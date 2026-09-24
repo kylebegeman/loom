@@ -101,6 +101,10 @@ run_checks() {
 # the upstream version it was built from.
 build_app() {
   local version=$1
+  # Dependencies must match the checkout being built: switching branches (or a
+  # dry run of a newer tag) leaves node_modules from another lockfile.
+  say "Installing dependencies for this checkout"
+  pnpm install --frozen-lockfile
   say "Building Loom $version"
   rm -rf release
   node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --build-version "$version"
@@ -279,6 +283,7 @@ cmd_integrate() {
     say "Dry run passed; discarding it"
     git switch -q main
     git branch -q -D "$branch"
+    pnpm install --frozen-lockfile >/dev/null
     rm -rf "$BUILDS_DIR/${tag#v}-"*
     echo "$tag merges, checks and builds cleanly. main and the installed app are unchanged."
     return 0
