@@ -5,6 +5,14 @@ additive: it tracks upstream and keeps upstream's internal names so merges stay 
 The `fork/branding` work is purely cosmetic. The app shows the name "Loom" and its own
 icon; behavior, data locations and identifiers are upstream's.
 
+## Implementation packets
+
+Loom features beyond the branding are built as implementation packets, one folder per
+feature, each additive and limited to marked seams. Start at
+[docs/fork/packets/README.md](docs/fork/packets/README.md) for the packet index, the
+conventions and the shared extension points; [docs/fork/selections.md](docs/fork/selections.md)
+records which old Loom features were chosen.
+
 ## Brand source
 
 Fork-owned files, never edited upstream:
