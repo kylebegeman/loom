@@ -1,6 +1,6 @@
 # Lxx: Packet title
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Not started. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 One paragraph: what this packet adds for the user, in plain words.
 

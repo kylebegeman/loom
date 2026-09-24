@@ -21,15 +21,15 @@ Record the commit hash of each one this packet created here when done.
 
 `ext-decide` is created like any other extension point: the `feat(fork): add the decide
 extension point` commit contains only what EXTENSION-POINTS.md section 18 specifies (empty
-`FORK_DECIDE_FEATURES`, no L29 code). If L15, L07, L08 or L14 lands first, it creates it and
-this packet only registers.
+`FORK_DECIDE_FEATURES`, no L29 code). If L07, L08, L14, L15 or L20 lands first, it creates it
+and this packet only registers.
 
 ## Packet seams
 
 None. All packet code is in fork-owned paths:
 
 - `packages/contracts/src/fork/jev-hub.ts`
-- `packages/client-runtime/src/fork/jev-hub.ts`, `jevLint.ts`, `jevCost.ts` (+ tests)
+- `packages/client-runtime/src/fork/jev-hub.ts`, `jev-hub-lint.ts`, `jev-hub-cost.ts` (+ tests)
 - `apps/server/src/fork/jev-hub/*`
 - `apps/web/src/fork/jev-hub/*`
 - `docs/fork/user/jev-hub.md`

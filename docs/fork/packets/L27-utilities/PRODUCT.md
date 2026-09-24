@@ -1,8 +1,7 @@
 # L27 product
 
-Selection: F4 in [selections.md](../../selections.md) is listed under "Not selected"; Kyle
-confirmed it for this packet in the 2026-09-24 brainstorm and left placement open. This
-document decides placement (below).
+Selection: F4 in [selections.md](../../selections.md), first listed as not selected; confirmed
+for this packet on 2026-09-24. Placement was left to this document, which decides it (below).
 
 ## Problem
 

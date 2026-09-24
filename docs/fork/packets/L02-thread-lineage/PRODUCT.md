@@ -24,8 +24,9 @@ an eye on two of them at once.
   Codex) continues the provider's own session from that point, which keeps tool results and
   reasoning the transcript cannot carry.
 - **See related threads.** The Related threads panel lists the parent, children (forks,
-  sidecars, agent-started threads), siblings, and threads that implemented a plan from this
-  thread, each with status (working, needs approval, done, error), branch and age.
+  sidecars, agent-started threads, reviewer threads), siblings, and threads that implemented
+  a plan from this thread, each with status (working, needs approval, done, error), branch
+  and age.
 - **Message a related thread without leaving.** Select one in the panel and use the compact
   composer under it to send a message; its reply streams into the panel.
 - **Start a sidecar.** "New sidecar" opens a side thread in the same workspace, next to the

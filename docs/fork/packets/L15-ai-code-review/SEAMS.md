@@ -19,7 +19,7 @@ Run each existence check; create any missing extension point exactly as specifie
 | [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings)                                 | "AI code review" section (with its project scope).                                                                        |
 | [`ext-diff-header`](../EXTENSION-POINTS.md#17-diff-panel-header-ext-diff-header)                 | "Review changes" button, shared with L26.                                                                                 |
 | [`ext-composer`](../EXTENSION-POINTS.md#11-composer-ext-composer)                                | The "Review this turn?" chip as a footer block.                                                                           |
-| [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root)                                 | The start dialog host and the keybinding listener.                                                                        |
+| [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root)                                 | The start dialog host (subscribes to `loom.ai-code-review.start` with `onForkCommand`).                                   |
 | [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings)                        | `loom.ai-code-review.start`, unbound by default (no default binding, no `keybindings.json` write).                        |
 | `ext-decide` (EXTENSION-POINTS.md, section 18)                                                   | The three decide features: `ai-code-review.reviewer-pick`, `ai-code-review.turn-suggest`, `ai-code-review.finding-merge`. |
 
@@ -32,22 +32,24 @@ the registry (`apps/server/src/fork/decide/registry.ts`), `diffExcerpt`
 
 ## Registrations (fork-owned files, not seams)
 
-| Registry                                                           | Entry                                                               |
-| ------------------------------------------------------------------ | ------------------------------------------------------------------- |
-| `packages/contracts/src/fork/index.ts`, `fork/rpc.ts`              | `export * from "./ai-code-review.ts"`, `AiCodeReviewRpcGroup`       |
-| `apps/server/src/fork/ForkRuntime.ts`                              | `AiCodeReviewService` layer and the reactor                         |
-| `apps/server/src/fork/features.ts`                                 | `"ai-code-review"` in `LOOM_SERVER_FEATURES`                        |
-| `apps/server/src/fork/persistence/migrations.ts`                   | `AiCodeReviewMigrations`                                            |
-| `apps/server/src/fork/rpc.ts` and its scope table                  | handlers and one scope per tag                                      |
-| `apps/server/src/fork/mcp/index.ts`                                | `AiCodeReviewToolkitRegistrationLive`                               |
-| `apps/server/src/fork/decide/registry.ts` (`FORK_DECIDE_FEATURES`) | `...aiCodeReviewDecideFeatures` (from `ai-code-review/decide.ts`)   |
-| `apps/web/src/fork/panels/registry.ts`                             | `aiCodeReviewPanel`                                                 |
-| `apps/web/src/fork/commandPalette/registry.ts`                     | `aiCodeReviewPaletteSource`                                         |
-| `apps/web/src/fork/settings/registry.ts`                           | `aiCodeReviewSettings`                                              |
-| `apps/web/src/fork/diffHeader/registry.ts`                         | `aiCodeReviewDiffHeaderAction`                                      |
-| `apps/web/src/fork/composer/registry.tsx` (`FORK_COMPOSER_BLOCKS`) | `aiCodeReviewSuggestionChip`                                        |
-| `apps/web/src/fork/ForkRoot.tsx`                                   | `{ id: "ai-code-review-dialog", Component: StartReviewDialogHost }` |
-| `packages/contracts/src/fork/keybindings.ts`                       | `"loom.ai-code-review.start"`                                       |
+| Registry                                                           | Entry                                                                                  |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `packages/contracts/src/fork/index.ts`, `fork/rpc.ts`              | `export * from "./ai-code-review.ts"`, `AiCodeReviewRpcGroup`                          |
+| `apps/server/src/fork/ForkRuntime.ts`                              | `\| AiCodeReviewService` in `ForkServices`                                             |
+| `apps/server/src/fork/ForkLayer.ts`                                | `AiCodeReviewService.layer,` and the `AiCodeReviewReactor` layer in `ForkServicesLive` |
+| `apps/server/src/fork/features.ts`                                 | `"ai-code-review"` in `LOOM_SERVER_FEATURES`                                           |
+| `apps/server/src/fork/persistence/migrations.ts`                   | `AiCodeReviewMigrations`                                                               |
+| `apps/server/src/fork/rpc.ts` and its scope table                  | handlers and one scope per tag                                                         |
+| `apps/server/src/fork/mcp/index.ts`                                | `AiCodeReviewToolkitRegistrationLive`                                                  |
+| `packages/client-runtime/src/fork/index.ts`                        | `export * from "./ai-code-review.ts";`                                                 |
+| `apps/server/src/fork/decide/registry.ts` (`FORK_DECIDE_FEATURES`) | `...aiCodeReviewDecideFeatures` (from `ai-code-review/decide.ts`)                      |
+| `apps/web/src/fork/panels/registry.ts`                             | `aiCodeReviewPanel`                                                                    |
+| `apps/web/src/fork/commandPalette/registry.ts`                     | `aiCodeReviewPaletteSource`                                                            |
+| `apps/web/src/fork/settings/registry.ts`                           | `aiCodeReviewSettings`                                                                 |
+| `apps/web/src/fork/diffHeader/registry.ts`                         | `aiCodeReviewDiffHeaderAction`                                                         |
+| `apps/web/src/fork/composer/registry.tsx` (`FORK_COMPOSER_BLOCKS`) | `aiCodeReviewSuggestionChip`                                                           |
+| `apps/web/src/fork/ForkRoot.tsx`                                   | `{ id: "ai-code-review-dialog", Component: StartReviewDialogHost }`                    |
+| `packages/contracts/src/fork/keybindings.ts`                       | `"loom.ai-code-review.start"`                                                          |
 
 Optional, only when the other packet is present: L18's `PROFILE_BINDING_SOURCES`
 (`apps/web/src/fork/project-profiles/bindingSources.ts`) gains the reviewer binding source;

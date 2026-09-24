@@ -116,10 +116,11 @@ docs/fork/user/provider-sign-in.md
    Cancel, the paste box, Sign out with confirmation (text in PRODUCT.md), the credential-store
    check or notice with the confirmation that shows the exact line and backup location, the
    "Same account as" warning, the custom-endpoint message, and the Claude API key rows (Save,
-   then only Replace and Remove, never a reveal or copy) writing a sensitive
-   `ANTHROPIC_API_KEY` environment variable through `useUpdateEnvironmentSettings` with
-   `withClaudeApiKey`. Register in `FORK_PROVIDER_SETUP_SECTIONS`. Use upstream primitives
-   only; match `ProviderSetupSection.tsx`'s row layout.
+   then only Replace and Remove, never a reveal or copy; **Make it sensitive** for a plain
+   entry) writing a sensitive `ANTHROPIC_API_KEY` environment variable through
+   `useUpdateEnvironmentSettings` with `withClaudeApiKey`. Register in
+   `FORK_PROVIDER_SETUP_SECTIONS`. Use upstream primitives only; match
+   `ProviderSetupSection.tsx`'s row layout.
 
 10. **Codex tools and import dialogs.** `CodexToolsDialog.tsx` (two tabs) and
     `ImportDialog.tsx`, opened from rows in the setup section.
@@ -142,7 +143,7 @@ docs/fork/user/provider-sign-in.md
     account, what the credential-storage check and notice mean and where the backup goes,
     that saved Claude API keys can be replaced or removed but not shown, why custom-endpoint
     Claude instances have no sign-in, remote sign-in tips). Update the packet
-    index Status. Fill SEAMS.md "Extension points created" and "Merge check".
+    index Status. Fill SEAMS.md "Extension points used or created" and "Merge check".
 
 ## Pitfalls
 

@@ -315,7 +315,7 @@ export const ModesPreview = Schema.Struct({
   estimatedTokens: NonNegativeInt,
 });
 
-export class LoomInstructionModesError extends Schema.TaggedErrorClass<LoomInstructionModesError>()(
+export class LoomInstructionModesError extends Schema.TaggedError<LoomInstructionModesError>()(
   "LoomInstructionModesError",
   {
     reason: Schema.Literals([

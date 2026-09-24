@@ -50,8 +50,7 @@ Why no extension point covers it: `ext-panels` adds new right-panel surfaces but
 upstream panel's internals, and the Device panel toolbar has no slot or `trailingActions` prop
 (the preview's chrome row has one; the device toolbar is inline JSX,
 `DevicePanel.tsx:186-247`). Without the seam, capture works from the Device QA panel, the
-palette and a keybinding; the seam only puts it next to the device. If Kyle prefers zero seams,
-drop this file and the component, and the packet still meets its scope.
+palette and a keybinding; the seam only puts it next to the device.
 
 Merge risk: low to medium. The seam is two inserted lines in a toolbar that upstream changes
 occasionally, plus a two-line import next to a stable import; all are insertions.

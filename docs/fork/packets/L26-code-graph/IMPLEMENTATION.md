@@ -28,7 +28,7 @@ apps/server/src/fork/code-graph/
   *.test.ts
 apps/web/src/fork/code-graph/
   state.ts  panel.tsx  CodeGraphPanel.tsx  OverviewTab.tsx  SearchTab.tsx  ImpactTab.tsx
-  NeighborhoodGraph.tsx  impactStore.ts  DiffImpactButton.tsx  palette.tsx  settings.tsx
+  NeighborhoodGraph.tsx  impactStore.ts  diffHeaderAction.tsx  palette.tsx  settings.tsx
   CodeGraphOpenWatcher.tsx  openWatcher.logic.ts  radialLayout.ts  impactSummary.ts  *.test.ts
 docs/fork/user/code-graph.md
 ```
@@ -86,7 +86,7 @@ projectId)` change should be reported (not within 10 minutes of the last report,
     20 remembered pairs); call `noteProjectOpened` fire and forget.
 12. **Diff header action.** Run the `ext-diff-header` existence check and create it if
     missing (own commit, EXTENSION-POINTS.md section 17). Then `impactStore.ts` and
-    `DiffImpactButton.tsx`, and register `codeGraphDiffHeaderAction` in
+    `diffHeaderAction.tsx`, and register `codeGraphDiffHeaderAction` in
     `FORK_DIFF_HEADER_ACTIONS` ([SEAMS.md](./SEAMS.md)).
 13. **Palette and settings.** `palette.tsx` in `FORK_COMMAND_PALETTE_SOURCES` (values
     `action:loom:code-graph:open`, `:impact`, `:rebuild`); `settings.tsx` in
@@ -97,7 +97,8 @@ projectId)` change should be reported (not within 10 minutes of the last report,
 14. **Docs.** `docs/fork/user/code-graph.md` (what it does, the pinned install command and
     what "untested version" means, that Loom never runs Graphify's installers, where the graph
     is stored, the per-project agent switch and its token cost, and when automatic updates
-    run). FORK.md "Packet seams" row. Status in the packets index.
+    run). No FORK.md "Packet seams" row (extension point rows only, in their own commits).
+    Status in the packets index.
 
 Commit extension points separately, then
 `feat(fork-code-graph): build a code graph with Graphify and show change impact`. Revert

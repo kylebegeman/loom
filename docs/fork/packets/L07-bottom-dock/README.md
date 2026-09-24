@@ -1,6 +1,6 @@
 # L07: Bottom dock
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Turns the area under the chat, which today holds only upstream's terminal drawer, into a
 tabbed dock. The terminal stays exactly as it is and becomes the dock's first tab. Next to

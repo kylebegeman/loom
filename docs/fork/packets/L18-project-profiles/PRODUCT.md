@@ -25,7 +25,7 @@ Profile (Settings, Loom, "Project profile", with a project selected in the scope
 - Choose whether project commands launched from Loom use varlock: Automatic (when
   `.env.schema` exists and varlock is installed), or Never. Set the schema path if it is not
   `.env.schema` at the checkout root.
-- Bind snippets or skills to the project when those Loom features are installed.
+- Bind a per-project default reviewer when Loom's AI code review (L15) is installed.
 - Turn "No AI identification" on or off for the project when Loom's small extras (L20) are
   installed; the row is L20's switch, shown here too.
 - See links to upstream's Project settings for model, permissions, worktrees and actions.
@@ -77,7 +77,9 @@ Agents:
 
 - **Server lacks the feature**: launcher entry disabled with "Needs a Loom server"; settings
   section shows "This environment does not run Loom's project profiles."
-- **No project scope in settings**: "Choose a project to edit its Loom profile."
+- **No project scope in settings**: "Choose a project to edit its Loom profile." The "Share
+  profile with agents" switch still shows, once per environment in the scope (it is an
+  environment setting).
 - **Several checkouts in scope**: the section edits all of them together and says so; mixed
   values show "Mixed" like upstream's scoped settings.
 - **Empty profile**: every field empty; nothing is stored until something is saved.
@@ -87,6 +89,8 @@ Agents:
 - **Schema parse error**: the parser's message with line and column, and the path.
 - **varlock not installed**: "Run with varlock" and "Validate with varlock" are disabled with
   "Install varlock to use this" and the install command.
+- **First validation on an environment**: a one-time confirmation before varlock runs (see
+  Copy); "Cancel" runs nothing and asks again next time.
 - **Validating**: spinner on the button; results replace the status column until refreshed.
 - **Budget not reported**: for threads on providers that do not report token usage (Cursor,
   Grok, OpenCode, Antigravity), "Token usage is not reported by <provider>".
@@ -109,7 +113,10 @@ Section title "Project profile". Fields: "Agent notes", "Commands", "Token budge
 your notes, commands and env variable status (never values) with one tool." Composer items
 "Insert project notes" (description: the first line of the notes) and "Add project notes".
 Inserted text starts with "Project notes:" on its own line. Budget labels "Tokens per day for this project", "Tokens per thread". Varlock
-choice "Use varlock for commands: Automatic / Never". Env statuses "Set in .env.local",
+choice "Use varlock for commands: Automatic / Never". First "Validate with varlock" on an
+environment: title "Validate with varlock?", body "varlock loads this project's configuration
+on <environment>. That can contact the secret managers and run the code generators the
+project configured. Values stay on the server.", buttons "Validate" and "Cancel". Env statuses "Set in .env.local",
 "Set in server environment", "Missing", "Empty", "Invalid: expected a URL", "Resolved by
 varlock". Timeline markers as in the table above.
 

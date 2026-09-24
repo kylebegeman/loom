@@ -213,8 +213,9 @@ In `apps/web/src/fork/project-lifecycle/`:
     renders null. Register in `FORK_ROOT_COMPONENTS`.
 11. Route file `apps/web/src/routes/loom.repositories.tsx` (SEAMS.md), then regenerate the
     route tree with `vp run --filter @t3tools/web build`.
-12. `SidebarItem.tsx` (`RepositoriesSidebarItem`, TECHNICAL.md, Clients), then the two marked
-    lines in `apps/web/src/components/sidebar/SidebarChrome.tsx` exactly as SEAMS.md shows,
+12. `SidebarItem.tsx` (`RepositoriesSidebarItem`, TECHNICAL.md, Clients), then the three
+    inserted lines (two markers) in `apps/web/src/components/sidebar/SidebarChrome.tsx`
+    exactly as SEAMS.md shows,
     then `vp fmt` on that file and check both markers are still attached.
 13. Typecheck `@t3tools/web`.
 

@@ -40,7 +40,7 @@ report it rather than guessing.
 | [6. Right panels](#6-right-panels-ext-panels)                              | `fork: ext-panels`          | 3                                                   | ext-core               |
 | [7. Settings](#7-settings-ext-settings)                                    | `fork: ext-settings`        | 2, plus one route file and the generated route tree | none                   |
 | [8. Command palette](#8-command-palette-ext-palette)                       | `fork: ext-palette`         | 1                                                   | ext-core               |
-| [9. Keybindings](#9-keybindings-ext-keybindings)                           | `fork: ext-keybindings`     | 1                                                   | ext-web-root           |
+| [9. Keybindings](#9-keybindings-ext-keybindings)                           | `fork: ext-keybindings`     | 1                                                   | ext-core, ext-web-root |
 | [10. MCP tools](#10-agent-facing-mcp-tools-ext-mcp)                        | `fork: ext-mcp`             | 1                                                   | ext-core               |
 | [11. Composer](#11-composer-ext-composer)                                  | `fork: ext-composer`        | 1                                                   | none                   |
 | [11b. Composer menu trigger](#11b-composer-menu-trigger-ext-composer-menu) | `fork: ext-composer-menu`   | 3                                                   | ext-composer           |
@@ -53,8 +53,9 @@ report it rather than guessing.
 | [18. Decisions with Jev](#18-decisions-with-jev-ext-decide)                | none                        | 0                                                   | ext-core, ext-settings |
 
 `ext-panels` and `ext-palette` need server core only for `loomFeaturesOf` from
-`@t3tools/client-runtime/fork`; a client-only packet that uses them runs the `ext-core`
-existence check and creates it if missing, but registers nothing in it.
+`@t3tools/client-runtime/fork`, and `ext-keybindings` only for `packages/contracts/src/fork/`
+and the `@t3tools/contracts/fork` export; a client-only packet that uses them runs the
+`ext-core` existence check and creates it if missing, but registers nothing in it.
 
 Every fork identifier follows the naming table in CONVENTIONS.md: wire names start with
 `loom.`, tables with `fork_`. Spots that were proposed as shared extension points but kept as
@@ -144,7 +145,8 @@ error, stream? })`, e.g. `WsServerProbeRpc` (`rpc.ts:451-455`); every error unio
   requirement to the upstream layers hosting it. Upstream's `server.test.ts`, which builds
   `makeRoutesLayer` with mocks, keeps compiling. The rule that follows: **transport code is
   thin; all fork logic lives in fork services built in `ForkLayer`.**
-- One capability key, `loomFeatures: string[]`, lists the packet slugs the server supports.
+- One capability key, `loomFeatures: string[]`, lists the packet slugs the server supports,
+  plus the extension point names `core` and `decide`.
 
 ### Seams
 
@@ -165,22 +167,27 @@ appended exports do not touch it):
      "./settings": {
 ```
 
-**`packages/client-runtime/package.json`** (no marker; first entry of `exports`):
+**`packages/client-runtime/package.json`** (no marker; directly after the `"./errors"` entry
+and before `"./rpc"`, because upstream prepends new exports at the top of this object, and an
+entry in the middle changes no upstream line):
 
 ```diff
-   "exports": {
+     "./errors": {
+       "types": "./src/errors/index.ts",
+       "default": "./src/errors/index.ts"
+     },
 +    "./fork": {
 +      "types": "./src/fork/index.ts",
 +      "default": "./src/fork/index.ts"
 +    },
-     "./load-balancing": {
+     "./rpc": {
 ```
 
 **`packages/contracts/src/environment.ts`**, first key of the struct (line 78):
 
 ```diff
  export const ExecutionEnvironmentCapabilities = Schema.Struct({
-+  // fork: ext-core: Loom packet slugs this server implements. Absent on upstream servers.
++  // fork: ext-core: Loom features this server implements. Absent on upstream servers.
 +  loomFeatures: Schema.optionalKey(Schema.Array(Schema.String)), // fork: ext-core
    repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 ```
@@ -255,7 +262,7 @@ would otherwise be unused):
 ```
 
 **`packages/client-runtime/src/rpc/client.ts`**: one import after the contracts import
-(line 1) and one leading member in each stream union (lines 41 and 63):
+(line 1) and one leading member in each stream union (lines 42 and 63):
 
 ```diff
  import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
@@ -345,7 +352,10 @@ import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 
 const NO_FEATURES: ReadonlyArray<string> = [];
 
-/** Loom packet slugs an environment supports. Empty on upstream T3 servers. */
+/**
+ * Loom features (packet slugs, `core`, `decide`) an environment supports. Empty on upstream
+ * T3 servers.
+ */
 export const loomFeaturesOf = (
   capabilities: ExecutionEnvironmentCapabilities | null | undefined,
 ): ReadonlyArray<string> => capabilities?.loomFeatures ?? NO_FEATURES;
@@ -511,8 +521,8 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
    into `ForkSubscriptionRpcTag` (durable, resubscribed on reconnect) or
    `ForkStreamCommandRpcTag` (one-shot progress streams).
 2. Server service: `apps/server/src/fork/<slug>/<Name>.ts` with a `Context.Service` and
-   `layer`. Add the layer to `ForkServicesLive` and the service to `ForkServices` in
-   `ForkRuntime.ts`. Append the slug to `LOOM_SERVER_FEATURES`.
+   `layer`. Add the layer to `ForkServicesLive` in `ForkLayer.ts` and the service to
+   `ForkServices` in `ForkRuntime.ts`. Append the slug to `LOOM_SERVER_FEATURES`.
 3. Server handlers: `apps/server/src/fork/<slug>/rpc.ts` exports
    `makeSnippetsRpcHandlers = (auth: ForkRpcAuth) => Effect.succeed(SnippetsRpcGroup.of({...}))`,
    each handler shaped `(input) => auth.effect(TAG, withForkRuntime(Effect.gen(...)))`. Spread
@@ -702,8 +712,8 @@ No upstream seam beyond `ForkRoutesLayer` (server core).
   `VITE_HTTP_URL`.
 - Upstream's `authenticateRawRouteWithScope` (`http.ts:271`) is not exported. A packet that
   needs environment auth copies its ten lines into `apps/server/src/fork/http.ts` (created by
-  the first packet that needs it). Webhook-style routes (L25) authenticate with their own
-  per-trigger secret instead.
+  the first packet that needs it). A webhook route (for example L25's follow-up) would
+  authenticate with its own secret instead. L23's signed file route is the first user.
 - Handlers call fork services through `withForkRuntime`, so `makeRoutesLayer` gains no
   requirement. Add the route layer to `ForkRoutesLayer`.
 - Prefer RPC. Use HTTP only for inbound webhooks, downloads or uploads.
@@ -724,7 +734,8 @@ No upstream seam.
   scoped `subscribeDomainEvents`, and catch up with `readEvents(fromSequenceExclusive)` and
   `latestSequence` (`apps/server/src/orchestration/Services/OrchestrationEngine.ts`). A fork
   reactor that must not miss events keeps its own cursor in a fork table.
-  `AgentAwarenessRelay` is an upstream consumer outside orchestration that does the same
+  `AgentAwarenessRelay` is an upstream consumer outside orchestration that subscribes to the
+  live event stream under `forkParked`; it keeps no cursor
   (`apps/server/src/relay/AgentAwarenessRelay.ts:609-610`).
 - Side effects feed results back through existing commands dispatched with
   `OrchestrationEngineService.dispatch`, using server command ids like upstream's
@@ -1292,7 +1303,7 @@ conflict in this file, take upstream's version, regenerate the same way, then ty
 import type { ComponentType } from "react";
 
 export interface ForkSettingsSection {
-  /** The packet slug; also the page anchor. */
+  /** The packet slug (or an extension point's name, such as `decide`); also the page anchor. */
   readonly id: string;
   readonly title: string;
   readonly Component: ComponentType;
@@ -1459,7 +1470,8 @@ Test: item values across sources are unique and start with `action:loom:`.
 
 ## 9. Keybindings (`ext-keybindings`)
 
-Prerequisite: [Web root](#5-web-root-ext-web-root).
+Prerequisite: [Server core](#1-server-core-ext-core) (for `packages/contracts/src/fork/`
+and the `@t3tools/contracts/fork` export) and [Web root](#5-web-root-ext-web-root).
 
 ### Current upstream mechanism
 
@@ -1639,7 +1651,8 @@ export const ForkMcpToolkitsLive = Layer.mergeAll(
 
 ### Registering a toolkit
 
-`apps/server/src/fork/<slug>/mcp.ts` follows the upstream toolkit pattern:
+`apps/server/src/fork/<slug>/mcp.ts` follows the upstream toolkit pattern (the snippets tool
+is illustrative; L01 ships no MCP tools):
 
 ```ts
 const SearchSnippetsTool = Tool.make("loom_snippets_search", {
@@ -1684,7 +1697,8 @@ tests run the service through `withForkRuntime` with a test `ForkRuntime` contex
 
 ### Purpose
 
-Three hooks packets need: a key handler (Tab expansion such as snippet `;alias`), footer
+Three hooks packets need: a key handler (no packet registers one yet; L01's `;alias` goes
+through [ext-composer-menu](#11b-composer-menu-trigger-ext-composer-menu)), footer
 controls, and a drawer anchored above the composer (clipboard history, per-turn tool
 overrides).
 
@@ -1876,16 +1890,23 @@ with a fixed composition written when the first drawer lands, and update this fi
 
 - Key handlers find the token before `snapshot.expandedCursor` the way
   `detectComposerTrigger` does (`apps/web/src/composer-logic.ts:209-256`) and replace it with
-  `replace(start, end, text, { expectedText })`. Data they need (snippet aliases) is read
-  synchronously from an atom registry or store, never fetched on the keystroke.
+  `replace(start, end, text, { expectedText })`. Data they need is read synchronously from
+  an atom registry or store, never fetched on the keystroke.
 - Blocks render compact controls sized by `size`.
 - Drawers open from a fork command, a block button or a palette item, and close on Escape.
-- Check: `git grep -c 'fork: ext-composer' -- apps/web/src/components/chat/ChatComposer.tsx`
-  prints 5.
+- Check: `git grep -cE 'fork: ext-composer([^a-z0-9-]|$)' -- apps/web/src/components/chat/ChatComposer.tsx`
+  prints 5. The strict pattern keeps `fork: ext-composer-menu` markers out of the count.
 - Test the pure parts (token detection, expansion) in the packet; ids unique across the three
   lists.
 
 ## 11b. Composer menu trigger (`ext-composer-menu`)
+
+Prerequisite: [Composer](#11-composer-ext-composer).
+
+This section is not yet verbatim: it gives the seams in prose and the registry by shape. The
+first packet that creates it writes the full code and replaces this outline with it in the
+same commit (How to use this file, rule 3). Do not build two packets that would create it in
+parallel; land the extension point first.
 
 Optional; create only when a packet needs a new `@`-style menu (for example a snippet picker
 that opens on a prefix). Tab expansion alone does not need it. Fork trigger prefixes in
@@ -2161,10 +2182,10 @@ L16 (provider sign-in) and L17 (more providers).
 
 ### Purpose
 
-Let a packet (a) add a whole provider driver (L17: Gemini CLI, Copilot CLI, custom ACP
-agents) and (b) decorate an upstream driver's instances (L16: attach in-app sign-in to Codex
-and Claude instances), plus show the matching settings form, icon and a setup section in
-**Settings > Providers**, without further upstream edits.
+Let a packet (a) add a whole provider driver (L17: custom ACP agents, Gemini CLI among them
+through `gemini --acp`, and Copilot CLI) and (b) decorate an upstream driver's instances
+(L16: attach in-app sign-in to Codex and Claude instances), plus show the matching settings
+form, icon and a setup section in **Settings > Providers**, without further upstream edits.
 
 ### Current upstream mechanism
 
@@ -2401,7 +2422,7 @@ export function ForkProviderSetupSlot(
 ### Registering a packet
 
 - A driver: `apps/server/src/fork/<slug>/drivers/<Name>Driver.ts` exports a
-  `ForkProviderDriver` whose `driverKind` starts with `loom` (`loomGemini`). Append it to
+  `ForkProviderDriver` whose `driverKind` starts with `loom` (`loomAcp`). Append it to
   `FORK_PROVIDER_DRIVERS`. Its settings schema lives in
   `packages/contracts/src/fork/<slug>.ts`; append a `ProviderClientDefinition` to
   `FORK_PROVIDER_CLIENT_DEFINITIONS` and an icon to `FORK_PROVIDER_ICONS`.
@@ -2436,8 +2457,9 @@ test -f apps/server/src/fork/providers/drivers.ts && test -f apps/web/src/fork/p
 
 - The upstream Add provider dialog also lists "coming soon" entries for `githubCopilot`,
   `gemini`, `acpRegistry` and `piAgent` (`AddProviderInstanceDialog.tsx:73-94`). Fork drivers
-  deliberately use different kinds (`loomGemini`, ...) so that a future upstream driver with
-  the same name cannot decode a fork instance's config. Both entries can be visible at once.
+  deliberately use different kinds (`loomAcp`, `loomCopilot`) so that a future upstream
+  driver with the same name cannot decode a fork instance's config. Both entries can be
+  visible at once.
 - Mobile keeps its own provider icon map (`apps/mobile/src/components/ProviderIcon.tsx`);
   unknown drivers fall back to the Codex logo there (line 75), so fork drivers show that logo
   in the mobile app.
@@ -2455,8 +2477,9 @@ Used by L03 (pinned goals), L20 (private mode) and L22 (instruction modes).
 
 Let fork services add standing text (a pinned goal, instruction modes) to the text a
 provider receives for a user turn, for every provider and every client, without changing
-what T3's timeline shows. This replaces the "packet seam in the provider command path" that
-[Orchestration](#12-orchestration-and-thread-behavior), rule 5, lists as the last resort.
+what T3's timeline shows. This is the one path for such text;
+[Orchestration](#12-orchestration-and-thread-behavior), rule 5, forbids other seams in the
+provider command path.
 
 ### Current upstream mechanism
 
@@ -2554,7 +2577,10 @@ export interface ForkTurnInputContext {
 }
 
 export interface ForkTurnInputContributor {
-  /** The packet slug. */
+  /**
+   * Unique id from the order table: the packet slug, or `<slug>-<name>`
+   * (e.g. `small-extras-private-mode`).
+   */
   readonly id: string;
   /** Lower goes first; ties by id. Assigned in EXTENSION-POINTS.md, Provider turn input. */
   readonly order: number;
@@ -2863,6 +2889,8 @@ agentTool? }`) with id `<packet-slug>.<name>` and `packet` the packet id (`"L15"
   `multi-thread-runs.compare-rank`) has only `off` and `manual`: the settings UI hides "Let
   agents use this", `updateFeature` rejects `manual-agents` for it, and a stored
   `manual-agents` row is read as `manual`. `agentTool` defaults to true.
+- **The global "Use Jev" switch** (`enabled`) is on by default. With no key saved, every
+  feature falls back with `no-key`, so nothing is sent until the user saves a key.
 - **Order of checks** in `decide`, each returning a fallback without contacting TypeSafe:
   global "Use Jev" off or feature `off` (`disabled`); `origin: "agent"` without
   `manual-agents` (`agent-not-allowed`); the project, given or derived from `threadId`, has
@@ -2913,6 +2941,12 @@ None. Every registration goes into fork-owned registry files of `ext-core` and
 `ext-settings`.
 
 ### Fork-owned files
+
+This section is not yet verbatim: the RPC group, the `LoomDecide` layer, `DecideStore.ts`,
+`rpc.ts` and `JevSettingsSection.tsx` are given in outline or prose. The first packet that
+creates it writes the full code and replaces the outline with it in the same commit (How to
+use this file, rule 3). Do not build two packets that would create it in parallel; land the
+extension point first.
 
 **`packages/contracts/src/fork/decide.ts`** (add `export * from "./decide.ts";` to
 `packages/contracts/src/fork/index.ts` and `DecideRpcGroup,` to the `.merge(` in
@@ -3450,7 +3484,7 @@ CREATE TABLE IF NOT EXISTS fork_decide_question_sets (
 
 CREATE TABLE IF NOT EXISTS fork_decide_settings (
   id             INTEGER PRIMARY KEY CHECK (id = 1),
-  settings_json  TEXT NOT NULL,                    -- enabled, redaction, key metadata (never the key)
+  settings_json  TEXT NOT NULL,                    -- enabled (default true), redaction, key metadata (never the key)
   updated_at     TEXT NOT NULL
 );
 
@@ -3691,7 +3725,7 @@ It edits the environment of the selected settings scope (`useSettingsScope()`,
 
 - An intro line: "Jev is TypeSafe's decision model. Loom can use it for small optional
   decisions; every use has a non-Jev fallback. What is sent is shown in the Decisions panel."
-- "Use Jev" switch (global `enabled`).
+- "Use Jev" switch (global `enabled`, on by default).
 - API key: "No key" or "Key saved on <date>"; a password field with "Save", then "Replace"
   and "Remove" (Remove asks for confirmation); "Test key" shows "Key works. Models:
   jev-latest, jev-preview" or the failure ("TypeSafe rejected this key (401)", "Could not
@@ -3853,8 +3887,8 @@ read `useServerConfigs().get(environmentId)?.environment.capabilities` and pass 
   `loom.` prefix and the collision test are the only guard.
 - **Migrations.** A fork migration in upstream's sequence silently skips upstream schema
   changes. Per-packet tracking tables avoid it; never bypass them.
-- **Keybinding defaults** leak into the user's `keybindings.json`, which upstream T3 Code then
-  flags. Prefer unbound commands.
+- **Keybinding defaults.** Fork default shortcuts are `keydown` listeners with an off switch,
+  never `keybindings.json` entries, which upstream T3 Code would flag (section 9).
 - **MCP tools** are visible to every session and cost tokens every turn.
 - **Settings search** does not include fork sections (the search list is upstream-owned).
 - **Knip.** `knip:check` checks unused exports in apps and packages. If CI runs on the fork,

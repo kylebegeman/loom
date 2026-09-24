@@ -1,6 +1,6 @@
 # L25: Inbound triggers
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Loom starts work from outside events. A trigger watches GitHub for a project: an issue
 assigned to you, an issue given a label, an @mention of you, a review request, or a failed
@@ -67,9 +67,9 @@ No edits to upstream source lines. See [SEAMS.md](./SEAMS.md).
 
 ## Optional integrations
 
-- If L06 (source control cockpit) is present, the CI-failure follow-up prompt may include
-  the failing job's log tail through L06's server service; otherwise it includes job names
-  and links.
+- Follow-up (not designed): with L06 (source control cockpit) present, the CI-failure
+  follow-up prompt could include the failing job's log tail. v1 sends the workflow, the
+  failed job names and the run link, with or without L06.
 - If L19 (project lifecycle) is present, nothing changes; a parked project's triggers are
   skipped because its folder is missing (the event stays pending with a reason).
 

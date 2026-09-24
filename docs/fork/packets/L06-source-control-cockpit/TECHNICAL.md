@@ -230,7 +230,7 @@ export const LeakScanResult = Schema.Struct({
   output: Schema.String, // ANSI-stripped, capped at 8 KiB, for anything the parser missed
 });
 
-export class SourceControlCockpitError extends Schema.TaggedErrorClass<SourceControlCockpitError>()(
+export class SourceControlCockpitError extends Schema.TaggedError<SourceControlCockpitError>()(
   "SourceControlCockpitError",
   {
     reason: Schema.Literals([

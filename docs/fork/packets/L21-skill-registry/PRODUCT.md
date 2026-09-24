@@ -1,7 +1,7 @@
 # L21 product
 
-Selections status: "Under consideration" in [selections.md](../../selections.md); scoped by
-Kyle in the 2026-09-24 brief, questions answered the same day.
+Selection: skill registry, selected as L21 in [selections.md](../../selections.md) (Outcomes).
+Scoped by Kyle in the 2026-09-24 brief, questions answered the same day.
 
 ## Problem
 

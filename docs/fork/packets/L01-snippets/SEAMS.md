@@ -29,7 +29,7 @@ the same bytes. Keep the registry generic: nothing snippet-specific in that comm
 None. All packet code is in fork-owned paths:
 
 - `packages/contracts/src/fork/snippets.ts`
-- `packages/client-runtime/src/fork/snippets.ts`, `snippetsEngine.ts` (+ tests)
+- `packages/client-runtime/src/fork/snippets.ts`, `snippets-engine.ts` (+ tests)
 - `apps/server/src/fork/snippets/*`
 - `apps/web/src/fork/snippets/*`
 - `docs/fork/user/snippets.md`

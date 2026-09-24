@@ -19,7 +19,7 @@ drift; search for the quoted code. Jev facts are from <https://docs.typesafe.ai>
                                                      rpc.ts (loom.jev-hub.*), mcp.ts (loom_jev_hub_ask,
                                                        loom_jev_hub_submit), decide.ts (2 features)
                                                                  |
-                              client-runtime: jevLint, jevCost, atoms
+                         client-runtime: jev-hub-lint, jev-hub-cost, atoms
                                                                  |
                          web: Decisions panel (J): Log | Playground | Templates | Tuning
 ```
@@ -66,10 +66,12 @@ it to `manual-agents`.
 
 The draft gate (`loom_jev_hub_submit`) is the target feature's "Let agents use this": its mode
 must be `manual-agents`. A feature registered with `agentTool: false` (L07's approval risk,
-L08's compare ranking, L14's Auto preset) has no such switch, so for it the gate is
-`jev-hub.playground`'s mode instead. `draftGateFeature(feature)` returns the id to check.
+L08's compare ranking, L14's Auto preset, L15's turn suggestion and finding merge, L20's
+branch type) has no such switch, so for it the gate is `jev-hub.playground`'s mode instead.
+`draftGateFeature(feature)` returns the id to check.
 
-Neither feature passes a `threshold`; playground results are shown whatever their
+Neither feature has a `defaultThreshold`; the playground passes none, and `loom_jev_hub_ask`
+passes only the agent's optional `threshold`. Playground results are shown whatever their
 confidence, so a playground run that falls below a configured threshold still shows its
 answers from the `low-confidence` fallback.
 
@@ -740,10 +742,10 @@ CREATE TABLE IF NOT EXISTS fork_jev_hub_tuning (
 
 ### Shared (client-runtime)
 
-- `packages/client-runtime/src/fork/jevLint.ts` (pure): `lintQuestion(question)` and
+- `packages/client-runtime/src/fork/jev-hub-lint.ts` (pure): `lintQuestion(question)` and
   `lintRequest({ questions, state? })` returning `LintIssue[]` with `{ rule, severity:
 "error" | "warning" | "info", questionKey, message, path }`.
-- `packages/client-runtime/src/fork/jevCost.ts` (pure): `estimateCostUsd(inputTokens)` and
+- `packages/client-runtime/src/fork/jev-hub-cost.ts` (pure): `estimateCostUsd(inputTokens)` and
   `formatCost` ("about $0.0021", "under $0.0001").
 - `packages/client-runtime/src/fork/jev-hub.ts`: `createJevHubEnvironmentAtoms(runtime)`:
   query atom families for `listDecisions` (by query key), `getDecision`, `listTemplates`,
@@ -751,7 +753,7 @@ CREATE TABLE IF NOT EXISTS fork_jev_hub_tuning (
   atom for `subscribeChanges`; commands for the mutations; `replay` through the stream
   command helper.
 
-### Lint rules (`jevLint.ts`)
+### Lint rules (`jev-hub-lint.ts`)
 
 From the [Jev 1.13 jaggedness page](https://docs.typesafe.ai/model-jaggedness/jev-1.13) (rule
 numbers refer to its table) and the API limits. Text rules scan every string inside
@@ -766,7 +768,7 @@ numbers refer to its table) and the API limits. Text rules scan every string ins
 | `oversized-state`         | error    | `fitBudget(...).fits` is false: the questions alone exceed 32k (with the longest question) or 64k (all).                                                            | "The questions are too long for Jev."                                                        |
 | `state-trimmed`           | warning  | The state had to be trimmed to fit.                                                                                                                                 | "The state is over Jev's limit and will be trimmed. Send only what the question needs."      |
 | `large-state`             | warning  | Estimated state over 8,000 tokens (rule 5; a heuristic, not an API limit).                                                                                          | "Large states cost accuracy. Filter to what the question needs."                             |
-| `negation`                | warning  | A negation in the instructions: `\b(not                                                                                                                             | no                                                                                           | never | none | neither | nor | without | except | unless | cannot)\b`or`n't` (rule 1). | "Jev reads negations literally. Ask the positive question and handle the opposite in code." |
+| `negation`                | warning  | A negation in the instructions: `\b(not\|no\|never\|none\|neither\|nor\|without\|except\|unless\|cannot)\b` or `n't` (rule 1).                                      | "Jev reads negations literally. Ask the positive question and handle the opposite in code."  |
 | `double-negative`         | warning  | Two or more negations in one sentence, or a negated question with a negated `true` criterion (rule 4).                                                              | "Double negatives lower accuracy. Rewrite it as a direct question."                          |
 | `option-without-criteria` | warning  | A Choice option whose description is null or empty (rule 1).                                                                                                        | "Describe what this option covers, and what it does not."                                    |
 | `noul-without-criteria`   | info     | A Noul without `true` and `false` descriptions.                                                                                                                     | "Say what yes and no mean when the boundary is subtle."                                      |

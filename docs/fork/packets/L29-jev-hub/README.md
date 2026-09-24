@@ -1,6 +1,6 @@
 # L29: Jev hub
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 The place to see, trial and tune Loom's use of Jev, TypeSafe's decision model. Several Loom
 features can ask Jev a small typed question (L15 picks a reviewer model, L07 labels an
@@ -105,10 +105,12 @@ None. See [SEAMS.md](./SEAMS.md).
   may open a decision in this panel with `forkPanelSurface("jev-hub", "decision:<id>")` when
   `jev-hub` is in `loomFeatures` (TECHNICAL.md, "Deep link").
 - If L21 (skill registry) is present, the drafting card offers "Install the TypeSafe skill
-  in Skills", which opens L21's panel; L21 does the install as an explicit user step.
+  in Skills", which opens L21's panel on its Sources tab
+  (`forkPanelSurface("skill-registry", "sources")`), where TypeSafe is a suggested source;
+  L21 does the install as an explicit user step.
 - If L20's "No AI identification" is on for a project, L20 turns Jev off for that project
-  through `ext-decide`; this panel then shows "Jev is off for this project" and runs nothing
-  for it.
+  through `ext-decide` unless the user already chose; this panel then shows "Jev is off for
+  this project" and runs nothing for it.
 
 ## Dependencies needing approval
 

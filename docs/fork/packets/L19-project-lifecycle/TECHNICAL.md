@@ -151,7 +151,6 @@ export const RepositoriesResult = Schema.Struct({
 });
 
 export const ParkBlockerCode = Schema.Literals([
-  "not-a-repository",
   "protected-path",
   "no-origin",
   "origin-unreachable",
@@ -202,7 +201,7 @@ export const ParkAssessment = Schema.Struct({
 Errors: one tagged error with a user-facing message.
 
 ```ts
-export class ProjectLifecycleError extends Schema.TaggedErrorClass<ProjectLifecycleError>()(
+export class ProjectLifecycleError extends Schema.TaggedError<ProjectLifecycleError>()(
   "ProjectLifecycleError",
   {
     reason: Schema.Literals([
@@ -355,7 +354,8 @@ T3's own thread worktrees live under `ServerConfig.worktreesDir` (`<baseDir>/wor
 `assessPark({ path })` collects facts, then a pure function turns them into blockers.
 
 Path guards (blocker `protected-path`, and `park` refuses outright): the path must be
-absolute, exist, and equal `git rev-parse --show-toplevel`; it must not be `/`, the home
+absolute, exist, and equal `git rev-parse --show-toplevel` (when that command fails, the
+detail is "Not a git repository."); it must not be `/`, the home
 directory, `cloneRoot` itself, contain or equal `ServerConfig.baseDir` or
 `ServerConfig.cwd` (the running server's own checkout, which is the Loom dev tree during
 development), or be inside `worktreesDir`.
@@ -464,9 +464,9 @@ and `trashAvailability(): Effect<{ ok: true } | { ok: false; reason: string }>`.
 - `linux`: `gio trash <path>` when `gio` is on PATH; otherwise unavailable.
 - `win32` and others: unavailable.
 
-There is no code path that calls `FileSystem.remove` on a checkout. A test asserts that
-`trash.ts` and `ProjectLifecycle.ts` never import or call `remove`/`rm` (grep-based test,
-cheap and meaningful given the old bug).
+There is no code path that calls `FileSystem.remove` on a checkout. A test
+(`noDelete.test.ts`) reads every non-test `.ts` file in the packet folder and fails on any
+`remove`/`rm` call (grep-based test, cheap and meaningful given the old bug).
 
 ### Reopen
 

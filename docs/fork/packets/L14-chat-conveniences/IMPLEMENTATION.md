@@ -154,7 +154,7 @@ docs/fork/user/chat-conveniences.md
   use timers.
 - Part A: ranges must be rebuilt after scrolling; keeping stale `Range` objects on
   recycled rows highlights the wrong text.
-- Part A: the capture-phase `mod+F` listener must return early (without
+- Part A: the bubble-phase `mod+F` listener must return early (without
   `preventDefault`) in every excluded context, or it breaks the browser's find on web and
   the terminal's own keys.
 - Part B: `mermaid.render` touches `document.body` with temporary elements; serialize

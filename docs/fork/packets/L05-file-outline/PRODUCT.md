@@ -87,5 +87,6 @@ The open or closed state is visible from the pressed state of the header button.
 - v1 languages: TypeScript, TSX, JavaScript, Swift, Python, Go, Rust, Markdown and Kotlin.
   Kotlin joins the brief's list at Kyle's request; Java, C# and Ruby come later on
   demand (follow-up in README).
-- The keybinding ships unbound, per EXTENSION-POINTS.md (defaults leak into upstream's
-  `keybindings.json`).
+- The keybinding ships unbound; users assign it in Settings > Keybindings (a fork default
+  would need a keydown listener with an off switch, EXTENSION-POINTS.md section 9, which this
+  packet does not need).

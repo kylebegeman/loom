@@ -8,7 +8,7 @@ without Jev; later phases add fan-out, Jev, suggestions, agents, lenses and inte
 ## Before starting
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md (sections 1,
-2, 4 to 11, 17 and 18) and this folder. Seed a worktree `.t3` with real threads that have
+2, 4 to 12, 17 and 18) and this folder. Seed a worktree `.t3` with real threads that have
 uncommitted changes, several turns and a branch (AGENTS.md, "Test data"). For the manual pass,
 have at least Codex and Claude signed in; a Jev key and an installed `impeccable` binary are
 needed only for their phases.
@@ -36,7 +36,7 @@ docs/fork/user/ai-code-review.md
 0. **Extension points.** Run the existence checks for `ext-core`, `ext-mcp`, `ext-panels`,
    `ext-palette`, `ext-settings`, `ext-diff-header`, `ext-composer`, `ext-web-root`,
    `ext-keybindings` and `ext-decide`; create each missing one exactly as specified, one
-   commit each. `ext-decide` is needed from phase 7 on; it may be created then.
+   commit each, before any packet code. `ext-decide` is first used in phase 7.
 1. **Contracts.** Schemas, errors, RPC group, `subscribeThread` in `ForkSubscriptionRpcTag`,
    defaults and constants from TECHNICAL.md. Typecheck contracts, server, client-runtime, web
    and mobile.
@@ -53,17 +53,18 @@ docs/fork/user/ai-code-review.md
 5. **Web, one reviewer.** Client-runtime atoms; panel (letter W), start dialog host through
    `ForkRoot`, review and finding cards, filters, low-confidence toggle, dismiss and restore,
    "Fix this" and "Fix selected" through `getHandBack` and `addReviewComment`, "Copy as
-   Markdown", "Open file at line", "Open in diff"; palette source; diff header action;
-   keybinding command and listener; settings section (without Jev fields yet). Unavailable
-   states for upstream servers.
+   Markdown", "Open file", "Open in diff"; palette source; diff header action; keybinding
+   command and its `onForkCommand` subscription; settings section (without Jev fields yet).
+   Unavailable states for upstream servers.
 6. **Fan-out and merge.** Up to three reviewer slots in the dialog and `start`; provisional
    rule merge after each run and final merge at the end; "Found by N of M"; per-reviewer rows
    with "Waiting for approval", "Ask again", "Open review thread"; re-merge after Ask again.
-7. **Jev.** Create `ext-decide` if missing. Add `aiCodeReviewDecideFeatures` (in
-   `ai-code-review/decide.ts`, `packet: "L15"`, `agentTool: false` on turn-suggest and
-   finding-merge) to `FORK_DECIDE_FEATURES`. Reviewer-pick for Auto slots (dialog pick with
-   confidence and fallback reason, server pick for unresolved Auto; a low-confidence fallback
-   keeps the model when only effort was unsure), offered in the web only when
+7. **Jev.** Add `aiCodeReviewDecideFeatures` (in `ai-code-review/decide.ts`,
+   `packet: "L15"`, `agentTool: false` on turn-suggest and finding-merge) to
+   `FORK_DECIDE_FEATURES`. Reviewer-pick for Auto slots (the `resolveAuto` RPC, scope
+   `orchestration:operate`, for the dialog's pick with confidence and fallback reason; server
+   pick in `start` for unresolved Auto; a low-confidence fallback keeps the model when only
+   effort was unsure), offered in the web only when
    `useDecideFeature(...).usable`; candidate pool and effort presets in settings; effort
    mapping to provider options; finding-merge in the final merge with the Noul bands and
    per-pair rule fallback. Add the three features to L29's catalog if L29's PRODUCT.md lists

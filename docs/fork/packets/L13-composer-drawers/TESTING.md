@@ -46,6 +46,8 @@
   setters as upstream's pickers do, restore, compare the four fields and the sticky
   fields). This is behavior, not markup, and guards the coupling to the store's shape.
 - Records older than 24 hours are dropped on load.
+- `restoreOnceThread` with a failing fake command: one toast with PRODUCT.md's copy
+  ("Couldn't switch the thread back. ..."), the record is deleted, and nothing is retried.
 
 `apps/server/src/fork/composer-drawers/ShellRunner.test.ts` (with a real temporary
 directory and the real `ProcessRunner` layer, POSIX only; skip on Windows CI):
@@ -105,14 +107,17 @@ signed-in provider:
    and the thread's model label); after the turn, the thread's stored settings return to
    Sonnet and approval-required. Change the model during the turn: the restore leaves the
    user's change alone. Cancel before sending restores at once. Reload between send and
-   turn end: the restore still happens.
+   turn end: the restore still happens. Once is unavailable, with its PRODUCT.md message,
+   in a new draft thread, while a turn runs, and while an async question from the agent is
+   unanswered.
 3. Schema: paste a schema, add to prompt, send to a provider; save and reuse.
 4. Shell: `git status --short` attaches a fenced block; `exit 3` shows the red code;
    `yes | head -c 200000` shows truncation at 64 KB; raise "Output limit" to 256 KB in
    settings and the same command returns whole; `sleep 60` with 10 s stops at 10 s; change
    "Default timeout" to 2 min and the tab preselects it; `sleep 610` with 10 min stops at
    10 minutes and the result still arrives (long unary RPC); on a thread with a worktree
-   the cwd is the worktree.
+   the cwd is the worktree. "Clear recent commands" in settings empties the arrow-key
+   history.
 5. Clipboard: off by default (tab explains, "Turn on"). On: copy a code block with its
    copy button and a selected paragraph: both appear. Copy a fake `ghp_` token: not
    recorded. Desktop: copy in another app, switch back to Loom: the item appears. Insert

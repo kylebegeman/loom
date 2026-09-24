@@ -151,10 +151,13 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 
 13. `apps/desktop/src/fork/browser-dev-tools/collector.ts` (main): webview tracking, listeners,
     ring buffers, subscriptions keyed by `(sender webContents id, webContentsId, mode)`, 250 ms
-    batching, cleanup on `destroyed` of either side. `bridge.ts` (preload): `ipcRenderer.invoke`
-    and `ipcRenderer.on` wrappers. Register both in the `ext-desktop` fork files.
+    batching, cleanup on `destroyed` of either side.
+    `apps/desktop/src/fork/browser-dev-tools/preload.ts` (EXTENSION-POINTS.md section 13):
+    `ipcRenderer.invoke` and `ipcRenderer.on` wrappers. Register both in the `ext-desktop`
+    fork files.
 14. Web: `BrowserDevToolsDock.tsx` and the PreviewView seam; `sendErrors.ts`; dock settings
-    (on or off) and the `toggle-dock` command.
+    (on or off, client key `loom:browser-dev-tools:dock-enabled:v1`) and the `toggle-dock`
+    command.
 15. Guard test: fails when `apps/desktop/src/**` outside `fork/` contains `webRequest.`.
 
 ## Phase 5: documentation and finish
@@ -176,7 +179,8 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 - Do not pass `redis-server` or `valkey-server` after the image; pass only flags and let the
   image's entrypoint choose the binary.
 - `PortDiscovery` only reports ports that serve HTML (`PortScanner.ts:11-13`); an API-only server
-  stays "Running, no page detected" with its terminal still linked. Say so in the row.
+  turns "Running, no port detected yet" after 60 seconds in Starting, with its terminal still
+  linked. Say so in the row.
 - `docker compose ps --format json` changed shape between Compose releases; parse both.
 - `docker run` for a missing image pulls first; stream it, and do not apply a short timeout.
 - Never pass database passwords through the WebSocket except in `databaseUrl`'s result; never

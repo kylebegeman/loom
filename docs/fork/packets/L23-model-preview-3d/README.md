@@ -1,6 +1,6 @@
 # L23: 3D model preview
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 A **3D model** right panel that shows the thread's 3D files next to the chat: STL, 3MF, OBJ
 and glTF/GLB meshes, and OpenSCAD `.scad` sources, which the environment server renders with the
@@ -19,7 +19,8 @@ panel can link to it when a URL is configured, and never depends on it.
 
 - In:
   - Model discovery in the thread's workspace: `.stl`, `.3mf`, `.obj`, `.glb`, `.gltf`, `.scad`
-    (`.step` / `.stp` are listed with "Open STEP files in the Fabrication app", never previewed).
+    (`.step` / `.stp` are listed, never previewed: "STEP files are not previewed here; open them
+    in the Fabrication app (STEP import is planned there).").
   - One panel tab per file; open from the launcher's file picker, the palette, or a keybinding.
   - three.js viewer, lazy-loaded: orbit, pan, zoom, fit, iso/front/top/right views, wireframe,
     grid sized to the chosen build plate, axes, bounding box dimensions in mm, triangle count, a
@@ -34,7 +35,8 @@ panel can link to it when a URL is configured, and never depends on it.
   - Capture the current view, or a 2x2 sheet of standard views, into the composer.
   - Agent tool `loom_model_preview_3d_render`.
   - Loom settings section: OpenSCAD path and version, backend, render timeout, colors, max file
-    size, build plate preset (or custom size), optional Fabrication app URL.
+    size, build plate preset (or custom size), optional Fabrication app URL, "Let agents render
+    models" (the agent tool, on by default).
   - Palette entries and unbound keybinding commands.
 - Out:
   - Editing geometry, measuring between points, section planes, slicing, printer control, print

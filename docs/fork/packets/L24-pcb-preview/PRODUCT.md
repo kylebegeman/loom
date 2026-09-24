@@ -107,4 +107,5 @@ see the rule violations, while the agent works.
   so the link lands on the right board when the Electronics app runs on that machine.
 - "Send summary to chat" is in v1 (Kyle): it fills the composer and never sends, so the user
   stays in control of what the agent reads. "Copy summary" stays for other destinations.
-  It writes through upstream's composer draft store, so it needs no composer extension point.
+- Uses upstream's composer draft store instead of `ext-composer`: same behavior Kyle chose
+  (fills, never sends), no seam.

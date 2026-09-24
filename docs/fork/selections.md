@@ -12,8 +12,8 @@ Code has 10 areas and a different engine.
 | ID  | Panel                                  | Notes                                                                                                                                                      |
 | --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P1  | Snippets                               | Pairs with F1.                                                                                                                                             |
-| P5  | Threads: related threads and Pair mode | Parent, child and sibling threads; two threads side by side with a merge step. F16 parts 1 and 2 (L02).                                                    |
-| P6  | Thread Inspector                       | Status card for branch, worktree, changes, plan and approvals; can be pinned. Client-only in old Loom.                                                     |
+| P5  | Threads: related threads and Pair mode | Parent, child and sibling threads; two threads side by side (the merge step was dropped in L02). F16 parts 1 and 2 (L02).                                  |
+| P6  | Thread Inspector                       | Status card for branch, worktree, changes, plan and approvals (L04 dropped old Loom's pin). Client-only in old Loom.                                       |
 | P7  | Source control: lanes, graph, CI       | Lanes, branch graph, CI checks, conflicts, safe branch switching. Pairs with F13. T3 already covers pull request review.                                   |
 | P8  | File Outline                           | Symbol list for the open file. Client-only in old Loom.                                                                                                    |
 | P10 | Bottom dock                            | Build each tab as its own feature, one at a time: tasks, activity ledger, approvals and the rest. T3 has only a terminal drawer today.                     |
@@ -32,7 +32,7 @@ Code has 10 areas and a different engine.
 | F3  | AI code review                        | Selected, with a separate brainstorm on how it should work before any design.                                                                       |
 | F4  | Utilities catalog                     | Offline developer tools in a panel. First listed as not selected; now L27.                                                                          |
 | F5  | In-app provider sign-in and setup     | Old Loom's final in-app sign-in and setup flow for providers, including the Codex tools page and config import.                                     |
-| F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, OpenAI-compatible endpoints (DeepSeek), Ollama, LM Studio.                                                      |
+| F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, DeepSeek, Ollama, LM Studio. L17: DeepSeek via its Anthropic-compatible API, Gemini CLI as a custom ACP agent.  |
 | F7  | Auto-resume after usage limits        | Continue a thread when a provider limit resets. First listed as not selected; now L28.                                                              |
 | F8  | Chat conveniences                     | Find in thread, clipboard history, Mermaid diagrams, file outline, model picker presets, answering a provider's question without stopping it.       |
 | F11 | Project profiles                      | Per-project commands, tools, budgets and defaults beyond what T3's project settings cover.                                                          |

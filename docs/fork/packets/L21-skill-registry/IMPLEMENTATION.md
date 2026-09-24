@@ -30,7 +30,8 @@ apps/server/src/fork/skill-registry/
   suggestedSources.ts
   sources.ts           sources.test.ts
   installs.ts          installs.test.ts
-  lab.ts  validate.ts  validate.test.ts
+  lab.ts               lab.test.ts
+  validate.ts          validate.test.ts
   SkillRegistryService.ts
   migrations.ts  rpc.ts
 apps/web/src/fork/skill-registry/
@@ -71,11 +72,12 @@ docs/fork/user/skill-registry.md
    `sources`, and the `targets` handler. Sources tab UI with the Suggested list, fetch
    progress, grouped same-name entries with their subpaths, preselection per target family,
    target picker defaulting to the shared Claude folder, install, check updates, update with
-   changed-file list, remove.
+   changed-file list, remove. The `"sources"` resource id (Sources tab, URL field focused)
+   and palette item "Install skills from git", which opens it.
 9. **Lab.** `lab.ts` (scaffold into any target from `targets`, including `~/.agents/skills`;
-   read; write with compare-and-swap), Lab tab with the editor and
+   read; write with compare-and-swap; `lab.test.ts`), Lab tab with the editor and
    live validation (debounced 300 ms, through `validate`), "Test in new thread" and "Move to
-   trash".
+   trash". The `"lab"` resource id and palette item "Create a skill", which opens it.
 10. **Docs and status.** `docs/fork/user/skill-registry.md`: what the panel shows, how
     enable/disable maps to provider files, what an install does and does not do, where
     removed skills go. Update the packet index Status and SEAMS.md.

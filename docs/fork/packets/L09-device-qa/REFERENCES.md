@@ -31,7 +31,7 @@ headless Xcode and simulator tooling. T3 already has the device panel itself") i
 | `apps/server/src/mcp/toolkits/device/tools.ts:21-27`                    | Upstream's decision to leave install and input to `agent-device`.                                 |
 | `apps/server/src/mcp/toolkits/device/handlers.ts:59,62,242`             | Quick start install text, SSH build note, `pngDimensions`.                                        |
 | `apps/server/src/mcp/McpInvocationContext.ts:11,47-56`                  | `McpCapability`, `requireMcpCapability`.                                                          |
-| `apps/server/src/provider/ProviderService.ts:869-914`                   | How the `device` capability follows Agent device access.                                          |
+| `apps/server/src/provider/Layers/ProviderService.ts:869-914`            | How the `device` capability follows Agent device access.                                          |
 | `apps/server/src/mcp/McpHttpServer.ts:499-577`                          | `registerImageTool` (private; why fork tools return paths).                                       |
 | `packages/contracts/src/assets.ts:19-25`                                | `media-file` asset resource.                                                                      |
 | `apps/web/src/assets/assetUrls.ts:19-33`                                | `useAssetUrlState`.                                                                               |

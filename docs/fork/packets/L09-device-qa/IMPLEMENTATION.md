@@ -134,8 +134,9 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
     size, "Delete evidence older than N days" as a switch plus a number field, 1 to 365,
     default 30 when switched on; default clean status bar).
 15. Optional integrations (README): if `apps/web/src/fork/apple-build-tooling/` exists, list its
-    latest successful build products in the Install tab through its atoms; do not add the import
-    otherwise.
+    latest successful build products in the Install tab through its atoms, and add the "Run
+    flows after launch" checkbox to L10's Build and run, shown only for a simulator destination
+    and calling `runFlows` for the launched simulator; do not add the imports otherwise.
 
 ## Phase 4: documentation and finish
 

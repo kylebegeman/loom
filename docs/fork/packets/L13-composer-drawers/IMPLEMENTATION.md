@@ -61,7 +61,8 @@ docs/fork/user/composer-drawers.md
    this packet created `ext-settings`). Palette items "Clipboard history", "Clear
    clipboard history"; command `clipboard`. Commit
    `feat(fork-composer-drawers): keep a local clipboard history for the composer`.
-5. Once: `once.ts` (pure snapshot and compare helpers plus the store record type) + test,
+5. Once: `once.ts` (pure snapshot and compare helpers, `restoreOnceThread` with its
+   commands passed in, plus the store record type) + test,
    `OnceTab.tsx`, `OnceRestorer.tsx` (append to `FORK_ROOT_COMPONENTS`). Use the thread
    command atoms from `apps/web/src/state/threads` (`threadEnvironment.updateMetadata`,
    `threadEnvironment.setRuntimeMode`, as `ChatView.tsx:1481-1487` does) with
@@ -90,7 +91,7 @@ Drawer registration:
 
 ```tsx
 export const composerToolsDrawer: ForkComposerDrawer = {
-  id: "composer-tools",
+  id: "composer-tools-drawer",
   useDrawer: ({ environmentId, threadRef, replace }) => {
     const threadKey = scopedThreadKey(threadRef);
     const open = useComposerToolsDrawerStore((s) => (s.openThreadKey === threadKey ? s.tab : null));
@@ -116,17 +117,22 @@ export function onceRestoreActions(input: {
   snapshot: OnceSnapshot;
   shell: Pick<OrchestrationThreadShell, "modelSelection" | "runtimeMode" | "latestTurn">;
   sentAt: string;
+  overrideAtSend: { modelSelection: ModelSelection; runtimeMode: RuntimeMode };
 }): { ready: boolean; modelSelection?: ModelSelection; runtimeMode?: RuntimeMode } {
-  const turn = input.shell.latestTurn;
+  const { shell, snapshot, overrideAtSend } = input;
+  const turn = shell.latestTurn;
   if (!turn || turn.requestedAt < input.sentAt || turn.state === "running") return { ready: false };
+  // Restore only what still carries the override: a later user change is left alone.
+  const restoreModel =
+    Equal.equals(shell.modelSelection, overrideAtSend.modelSelection) &&
+    !Equal.equals(shell.modelSelection, snapshot.thread.modelSelection);
+  const restoreRuntimeMode =
+    shell.runtimeMode === overrideAtSend.runtimeMode &&
+    shell.runtimeMode !== snapshot.thread.runtimeMode;
   return {
     ready: true,
-    ...(Equal.equals(input.shell.modelSelection, input.snapshot.thread.modelSelection)
-      ? {}
-      : { modelSelection: input.snapshot.thread.modelSelection }),
-    ...(input.shell.runtimeMode === input.snapshot.thread.runtimeMode
-      ? {}
-      : { runtimeMode: input.snapshot.thread.runtimeMode }),
+    ...(restoreModel ? { modelSelection: snapshot.thread.modelSelection } : {}),
+    ...(restoreRuntimeMode ? { runtimeMode: snapshot.thread.runtimeMode } : {}),
   };
 }
 ```
@@ -141,9 +147,9 @@ for every non-terminal state; treat all of them like `"running"`.)
   `modelSelection` and `runtimeMode` right after the send is observed) and restore a field
   only if the shell still equals `overrideAtSend` for that field.
 - `latestUserMessageAt` also advances when an async question answer creates a message
-  (decider, `thread.user-input.respond` in message mode). Arm only while no async
-  question is pending for the thread, or accept that such an answer counts as "the next
-  message" (document the choice in the user doc; the first is simpler to explain).
+  (decider, `thread.user-input.respond` in message mode). So Once cannot be armed while
+  the thread shell's `hasPendingUserInput` is true (TECHNICAL.md, Once; PRODUCT.md,
+  States).
 - Queued follow-ups: Once is disabled while a turn runs, so the send is never queued.
 - Wrapping `navigator.clipboard.writeText`: keep a reference to the original bound to
   `navigator.clipboard`; restore it on disable; never wrap twice (HMR re-mounts).

@@ -10,16 +10,16 @@ applies in full; this file only adds the fork rules.
 New code goes in fork-owned directories. Upstream never creates files there, so they never
 conflict.
 
-| Package                   | Fork directory                                                | Packet code                                           |
-| ------------------------- | ------------------------------------------------------------- | ----------------------------------------------------- |
-| `packages/contracts`      | `src/fork/`, exported as `@t3tools/contracts/fork`            | `src/fork/<slug>.ts` (schemas, RPC group)             |
-| `packages/client-runtime` | `src/fork/`, exported as `@t3tools/client-runtime/fork`       | `src/fork/<slug>.ts` (atoms shared by web and mobile) |
-| `packages/shared`         | `src/fork/` (add a subpath export only if a packet needs one) | `src/fork/<slug>.ts`                                  |
-| `apps/server`             | `src/fork/`                                                   | `src/fork/<slug>/` (services, handlers, tools)        |
-| `apps/web`                | `src/fork/`                                                   | `src/fork/<slug>/` (components, hooks, state)         |
-| `apps/desktop`            | `src/fork/`                                                   | `src/fork/<slug>/` (Electron-only work)               |
-| `apps/mobile`             | `src/fork/`                                                   | `src/fork/<slug>/`                                    |
-| `docs/fork/packets/`      | one folder per packet                                         | `Lxx-slug/`                                           |
+| Package                   | Fork directory                                                | Packet code                                                                                       |
+| ------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `packages/contracts`      | `src/fork/`, exported as `@t3tools/contracts/fork`            | `src/fork/<slug>.ts` (schemas, RPC group)                                                         |
+| `packages/client-runtime` | `src/fork/`, exported as `@t3tools/client-runtime/fork`       | `src/fork/<slug>.ts` (atoms shared by web and mobile), `src/fork/<slug>-<name>.ts` (pure helpers) |
+| `packages/shared`         | `src/fork/` (add a subpath export only if a packet needs one) | `src/fork/<slug>.ts`                                                                              |
+| `apps/server`             | `src/fork/`                                                   | `src/fork/<slug>/` (services, handlers, tools)                                                    |
+| `apps/web`                | `src/fork/`                                                   | `src/fork/<slug>/` (components, hooks, state)                                                     |
+| `apps/desktop`            | `src/fork/`                                                   | `src/fork/<slug>/` (Electron-only work)                                                           |
+| `apps/mobile`             | `src/fork/`                                                   | `src/fork/<slug>/`                                                                                |
+| `docs/fork/packets/`      | one folder per packet                                         | `Lxx-slug/`                                                                                       |
 
 Exceptions, which live in upstream directories because a tool requires it, and are listed in
 the packet's `SEAMS.md`:
@@ -49,7 +49,13 @@ files.
 | Environment capability entry  | the slug, in `capabilities.loomFeatures` | `"snippets"`                    |
 | Right panel id                | `<slug>` or `<slug>:<name>`              | `snippets`                      |
 | Desktop IPC channel           | `loom:<slug>:<name>`                     | `loom:apple-build-tooling:run`  |
-| Settings section id           | the slug                                 | `snippets`                      |
+| Settings section id           | the slug, or the extension point name    | `snippets`, `decide`            |
+
+The MCP tool example is illustrative; L01 ships no MCP tools. Extension points that own wire
+names, tables or a capability use their short name in place of the slug: `core`
+(`loom.core.info`, capability `core`) and `decide` (`loom.decide.*`, `fork_decide_*`,
+`fork_migrations_decide`, capability and settings section `decide`). No packet may use these
+as its slug.
 
 Wire names and user-facing identifiers say "loom"; code paths and database objects say
 "fork". Never reuse an upstream name, and never rename an upstream identifier (FORK.md,
@@ -98,6 +104,7 @@ same commit as the seams:
 - Extension point seams go in a table headed "Extension point seams", created by the first
   extension point with the columns `File`, `Marker`, `Why`.
 - Packet seams go in a table headed "Packet seams" with the columns `File`, `Packet`, `Why`.
+  `Packet` is the packet slug in backticks, for example `` `file-outline` ``.
 
 Keep each "Why" to one line and point at the packet folder for detail.
 

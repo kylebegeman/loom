@@ -393,7 +393,7 @@ Web (`apps/web/src/fork/pcb-preview/`):
 | `state.ts`            | Web atom instances with `connectionAtomRuntime`.                                                                                                                                                  |
 | `preferences.ts`      | `loom:pcb-preview:last-design:v1` (per project), `loom:pcb-preview:trusted-projects:v1`, `loom:pcb-preview:electronics-url:v1`, all via `resolveStorage` in try/catch.                            |
 | `palette.tsx`         | Palette source: "Open PCB preview" / "Close PCB preview".                                                                                                                                         |
-| `commands.ts`         | `onForkCommand("loom.pcb-preview.toggle", ...)` registration, mounted from a tiny `ForkRoot` component.                                                                                           |
+| `commands.tsx`        | `PcbPreviewCommandHost`, a tiny `ForkRoot` component that registers `onForkCommand("loom.pcb-preview.toggle", ...)`.                                                                              |
 | `settings.tsx`        | Loom settings section: tool status from `status`, Electronics URL field.                                                                                                                          |
 | `summary.ts`          | Pure: `PcbCheckResult` to the text summary; `electronicsDesignUrl(baseUrl, absolutePath)`.                                                                                                        |
 

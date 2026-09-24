@@ -5,9 +5,10 @@ creates the extension point.
 
 ## Extension points
 
-Used: `ext-panels`, `ext-web-root`, `ext-keybindings`, `ext-palette`. Run each existence
-check from EXTENSION-POINTS.md; create missing ones exactly as specified, one commit each,
-before packet code, and record them here with their commits.
+Used: `ext-core` (prerequisite only), `ext-panels`, `ext-web-root`, `ext-keybindings`,
+`ext-palette`. Run each existence check from EXTENSION-POINTS.md; create missing ones
+exactly as specified, one commit each, before packet code, and record them here with their
+commits.
 
 Registrations (fork-owned files only):
 

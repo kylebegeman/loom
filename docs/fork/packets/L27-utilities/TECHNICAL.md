@@ -260,9 +260,9 @@ vanish on reload. The only persisted value is recent tool ids,
   into submenu groups (`filterCommandPaletteGroups`, `CommandPalette.logic.ts:369-443`,
   matches only each group's own items), so the source also returns six root actions for the
   most used tools: "Decode JWT", "Base64", "Hash text", "Generate UUID", "Unix time", "Format
-  JSON" (`value: "action:loom:utilities:<id>"`). The submenu's `searchTerms` include
-  "utilities", "tools" and every category name, not every keyword, to keep root results
-  short.
+  JSON" (`value: "action:loom:utilities:quick:<id>"`, distinct from the submenu values). The
+  submenu's `searchTerms` include "utilities", "tools" and every category name, not every
+  keyword, to keep root results short.
 
 - **Open logic.** `openUtilities(toolId, threadRef)`: select the tool; if `threadRef` is set,
   `useRightPanelStore.getState().openSurface(threadRef, forkPanelSurface("utilities"))`;

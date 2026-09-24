@@ -51,8 +51,8 @@ existing harness that already speaks to it natively, so this packet adds no agen
     runs a command the user already has.
   - Text generation (titles, commit messages) with the ACP drivers: they report
     `supportsTextGeneration: false` in v1.
-  - In-app sign-in for Copilot or custom ACP agents (their CLIs own login; L16's setup slot
-    could host it later).
+  - In-app sign-in for Copilot or custom ACP agents (their CLIs own login; the
+    `ext-providers` setup slot could host it later).
   - Mobile UI. Threads on these drivers still work from the upstream mobile app (with the
     Codex logo as their icon, see `ext-providers`, Known limits).
 
@@ -80,8 +80,8 @@ None. See [SEAMS.md](./SEAMS.md).
 ## Optional integrations
 
 - If L16 is present, its decorator leaves endpoint instances alone (it skips every Claude
-  instance that sets `ANTHROPIC_BASE_URL`), so they show no sign-in. A later L16 follow-up
-  could register a Copilot sign-in section in the same setup slot.
+  instance that sets `ANTHROPIC_BASE_URL`), so they show no sign-in. L17 could later register
+  a Copilot sign-in section in the same setup slot.
 - If L22 (instruction modes) is present, its per-turn instructions reach these drivers too,
   because they go through upstream's `ProviderService.sendTurn`.
 

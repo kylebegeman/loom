@@ -1,6 +1,6 @@
 # L12: Panel picker
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 A compact, searchable picker for opening right-panel surfaces. It replaces upstream's flat
 "Open a surface" launcher (shown when the right panel is empty) and the tab bar's "+" menu
@@ -8,7 +8,7 @@ with one list that filters as you type, shows a one-line description per surface
 recently used surfaces at the top, and works entirely from the keyboard. Fork panels from
 other Loom packets appear in it automatically through the fork panel registry. It is
 deliberately much smaller than old Loom's catalog (about 1,000 lines of catalog and hub
-code there; about 400 here).
+code there; about 530 here).
 
 Selection item: P14 (Panel picker), see [selections.md](../../selections.md).
 
@@ -18,7 +18,7 @@ Selection item: P14 (Panel picker), see [selections.md](../../selections.md).
   - `LoomPanelPickerList`: search field, ranked results, recents group, unavailable rows
     with their reason, letter hints, arrow and Enter navigation.
   - Empty-state launcher: the list in place of upstream's launcher. Upstream's single-key
-    letter shortcuts keep working; any other printable key starts a search.
+    letter shortcuts keep working; press `/` and type to filter.
   - "+" button in the tab bar opens the same list in a popover with the search focused.
   - Browser profiles: the Browser row expands (Right arrow or its chevron) into one row per
     profile when more than one profile exists.
@@ -68,13 +68,13 @@ Any of them may have to be created by this packet (run each existence check firs
 
 ## Optional integrations
 
-- Every packet that registers a fork panel (L01 Snippets, L04, L05, L06, L29 and others)
+- Every packet that registers a fork panel (L01 Snippets, L04, L06, L27, L29 and others)
   appears in the picker with no change to this packet. A panel that sets `description`
   shows it under its title; a panel without one shows only its title.
 
 ## Size estimate
 
-Small to medium: about 500 to 650 lines including tests (picker list and ranking about
+Small to medium: about 650 to 700 lines including tests (picker list and ranking about
 300, launcher and popover wrappers about 120, settings, command, default shortcut and
 palette glue about 110, tests about 140).
 

@@ -47,7 +47,7 @@ side by side.
     ranking hint (it only informs).
   - DAG scheduling, retries, budgets, leases (old Loom Swarm phase 59).
   - A bottom dock of its own. The Runs view is a right panel; if L07's bottom dock is
-    present it can also host it.
+    present, a follow-up can also host it there.
   - Attachments in compare prompts (text only in v1).
   - Mobile UI.
 
@@ -83,10 +83,10 @@ None. Everything goes through extension points.
     `delegate`) when that table exists, so it shows in L02's Related threads panel;
   - member rows offer "Open side by side" through L02's `thread-lineage:thread` panel when
     it is registered.
-- If L07 (bottom dock) is present, register the runs list as a dock tab through L07's
-  registry.
-- If L04 (thread inspector) is present, register a "Runs" inspector section (the thread's
-  delegated children and their status).
+- Follow-up, not built by this packet: if L07 (bottom dock) is present, register the runs
+  list as a dock tab through L07's registry.
+- Follow-up, not built by this packet: if L04 (thread inspector) is present, register a
+  "Runs" inspector section (the thread's delegated children and their status).
 
 - If L29 (Jev hub) is present, routing and ranking decisions appear in its Decisions panel
   (they are logged in the shared `fork_decide_decisions` table), where Kyle can rate them and tune

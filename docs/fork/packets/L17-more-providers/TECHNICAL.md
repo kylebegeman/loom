@@ -432,4 +432,5 @@ None.
 - **An OpenCode preset for DeepSeek**: declined by Kyle; the Claude-based preset is enough.
 - **Reusing upstream's reserved kinds** (`githubCopilot`, `gemini`, `acpRegistry`): a future
   upstream driver would decode fork configs with its own schema. Rejected.
-- **ACP registry download**: deferred (supply-chain surface, platform archives).
+- **ACP registry download**: out of scope (supply-chain surface, platform archives); a
+  registry browser that fills in `npx`/`uvx` commands is a follow-up.

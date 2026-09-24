@@ -79,11 +79,10 @@ after the rehearsal merge.
   `pnpm-lock.yaml` untouched.
 - Outline accurate on the fixtures for all eight language ids.
 - No new dependency in v1 (`web-tree-sitter` only arrives with the conditional phase 2).
+- Jump lands on the declaration line for every symbol kind.
+- No network requests added (check the devtools network panel during the manual pass).
+- No continuous repaint while the outline is open and idle.
 
 Phase 2, if triggered: the same fixture tests pass against the tree-sitter provider, the
 recorded failing files produce correct outlines, a grammar load failure falls back to the
 scanner, and the web and desktop builds both load the WASM.
-
-- Jump lands on the declaration line for every symbol kind.
-- No network requests added (check the devtools network panel during the manual pass).
-- No continuous repaint while the outline is open and idle.

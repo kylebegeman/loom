@@ -4,8 +4,8 @@ Treat external repositories as references, not code to copy.
 
 ## Old Loom
 
-F4 in [selections.md](../../selections.md) (listed under "Not selected"; confirmed for this
-packet on 2026-09-24). Old Loom (`bagelvault/loom` 0.13.10):
+F4 in [selections.md](../../selections.md), first listed as not selected; confirmed for this
+packet on 2026-09-24. Old Loom (`bagelvault/loom` 0.13.10):
 
 - https://github.com/bagelvault/loom/blob/a79ec506/packages/utilities/src/index.ts
   (913 lines, 30 tools, no runtime dependencies). Keep: the registry shape (id, label,

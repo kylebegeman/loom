@@ -94,8 +94,10 @@ this project" covers it.
 - Park dialog title: "Park <name>". Intro: "Parking moves <path> to the Trash on
   <environment>. Loom checks that nothing unique would be lost first."
 - Blocker headings: "Uncommitted changes", "Untracked files", "Stashes", "Commits not on
-  GitHub", "No origin remote", "GitHub is unreachable", "A thread is still working",
-  "A clone is in progress", "Linked worktree has changes", "Nested repository".
+  GitHub", "Tags not on GitHub", "No origin remote", "GitHub is unreachable", "A thread is
+  still working", "A clone is in progress", "A merge or rebase is in progress", "Linked
+  worktree has changes", "Nested repository", "A safety check did not finish", "This folder
+  cannot be parked".
 - Push button: "Push all branches and tags". After success: "Pushed <n> branches."
 - Keep list heading: "Files to keep (<n>)". Checkbox: "I have these elsewhere". Hint under
   it: "These files go to the Trash with the folder. Loom does not copy them."
@@ -143,7 +145,7 @@ No em dashes in product copy.
 - A Repositories icon sits in the sidebar footer next to Pull Requests, through a small
   packet seam next to the existing `fork: brand` seam in `SidebarChrome.tsx`. Reason: Kyle
   wants a visible entry; the file changes often (28 upstream commits since June), so the
-  seam is two marked lines and all logic lives in a fork component.
+  seam is three inserted lines (two markers) and all logic lives in a fork component.
 - Keep files: a confirmation, not a block. The Park dialog lists each Keep file and enables
   Park only after "I have these elsewhere" is ticked; Review files need only the general
   acknowledgement; Loom never copies `.env` files. Reason: Kyle's answer; a block would

@@ -1,6 +1,6 @@
 # L20: Small extras
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Four small, independent conveniences, each shippable on its own:
 
@@ -90,18 +90,18 @@ Details in [SEAMS.md](./SEAMS.md).
 
 - If L18 (project profiles) is present, its profile shows part D's switch through
   `PROFILE_SECTION_ROWS`; whichever packet lands second adds the registration line.
-- If L29 (Jev hub) or any `ext-decide` user is present, the `small-extras.branch-type`
-  decisions appear in its log like any other feature; nothing else changes.
+- If L29 (Jev hub) is present, the `small-extras.branch-type` decisions appear in its log
+  like any other feature; nothing else changes.
 - If L22 (instruction modes) or L03 (goals) is present, their blocks follow the private mode
   block (orders 10 and 20 after 5); none depends on another.
 - If L06 (source control cockpit) is present, nothing changes; it reads branch names from
   git and shows whatever prefix they carry.
-- If L11 (browser dev tools) ships its own Docker view later, part B's panel can be retired
-  in favor of it; they share no code.
+- L11 (browser dev tools) covers Docker Compose stacks for dev; part B's panel lists every
+  container and follows logs. They share no code.
 
 ## Size estimate
 
-Medium overall, about 2.6k lines with tests. Part A ~200, part D ~1,300 (server 750, web
+Medium overall, about 2.7k lines with tests. Part A ~200, part D ~1,300 (server 750, web
 250, tests 300), part B ~450, part C ~600, shared settings plumbing ~150.
 
 ## How an agent starts

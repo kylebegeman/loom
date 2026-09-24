@@ -60,7 +60,7 @@ export const IntentCommand = Schema.Union([
 ]);
 
 export const ProfileBinding = Schema.Struct({
-  kind: TrimmedNonEmptyString,   // "snippet", "skill", ... owned by the registering packet
+  kind: TrimmedNonEmptyString,   // "ai-code-review-reviewer" (L15); owned by the registering packet
   id: TrimmedNonEmptyString,
 });
 
@@ -250,11 +250,13 @@ A `Layer.effectDiscard` in `ForkServicesLive`, started with `forkParked(...)`
 3. Delta per thread: `new >= last ? new - last : new` (a lower value means a new provider
    session). Update `fork_project_profiles_thread_usage` and
    `fork_project_profiles_daily_usage` in one transaction. The `day` key is the activity's
-   `createdAt` converted to the server process's local date (`YYYY-MM-DD` from the local
-   year, month and day of a `Date`), so a day ends at the server's local midnight. A pure
-   `serverLocalDay(iso, timeZoneOffsetMinutes?)` helper does the conversion and is tested
-   across midnight and a DST change; `budgetStatus` uses the same helper for "today". Thread to project via a small cache
-   over `getThreadShellById`.
+   `createdAt` converted to the server's local date (`YYYY-MM-DD` in the server's time zone),
+   so a day ends at the server's local midnight. A pure `serverLocalDay(iso, timeZone?)`
+   helper does the conversion: `timeZone` is an IANA zone name that defaults to the server's
+   own (`Intl.DateTimeFormat().resolvedOptions().timeZone`), and the year, month and day come
+   from `Intl.DateTimeFormat` in that zone. Tests pass a fixed zone (for example
+   `America/New_York`) for the midnight and DST cases; `budgetStatus` uses the same helper
+   for "today". Thread to project via a small cache over `getThreadShellById`.
 4. When the project has budgets, compare after the update. On first crossing of 80% and of
    100% (per day for the project budget, per thread for the thread budget; remembered in
    `fork_project_profiles_budget_alerts`), dispatch the existing internal command
@@ -321,11 +323,14 @@ rare); `update` applies the patch to the stored document and re-validates.
   `varlockValidate`, `varlockCommand`, `updateSettings`.
 - `apps/web/src/fork/project-profiles/`:
   - `panel.tsx`: `{ id: "project-profiles:env", title: "Env", icon: KeyRoundIcon, shortcut:
-"E", isAvailable: threadRef !== null && loomFeatures.includes("project-profiles") }`.
+"E", unavailableHint: "Needs a Loom server", isAvailable: threadRef !== null &&
+loomFeatures.includes("project-profiles") }`.
   - `EnvPanel.tsx`: header (root path, schema path, Refresh, Validate with varlock, Edit
     profile), a status filter, the variable table (virtualized over 200 rows with
     `@legendapp/list`), a Commands block (mapped intents and project actions with "Run with
-    varlock"), and a Budget block.
+    varlock"), and a Budget block. The first "Validate with varlock" per environment shows a
+    one-time confirmation (PRODUCT, Copy), remembered in
+    `loom:project-profiles:varlock-confirmed:v1` (try/catch around storage).
   - `runInTerminal.ts`: opens a new terminal for the thread and writes the command line,
     mirroring `runProjectScript` (`apps/web/src/components/ChatView.tsx:4141-4240`):
     `nextTerminalId` (`packages/shared/src/terminalLabels.ts:32`),
@@ -338,7 +343,10 @@ rare); `update` applies the patch to the stored document and re-validates.
     (`apps/web/src/components/settings/SettingsScopeContext.tsx`): with a project scope it
     edits every target in `targets` (one `update` per environment and project), showing
     "Mixed" where targets differ; otherwise the "Choose a project" notice. Links to
-    `/settings/projects` with the same scope search for upstream-owned fields.
+    `/settings/projects` with the same scope search for upstream-owned fields. The "Share
+    profile with agents" switch (`getSettings` / `updateSettings`, one value per environment)
+    renders at the top of the section once per environment in the scope
+    (`connectedEnvironments` from `useSettingsScope()`), also when no project is selected.
   - "Edit profile" navigation computes the project key the way
     `apps/web/src/hooks/useThreadActionMenu.ts:198-210` does and navigates to
     `/settings/loom` with `search: { project: projectKey }`.
@@ -349,21 +357,28 @@ rare); `update` applies the patch to the stored document and re-validates.
 
 ```ts
 export interface ProfileBindingSource {
-  readonly kind: string; // "snippet", "skill"
-  readonly label: string; // "Snippets"
+  readonly kind: string; // "ai-code-review-reviewer" (L15)
+  readonly label: string; // "Reviewer"
   readonly feature: string; // loomFeatures slug that must be present
   /** Hook returning pickable items for an environment. */
   readonly useOptions: (
     environmentId: EnvironmentId,
   ) => ReadonlyArray<{ id: string; label: string }> | null;
 }
-/** Empty in this packet. L01 and L21 append their source when they integrate. */
+/** Empty in this packet. L15 appends its "Reviewer" source when both exist. */
 export const PROFILE_BINDING_SOURCES: ReadonlyArray<ProfileBindingSource> = [];
 ```
 
 The Bindings section renders only when at least one source is registered and its feature is
-present. Other packets read bindings through `loom.project-profiles.get` when
-`project-profiles` is in `loomFeatures`.
+present. L15 (AI code review) is the only registrant; L01 and L21 register no source in v1.
+
+Other packets read bindings in one of two ways:
+
+- Clients: through `loom.project-profiles.get` when `project-profiles` is in `loomFeatures`.
+- Fork services on the server: `ProjectProfileService.get(projectId)`, the method behind
+  `loom.project-profiles.get` (defaults when nothing is stored). Look the service up as an
+  optional service, so the caller builds and runs without L18. L15's `prepare` reads its
+  reviewer this way: the first binding of kind `ai-code-review-reviewer` wins.
 
 ### Profile rows (optional integrations)
 

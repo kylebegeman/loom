@@ -41,7 +41,7 @@ installed, project commands can be launched through `varlock run` from the panel
   - Enforcing budgets (stopping turns); that needs an orchestration seam.
   - Following `@import` of schemas outside the checkout, varlock plugins and secret-manager
     resolution (only through an explicit varlock run).
-  - Snippet and skill picker UIs; L01 and L21 register binding sources if present.
+  - Snippet and skill picker UIs; L01 and L21 register no binding source in v1.
   - Old Loom's unused profile fields (safety, workflows, Apple, remote runtime, Apollo, facts,
     retention).
   - Mobile UI.
@@ -51,12 +51,13 @@ installed, project commands can be launched through `varlock run` from the panel
 Web and desktop: supported. Mobile: not supported (nothing shown; the RPCs are reachable
 through client-runtime). Remote: works over every connection mode; env files and varlock live
 on the environment's machine. Upstream T3 server: panel entry disabled with "Needs a Loom
-server", settings section shows the same.
+server", settings section explains that the environment does not run Loom's project profiles.
 
 ## Extension points used
 
 [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core) (RPC, ForkLayer, persistence, reactor, capability `"project-profiles"`),
 [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), [`ext-mcp`](../EXTENSION-POINTS.md#10-agent-facing-mcp-tools-ext-mcp),
+[`ext-composer`](../EXTENSION-POINTS.md#11-composer-ext-composer) (prerequisite of `ext-composer-menu`; this packet registers nothing in it),
 [`ext-composer-menu`](../EXTENSION-POINTS.md#11b-composer-menu-trigger-ext-composer-menu) (the `%` trigger) and [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) (a
 small bridge that tells the trigger whether the active thread's environment has project
 profiles). Create any that are missing.
@@ -73,9 +74,10 @@ Commit only the intended lockfile change (CONVENTIONS.md, lockfile rule).
 
 ## Optional integrations
 
-- If L01 (snippets) or L21 (skill registry) is present, it may register a binding source so
-  the profile's Bindings section can pick its items, and may read the profile's bindings to
-  rank bound items first. L18 works without either.
+- If L15 (AI code review) is present, it registers a "Reviewer" binding source for a
+  per-project default reviewer and reads that binding on the server (TECHNICAL, "Binding
+  sources"). L18 works without it. L01 (snippets) and L21 (skill registry) register no
+  binding source in v1.
 - If L20 (small extras) is present with its private mode part, the profile shows L20's "No
   AI identification" switch through `PROFILE_SECTION_ROWS`. Whichever packet lands second
   adds the one registration line.

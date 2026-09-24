@@ -1,6 +1,6 @@
 # L11: Browser dev tools
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Makes the browser preview a small dev environment. A **Dev environment** right panel starts,
 stops and restarts the project's dev servers (in thread terminals, so upstream's port discovery
@@ -20,9 +20,9 @@ packet builds on those and replaces none of them.
 - In:
   - Dev servers: candidates from upstream project scripts plus `package.json` scripts (`dev`,
     `start`, `serve`, `preview`, `storybook`), package manager from the lockfile; start, stop,
-    restart in a thread terminal named `loom-dev-<key>`, from any thread of the project (each
-    row shows the owning thread and worktree with a link; stopping another thread's server
-    asks a light confirmation); state (starting, running, exited with
+    restart in a thread terminal named `loom-dev-<hash of key>`, from any thread of the
+    project (each row shows the owning thread and worktree with a link; stopping another
+    thread's server asks a light confirmation); state (starting, running, exited with
     code), linked URLs from upstream's port discovery, an 8 KB output tail, "Show in terminal",
     "Open in preview" (desktop) or "Open in browser" (web). Honors upstream's
     `ProjectScript.previewUrl` and `autoOpenPreview`, which upstream stores but never acts on.
@@ -86,7 +86,9 @@ packet builds on those and replaces none of them.
 ## Optional integrations
 
 None required. If L07 (bottom dock) is present, the dev dock stays inside the preview panel;
-it does not move into L07's dock.
+it does not move into L07's dock. L20 (small extras) has a Containers panel that lists every
+container and follows its logs; this packet's Compose tab covers a project's dev stacks. They
+share no code.
 
 ## Size estimate
 

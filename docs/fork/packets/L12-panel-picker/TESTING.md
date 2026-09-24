@@ -51,7 +51,7 @@ vp test run apps/web/src/fork/panel-picker/rank.test.ts \
   packages/contracts/src/fork/keybindings.test.ts
 vp lint apps/web/src/fork/panel-picker apps/web/src/components/RightPanelTabs.tsx
 vp run --filter @t3tools/web typecheck
-vp run --filter @t3tools/contracts typecheck   # only if this packet added the keybinding command
+vp run --filter @t3tools/contracts typecheck
 ```
 
 ## Manual check
@@ -60,9 +60,10 @@ With Kyle's permission, one pass with `test-t3-app` (web) and the desktop dev ap
 
 1. Open a thread, open the right panel with `mod+alt+b`: the picker shows "Open a panel",
    the list, letters. Press `T`: a terminal opens (upstream letter behavior).
-2. Close all tabs; press `j` (the one unassigned letter, EXTENSION-POINTS.md "Launcher
-   letters"): the search focuses with "j" typed and filters. Arrows plus Enter open the
-   highlighted surface.
+2. Close all tabs; press `/`: the search focuses; type `diff`, then arrows plus Enter open
+   the highlighted surface. Close all tabs again and press `2` (not a surface letter; every
+   letter A to Z is assigned, EXTENSION-POINTS.md "Launcher letters"): the search focuses
+   with "2" typed and filters.
 3. With tabs open, click "+": the popover opens with the search focused; type `d`, Enter:
    Diff opens. Escape with a query clears it; Escape again closes.
 4. With two browser profiles configured (desktop), Right arrow on Browser shows both;

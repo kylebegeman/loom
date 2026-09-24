@@ -94,7 +94,7 @@ extension point seams this packet created.
 | `packages/contracts/src/fork/index.ts`       | `export * from "./browser-dev-tools.ts";`                                                                                              |
 | `packages/contracts/src/fork/rpc.ts`         | `BrowserDevToolsRpcGroup,`; `watchServers` in `ForkSubscriptionRpcTag`; `composeAction`, `createDatabase` in `ForkStreamCommandRpcTag` |
 | `packages/contracts/src/fork/desktop.ts`     | `browserDevTools?: BrowserDevToolsDesktopBridge;`                                                                                      |
-| `packages/contracts/src/fork/keybindings.ts` | `loom.browser-dev-tools.open`, `.toggle-dock`, `.start-default-server`                                                                 |
+| `packages/contracts/src/fork/keybindings.ts` | `loom.browser-dev-tools.open`, `.toggle-dock`                                                                                          |
 | `apps/desktop/src/fork/ipc.ts`               | `yield* installBrowserDevToolsCollector();`                                                                                            |
 | `apps/desktop/src/fork/preload.ts`           | `browserDevTools: makeBrowserDevToolsBridge(_ipcRenderer),`                                                                            |
 | `apps/server/src/fork/*`                     | feature slug, service layer, `ForkServices` member, migrations, handlers, scopes, toolkit                                              |

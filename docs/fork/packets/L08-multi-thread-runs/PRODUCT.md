@@ -41,7 +41,7 @@ afterwards; agents have no way to start or check on another thread at all.
   Jev), Jev picks the model and reasoning effort from Kyle's routing candidates (each with a
   description Kyle writes, and the efforts it may use). Without Jev, or when Jev is slow,
   fails or is unsure, the child uses the caller's model and effort, as before. The Runs panel
-  shows how each child's model was chosen ("Picked by Jev, confidence 0.74", "Caller's model:
+  shows how each child's model was chosen ("Picked by Jev (confidence 0.74)", "Caller's model:
   Jev timed out", or "Chosen by the agent").
 - **Stay in control.** Delegation is off by default; a thread can have at most four active
   children (configurable); children cannot delegate further unless the depth limit is raised;
@@ -91,9 +91,10 @@ afterwards; agents have no way to start or check on another thread at all.
 - Tool descriptions (short, they cost tokens every turn):
   - start: "Start a new T3 Code thread in this project to work on a task in parallel,
     optionally with another provider or model, in its own git worktree unless worktree is
-    false (read-only jobs only). Returns the thread id. Use get_thread to check on it."
-  - get: "Read the status, last reply and changed files of a thread you started. Pass
-    waitSeconds to wait until it stops working."
+    false (read-only jobs only). Returns the thread id. Use loom_multi_thread_runs_get_thread
+    to check on it."
+  - get: "Read the status, last reply and changed files of a thread you started with
+    loom_multi_thread_runs_start_thread. Pass waitSeconds to wait until it stops working."
 - Tool errors in plain words: "Thread delegation is turned off in Loom settings.", "This
   thread already has 4 active child threads.", "Child threads cannot start more threads
   (delegation depth 1).", "Provider instance 'x' is not available.", "You can only read

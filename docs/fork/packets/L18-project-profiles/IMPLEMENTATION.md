@@ -36,8 +36,11 @@ docs/fork/user/project-profiles.md
 ## Steps
 
 1. **Extension points.** Existence checks for `ext-core`, `ext-panels`, `ext-settings`,
-   `ext-palette`, `ext-mcp`, `ext-web-root`, `ext-composer-menu`; create missing ones, one
-   commit each (SEAMS.md has the note on writing `ext-composer-menu` to its shape).
+   `ext-palette`, `ext-mcp`, `ext-web-root`, `ext-composer` (prerequisite of
+   `ext-composer-menu`; strict check
+   `git grep -cE 'fork: ext-composer([^a-z0-9-]|$)' -- apps/web/src/components/chat/ChatComposer.tsx`),
+   `ext-composer-menu`; create missing ones, one commit each, `ext-composer` before
+   `ext-composer-menu` (SEAMS.md has the note on writing `ext-composer-menu` to its shape).
 2. **Contracts.** Schemas and `ProjectProfilesRpcGroup` as in TECHNICAL; register in the fork
    group and index; `DEFAULT_PROJECT_PROFILE` helper. Typecheck contracts and consumers.
 3. **Pure server logic first.**
@@ -47,13 +50,15 @@ docs/fork/user/project-profiles.md
    - `varlock.ts`: `buildVarlockCommandLine(command, os)` with POSIX single-quote escaping
      (`'` becomes `'\''`) and the Windows rule; `extractVarlockErrors(json, redact)`.
    - `budget.ts`: `applyUsage(last, next)` delta rule, `crossedLevels(before, after, budget)`
-     and `serverLocalDay(iso)` (the day ends at the server's local midnight).
+     and `serverLocalDay(iso, timeZone?)` (the day ends at the server's local midnight;
+     `timeZone` is an IANA name, defaulting to the server's zone).
 4. **Storage.** `migrations.ts` (`ProjectProfilesMigrations`, slug `project-profiles`, id 1)
    in `FORK_MIGRATION_SETS`; `ProfileStore.ts` repository.
 5. **Services.** `EnvInspectorLive.ts` (file reading with size limits and realpath checks
    through `effect/FileSystem` and `effect/Path`), `VarlockRunner.ts` (detect, validate,
    environment with telemetry disabled; spawn like `apps/server/src/processRunner.ts`),
-   `ProjectProfileService.ts` (profile CRUD, checkout resolution, command resolution with
+   `ProjectProfileService.ts` (profile CRUD, including the `get(projectId)` other fork
+   services may call, checkout resolution, command resolution with
    `resolveProjectScripts`). Register in `ForkServices`, `ForkServicesLive`; append
    `"project-profiles"` to `LOOM_SERVER_FEATURES`.
 6. **Reactor.** `BudgetReactor.ts` with `forkParked`, filtering `thread.activity-appended`
@@ -68,12 +73,13 @@ docs/fork/user/project-profiles.md
    (`action:loom:project-profiles:open-env`, `:edit`, `:run-<intent>`). The "Share profile
    with agents" switch in the section defaults to on. Empty `PROFILE_SECTION_ROWS` rendered
    under "More" (and, if L20's private mode already exists, add its row registration here).
+   A one-time confirmation before the first "Validate with varlock" per environment (PRODUCT,
+   Copy), remembered in `loom:project-profiles:varlock-confirmed:v1` (try/catch around
+   storage).
 10. **Composer menu.** `composerBridgeStore.ts` (module store), `ProjectNotesComposerBridge`
     in `FORK_ROOT_COMPONENTS`, and `composerMenu.ts` in `FORK_COMPOSER_TRIGGERS` (TECHNICAL,
     "Composer: Insert project notes"). Pure `detectProjectNotesTrigger(text, cursor,
-supported)` tested on its own. A one-time
-    confirmation before the first "Validate with varlock" per environment, remembered in
-    `loom:project-profiles:varlock-confirmed:v1` (try/catch around storage).
+supported)` tested on its own.
 11. **Docs.** `docs/fork/user/project-profiles.md` (what the profile is for, what stays in
     upstream Project settings, the `.env.schema` format in two paragraphs with a link to
     varlock, that values never leave the server, that agents can read the profile by

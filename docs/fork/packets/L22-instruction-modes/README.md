@@ -45,8 +45,8 @@ whichever client sends the message, including the upstream mobile app.
 - Web and desktop: the composer control, a Loom settings section, palette items.
 - Mobile: no UI; delivery still happens server-side.
 - Remote: supported; state and delivery live on the environment.
-- Upstream T3 server: the composer control is hidden and the settings section says "Needs a
-  Loom server". Upstream clients on a Loom server get the modes delivered but cannot see or
+- Upstream T3 server: the composer control is hidden and the settings section reads
+  "Instruction modes need a Loom server." Upstream clients on a Loom server get the modes delivered but cannot see or
   change them.
 
 ## Extension points used
@@ -59,6 +59,7 @@ whichever client sends the message, including the upstream mobile app.
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette): toggle a mode for the current thread, open the library.
 - [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings): `loom.instruction-modes.open` (opens the composer control), unbound; handled by the
   fork keydown listener, never written into `keybindings.json`.
+- [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root): prerequisite of `ext-keybindings` (its shortcut host); registers nothing else.
 
 ## Packet seams
 

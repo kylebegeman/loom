@@ -26,20 +26,20 @@ OpenAI-endpoint drivers; its endpoint drivers were chat-only and could not edit 
 
 ## Entry points
 
-| Where                                    | What                                                                                                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Settings > Loom > Model endpoints        | List of endpoint instances (derived from provider instances this packet created) with a "Share Claude skills" switch each, and **Add endpoint**. |
-| Settings > Providers > Add provider      | "ACP agent" and "GitHub Copilot CLI" appear after upstream's drivers (via `ext-providers`).                                                      |
-| Settings > Providers, an instance editor | The generic settings form for the fork drivers; for endpoint instances, the usual Claude form plus a "Refresh models" row.                       |
-| Model picker in the composer             | The new instances, like any provider.                                                                                                            |
-| Command palette                          | "Add model endpoint", "Add ACP agent", "Add GitHub Copilot provider".                                                                            |
-| Keybinding                               | None.                                                                                                                                            |
+| Where                                    | What                                                                                                                                                                    |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Settings > Loom > Model endpoints        | List of endpoint instances (derived from provider instances this packet created) with **Refresh models** and a "Share Claude skills" switch each, and **Add endpoint**. |
+| Settings > Providers > Add provider      | "ACP agent" and "GitHub Copilot CLI" appear after upstream's drivers (via `ext-providers`).                                                                             |
+| Settings > Providers, an instance editor | The generic settings form for the fork drivers; endpoint instances use the usual Claude form (refresh models from Settings > Loom > Model endpoints).                   |
+| Model picker in the composer             | The new instances, like any provider.                                                                                                                                   |
+| Command palette                          | "Add model endpoint", "Add ACP agent", "Add GitHub Copilot provider".                                                                                                   |
+| Keybinding                               | None.                                                                                                                                                                   |
 
 Ways out: an endpoint instance is removed or disabled in the provider editor like any
 instance (Model endpoints lists it with **Open in Providers**). ACP instances are removed the
-same way. Model list refresh can be repeated. The endpoint test can be rerun from the editor.
-The skills switch turns sharing on and off again (off removes only Loom's symlink, never a
-real folder).
+same way. Model list refresh can be repeated. The endpoint test reruns with **Refresh
+models** on its Model endpoints row. The skills switch turns sharing on and off again (off
+removes only Loom's symlink, never a real folder).
 
 ## Flows
 
@@ -100,8 +100,9 @@ plan updates. Model selection lists the models the agent advertises (ACP session
 - Endpoint skills switch: linked, not linked, "This endpoint has its own skills folder; Loom
   leaves it alone." (a real folder exists), "Your main Claude skills folder was not found."
   (nothing to link).
-- ACP driver status: pending ("Checking Copilot CLI."), ready, not installed, not signed in,
-  error (agent crashed during initialize, with the first stderr line when it has no secrets).
+- ACP driver status: pending ("Checking Copilot CLI." or, for a custom agent, "Checking
+  `<command>`."), ready, not installed, not signed in, error (agent crashed during
+  initialize, with the first stderr line when it has no secrets).
 - In a thread: agent without `session/load` support: after a server restart the next message
   starts a new agent session, and the thread's work log shows "This agent cannot resume its
   earlier session; it starts fresh." Replaying history into a fresh session is out of scope.

@@ -250,7 +250,7 @@ malformed and must be filtered before they reach the browser).
 | `decorator.ts`             | `ForkProviderDriverDecorator` for `codex` and `claudeAgent`: wraps `create`, builds the manager, decorates the snapshot.                  |
 | `managers.ts`              | `SignInManager` interface and the `WeakMap<ProviderInstance, SignInManager>` with `registerManager` / `managerFor`.                       |
 | `CodexSignIn.ts`           | Per-instance Codex manager over `codex app-server`.                                                                                       |
-| `ClaudeSignIn.ts`          | Per-instance Claude manager over `claude auth login                                                                                       | logout | status`. |
+| `ClaudeSignIn.ts`          | Per-instance Claude manager over `claude auth login`, `logout` and `status`.                                                              |
 | `callbackForward.ts`       | Validates a pasted loopback URL against the pending redirect and forwards it with `node:http` (adapted from upstream's Antigravity code). |
 | `claudeAuthUrl.ts`         | `extractClaudeAuthorizationUrl` (allowlisted hosts, PKCE params), from old Loom.                                                          |
 | `accountFolders.ts`        | Suggest, create, record and move aside account folders.                                                                                   |
@@ -606,6 +606,7 @@ config: codex ? { homePath: sharedHomePath, shadowHomePath: folder } : { homePat
   with `useUpdateEnvironmentSettings(environmentId)` the way
   `AddProviderInstanceDialog.tsx:125-208` does -> wait until the instance's sign-in state is
   `supported` -> `start`.
+- Sign out: confirm (copy in PRODUCT.md, States) -> `signOut`.
 - Remove account: confirm -> `signOut` (ignore "not signed in") -> remove the instance with
   the same settings update the provider editor's delete uses -> `releaseAccountFolder`.
 - Gating: every entry checks

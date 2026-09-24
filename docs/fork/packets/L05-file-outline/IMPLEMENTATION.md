@@ -33,9 +33,10 @@ apps/web/src/fork/file-outline/
 
 ## Steps
 
-1. **Extension points.** Run the existence checks for `ext-web-root`, `ext-palette` and
-   `ext-keybindings` in EXTENSION-POINTS.md. Create any missing one exactly as specified, one
-   commit each (`feat(fork): add the <name> extension point`), with its FORK.md rows.
+1. **Extension points.** Run the existence checks for `ext-core` (prerequisite only, nothing
+   registered), `ext-web-root`, `ext-palette` and `ext-keybindings` in EXTENSION-POINTS.md.
+   Create any missing one exactly as specified, one commit each
+   (`feat(fork): add the <name> extension point`), with its FORK.md rows.
 2. **Scanner.** `scanner.ts` with `maskSource(source, config): string` (same length, newlines
    kept) and `walkBraces(masked, onOpen, onClose)`. Test masking on each language's tricky
    literals first (template literals with `${}`, Python triple quotes, Rust raw strings and

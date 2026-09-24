@@ -83,8 +83,9 @@ E. Auto preset (Jev)
 - Click the chip's close button, or apply another preset, to turn Auto off for this thread.
 - Turn "Suggest while typing" off in Settings > Loom > Chat conveniences to ask only when
   clicking the chip ("Suggest").
-- While Auto is on, the message being typed is sent to Jev (TypeSafe) from the
-  environment's server, after secrets are redacted. The Auto editor says so.
+- While Auto is on, the message being typed (its first 8,000 characters) is sent to Jev
+  (TypeSafe) from the environment's server, after secrets are redacted. The Auto editor
+  says so.
 
 ## Entry points
 
@@ -108,8 +109,9 @@ E. Auto preset (Jev)
   "Diagram too large to render."
 - C: no presets: "No presets yet" and "Save current setup"; unavailable preset as above;
   saving with 9 presets: "Replace a preset" mode (choose one to overwrite, Escape cancels).
-- D: too many open questions from the tool on one thread (3): the tool fails with "There
-  are already 3 unanswered questions in this thread. Wait for answers before asking more."
+- D: too many open asks from the tool on one thread (3 unanswered calls, each with up to 3
+  questions): the tool fails with "You already have 3 unanswered asks in this thread. Wait
+  for answers before asking more."
 - E: not set up: the presets list shows "Set up Auto"; Auto set up but Jev not usable for
   it on this environment (no `decide` capability, "Use Jev" off, no key, or Auto's switch
   off): "Auto" and "Set up Auto" are hidden. If Auto was already on for the thread, its chip

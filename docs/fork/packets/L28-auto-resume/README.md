@@ -1,6 +1,6 @@
 # L28: Auto-resume after usage limits
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 When a provider stops a thread's turn because the account ran out of usage, Loom's server
 notices, works out when the limit resets, and continues the thread by itself once it has.

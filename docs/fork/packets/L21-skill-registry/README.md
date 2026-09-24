@@ -71,12 +71,14 @@ None. See [SEAMS.md](./SEAMS.md).
 - If L16 is present, its Codex tools page also toggles Codex skills; both call Codex's
   `skills/config/write`, so they agree. Nothing is required from L16.
 - If L22 is present, nothing changes: instruction modes are not skills.
-- If L29 is present, its drafting brief links to the TypeSafe skill; installing it is the
-  user's click on the "TypeSafe" suggested source here. L21 never installs it on its own.
+- If L29 is present, its drafting brief links to the TypeSafe skill; its "Install the
+  TypeSafe skill" button opens this panel on the Sources tab
+  (`forkPanelSurface("skill-registry", "sources")`), and installing it is the user's click on
+  the "TypeSafe" suggested source there. L21 never installs it on its own.
 
 ## Size estimate
 
-Large: about 3,100 to 3,900 lines including tests. Server inventory and scanner 700, git
+Large: about 3,900 to 4,500 lines including tests. Server inventory and scanner 700, git
 source, targets, suggestions and installs 800, Claude settings and Codex toggles 300, lab file IO and validation
 300, RPC and storage 300; web panel 1,200; tests 700.
 

@@ -221,10 +221,10 @@ when its derived pending list is empty, not when the shell flag clears.
 
 ## Phase 5: approval risk badge (Jev)
 
-1. **Extension points.** Existence check for `ext-decide` (EXTENSION-POINTS.md section 18);
-   create it if missing, exactly as specified there, in its own commit. `ext-core`'s server
-   parts exist already if any server packet landed; otherwise its existence check covers
-   them.
+1. **Extension points.** Existence checks for `ext-settings` (EXTENSION-POINTS.md section 7)
+   and then `ext-decide` (section 18); create each missing one, exactly as specified there, in
+   its own commit, `ext-settings` first. `ext-core`'s server parts exist already if any
+   server packet landed; otherwise its existence check covers them.
 2. **Pure logic, test first.**
    - `apps/server/src/fork/bottom-dock/pendingApproval.ts`: `findPendingApproval(activities,
 requestId)` returning `{ requestKind, detail, appName } | null`, copied from the approval

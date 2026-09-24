@@ -2,8 +2,9 @@
 
 ## Old Loom
 
-Instruction modes are not in [selections.md](../../selections.md); Kyle added them in the
-2026-09-24 brief. Old Loom (`bagelvault/loom` at `a79ec506`) had no rule-pack feature. The
+Not in the original selection; added from the repository review
+([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on
+2026-09-24. Old Loom (`bagelvault/loom` at `a79ec506`) had no rule-pack feature. The
 closest prior art is thread goals:
 
 - [.ledger/entries/0011-goals.md](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/0011-goals.md):

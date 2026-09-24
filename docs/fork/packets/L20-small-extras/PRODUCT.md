@@ -29,8 +29,8 @@ Four small frictions, each too small for its own packet:
 
 ### No AI identification (private projects)
 
-- Turn "No AI identification" on for a project in Settings, Loom, Small extras (the
-  "Private projects" list), from the command palette in one of the project's threads, or in
+- Turn "No AI identification" on for a project in Settings, Loom, Small extras (the "No AI
+  identification" block), from the command palette in one of the project's threads, or in
   the project's Loom profile when project profiles (L18) are installed.
 - In that project:
   - New worktree branches are named by change type instead of `loom/`: `feature/`, `fix/`,
@@ -74,13 +74,13 @@ Four small frictions, each too small for its own packet:
 
 ## Entry points
 
-| Part                  | Entry                                                                                                                                                                                                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch prefix         | Settings, Loom, Small extras (environment-scoped like upstream's General page).                                                                                                                                                                                   |
-| No AI identification  | Settings, Loom, Small extras, "Private projects" (a switch per project on the environment). Command palette: "Turn on No AI identification for this project" / "Turn off ...", "Check this thread's commits for AI markers". L18's project profile, when present. |
-| Private mode warnings | Timeline row in the thread (every client). Web and desktop toast with "Copy fix command" or "Rename branch", and "Open thread".                                                                                                                                   |
-| Containers            | Right panel launcher and "+" menu ("Containers", letter C). Command palette: none (the launcher is enough).                                                                                                                                                       |
-| CLI tools             | Settings, Loom, Small extras. A "CLI tools" link in the Containers panel's missing-runtime state.                                                                                                                                                                 |
+| Part                  | Entry                                                                                                                                                                                                                                                                 |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch prefix         | Settings, Loom, Small extras (environment-scoped like upstream's General page).                                                                                                                                                                                       |
+| No AI identification  | Settings, Loom, Small extras, "No AI identification" (a switch per project on the environment). Command palette: "Turn on No AI identification for this project" / "Turn off ...", "Check this thread's commits for AI markers". L18's project profile, when present. |
+| Private mode warnings | Timeline row in the thread (every client). Web and desktop toast with "Copy fix command" or "Rename branch", and "Open thread".                                                                                                                                       |
+| Containers            | Right panel launcher and "+" menu ("Containers", letter C). Command palette: none (the launcher is enough).                                                                                                                                                           |
+| CLI tools             | Settings, Loom, Small extras. A "CLI tools" link in the Containers panel's missing-runtime state.                                                                                                                                                                     |
 
 Ways out and state: clearing the prefix restores upstream naming; "No AI identification" has
 its off switch in every place that has the on switch, and the settings list shows which
@@ -93,6 +93,8 @@ and stay visible in the timeline. Settings values have a reset button.
 - Branch prefix: saving, saved, invalid (inline error), environment lacks the feature
   ("Needs a Loom server").
 - No AI identification:
+  - With a project selected in the settings scope, the block lists only that project; with
+    all projects in scope, it lists every project of the environment.
   - List loading skeleton; empty project list: "No projects on <environment>."
   - Toggling: the switch shows progress; failure reverts it with the error.
   - A project with it on shows "On since <date>".
@@ -121,7 +123,8 @@ and stay visible in the timeline. Settings values have a reset button.
 - Prefix row: "Worktree branch prefix". Description: "New worktree threads rename their
   branch to <prefix>/<name> after the first message. Leave empty for t3code. Private
   projects use feature/, fix/ and the like instead." Error: "Use lowercase letters,
-  numbers, '-', '_' and '/'. Start and end with a letter or number."
+  numbers, '-', '_' and '/'. Start and end with a letter or number." Preview line: "New
+  branches look like <prefix>/fix-login-redirect"
 - Private projects block title: "No AI identification". Description: "In these projects
   Loom asks agents to leave AI out of commits, pull requests and comments, turns off
   Claude's attribution, names branches by change type, and checks new commits after each
@@ -130,23 +133,28 @@ and stay visible in the timeline. Settings values have a reset button.
   that a normal git push does not send."
 - Palette: "Turn on No AI identification for this project", "Turn off No AI identification
   for this project", "Check this thread's commits for AI markers". Toggle toast: "No AI
-  identification is on for <project>." / "... is off for <project>." with "Undo".
+  identification is on for <project>." / "... is off for <project>." with "Undo". Check
+  results besides the warning: "No AI markers in this thread's new commits.", "This thread is
+  not on a branch, so Loom did not check its commits." and "This thread's folder is not a git
+  repository."
 - Warning toast title: "Commits in <branch> mention AI". Description: "<n> new commits:
   <short ids>." plus "Already pushed. After fixing, push with --force-with-lease." when
   pushed. Actions: "Copy fix command", "Open thread". Expandable "Show details": each
   commit's subject and what was found, and the command. When only names in messages were
   found: title "Commit messages name an agent", action "Copy reword command".
 - Temporary branch toast: "<branch> still has a temporary name". Actions: "Rename branch",
-  "Copy command".
+  "Copy command", "Open thread".
 - Timeline row: "No AI identification: <n> new commits mention AI (<short ids>). Fix command
   in the Loom warning or the palette check." / "No AI identification: the branch still has
   its temporary name <branch>."
 - Containers panel title: "Containers". Buttons: "Follow logs", "Refresh", "Show all",
   "This project". Terminal tab title comes from upstream; the command line shows the
-  container name.
+  container id.
 - CLI tools heading: "CLI tools". Buttons: "Check for updates", "Refresh", "Copy update
   command". Row labels: "Installed with Homebrew", "Installed with npm", "Installed with
-  Bun", "Part of macOS", "Part of Xcode", "Unknown install".
+  Bun", "Part of macOS", "Part of Xcode", "Unknown install". Xcode row with only the Command
+  Line Tools: "Xcode is not installed (Command Line Tools only)". After "Check for updates":
+  "Homebrew results are as fresh as its last brew update."
 
 No em dashes in product copy. Nothing in these strings attributes work to AI; the words
 "AI" and "agent" appear only in Loom's own UI, never in text Loom writes into a repository.
@@ -209,6 +217,9 @@ No em dashes in product copy. Nothing in these strings attributes work to AI; th
   request text are not scanned.
 - Codex 0.156.1 contains its own commit attribution instruction behind a flag whose default
   is unverified; IMPLEMENTATION.md has the verification step.
+- Messages that start with `/` (slash commands) and messages near the input size limit are
+  sent without the instruction.
+- Checking out a pull request still creates a local `t3code/pr-<n>/...` branch.
 
 ## Out of scope
 

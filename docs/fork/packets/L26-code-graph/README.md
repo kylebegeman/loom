@@ -1,9 +1,10 @@
 # L26: Code graph
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
-Kyle confirmed L26 on 2026-09-24 (it is not in selections.md; it came from the repository
-review).
+Not in the original selection; added from the repository review
+([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on
+2026-09-24.
 
 Loom builds a code knowledge graph for a project with Graphify (a local, tree-sitter based
 Python tool) and uses it three ways: a **Code map** panel to browse the project's modules,

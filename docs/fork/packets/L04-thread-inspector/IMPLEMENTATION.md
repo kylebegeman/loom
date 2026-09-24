@@ -10,9 +10,9 @@ changes, a plan, subagents and a pending approval make the best test set.
 
 ## Steps
 
-1. **Extension points.** Existence checks for `ext-panels`, `ext-web-root`,
-   `ext-keybindings`, `ext-palette`; create missing ones exactly as specified, one commit
-   each, with FORK.md rows.
+1. **Extension points.** Existence checks for `ext-core` (prerequisite only, nothing
+   registered), `ext-panels`, `ext-web-root`, `ext-keybindings`, `ext-palette`; create
+   missing ones exactly as specified, one commit each, with FORK.md rows.
 2. **Model first.** `model.ts` and `model.test.ts` (TESTING.md lists the cases). Build the
    inputs in tests from plain objects typed with the upstream types; do not render
    components.

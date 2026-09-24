@@ -1,6 +1,6 @@
 # L15: AI code review
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 AI review of the agent's changes before Kyle commits or opens a pull request. One to three
 reviewers (other models, or the same one with a review brief) each run as an ordinary
@@ -27,10 +27,15 @@ The design session was held on 2026-09-24; its decisions are in
   confirmation above 2,000 changed lines; the "Review this turn?" chip; per-project
   automatic start of suggested reviews; the agent tool `loom_ai_code_review_start` behind "Let
   agents use this".
-- Out (follow-ups, see [PRODUCT.md](./PRODUCT.md#out-of-scope-and-follow-ups)): headless quick
-  review (A3); inline diff annotations; other people's pull requests and PR review drafts;
-  pre-Commit / pre-PR hooks; an agent tool to read findings; verification passes (G3);
-  anything mobile-specific. Native Codex review is rejected.
+- Out (see [PRODUCT.md](./PRODUCT.md#out-of-scope-and-follow-ups)):
+  - Follow-up: headless quick review (A3).
+  - Follow-up: inline finding annotations in the diff panel.
+  - Follow-up: other people's pull requests and PR review drafts.
+  - Follow-up: a pre-Commit / pre-PR review hook.
+  - Follow-up: an agent tool to read review findings.
+  - Follow-up: verification passes (G3).
+  - Follow-up: a mobile findings view or "review finished" notification.
+  - Native Codex review: rejected.
 
 ## Surfaces
 
@@ -60,8 +65,8 @@ None. See [SEAMS.md](./SEAMS.md).
 ## Optional integrations
 
 - L02 thread lineage present: reviewer threads are recorded as `review` children of the
-  source thread and appear under it in Related threads (needs L02 to accept the `review`
-  kind; otherwise skipped silently).
+  source thread and appear under it in Related threads (L02 defines the `review` kind; rows
+  use `INSERT OR IGNORE`).
 - L18 project profiles present: per-project default reviewer through a "Reviewer" profile
   binding.
 - L26 code graph present: the blast radius of the changed files goes into the reviewer's

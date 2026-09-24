@@ -14,10 +14,11 @@ Part A, `apps/web/src/fork/chat-conveniences/find/findMatches.test.ts` (pure):
 
 Part A default shortcut, `find/defaultShortcut.test.ts` (pure):
 
-- `shouldOpenFindFromDefaultShortcut` is true only for `mod+F` with the setting on, no user
-  binding resolved for the event, a timeline handle, no terminal or preview focus, and a
-  target outside right-panel surfaces, dialogs and menus. Each excluded case returns false
-  (the listener then does not call `preventDefault`, so the browser's find runs on web).
+- `shouldOpenFindFromDefaultShortcut` is true only for `mod+F` with the setting on, the
+  command palette closed, no user binding resolved for the event, a timeline handle, no
+  terminal or preview focus, and a target outside right-panel surfaces, dialogs and menus.
+  Each excluded case returns false (the listener then does not call `preventDefault`, so
+  the browser's find runs on web).
 - `mod+shift+f` never matches (upstream's project search).
 
 Part A highlighting: the web unit tests run in Node without a DOM
@@ -103,7 +104,7 @@ orchestration, no provider):
   produces a `thread.turn.start` whose message text contains the question and the answer
   (this proves the whole answer path with upstream's decider).
 - `thread.user-input.dismiss` on it succeeds.
-- A fourth open question on one thread fails with `too-many-open`; answering one frees a
+- A fourth open ask on one thread fails with `too-many-open`; answering one frees a
   slot.
 - Unknown and archived threads fail with their reasons.
 - The fork tool name starts with `loom_` and is unique (ext-mcp's registry test).
@@ -166,12 +167,13 @@ model (effort low to medium) and a strong one (effort medium to high); apply Aut
 "rename foo to bar in utils.ts": the chip suggests the fast model with its low effort and a
 percentage; press **Use**: the composer shows it. Type a design question: the strong model
 with high effort is suggested; send without **Use**: the turn runs on the current
-selection. Remove the key: "No Jev key on this environment." Switch the feature Off in the
-Jev section, and "Jev off for this project": Auto is no longer offered, and on a thread
-where it was on, the chip shows the reason. The Jev section shows only "Use Jev" for Auto
-(no "Let agents use this"). Turn "suggest while
-typing" off: only **Suggest** asks. Check the network panel: one request per pause, none
-while idle.
+selection. Paste a draft over 8,000 characters: a suggestion still arrives. Check the
+network panel: one request per pause, none while idle. Turn "suggest while typing" off:
+only **Suggest** asks. The Jev section shows only "Use Jev" for Auto (no "Let agents use
+this"). Switch the feature Off there: Auto is no longer offered, and on a thread where it
+was on, the chip shows the reason. Switch it back on and turn "Jev off for this project":
+Auto is still offered, and the chip reads "Auto: keeping current model" with the reason
+"Jev is off for this project." Last, remove the key: "No Jev key on this environment."
 
 Upstream-server case: A, B, C work; the agent tool list has no `loom_` tool; Auto is
 hidden. Loom server without ext-decide's `decide` capability: Auto is hidden and no

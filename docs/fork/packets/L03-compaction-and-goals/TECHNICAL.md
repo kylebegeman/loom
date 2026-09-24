@@ -220,8 +220,8 @@ collects blocks from registered contributors and prepends them to the provider-b
 sorted by order. It already skips continuation turns (no input), slash commands such as
 upstream's own `/compact` turn (which `compactThread` sends through this same `sendTurn`),
 and any block that would exceed the input limit; a failing contributor is logged and skipped.
-This packet's contributor has id `compaction-and-goals` and order 20, so an instruction modes
-block from L22 (order 10), when present, comes first.
+This packet's contributor has id `compaction-and-goals` and order 20, so L20's private mode
+block (order 5) and L22's instruction modes block (order 10), when present, come first.
 
 Prepending rather than appending keeps Claude's skill dispatch intact: a `$skill` mention
 turns into a final `/name` block whose trailing text becomes the skill's arguments

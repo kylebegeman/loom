@@ -64,8 +64,8 @@ it created and skipped, and imported snippets can be deleted.
 
 ## Copy
 
-- Panel title: "Snippets". Launcher description (if L12 adds descriptions): "Reusable
-  prompts and fill-in templates."
+- Panel title: "Snippets". Panel description (`ForkPanelDefinition.description`, shown by
+  the panel picker): "Reusable prompts and fill-in templates."
 - Search placeholder: "Search snippets".
 - Dialog footer hints: "Enter Insert", "mod+C Copy", "mod+Enter Send to terminal",
   "mod+E Edit".
@@ -100,7 +100,7 @@ it created and skipped, and imported snippets can be deleted.
   `;` or `; ` is plain text and never opens the menu, so punctuation in prose stays quiet.
 - Search and panel commands have no default keybindings: they are reachable from the
   command palette and the panel launcher, and users bind them in Keybindings if they want
-  (EXTENSION-POINTS.md discourages default bindings).
+  (decided by Kyle).
 - Search runs on the client over the cached library, so results update on every keystroke
   with no RPC; the server pushes the library when it changes.
 - Pins and use counts live on the server (old Loom kept them in localStorage per device,

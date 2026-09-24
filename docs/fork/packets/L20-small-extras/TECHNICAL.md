@@ -78,22 +78,19 @@ export const SmallExtrasInfo = Schema.Struct({
   parts: Schema.Array(Schema.Literals(SMALL_EXTRAS_PARTS)),
 });
 
-export class SmallExtrasError extends Schema.TaggedErrorClass<SmallExtrasError>()(
-  "SmallExtrasError",
-  {
-    reason: Schema.Literals([
-      "invalid",
-      "storage",
-      "probe-failed",
-      "not-found",
-      "not-a-repository",
-      "not-private",
-      "not-temporary",
-      "git-failed",
-    ]),
-    message: Schema.String,
-  },
-) {}
+export class SmallExtrasError extends Schema.TaggedError<SmallExtrasError>()("SmallExtrasError", {
+  reason: Schema.Literals([
+    "invalid",
+    "storage",
+    "probe-failed",
+    "not-found",
+    "not-a-repository",
+    "not-private",
+    "not-temporary",
+    "git-failed",
+  ]),
+  message: Schema.String,
+}) {}
 ```
 
 | Tag                   | Payload                            | Success                          | Scope                   | Part |
@@ -114,9 +111,11 @@ All unary except `privateModeWarnings`, which is a durable subscription listed i
 `Schema.Union([SmallExtrasError, EnvironmentAuthorizationError])`. The first part to ship
 creates the file with `info`, `getSettings`, `updateSettings` and its own methods; later
 parts add theirs. The server's `info` returns the parts it implements (a constant in the
-server package, `IMPLEMENTED_SMALL_EXTRAS_PARTS`). Clients show a part only when
+server package, `IMPLEMENTED_SMALL_EXTRAS_PARTS`). Clients call a part's methods only when
 `loomFeatures` includes `small-extras` and `info.parts` includes the part, so a newer Loom
-client on an older Loom server never calls a missing method.
+client on an older Loom server never calls a missing method; a part missing from
+`info.parts` shows "Needs a newer Loom server" instead (settings block and panel) and its
+palette items are hidden.
 
 ### Storage
 
@@ -204,7 +203,8 @@ their rows and update the `Ref`s. Dependencies: `SqlClient`, `VcsProcess`,
 reads the selected settings scope (EXTENSION-POINTS.md, Settings: the page is scope-gated
 like General; use the scope context from `apps/web/src/components/settings/useScopedSettings.ts:30`)
 to pick the environment, checks `supportsLoomFeature(..., "small-extras")`, loads `info` and
-`getSettings`, and renders one block per available part, in the order A, D, C. Rows use
+`getSettings`, and renders one block for each settings part, in the order A, D, C; a part
+that is not in `info.parts` shows "Needs a newer Loom server" in its block. Rows use
 upstream's `SettingsRow` and `DraftInput` (`apps/web/src/components/settings/settingsLayout.tsx:268`;
 `DraftInput` as used in `SettingsPanels.tsx:2849-2858`).
 
@@ -422,7 +422,8 @@ Registered by `SmallExtrasService` with `registerForkTurnInputContributor`
 (EXTENSION-POINTS.md, section 16): id `small-extras-private-mode`, order 5, so it comes
 before L22's modes (10) and L03's goal (20). It returns the block only for threads whose
 project is private, from the same in-memory lookups (no SQL on the hot path after the first
-turn of a thread), and `undefined` otherwise. It is sent on every turn.
+turn of a thread), and `undefined` otherwise. It is sent on every turn, except the two
+cases in Known limits (slash commands and messages near the input limit).
 
 ```text
 <loom_private_mode>
@@ -485,7 +486,7 @@ user asked for "add claude adapter") is kept: it describes the product, not the 
 `chooseBranchType` asks Jev only when the project is private **and** `ext-decide` returns an
 answer; every other outcome uses `branchTypeFromKeywords`.
 
-- Feature registration (`apps/server/src/fork/small-extras/privateMode/decide.ts`), in the
+- Feature registration (`apps/server/src/fork/small-extras/decide.ts`), in the
   `ext-decide` feature registry (EXTENSION-POINTS.md, section 18):
 
   ```ts
@@ -494,7 +495,7 @@ answer; every other outcome uses `branchTypeFromKeywords`.
     packet: "L20",
     label: "Branch type in private projects",
     description:
-      "Picks feature, fix, hotfix, chore, docs or refactor for a new worktree branch in a project with No AI identification.",
+      "Picks feature, fix, hotfix, chore, docs or refactor for a new worktree branch in a project with No AI identification; without Jev, keyword rules pick it (default feature).",
     defaultMode: "manual",
     defaultThreshold: 0.6,
     agentTool: false,
@@ -576,6 +577,9 @@ of private projects only:
 --remotes` (commits not on any remote). Cap 200 commits. Then store
   `last_scanned_head = HEAD` and clear `turn_start_head`.
 
+A thread whose checkout has no branch (`git symbolic-ref --quiet --short HEAD` prints nothing:
+a detached HEAD) is skipped at both events: no log, no warning.
+
 Events are handled one at a time per thread; checks for different threads run with
 concurrency 2. A missed event (server down) only skips one check; the palette check covers
 it. Recording HEAD races the agent only if the agent commits within milliseconds of the turn
@@ -584,7 +588,8 @@ starting; the fallback ranges still catch those commits on the next check.
 **Git commands** (through `VcsProcess.run`, `timeoutMs: 10_000`, `maxOutputBytes: 2 MiB`,
 never with a shell):
 
-- `git rev-parse HEAD`, `git symbolic-ref --quiet --short HEAD` (branch; detached: none).
+- `git rev-parse HEAD`, `git symbolic-ref --quiet --short HEAD` (branch; detached: none, and
+  the thread is skipped).
 - `git log --max-count=200 --format=%H%x00%an%x00%ae%x00%cn%x00%ce%x00%B%x1e <range>`.
 - For flagged commits: `git branch --remotes --contains <oldest flagged>` (non-empty means
   pushed).
@@ -624,16 +629,21 @@ git -C '<cwd>' rebase --rebase-merges --exec 'git log -1 --format=%B | grep -v -
 - `<cwd>` is single-quoted with `'` escaped as `'\''`.
 - When only `agent-name` findings exist, the "reword" command is
   `git -C '<cwd>' rebase -i <oldest>^` with the list of commits to reword.
-- When the commits are already on a remote, the warning adds "After fixing, push with
-  `git push --force-with-lease`". Loom never runs any of these commands.
+- When the commits are already on a remote, the warning adds the "Already pushed" line from
+  PRODUCT.md, Copy. Loom never runs any of these commands.
 
 **Temporary branch.** When `checkpointTurnCount >= 2` and the thread's branch still matches
-`isTemporaryWorktreeBranch`, the check adds a `temporary-branch` finding. The first turn is
-skipped because upstream's rename can finish after a short first turn. `renamePrivateBranch`
-fixes it with exactly upstream's steps
-(`ProviderCommandReactor.ts:914-925`): name from the branch namer with the thread's first
-message (`ProjectionSnapshotQuery.getTurnStartMessage`, `:235`) or the thread title when that
-is missing, `GitWorkflowService.renameBranch({ cwd, oldBranch, newBranch })`
+`isTemporaryWorktreeBranch`, the check sets `temporaryBranch: true` and `renameCommand`. The
+first turn is skipped because upstream's rename can finish after a short first turn.
+`renamePrivateBranch` fixes it with exactly upstream's steps
+(`ProviderCommandReactor.ts:914-925`). The name does not call text generation again (it
+already failed for this thread): the thread's first message
+(`ProjectionSnapshotQuery.getTurnStartMessage`, `:235`), or the thread title when that is
+missing, goes through `generatedWorktreeBranchName` in `branchNaming.ts`, a fork copy of
+upstream's module-private sanitizer `buildGeneratedWorktreeBranchName`
+(`ProviderCommandReactor.ts:185-206`) that returns `t3code/<fragment>`, and that name goes
+through `forkWorktreeBranchName` like upstream's. Then
+`GitWorkflowService.renameBranch({ cwd, oldBranch, newBranch })`
 (`apps/server/src/git/GitWorkflowService.ts:108`), `thread.meta.update` with the new branch,
 and `VcsStatusBroadcaster.refreshStatus(cwd)`. It refuses (`not-temporary`) when the branch
 is no longer temporary and (`not-private`) outside private projects. The copyable
@@ -660,7 +670,7 @@ export const PrivateModeWarning = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
   cwd: Schema.String,
-  branch: Schema.NullOr(Schema.String),
+  branch: Schema.String, // threads with no branch are skipped
   temporaryBranch: Schema.Boolean,
   findings: Schema.Array(PrivateModeFinding),
   pushed: Schema.Boolean,
@@ -671,6 +681,7 @@ export const PrivateModeWarning = Schema.Struct({
 });
 export const PrivateCheckResult = Schema.Struct({
   isPrivate: Schema.Boolean,
+  noBranch: Schema.Boolean, // detached HEAD: nothing checked
   warning: Schema.NullOr(PrivateModeWarning),
   checkedCommits: NonNegativeInt,
 });
@@ -691,14 +702,18 @@ export const PrivateCheckResult = Schema.Struct({
 
 The same warning is not repeated for an unchanged HEAD: the check skips when
 `HEAD == last_scanned_head`. `checkPrivateThread` runs the same check on demand with the
-range `HEAD --not --remotes` plus `last_scanned_head..HEAD`, publishes the result on the
-stream only for the caller (it returns it), and appends no timeline row.
+range `HEAD --not --remotes` plus `last_scanned_head..HEAD`, returns the result to the caller
+only (it does not publish on the `privateModeWarnings` stream), and appends no timeline row.
+On a thread with no branch it runs no log and returns `noBranch: true`; outside a git
+repository it fails with `not-a-repository`. The messages for both are in PRODUCT.md, Copy.
 
 ### Web (part D)
 
 - Settings block `PrivateProjectsBlock.tsx`: the environment's projects (from the web
   entity store for that environment) with a switch each, bound to `listPrivateProjects` and
-  `setPrivateProject`, the description and limits note from PRODUCT.md.
+  `setPrivateProject`, the description and limits note from PRODUCT.md. In a project (or
+  checkout) settings scope it lists only the scope's project; in the all (or environment)
+  scope it lists every project of the environment.
 - Palette source `apps/web/src/fork/small-extras/palette.tsx` (`ext-palette`): items only when
   `loomFeatures` has `small-extras`, there is an active thread, and the environment's
   `info.parts` has `private-mode` (read from the cached `info` query; items are hidden until
@@ -709,17 +724,26 @@ stream only for the caller (it returns it), and appends no timeline row.
     project, calls `setPrivateProject` with the flipped value, then shows the toggle toast
     with "Undo".
   - `action:loom:small-extras:private-check`: `run` calls `checkPrivateThread` and shows the
-    warning toast or "No AI markers in this thread's new commits."
+    warning toast, "No AI markers in this thread's new commits.", or the no-branch or
+    not-a-repository message (PRODUCT.md, Copy).
 - Toast host `PrivateModeWarningToasts.tsx` in `FORK_ROOT_COMPONENTS` (`ext-web-root`):
   subscribes to `privateModeWarnings` for each connected environment whose capabilities
   include `small-extras` and whose `info.parts` include `private-mode`
   (`createEnvironmentRpcSubscriptionAtomFamily`), and renders nothing itself. For each
   warning it calls upstream's `toastManager.add` (`apps/web/src/components/ui/toast.tsx:79`,
   exported at `:806-812`) with `type: "warning"`, `timeout: 0`, the title and description
-  from PRODUCT.md, `actionProps` "Copy fix command" (writes `fixCommand`, or
-  `rewordCommand`, to the clipboard) or "Rename branch" (calls `renamePrivateBranch`), and
-  `data.secondaryActionProps` "Open thread", with `data.expandableContent` listing each
-  finding and the full command. The palette check uses the same toast builder.
+  from PRODUCT.md, and `data.expandableContent` listing each finding and the full command.
+  Actions per case, matching PRODUCT.md, Copy:
+  - automatic fix: `actionProps` "Copy fix command" (writes `fixCommand`), and
+    `data.secondaryActionProps` "Open thread";
+  - names only: `actionProps` "Copy reword command" (writes `rewordCommand`), and
+    `data.secondaryActionProps` "Open thread";
+  - temporary branch: `actionProps` "Rename branch" (calls `renamePrivateBranch`),
+    `data.secondaryActionProps` "Copy command" (writes `renameCommand`), and "Open thread"
+    as a third button through `data.additionalActions` (`toast.tsx:50-53`).
+
+  The palette check uses the same toast builder.
+
 - L18 integration: `PrivateModeProfileRow.tsx` (one `SettingsRow` with the switch for one
   project), registered in L18's `PROFILE_SECTION_ROWS` as
   `{ id: "small-extras-private-mode", feature: "small-extras", Component: PrivateModeProfileRow }`
@@ -759,6 +783,11 @@ adds its trailer in practice, a Codex-side switch is a follow-up (PRODUCT.md, Ou
   never pushed.
 - Code comments and pull request text are covered only by the instruction (and, for Claude,
   its `pr` attribution setting).
+- `ext-turn-input` passes messages that start with `/` (slash commands) through unchanged and
+  skips a block that would push a message over `PROVIDER_SEND_TURN_MAX_INPUT_CHARS`
+  (EXTENSION-POINTS.md, section 16), so those messages go out without the instruction.
+- PR checkout branches keep upstream's `t3code/pr-<n>/...` names in private projects too
+  (PRODUCT.md, Decisions).
 
 ## Part B: containers
 
@@ -888,8 +917,10 @@ without it gets upstream's authorization error, shown as a toast.
 `apps/web/src/fork/small-extras/containersPanel.tsx`: `ForkPanelDefinition` with id
 `small-extras:containers`, title "Containers", icon `ContainerIcon` (lucide), shortcut `C`,
 `description` "Docker and Podman containers, with their logs in the terminal." (the optional
-field L12 adds), `isAvailable` = thread present and `loomFeatures` has `small-extras` (the
-panel itself shows a message when `info.parts` lacks `containers`). The list refreshes on
+`ForkPanelDefinition` field, shown by L12's picker), `unavailableHint` "Needs a Loom server",
+`isAvailable` = thread present and `loomFeatures` has `small-extras` (the panel itself shows
+"Needs a newer Loom server" when `info.parts` lacks `containers`). The `NoRuntime` state
+links "CLI tools" to `/settings/loom#loom-small-extras`. The list refreshes on
 mount, on the Refresh button, and every 10 seconds while the panel is mounted and the
 document is visible.
 
@@ -984,7 +1015,8 @@ For each tool (concurrency 6):
 `checkUpdates: true` additionally runs, in parallel, with 60 second timeouts:
 
 - `brew outdated --json=v2` (reads Homebrew's local metadata; it does not run
-  `brew update`, so results are as fresh as the last update, and the UI says so);
+  `brew update`, so results are as fresh as the last update, and the UI says so in
+  PRODUCT.md's wording);
 - `npm outdated -g --json` (asks the npm registry; exit code 1 means "something is
   outdated", not failure).
 

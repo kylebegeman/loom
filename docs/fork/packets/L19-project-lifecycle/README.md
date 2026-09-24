@@ -1,6 +1,6 @@
 # L19: Project lifecycle
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Loom gets a Repositories page that follows Kyle's ephemeral checkout workflow
 (`~/Developer/docs/workflow/ephemeral-checkouts.md`): GitHub is the source of truth and the
@@ -75,9 +75,9 @@ EXTENSION-POINTS.md specifies, each in its own commit.
 
 ## Packet seams
 
-- `apps/web/src/components/sidebar/SidebarChrome.tsx`: two inserted lines marked
-  `fork: project-lifecycle` (an import below the `fork: brand` import, and
-  `<RepositoriesSidebarItem />` after the Pull Requests item).
+- `apps/web/src/components/sidebar/SidebarChrome.tsx`: three inserted lines, two of them
+  carrying the `fork: project-lifecycle` marker (a marker line and an import below the
+  `fork: brand` import, and `<RepositoriesSidebarItem />` after the Pull Requests item).
 - `apps/web/src/routes/loom.repositories.tsx`: new fork-owned route file (lives in the
   routes directory because the router requires it).
 - `apps/web/src/routeTree.gen.ts`: regenerated, not hand-edited.

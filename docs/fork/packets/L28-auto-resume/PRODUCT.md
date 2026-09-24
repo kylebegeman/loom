@@ -1,7 +1,7 @@
 # L28 product
 
-Selection: F7 in [selections.md](../../selections.md) is listed under "Not selected"; Kyle
-confirmed it for this packet in the 2026-09-24 brainstorm.
+Selection: F7 in [selections.md](../../selections.md), first listed as not selected; confirmed
+for this packet on 2026-09-24.
 
 ## Problem
 
@@ -58,8 +58,8 @@ Every schedule has a way out (cancel, take over) and a way to see it (marker, ch
 - **Scheduled without a known reset** (Grok, or Codex without window data): "Loom will check
   again in 30m" and the attempt number ("check 2 of 6").
 - **Switching account:** marker "Loom will continue on <account> because <old account> hit its
-  session limit." Chip "Continuing on <account>" with Cancel. Resume happens after a 10
-  second grace so a Cancel click can still win.
+  session limit." Chip "Continuing on <account> in a few seconds" with Cancel. Resume
+  happens after a 10 second grace so a Cancel click can still win.
 - **No account to switch to:** the thread waits for the reset on the same account (the
   scheduled state above). This is always the case for Claude today.
 - **Needs attention:** a Codex workspace credit or spend limit with no usage window to wait

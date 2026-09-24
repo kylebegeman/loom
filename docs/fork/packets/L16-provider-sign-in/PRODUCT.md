@@ -159,18 +159,25 @@ refreshes the provider.
 - Loading: "Reading sign-in status." while the first state arrives.
 - Idle signed out: "Not signed in." with **Sign in**.
 - Idle signed in: "Signed in as <email>" (plus plan label when reported) with **Sign out**.
+  **Sign out** asks first: "Sign out of <instance>? Its running threads stop. Thread history
+  is kept."
 - Starting: "Starting sign-in." Buttons disabled except Cancel.
 - Waiting (browser, device code, code paste): as in the flows, always with **Cancel**.
 - Verifying: "Checking the account and available models."
 - Succeeded: "Signed in as <email>." then idle.
 - Failed: the provider's message when safe, else "Sign-in failed. Try again." with **Try
   again**. Timed out: "Sign-in expired after 10 minutes." Cancelled: "Sign-in cancelled."
+  Cancelled by a settings change (saving the instance's settings rebuilds it): "Sign-in was
+  cancelled because the provider settings changed."
 - Another client started the flow: "Sign-in is in progress in another window." with Cancel.
 - Disabled instance: "Enable this instance to sign in." with **Enable**.
 - CLI missing: "Codex is not installed on this environment." (from the provider snapshot).
 - Upstream server: "Account management needs a Loom server." and nothing else.
 - Claude API key saved: "An API key is saved for this account." with **Replace key** and
   **Remove key**.
+- Claude API key set as a plain variable (typed by hand in the provider form): "An API key is
+  set in this instance's environment variables." with **Make it sensitive**, which only moves
+  it into the secret store; afterwards the saved-key state applies.
 - Custom endpoint Claude instance: the endpoint message above, no buttons.
 - Credential storage: green check, warning with **Use file storage**, or "Loom could not
   read ~/.codex/config.toml." (no action offered).

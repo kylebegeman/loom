@@ -103,6 +103,6 @@ move the two lines with it.
 
 Add to the "Packet seams" table (create it if missing, per CONVENTIONS.md):
 
-| File                                   | Packet            | Why                                                             |
-| -------------------------------------- | ----------------- | --------------------------------------------------------------- |
-| `apps/web/src/components/ChatView.tsx` | `L07-bottom-dock` | Mounts the bottom dock directly above the terminal drawer list. |
+| File                                   | Packet        | Why                                                                                                      |
+| -------------------------------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/ChatView.tsx` | `bottom-dock` | Mounts the bottom dock directly above the terminal drawer list. See `docs/fork/packets/L07-bottom-dock`. |

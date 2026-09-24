@@ -6,7 +6,7 @@ server test uses `ext-decide` with a scripted `fetch` (or a test `LoomDecide` la
 
 ## Automated tests
 
-`packages/client-runtime/src/fork/jevLint.test.ts` (pure):
+`packages/client-runtime/src/fork/jev-hub-lint.test.ts` (pure):
 
 - Each rule in TECHNICAL.md's table fires on a minimal example and stays quiet on a close
   negative: `not` and `n't` fire `negation`, `note` and `knot` do not; two negations in one
@@ -20,7 +20,7 @@ server test uses `ext-decide` with a scripted `fetch` (or a test `LoomDecide` la
 - Severity: only `empty-instructions`, `too-many-options`, `too-few-options`,
   `score-levels` and `oversized-state` are errors.
 
-`packages/client-runtime/src/fork/jevCost.test.ts`: 1,000,000 input tokens cost $0.042;
+`packages/client-runtime/src/fork/jev-hub-cost.test.ts`: 1,000,000 input tokens cost $0.042;
 0 tokens is $0; formatting of very small amounts ("under $0.0001").
 
 `apps/server/src/fork/jev-hub/buckets.test.ts`: every boundary of `countBucket`,
@@ -125,8 +125,8 @@ Registry invariants come from the extension points' own tests: panel id `jev-hub
 
 ```sh
 vp test run \
-  packages/client-runtime/src/fork/jevLint.test.ts \
-  packages/client-runtime/src/fork/jevCost.test.ts \
+  packages/client-runtime/src/fork/jev-hub-lint.test.ts \
+  packages/client-runtime/src/fork/jev-hub-cost.test.ts \
   apps/server/src/fork/jev-hub/*.test.ts \
   apps/server/src/fork/decide/*.test.ts \
   apps/server/src/fork/rpcAuthorization.test.ts \

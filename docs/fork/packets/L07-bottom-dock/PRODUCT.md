@@ -53,7 +53,8 @@ need a home with status at a glance, separate from ad-hoc terminal work.
 What the user can do:
 
 - See the project's scripts (upstream's project scripts, the same list as the header's
-  script menu) as rows with icon, name and state: Idle, Running, Finished.
+  script menu) as rows with icon, name and state: Idle, Running, Finished, or Stopped (the
+  shell ended; Restart).
 - Run, Stop (sends Ctrl-C) and Restart a script. Each script runs in its own terminal
   session (`task-<script id>`), so running the dev server never takes over the user's
   shell.

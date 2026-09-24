@@ -46,8 +46,8 @@ login`" (`apps/server/src/provider/Layers/CodexProvider.ts:554`), and for Claude
 - Out:
   - Sign-in for Cursor, Grok and OpenCode (they manage their own logins; upstream's messages
     stay). Antigravity keeps upstream's flow.
-  - Gemini CLI and Copilot CLI sign-in (L17 adds those drivers; it may register its own setup
-    section later).
+  - Sign-in for L17's Copilot and custom ACP agent drivers, Gemini CLI among them (their CLIs
+    own login; L17 may register its own setup section later).
   - Account usage meters and reset credits (upstream already shows usage limits).
   - A cross-provider skill registry (L21). This packet only toggles Codex skills.
   - Continuous sync of Claude configuration into Codex; import is one-shot.
@@ -66,7 +66,8 @@ login`" (`apps/server/src/provider/Layers/CodexProvider.ts:554`), and for Claude
   messages; the in-app flow is reachable from web or desktop against the same environment.
 - Remote: supported over direct, Tailscale and T3 Connect connections. Every action is a fork
   RPC on the environment's WebSocket. Nothing reads the client's filesystem or credentials.
-- Upstream T3 server: the section shows "Needs a Loom server" and nothing else changes.
+- Upstream T3 server: the section shows "Account management needs a Loom server." and nothing
+  else changes.
 
 ## Extension points used
 
@@ -75,7 +76,7 @@ login`" (`apps/server/src/provider/Layers/CodexProvider.ts:554`), and for Claude
   the provider editor.
 - [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings): an "Accounts" section on the Loom settings page (add account, list of
   accounts per provider with status).
-- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette): "Sign in to <instance>", "Add Codex account", "Add Claude account".
+- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette): "Sign in to <instance>", "Add Codex account", "Add Claude account", "Open Codex tools".
 
 ## Packet seams
 
@@ -84,9 +85,10 @@ None. Every upstream touch goes through `ext-core`, `ext-providers`, `ext-settin
 
 ## Optional integrations
 
-- If L21 (skill registry) is present, the Codex tools page's skill list shows a link
-  "Manage all skills" that opens L21's panel. Both packets call the same Codex method
-  (`skills/config/write`), so they cannot disagree.
+- If L21 (skill registry) is present, both packets toggle Codex skills through the same Codex
+  method (`skills/config/write`), so they cannot disagree. Follow-up, not built by this
+  packet: a "Manage all skills" link on the Codex tools page's skill list that opens L21's
+  panel.
 - If L17 is present, its Copilot driver (and its generic ACP agent option) could register
   their own setup sections later; nothing in this packet depends on that. L17's model
   endpoint instances are Claude instances that set `ANTHROPIC_BASE_URL`; this packet treats

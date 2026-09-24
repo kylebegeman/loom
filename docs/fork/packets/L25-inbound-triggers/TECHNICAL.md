@@ -167,7 +167,7 @@ export const InboundTriggersSettings = Schema.Struct({
   pollIntervalMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })), // default 5
 });
 
-export class InboundTriggersError extends Schema.TaggedErrorClass<InboundTriggersError>()(
+export class InboundTriggersError extends Schema.TaggedError<InboundTriggersError>()(
   "InboundTriggersError",
   {
     reason: Schema.Literals([

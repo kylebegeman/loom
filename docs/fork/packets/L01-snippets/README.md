@@ -1,6 +1,6 @@
 # L01: Snippets library and panel
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 A saved library of reusable prompt text that lives on the environment, so it follows the
 machine to every client. Search it as you type from anywhere (a palette-style dialog with

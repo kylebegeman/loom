@@ -64,12 +64,11 @@ sits on its own line. Expected marker count in the file: 2.
 namer for parts A and D"): with no namer registered, which is the case in upstream's
 `ProviderCommandReactor.test.ts`, it returns the upstream name unchanged.
 
-Why no extension point covers it: the rename is internal orchestration behavior in a
-reactor. EXTENSION-POINTS.md, "Orchestration", allows a packet seam when no command or event
-path can express it; changing the branch name after upstream's rename would mean a second
-rename (a second `git branch -m`, a second `thread.meta.update` and a window where clients
-see the upstream name, which in a private project is exactly what must not happen), which is
-worse than one wrapped expression.
+Why no extension point covers it: the rename is internal reactor behavior that no extension
+point or existing command can change before upstream's rename. Changing the branch name after
+upstream's rename would mean a second rename (a second `git branch -m`, a second
+`thread.meta.update` and a window where clients see the upstream name, which in a private
+project is exactly what must not happen), which is worse than one wrapped expression.
 
 ### `ClaudeAdapter.ts`
 

@@ -577,8 +577,7 @@ Steps, inside `start_thread` step 5 when the agent named neither provider nor mo
    descriptor (a `select` descriptor with id `reasoningEffort` or `effort`); for each allowed
    effort that is one of the descriptor's choice ids, add option key `c<i>.<effort>`; a
    candidate with no efforts (or a model without an effort descriptor) adds `c<i>`. Keys are
-   opaque on purpose: Jev reads the criteria, not the key. At most 12 x 8 options, far under
-   Jev's 255.
+   opaque; the criteria carry the meaning. At most 12 x 8 options, far under Jev's 255.
 2. Fewer than two options: fallback with reason `no-candidates`, no Jev call.
 3. State (built in code; `task` capped at 6,000 estimated tokens with `estimateTokens`
    from `apps/server/src/fork/decide/budget.ts`, head kept; `decide` itself runs
@@ -709,8 +708,8 @@ above.
 ### Shared atoms (`packages/client-runtime/src/fork/multi-thread-runs.ts`)
 
 `createMultiThreadRunsAtoms(runtime)`: query families `list` (`staleTimeMs: 5_000`) and
-`getSettings`; commands `startCompare`, `setArchived`, `remove`, `stopRun`, `setSettings`,
-each refreshing `list` (or `getSettings`) for the environment on success.
+`getSettings`; commands `startCompare`, `setArchived`, `remove`, `stopRun`, `rank`,
+`setSettings`, each refreshing `list` (or `getSettings`) for the environment on success.
 
 ### Web (`apps/web/src/fork/multi-thread-runs/`)
 
@@ -720,7 +719,7 @@ each refreshing `list` (or `getSettings`) for the environment on success.
 | `runView.ts` (+ test)      | Pure: aggregate run status from member shells, filters (status, provider, text), sort, member title formatting.                                                                                                                                                     |
 | `RunsPanel.tsx`            | Panel `multi-thread-runs` for the current thread's project.                                                                                                                                                                                                         |
 | `CompareDialog.tsx`        | The dialog with its two modes ("Different models", "Same model, several times"); provider and model options from `deriveProviderInstanceEntries` (`apps/web/src/providerInstances.ts:94`) filtered by `isProviderInstancePickerReady` (78), models from each entry. |
-| `RankHint.tsx`             | "Rank with Jev" button, rubric dialog, result line, stale note, "Re-rank" and "Clear hint". Rendered only with the `decide` capability and the feature not Off.                                                                                                     |
+| `RankHint.tsx`             | "Rank with Jev" button, rubric dialog, result line, stale note, "Re-rank" and "Clear hint". Rendered only when `useDecideFeature(env, "multi-thread-runs.compare-rank").usable`.                                                                                    |
 | `RoutingSettings.tsx`      | Routing candidates editor (provider and model, description, allowed efforts from the model's effort descriptor) and the default rubric, inside the settings section; shown only with `decide`.                                                                      |
 | `CompareDialogHost.tsx`    | `ForkRoot` component: dialog store, `onForkCommand` for both commands.                                                                                                                                                                                              |
 | `RunsSettings.tsx`         | `ForkSettingsSection` "Multi-thread runs": toggle and two number inputs, scope-gated (reads the selected environment like upstream's General page, `apps/web/src/components/settings/useScopedSettings.ts:30`).                                                     |

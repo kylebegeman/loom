@@ -50,20 +50,24 @@ vp run --filter @t3tools/mobile typecheck # contracts changed
 Needs Kyle's permission for the dev server and browser (AGENTS.md). Use a worktree `.t3` and
 scratch homes, then real accounts only at the steps marked "with Kyle".
 
-1. Start `vp run dev` in the worktree. In Settings > Providers add a Codex instance with
-   `CODEX_HOME` = `.t3/scratch/codex-home` and a Claude instance with `CLAUDE_CONFIG_DIR` =
-   `.t3/scratch/claude-config`. Their editors show the Account section, "Not signed in".
+1. Start `vp run dev` in the worktree. In Settings > Providers set the default Codex
+   instance's `CODEX_HOME` (`homePath`) to `.t3/scratch/codex-home` in the worktree settings
+   (it becomes the shared home for step 5), and add a Claude instance with
+   `CLAUDE_CONFIG_DIR` = `.t3/scratch/claude-config`. Their editors show the Account section,
+   "Not signed in".
 2. Codex device code (with Kyle): start, approve on a phone, see "Signed in as ...". Sign
-   out. Start again and Cancel; the row returns to idle with "Sign-in cancelled."
+   out and confirm the prompt. Start again and Cancel; the row returns to idle with
+   "Sign-in cancelled."
 3. Codex browser from a second device (with Kyle): share the dev server over the tailnet
    (`vp run dev --share`), start browser sign-in on the laptop, let the last page fail, paste
    the `localhost` URL, see success.
 4. Claude (with Kyle): start subscription sign-in, open the link, paste the code Claude shows,
    see the email. This is the step that proves `claude auth login` accepts a piped code; if
    it does not, switch to the pseudo-terminal fallback before going further.
-5. Add account: Accounts > Add Codex account with the scratch shared home; confirm the
-   suggested folder, create, sign in; start a thread on the first instance and continue it on
-   the new one from the model picker.
+5. Add account: Accounts > Add Codex account (its shared home is the scratch home from step
+   1); check the suggested folder, then use **Change folder** to put the shadow home at the
+   worktree's `.t3/scratch/codex-shadow`; create, sign in; start a thread on the first
+   instance and continue it on the new one from the model picker.
 6. Credential store: set `cli_auth_credentials_store = "keyring"` in the scratch shared
    `config.toml` (with a few other keys, comments and a table); the notice appears for the
    shadow instance; **Use file storage** shows the exact old and new line and the backup

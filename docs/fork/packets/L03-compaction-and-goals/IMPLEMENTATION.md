@@ -1,7 +1,7 @@
 # L03 implementation plan
 
-Ordered steps for one agent. Each step leaves the tree compiling. Compaction (steps 2 and 8)
-is independent of goals and can ship first if Kyle wants it early.
+Ordered steps for one agent. Each step leaves the tree compiling. Compaction (step 2) is
+independent of goals and can ship first if Kyle wants it early.
 
 ## Before starting
 
@@ -71,7 +71,7 @@ Typecheck `@t3tools/contracts`.
    "Set goal" or "Edit goal", and state items according to the current goal.
 6. Clear shows a toast with Undo, which calls `setGoal` with the returned objective and state.
 7. `ext-composer`: run its existence check
-   (`git grep -c 'fork: ext-composer' -- apps/web/src/components/chat/ChatComposer.tsx`
+   (`git grep -cE 'fork: ext-composer([^a-z0-9-]|$)' -- apps/web/src/components/chat/ChatComposer.tsx`
    prints 5); if missing, create it exactly as EXTENSION-POINTS.md section 11 specifies, in
    its own commit with its FORK.md row. Then `GoalComposerButton.tsx` (TECHNICAL.md,
    Clients) and its `FORK_COMPOSER_BLOCKS` entry.

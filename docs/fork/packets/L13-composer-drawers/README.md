@@ -1,6 +1,6 @@
 # L13: Composer drawers
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 One "Composer tools" drawer that opens above the composer with four tabs:
 
@@ -60,7 +60,7 @@ Selection items: P15 (Composer drawers) and the clipboard part of F8, see
 
 - [`ext-composer`](../EXTENSION-POINTS.md#11-composer-ext-composer) (footer block and drawer).
 - [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core) (the shell RPC, capability `composer-drawers`).
-- [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings) (clipboard history settings).
+- [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings) (clipboard history and shell defaults).
 - [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) and [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (commands).
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette) (palette items).
 
@@ -73,13 +73,13 @@ None. See [SEAMS.md](./SEAMS.md).
 ## Optional integrations
 
 - If L01 (Snippets) is present, both register composer drawers; ext-composer shows the
-  first open drawer, and each closes when the other opens (they never stack).
+  first open drawer, so they never overlap.
 - If L14's model presets are present, a preset can be applied while Once is armed; it is
   just another composer model change and is reverted like any other.
 
 ## Size estimate
 
-Medium: about 1,300 to 1,700 lines including tests (drawer shell and tabs about 700,
+Medium: about 1,700 to 2,000 lines including tests (drawer shell and tabs about 700,
 Once controller about 250, clipboard capture and filters about 250, shell RPC and service
 about 250, glue and settings about 150, tests about 250).
 

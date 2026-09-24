@@ -24,20 +24,21 @@ web pages, and leaves slicing and printers to the separate Fabrication app.
 - Capture the current view, or a sheet of four standard views, into the composer, so the next
   message shows the agent the part.
 - Configure OpenSCAD (path, backend, timeout, colors), the build plate (Bambu Lab H2D, Bambu Lab
-  H2C, Anycubic Kobra S1, or a custom size), the maximum file size, and an optional Fabrication
-  app link in Loom settings.
-- Let agents render a model to PNG views with `loom_model_preview_3d_render`.
+  H2C, Anycubic Kobra S1, or a custom size), the maximum file size, an optional Fabrication app
+  link, and "Let agents render models" in Loom settings.
+- Let agents render a model to PNG views with `loom_model_preview_3d_render` (on by default;
+  "Let agents render models" turns it off).
 
 ## Entry points
 
-| Entry                                                                                                                                               | What it does                                                                                       | Way out / state                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| Right panel launcher and "+" menu: "3D model" (letter `O`)                                                                                          | Opens the panel's file picker; choosing a file opens a tab for it.                                 | Close the tab; the file watch stops. |
-| Command palette: "3D model: Open file..." (submenu of model files), "3D model: Capture view", "3D model: Capture four views", "3D model: Re-render" | As named; hidden when the feature is absent.                                                       | n/a                                  |
-| Keybinding commands `loom.model-preview-3d.open`, `loom.model-preview-3d.capture`                                                                   | Unbound by default.                                                                                | Same as the palette.                 |
-| Settings, Loom page, "3D model" section                                                                                                             | OpenSCAD detection and options, limits, build plate preset, Fabrication URL, "Clear render cache". | Toggle back.                         |
-| Composer                                                                                                                                            | Captures are attached as images.                                                                   | Remove the attachment.               |
-| Agent tool                                                                                                                                          | `loom_model_preview_3d_render`.                                                                    | n/a (read-only tool).                |
+| Entry                                                                                                                                               | What it does                                                                                                                   | Way out / state                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
+| Right panel launcher and "+" menu: "3D model" (letter `O`)                                                                                          | Opens the panel's file picker; choosing a file opens a tab for it.                                                             | Close the tab; the file watch stops. |
+| Command palette: "3D model: Open file..." (submenu of model files), "3D model: Capture view", "3D model: Capture four views", "3D model: Re-render" | As named; hidden when the feature is absent.                                                                                   | n/a                                  |
+| Keybinding commands `loom.model-preview-3d.open`, `loom.model-preview-3d.capture`                                                                   | Unbound by default.                                                                                                            | Same as the palette.                 |
+| Settings, Loom page, "3D model" section                                                                                                             | OpenSCAD detection and options, limits, build plate preset, Fabrication URL, "Let agents render models", "Clear render cache". | Toggle back.                         |
+| Composer                                                                                                                                            | Captures are attached as images.                                                                                               | Remove the attachment.               |
+| Agent tool                                                                                                                                          | `loom_model_preview_3d_render`.                                                                                                | n/a (read-only tool).                |
 
 ## States
 
@@ -51,8 +52,8 @@ web pages, and leaves slicing and printers to the separate Fabrication app.
   "stale" badge.
 - **Too large**: "This file is 212 MB; the limit is 150 MB." with "Load anyway".
 - **Unsupported**: Draco-compressed glTF, WebGL unavailable.
-- **STEP file**: "STEP files open in the Fabrication app." with "Open in Fabrication" when its
-  URL is set.
+- **STEP file**: "STEP files are not previewed here; open them in the Fabrication app (STEP
+  import is planned there)." with "Open in Fabrication" when its URL is set.
 - **Larger than the build volume**: the status bar shows "Larger than the Bambu Lab H2D build
   volume (350 x 320 x 325 mm)" next to the dimensions. Informational only.
 - **File gone**: "The file was deleted or moved." with the picker.

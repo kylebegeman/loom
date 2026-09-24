@@ -24,7 +24,7 @@ them as one compact drawer.
   pickers. Send. The composer switches back right away, and the thread's stored settings
   switch back when that turn finishes. "Cancel" switches back without sending.
 - Schema: paste or write a JSON Schema, or pick a saved one; "Add to prompt" appends
-  "Respond with only JSON that matches this schema:" and the schema in a fenced block.
+  "Respond with only JSON that matches this JSON Schema:" and the schema in a fenced block.
   "Save" keeps it for later (up to 10).
 - Shell: type a command and press mod+Enter. It runs in the thread's workspace (its
   worktree when it has one) on the thread's environment. See the exit code, duration and
@@ -37,15 +37,15 @@ them as one compact drawer.
 
 ## Entry points
 
-| Way in                                       | What happens                                                                                                                   | Way out                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| Composer footer tools button (wrench icon)   | Opens the drawer on the last used tab.                                                                                         | Same button, Escape, or sending.                   |
-| Keybinding `loom.composer-drawers.tools`     | Toggles the drawer.                                                                                                            | Same key or Escape.                                |
-| Keybinding `loom.composer-drawers.once`      | Arms Once (opens the drawer on Once); again cancels.                                                                           | Same key, "Cancel", or sending.                    |
-| Keybinding `loom.composer-drawers.shell`     | Opens the drawer on Shell with the input focused.                                                                              | Escape.                                            |
-| Keybinding `loom.composer-drawers.clipboard` | Opens the drawer on Clipboard.                                                                                                 | Escape.                                            |
-| Command palette                              | "Composer tools", "Next message only", "Run a shell command for the prompt", "Clipboard history", "Clear clipboard history".   | As above.                                          |
-| Settings > Loom > Composer drawers           | Clipboard history on or off, remember across restarts, read on focus (desktop), clear; shell default timeout and output limit. | Switch off (also clears); pick the defaults again. |
+| Way in                                       | What happens                                                                                                                                          | Way out                                            |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| Composer footer tools button (wrench icon)   | Opens the drawer on the last used tab.                                                                                                                | Same button, Escape, or sending.                   |
+| Keybinding `loom.composer-drawers.tools`     | Toggles the drawer.                                                                                                                                   | Same key or Escape.                                |
+| Keybinding `loom.composer-drawers.once`      | Arms Once (opens the drawer on Once); again cancels.                                                                                                  | Same key, "Cancel", or sending.                    |
+| Keybinding `loom.composer-drawers.shell`     | Opens the drawer on Shell with the input focused.                                                                                                     | Escape.                                            |
+| Keybinding `loom.composer-drawers.clipboard` | Opens the drawer on Clipboard.                                                                                                                        | Escape.                                            |
+| Command palette                              | "Composer tools", "Next message only", "Run a shell command for the prompt", "Clipboard history", "Clear clipboard history".                          | As above.                                          |
+| Settings > Loom > Composer drawers           | Clipboard history on or off, remember across restarts, read on focus (desktop), clear; shell default timeout and output limit, clear recent commands. | Switch off (also clears); pick the defaults again. |
 
 All keybindings are unbound by default.
 
@@ -57,7 +57,8 @@ All keybindings are unbound by default.
   Check its model and access level."
 - Once unavailable: in a new (draft) thread: "Pick settings for a new thread directly;
   Once is for follow-up messages." While a turn is running: "Available when the thread is
-  idle."
+  idle." While the agent is waiting for an answer to its question: "Available after you
+  answer the agent's question."
 - Schema: invalid JSON shows the parse error under the editor and disables "Add to
   prompt". A schema that is valid JSON but not an object or boolean shows "A JSON Schema
   is an object."
@@ -68,6 +69,8 @@ All keybindings are unbound by default.
   64 KB." (the configured limit).
 - Shell unavailable: on an upstream server, "Running commands needs a Loom server."; with
   no workspace (thread without a project path), "This thread has no workspace to run in."
+- Shell failed: the command could not start, or the environment does not know the thread
+  or project: "Couldn't run the command: <message>".
 - Clipboard off: the tab explains the feature and has "Turn on" (goes to settings, or
   toggles inline).
 - Clipboard empty: "Nothing copied yet."
@@ -83,11 +86,13 @@ All keybindings are unbound by default.
   block.
 - Shell: placeholder "Command to run in the workspace"; buttons "Run", "Attach"; timeout
   select "10 s", "30 s", "1 min", "2 min", "5 min", "10 min", preselected to the default
-  from settings. Attached block header: `` `$ command` exited with 0 in 1.2 s ``.
+  from settings. Attached block header:
+  `` `$ command` exited with 0 in 1.2 s (cwd: ~/proj) ``.
 - Settings, shell: "Default timeout" (same choices, default "30 s"), description "How long
   a command may run before Loom stops it. You can change it per run."; "Output limit"
   ("64 KB", "256 KB", "512 KB", "1 MB", default "64 KB"), description "Output beyond this
-  is cut off. Applies to standard output and errors separately."
+  is cut off. Applies to standard output and errors separately."; button "Clear recent
+  commands".
 - Clipboard: "Recent clipboard", "Clear all", per item "Insert", "Delete". Footer: "Stored
   on this device only."
 

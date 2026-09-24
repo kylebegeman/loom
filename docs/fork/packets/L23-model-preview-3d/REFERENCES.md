@@ -4,9 +4,10 @@ Sources for this packet. Treat external repositories as references, not code to 
 
 ## Old Loom
 
-"3D modeling with Blender and OpenSCAD, for 3D printing" is under consideration in
-[selections.md](../../selections.md). Old Loom has no 3D code: no three.js, OpenSCAD, Blender,
-manifold or OCCT dependencies, no model parser or viewer. Related remains, all dropped:
+"3D modeling with Blender and OpenSCAD, for 3D printing": 3D preview (L23), split out in
+[selections.md](../../selections.md) (Outcomes); the workbench is the Fabrication app. Old
+Loom has no 3D code: no three.js, OpenSCAD, Blender, manifold or OCCT dependencies, no model
+parser or viewer. Related remains, all dropped:
 
 | File                                                                                                                                                                                                                                                                                              | Note                                                                                   |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |

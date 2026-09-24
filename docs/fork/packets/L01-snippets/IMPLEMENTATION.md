@@ -15,8 +15,8 @@ start dev servers or browsers without Kyle's permission.
 ```
 packages/contracts/src/fork/snippets.ts
 packages/client-runtime/src/fork/snippets.ts
-packages/client-runtime/src/fork/snippetsEngine.ts
-packages/client-runtime/src/fork/snippetsEngine.test.ts
+packages/client-runtime/src/fork/snippets-engine.ts
+packages/client-runtime/src/fork/snippets-engine.test.ts
 apps/server/src/fork/snippets/migrations.ts
 apps/server/src/fork/snippets/SnippetStore.ts
 apps/server/src/fork/snippets/SnippetService.ts
@@ -33,6 +33,7 @@ apps/web/src/fork/snippets/composerBridge.ts
 apps/web/src/fork/snippets/fillInDrawer.tsx
 apps/web/src/fork/snippets/fillInStore.ts
 apps/web/src/fork/snippets/composerMenu.ts
+apps/web/src/fork/snippets/composerMenu.test.ts
 apps/web/src/fork/snippets/terminalSend.ts
 apps/web/src/fork/snippets/terminalSend.test.ts
 apps/web/src/fork/snippets/palette.tsx
@@ -49,7 +50,7 @@ docs/fork/user/snippets.md
 2. Contracts: write `packages/contracts/src/fork/snippets.ts` from TECHNICAL.md. Export it
    from `fork/index.ts`, merge `SnippetsRpcGroup` in `fork/rpc.ts`, set
    `ForkSubscriptionRpcTag`. Typecheck `@t3tools/contracts`.
-3. Engine: `snippetsEngine.ts` with `parseSnippetFields`, `expandSnippet`, `rankSnippets`,
+3. Engine: `snippets-engine.ts` with `parseSnippetFields`, `expandSnippet`, `rankSnippets`,
    `findExactAlias`, `parseSnippetArtifacts`, `buildSnippetArtifact`,
    `convertLegacyBraces`, plus the test file (TESTING.md lists cases). Test-first here:
    these are pure and carry most of the subtle behavior.

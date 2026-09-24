@@ -1,6 +1,6 @@
 # L06: Source control cockpit
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 A "Source control" right panel for the current thread's branch. It answers the questions
 upstream leaves scattered or unanswered: which branch and worktree this thread is on, which
@@ -72,8 +72,8 @@ None. All upstream behavior is reused through exported stores, hooks and RPCs.
 
 - If L19 (project lifecycle) is present, the lane card shows "Park this project" for the
   thread's project when the lane is clean, linking to `/loom/repositories?park=<projectId>`.
-- If L15 (AI code review) is present, the Checks view may offer its review action; not
-  required.
+- Follow-up, not built by this packet: if L15 (AI code review) is present, the Checks view
+  may offer its review action; not required.
 
 ## Size estimate
 

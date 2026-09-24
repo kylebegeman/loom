@@ -1,6 +1,6 @@
 # L27: Utilities catalog
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Twenty-nine small developer tools that run entirely in the client, offline: encoders and
 decoders, JWT decode, hashes and HMAC, color, case, number and timestamp conversion, a cron

@@ -97,7 +97,8 @@ On narrow composer layouts the control can be hidden by the composer's overflow 
 - Problems heading: "Files that are not modes". Row reasons: "No name in the frontmatter",
   "The frontmatter is not valid YAML", "Rules are longer than 4,000 characters", "The file
   name must be lowercase letters, numbers and dashes, ending in .md", "File is larger than
-  20 KB".
+  20 KB", "The name is longer than 60 characters", "The description is longer than 200
+  characters", "Too many files (Loom reads the first 200)", "Loom cannot read this file".
 - Missing mode in the composer menu: "<id> (file not found)" with "Remove".
 - Size warning in the editor above 2,000 characters: "Long modes use context on every turn."
 - Conflict on save: "This mode changed on disk since you opened it. Reload or overwrite."

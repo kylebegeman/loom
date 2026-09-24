@@ -67,6 +67,9 @@ With Kyle's permission for the dev server, browser and (separately) installing a
 10. Remote: over `vp run dev --share` from a second browser, thumbnails and videos load.
 11. Upstream server: the Device panel toolbar shows no extra buttons; the launcher entry is
     disabled with its hint.
+12. Physical device (only if an iPhone is connected): open Device QA from the Device panel
+    toolbar on it; the Flows tab shows "Flows run on simulators and emulators in this version."
+    and offers the booted simulators.
 
 ## Merge safety
 

@@ -73,11 +73,12 @@ unrelated). Remote and upstream servers: supported (client-only).
 ## Decisions
 
 - Client-only, like old Loom's inspector: no RPCs, no persisted state.
-- The card is anchored under its header button and rendered in a portal, so it needs one
-  header seam and nothing in the chat layout.
+- The card is opened by its header button, docked under the header at the chat's top-right
+  corner and rendered in a portal, so it needs one header seam and nothing in the chat
+  layout.
 - Light dismissal only, confirmed by Kyle (and his last recorded direction for old Loom's
-  card, ledger 1359): the eye button is the only way in, and the first interaction
-  elsewhere closes it. There is no pin on the card; the panel tab is the keep-open view for
-  long watching.
+  card, ledger 1359): the card opens from the eye button, the palette or its keybinding,
+  and the first interaction elsewhere closes it. There is no pin on the card; the panel tab
+  is the keep-open view for long watching.
 - Compact density (Status and Attention first, other sections collapsed to one line each)
   when the window is narrower than 900 px.

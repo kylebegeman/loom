@@ -392,8 +392,8 @@ cwd = workspace root; env = process.env + { DO_NOT_TRACK: "1" }
 `artifacts` (role to path or null after `--output` materialization). `FlowReport`: `flow`,
 `device`, `executionPrerequisite`, `ok`, `passed`, `failed`, `skipped`, `errored`, `steps`,
 `startedAt`, `durationMs`. Decode with lenient schemas (unknown keys allowed, all but `status`
-optional) so an argent upgrade degrades instead of breaking. Lines that are not JSON are kept in
-`<runDir>/stderr.txt`-style side log and ignored.
+optional) so an argent upgrade degrades instead of breaking. Lines that are not JSON are appended
+to `<runDir>/output.log` and otherwise ignored.
 
 `--json-stream` supports a single flow only (argent rejects it for directories), which is why
 Loom expands folders into paths and runs them one by one. Exit code 0 means the flow passed, 1

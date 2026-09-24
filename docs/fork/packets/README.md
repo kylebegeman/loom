@@ -22,8 +22,9 @@ Read these before touching a packet:
 
 No packet depends on another packet. A packet may depend on an extension point, and an
 extension point is created by whichever packet needs it first, byte for byte as
-EXTENSION-POINTS.md specifies it. Two packets built in parallel therefore create identical
-extension point commits, and the second one to land drops its copy.
+EXTENSION-POINTS.md specifies it (except where a section says it is not yet verbatim). Two
+packets built in parallel therefore create identical extension point commits, and the second
+one to land drops its copy.
 
 If a packet seems to need another packet's feature, the design is wrong: either the shared
 part belongs in an extension point (propose the change to EXTENSION-POINTS.md first), or the
@@ -65,9 +66,9 @@ packet should degrade gracefully when the other feature is absent.
 selection to its packet. "Extension points" lists what the packet's README says it uses, in
 short codes: `core` server core (RPC, server layer, storage, capabilities), `root` web root,
 `panels`, `settings`, `palette`, `keys` keybindings, `mcp`, `composer`, `composer-menu`,
-`desktop`, `providers`, `turn-input`, `diff-header`, `decide` (decisions with Jev). `core*` means the packet registers
-nothing in server core and needs it only as the prerequisite of `panels` or `palette`. Right
-panel launcher letters are assigned in
+`desktop`, `providers`, `turn-input`, `diff-header`, `decide` (decisions with Jev). `core*`
+means the packet registers nothing in server core and needs it only as the prerequisite of
+`panels`, `palette` or `keys`. Right panel launcher letters are assigned in
 [EXTENSION-POINTS.md, "Launcher letters"](./EXTENSION-POINTS.md#launcher-letters).
 
 | ID  | Packet                                                    | Summary                                                                                                                    | Selection                    | Extension points                                                                | Status         |
@@ -84,19 +85,19 @@ panel launcher letters are assigned in
 | L10 | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                          | core, root, panels, settings, palette, keys, mcp                                | Ready to build |
 | L11 | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                          | core, root, panels, settings, palette, keys, mcp, desktop                       | Ready to build |
 | L12 | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                          | core\*, root, panels, settings, palette, keys                                   | Ready to build |
-| L13 | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard)          | core, root, settings, palette, keys, composer                                   | Ready to build |
-| L14 | [`chat-conveniences`](./L14-chat-conveniences/)           | Find in thread, Mermaid diagrams, model presets with an optional Jev Auto preset, and questions that do not stop the turn. | F8                           | core, root, settings, palette, keys, mcp, composer, decide                      | Ready to build |
+| L13 | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard history)  | core, root, settings, palette, keys, composer                                   | Ready to build |
+| L14 | [`chat-conveniences`](./L14-chat-conveniences/)           | Find in thread, Mermaid diagrams, model presets with an optional Jev Auto preset, and questions that do not stop the turn. | F8 (the rest)                | core, root, settings, palette, keys, mcp, composer, decide                      | Ready to build |
 | L15 | [`ai-code-review`](./L15-ai-code-review/)                 | A second model reviews changes and chosen findings go back to be fixed.                                                    | F3                           | core, root, panels, settings, palette, keys, mcp, composer, diff-header, decide | Ready to build |
 | L16 | [`provider-sign-in`](./L16-provider-sign-in/)             | Sign Codex and Claude accounts in and out inside Loom, add accounts, manage Codex tools.                                   | F5                           | core, settings, palette, providers                                              | Ready to build |
 | L17 | [`more-providers`](./L17-more-providers/)                 | DeepSeek, Ollama and LM Studio endpoints, custom ACP agents (Gemini CLI among them), and Copilot.                          | F6                           | core, settings, palette, providers                                              | Ready to build |
-| L18 | [`project-profiles`](./L18-project-profiles/)             | Private per-project agent notes, command mappings, token budgets, and `.env.schema` status.                                | F11                          | core, root, panels, settings, palette, mcp, composer-menu                       | Ready to build |
+| L18 | [`project-profiles`](./L18-project-profiles/)             | Private per-project agent notes, command mappings, token budgets, and `.env.schema` status.                                | F11                          | core, root, panels, settings, palette, mcp, composer, composer-menu             | Ready to build |
 | L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | A Repositories page to clone, adopt, park safely and reopen GitHub checkouts.                                              | F12                          | core, root, settings, palette, keys                                             | Ready to build |
 | L20 | [`small-extras`](./L20-small-extras/)                     | A worktree branch prefix, a per-project No AI identification mode, a containers panel, and CLI tool versions.              | F23                          | core, root, panels, settings, palette, turn-input, decide                       | Ready to build |
 | L21 | [`skill-registry`](./L21-skill-registry/)                 | See, toggle, install and create agent skills across providers and accounts in one panel.                                   | Skill registry               | core, root, panels, palette, keys                                               | Ready to build |
-| L22 | [`instruction-modes`](./L22-instruction-modes/)           | Reusable rule packs such as "Minimal code" applied to every turn of a thread, for any provider.                            | Repository review            | core, settings, palette, keys, composer, turn-input                             | Ready to build |
+| L22 | [`instruction-modes`](./L22-instruction-modes/)           | Reusable rule packs such as "Minimal code" applied to every turn of a thread, for any provider.                            | Repository review            | core, root, settings, palette, keys, composer, turn-input                       | Ready to build |
 | L23 | [`model-preview-3d`](./L23-model-preview-3d/)             | Preview STL, 3MF, OBJ, glTF and OpenSCAD models beside the chat, with live reload.                                         | 3D preview                   | core, root, panels, settings, palette, keys, mcp                                | Ready to build |
 | L24 | [`pcb-preview`](./L24-pcb-preview/)                       | View KiCad and tscircuit schematics and boards beside the chat and run ERC and DRC.                                        | PCB preview                  | core, root, panels, settings, palette, keys                                     | Ready to build |
-| L25 | [`inbound-triggers`](./L25-inbound-triggers/)             | Start threads from GitHub events (assigned issues, mentions, review requests, CI failures).                                | Repository review            | core, root, settings, palette, keys                                             | Ready to build |
+| L25 | [`inbound-triggers`](./L25-inbound-triggers/)             | Start threads from assigned or labeled GitHub issues, mentions and review requests; send CI failures to the owning thread. | Repository review            | core, root, settings, palette, keys                                             | Ready to build |
 | L26 | [`code-graph`](./L26-code-graph/)                         | A local code graph to browse symbols, see the blast radius of changes, and let agents query it.                            | Repository review            | core, root, panels, settings, palette, mcp, diff-header                         | Ready to build |
 | L27 | [`utilities`](./L27-utilities/)                           | Twenty-nine offline developer tools (encoders, JWT decode, hashes, regex, subnet and chmod calculators) in a panel.        | F4                           | core\*, root, panels, palette, keys                                             | Ready to build |
 | L28 | [`auto-resume`](./L28-auto-resume/)                       | Continue a thread automatically after a provider usage limit resets, or on another account.                                | F7                           | core, settings, palette, composer                                               | Ready to build |

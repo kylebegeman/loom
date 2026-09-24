@@ -2,8 +2,8 @@
 
 ## Old Loom
 
-"Skill registry, manager and creation lab" is under consideration in
-[selections.md](../../selections.md). `bagelvault/loom` at `a79ec506` had a much heavier
+"Skill registry, manager and creation lab" was selected as packet L21 in
+[selections.md](../../selections.md) (Outcomes). `bagelvault/loom` at `a79ec506` had a much heavier
 design: skills as governed objects with lifecycle receipts, a metadata-only "Skill Source
 Registry" with review and promotion, and a generator-based authoring studio.
 

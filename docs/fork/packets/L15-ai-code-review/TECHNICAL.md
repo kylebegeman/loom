@@ -93,8 +93,9 @@ ones to use; constants are named so they can be tuned in one place.
 Start dialog / palette / diff button / chip / agent tool
         |
         v
-AiCodeReviewService.prepare -> target diff, stats, estimate, defaults, Auto pick (Jev)
-AiCodeReviewService.start   -> review row + one run per reviewer
+AiCodeReviewService.prepare     -> target diff, stats, estimate, defaults
+AiCodeReviewService.resolveAuto -> Auto pick (Jev) for the dialog's Auto slots
+AiCodeReviewService.start       -> review row + one run per reviewer
         |  thread.create + thread.turn.start (approval-required, server-built brief)
         v
 Reviewer threads (ordinary threads, any provider)
@@ -117,6 +118,7 @@ suggestion is a reactor on `thread.turn-diff-completed`; cleanup follows `thread
 ```ts
 export const AI_CODE_REVIEW_WS_METHODS = {
   prepare: "loom.ai-code-review.prepare",
+  resolveAuto: "loom.ai-code-review.resolveAuto",
   start: "loom.ai-code-review.start",
   cancel: "loom.ai-code-review.cancel",
   askAgain: "loom.ai-code-review.askAgain",
@@ -401,25 +403,28 @@ Defaults (`AI_CODE_REVIEW_DEFAULT_SETTINGS`): no default reviewers, no candidate
 
 ### RPCs
 
-| Tag                     | Input                                                                                                       | Output                                                                                                                                                                                        | Scope                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `prepare`               | `{ sourceThreadId, target, resolveAuto: boolean }`                                                          | `{ targetLabel, resolvedBaseRef, estimate, noChanges, sourceBusy, reviewRunning, turns, recentCommits, reviewers: Array<{ slot, resolved?: StartReviewer, sameAsAuthor }>, lensesAvailable }` | `orchestration:read`    |
-| `start`                 | `{ sourceThreadId, target, instructions?, reviewers: Array<StartReviewer> (1 to 3), lenses, confirmLarge }` | `{ reviewId }`                                                                                                                                                                                | `orchestration:operate` |
-| `cancel`                | `{ reviewId }`                                                                                              | `{}`                                                                                                                                                                                          | `orchestration:operate` |
-| `askAgain`              | `{ runId }`                                                                                                 | `{}`                                                                                                                                                                                          | `orchestration:operate` |
-| `subscribeThread`       | `{ sourceThreadId }`                                                                                        | stream of `ThreadReviewsSnapshot` (`ForkSubscriptionRpcTag`)                                                                                                                                  | `orchestration:read`    |
-| `get`                   | `{ reviewId }`                                                                                              | `ReviewDetail`                                                                                                                                                                                | `orchestration:read`    |
-| `setGroupState`         | `{ reviewId, groupIds, state }`                                                                             | `{}`                                                                                                                                                                                          | `orchestration:operate` |
-| `getHandBack`           | `{ reviewId, groupIds }`                                                                                    | `Array<{ groupId, file, startLine, endLine, lines: string or null, text }>`                                                                                                                   | `orchestration:operate` |
-| `dismissSuggestion`     | `{ threadId }`                                                                                              | `{}`                                                                                                                                                                                          | `orchestration:operate` |
-| `getSettings`           | `{}`                                                                                                        | `{ settings, impeccable: { available, path } }`                                                                                                                                               | `orchestration:read`    |
-| `updateSettings`        | `AiCodeReviewSettings`                                                                                      | `AiCodeReviewSettings`                                                                                                                                                                        | `orchestration:operate` |
-| `getProjectSettings`    | `{ projectId }`                                                                                             | `AiCodeReviewProjectSettings`                                                                                                                                                                 | `orchestration:read`    |
-| `updateProjectSettings` | `AiCodeReviewProjectSettings`                                                                               | `AiCodeReviewProjectSettings`                                                                                                                                                                 | `orchestration:operate` |
+| Tag                     | Input                                                                                                       | Output                                                                                                                                                              | Scope                   |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `prepare`               | `{ sourceThreadId, target }`                                                                                | `{ targetLabel, resolvedBaseRef, estimate, noChanges, sourceBusy, reviewRunning, turns, recentCommits, reviewers: Array<{ slot, sameAsAuthor }>, lensesAvailable }` | `orchestration:read`    |
+| `resolveAuto`           | `{ sourceThreadId, target, slots: Array<ReviewerSlot> (1 to 3) }`                                           | `{ reviewers: Array<{ slot, resolved?: StartReviewer }> }` (`resolved` set for each Auto slot)                                                                      | `orchestration:operate` |
+| `start`                 | `{ sourceThreadId, target, instructions?, reviewers: Array<StartReviewer> (1 to 3), lenses, confirmLarge }` | `{ reviewId }`                                                                                                                                                      | `orchestration:operate` |
+| `cancel`                | `{ reviewId }`                                                                                              | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `askAgain`              | `{ runId }`                                                                                                 | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `subscribeThread`       | `{ sourceThreadId }`                                                                                        | stream of `ThreadReviewsSnapshot` (`ForkSubscriptionRpcTag`)                                                                                                        | `orchestration:read`    |
+| `get`                   | `{ reviewId }`                                                                                              | `ReviewDetail`                                                                                                                                                      | `orchestration:read`    |
+| `setGroupState`         | `{ reviewId, groupIds, state }`                                                                             | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `getHandBack`           | `{ reviewId, groupIds }`                                                                                    | `Array<{ groupId, file, startLine, endLine, lines: string or null, text }>`                                                                                         | `orchestration:operate` |
+| `dismissSuggestion`     | `{ threadId }`                                                                                              | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `getSettings`           | `{}`                                                                                                        | `{ settings, impeccable: { available, path } }`                                                                                                                     | `orchestration:read`    |
+| `updateSettings`        | `AiCodeReviewSettings`                                                                                      | `AiCodeReviewSettings`                                                                                                                                              | `orchestration:operate` |
+| `getProjectSettings`    | `{ projectId }`                                                                                             | `AiCodeReviewProjectSettings`                                                                                                                                       | `orchestration:read`    |
+| `updateProjectSettings` | `AiCodeReviewProjectSettings`                                                                               | `AiCodeReviewProjectSettings`                                                                                                                                       | `orchestration:operate` |
 
 All tags are `loom.ai-code-review.<name>` and every error union includes
 `EnvironmentAuthorizationError` (EXTENSION-POINTS.md, server core). `getHandBack` reads file
 contents from the checkout, so it takes the operate scope like the action it belongs to.
+`prepare` never calls Jev; `resolveAuto` does, and every sent Jev request is paid and logged
+in `fork_decide_decisions`, so it takes the operate scope like `start`.
 Jev availability is not part of L15's RPCs: the web asks
 `useDecideFeature(environmentId, "ai-code-review.reviewer-pick")`
 (`apps/web/src/fork/decide/state.ts`) and offers "Auto (Jev)" only when `usable` is true,
@@ -427,23 +432,23 @@ hiding it entirely when `supported` is false.
 
 ### Server layout (`apps/server/src/fork/ai-code-review/`)
 
-| File                     | Role                                                                                                                  |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `migrations.ts`          | `AiCodeReviewMigrations` (slug `ai-code-review`, tracking table `fork_migrations_ai_code_review`).                    |
-| `AiCodeReviewStore.ts`   | Repository for the tables in [Storage](#storage).                                                                     |
-| `targetDiff.ts`          | Diff text, refs and label per target (below).                                                                         |
-| `diffStats.ts`           | Pure: parse a unified diff into files, additions, deletions, languages, file kinds, size bucket; token estimate.      |
-| `ReviewBrief.ts`         | Pure: the reviewer brief per target, lenses, instructions and optional impact summary.                                |
-| `findingValidation.ts`   | Pure plus a file probe: path normalization, checkout containment, line clamping, per-run dedupe.                      |
-| `fallbackParser.ts`      | Pure: the last fenced `json` block of a reviewer's final message, decoded with `ReviewSubmitInput`.                   |
-| `mergeRule.ts`           | Pure: candidate pairs, the deterministic "same issue" rule, union-find, group fields.                                 |
-| `effort.ts`              | Pure: preset ranges, level order, mapping a level to a model's provider option.                                       |
-| `decide.ts`              | `aiCodeReviewDecideFeatures` for `ext-decide` and the pure state and question builders for each feature.              |
-| `impeccable.ts`          | Binary lookup, argv builder (pure), run, JSON to findings mapping.                                                    |
-| `integrations.ts`        | Optional L02 lineage row, L18 reviewer binding, L26 impact summary; each a no-op when the other packet is absent.     |
-| `AiCodeReviewService.ts` | `Context.Service`: prepare, start, cancel, ask again, submit handling, turn-end handling, merge, hand-back, settings. |
-| `AiCodeReviewReactor.ts` | `Layer.effectDiscard` with `forkParked`: domain event watcher, startup reconciliation, suggestions, cleanup.          |
-| `rpc.ts`, `mcp.ts`       | RPC handlers and the two MCP tools.                                                                                   |
+| File                     | Role                                                                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `migrations.ts`          | `AiCodeReviewMigrations` (slug `ai-code-review`, tracking table `fork_migrations_ai_code_review`).                                  |
+| `AiCodeReviewStore.ts`   | Repository for the tables in [Storage](#storage).                                                                                   |
+| `targetDiff.ts`          | Diff text, refs and label per target (below).                                                                                       |
+| `diffStats.ts`           | Pure: parse a unified diff into files, additions, deletions, languages, file kinds, size and file-count buckets; token estimate.    |
+| `ReviewBrief.ts`         | Pure: the reviewer brief per target, lenses, instructions and optional impact summary.                                              |
+| `findingValidation.ts`   | Pure plus a file probe: path normalization, checkout containment, line clamping, per-run dedupe.                                    |
+| `fallbackParser.ts`      | Pure: the last fenced `json` block of a reviewer's final message, decoded with `ReviewSubmitInput`.                                 |
+| `mergeRule.ts`           | Pure: candidate pairs, the deterministic "same issue" rule, union-find, group fields.                                               |
+| `effort.ts`              | Pure: preset ranges, level order, mapping a level to a model's provider option.                                                     |
+| `decide.ts`              | `aiCodeReviewDecideFeatures` for `ext-decide` and the pure state and question builders for each feature.                            |
+| `impeccable.ts`          | Binary lookup, argv builder (pure), run, JSON to findings mapping.                                                                  |
+| `integrations.ts`        | Optional L02 lineage row, L18 reviewer binding, L26 impact summary; each a no-op when the other packet is absent.                   |
+| `AiCodeReviewService.ts` | `Context.Service`: prepare, resolve Auto, start, cancel, ask again, submit handling, turn-end handling, merge, hand-back, settings. |
+| `AiCodeReviewReactor.ts` | `Layer.effectDiscard` with `forkParked`: domain event watcher, startup reconciliation, suggestions, cleanup.                        |
+| `rpc.ts`, `mcp.ts`       | RPC handlers and the two MCP tools.                                                                                                 |
 
 The service is named `AiCodeReviewService` so it never collides with upstream's
 `ReviewService` (`apps/server/src/review/ReviewService.ts:22`), which it uses.
@@ -481,11 +486,12 @@ about twice as much surrounding code). It is a rough guide and the UI says "abou
 come from a small extension map; file kinds (`source`, `tests`, `docs`, `config`, `styles`)
 from path patterns. Size buckets for Jev state: `tiny` (under 20 changed lines), `small` (20 to
 199), `medium` (200 to 999), `large` (1,000 to 4,999), `very large` (5,000 or more).
+File-count buckets: `one` (1 file), `few` (2 to 5), `several` (6 to 20), `many` (21 to 100),
+`very many` (more than 100).
 
 ### Lifecycle
 
-**prepare** (`resolveAuto` true when the dialog opens with an Auto slot, or when the user
-switches a slot to Auto):
+**prepare** (read only; never calls Jev):
 
 1. Load the source thread shell (`ProjectionSnapshotQuery.getThreadShellById`,
    `ProjectionSnapshotQuery.ts:217`); refuse a thread that is a reviewer thread of any run
@@ -498,8 +504,12 @@ switches a slot to Auto):
 5. Default slots: the L18 project binding when present (it replaces the whole list with one
    slot), else `settings.defaultReviewers`, else one slot with the source thread's
    `modelSelection`. `sameAsAuthor` compares `instanceId` and `model`.
-6. With `resolveAuto`, run [reviewer-pick](#jev-feature-ai-code-reviewreviewer-pick) for Auto
-   slots with origin `user`, excluding models already in other slots.
+
+**resolveAuto** (the dialog calls it after `prepare` when a slot is Auto, and again when the
+user switches a slot to Auto): load the source thread and compute the target diff and stats
+as `prepare` steps 1 and 2 do, then run
+[reviewer-pick](#jev-feature-ai-code-reviewreviewer-pick) for the Auto slots with origin
+`user`, excluding models already in other slots.
 
 **start** (the server recomputes everything; client estimates are never trusted):
 
@@ -900,7 +910,7 @@ review." }`; otherwise `{ status: "started", reviewId, message }`.
 4. "Copy as Markdown": client-side from `ReviewDetail`, one list item per group:
    `- **Should fix** path:L10-L14: title` and the body indented.
 
-Opening code: "Open file at line" calls
+Opening code: "Open file" calls
 `useRightPanelStore.getState().openFile(threadRef, path, startLine)`
 (`apps/web/src/rightPanelStore.ts:137`). "Open in diff" selects the matching scope in
 `useDiffPanelStore` (`selectGitScope`, `selectBranchBaseRef`, or `selectTurn(ref, turnId,
@@ -914,17 +924,18 @@ targets have no diff scope, so they show "Open file" only.
   `INSERT OR IGNORE INTO fork_thread_lineage_links (child_thread_id, parent_thread_id,
 project_id, kind, context_mode, through_message_id, carried_message_count, created_by,
 created_at) VALUES (?, ?, ?, 'review', 'none', NULL, 0, 'user', ?)` (`created_by` is
-  `'agent'` for agent-started reviews), guarded by the `sqlite_master` check L08 uses. This
-  needs L02 to accept the `review` kind in `ThreadLineageKind` and its `CHECK`; until it
-  does, `INSERT OR IGNORE` skips the row (SQLite applies IGNORE to CHECK violations) and
-  nothing else changes. Failures are logged and ignored.
+  `'agent'` for agent-started reviews), guarded by the `sqlite_master` check L08 uses. L02
+  defines the `review` kind in `ThreadLineageKind` and its `CHECK` (L02 TECHNICAL.md,
+  Storage); on an older L02 table whose `CHECK` predates it, `INSERT OR IGNORE` skips the row
+  (SQLite applies IGNORE to CHECK violations). Failures are logged and ignored.
 - **L18 present** (`project-profiles` in `LOOM_SERVER_FEATURES` and its service in the
   runtime): the web registers a `ProfileBindingSource` in L18's `PROFILE_BINDING_SOURCES`
   (`apps/web/src/fork/project-profiles/bindingSources.ts`, L18 TECHNICAL.md) with kind
   `ai-code-review-reviewer`, label "Reviewer", feature `ai-code-review`, options = "Auto
   (Jev)" plus the available models. The binding id is the JSON of a `ReviewerSlot`. The
-  server reads the project's profile bindings in `prepare`; the first binding of that kind
-  wins. Without L18 there is no per-project reviewer.
+  server reads the project's profile in `prepare` with `ProjectProfileService.get(projectId)`
+  (L18 TECHNICAL.md, "Binding sources"), looked up as an optional service; the first binding
+  of that kind wins. Without L18 there is no per-project reviewer.
 - **L26 present** (`code-graph` in `LOOM_SERVER_FEATURES`): `prepare`/`start` call the code
   graph service's impact query server-side (`CodeGraphImpactInput` with the target's changed
   files, depth 2; L26 TECHNICAL.md, "Impact") regardless of L26's agent switch, and the brief
@@ -1051,7 +1062,7 @@ upstream wire schema or event type changes.
   otherwise a list built from the provider instances' models; either way it only offers
   available models. "Auto (Jev)" is offered only when
   `useDecideFeature(environmentId, "ai-code-review.reviewer-pick").usable`; a saved Auto slot
-  shows the fallback line otherwise.
+  shows the fallback line otherwise. Auto slots resolve through `resolveAuto` after `prepare`.
 - `handBack.ts` (above), `markdown.ts` (Copy as Markdown).
 - `palette.tsx`: items `action:loom:ai-code-review:uncommitted`, `:branch`, `:turn`, `:commit`,
   `:panel`, each with `shortcutCommand` where relevant.
@@ -1060,8 +1071,9 @@ upstream wire schema or event type changes.
   to Uncommitted, `branch` to Branch with its `baseRef`, `turn` to Turn with its `turnId`.
 - `composerChip.tsx`: a `FORK_COMPOSER_BLOCKS` entry (`ext-composer`) rendering the "Review
   this turn?" chip from the thread's snapshot; renders null when there is no open suggestion.
-- `keybinding.ts`: `loom.ai-code-review.start` in `FORK_KEYBINDING_COMMANDS`, unbound, handled
-  by a fork keydown listener that opens the dialog.
+- `keybinding.ts`: `loom.ai-code-review.start` in `FORK_KEYBINDING_COMMANDS`, unbound;
+  `StartReviewDialogHost` subscribes with `onForkCommand("loom.ai-code-review.start", ...)`;
+  no packet keydown listener.
 - `settings.tsx`: section id `ai-code-review`, title "AI code review", with the project scope
   subsection for `autoStartSuggested`. The Auto candidates field is hidden when
   `useDecideFeature(...).supported` is false (effort presets stay: they also set manual slots); Jev's own switches stay in the Jev section.

@@ -72,12 +72,13 @@ server: compaction entry points work (they use upstream's command); goal UI is h
 
 ## Optional integrations
 
-- If L02 (thread lineage) is present, the fork dialog may offer "Copy goal to the new
-  thread"; L02 would call this packet's `setGoal` RPC when `loomFeatures` includes
-  `compaction-and-goals`. Not required by either packet.
-- If L04 (thread inspector) is present, register a "Goal" section in its
-  `FORK_INSPECTOR_SECTIONS` (`apps/web/src/fork/thread-inspector/sections.ts`) showing the
-  objective and state with an Edit button. The section checks `loomFeatures` itself.
+- Follow-up, not built by this packet or L02: if L02 (thread lineage) is present, the fork
+  dialog may offer "Copy goal to the new thread"; L02 would call this packet's `setGoal` RPC
+  when `loomFeatures` includes `compaction-and-goals`. Not required by either packet.
+- Follow-up, not built by this packet: if L04 (thread inspector) is present, register a
+  "Goal" section in its `FORK_INSPECTOR_SECTIONS`
+  (`apps/web/src/fork/thread-inspector/sections.ts`) showing the objective and state with an
+  Edit button. The section checks `loomFeatures` itself.
 
 ## Size
 

@@ -3,7 +3,8 @@
 ## Extension points created by this packet
 
 None specific. It uses `ext-core` (with persistence and a reactor), `ext-panels`,
-`ext-settings`, `ext-palette`, `ext-mcp`, `ext-composer-menu` and `ext-web-root`. Run each
+`ext-settings`, `ext-palette`, `ext-mcp`, `ext-composer` (prerequisite of `ext-composer-menu`;
+nothing registered in it), `ext-composer-menu` and `ext-web-root`. Run each
 existence check; create any missing one exactly as specified in
 [EXTENSION-POINTS.md](../EXTENSION-POINTS.md), one commit each, and record the commits here.
 

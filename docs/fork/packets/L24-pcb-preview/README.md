@@ -1,6 +1,6 @@
 # L24: PCB preview
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 A right panel that shows the circuit boards in the thread's project. It finds KiCad projects
 and tscircuit circuits in the workspace, renders their schematic and board views to SVG on
@@ -21,7 +21,7 @@ edits it.
   - KiCad ERC and DRC on demand, violations grouped by severity with their location text,
     and a plain-text summary: "Send summary to chat" puts it in the thread's composer (never
     sends), "Copy summary" copies it.
-  - Tool detection with clear setup states ("KiCad not found", "tscircuit CLI not found").
+  - Tool detection with clear setup states when KiCad or the tscircuit CLI is missing.
     Detection only: `PATH`, `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`, and the
     project's `node_modules/.bin/tsci`.
   - A Loom settings section showing the detected tools, and an optional link to the

@@ -812,7 +812,8 @@ xcodegen-cache/<hash>           XcodeGen cache file
   factories (`createEnvironmentRpcQueryAtomFamily`, `createEnvironmentRpcSubscriptionAtomFamily`,
   `createEnvironmentRpcCommand`, `packages/client-runtime/src/state/runtime.ts:612,646,678`):
   `status`, `inspect`, `destinations`, `xcodegen`, `readiness`, `runs` (subscription on
-  `watchRuns`), `run` (getRun), commands `start`, `cancel`, `updateSettings`, `clearHistory`.
+  `watchRuns`), `run` (getRun), `settings` (getSettings), `tailLog` (stream command), commands
+  `start`, `cancel`, `updateSettings`, `clearHistory`, `openResultBundle`.
 - `apps/web/src/fork/apple-build-tooling/`:
   - `state.ts`: instantiates the atoms with `connectionAtomRuntime` (as
     `apps/web/src/state/device.ts:18`); selection store (container, scheme, configuration,
@@ -853,9 +854,9 @@ Registered through `ext-mcp` in `apps/server/src/fork/apple-build-tooling/mcp.ts
 ```ts
 const RunTool = Tool.make("loom_apple_build_tooling_run", {
   description:
-    "Build, test, or build and run the Apple app in this thread's workspace with xcodebuild, " +
-    "and return a compact summary (errors with file:line, failed tests). Prefer this over " +
-    "running xcodebuild yourself. action=generate runs xcodegen generate.",
+    "Build, test, or build and run the Apple app in this thread's workspace with xcodebuild " +
+    "or swift, and return a compact summary (errors with file:line, failed tests). Prefer this " +
+    "over running xcodebuild yourself. action=generate runs xcodegen generate.",
   parameters: Schema.Struct({
     action: Schema.Literals(["build", "test", "run", "release_build", "generate"]),
     container: Schema.optional(Schema.String), // workspace-relative path; default: the only one found
@@ -882,6 +883,9 @@ const StatusTool = Tool.make("loom_apple_build_tooling_status", {
 
 - The workspace comes from `McpInvocationContext.threadId`
   (`apps/server/src/mcp/McpInvocationContext.ts`), resolved like the RPCs.
+- When the resolved container is a `Package.swift`, `build` runs `swiftBuild` and `test` runs
+  `swiftTest` (`only_testing` becomes `--filter`); `run`, `release_build` and `generate` fail
+  with `invalid-request`.
 - The run tool waits for the run to finish (timeout 45 minutes; on timeout it returns
   `status: "running"` with the run id, and the run continues).
 - `summaryText` is at most 8 KB; `logTail` the last 60 log lines. Details stay in the panel.

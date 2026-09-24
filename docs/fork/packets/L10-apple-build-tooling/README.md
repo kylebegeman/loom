@@ -1,6 +1,6 @@
 # L10: Apple build tooling
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 An "Apple build" right panel for projects that contain an Xcode project, an Xcode
 workspace, an XcodeGen spec or a Swift package. The user picks a scheme and a destination
@@ -82,10 +82,12 @@ None. Everything goes through extension points. See [SEAMS.md](./SEAMS.md).
 
 ## Optional integrations
 
-- If L09 (device-qa) is present when this packet is implemented, add a "Run flows after
-  launch" checkbox to "Build and run" that calls L09's flow runner for the selected device.
-  If L09 is implemented after this packet, L09 adds the hook instead. Neither packet imports
-  the other's modules unless both exist in the tree.
+- L09 (device-qa): L09's Install section lists this packet's latest successful build
+  products for the project as install candidates, and "Build and run" gets a "Run flows after
+  launch" checkbox that calls L09's flow runner for the launched simulator. The checkbox is
+  offered only when the destination is a simulator (flows run only on simulators and
+  emulators; it is hidden for physical devices and "My Mac"). Whichever packet lands second
+  adds both hooks. Neither packet imports the other's modules unless both exist in the tree.
 
 ## Size estimate
 

@@ -1,6 +1,6 @@
 # L19 seams
 
-This packet inserts two marked lines into one upstream file (the sidebar footer icon), adds
+This packet inserts three lines (two markers) into one upstream file (the sidebar footer icon), adds
 one fork-owned file inside upstream's routes directory (the router only discovers routes
 there), and regenerates the route tree. It edits no existing upstream line.
 
@@ -22,11 +22,11 @@ here when done. If all existed: "None: all existed".
 
 ## Packet seams
 
-| File                                                | Marker                     | Lines                    | Why                                                                               |
-| --------------------------------------------------- | -------------------------- | ------------------------ | --------------------------------------------------------------------------------- |
-| `apps/web/src/components/sidebar/SidebarChrome.tsx` | `fork: project-lifecycle`  | 2 (import, one JSX line) | Repositories icon in the sidebar footer next to Pull Requests.                    |
-| `apps/web/src/routes/loom.repositories.tsx`         | none (new fork-owned file) | whole file               | TanStack Router discovers routes only in `apps/web/src/routes/` (CONVENTIONS.md). |
-| `apps/web/src/routeTree.gen.ts`                     | none (generated)           | generated                | The router plugin regenerates it when a route file is added.                      |
+| File                                                | Marker                     | Lines                   | Why                                                                               |
+| --------------------------------------------------- | -------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
+| `apps/web/src/components/sidebar/SidebarChrome.tsx` | `fork: project-lifecycle`  | 3 (marker, import, JSX) | Repositories icon in the sidebar footer next to Pull Requests.                    |
+| `apps/web/src/routes/loom.repositories.tsx`         | none (new fork-owned file) | whole file              | TanStack Router discovers routes only in `apps/web/src/routes/` (CONVENTIONS.md). |
+| `apps/web/src/routeTree.gen.ts`                     | none (generated)           | generated               | The router plugin regenerates it when a route file is added.                      |
 
 ### `SidebarChrome.tsx`
 
@@ -69,7 +69,7 @@ Back button only for the pages it knows, lines 131-143), which is why the page h
 Back link.
 
 Why no extension point covers it: EXTENSION-POINTS.md has no sidebar footer registry, and
-this is the only packet that adds a footer icon. A registry would need the same two seam
+this is the only packet that adds a footer icon. A registry would need the same seam
 lines plus a fork file with one entry, so it saves nothing until a second packet needs one.
 
 The route file, verbatim:
@@ -114,8 +114,9 @@ git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 Expected: no conflicts from this packet, except possibly `apps/web/src/routeTree.gen.ts`
 when upstream also adds a route, and `SidebarChrome.tsx` when upstream edits the lines around
 the two marked insertions (28 upstream commits touched the file since June). Resolve by
-taking upstream's version and reinserting the two marked lines next to the brand import and
-after the Pull Requests item. Record the tag and result here.
+taking upstream's version and reinserting the three lines (the marker line and the import
+next to the brand import, the JSX line after the Pull Requests item). Record the tag and
+result here.
 
 ## FORK.md rows
 

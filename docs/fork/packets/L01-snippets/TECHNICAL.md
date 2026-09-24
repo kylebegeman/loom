@@ -11,7 +11,7 @@ drift; search for the quoted code.
  fork_snippets_aliases          SnippetService (rules, limits) --> library atom (full snapshot)
  fork_snippets_revisions        PubSub of library snapshots            |
                                                                        v
-                                             pure engine (client-runtime/fork/snippetsEngine.ts)
+                                             pure engine (client-runtime/fork/snippets-engine.ts)
                                              rank / parse fields / expand / artifact format
                                                                        |
                   +--------------------+----------------+--------------+---------------+
@@ -311,7 +311,7 @@ CREATE TABLE IF NOT EXISTS fork_snippets_revisions (
   one `createEnvironmentRpcCommand` per mutation, modeled on
   `packages/client-runtime/src/state/device.ts:11-50` (serial scheduler per environment for
   writes).
-- `packages/client-runtime/src/fork/snippetsEngine.ts`: pure functions, no React, no
+- `packages/client-runtime/src/fork/snippets-engine.ts`: pure functions, no React, no
   Effect services, fully unit tested:
   - `parseSnippetFields(body): SnippetField[]`: fields in first-appearance order with
     defaults; built-ins flagged.
@@ -397,7 +397,7 @@ fenced JSON blocks. The writer emits one block per snippet:
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `state.ts`                | `snippetsEnvironment = createSnippetsEnvironmentAtoms(connectionAtomRuntime)`; `useSnippetLibrary(environmentId)` via `useEnvironmentQuery` (as `apps/web/src/state/device.ts:32-40` reads device state); `useSnippetsSupported(environmentId)`. |
 | `readLibrary.ts`          | Synchronous read of the cached library for an environment from `appAtomRegistry` (used by the `;` menu and palette sources, which must not suspend). Returns `null` when not loaded.                                                             |
-| `panel.tsx`               | `snippetsPanel: ForkPanelDefinition` (id `snippets`, title "Snippets", letter `S`, icon `TextQuote` from lucide).                                                                                                                                |
+| `panel.tsx`               | `snippetsPanel: ForkPanelDefinition` (id `snippets`, title "Snippets", letter `S`, icon `TextQuote` from lucide, description "Reusable prompts and fill-in templates.").                                                                         |
 | `SnippetsPanel.tsx`       | Library list, filters, detail, editor, history, import and export views.                                                                                                                                                                         |
 | `SnippetEditor.tsx`       | Form with inline validation (client-side schema decode before sending).                                                                                                                                                                          |
 | `SnippetSearchDialog.tsx` | The search dialog (a `CommandDialog` from `~/components/ui/command`), live results and preview.                                                                                                                                                  |
@@ -571,9 +571,10 @@ None in this packet (see README, Out).
 
 - Snapshot size is bounded by `libraryBodyCharsMax` (about 1.5 MB of text, typically a few
   KB). It is pushed only on user edits, never per keystroke or per use.
-- Ranking over 1,000 snippets is a linear pass with cheap string tests; measure in a test
-  that ranking 1,000 snippets with bodies of 2,000 characters takes under 10 ms on CI
-  hardware, and memoize by `(libraryVersion, query, projectId)`.
+- Ranking over 1,000 snippets is a linear pass with cheap string tests; a test guards
+  ranking 1,000 snippets with 2,000-character bodies under a generous bound (TESTING.md) to
+  catch quadratic regressions; the target is under 10 ms on a recent Mac. Memoize by
+  `(libraryVersion, query, projectId)`.
 - The `;` trigger's `detect` runs on every composer snapshot; it is a regex over the
   current token only.
 - The dialog, drawer and panel render nothing and subscribe to nothing while closed. The

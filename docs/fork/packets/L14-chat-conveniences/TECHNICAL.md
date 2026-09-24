@@ -59,6 +59,7 @@ closed:
   in `keybindings.json`. It handles `mod+F` (`event.metaKey` on macOS, `ctrlKey`
   elsewhere, no other modifiers, `shortcutKeyFromEvent(event) === "f"`) only when all of
   these hold: the setting is on (default on); the event is not `defaultPrevented`; the
+  command palette is closed (`isCommandPaletteOpen()`, `~/commandPaletteBus`); the
   user's keybindings do not claim the key
   (`resolveShortcutCommand(event, keybindings, { context: { terminalFocus, previewFocus } }) === null`,
   `apps/web/src/keybindings.ts:227`, keybindings from `primaryServerKeybindingsAtom`); a
@@ -130,7 +131,8 @@ Older turns: when `threadHasOlderTurns` is true for the handle's thread, the bar
 
 Files: `apps/web/src/fork/chat-conveniences/find/` with `timelineHandle.ts`,
 `FindInThreadHost.tsx`, `FindBar.tsx`, `findMatches.ts` (pure: text reduction and
-matching), `highlight.ts`, `find.css`, `findMatches.test.ts`.
+matching), `defaultShortcut.ts` (pure: `shouldOpenFindFromDefaultShortcut`),
+`highlight.ts`, `find.css`, `findMatches.test.ts`, `defaultShortcut.test.ts`.
 
 ### Performance
 
@@ -323,12 +325,14 @@ Server: `apps/server/src/fork/chat-conveniences/`:
 
 - `AskService.ts`: `Context.Service` depending on `OrchestrationEngineService` and
   `ProjectionSnapshotQuery`. Keeps an in-memory `Map<ThreadId, Set<ApprovalRequestId>>`
-  of questions it posted.
+  of the asks (requests) it posted.
   1. `getThreadShellById(threadId)`; fail `thread-not-found` or `thread-archived`
      (`archivedAt !== null`).
   2. Prune the thread's set: for each id, `getUserInputActivity({ threadId, requestId })`
      (`ProjectionSnapshotQuery.ts:81-84`); drop ids whose latest activity is
-     `user-input.resolved`. If 3 remain, fail `too-many-open`.
+     `user-input.resolved`. If 3 remain, fail `too-many-open` with PRODUCT.md's message
+     ("You already have 3 unanswered asks in this thread. ..."). The limit counts asks,
+     one request each as upstream's panel shows them, not the questions inside them.
   3. `requestId = ApprovalRequestId.make("loom-ask:" + threadId + ":" + randomUUID())`.
   4. Dispatch:
 
@@ -645,7 +649,10 @@ server; it only sees labels and descriptions.
   `apps/web/src/composerDraftStore.ts:378-405`) only while Auto is on; decide with
   `shouldRequestSuggestion`; call `autoSuggest` through an environment RPC command atom
   (`packages/client-runtime/src/fork/chat-conveniences.ts`, bound in web `state.ts`);
-  ignore a result whose request text no longer matches the draft. **Use** runs
+  ignore a result whose request text no longer matches the draft. A draft longer than
+  8,000 characters (the contract's `message` cap) is sent as its first 8,000 characters,
+  and the "same text" and stale-result checks compare that cut text, so a long draft still
+  gets a suggestion instead of failing to decode. **Use** runs
   `resolveAutoSelection`, then part C's `inspectPreset` checks and `applyPreset` path with
   the resolved selection, so locks and availability rules are identical to presets.
 - Idle timer: one `setTimeout` per keystroke pause (replaced on each change), cleared on

@@ -1,7 +1,10 @@
 # L29 implementation plan
 
 Ordered steps for one agent. Each step leaves the tree compiling. Four phases; each ends in a
-usable state and can be reviewed on its own.
+usable state and can be reviewed on its own. Kyle's data-tool phases map as: context
+builders and question builder in phase 2 (phase 1's playground takes pasted text only), test
+sets and replay in phase 3, agent drafting in phase 4; phase 1 ships the log and ratings they
+build on.
 
 ## Before starting
 
@@ -19,8 +22,8 @@ usable state and can be reviewed on its own.
 ```
 packages/contracts/src/fork/jev-hub.ts
 packages/client-runtime/src/fork/jev-hub.ts
-packages/client-runtime/src/fork/jevLint.ts        jevLint.test.ts
-packages/client-runtime/src/fork/jevCost.ts        jevCost.test.ts
+packages/client-runtime/src/fork/jev-hub-lint.ts   jev-hub-lint.test.ts
+packages/client-runtime/src/fork/jev-hub-cost.ts   jev-hub-cost.test.ts
 apps/server/src/fork/jev-hub/
   decide.ts  migrations.ts  HubStore.ts
   buckets.ts  contextShapes.ts  ContextBuilder.ts
@@ -58,7 +61,7 @@ docs/fork/user/jev-hub.md
    - `migrations.ts` (migration 1, all five tables) in `FORK_MIGRATION_SETS`.
    - `HubStore.ts` (templates now; the rest of the SQL can land with its phase).
    - `JevHubService.ts` with `run`, template CRUD, and pass-throughs to
-     `LoomDecide.log` (list, get, rate, delete, changes).
+     `LoomDecide.log` (list, get, rate, remove, changes; `setKept` joins in phase 3).
    - `rpc.ts`: handlers for the phase 1 tags.
    - Register `JevHubService.layer` in `ForkServicesLive` (after `LoomDecide.layer`, or
      `Layer.provide` it), the service in `ForkServices`, `"jev-hub"` in
@@ -66,7 +69,7 @@ docs/fork/user/jev-hub.md
    - `mcp.ts`: `loom_jev_hub_ask` only; toolkit registration in `ForkMcpToolkitsLive`.
    - Tests: `JevHubService.test.ts` (run, templates, ratings through a test `LoomDecide`
      over `SqlitePersistenceMemory` with a scripted fetch), `mcp.test.ts` (ask).
-4. **Client runtime.** `jevCost.ts` with its test; `jev-hub.ts` atoms for phase 1.
+4. **Client runtime.** `jev-hub-cost.ts` with its test; `jev-hub.ts` atoms for phase 1.
 5. **Web.** `state.ts`, `panel.tsx` (id `jev-hub`, letter `J`), `DecisionsPanel.tsx` (tabs,
    setup and banner states, deep link), `LogTab.tsx`, `DecisionDetail.tsx`, `AnswerView.tsx`,
    `RatingControls.tsx`, a first `PlaygroundTab.tsx` with the pasted source and inline JSON
@@ -82,7 +85,7 @@ docs/fork/user/jev-hub.md
    (service over `ProjectionSnapshotQuery`, `CheckpointDiffQuery`, `WorkspaceFileSystem`),
    the `buildContext` tag and handler. Tests: `buckets.test.ts`, `contextShapes.test.ts`,
    `ContextBuilder.test.ts`.
-8. **Client runtime.** `jevLint.ts` and its test (the rule table in TECHNICAL.md).
+8. **Client runtime.** `jev-hub-lint.ts` and its test (the rule table in TECHNICAL.md).
 9. **Web.** `ContextPreview.tsx`, `QuestionBuilder.tsx` (guided form, live lint),
    `TemplatesTab.tsx` (list, editor, "Use for this feature" and "Revert to built-in wording"
    through `loom.decide.updateFeature`, delete with the "In use by" confirmation),
@@ -117,7 +120,8 @@ docs/fork/user/jev-hub.md
 15. **Web.** `DraftCard.tsx` (in Tuning and on each template), `composerFill.ts` (append to
     the thread's composer through `useComposerDraftStore`, never send), the agent switch
     warning with an inline switch, the "Install the TypeSafe skill in Skills" button only
-    when `skill-registry` is in `loomFeatures` (opens `forkPanelSurface("skill-registry")`),
+    when `skill-registry` is in `loomFeatures` (opens L21's Sources tab with
+    `forkPanelSurface("skill-registry", "sources")`),
     "From agent" badges, unlabeled items with the agent's hint.
 16. **Docs.** `docs/fork/user/jev-hub.md`: what the Decisions panel is for, adding the key
     (link to the Jev settings), what is sent and what is removed, retention, how to rate and

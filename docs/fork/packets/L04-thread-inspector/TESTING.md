@@ -37,7 +37,9 @@ With Kyle's permission for a dev server and browser, on seeded data:
 4. Open the card with the eye button. It closes on: a click in the timeline, Escape, a
    window resize, opening the right panel, a jump action. It does not close while a reply
    streams. The eye button toggles it without flicker. At 800 px: compact density.
-5. Keybindings (bind them in Settings > Keybindings first): toggle panel, toggle card.
+5. Keybindings (bind them in Settings > Keybindings first): toggle panel, toggle card. The
+   two palette items, "Show thread inspector" and "Show thread inspector card", do the
+   same.
 6. Upstream T3 server: everything works (client-only).
 7. Performance: with the card open during a long streaming reply, the profiler shows no
    continuous re-render and the 1 Hz ticker stops when the tab is hidden.

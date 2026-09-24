@@ -95,7 +95,9 @@ Panel title "Code map". Tabs "Overview", "Search", "Impact". Buttons "Build grap
   crosses the WebSocket.
 - One MCP tool with a `mode` parameter, per EXTENSION-POINTS.md guidance on tool cost.
 - Loom does not install Graphify; it shows the command.
-- L26 is confirmed (Kyle, 2026-09-24), although it is not in selections.md.
+- Not in the original selection; added from the repository review
+  ([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on
+  2026-09-24.
 - "Let agents query the code graph" is off by default and enabled per project (Kyle): most
   sessions will not use it, and a project where agents benefit can opt in. Upstream lists
   every MCP tool to every session, so the one-sentence description is still paid everywhere;

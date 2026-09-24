@@ -1,6 +1,6 @@
 # L09: Device QA and flows
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Adds quality checks on top of upstream's Device panel. A "Device QA" right panel lists the
 project's recorded UI flows (Software Mansion's argent flows in `.argent/flows/`), runs one or
@@ -73,11 +73,12 @@ run flows and capture evidence, gated by upstream's existing "Agent device acces
 
 ## Optional integrations
 
-- L10 (apple-build-tooling): if L10 is in the tree when this packet is built, the Install
-  section lists L10's latest successful build products for the project as install candidates,
-  and L10's "Build and run" gets a "Run flows after launch" option that calls this packet's
-  flow runner. If L10 lands later, L10 adds the same hooks. Without L10 the user types or picks
-  an artifact path.
+- L10 (apple-build-tooling): the Install section lists L10's latest successful build products
+  for the project as install candidates, and L10's "Build and run" gets a "Run flows after
+  launch" checkbox that calls this packet's flow runner for the launched simulator. The
+  checkbox is offered only when the destination is a simulator (flows run only on simulators
+  and emulators; it is hidden for physical devices and "My Mac"). Whichever packet lands
+  second adds both hooks. Without L10 the user types or picks an artifact path.
 - L11 (browser-dev-tools): none.
 
 ## Size estimate

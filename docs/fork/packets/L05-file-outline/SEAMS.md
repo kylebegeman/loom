@@ -2,8 +2,9 @@
 
 ## Extension points created by this packet
 
-None are specific to this packet. It uses `ext-palette`, `ext-keybindings` and (as the
-keybinding prerequisite) `ext-web-root`. Run each existence check in
+None are specific to this packet. It uses `ext-palette`, `ext-keybindings`, `ext-web-root`
+(the keybinding prerequisite) and `ext-core` (the prerequisite of `ext-palette`; nothing
+registered). Run each existence check in
 [EXTENSION-POINTS.md](../EXTENSION-POINTS.md); create any missing one exactly as specified,
 in its own commit, and list it here with the commit hash when this packet creates it.
 
@@ -99,6 +100,6 @@ layout moves, keep the column immediately before the explorer aside.
 Add to the "Packet seams" table (create the table with columns `File`, `Packet`, `Why` if it
 does not exist yet):
 
-| File                                                 | Packet           | Why                                                                                                               |
-| ---------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/components/files/FilePreviewPanel.tsx` | L05 file-outline | Outline toggle in the file header and outline column beside the source. See `docs/fork/packets/L05-file-outline`. |
+| File                                                 | Packet         | Why                                                                                                               |
+| ---------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/files/FilePreviewPanel.tsx` | `file-outline` | Outline toggle in the file header and outline column beside the source. See `docs/fork/packets/L05-file-outline`. |

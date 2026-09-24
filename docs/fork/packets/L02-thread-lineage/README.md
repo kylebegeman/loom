@@ -29,7 +29,8 @@ steered at once. There is no automatic merge.
     `forkSession`, Codex through app-server `thread/fork`. The child then resumes the forked
     native session instead of reading a transcript.
   - A fork-owned lineage table (`fork_thread_lineage_links`) with parent, child, kind (fork,
-    sidecar, delegate) and fork point. Siblings are derived. Unlink is the reverse action.
+    sidecar, delegate, review) and fork point. Siblings are derived. Unlink is the reverse
+    action.
   - Related threads panel (right panel `thread-lineage`): parent, children, siblings and
     plan implementation threads, with status, open, open side by side, and a compact
     composer that sends a turn to the selected related thread.
@@ -38,8 +39,8 @@ steered at once. There is no automatic merge.
   - Side by side: a thread pane panel (`thread-lineage:thread`) that shows any thread of the
     same environment next to the current one, with its own compact composer and a Stop
     button.
-  - Command palette items and unbound keybinding commands for fork, sidecar, related threads
-    and side by side.
+  - Command palette items for fork, sidecar, related threads and side by side, and unbound
+    keybinding commands for fork, sidecar and related threads.
   - Server cleanup: a fork reactor removes lineage rows when threads or projects are deleted.
 - Out:
   - Automatic merge of two threads or their changes (explicitly dropped).
@@ -89,10 +90,14 @@ Details in [SEAMS.md](./SEAMS.md).
 - If L08 (multi-thread runs) is present, its agent-started child threads appear here as
   `delegate` children: L08 writes rows into `fork_thread_lineage_links` when that table
   exists. Nothing in this packet depends on L08.
-- If L04 (thread inspector) is present, register a "Lineage" section in its
-  `FORK_INSPECTOR_SECTIONS` (`apps/web/src/fork/thread-inspector/sections.ts`): parent title
-  and child counts from `listForThread`, with a button that opens Related threads. The
-  section checks `loomFeatures` itself. Nothing here depends on L04.
+- If L15 (AI code review) is present, its reviewer threads appear here as `review`
+  children under Reviews: L15 writes rows into `fork_thread_lineage_links` when that table
+  exists. Nothing in this packet depends on L15.
+- Follow-up, not built by this packet: if L04 (thread inspector) is present, register a
+  "Lineage" section in its `FORK_INSPECTOR_SECTIONS`
+  (`apps/web/src/fork/thread-inspector/sections.ts`): parent title and child counts from
+  `listForThread`, with a button that opens Related threads. The section checks
+  `loomFeatures` itself. Nothing here depends on L04.
 
 ## Size
 

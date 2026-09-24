@@ -44,7 +44,7 @@ EXTENSION-POINTS.md section 18 specifies).
 3. The seam in `ProviderCommandReactor.ts` (SEAMS.md), then `vp fmt` on that file.
 4. Add `"worktree-prefix"` to `IMPLEMENTED_SMALL_EXTRAS_PARTS`.
 5. Settings block: `DraftInput` bound to `worktreeBranchPrefix` (empty string saves `null`),
-   inline validation with the same schema (`Schema.decodeUnknownEither(WorktreeBranchPrefix)`),
+   inline validation with the same schema (`Schema.decodeUnknownResult(WorktreeBranchPrefix)`),
    reset button (back to `loom`), and a preview line "New branches look like
    <prefix>/fix-login-redirect".
 6. Test: a focused test on the reactor would need the whole reactor harness; instead test
@@ -71,9 +71,11 @@ EXTENSION-POINTS.md section 18 specifies).
    the file. If part A has not shipped, also add the reactor seam from SEAMS.md.
 6. **Commit check.** `commitCheck.ts` reactor with `forkParked`, per-thread serialization,
    concurrency 2, the git commands through `VcsProcess.run`, the `thread.activity.append`
-   dispatch, the `PubSub` behind `privateModeWarnings`; `checkPrivateThread`;
-   `renamePrivateBranch` with upstream's rename steps.
-7. **Jev branch type.** `decide.ts`: register `small-extras.branch-type` in the `ext-decide`
+   dispatch, the `PubSub` behind `privateModeWarnings`, skipping threads with no branch;
+   `checkPrivateThread` (returns its result only, `noBranch` on a detached HEAD);
+   `renamePrivateBranch` with upstream's rename steps and `generatedWorktreeBranchName` in
+   `branchNaming.ts`, the fork copy of upstream's sanitizer (TECHNICAL.md, Commit check).
+7. **Jev branch type.** `apps/server/src/fork/small-extras/decide.ts`: register `small-extras.branch-type` in the `ext-decide`
    registry; `chooseBranchType` calls `decide` and falls back to the keyword rules; the
    "Jev off by default" reconciliation on `setPrivateProject` and at startup, using section
    18's per-project override API (TECHNICAL.md names it).
@@ -105,7 +107,9 @@ EXTENSION-POINTS.md section 18 specifies).
    classification. Add `"containers"` to the implemented parts.
 3. Web: `containersPanel.tsx` (definition), `ContainersPanel.tsx` (list, filters, runtime
    menu writing `containerRuntime` through `updateSettings`, 10 second refresh while
-   visible), `followContainerLogs.ts` (TECHNICAL.md). Get `openTerminal` and `writeTerminal`
+   visible; the `NoRuntime` state shows "Docker or Podman is not installed on <environment>."
+   with a "CLI tools" link to `/settings/loom#loom-small-extras`), `followContainerLogs.ts`
+   (TECHNICAL.md). Get `openTerminal` and `writeTerminal`
    with `useAtomCommand(terminalEnvironment.open, ...)` and `.write` exactly as ChatView does
    (`apps/web/src/components/ChatView.tsx:892-893`). Resolve `cwd` from the thread shell:
    `worktreePath ?? project.workspaceRoot`.

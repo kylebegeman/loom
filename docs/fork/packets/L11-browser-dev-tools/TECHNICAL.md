@@ -35,7 +35,7 @@ the `ext-desktop` extension point.
 
 | Upstream piece                              | Where                                                                                                                                                                                                                                                                                | Use here                                                                                                                                                   |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Port discovery, PID to terminal attribution | `apps/server/src/preview/PortScanner.ts:43-67` (`PortDiscovery` service: `scan`, `subscribe`, `retain`), fed by the terminal manager (`apps/server/src/terminal/Manager.ts:2411-2415`)                                                                                               | A server's URL is the discovered server whose `terminal` matches `{ threadId, terminalId: "loom-dev-<key>" }`.                                             |
+| Port discovery, PID to terminal attribution | `apps/server/src/preview/PortScanner.ts:43-67` (`PortDiscovery` service: `scan`, `subscribe`, `retain`), fed by the terminal manager (`apps/server/src/terminal/Manager.ts:2411-2415`)                                                                                               | A server's URL is the discovered server whose `terminal` matches `{ threadId, terminalId: "loom-dev-<hash of key>" }`.                                     |
 | `DiscoveredLocalServer`                     | `packages/contracts/src/preview.ts:304-316`                                                                                                                                                                                                                                          | Shown per server row.                                                                                                                                      |
 | Terminal sessions                           | `apps/server/src/terminal/Manager.ts:146-217` (`open`, `write`, `close`, `subscribe`, `subscribeMetadata`); `TerminalOpenInput` has no command, so commands are written (`packages/contracts/src/terminal.ts:40-49`)                                                                 | Dev servers and "follow logs" terminals.                                                                                                                   |
 | Server-side terminal command runner pattern | `apps/server/src/project/ProjectSetupScriptRunner.ts:282-420` (open, subscribe before write, write command)                                                                                                                                                                          | Same pattern for starting servers.                                                                                                                         |
@@ -284,9 +284,12 @@ terminalId, cwd, worktreePath, env })`, subscribe to the terminal's events first
 - `useVarlock` and varlock present and `<cwd>/.env.schema` exists: the command becomes
   `varlock run -- <command>`.
 - State: `starting` until `PortDiscovery` reports a server whose `terminal` equals this terminal,
-  then `running` with its URLs; an `exited` terminal event sets `exited` with the code; a
-  closed terminal sets `stopped`. The terminal's `activity.hasRunningSubprocess` going false
-  while `starting` also means `exited` (shell still open, command ended).
+  then `running` with its URLs. After 60 seconds in `starting` with no report, the service sets
+  `running` with empty `urls` (an Effect clock timer, so tests drive it with `TestClock`); the
+  row reads "Running, no port detected yet", and a later report fills `urls`. An `exited`
+  terminal event sets `exited` with the code; a closed terminal sets `stopped`. The terminal's
+  `activity.hasRunningSubprocess` going false while `starting` also means `exited` (shell still
+  open, command ended).
 - The service holds one `PortDiscovery.retain` scope while any fork dev server is starting or
   running, so upstream's 3 second scan runs only then (`PortScanner.ts:73,584,598`).
 - Output tail: the last 8 KB of the terminal's `output` events, kept in memory per server (old
@@ -426,7 +429,8 @@ fromCache, durationMs }`. These listeners are passive (no callback), add no late
   `wc.on("destroyed")`. Reload clears nothing; the dock has "Clear".
 - IPC (channels `loom:browser-dev-tools:<name>`):
   - `snapshot(webContentsId)` returns both buffers.
-  - `subscribe(webContentsId)` / `unsubscribe(webContentsId)`; while subscribed, new entries are
+  - `subscribe(webContentsId, mode)` / `unsubscribe(webContentsId, mode)`, `mode` being
+    `"counts"` or `"entries"`; while subscribed, new entries (only counts in `counts` mode) are
     sent to the subscribing renderer (`event.sender`) in batches every 250 ms on
     `loom:browser-dev-tools:events`, at most 200 entries per batch.
   - `clear(webContentsId)`.
@@ -442,7 +446,7 @@ either side.
 - `packages/client-runtime/src/fork/browser-dev-tools.ts`: atoms for all server methods.
 - `packages/contracts/src/fork/desktop.ts` (created by `ext-desktop`) gains
   `browserDevTools?: BrowserDevToolsDesktopBridge` with `snapshot`, `subscribe(webContentsId,
-listener) => unsubscribe`, `clear`.
+mode, listener) => unsubscribe`, `clear`.
 - `apps/web/src/fork/browser-dev-tools/`:
   - `panel.tsx`: `{ id: "browser-dev-tools", title: "Dev environment", icon: ServerCogIcon,
 shortcut: "V", unavailableHint: "Needs a Loom server with dev tools", isAvailable:
@@ -456,16 +460,20 @@ threadRef !== null && loomFeatures.includes("browser-dev-tools") }`; lazy body w
   - `ComposeSection.tsx`, `DatabasesSection.tsx`, `HttpLabSection.tsx`.
   - `BrowserDevToolsDock.tsx`: rendered by the PreviewView seam with `threadRef`, `tabId`
     (runtime tab id) and `visible`. Returns `null` when `window.desktopBridge?.fork?.browserDevTools`
-    is absent or the dock is turned off. Finds the tab's `webContentsId` from upstream's preview
-    bridge state events (`previewBridge.onStateChange`, `DesktopPreviewTabState.webContentsId`,
+    is absent or the dock is turned off. The on/off switch is a client preference,
+    `loom:browser-dev-tools:dock-enabled:v1` (missing means on), read through `resolveStorage`
+    in try/catch, never a `DevToolsSettings` field, because the dock also runs against upstream
+    servers. Finds the tab's `webContentsId` from upstream's preview bridge state events
+    (`previewBridge.onStateChange`, `DesktopPreviewTabState.webContentsId`,
     `packages/contracts/src/ipc.ts:710-712`) with the `<webview data-preview-tab="<runtimeTabId>">`
     element's `getWebContentsId()` (`HostedBrowserWebview.tsx:303`) as the initial value.
-    Collapsed: a 28 px bar ("Console 3 errors, 1 warning | Network 2 failed | 2 servers") and a
-    chevron. Expanded: resizable (drag handle, 120 to 60% of the panel height), height stored in
-    `loom:browser-dev-tools:dock-height:v1`, tabs Console and Network, level and text filters,
-    virtualized lists, "Send errors to composer". Subscribes to the collector only while visible
-    and expanded; while collapsed it reads counts from a lightweight subscription that sends only
-    counts (the collector batches counts the same way).
+    Collapsed: a 28 px bar ("Console 3 errors, 1 warning | Network 2 failed | 2 servers
+    running") and a chevron. Expanded: resizable (drag handle, 120 to 60% of the panel
+    height), height stored in `loom:browser-dev-tools:dock-height:v1`, tabs Console and
+    Network, level and text filters, virtualized lists, "Send errors to composer". Subscribes
+    to the collector only while visible and expanded; while collapsed it reads counts from a
+    lightweight subscription that sends only counts (the collector batches counts the same
+    way).
   - `sendErrors.ts`: formats the last 20 console errors and failed requests as a text block and
     inserts it through the mounted composer handle or the draft store.
   - `palette.tsx`, `shortcuts.tsx`, `settings.tsx`.
@@ -481,7 +489,8 @@ One tool, registered through `ext-mcp`:
 const FetchTool = Tool.make("loom_browser_dev_tools_fetch", {
   description:
     "Fetch a web page with the Obscura headless browser and return it as markdown, text or links. " +
-    "Fast and light; obeys robots.txt. Use the preview_* tools to interact with pages instead.",
+    "Fast and light; obeys robots.txt by default. " +
+    "Use the preview_* tools to interact with pages instead.",
   parameters: Schema.Struct({
     url: Schema.String,
     format: Schema.optional(Schema.Literals(["markdown", "text", "links"])),

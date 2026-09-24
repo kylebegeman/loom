@@ -85,7 +85,8 @@ now)`, `resolveTokenPath(claims, requestPath)` (containment after normalization;
     Fabrication app; `panel.tsx` definition (letter `O`), lazy body.
 11. Capture to composer (`addImage` path from TECHNICAL.md).
 12. Palette source, shortcuts component, settings section (build plate select: H2D, H2C,
-    Kobra S1, Custom with three mm fields; the preset's note shown underneath).
+    Kobra S1, Custom with three mm fields; the preset's note shown underneath; the "Let agents
+    render models" switch for `agentToolEnabled`).
 
 ## Phase 4: documentation and finish
 

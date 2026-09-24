@@ -3,7 +3,7 @@
 ## Problem
 
 Upstream lists eight right-panel surfaces in a flat menu, and Loom packets will add many
-more (Snippets, Thread Inspector, File Outline, Source Control and others). A flat list of
+more (Snippets, Thread Inspector, Source Control, Utilities and others). A flat list of
 fifteen or more entries with no search, no descriptions and no memory of what you use gets
 slow to scan. Old Loom solved this with a large catalog of hubs and cards that was heavier
 than the problem. Kyle wants something far more compact: type a few letters, press Enter.
@@ -11,8 +11,8 @@ than the problem. Kyle wants something far more compact: type a few letters, pre
 ## What the user can do
 
 - Open the right panel (upstream `rightPanel.toggle`, `mod+alt+b`) and, when it is empty,
-  pick a surface from a compact list: press its letter (as upstream), or start typing to
-  filter, use the arrows, and press Enter.
+  pick a surface from a compact list: press its letter (as upstream), or press `/` and type
+  to filter, use the arrows, and press Enter.
 - Click "+" in the panel's tab bar to get the same list in a popover with the search field
   focused.
 - See a one-line description under each surface name (fork panels included, when they

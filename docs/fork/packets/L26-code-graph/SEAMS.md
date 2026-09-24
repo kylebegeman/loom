@@ -27,7 +27,7 @@ may add its own button there too).
 
 ### The diff header action
 
-`apps/web/src/fork/code-graph/DiffImpactButton.tsx` exports `codeGraphDiffHeaderAction`
+`apps/web/src/fork/code-graph/diffHeaderAction.tsx` exports `codeGraphDiffHeaderAction`
 (`{ id: "code-graph", Component: DiffImpactButton }`), where `DiffImpactButton` takes
 `ForkDiffHeaderActionProps` (`threadRef`, `files`, `scopeLabel`, `selection`).
 

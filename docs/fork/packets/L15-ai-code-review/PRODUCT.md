@@ -105,8 +105,8 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
   line range, the body, an optional suggested fix, and the reviewer names on expand.
 - Filters: severity, category, reviewer, state (Open, Dismissed, Sent to fix). "Show 3
   low-confidence" reveals low-confidence findings.
-- "Open file at line" opens the file at the range; "Open in diff" opens the diff panel on the
-  review's target scope at that file.
+- "Open file" opens the file at the finding's lines; "Open in diff" opens the diff panel on
+  the review's target scope at that file.
 - "Fix this" adds a review comment chip to the working thread's composer (file, range, the
   current lines, and the finding text) and marks the finding "Sent to fix". "Fix selected"
   does the same for several. Nothing is sent. Kyle can remove a chip in the composer as usual.
@@ -123,7 +123,7 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
   the suggestion. The Review panel shows the same suggestion at the top.
 - With "Start suggested reviews automatically" on for the project, a suggested review starts
   with the default reviewers instead of showing the chip, unless it is above the
-  confirmation threshold, in which case the chip appears with "Large: 2,400 changed lines".
+  confirmation threshold, in which case the chip appears as "Review this turn? (large)".
 
 ### Agent-started reviews
 

@@ -4,7 +4,7 @@ Focused tests only (AGENTS.md). No repo-wide checks, no sleeps.
 
 ## Automated tests
 
-`packages/client-runtime/src/fork/snippetsEngine.test.ts` (pure):
+`packages/client-runtime/src/fork/snippets-engine.test.ts` (pure):
 
 - Fields: `[[name]]`, `[[name|default]]`, duplicates collapse in first-appearance order,
   `\[[x]]` stays literal, `[[1, 2]]` and `[[ ]]` do not match, names over 64 characters do
@@ -74,7 +74,7 @@ registering.
 ## Commands
 
 ```sh
-vp test run packages/client-runtime/src/fork/snippetsEngine.test.ts \
+vp test run packages/client-runtime/src/fork/snippets-engine.test.ts \
   apps/server/src/fork/snippets/SnippetService.test.ts \
   apps/server/src/fork/rpcAuthorization.test.ts \
   apps/server/src/fork/persistence/migrations.test.ts \
@@ -106,7 +106,10 @@ worktree `.t3`, then the desktop dev app:
 3. `;zzz` + Tab: no menu item, Tab behaves as without Loom (focus is not trapped). Typing
    `;` alone, or `; ` followed by words, never opens the menu.
 4. Bind `loom.snippets.search` in Settings > Keybindings, open the dialog, type, insert,
-   copy, send a multi-line snippet to an open terminal (no command runs).
+   copy, send a multi-line snippet to an open terminal (no command runs). With text in the
+   composer, palette "Save prompt as snippet" opens the panel editor prefilled with it. On
+   the settings page, the dialog's Insert is disabled with "Open a thread to insert
+   snippets."; Copy still works.
 5. Edit the snippet twice; history shows three revisions; restore the first; delete and
    restore from the Deleted filter.
 6. Import an old Loom `.loom-snippet.md` export; fields convert. Export all and re-import.

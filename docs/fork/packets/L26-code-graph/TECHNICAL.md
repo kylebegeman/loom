@@ -421,7 +421,8 @@ loomFeatures.includes("code-graph") }`. The panel reads the thread's project fro
   - `impactStore.ts`: zustand, session only, `{ [threadKey]: { files, scopeLabel, requestId } }`
     written by the diff button and read by `ImpactTab`; the panel surface uses
     `forkPanelSurface("code-graph", "impact")` so the Impact tab opens as its own tab id.
-  - `DiffImpactButton.tsx`: the `ext-diff-header` action (`codeGraphDiffHeaderAction`).
+  - `diffHeaderAction.tsx`: the `ext-diff-header` action (`codeGraphDiffHeaderAction`, whose
+    component is `DiffImpactButton`).
   - `palette.tsx`, `settings.tsx` (settings section: Graphify command with the pinned install
     command, "Update graphs automatically", and a per-project list with size, "Let agents
     query the code graph" per project, and "Delete graph").

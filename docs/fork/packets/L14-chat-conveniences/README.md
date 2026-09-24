@@ -1,6 +1,6 @@
 # L14: Chat conveniences
 
-Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Five small improvements to the chat view. Each part ships on its own and has its own
 commit; an agent can build any subset, except that E builds on C.

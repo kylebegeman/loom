@@ -218,9 +218,9 @@ so mobile could use it later.
 - Block `id: "composer-tools"`: an icon button (lucide `Wrench`), `size` from props, with
   a dot when Once is armed for this thread. Tooltip "Composer tools". Clicking toggles the
   drawer for `scopedThreadKey(threadRef)`.
-- Drawer `id: "composer-tools"`: `useDrawer({ environmentId, threadRef, replace })` reads
-  `drawerStore`; returns `null` unless `openThreadKey` equals this thread's key. Returns the
-  drawer element otherwise. It also reads `useComposerHandleContext()` and passes the
+- Drawer `id: "composer-tools-drawer"`: `useDrawer({ environmentId, threadRef, replace })`
+  reads `drawerStore`; returns `null` unless `openThreadKey` equals this thread's key. Returns
+  the drawer element otherwise. It also reads `useComposerHandleContext()` and passes the
   handle down.
 - The ext-composer host hides fork drawers while the stash menu, an upstream trigger menu,
   or an approval is showing; the drawer store stays open, so it reappears after.
@@ -229,7 +229,8 @@ so mobile could use it later.
 
 ### Once
 
-Snapshot on arm (server threads only, and only when the thread is idle):
+Snapshot on arm (server threads only, only when the thread is idle, and only while no agent
+question is open):
 
 ```ts
 interface OnceSnapshot {
@@ -255,23 +256,33 @@ interface OnceSnapshot {
   threads (`ChatView.tsx:8895-8900`).
 - Thread fields come from `useThreadShell(threadRef)` (`apps/web/src/state/entities.ts:99`;
   shell fields at `packages/contracts/src/orchestration.ts:815-852`).
+- No open question means the shell's `hasPendingUserInput` is false
+  (`orchestration.ts:851`; it counts message-mode questions too). Answering an async
+  question creates a user message (decider, `thread.user-input.respond` in message mode),
+  which would advance `latestUserMessageAt` and count as the send.
 
 Restore the composer when a send is observed: the thread shell's `latestUserMessageAt`
 becomes later than `armedAt`. Write the snapshot back with one `setState` that replaces only
 those four draft fields for that thread key and the two sticky fields. This couples to the
 store's state shape (typed through `ComposerThreadDraftState`, so a rename fails typecheck);
 the public setters cannot restore `modelSelectionExplicit` or remove sticky entries.
-Record `{ sentAt: latestUserMessageAt }` in the Once record and move it to "restoring".
+Record `{ sentAt: latestUserMessageAt, overrideAtSend: { modelSelection, runtimeMode } }`
+(the shell's values when the send is observed, which carry the override) in the Once record
+and move it to "restoring".
 
 Restore the thread after the turn: `OnceRestorer` (mounted in `ForkRoot`, so it works
 even if the user navigates away) watches restoring records' thread shells. When
 `latestTurn` exists with `requestedAt >= sentAt` and `state` is not `"running"`, compare
-the shell's `modelSelection` and `runtimeMode` with the snapshot's `thread` values; for each
-that differs, dispatch the same commands upstream uses before a send
+the shell's `modelSelection` and `runtimeMode` with the record's `overrideAtSend` and the
+snapshot's `thread` values. Restore a field only when the shell still equals
+`overrideAtSend` for it (the user has not changed it since the send) and differs from the
+snapshot; for each such field, dispatch the same commands upstream uses before a send
 (`persistThreadSettingsForNextTurn`, `ChatView.tsx:5129-5200`): `threadEnvironment.updateMetadata`
 with `{ threadId, modelSelection }` and `threadEnvironment.setRuntimeMode` with
 `{ threadId, runtimeMode, createdAt }` (atoms used at `ChatView.tsx:1481-1487`). Then delete
-the record. On failure, toast and delete the record (never retry in a loop).
+the record. On failure, toast and delete the record (never retry in a loop). This dispatch
+step, `restoreOnceThread` in `once.ts`, takes the two commands and the toast as arguments,
+so the failure path is tested with fakes.
 
 Why restore the thread too: turns started without the composer use the thread's stored
 settings, for example answering an async question (`decider.ts` builds that turn with
@@ -341,9 +352,12 @@ Cancel before sending: restore the composer from the snapshot and delete the rec
 
 Capture sources, active only while `enabled`:
 
-1. In-app `copy` events: a `document` listener reads `window.getSelection()?.toString()`
-   (the event's `clipboardData` is empty on the way out). Skips events whose target is
-   inside an `input[type=password]`.
+1. In-app `copy` events: a `document` listener in the bubble phase, so upstream handlers
+   that call `preventDefault` and set their own data (for example markdown copy,
+   `ChatMarkdown.tsx`'s `onCopy={handleCopy}`) have run, records
+   `event.clipboardData?.getData("text/plain")`, falling back to
+   `window.getSelection()?.toString()` when that is empty (a default copy leaves
+   `clipboardData` empty). Skips events whose target is inside an `input[type=password]`.
 2. In-app programmatic copies: upstream's copy buttons call
    `navigator.clipboard.writeText` (for example `MarkdownCodeBlock` in
    `apps/web/src/components/ChatMarkdown.tsx:929-955`). `ClipboardCapture` wraps

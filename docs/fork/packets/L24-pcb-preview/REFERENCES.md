@@ -4,9 +4,10 @@ Treat external repositories as references, not code to copy.
 
 ## Old Loom
 
-[selections.md](../../selections.md) lists "KiCad circuit board design and management" under
-"Under consideration". Old Loom (`bagelvault/loom` 0.13.10) had no KiCad integration; it had
-a tscircuit "Hardware Studio" area:
+"KiCad circuit board design and management": PCB preview (L24), split out in
+[selections.md](../../selections.md) (Outcomes); the workbench is the Electronics app. Old
+Loom (`bagelvault/loom` 0.13.10) had no KiCad integration; it had a tscircuit "Hardware
+Studio" area:
 
 - https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/studio/StudioHardwareSurface.tsx
   (666 lines: board source editor, snapshot, BOM). Drop: a full authoring surface belongs to

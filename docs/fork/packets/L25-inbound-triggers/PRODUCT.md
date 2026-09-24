@@ -120,7 +120,9 @@ No em dashes in product copy.
   thread.
 - No new orchestration events or commands; threads are created with upstream's
   `thread.create` and `thread.turn.start`.
-- The packet is confirmed (Kyle, 2026-09-24), although it is not in `selections.md`.
+- Not in the original selection; added from the repository review
+  ([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on
+  2026-09-24.
 - Polling through `gh` only. Webhooks are a recorded follow-up and stay undesigned: the Mac
   has no public endpoint and `gh` already covers the five kinds.
 - Triggered worktree threads run the project's setup script, the same as manual worktree

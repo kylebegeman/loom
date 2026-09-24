@@ -2,8 +2,10 @@
 
 ## Old Loom
 
-Not a selections.md item; the brief notes old Loom's scheduled and webhook runs and its
-Slack and Telegram gateways as Core-dependent references. Together they were about 20k
+Not in the original selection; added from the repository review
+([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on
+2026-09-24. The brief notes old Loom's scheduled and webhook runs and its Slack and Telegram
+gateways as Core-dependent references. Together they were about 20k
 lines (triggers 2.4k, automation 4.6k, conversation gateways 8.7k, a Postgres scheduler
 3.7k), much of it tied to old Loom's cloud Core (publicly reachable ingress, Postgres job
 leases, a GitHub App credential broker).

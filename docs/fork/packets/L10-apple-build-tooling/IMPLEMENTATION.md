@@ -150,7 +150,8 @@ with its FORK.md rows. Do not mix packet code into those commits.
    `"apple-build-tooling"` in `LOOM_SERVER_FEATURES`.
 9. `rpc.ts` handlers, each `(input) => auth.effect(TAG, withForkRuntime(...))` or
    `auth.stream(...)`; scopes in `FORK_RPC_REQUIRED_SCOPES` per TECHNICAL.md.
-10. `mcp.ts`: the two tools and handlers; register in `ForkMcpToolkitsLive`.
+10. `mcp.ts`: the two tools and handlers (a `Package.swift` container maps `build` and `test`
+    to `swiftBuild` and `swiftTest`, TECHNICAL.md); register in `ForkMcpToolkitsLive`.
 
 ## Phase 3: client runtime and web
 
@@ -182,8 +183,10 @@ with its FORK.md rows. Do not mix packet code into those commits.
 
 ## Phase 4: optional pieces
 
-16. If L09 exists in the tree, the "Run flows after launch" option (README, optional
-    integrations).
+16. If L09 exists in the tree, the "Run flows after launch" checkbox (README, optional
+    integrations), shown only for a simulator destination and calling L09's `runFlows` for the
+    launched simulator, and this packet's latest successful build products as install
+    candidates in L09's Install tab.
 
 (Swift packages and physical devices are v1 scope and are built in phases 1 to 3 above.)
 

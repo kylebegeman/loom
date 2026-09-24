@@ -370,7 +370,7 @@ Not integrated; documented in `docs/fork/user/model-preview-3d.md`:
   `execute_blender_code`. On 2026-09-24 that command does not exist (`~/.local/bin` has no
   `blender-mcp`; `uv` and `uvx` are installed at `/opt/homebrew/bin`, Blender at
   `/opt/homebrew/bin/blender` and `/Applications/Blender.app`), so Codex cannot start the server.
-- Fix options (from the Fabrication packet's references; Kyle chooses):
+- Fix options for the user doc (from the Fabrication packet's references):
   1. Reinstall the community server as a tool: `uv tool install mcp-for-blender` (the project was
      renamed from `blender-mcp`), then check the installed executable with
      `uv tool list --show-paths` and point `command` at it.
@@ -400,8 +400,9 @@ path), title: basename(path) })` so each file gets its own tab.
     exceeds the build volume's matching axis, the status bar adds "Larger than the <label>
     build volume (X x Y x Z mm)". The check is `fitsBuildVolume(sizeMm, volumeMm)` in
     `buildPlate.ts`, a pure helper that compares axis by axis (no rotation search).
-  - STEP entries (`.step`, `.stp`) show "STEP files open in the Fabrication app." and, when
-    `fabricationUrl` is set, "Open in Fabrication". They never load into the viewer.
+  - STEP entries (`.step`, `.stp`) show "STEP files are not previewed here; open them in the
+    Fabrication app (STEP import is planned there)." and, when `fabricationUrl` is set, "Open in
+    Fabrication". They never load into the viewer.
   - `viewer/` (all `three` imports live here and load through `React.lazy`, like upstream's
     `DevicePanel`, `apps/web/src/components/ChatView.tsx:600-606`):
     - `createViewer(canvas, options)`: `WebGLRenderer({ antialias: true, alpha: true })`,
@@ -440,7 +441,8 @@ path), title: basename(path) })` so each file gets its own tab.
   - `palette.tsx` (the "Open file..." submenu uses `listModels`), `shortcuts.tsx`,
     `settings.tsx` (OpenSCAD status with "Refresh detection", options, limits, build plate
     select with the three presets plus "Custom" (three number fields in mm when chosen) and the
-    preset's note underneath, Fabrication URL, "Clear render cache").
+    preset's note underneath, Fabrication URL, "Let agents render models" bound to
+    `agentToolEnabled`, "Clear render cache").
 - Theme: read the panel's computed CSS variables for background, grid and mesh colors when the
   theme changes (listen to the theme store the app uses; do not poll).
 
