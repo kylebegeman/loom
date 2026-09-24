@@ -17,6 +17,7 @@ import { fromYaml } from "@t3tools/shared/schemaYaml";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { clerkFrontendApiHostnameFromPublishableKey } from "@t3tools/shared/relayAuth";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { BRAND_NAME, formatBrandDisplayName } from "@t3tools/shared/brand"; // fork: brand
 import rootPackageJson from "../package.json" with { type: "json" };
 import desktopPackageJson from "../apps/desktop/package.json" with { type: "json" };
 import gnomeCaptureBundle from "../apps/desktop/gnome-extension/bundle.json" with { type: "json" };
@@ -2614,8 +2615,8 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
 
 export function resolveDesktopProductName(version: string): string {
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? formatBrandDisplayName("Nightly") // fork: brand
+    : BRAND_NAME; // fork: brand
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
@@ -2640,7 +2641,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     appId: DESKTOP_APP_ID,
     productName: resolveDesktopProductName(version),
-    artifactName: "T3-Code-${version}-${arch}.${ext}",
+    artifactName: `${BRAND_NAME}-\${version}-\${arch}.\${ext}`, // fork: brand
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
       ...DESKTOP_FILE_EXCLUSIONS,
@@ -2690,12 +2691,13 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
+        // fork: brand
         NSScreenCaptureUsageDescription:
-          "T3 Code captures the active window when you use the window capture shortcut.",
+          BRAND_NAME + " captures the active window when you use the window capture shortcut.",
       },
       protocols: [
         {
-          name: "T3 Code",
+          name: BRAND_NAME, // fork: brand
           schemes: ["t3code", "t3code-dev"],
         },
       ],
@@ -2742,7 +2744,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // t3code:// OAuth callbacks to the app.
       protocols: [
         {
-          name: "T3 Code",
+          name: BRAND_NAME, // fork: brand
           schemes: ["t3code", "t3code-dev"],
         },
       ],

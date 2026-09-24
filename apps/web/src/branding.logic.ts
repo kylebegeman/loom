@@ -1,14 +1,12 @@
+import { formatBrandDisplayName } from "@t3tools/shared/brand"; // fork: brand
+
 const NIGHTLY_SERVER_VERSION_PATTERN = /^[^-+]+-(?:nightly|preview)\.\d{8}\.\d+$/;
 
 export function formatAppDisplayName(input: {
   readonly baseName: string;
   readonly stageLabel: string;
 }): string {
-  if (input.stageLabel.trim().toLowerCase() === "latest") {
-    return input.baseName;
-  }
-
-  return `${input.baseName} (${input.stageLabel})`;
+  return formatBrandDisplayName(input.stageLabel, input.baseName); // fork: brand
 }
 
 export function resolveServerBackedAppStageLabel(input: {
