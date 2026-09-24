@@ -7,14 +7,18 @@
 #   scripts/fork/loom.sh build
 #   scripts/fork/loom.sh install
 #   scripts/fork/loom.sh rollback
+#   scripts/fork/loom.sh signing-setup
 #
 # integrate merges an upstream tag into a test branch (integrate/<tag>), runs
 # the fork's checks and builds the app. Only when all of that passes does it
 # fast-forward main, tag the result loom-<tag>, push, and install. A merge
 # conflict stops on the test branch; resolve it, commit, and rerun with
-# --continue. --dry-run merges, checks and builds, then throws the result away
-# without touching main or the installed app. Every install first snapshots the T3 database so rollback can
-# restore the build and the data it ran with.
+# --continue. --dry-run merges, checks and builds, then throws the result
+# away without touching main or the installed app. Every install first
+# snapshots the T3 database so rollback can restore the build and the data it
+# ran with. signing-setup creates a local code-signing certificate once, so
+# every build is the same app to macOS and keeps its permissions and Keychain
+# access across updates.
 set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -24,6 +28,8 @@ APP_PATH="/Applications/Loom.app"
 BUILDS_DIR="$HOME/Library/Application Support/Loom Builds"
 T3_USERDATA="$HOME/.t3/userdata"
 KEEP_BUILDS=3
+SIGNING_IDENTITY="${LOOM_SIGNING_IDENTITY:-Loom Local Code Signing}"
+LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 # Upstream files that must still carry a `fork: brand` marker after a merge.
 SEAM_FILES=(
   apps/desktop/src/app/DesktopEnvironment.ts
@@ -127,8 +133,60 @@ build_app() {
   name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$record"/*.app/Contents/Info.plist)
   case "$name" in Loom | "Loom ("*) ;; *) die "the built app is named '$name', not Loom; check the brand seams" ;; esac
   [ "$(ls -d "$record"/*.app | head -1)" = "$record/Loom.app" ] || mv "$record"/*.app "$record/Loom.app"
+  sign_app "$record/Loom.app"
   printf 'upstream=%s\ncommit=%s\nbuilt=%s\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
   echo "Built $name $version into $record"
+}
+
+signing_identity_exists() {
+  security find-identity -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | grep -F "\"$SIGNING_IDENTITY\"" >/dev/null
+}
+
+# Local builds leave Electron's own ad hoc signature, identified as "Electron"
+# and pinned to one build's hash. Re-sign with the local identity so the
+# signature names the app's bundle id and the same certificate every build.
+# Without the identity, still re-sign ad hoc so the identifier is right.
+sign_app() {
+  local app=$1 identity=-
+  if signing_identity_exists; then
+    identity=$SIGNING_IDENTITY
+  else
+    echo "No '$SIGNING_IDENTITY' certificate: signing ad hoc. Each build will look like a new app"
+    echo "to macOS; run 'scripts/fork/loom.sh signing-setup' once to fix that."
+  fi
+  say "Signing the app"
+  codesign --force --deep --sign "$identity" "$app"
+  codesign --verify --deep --strict "$app"
+  codesign -d -r- "$app" 2>&1 | grep '^designated' | sed 's/^/  /'
+}
+
+# Create a self-signed code-signing certificate in the login keychain. It is
+# only for this Mac: it gives local builds a stable identity, it is not trusted
+# by anyone else, and it cannot notarize. The private key never leaves the
+# keychain; the temporary files are removed.
+cmd_signing_setup() {
+  if signing_identity_exists; then
+    echo "'$SIGNING_IDENTITY' already exists in the login keychain."
+    return 0
+  fi
+  local tmp pw
+  tmp=$(mktemp -d)
+  chmod 700 "$tmp"
+  pw=$(/usr/bin/openssl rand -hex 16)
+  printf '%s\n' \
+    '[req]' 'distinguished_name = dn' 'x509_extensions = ext' 'prompt = no' \
+    '[dn]' "CN = $SIGNING_IDENTITY" \
+    '[ext]' 'basicConstraints = critical, CA:false' 'keyUsage = critical, digitalSignature' \
+    'extendedKeyUsage = critical, codeSigning' > "$tmp/cert.cnf"
+  /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -config "$tmp/cert.cnf" \
+    -keyout "$tmp/key.pem" -out "$tmp/cert.pem" 2>/dev/null
+  /usr/bin/openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
+    -out "$tmp/identity.p12" -passout pass:"$pw" 2>/dev/null
+  security import "$tmp/identity.p12" -k "$LOGIN_KEYCHAIN" -P "$pw" -T /usr/bin/codesign >/dev/null
+  rm -rf "$tmp"
+  signing_identity_exists || die "the certificate was not imported"
+  echo "Created '$SIGNING_IDENTITY' in the login keychain. The first signing may ask to let"
+  echo "codesign use it; choose Always Allow."
 }
 
 # Build records, newest build first. Ordered by the recorded build time, not
@@ -337,5 +395,6 @@ case "${1:-}" in
   build) cmd_build ;;
   install) cmd_install ;;
   rollback) cmd_rollback ;;
-  *) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  signing-setup) cmd_signing_setup ;;
+  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -123,8 +123,14 @@ folder and may upgrade the database in ways an older build cannot read, which is
 rollback restores the data along with the app. Threads created on the newer build are
 lost by a rollback.
 
-Local builds are unsigned, so each new build may ask once for access to the
-`t3code Safe Storage` Keychain item. Allow it.
+Builds are signed with a local certificate, "Loom Local Code Signing", that
+`scripts/fork/loom.sh signing-setup` creates once in the login keychain. It gives every
+build the same identity (`identifier "com.t3tools.t3code" and certificate leaf = ...`),
+so macOS keeps Loom's permissions and Keychain access across updates; without it each
+build is a new ad hoc app. The certificate is self-signed and only for this Mac: it is
+not trusted elsewhere and cannot notarize. The first build after setup may ask to let
+`codesign` use the key, and Loom may ask once for the `t3code Safe Storage` item;
+choose Always Allow for both.
 
 ## Merging upstream
 
