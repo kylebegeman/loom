@@ -99,6 +99,33 @@ Windows `.ico` and web exports) and for the mobile iOS build.
   "macOS pre-Tahoe" export described in `assets/README.md`.
 - `assets/prod/logo.svg` is unchanged. No build uses it.
 
+## Updating from upstream
+
+`scripts/fork/loom.sh` is the whole process. Stable releases are the default; a nightly
+is something you choose.
+
+| Command                                          | What it does                                                                                                                         |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/fork/loom.sh status`                    | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                              |
+| `scripts/fork/loom.sh integrate`                 | Merge the newest stable tag on a test branch, run the fork's checks, build, then fast-forward main, tag `loom-<tag>`, push, install. |
+| `scripts/fork/loom.sh integrate nightly`         | The same for the newest nightly tag, or pass any upstream tag.                                                                       |
+| `scripts/fork/loom.sh integrate <tag> --dry-run` | Merge, check and build, then discard it. main and the installed app are unchanged.                                                   |
+| `scripts/fork/loom.sh build` / `install`         | Rebuild main (stamped with its upstream version) / install the newest build.                                                         |
+| `scripts/fork/loom.sh rollback`                  | Reinstall the previous build and restore the T3 data it last ran with.                                                               |
+
+A merge conflict stops on the `integrate/<tag>` branch and lists the files. Resolve them,
+`git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`.
+
+Builds live in `~/Library/Application Support/Loom Builds` (the newest three, plus the
+installed one). Each install first saves `~/.t3/userdata/state.sqlite` and the settings
+files into the record of the build being replaced. Nightly builds share stable's data
+folder and may upgrade the database in ways an older build cannot read, which is why a
+rollback restores the data along with the app. Threads created on the newer build are
+lost by a rollback.
+
+Local builds are unsigned, so each new build may ask once for access to the
+`t3code Safe Storage` Keychain item. Allow it.
+
 ## Merging upstream
 
 Conflicts should only appear on the seam lines above. After a merge, check that
