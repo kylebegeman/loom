@@ -44,7 +44,9 @@ FORK_TESTS=(
 )
 TYPECHECK_DIRS=(packages/shared apps/desktop apps/web scripts)
 
-export PATH="/opt/homebrew/opt/rustup/bin:$PATH" # the desktop build compiles a Rust helper
+# The repo's own tools (vp) and Rust, which the desktop build needs for a
+# native helper. pnpm adds node_modules/.bin itself; plain node does not.
+export PATH="$REPO_ROOT/node_modules/.bin:/opt/homebrew/opt/rustup/bin:$PATH"
 
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
