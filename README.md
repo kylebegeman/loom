@@ -1,3 +1,7 @@
+> **Loom** is Kyle Begeman's personal fork of [T3 Code](https://github.com/pingdotgg/t3code).
+> It tracks upstream closely and adds a few features on top; everything below is
+> upstream's README. For T3 Code itself, use [the original project](https://github.com/pingdotgg/t3code).
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
