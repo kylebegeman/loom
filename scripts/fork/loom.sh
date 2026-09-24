@@ -163,8 +163,15 @@ prune_builds() {
 # found and quit by their exact paths: a bundle id is ambiguous between them,
 # and two running at once would put two servers on one database.
 VANILLA_APP_PATH="/Applications/T3 Code (Alpha).app"
+# pgrep never matches itself (a grep over ps output would match its own
+# arguments); the paths are escaped so "(Alpha)" is literal, not a regex group.
 app_running() {
-  ps -axo command= | grep -F -e "$APP_PATH/Contents/MacOS/" -e "$VANILLA_APP_PATH/Contents/MacOS/" >/dev/null
+  local app pattern
+  for app in "$APP_PATH" "$VANILLA_APP_PATH"; do
+    pattern=$(printf '%s' "$app/Contents/MacOS/" | sed 's/[][\\.*^$()+?{}|]/\\&/g')
+    pgrep -f -- "$pattern" >/dev/null && return 0
+  done
+  return 1
 }
 
 quit_app() {
