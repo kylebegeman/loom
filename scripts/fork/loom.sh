@@ -84,6 +84,12 @@ cmd_status() {
   printf 'kept builds:          %s\n' "$(ls "$BUILDS_DIR" 2>/dev/null | tr '\n' ' ')"
 }
 
+# pnpm's automatic install on some machines rewrites one peer-dependency hash
+# in pnpm-lock.yaml. It is local noise, never part of the fork, so undo it.
+restore_lockfile() {
+  git diff --quiet -- pnpm-lock.yaml || git checkout -q -- pnpm-lock.yaml
+}
+
 run_checks() {
   say "Checking that every fork seam survived"
   local missing=0 f
@@ -100,6 +106,7 @@ run_checks() {
     say "Typechecking $d"
     (cd "$d" && pnpm run -s typecheck)
   done
+  restore_lockfile
 }
 
 # Build the macOS app for this Mac from the current checkout, stamped with
@@ -122,6 +129,7 @@ build_app() {
     die "the desktop build failed"
   fi
   git checkout -q -- "${stamped[@]}"
+  restore_lockfile
   local zip
   zip=$(ls release/*-arm64.zip 2>/dev/null | head -1)
   [ -n "$zip" ] || die "the build produced no zip in release/"
