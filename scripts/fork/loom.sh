@@ -107,6 +107,12 @@ build_app() {
   pnpm install --frozen-lockfile
   say "Building Loom $version"
   rm -rf release
+  # Like upstream's release workflow, stamp every releasable package with the
+  # release version first, so the app and its bundled server agree. The stamp
+  # is for the build only; the package files are restored afterwards.
+  local stamped=(apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json)
+  trap 'git checkout -q -- "${stamped[@]}"' RETURN
+  node scripts/update-release-package-versions.ts "$version"
   node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --build-version "$version"
   local zip
   zip=$(ls release/*-arm64.zip 2>/dev/null | head -1)
