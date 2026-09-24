@@ -1,6 +1,6 @@
 # L12: Panel picker
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 A compact, searchable picker for opening right-panel surfaces. It replaces upstream's flat
 "Open a surface" launcher (shown when the right panel is empty) and the tab bar's "+" menu
@@ -23,14 +23,21 @@ Selection item: P14 (Panel picker), see [selections.md](../../selections.md).
   - Browser profiles: the Browser row expands (Right arrow or its chevron) into one row per
     profile when more than one profile exists.
   - Recents (last 5 surfaces opened through the picker), stored per client.
-  - Keybinding command `loom.panel-picker.open` and a command palette item.
-  - A Loom setting to switch back to upstream's launcher and menu.
+  - Descriptions for every row: fork-owned copy for upstream surfaces, and the optional
+    `description` that fork panels set on their `ForkPanelDefinition` (`ext-panels`).
+  - `mod+shift+'` opens the picker by default, through a fork keydown listener with a
+    setting to turn it off (never written into `keybindings.json`). The keybinding command
+    `loom.panel-picker.open` stays bindable in Settings > Keybindings, and a command palette
+    item opens the picker too.
+  - Loom settings: switch back to upstream's launcher and menu, and turn the default
+    shortcut off.
 - Out:
   - Hubs, facets, suggested cards, "more ways to open" sections (old Loom's catalog).
   - Opening a specific surface from the command palette (surface handlers live in
     `ChatView`; the palette opens the picker instead).
-  - Descriptions for fork panels until `ext-panels` gains an optional `description` field
-    (question for Kyle; see PRODUCT.md). Upstream surfaces get descriptions from this packet.
+  - A default binding in `keybindings.json` (no `FORK_DEFAULT_KEYBINDINGS` seam): upstream
+    T3 Code would flag it as an invalid entry after a rollback.
+  - Default bindings for individual panels: panel commands stay unbound (L01's rule).
   - Mobile (there is no right panel on mobile).
 
 ## Surfaces
@@ -47,7 +54,7 @@ Selection item: P14 (Panel picker), see [selections.md](../../selections.md).
 - [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels) (required: the fork panel actions reach the picker through its `forkActions`
   spread, and this packet's seams sit next to its seams in `RightPanelTabs.tsx`).
 - [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings) (the switch back to upstream's launcher).
-- [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) and [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (`loom.panel-picker.open`).
+- [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) (the command host and the default-shortcut listener) and [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (`loom.panel-picker.open`).
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette) ("Open panel picker").
 - [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core), only as the prerequisite of `ext-panels` and `ext-palette`; no server code.
 
@@ -56,21 +63,20 @@ Any of them may have to be created by this packet (run each existence check firs
 ## Packet seams
 
 - `apps/web/src/components/RightPanelTabs.tsx`: one import, the picker in place of the
-  empty-state launcher, and the picker button in place of the "+" menu. Five marked sites.
+  empty-state launcher, and the picker button in place of the "+" menu. Six marked sites.
   See [SEAMS.md](./SEAMS.md).
 
 ## Optional integrations
 
-- Every packet that registers a fork panel (L01 Snippets, L04, L05, L06, and others)
-  appears in the picker with no change to this packet.
-- If `ext-panels` later carries a `description` per fork panel, the picker shows it
-  (TECHNICAL.md explains the one-line change).
+- Every packet that registers a fork panel (L01 Snippets, L04, L05, L06, L29 and others)
+  appears in the picker with no change to this packet. A panel that sets `description`
+  shows it under its title; a panel without one shows only its title.
 
 ## Size estimate
 
-Small to medium: about 450 to 600 lines including tests (picker list and ranking about
-300, launcher and popover wrappers about 120, settings, command and palette glue about 80,
-tests about 120).
+Small to medium: about 500 to 650 lines including tests (picker list and ranking about
+300, launcher and popover wrappers about 120, settings, command, default shortcut and
+palette glue about 110, tests about 140).
 
 ## How an agent starts
 

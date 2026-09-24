@@ -28,9 +28,9 @@ Why none are needed:
   deliberately left out (see PRODUCT.md, entry points).
 - Captures reach the composer through upstream's public draft store.
 
-`package.json` changes for the new dependencies (`three`, `@types/three`, and later
-`occt-import-js`) in `apps/web/package.json` are dependency additions, not seams, but they touch
-an upstream file and the lockfile. Add them only after Kyle approves, commit only the intended
+`package.json` changes for the new dependencies (`three` and `@types/three`, approved by Kyle
+on 2026-09-24) in `apps/web/package.json` are dependency additions, not seams, but they touch an
+upstream file and the lockfile. Commit only the intended
 lockfile change (CONVENTIONS.md, "The lockfile rule"), and mention them in FORK.md under a
 "Dependencies added by packets" note if FORK.md has one by then.
 

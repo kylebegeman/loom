@@ -13,6 +13,7 @@ are idle threads to test Once on. Ask Kyle before starting dev servers or browse
 
 ```
 packages/contracts/src/fork/composer-drawers.ts
+packages/contracts/src/fork/composer-drawers.test.ts
 packages/client-runtime/src/fork/composer-drawers.ts
 apps/server/src/fork/composer-drawers/ShellRunner.ts
 apps/server/src/fork/composer-drawers/ShellRunner.test.ts
@@ -72,11 +73,15 @@ docs/fork/user/composer-drawers.md
    `Layer.provide(ProcessRunner.layer)`, `rpc.ts`, registrations, scope
    `terminal:operate`, feature slug. `ShellRunner.test.ts`. Typecheck contracts, server,
    client-runtime, web, mobile.
-8. Shell, client: client-runtime atoms, `state.ts`, `shell.ts` + test,
-   `ShellTab.tsx`; command `shell`; palette item. Commit
+8. Shell, client: client-runtime atoms, `state.ts`, `shell.ts` + test (including
+   `readShellSettings` with fallback to the defaults), `ShellTab.tsx` with the per-run
+   timeout select; the "Default timeout" and "Output limit" rows in `settings.tsx`;
+   command `shell`; palette item. Commit
    `feat(fork-composer-drawers): run a command and attach its output`.
 9. User doc `docs/fork/user/composer-drawers.md`: the four tabs, the clipboard privacy
-   rules, the shell's timeout and cap, that Once restores after the turn.
+   rules (focus-regain capture only on desktop), the shell's default timeout and cap and
+   where to change them (up to 10 minutes and 1 MB), that the schema is added to the
+   prompt as text, that Once restores after the turn.
 10. Packet index Status.
 
 ## Code sketches
@@ -150,6 +155,11 @@ for every non-terminal state; treat all of them like `"running"`.)
 - The shell runs with the server process's environment and the user's login shell; on a
   remote environment that is the remote machine. The UI shows the cwd so this is visible.
 - Never log command output on the server.
+- A 10-minute run keeps one unary RPC open. No client-side request timeout was found in
+  `packages/client-runtime/src/rpc/` (only the 15 s socket-open timeout,
+  `session.ts:45`); confirm in the manual check that a long run returns. If the
+  connection drops mid-run, the command keeps running on the server until its own
+  timeout and the tab shows the RPC error; do not retry automatically.
 
 ## Done when
 
@@ -158,5 +168,5 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
 - Once restores the composer on send and the thread after the turn, and never overwrites a
   later user change.
 - Clipboard history is empty and captures nothing until enabled; turning it off clears it.
-- A shell command that times out, fails to spawn, or prints 1 MB behaves as TESTING.md
-  describes.
+- A shell command that times out, fails to spawn, or prints more than the output limit
+  behaves as TESTING.md describes, with the defaults and with the maximums.

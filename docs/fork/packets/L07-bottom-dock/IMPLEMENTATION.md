@@ -1,7 +1,7 @@
 # L07 implementation plan
 
 One agent per phase. Each phase leaves the tree compiling, tested and shippable. Phase 1
-comes first; phases 2, 3 and 4 are independent of each other.
+comes first; phases 2, 3 and 4 are independent of each other; phase 5 follows phase 4.
 
 ## Before starting
 
@@ -26,6 +26,11 @@ apps/web/src/fork/bottom-dock/
   tasks/                  phase 2: TasksTab.tsx, taskModel.ts (+ test), useTaskActions.ts, tab.ts
   activity/               phase 3: ActivityTab.tsx, rows.ts (+ test), search.ts (+ test), tab.ts
   approvals/              phase 4: ApprovalsTab.tsx, ApprovalThreadGroup.tsx, grouping.ts (+ test), tab.ts
+                          phase 5: RiskBadge.tsx
+packages/contracts/src/fork/bottom-dock.ts          phase 5
+packages/client-runtime/src/fork/bottom-dock.ts     phase 5
+apps/server/src/fork/bottom-dock/                   phase 5: decide.ts, pendingApproval.ts (+ test),
+                                                    ApprovalRiskService.ts (+ test), rpc.ts
 docs/fork/user/bottom-dock.md
 ```
 
@@ -180,13 +185,17 @@ never write to a `term-N` session.
 
 ## Phase 3: Activity
 
-1. `activity/rows.ts` (pure, test first): `deriveActivityRows(thread)`, with the noise-kind
-   exclusions mirroring `deriveWorkLogEntries` (`apps/web/src/session-logic.ts:451-512`).
+1. `activity/rows.ts` (pure, test first): `deriveActivityRows(thread, { includeMessages })`,
+   with the noise-kind exclusions mirroring `deriveWorkLogEntries`
+   (`apps/web/src/session-logic.ts:451-512`); messages are skipped unless `includeMessages`.
 2. `activity/search.ts` (pure): `filterRows(rows, { query, chips })`, token matching, and
-   `groupByTurn(rows)`.
-3. `activity/ActivityTab.tsx`: search input with `useDeferredValue`, chips, the virtualized
-   list (`@legendapp/list`, as `MessagesTimeline.tsx` uses it), expandable rows with Copy,
-   "Load older turns" via `threadHasOlderTurns` / `requestOlderThreadTurns`.
+   `groupByTurn(rows)`; `activityEmptyState(thread, { includeMessages, rows })` returning
+   `"empty"`, `"only-messages"` or `"no-matches"`.
+3. `activity/ActivityTab.tsx`: search input with `useDeferredValue`, chips (All, Work,
+   Decisions, Errors), the "Messages" toggle (off by default, per thread, in memory), the
+   virtualized list (`@legendapp/list`, as `MessagesTimeline.tsx` uses it), expandable rows
+   with Copy, "Load older turns" via `threadHasOlderTurns` / `requestOlderThreadTurns`, and
+   the "Only chat messages so far." state with "Show messages".
 4. `activity/tab.ts`: `id: "activity"`, `HistoryIcon`, `command: "loom.bottom-dock.activity"`,
    no badge. Register; append the command; user doc section.
 
@@ -210,10 +219,53 @@ payloads during derivation, only in `detail()` on expand.
 Pitfall: a thread's shell can lag its detail by a moment after a response; hide a group only
 when its derived pending list is empty, not when the shell flag clears.
 
+## Phase 5: approval risk badge (Jev)
+
+1. **Extension points.** Existence check for `ext-decide` (EXTENSION-POINTS.md section 18);
+   create it if missing, exactly as specified there, in its own commit. `ext-core`'s server
+   parts exist already if any server packet landed; otherwise its existence check covers
+   them.
+2. **Pure logic, test first.**
+   - `apps/server/src/fork/bottom-dock/pendingApproval.ts`: `findPendingApproval(activities,
+requestId)` returning `{ requestKind, detail, appName } | null`, copied from the approval
+     half of `derivePendingRequests` with a comment pointing at
+     `packages/client-runtime/src/pendingRequests.ts:122-196`.
+   - `decide.ts`: `APPROVAL_RISK_FEATURE` (a `DecideFeature` with `agentTool: false`),
+     `APPROVAL_RISK_QUESTIONS` and `buildApprovalRiskState(approval)` (TECHNICAL.md, Phase 5;
+     caps `request_text` with `estimateTokens`, leaves redaction to `decide`), plus
+     `toRiskResult(decideResult)` mapping `answered` to `labeled` and every `fallback`
+     (including `low-confidence` with answers) to `none`.
+3. **Contract.** `packages/contracts/src/fork/bottom-dock.ts` with `BottomDockRpcGroup`;
+   register in `fork/index.ts` and `fork/rpc.ts`. Typecheck contracts.
+4. **Service.** `ApprovalRiskService.ts`: cache (500 entries), in-flight dedupe with a
+   `Deferred` per request id, lookup through `ProjectionSnapshotQuery`, then
+   `LoomDecide.decide("bottom-dock.approval-risk", { state, questions }, { origin: "auto",
+threadId, projectId })` with no `threshold` and no confidence re-check. Do not cache
+   `timeout` or `error`. The service has no dependency on the
+   orchestration engine, so it cannot dispatch commands.
+5. **Registration.** `APPROVAL_RISK_FEATURE` appended to `FORK_DECIDE_FEATURES`
+   (`apps/server/src/fork/decide/registry.ts`); `"bottom-dock"` in
+   `LOOM_SERVER_FEATURES`; service in `ForkServices` and `ForkServicesLive`; `rpc.ts`
+   handler with `auth.effect(TAG, withForkRuntime(...))`; scope `orchestration:read`.
+6. **Client.** `packages/client-runtime/src/fork/bottom-dock.ts` (query family,
+   `staleTimeMs: Infinity`); `approvals/RiskBadge.tsx` mounted by `ApprovalThreadGroup` next
+   to each approval header, gated on `useDecideFeature(environmentId,
+"bottom-dock.approval-risk").usable` and `bottom-dock` in `loomFeatures`; renders
+   nothing while loading and on `none`; muted variant for Read-only and Reversible, warning
+   variant for Irreversible; tooltip copy from PRODUCT.md.
+7. **Docs.** User doc section "Approval risk badge": what the three labels mean, that it is
+   Jev's estimate from the request text only, that it never answers anything, and where to
+   turn it off (Loom settings, Jev, "Approval risk badge", "Use Jev"; or "Jev off for this
+   project").
+
+Pitfalls: never send more than the request text (no thread history); never show a badge on
+fallback or while loading; the badge must not be focusable in a way that steals the
+keyboard path to Approve and Decline.
+
 ## Done when
 
-The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done) (no server
-or `loomFeatures` items apply), plus per phase:
+The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done) (server and
+`loomFeatures` items apply to phase 5 only), plus per phase:
 
 - Phase 1: with no tabs registered, the terminal drawer is pixel- and behavior-identical to
   upstream; with a tab registered, the one-tab rule holds for every way in (tab click,
@@ -222,4 +274,10 @@ or `loomFeatures` items apply), plus per phase:
   dock and switching threads, and stop with Stop.
 - Phase 3: search finds a tool call from 200 turns ago after "Load older turns"; typing stays
   smooth on a 500-activity thread.
+- Phase 3: with "Messages" off, no message rows appear and a messages-only thread shows the
+  "Only chat messages so far." state; turning it on adds them.
 - Phase 4: approving from the dock resolves the request in the thread on another client.
+- Phase 5: with a Jev key, a pending `rm -rf` style command shows Irreversible and a `git
+status` command shows Read-only (manual check); with no key, "Use Jev" off, the project
+  switched off, or a scripted timeout, no badge appears and the tab is otherwise unchanged; no
+  badge path can answer an approval.

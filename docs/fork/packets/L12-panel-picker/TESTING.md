@@ -19,9 +19,20 @@
 - Browser profile rows: generated only with more than one profile; searchable by
   "browser" plus the profile name.
 
+`apps/web/src/fork/panel-picker/defaultShortcut.test.ts` (pure):
+
+- Matches `Meta+Shift+Quote` on macOS and `Ctrl+Shift+Quote` elsewhere, whether `key` is
+  `'` or `"` (Shift on US layouts).
+- Rejects: no Shift, Alt added, the other platform's modifier, both Meta and Ctrl, and
+  other keys such as `Semicolon`.
+- `shouldOpenFromDefaultShortcut`: false when the setting is off, the event is already
+  handled or repeated, the palette is open, there is no active thread, or `boundCommand`
+  is not null (a user binding on the key, including `loom.panel-picker.open` itself); true
+  otherwise.
+
 `preferences.ts` behavior (in the same file or `preferences.test.ts`):
 
-- Enabled defaults to true when the key is missing or storage throws.
+- Enabled and shortcut both default to true when the key is missing or storage throws.
 - Recents keep at most 5 labels, most recent first, without duplicates.
 
 No component render tests (AGENTS.md: do not render to static markup to assert markup).
@@ -34,6 +45,7 @@ settings ids) run with their own tests.
 
 ```sh
 vp test run apps/web/src/fork/panel-picker/rank.test.ts \
+  apps/web/src/fork/panel-picker/defaultShortcut.test.ts \
   apps/web/src/fork/panels/registry.test.ts \
   apps/web/src/fork/settings/registry.test.ts \
   packages/contracts/src/fork/keybindings.test.ts
@@ -57,13 +69,19 @@ With Kyle's permission, one pass with `test-t3-app` (web) and the desktop dev ap
    Enter on one opens that profile.
 5. Open a thread without a project (or on web): Browser shows its reason inline.
 6. Recents: the last surfaces opened appear first on the next open.
-7. Bind `loom.panel-picker.open`; with the panel hidden, press it: the panel shows and the
-   search (or the popover) is focused. Same from the command palette item.
-8. Settings > Loom > Panel picker off: upstream's launcher and "+" menu are back,
-   unchanged; on again: the picker returns.
-9. The pull request page's right panel shows the picker with upstream surfaces only.
-10. With a fork panel packet installed (for example L01), its panel appears in both
-    lists; on an upstream server it is listed as unavailable with its hint.
+7. With the panel hidden, press `mod+shift+'`: the panel shows and the search (or the
+   popover) is focused. Same from the command palette item. Check `keybindings.json`: no
+   Loom entry was written.
+8. Turn "`mod+shift+'` opens the panel picker" off: the key does nothing in Loom. Bind
+   `loom.panel-picker.open` to another key in Settings > Keybindings: it opens the picker.
+   Bind some other command to `mod+shift+'` with the switch on: that command runs and the
+   picker does not open.
+9. Settings > Loom > Panel picker, "Use the compact panel picker" off: upstream's launcher
+   and "+" menu are back, unchanged; on again: the picker returns.
+10. The pull request page's right panel shows the picker with upstream surfaces only.
+11. With a fork panel packet installed (for example L01), its panel appears in both
+    lists with its description when it sets one; on an upstream server it is listed as
+    unavailable with its hint.
 
 ## Merge safety
 
@@ -75,5 +93,7 @@ synced `main`.
 
 - Upstream's surfaces behave exactly as before when picked; only the list presentation
   changed.
-- The setting restores upstream's UI completely.
+- The picker setting restores upstream's UI completely.
+- The default shortcut is never persisted in `keybindings.json` and yields to user
+  bindings.
 - No console errors, no layout shift when the popover opens, no repainting animation.

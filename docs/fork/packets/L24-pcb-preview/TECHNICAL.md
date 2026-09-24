@@ -27,6 +27,8 @@ of one sheet or layer preset is fetched separately, only when shown.
 ## Tools and exact invocations
 
 Detection runs once per server start and again on `status` requests older than 60 seconds.
+Detection is the only way tools are found: there are no path override settings (Kyle's
+decision; a follow-up if a real install is missed).
 
 | Tool        | Lookup order                                                                   | Version                                    |
 | ----------- | ------------------------------------------------------------------------------ | ------------------------------------------ |
@@ -150,6 +152,8 @@ export const PcbLayerPreset = Schema.Literals(["front", "back", "all"]);
 
 export const PcbDesign = Schema.Struct({
   id: TrimmedNonEmptyString, // workspace-relative entry path
+  /** Absolute entry path on the environment host; used only for the Electronics deep link. */
+  absolutePath: TrimmedNonEmptyString,
   kind: PcbDesignKind,
   name: TrimmedNonEmptyString,
   schematicPath: Schema.optional(TrimmedNonEmptyString),
@@ -384,14 +388,14 @@ Web (`apps/web/src/fork/pcb-preview/`):
 | `panel.tsx`           | `ForkPanelDefinition` (`id: "pcb-preview"`, title "PCB preview", icon `CircuitBoardIcon` from lucide, shortcut `"Z"`, `isAvailable: threadRef !== null && loomFeatures.includes("pcb-preview")`). |
 | `PcbPreviewPanel.tsx` | Toolbar (design select, view tabs, preset or sheet select, zoom, refresh, "Rendering" state), body.                                                                                               |
 | `SvgViewport.tsx`     | `<img>` from a Blob URL; CSS `transform: translate() scale()` pan and zoom; fit on first load.                                                                                                    |
-| `ChecksView.tsx`      | Run ERC / Run DRC, grouped list, copy summary.                                                                                                                                                    |
+| `ChecksView.tsx`      | Run ERC / Run DRC, grouped list, "Send summary to chat", "Copy summary".                                                                                                                          |
 | `usePcbPreview.ts`    | View state machine: current design, view, preset, sheet; render on (visible and hash changed); cancel on change.                                                                                  |
 | `state.ts`            | Web atom instances with `connectionAtomRuntime`.                                                                                                                                                  |
 | `preferences.ts`      | `loom:pcb-preview:last-design:v1` (per project), `loom:pcb-preview:trusted-projects:v1`, `loom:pcb-preview:electronics-url:v1`, all via `resolveStorage` in try/catch.                            |
 | `palette.tsx`         | Palette source: "Open PCB preview" / "Close PCB preview".                                                                                                                                         |
 | `commands.ts`         | `onForkCommand("loom.pcb-preview.toggle", ...)` registration, mounted from a tiny `ForkRoot` component.                                                                                           |
 | `settings.tsx`        | Loom settings section: tool status from `status`, Electronics URL field.                                                                                                                          |
-| `summary.ts`          | Pure: `PcbCheckResult` to the copyable text summary.                                                                                                                                              |
+| `summary.ts`          | Pure: `PcbCheckResult` to the text summary; `electronicsDesignUrl(baseUrl, absolutePath)`.                                                                                                        |
 
 Rendering the SVG safely: `new Blob([svg], { type: "image/svg+xml" })`, `URL.createObjectURL`,
 shown in `<img>`; revoked on change and unmount. Scripts and external references inside an
@@ -411,9 +415,31 @@ Palette and keybinding: the palette item and the `loom.pcb-preview.toggle` comma
 (`closeSurface` is declared at `apps/web/src/rightPanelStore.ts:160`).
 
 Electronics link: when `loom:pcb-preview:electronics-url:v1` is set, the toolbar menu shows
-"Open in Electronics", which opens that URL with `window.open` (desktop: upstream's external
-link handling applies). The URL is client-local because the Electronics app runs on a
-machine the client can reach, which may differ from the Loom server.
+"Open in Electronics", which opens
+`electronicsDesignUrl(baseUrl, design.absolutePath)`: parse the setting with `new URL`,
+strip trailing slashes from its pathname, append `/designs/by-path`, and set the `path`
+search parameter with `searchParams.set` (so the path is URL-encoded, and a trailing slash or
+a path prefix on the setting both work), opened via
+`window.open` (desktop: upstream's external link handling applies). The entry path is the
+`.kicad_pro` for a KiCad project (the lone `.kicad_sch` / `.kicad_pcb` otherwise) and the
+circuit entry file for tscircuit. The Electronics spec defines the page
+(`~/Developer/docs/apps/electronics/SPEC.md`, section 5, "Open by path"): it redirects to a
+linked library design or shows the path source read-only. The URL setting is client-local
+because the Electronics app runs on a machine the client can reach, which may differ from
+the Loom server; the path is only meaningful when the Electronics app runs on the
+environment host, and the menu item's tooltip says so ("Opens this board in the Electronics
+app. The app must run on the machine that has this project."). An invalid URL setting hides
+the item and the settings field shows "Not a valid URL".
+
+Send summary to chat: `summaryText(result, design)` from `summary.ts` (design name, check
+kind, KiCad version, counts, then one line per violation with severity, rule, description
+and item positions, capped at 100 violations with "and N more"), written with
+`useComposerDraftStore.getState().setPrompt(threadRef, next)`
+(`apps/web/src/composerDraftStore.ts:571`), where `next` is the summary, or the current draft
+prompt plus a blank line plus the summary when the draft is not empty; then focus the
+composer. It never sends. This is the same path L06 uses for "Ask the agent"; no
+`ext-composer` seam is needed. "Copy summary" writes the same text with
+`navigator.clipboard.writeText` and shows "Copied".
 
 ## Agent-facing tools
 

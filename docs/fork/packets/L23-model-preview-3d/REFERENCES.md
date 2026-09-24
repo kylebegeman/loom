@@ -58,7 +58,8 @@ QUESTIONS, SAFETY; status "Not started"). Optional for this panel, never require
   https://threejs.org/docs/ (package metadata checked with `npm view three` and unpkg on
   2026-09-24).
 - occt-import-js (LGPL-2.1) 0.0.23, STEP/IGES/BREP import in WebAssembly, about 11.6 MB
-  unpacked: https://github.com/kovacsv/occt-import-js
+  unpacked, declined by Kyle (STEP stays with the Fabrication app):
+  https://github.com/kovacsv/occt-import-js
 - Online3DViewer (MIT) 0.18.0, a complete viewer that bundles occt-import-js, considered and not
   used: https://github.com/kovacsv/Online3DViewer
 - OpenSCAD (GPL-2.0-or-later): https://openscad.org, snapshots at
@@ -83,3 +84,20 @@ QUESTIONS, SAFETY; status "Not started"). Optional for this panel, never require
     required for `execute_blender_code`). The command path is missing on 2026-09-24.
     `uv`/`uvx` are at `/opt/homebrew/bin`; Blender at `/opt/homebrew/bin/blender`
     and `/Applications/Blender.app`.
+
+## Printer build volumes (build plate presets)
+
+Checked on 2026-09-24.
+
+- Bambu Lab H2C: 330 x 320 x 325 mm total for both nozzles; left nozzle 325 x 320 x 320 mm;
+  both nozzles 300 x 320 x 325 mm. Kyle's source https://bambulab.com/en/h2c/specs (the page
+  refused automated fetches with HTTP 403); the same figures appear in Bambu Lab's H2C
+  announcement, https://blog.bambulab.com/bambu-lab-h2c-where-multi-material-vortek-system-meets-engineering-precision/
+  (seen in search results, not opened).
+- Bambu Lab H2D: 350 x 320 x 325 mm total for both nozzles; one nozzle 325 x 320 x 325 mm;
+  both nozzles 300 x 320 x 325 mm. https://bambulab.com/en/h2d/tech-specs returned HTTP 403 to
+  automated fetches, so these figures are confirmed only by third-party pages, for example
+  https://3dprintingindustry.com/news/bambu-labs-new-h2d-3d-printer-technical-specifications-and-pricing-237763/.
+  Unverified against bambulab.com; recheck in a browser.
+- Anycubic Kobra S1: 250 x 250 x 250 mm,
+  https://store.anycubic.com/products/kobra-s1-ace-2-pro-combo-3d-printer (fetched).

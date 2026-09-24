@@ -115,11 +115,15 @@ export const AppleDestination = Schema.Union([
     booted: Schema.Boolean,
   }),
   Schema.TaggedStruct("device", {
-    identifier: Schema.String,
+    identifier: Schema.String, // devicectl identifier; also accepted by xcodebuild -destination id=
     name: Schema.String,
-    platform: Schema.String,
+    platform: Schema.String, // "iOS", "iPadOS", "watchOS", ...
     osVersion: Schema.String,
     paired: Schema.Boolean,
+    /** null when devicectl does not report it. */
+    developerModeEnabled: Schema.NullOr(Schema.Boolean),
+    /** devicectl connection state, for display ("connected", "disconnected", ...). */
+    connection: Schema.NullOr(Schema.String),
   }),
   Schema.TaggedStruct("mac", {}),
   Schema.TaggedStruct("generic", {
@@ -179,8 +183,12 @@ export const AppleIssue = Schema.Struct({
 export const AppleTestFailure = Schema.Struct({
   testName: Schema.String,
   target: Schema.String,
-  identifier: Schema.String, // testIdentifierString, usable with -only-testing
+  /** xcodebuild: testIdentifierString (for -only-testing). swift test: the `swift test list` form (for --filter). */
+  identifier: Schema.String,
   message: Schema.String,
+  /** From the log when known (swift test); xcresult summaries do not carry it. */
+  file: Schema.optional(Schema.String),
+  line: Schema.optional(Schema.Int),
 });
 
 export const AppleRunSummary = Schema.Struct({
@@ -212,8 +220,10 @@ export const AppleRunSummary = Schema.Struct({
     }),
   ),
   xcodegen: Schema.optional(Schema.Struct({ generatedProject: Schema.String })),
-  /** Set when the run failed before any result bundle existed. */
+  /** Set when the run failed before any result bundle existed, or with a known cause (hint). */
   failureReason: Schema.optional(Schema.String),
+  /** A known cause the panel explains with a fix: code signing not set up, or the device unavailable. */
+  hint: Schema.optional(Schema.Literals(["signing", "device-unavailable"])),
 });
 
 export const AppleRunRecord = Schema.Struct({
@@ -280,6 +290,14 @@ export const AppleBuildSettings = Schema.Struct({
   keepRunsPerProject: Schema.Int.check(Schema.isBetween({ minimum: 5, maximum: 200 })),
   openLaunchedSimulatorInDevicePanel: Schema.Boolean,
 });
+export const DEFAULT_APPLE_BUILD_SETTINGS: typeof AppleBuildSettings.Type = {
+  agentToolsEnabled: true,
+  useXcbeautify: true,
+  collectTestDiagnostics: "never",
+  derivedData: "loom",
+  keepRunsPerProject: 20,
+  openLaunchedSimulatorInDevicePanel: true,
+};
 
 /** getSettings result: the settings plus what Loom stores on disk, for the settings section. */
 export const AppleBuildSettingsView = Schema.Struct({
@@ -429,6 +447,8 @@ Directory: `apps/server/src/fork/apple-build-tooling/`.
 | `xcodegen.ts`          | Validate, diff and generate.                                                                                                                                                      |
 | `readiness.ts`         | Checks from build settings JSON and files.                                                                                                                                        |
 | `simulators.ts`        | `simctl list -j`, `devicectl --json-output -` parsing.                                                                                                                            |
+| `diagnostics.ts`       | Pure: compiler diagnostics and test-failure lines from a raw log (swift build, swift test, and xcodebuild runs without a result bundle); `classifySigningIssue`.                  |
+| `xunit.ts`             | Pure: the small xUnit XML reader for `swift test --xunit-output` files.                                                                                                           |
 | `rpc.ts`               | `makeAppleBuildToolingRpcHandlers(auth)`.                                                                                                                                         |
 | `mcp.ts`               | Toolkit and handlers.                                                                                                                                                             |
 
@@ -501,15 +521,15 @@ xcodebuild (-workspace W | -project P) -scheme S [-configuration C]
 setting, or omitted for `xcode-default`. `-resultBundlePath` must not exist beforehand;
 the run directory is new per run, so it never does.
 
-| Kind               | Commands                                                                                                                                                                                     |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build`            | `... build`                                                                                                                                                                                  |
-| `test`             | `... test -collect-test-diagnostics <setting> [-testPlan T] [-only-testing:X ...] [-retry-tests-on-failure -test-iterations N]`                                                              |
-| `run`              | 1. `... build`. 2. `xcodebuild ... -showBuildSettings -json` (same scheme, configuration, destination). 3. Pick the application product (below). 4. Install and launch (below).              |
-| `releaseBuild`     | `... -configuration Release -destination generic/platform=iOS build CODE_SIGNING_ALLOWED=NO` (platform from the scheme's `SUPPORTED_PLATFORMS`; macOS schemes use `generic/platform=macOS`). |
-| `xcodegenGenerate` | `xcodegen generate --spec <spec> --use-cache --cache-path <stateDir>/fork/apple-build-tooling/xcodegen-cache/<hash>`                                                                         |
-| `swiftBuild`       | `swift build` in the package directory.                                                                                                                                                      |
-| `swiftTest`        | `swift test --parallel --xunit-output <runDir>/xunit.xml`                                                                                                                                    |
+| Kind               | Commands                                                                                                                                                                                        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`            | `... build`                                                                                                                                                                                     |
+| `test`             | `... test -collect-test-diagnostics <setting> [-testPlan T] [-only-testing:X ...] [-retry-tests-on-failure -test-iterations N]`                                                                 |
+| `run`              | 1. `... build`. 2. `xcodebuild ... -showBuildSettings -json` (same scheme, configuration, destination). 3. Pick the application product (below). 4. Install and launch (below).                 |
+| `releaseBuild`     | `... -configuration Release -destination generic/platform=iOS build CODE_SIGNING_ALLOWED=NO` (platform from the scheme's `SUPPORTED_PLATFORMS`; macOS schemes use `generic/platform=macOS`).    |
+| `xcodegenGenerate` | `xcodegen generate --spec <spec> --use-cache --cache-path <stateDir>/fork/apple-build-tooling/xcodegen-cache/<hash>`                                                                            |
+| `swiftBuild`       | `swift build` with `cwd` = the package directory (the directory of the selected `Package.swift`).                                                                                               |
+| `swiftTest`        | `swift test --parallel --xunit-output <runDir>/xunit.xml [--filter <escaped identifier> ...]`, same `cwd`. The run directory exists before the command (SwiftPM writes nothing if it does not). |
 
 Destination specifiers (`commands.ts`, unit tested):
 
@@ -528,15 +548,93 @@ app is `TARGET_BUILD_DIR/WRAPPER_NAME` and the bundle id `PRODUCT_BUNDLE_IDENTIF
 
 Install and launch:
 
-| Destination | Steps                                                                                                                                                                                                                                                                     |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Simulator   | `xcrun simctl boot <udid>` (ignore "Unable to boot device in current state: Booted"), `xcrun simctl bootstatus <udid> -b`, `xcrun simctl install <udid> <app>`, `xcrun simctl launch --terminate-running-process <udid> <bundleId>`. Then the optional Device panel open. |
-| Device      | `xcrun devicectl device install app --device <id> <app> --json-output -`, then `xcrun devicectl device process launch --device <id> --terminate-existing <bundleId> --json-output -`. Parse the JSON; the human text is not stable (devicectl help says so).              |
-| Mac         | `open -n <app>`                                                                                                                                                                                                                                                           |
+| Destination | Steps                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Simulator   | `xcrun simctl boot <udid>` (ignore "Unable to boot device in current state: Booted"), `xcrun simctl bootstatus <udid> -b`, `xcrun simctl install <udid> <app>`, `xcrun simctl launch --terminate-running-process <udid> <bundleId>`. Then the optional Device panel open.                                                                                                                                                                         |
+| Device      | `xcrun devicectl device install app --device <id> <app> --json-output -`, then `xcrun devicectl device process launch --device <id> --terminate-existing <bundleId> --json-output -`. Parse the JSON; the human text is not stable (devicectl help says so). A non-zero exit gives `hint: "device-unavailable"` with devicectl's error text (JSON `error` when present, else stderr; the exact error JSON shape is unverified, decode leniently). |
+| Mac         | `open -n <app>`                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 
-Check the `devicectl` subcommand flags on the target Xcode before relying on them
-(`xcrun devicectl device install app --help`); Xcode 27 changed JSON to version 5 and adds a
-`_deprecationNotice` field to results that contain deprecated properties.
+`--device`, `--terminate-existing` and `--json-output` were checked with `--help` on Xcode 27.0
+(2026-09-24). Xcode 27 changed JSON to version 5 and adds a `_deprecationNotice` field to
+results that contain deprecated properties.
+
+### Physical devices and signing
+
+Minimal by design (PRODUCT.md, Decisions):
+
+- The device build is the normal `build` step with `-destination platform=<platform>,id=<identifier>`
+  and the project's own signing settings. Loom never passes `-allowProvisioningUpdates`,
+  `-allowProvisioningDeviceRegistration`, `-authenticationKey*`, or any `CODE_SIGN_*`,
+  `DEVELOPMENT_TEAM` or `PROVISIONING_PROFILE*` override (`commands.test.ts` asserts it).
+  `-allowProvisioningUpdates` lets xcodebuild create and update profiles, app IDs and
+  certificates (`xcodebuild -help`), which is exactly what Loom does not do.
+- Signing failures: when a device build fails, `classifySigningIssue(summary.build.issues)`
+  looks for signing errors by case-insensitive substrings (`signing for`, `requires a
+development team`, `no profiles for`, `provisioning profile`, `no signing certificate`,
+  `code signing`). A match sets `hint: "signing"` and `failureReason` to "Code signing is not
+  set up for this scheme. Open the project in Xcode, choose a team under Signing &
+  Capabilities, then build again."; the build's own issues stay listed below. The exact Xcode
+  27 wording of signing errors was not reproduced for this packet; the substrings are
+  deliberately loose, and the fixture test uses synthetic messages marked as such.
+- Only paired devices with Developer Mode not reported off are selectable; the others are
+  listed disabled with the fix text from PRODUCT.md. Loom does not pair devices or change
+  Developer Mode.
+- Physical-device runs are verified by hand only (TESTING.md); automated tests cover argv,
+  parsing and the signing classifier.
+
+### Swift packages: diagnostics and xUnit
+
+Facts checked with Swift 6.4 (Xcode 27.0) on a scratch package on 2026-09-24:
+
+- Compiler diagnostics print as `<absolute path>:<line>:<column>: error: <message>` (and
+  `warning:`), followed by Swift 6's indented source excerpt that repeats the message after
+  `|`. ANSI color codes are present when the output is a terminal; Loom pipes, but strips
+  `\x1b[...m` anyway.
+- XCTest failures print as `<absolute path>:<line>: error: -[<Module>.<Class> <test>] : <message>`.
+- Swift Testing issues print as `Test <name>() recorded an issue at <File>.swift:<line>:<column>: <message>`
+  (file name only, preceded by an SF Symbols glyph).
+- `swift test --xunit-output <path>` writes XCTest results to `<path>` only with `--parallel`,
+  and Swift Testing results to `<path without .xml>-swift-testing.xml` (for `xunit.xml`:
+  `xunit-swift-testing.xml`). The directory must exist.
+- XCTest xUnit: `<testcase classname="<Module>.<Class>" name="<test>" time="...">` with
+  `<failure message="failure">` (the message is always the word "failure"; the real text is in
+  the log line above).
+- Swift Testing xUnit: `<testcase classname="<Module>" name="<func>()">` with
+  `<failure message="<expectation text> (error): <comment>">` or `<skipped>reason</skipped>`;
+  `<testsuite>` carries `tests`, `failures`, `skipped` attributes.
+- `swift test list` prints identifiers `<Module>.<Class>/<test>` (XCTest) and
+  `<Module>.<func>()` (Swift Testing); `--filter <regex>` with the escaped identifier runs one
+  test. Identifiers of Swift Testing tests inside a `@Suite` type were not checked; derive
+  them the same way and verify when a fixture with a suite exists.
+
+`diagnostics.ts`:
+
+- `parseCompilerDiagnostics(log, cwd)`: lines matching
+  `^(?<file>/[^:]+):(?<line>\d+):(?<col>\d+): (?<sev>error|warning): (?<msg>.+)$` after ANSI
+  stripping; lines starting with whitespace or `|` are ignored (the excerpt), duplicates of the
+  same file, line and message are dropped; files inside `cwd` become workspace-relative.
+  Returns `AppleIssue[]` (errors first, capped at 100). Used for `swiftBuild`, the build phase
+  of `swiftTest`, and any xcodebuild run that failed before a result bundle existed.
+- `parseTestFailureLines(log)`: the XCTest and Swift Testing forms above, keyed by
+  `<Class>/<test>` or `<func>()`, giving message, file and line.
+- `classifySigningIssue(issues)` (above).
+
+`xunit.ts`:
+
+- `readXunit(xml)`: no XML dependency. SwiftPM writes a fixed, flat shape, so a small scanner
+  over `<testsuite ...>`, `<testcase ...>`, `<failure .../>`, `<failure ...>...</failure>` and
+  `<skipped>...</skipped>` tags with attribute parsing and the five XML entities is enough.
+  Anything unrecognized is skipped, never fatal. Returns
+  `{ total, failed, skipped, cases: { classname, name, status, message? }[] }`.
+- The summary for `swiftTest` merges both files when they exist: counts add up, `result` is
+  `Failed` if any failed, else `Passed` (`Skipped` when every case skipped); each failure's
+  identifier is `<classname>/<name>` for XCTest cases (classname contains a dot) and
+  `<classname>.<name>` for Swift Testing cases, its message is the xUnit message, replaced by
+  the log line's message when the xUnit message is the bare word "failure", and file and line
+  come from the log. Missing files (build failed first) leave `tests` unset and the build
+  issues from `parseCompilerDiagnostics` explain why.
+- "Test only this" on a package failure starts `swiftTest` with `onlyTesting: [identifier]`,
+  which becomes `--filter` with the identifier regex-escaped.
 
 ### XCResult summaries
 
@@ -622,9 +720,18 @@ else pass (old Loom's roll-up). The checklist is advice, not a gate: nothing is 
   `xcrun --find mcpbridge`, `xcrun mcp-server status`, and on Linux `xtool --version`. Tool
   probes are cached for 60 s per server; the walk is not cached.
 - `destinations` merges `xcrun simctl list devices available -j` (booted first, then by
-  runtime) and `xcrun devicectl list devices --json-output -` (paired devices; physical only),
-  plus `mac` and the `generic` entries. `devicectl` failures (no devices, no permission) yield
-  an empty device list, never an error.
+  runtime) and `xcrun devicectl list devices --json-output -`, plus `mac` and the `generic`
+  entries. `devicectl` failures (no devices, no permission) yield an empty device list, never
+  an error. On Xcode 27, devicectl lists simulators too, so keep only entries whose hardware
+  reality is `physical`. Read each device from the `properties` dictionary (JSON version 5:
+  `hardware.reality`, `hardware.platform`, `hardware.marketingName`, `hardware.udid`,
+  `connection.pairingState`, `connection.state`, `connection.transportType`, `state.name`,
+  `state.developerModeStatus`, `software.osVersionNumber.stringValue`), falling back to the
+  deprecated `hardwareProperties`, `deviceProperties` and `connectionProperties` (named in
+  `_deprecationNotice.deprecatedFields`) when `properties` is absent. `developerModeStatus` is
+  a string in the deprecated form and an object keyed by the status in `properties`; accept
+  both. Field names were read from `devicectl list devices --json-output -` on Kyle's Mac
+  (2026-09-24); no device values are copied into fixtures (write them by hand).
 
 ### Linux environments and xtool
 
@@ -638,8 +745,9 @@ xtool code.
 
 - On start, mark runs still `queued` or `running` as `interrupted` (the process died with the
   server). Use `forkParked` if the sweep touches projections; the SQL update alone does not.
-- After each run, delete runs beyond `keepRunsPerProject` for that project (oldest first),
-  including their run directories.
+- After each run, delete runs beyond `keepRunsPerProject` (default 20, 5 to 200) for that
+  project (oldest first), including their run directories. History is count-based only; there
+  is no age rule.
 - Derived data folders are not deleted automatically; the settings section shows their total
   size (`getSettings().storage`) and deletes them through `clearHistory({ includeDerivedData:
 true })`, refused while a run is active. Sizes are computed on request with a bounded walk,
@@ -692,7 +800,8 @@ Files: `<stateDir>/fork/apple-build-tooling/`
 ```
 runs/<runId>/log.txt           raw combined output
 runs/<runId>/Result.xcresult   result bundle (xcodebuild kinds)
-runs/<runId>/xunit.xml         swiftTest only
+runs/<runId>/xunit.xml         swiftTest only (XCTest results)
+runs/<runId>/xunit-swift-testing.xml   swiftTest only (Swift Testing results)
 derived/<hash>/                 derived data per workspace (setting "loom")
 xcodegen-cache/<hash>           XcodeGen cache file
 ```

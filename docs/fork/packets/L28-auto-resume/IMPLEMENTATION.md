@@ -14,9 +14,10 @@ orchestration events.
 packages/contracts/src/fork/auto-resume.ts
 packages/client-runtime/src/fork/auto-resume.ts
 apps/server/src/fork/auto-resume/
-  classify.ts  resetTime.ts  AutoResumeStore.ts  AutoResumeService.ts  AutoResumeReactor.ts
-  migrations.ts  rpc.ts  index.ts (exports AutoResumeLive)
-  classify.test.ts  resetTime.test.ts  AutoResumeStore.test.ts  AutoResumeReactor.test.ts
+  classify.ts  resetTime.ts  switchTarget.ts  AutoResumeStore.ts  AutoResumeService.ts
+  AutoResumeReactor.ts  migrations.ts  rpc.ts  index.ts (exports AutoResumeLive)
+  classify.test.ts  resetTime.test.ts  switchTarget.test.ts  AutoResumeStore.test.ts
+  AutoResumeReactor.test.ts
   upstreamWording.test.ts
 apps/web/src/fork/auto-resume/
   ComposerChip.tsx  composer.ts  settings.tsx  palette.tsx  format.ts  state.ts  format.test.ts
@@ -75,18 +76,43 @@ docs/fork/user/auto-resume.md
      occurredAtMs: number;
      nowMs: number;
    }): { resetAtMs: number; known: true } | { known: false };
-   export function pickSwitchTarget(
-     providers: ReadonlyArray<ServerProvider>,
-     stopped: ServerProvider,
-     modelId: string,
-     nowMs: number,
-   ): ServerProvider | undefined;
    ```
 
-   `pickSwitchTarget` filters by driver, `continuation?.groupKey` (both defined and equal),
-   `enabled`, `isProviderAvailable` (`packages/contracts/src/server.ts:251-252`),
-   `auth.status === "authenticated"`, the model id present in `models`, and
-   `exhaustedUntil(...) === undefined`; sorts by max `usedPercent`, then `instanceId`.
+   ```ts
+   // switchTarget.ts
+   export type AccountKind = "subscription" | "metered";
+   export function accountKind(provider: ServerProvider): AccountKind {
+     const type = provider.auth.type;
+     if (provider.driver === "codex") return type === "chatgpt" ? "subscription" : "metered";
+     if (provider.driver === "claudeAgent")
+       return type !== undefined && type !== "apiKey" ? "subscription" : "metered";
+     return "metered"; // unknown drivers and types are never picked without an opt-in
+   }
+   export function isIncluded(
+     provider: ServerProvider,
+     rules: ReadonlyArray<AutoResumeAccountRule>,
+   ): boolean {
+     const rule = rules.find((r) => r.instanceId === provider.instanceId);
+     return rule ? rule.include : accountKind(provider) === "subscription";
+   }
+   export function pickSwitchTarget(input: {
+     providers: ReadonlyArray<ServerProvider>;
+     stopped: ServerProvider;
+     modelId: string;
+     accountOrder: ReadonlyArray<ProviderInstanceId>;
+     accountRules: ReadonlyArray<AutoResumeAccountRule>;
+     nowMs: number;
+   }): ServerProvider | undefined;
+   ```
+
+   `pickSwitchTarget` filters out the stopped instance and keeps entries with the same
+   driver, `continuation?.groupKey` (both defined and equal), `enabled`,
+   `isProviderAvailable` (`packages/contracts/src/server.ts:254-255`),
+   `auth.status === "authenticated"`, the model id present in `models`,
+   `exhaustedUntil(...) === undefined`, and `isIncluded`. Order: when every candidate has a
+   non-empty `usageLimits.windows`, sort by headroom (`100 - max usedPercent`) descending,
+   ties by fixed order; otherwise sort by the fixed order (index in `accountOrder`, unlisted
+   last by `instanceId`).
 
 4. **Migrations and store.** `migrations.ts` with id 1 `Tables` (TECHNICAL.md, Storage).
    `AutoResumeStore` methods: `getSettings`, `putSettings`, `getCursor`, `putCursor`,
@@ -109,6 +135,8 @@ docs/fork/user/auto-resume.md
      if (thread.messages.some((m) => m.role === "user" && m.createdAt > job.detectedAt))
        return yield* cancel(job, "user-message");
      const providers = yield* registry.getProviders;
+     // A switch target that stopped qualifying is replaced once (pickSwitchTarget again);
+     // with no candidate left, the job falls back to the original account's reset.
      const instance = providers.find((p) => p.instanceId === (job.targetInstanceId ?? job.instanceId));
      const still = instance?.usageLimits ? exhaustedUntil(instance.usageLimits.windows, nowMs) : undefined;
      if (still !== undefined) return yield* defer(job, still + graceMs); // no attempt consumed
@@ -168,13 +196,20 @@ docs/fork/user/auto-resume.md
    );
    ```
 
-   `handle` covers the tables in TECHNICAL.md (detection, Claude hint cache, cancellation).
+   `handle` covers the tables in TECHNICAL.md (detection with its three gates: driver off,
+   thread off with the `off` marker, workspace cap with a `needs_attention` row and marker;
+   Claude hint cache; cancellation). On a stop that passes the gates, with
+   `allowAccountSwitch` on, call `pickSwitchTarget` first: a target schedules at `now + 10 s`
+   with the `switching` marker; no target schedules at the reset on the same account.
    `scheduler` loops over `earliestDue`, `Effect.sleep` raced with `wake.take`, then
    `claimDue` and `resume` each job sequentially. The cursor advances after every event,
    whether its handler succeeded or failed (a failure is logged), so one bad event can never
    block the stream or be retried forever.
 
    Settings changes: disabling a driver cancels its pending jobs with reason "disabled".
+   `setThreadAutoResume(threadId, false)` inserts into `fork_auto_resume_threads_off` and
+   cancels that thread's pending job ("turned off for this thread"); `true` deletes the row.
+   `dismiss` moves a `needs_attention` row to `cleared`.
 
 7. **Handlers and registration.** `rpc.ts` (the stream handler wraps `withForkRuntime` with
    `Stream.unwrap`, as in the `ext-core` pattern), scopes, `LOOM_SERVER_FEATURES`,
@@ -210,15 +245,24 @@ docs/fork/user/auto-resume.md
    }
    ```
 
-   Use upstream's button and tooltip primitives from `apps/web/src/components/ui/`; the
-   tooltip shows the local time and account. `settings.tsx` uses `SettingsSection` /
-   `SettingsRow` (`apps/web/src/components/settings/settingsLayout.tsx`). `palette.tsx`
-   returns items only for an active thread with a pending job; to know that synchronously
-   it reads the jobs atom value from the web atom registry.
+   Add the other chip states from TECHNICAL.md (switching, needs attention with Dismiss) and a
+   small menu with "Don't auto-resume this thread". Use upstream's button, menu and tooltip
+   primitives from `apps/web/src/components/ui/`; the tooltip shows the local time and
+   account. `settings.tsx` uses `SettingsSection` /
+   `SettingsRow` (`apps/web/src/components/settings/settingsLayout.tsx`); the accounts list
+   reads the environment's providers from the server config the settings page already has,
+   groups them by `continuation.groupKey`, shows each account's kind with upstream's auth
+   label, and edits `accountRules` and `accountOrder`. `palette.tsx` returns the resume and
+   cancel items only for an active thread with a pending job, and the per-thread toggle for
+   any active thread; to know that synchronously it reads the jobs atom value (including
+   `threadsOff`) from the web atom registry.
 
 9. **Docs.** `docs/fork/user/auto-resume.md`: what triggers it, which providers, how to
-   cancel or take over, account switching and which accounts qualify, that the continue
-   message is visible, and that turns Claude pauses by itself are left alone. Set the
+   cancel or take over, the per-thread switch, account switching (on by default, which
+   accounts qualify, why API-key accounts need an opt-in, the order rule, and why Claude
+   accounts wait for the reset), "Needs attention" for workspace credit and spend limits,
+   that the continue message is visible, and that turns Claude pauses by itself are left
+   alone. Set the
    packet index Status.
 
 ## Pitfalls
@@ -246,6 +290,12 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
   (TestClock) exactly one `thread.turn.start` is dispatched with the continue message.
 - A user message in between cancels it; archiving cancels it; a restart mid-schedule keeps
   it; a restart mid-resume marks it failed rather than resuming twice.
-- With switching on and a qualifying shadow-home instance, the resume targets it after the
-  10 second grace.
+- With default settings and a second Codex subscription account in the same group, a Codex
+  stop continues on it after the 10 second grace; an API-key account in the same group is
+  never picked until "Include in automatic switching" is on.
+- A Claude stop with a second Claude home configured waits for the reset on the same
+  account.
+- A workspace credit stop with no exhausted window gets one "Needs attention" marker and no
+  schedule.
+- A thread with "Don't auto-resume" on gets the "off" marker and no schedule.
 - Upstream wording-guard tests pass.

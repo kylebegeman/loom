@@ -57,14 +57,34 @@ The outline calls exactly that action. It works for workspace files and for host
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
 | Line regex only (old Loom `fileOutline.logic.ts`)                            | Poor: matches inside comments and strings, depth from indentation only                                                                   | none                                                                                                                                                                                               | Starting point, not enough                |
 | **Scanner plus per-language declaration rules (fork code)**                  | Good for outlines: comments and strings masked, nesting from braces (C-family) or indentation (Python), Markdown headings outside fences | ~600 lines, no dependency, synchronous, a few ms per 100 KB                                                                                                                                        | **v1**                                    |
-| `web-tree-sitter` + grammar WASM + `tags.scm` queries                        | Best: real parse trees, the same `@definition.*` captures GitHub code navigation uses                                                    | New production dependency (MIT), WASM assets per language (roughly 0.3 to 3 MB each, Swift among the largest; unverified, measure before deciding), async init, asset serving in Vite and Electron | Phase 2 candidate, needs Kyle's approval  |
+| `web-tree-sitter` + grammar WASM + `tags.scm` queries                        | Best: real parse trees, the same `@definition.*` captures GitHub code navigation uses                                                    | New production dependency (MIT), WASM assets per language (roughly 0.3 to 3 MB each, Swift among the largest; unverified, measure before deciding), async init, asset serving in Vite and Electron | Conditional phase 2 (approved by Kyle)    |
 | Shiki TextMate scopes (Shiki 4.2 is already bundled through `@pierre/diffs`) | Medium: `entity.name.function` also marks call sites in some grammars; tokenizing a large file on the main thread is slow                | No new dependency, but couples to `@pierre/diffs` internals and its worker pool                                                                                                                    | Rejected                                  |
 | Server-side parse RPC                                                        | Could use native tree-sitter                                                                                                             | Needs `ext-core`, breaks "works on upstream servers", adds a round trip                                                                                                                            | Rejected (old Loom D7 made the same call) |
 
 Prebuilt grammar packages exist (`@vscode/tree-sitter-wasm`, MIT, about 16 languages;
-`tree-sitter-wasms`); whether a maintained Swift WASM ships in them is unverified. Phase 2
-would add a `TreeSitterOutlineProvider` implementing the same `OutlineExtractor` interface
-per language, loaded lazily on first use, with the scanner as fallback.
+`tree-sitter-wasms`); whether maintained Swift and Kotlin WASM grammars ship in them is
+unverified.
+
+### Phase 2 (conditional): tree-sitter
+
+Approved by Kyle as a dependency, but built only when the trigger in
+[IMPLEMENTATION.md](./IMPLEMENTATION.md#phase-2-conditional-tree-sitter) is met. Design:
+
+- `apps/web/src/fork/file-outline/treeSitter/` adds a `TreeSitterOutlineProvider` per
+  language that implements the same `OutlineExtractor` interface, so the column, palette,
+  cache and tests do not change.
+- `web-tree-sitter` and a grammar's WASM load lazily on the first outline of that language
+  (dynamic `import()`, WASM referenced as a Vite asset URL so web and the desktop bundle
+  serve it the same way; verify the asset handling in both builds). Nothing loads while the
+  column is closed.
+- Symbols come from each grammar's `tags.scm` `@definition.*` captures (a fork-owned query
+  where a grammar ships none), mapped to `OutlineSymbolKind`; depth from ancestor
+  definitions.
+- The scanner extractor stays registered as the fallback: it is used while the grammar
+  loads, when loading fails, and for languages without a working grammar. The first
+  outline of a file therefore never waits on a WASM download.
+- Only languages that met the trigger switch; each switch is a one-line change in the
+  extractor map.
 
 ## Extractor design
 
@@ -109,7 +129,7 @@ export interface OutlineResult {
 }
 
 export type OutlineLanguageId =
-  "typescript" | "javascript" | "swift" | "python" | "go" | "rust" | "markdown";
+  "typescript" | "javascript" | "swift" | "python" | "go" | "rust" | "kotlin" | "markdown";
 
 export interface OutlineExtractor {
   readonly languageId: OutlineLanguageId;
@@ -124,7 +144,7 @@ export function outlineLanguageForPath(path: string): OutlineLanguageId | null;
 ```
 
 Extension map: `ts mts cts tsx` to typescript; `js mjs cjs jsx` to javascript (same rules,
-shared implementation); `swift`; `py pyi`; `go`; `rs`; `md mdx markdown`.
+shared implementation); `swift`; `py pyi`; `go`; `rs`; `kt kts` to kotlin; `md mdx markdown`.
 
 ### Shared scanner (`scanner.ts`)
 
@@ -136,7 +156,7 @@ stay valid and declaration regexes never match inside them. Per-language config:
 interface ScanConfig {
   readonly lineComment: ReadonlyArray<string>; // ["//"] or ["#"]
   readonly blockComment: readonly [string, string] | null; // ["/*", "*/"]
-  readonly nestedBlockComments: boolean; // Swift, Rust: true
+  readonly nestedBlockComments: boolean; // Swift, Rust, Kotlin: true
   readonly strings: ReadonlyArray<StringRule>; // quotes, raw strings, templates
 }
 ```
@@ -144,11 +164,13 @@ interface ScanConfig {
 String rules cover: `'` `"` with escapes; TS/JS template literals (masking `${...}` content
 is acceptable for an outline); Python triple quotes and prefixes (`r`, `f`, `b`); Go raw
 backtick strings; Rust raw strings `r#"..."#` and char literals vs lifetimes (`'a` is a
-lifetime when not closed within 3 chars); Swift multi-line `"""` and `#"..."#`.
+lifetime when not closed within 3 chars); Swift multi-line `"""` and `#"..."#`; Kotlin
+`"..."` and raw `"""..."""` strings (both with `$name` and `${...}` templates) and char
+literals.
 
 ### Nesting
 
-- Brace languages (TS/JS, Swift, Go, Rust): walk the masked text tracking `{`/`}` depth. A
+- Brace languages (TS/JS, Swift, Go, Rust, Kotlin): walk the masked text tracking `{`/`}` depth. A
   declaration opens a scope if its `{` is found before the next `;` or declaration on the
   same logical statement; its children are declarations inside that brace range. A stack of
   `(symbolDepth, braceDepth)` pairs yields each symbol's `depth`. Function bodies are
@@ -183,6 +205,16 @@ lifetime when not closed within 3 chars); Swift multi-line `"""` and `#"..."#`.
 - Rust: `fn`, `struct`, `enum`, `trait`, `impl X`, `impl Trait for X`, `mod`, `type`,
   `const`, `static`, `macro_rules! name`, with `pub(...)`, `async`, `unsafe`, `extern "C"`,
   attributes on previous lines.
+- Kotlin: `class`, `data class`, `sealed class`/`sealed interface`, `enum class`,
+  `annotation class`, `value class`, `interface`, `fun interface`, `object` and
+  `companion object` (kind `class`, detail `object`), `fun` including extension functions
+  (`fun Type.name(`, shown as `Type.name`) and generic ones (`fun <T> name(`), `val`/`var`
+  properties of types and at top level (`const val` as `constant`; other top-level
+  properties only when not `private`), `typealias`, entries of an `enum class` as
+  `constant`, with annotations (`@Composable`, possibly on previous lines) and modifiers
+  (`public`, `private`, `protected`, `internal`, `open`, `abstract`, `override`, `final`,
+  `suspend`, `inline`, `tailrec`, `operator`, `infix`, `external`, `lateinit`, `inner`,
+  `expect`, `actual`). Backticked names keep their text without backticks.
 
 Rules are a table per language (`languages/typescript.ts`, `swift.ts`, ...), each exporting
 an `OutlineExtractor`. `extractOutline` wraps the call in try/catch and returns an empty

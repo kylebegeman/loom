@@ -16,6 +16,7 @@ when a line has moved.
  thread.pullRequests snapshots                    |- checks: gh api check-runs + status
  useOpenPrLink, rightPanelStore.open("pull-requests") |- check log tail: gh api actions/jobs/<id>/logs
  composerDraftStore.setPrompt                     |- conflicts: git status v2 unmerged + git dir markers
+                                                  |- continue / abort the operation in progress
  rightPanelStore.openFile                         |- switch preflight, stash push/apply/pop
                                                   |- optional varlock scan
 ```
@@ -67,6 +68,8 @@ export const SOURCE_CONTROL_COCKPIT_WS_METHODS = {
   switchPreflight: "loom.source-control-cockpit.switchPreflight",
   stashPush: "loom.source-control-cockpit.stashPush",
   stashApply: "loom.source-control-cockpit.stashApply",
+  continueOperation: "loom.source-control-cockpit.continueOperation",
+  abortOperation: "loom.source-control-cockpit.abortOperation",
   leakScan: "loom.source-control-cockpit.leakScan",
 } as const;
 
@@ -166,6 +169,7 @@ export const ConflictFile = Schema.Struct({
   hint: Schema.NullOr(Schema.Literals(["lockfile", "generated"])),
 });
 export const ConflictsResult = Schema.Struct({
+  headSha: Schema.String, // HEAD read at step 1; the client passes it back to continue or abort
   operation: GitOperation,
   operationDetail: Schema.NullOr(Schema.String),
   files: Schema.Array(ConflictFile), // capped at 200; `truncated` below
@@ -199,6 +203,25 @@ export const StashApplyInput = Schema.Struct({
   drop: Schema.Boolean, // true = pop
 });
 
+/** Continue or abort the operation in progress. Rejected as `stale` when either no longer matches. */
+export const OperationStepInput = Schema.Struct({
+  target: LaneTarget,
+  operation: Schema.Literals([
+    "merge",
+    "rebase",
+    "rebase-interactive",
+    "am",
+    "cherry-pick",
+    "revert",
+  ]),
+  expectedHead: Schema.String,
+});
+export const OperationStepResult = Schema.Struct({
+  operation: GitOperation, // after the step: "none" when finished or aborted
+  conflictedCount: NonNegativeInt, // > 0 when a continue stopped at the next conflict
+  output: Schema.String, // git's output, ANSI-stripped, last 8 KiB
+});
+
 export const LeakScanResult = Schema.Struct({
   clean: Schema.Boolean,
   findings: Schema.Array(
@@ -216,6 +239,7 @@ export class SourceControlCockpitError extends Schema.TaggedErrorClass<SourceCon
       "git-failed",
       "gh-failed",
       "stale",
+      "unresolved", // continue requested while unmerged files remain
       "unavailable",
     ]),
     message: Schema.String, // includes git's stderr first line where relevant
@@ -223,17 +247,19 @@ export class SourceControlCockpitError extends Schema.TaggedErrorClass<SourceCon
 ) {}
 ```
 
-| Tag               | Payload                        | Success                   | Scope                   |
-| ----------------- | ------------------------------ | ------------------------- | ----------------------- |
-| `lane`            | `{ target }`                   | `LaneFacts`               | `orchestration:read`    |
-| `graph`           | `{ target; limit?: 50..500 }`  | `GraphResult`             | `orchestration:read`    |
-| `checks`          | `{ target; refresh: boolean }` | `ChecksResult`            | `orchestration:read`    |
-| `checkLog`        | `{ target; jobId }`            | `CheckLogResult`          | `orchestration:read`    |
-| `conflicts`       | `{ target }`                   | `ConflictsResult`         | `orchestration:read`    |
-| `switchPreflight` | `SwitchPreflightInput`         | `SwitchPreflightResult`   | `orchestration:read`    |
-| `stashPush`       | `StashPushInput`               | `{ ref: string }`         | `orchestration:operate` |
-| `stashApply`      | `StashApplyInput`              | `{ conflicted: boolean }` | `orchestration:operate` |
-| `leakScan`        | `{ target; staged: boolean }`  | `LeakScanResult`          | `orchestration:operate` |
+| Tag                 | Payload                        | Success                   | Scope                   |
+| ------------------- | ------------------------------ | ------------------------- | ----------------------- |
+| `lane`              | `{ target }`                   | `LaneFacts`               | `orchestration:read`    |
+| `graph`             | `{ target; limit?: 50..500 }`  | `GraphResult`             | `orchestration:read`    |
+| `checks`            | `{ target; refresh: boolean }` | `ChecksResult`            | `orchestration:read`    |
+| `checkLog`          | `{ target; jobId }`            | `CheckLogResult`          | `orchestration:read`    |
+| `conflicts`         | `{ target }`                   | `ConflictsResult`         | `orchestration:read`    |
+| `switchPreflight`   | `SwitchPreflightInput`         | `SwitchPreflightResult`   | `orchestration:read`    |
+| `stashPush`         | `StashPushInput`               | `{ ref: string }`         | `orchestration:operate` |
+| `stashApply`        | `StashApplyInput`              | `{ conflicted: boolean }` | `orchestration:operate` |
+| `continueOperation` | `OperationStepInput`           | `OperationStepResult`     | `orchestration:operate` |
+| `abortOperation`    | `OperationStepInput`           | `OperationStepResult`     | `orchestration:operate` |
+| `leakScan`          | `{ target; staged: boolean }`  | `LeakScanResult`          | `orchestration:operate` |
 
 Every `error` is `Schema.Union([SourceControlCockpitError, EnvironmentAuthorizationError])`.
 Scopes match upstream: VCS reads are `orchestration:read`, VCS writes
@@ -253,6 +279,7 @@ All methods are unary; none goes into the stream tag unions.
 | `checks.ts`               | GitHub check runs, statuses, job id parsing, cache.                            |
 | `checkLog.ts`             | Job log fetch, tail truncation, redaction, failed steps.                       |
 | `conflicts.ts`            | Unmerged records, marker counts, hints, commands.                              |
+| `operationStep.ts`        | Continue and abort of the operation in progress.                               |
 | `switchPreflight.ts`      | Overwrite prediction.                                                          |
 | `stash.ts`                | Push, apply, pop.                                                              |
 | `leakScan.ts`             | varlock detection and output parsing.                                          |
@@ -354,7 +381,36 @@ with `timeoutMs: 60_000` and `maxOutputBytes: 16 MiB`, then:
    REFERENCES.md).
 6. `commands`: merge `git merge --continue` / `git merge --abort`; rebase
    `git rebase --continue` / `git rebase --abort`; am `git am --continue` / `git am --abort`;
-   cherry-pick and revert likewise. The panel only displays them.
+   cherry-pick and revert likewise. Bisect gets `null` for continue and `git bisect reset`
+   for abort as a copyable command only. The panel shows them as copy chips next to the
+   Continue and Abort buttons.
+
+### Continue and abort (`operationStep.ts`)
+
+Runs only on an explicit click after the client's confirmation dialog.
+
+1. Resolve the cwd and take the same per-cwd `Semaphore` as the stash operations.
+2. Re-detect the operation (lane facts logic) and read HEAD. If the operation differs from
+   `input.operation` or HEAD differs from `input.expectedHead`, fail `stale` ("The
+   repository changed. Review the conflicts again."); the panel refetches.
+3. Continue only: `git status --porcelain=v2 -z`; any `u` record fails `unresolved`
+   ("Resolve and stage every conflicted file first."). The server does not stage files.
+4. Run `git <verb> --continue` or `git <verb> --abort`, where the verb is `merge`, `rebase`
+   (also for `rebase-interactive`), `am`, `cherry-pick` or `revert`, with env
+   `GIT_EDITOR=true` (accept git's prepared commit message; nothing may open an editor on the
+   environment), `GIT_TERMINAL_PROMPT=0`, `timeoutMs: 120_000` (commit hooks can run),
+   `maxOutputBytes: 256 KiB`, `allowNonZeroExit: true`.
+5. Re-detect the operation and count `u` records. A non-zero exit with the operation still
+   in progress and conflicts present is a normal result (a rebase stopped at the next
+   conflicting commit): return it. A non-zero exit otherwise fails `git-failed` with the
+   first line of stderr (for example a failing pre-commit hook).
+6. `VcsStatusBroadcaster.refreshLocalStatus(cwd)`, ignoring its failure, then return
+   `{ operation, conflictedCount, output }`.
+
+The client disables both buttons while any thread whose shell shares this checkout (same
+`worktreePath`, or the project root) has a running session, using the sibling-thread list
+the lane card already derives. That is a courtesy against racing an agent; the server's
+HEAD check is the real guard.
 
 ### Switch preflight
 
@@ -380,7 +436,10 @@ thread metadata update and, when the worktree changes, the session stop.
 ### Stash
 
 - Push: `git stash push [--include-untracked] -m <message>`; the message is prefixed
-  `loom: ` and clamped to 200 chars. Returns `stash@{0}`.
+  `loom: ` and clamped to 200 chars. Returns `stash@{0}`. "Stash and switch" always sends
+  `includeUntracked: true` (decided); `--all` is never used, so ignored files are never
+  stashed. The input keeps the flag so a later caller can opt out without a contract
+  change.
 - Apply or pop: `git stash apply <ref>` or `git stash pop <ref>`. Exit 1 with conflict
   output returns `{ conflicted: true }` (git keeps the stash on a conflicted pop).
 - After either, `VcsStatusBroadcaster.refreshLocalStatus(cwd)` so upstream's status stream
@@ -420,7 +479,7 @@ last view is a client preference: `loom:source-control-cockpit:view:v1` in local
 - `packages/client-runtime/src/fork/source-control-cockpit.ts`:
   `createSourceControlCockpitAtoms(runtime)` with query families `lane`, `graph`, `checks`,
   `conflicts`, `switchPreflight`, `checkLog`, and commands `stashPush`, `stashApply`,
-  `leakScan` (serial per environment).
+  `continueOperation`, `abortOperation`, `leakScan` (serial per environment).
 - `apps/web/src/fork/source-control-cockpit/`:
   - `panel.tsx`: the `ForkPanelDefinition` (id `source-control-cockpit`, title "Source
     control", icon `GitBranchIcon`, shortcut `G`, `isAvailable` =
@@ -446,7 +505,11 @@ last view is a client preference: `loom:source-control-cockpit:view:v1` in local
     highlighting), "Open on GitHub", "Ask the agent to fix".
   - `ConflictsView.tsx`: file list with kind, marker count, hint, "Open file"
     (`useRightPanelStore.getState().openFile(threadRef, path)`, `rightPanelStore.ts:137`),
-    "Ask the agent to resolve", command chips with copy.
+    "Ask the agent to resolve", Continue and Abort buttons, command chips with copy. Each
+    button opens upstream's `AlertDialog` (`apps/web/src/components/ui/alert-dialog.tsx`)
+    with the PRODUCT.md copy; confirming calls the command with the `headSha` and
+    `operation` from the last `conflicts` result, then refetches `lane` and `conflicts` and
+    shows the result toast. The lane card's operation banner links to this view.
   - `SafeSwitch.tsx`: ref picker using upstream's `vcsEnvironment.listRefs`, preflight
     result, actions.
   - `prompts.ts`: pure prompt builders for fix and resolve. Pattern after upstream's
@@ -455,7 +518,8 @@ last view is a client preference: `loom:source-control-cockpit:view:v1` in local
 - "Ask the agent" writes the prompt into the thread's composer with
   `useComposerDraftStore.getState().setPrompt(threadRef, prompt)`
   (`apps/web/src/composerDraftStore.ts:571`) and focuses the composer; the user sends it.
-  If the prompt is not empty, append after a blank line instead of replacing.
+  It never dispatches a turn (decided). If the prompt is not empty, append after a blank
+  line instead of replacing.
 - Gate every entry on `supportsLoomFeature(capabilities, "source-control-cockpit")` for the
   thread's environment.
 

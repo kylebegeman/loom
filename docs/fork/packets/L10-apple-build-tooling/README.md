@@ -1,6 +1,6 @@
 # L10: Apple build tooling
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 An "Apple build" right panel for projects that contain an Xcode project, an Xcode
 workspace, an XcodeGen spec or a Swift package. The user picks a scheme and a destination
@@ -25,9 +25,11 @@ summary.
   - Destinations: available simulators (`xcrun simctl list devices available -j`), connected
     devices (`xcrun devicectl list devices --json-output -`), "My Mac", and generic build
     destinations.
-  - Runs: build, test, build and run (install and launch on a simulator or device), release
-    build, XcodeGen generate, and `swift build` / `swift test` for packages. One run at a time
-    per workspace, cancellable, with a live log and a durable history (last 20 per project).
+  - Runs: build, test, build and run (install and launch on a simulator, a paired physical
+    device with the project's own signing, or this Mac), release build, XcodeGen generate, and
+    `swift build` / `swift test` for packages (compiler diagnostics parser plus an xUnit XML
+    reader for XCTest and Swift Testing). One run at a time per workspace, cancellable, with a
+    live log and a durable history (last 20 per project by default, configurable 5 to 200).
   - XCResult summaries through `xcrun xcresulttool get build-results` and
     `get test-results summary` (the non-deprecated commands).
   - XcodeGen validate (`xcodegen dump --type json`) and diff (generate into a temporary
@@ -44,7 +46,9 @@ summary.
     lanes (a later packet; old Loom's ASC client is kept as a reference only).
   - Editing XcodeGen specs from the UI (add target, add package). Agents edit YAML; the panel
     validates, diffs and generates.
-  - Code signing management. Builds for devices use the project's own signing settings.
+  - Code signing management. Builds for devices use the project's own signing settings;
+    Loom never passes `-allowProvisioningUpdates` and never touches certificates or
+    profiles. Physical-device runs are tested by hand only.
   - Builds on SSH device hosts. Runs happen on the environment host.
   - Android builds (Gradle). L09 covers installing an existing `.apk`.
   - xtool on Linux beyond detection and a documented manual path (see TECHNICAL.md,
@@ -85,8 +89,8 @@ None. Everything goes through extension points. See [SEAMS.md](./SEAMS.md).
 
 ## Size estimate
 
-Large: about 3,500 to 4,500 lines including tests. Server service and parsers are the bulk
-(about 1,800), the panel about 1,200.
+Large: about 4,000 to 4,800 lines including tests. Server service and parsers are the bulk
+(about 2,100, including the diagnostics parser and xUnit reader), the panel about 1,250.
 
 ## How an agent starts
 

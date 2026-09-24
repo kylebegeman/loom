@@ -464,11 +464,12 @@ at `ChatComposer.tsx:3501-3510` suggests so). If they are not, always use
 // composerMenu.ts, registered in FORK_COMPOSER_TRIGGERS
 export const snippetsComposerTrigger = {
   id: "snippets",
-  // `;` + at least one alias character, as a whole token (start of line or after whitespace).
+  // `;` immediately followed by a non-space character, as a whole token (start of line or
+  // after whitespace). A bare `;` or `; ` never matches, so it stays plain text.
   detect(text: string, cursor: number) {
     const start = tokenStart(text, cursor); // same rule as composer-logic's tokenStartForCursor
     const token = text.slice(start, cursor);
-    const match = /^;([\p{L}\p{N}][\p{L}\p{N}_.-]*)$/u.exec(token);
+    const match = /^;(\S+)$/u.exec(token);
     return match
       ? { kind: "loom:snippets", query: match[1]!, rangeStart: start, rangeEnd: cursor }
       : null;
@@ -486,6 +487,9 @@ export const snippetsComposerTrigger = {
   ext-composer-menu registry shape, so both read it from the composer bridge
   (`readSnippetsComposerBridge()?.threadRef.environmentId`). The bridge is set by the
   drawer hook on the composer's first render, before the user can type `;`.
+- The query is everything after `;` up to the cursor, whatever the characters, and the
+  ranking filters by it (alias, title, tags, body). Characters that cannot appear in an
+  alias (for example `;)`) simply rank title and body matches or produce no items.
 - Items: `label` = title, `description` = `;alias` list plus the first line of the body.
 - The trigger returns `null` when the feature is unsupported or the library is not
   loaded, so upstream triggers and typing behave exactly as today.
@@ -553,7 +557,8 @@ markers; the user doc mentions it.
 ### Keybindings (ext-keybindings)
 
 `FORK_KEYBINDING_COMMANDS` gains `"loom.snippets.search"` and `"loom.snippets.open"`. No
-default bindings. `commands.ts` subscribes with `onForkCommand` from a `ForkRoot` component:
+default bindings (decided): nothing is added to `DEFAULT_KEYBINDINGS` or written to the
+user's `keybindings.json`, and this packet registers no fork default shortcut either. `commands.ts` subscribes with `onForkCommand` from a `ForkRoot` component:
 `search` opens the dialog; `open` toggles the panel via
 `useRightPanelStore.getState().openSurface(ref, forkPanelSurface("snippets"))`, or `close`
 when that surface is already active.

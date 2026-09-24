@@ -115,7 +115,8 @@ docs/fork/user/pcb-preview.md
            pcbError("path-outside-workspace", "That design is outside the workspace."),
          ),
        );
-     // stat entry.absolutePath; classify kind from the suffix; locate siblings
+     // stat entry.absolutePath; classify kind from the suffix; locate siblings.
+     // listDesigns returns entry.absolutePath as PcbDesign.absolutePath (Electronics link).
    });
    ```
 
@@ -195,7 +196,9 @@ view, preset, sheetId }` decide `render | readSheet | idle`.
      ```
 
    - `PcbPreviewPanel.tsx`: toolbar and states from PRODUCT.md, the tscircuit trust prompt,
-     and `ChecksView.tsx`. The tab keeps the registry title "PCB preview"; the design name
+     the "Open in Electronics" menu item (`electronicsDesignUrl`), and `ChecksView.tsx` with
+     "Send summary to chat" (draft store `setPrompt`, append after a blank line, never send)
+     and "Copy summary". The tab keeps the registry title "PCB preview"; the design name
      shows in the toolbar.
    - `panel.tsx`: the `ForkPanelDefinition`; append to `FORK_PANELS`, with the
      shortcut letter `Z` assigned in EXTENSION-POINTS.md, "Launcher letters".
@@ -208,7 +211,9 @@ view, preset, sheetId }` decide `render | readSheet | idle`.
 
 9. **Docs.** `docs/fork/user/pcb-preview.md`: what the panel shows, that it needs KiCad 9+
    or the tscircuit CLI on the environment's machine, that tscircuit renders run project
-   code, and where the Electronics link comes from. Set the packet index Status.
+   code, where the tools are looked for (no custom paths), how "Send summary to chat" works,
+   and that "Open in Electronics" needs the Electronics app on the environment's machine.
+   Set the packet index Status.
 
 ## Pitfalls
 
@@ -216,7 +221,8 @@ view, preset, sheetId }` decide `render | readSheet | idle`.
   `<project>-<sheet>.svg`); list the output directory after the run instead of predicting
   names, and sort the root sheet first.
 - KiCad writes relative paths in reports; do not surface absolute server paths in the UI
-  when the client is remote, show workspace-relative ones.
+  when the client is remote, show workspace-relative ones. `PcbDesign.absolutePath` exists
+  only to build the Electronics URL; never render it as text.
 - `kicad-cli` may print warnings on stderr and still exit 0. Only the exit code decides.
 - The effect `FileSystem.watch` recursive option depends on the platform backend; on Linux
   older Node versions lack recursive `fs.watch`. If it fails, fall back to watching the

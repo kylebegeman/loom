@@ -19,6 +19,8 @@ apps/web/src/fork/panel-picker/requests.ts
 apps/web/src/fork/panel-picker/PanelPickerList.tsx
 apps/web/src/fork/panel-picker/PanelPicker.tsx
 apps/web/src/fork/panel-picker/PanelPickerCommandHost.tsx
+apps/web/src/fork/panel-picker/defaultShortcut.ts
+apps/web/src/fork/panel-picker/defaultShortcut.test.ts
 apps/web/src/fork/panel-picker/palette.tsx
 apps/web/src/fork/panel-picker/settings.tsx
 ```
@@ -32,9 +34,10 @@ apps/web/src/fork/panel-picker/settings.tsx
    see EXTENSION-POINTS.md, Settings).
 2. `types.ts`, `rank.ts` and `rank.test.ts` (test-first; TESTING.md lists cases).
 3. `preferences.ts`: a module store over `resolveStorage` with `useSyncExternalStore`;
-   `useLoomPanelPicker(): { enabled: boolean }`, `setLoomPanelPickerEnabled(value)`,
+   `useLoomPanelPicker(): { enabled: boolean; shortcut: boolean }`,
+   `setLoomPanelPickerEnabled(value)`, `setLoomPanelPickerShortcut(value)`,
    `readRecentPanels()`, `recordRecentPanel(label)`. All storage access in try/catch;
-   defaults when storage throws (enabled, no recents).
+   defaults when storage throws (enabled, shortcut on, no recents).
 4. `requests.ts`: `requestPanelPicker()`, `usePanelPickerRequest(onRequest)`.
 5. `PanelPickerList.tsx`: search, groups, keyboard, Browser profile rows. Reuse
    `Kbd`, `Tooltip`, `ScrollArea` and, if they fit, the `Command*` primitives
@@ -44,12 +47,15 @@ apps/web/src/fork/panel-picker/settings.tsx
    `useLoomPanelPicker`.
 7. Seams in `RightPanelTabs.tsx` exactly as SEAMS.md shows. Run `vp fmt` on the file and
    re-check marker placement; `git grep -c 'fork: panel-picker'` prints 6.
-8. `settings.tsx` (append to `FORK_SETTINGS_SECTIONS`), `PanelPickerCommandHost.tsx`
-   (append to `FORK_ROOT_COMPONENTS`), `"loom.panel-picker.open"` in
-   `FORK_KEYBINDING_COMMANDS`, `palette.tsx` (append to `FORK_COMMAND_PALETTE_SOURCES`).
+8. `defaultShortcut.ts` and its test first (TESTING.md), then `PanelPickerCommandHost.tsx`
+   (append to `FORK_ROOT_COMPONENTS`): the `onForkCommand` subscription and the default
+   `mod+shift+'` listener exactly as TECHNICAL.md describes (user bindings win; nothing
+   written to `keybindings.json`). `"loom.panel-picker.open"` in
+   `FORK_KEYBINDING_COMMANDS`. `settings.tsx` with both switches (append to
+   `FORK_SETTINGS_SECTIONS`), `palette.tsx` (append to `FORK_COMMAND_PALETTE_SOURCES`).
 9. FORK.md "Packet seams" row (SEAMS.md). User doc: a short
-   `docs/fork/user/panel-picker.md` (how to search, the letters, the setting, the
-   keybinding command).
+   `docs/fork/user/panel-picker.md` (how to search, the letters, `mod+shift+'` and how to
+   turn it off, binding `loom.panel-picker.open` to another key, the fallback setting).
 10. Checks (TESTING.md). Commit `feat(fork-panel-picker): search and open panels from a compact picker`.
 11. Update the packet index Status.
 
@@ -115,6 +121,11 @@ export function LoomPanelPickerButton(props: {
   cheap enough to run on every render of the picker.
 - The pull request page (`routes/_chat.pull-requests.tsx`) also renders `RightPanelTabs`
   without fork actions; the picker must work with only upstream actions.
+- The default shortcut must return without `preventDefault` in every case it does not
+  handle (setting off, no thread, a user binding on the key, palette open), or it swallows
+  keys that belong to someone else.
+- Do not add `FORK_DEFAULT_KEYBINDINGS` or touch `packages/shared/src/keybindings.ts`; the
+  default lives only in the listener.
 
 ## Done when
 
@@ -122,4 +133,7 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
 
 - Every upstream surface opens from the launcher and the popover by letter, by search and
   by click, exactly as it did from upstream's lists.
-- Turning the setting off restores upstream's launcher and menu with no reload.
+- Turning the picker setting off restores upstream's launcher and menu with no reload.
+- `mod+shift+'` opens the picker in a thread; turning its setting off makes the key do
+  nothing in Loom; a user binding on the same key runs its own command instead.
+- The user's `keybindings.json` has no Loom entry after running the packet.

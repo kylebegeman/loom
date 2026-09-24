@@ -21,7 +21,14 @@ at `a79ec506` (0.13.10).
   `RightPanelEmptyState` (313-606, `actions` 336-411, letter listener 424-440, keys
   442-468), `RightPanelTabs` (819), `addSurfaceActions` (863-928), "+" menu (1245-1332),
   empty-state render (1388-1408).
-- `apps/web/src/rightPanelStore.ts`: `show` (store interface), used by the command host.
+- `apps/web/src/rightPanelStore.ts`: `show` (store interface, line 166), used by the
+  command host.
+- `apps/web/src/keybindings.ts`: `shortcutKeyFromEvent` (83, `Quote` maps to `'` at 72),
+  `resolveShortcutCommand` (227); `apps/web/src/lib/utils.ts:11` (`isMacPlatform`);
+  `apps/web/src/commandPaletteBus.ts:35` (`isCommandPaletteOpen`).
+- `packages/shared/src/keybindings.ts:21-70` (`DEFAULT_KEYBINDINGS`; `mod+shift+'` is free),
+  `apps/server/src/keybindings.ts:451-546` (default backfill into `keybindings.json`, the
+  reason the default is a listener).
 - `apps/web/src/components/ui/command.tsx`, `popover.tsx`, `kbd.tsx`, `tooltip.tsx`.
 - `apps/web/src/components/CommandPalette.tsx`: the reference for list keyboard behavior
   with `Command` primitives.

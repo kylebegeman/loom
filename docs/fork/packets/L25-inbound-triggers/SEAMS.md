@@ -5,13 +5,13 @@ routes directory and regenerates the route tree.
 
 ## Extension points used
 
-| Extension point   | Registration                                                                                                                                                                                                                                                                      |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ext-core`        | `InboundTriggersRpcGroup` (with `subscribeInbox` in `ForkSubscriptionRpcTag`), service and poller layers in `ForkServicesLive`, migration set, handlers, scopes, `"inbound-triggers"` in `LOOM_SERVER_FEATURES`; phase 3 adds `InboundTriggersWebhookRoutes` to `ForkRoutesLayer` |
-| `ext-settings`    | `inboundTriggersSettings` in `FORK_SETTINGS_SECTIONS`                                                                                                                                                                                                                             |
-| `ext-palette`     | `inboundTriggersPaletteSource` in `FORK_COMMAND_PALETTE_SOURCES`                                                                                                                                                                                                                  |
-| `ext-web-root`    | `{ id: "inbound-triggers-inbox", Component: InboxToastCoordinator }` and `{ id: "inbound-triggers-shortcuts", Component: InboundTriggersShortcutHost }`                                                                                                                           |
-| `ext-keybindings` | `"loom.inbound-triggers.open"` in `FORK_KEYBINDING_COMMANDS`                                                                                                                                                                                                                      |
+| Extension point   | Registration                                                                                                                                                                                                    |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ext-core`        | `InboundTriggersRpcGroup` (with `subscribeInbox` in `ForkSubscriptionRpcTag`), service and poller layers in `ForkServicesLive`, migration set, handlers, scopes, `"inbound-triggers"` in `LOOM_SERVER_FEATURES` |
+| `ext-settings`    | `inboundTriggersSettings` in `FORK_SETTINGS_SECTIONS`                                                                                                                                                           |
+| `ext-palette`     | `inboundTriggersPaletteSource` in `FORK_COMMAND_PALETTE_SOURCES`                                                                                                                                                |
+| `ext-web-root`    | `{ id: "inbound-triggers-inbox", Component: InboxNotifier }` and `{ id: "inbound-triggers-shortcuts", Component: InboundTriggersShortcutHost }`                                                                 |
+| `ext-keybindings` | `"loom.inbound-triggers.open"` in `FORK_KEYBINDING_COMMANDS`                                                                                                                                                    |
 
 ## Extension points created by this packet
 
@@ -47,13 +47,15 @@ they do not conflict.
 Considered and rejected:
 
 - Extracting `dispatchBootstrapTurnStart` from `apps/server/src/ws.ts` into a shared
-  service so triggered threads get the full bootstrap (including setup scripts). A
-  multi-hundred-line refactor of upstream's busiest server file; the fork repeats the
-  worktree steps instead.
+  service so triggered threads get the full bootstrap. A multi-hundred-line refactor of
+  upstream's busiest server file; the fork repeats the worktree steps instead and runs setup
+  scripts through upstream's public `ProjectSetupScriptRunner` service, which ForkLayer can
+  already use (no seam).
 - A new orchestration command such as `loom.inbound-triggers.start`: forbidden by
   EXTENSION-POINTS.md, "Orchestration", and unnecessary.
 - Hooking upstream's `ThreadNotificationCoordinator` to notify on thread birth: a seam in a
-  web component for something a fork toast coordinator does on its own.
+  web component for something the fork `InboxNotifier` does on its own with the same
+  browser `Notification` API.
 
 ## Merge check
 

@@ -1,19 +1,20 @@
 # L27: Utilities catalog
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
-Twenty-six small developer tools that run entirely in the client, offline: encoders and
+Twenty-nine small developer tools that run entirely in the client, offline: encoders and
 decoders, JWT decode, hashes and HMAC, color, case, number and timestamp conversion, a cron
-explainer, a text diff, UUID, password and token generators, a user-agent parser and a few
-text helpers. They live in a right panel next to the thread, open from the command palette
+explainer, a text diff, a regex tester, a CIDR/subnet calculator, a chmod calculator, UUID,
+password and token generators, a user-agent parser and a few text helpers. They live in a right panel next to the thread, open from the command palette
 straight to one tool, and fall back to a dialog when no thread is open. Nothing typed into
 them leaves the device or is saved.
 
 ## Scope
 
 - In:
-  - The 26 tools listed in [TECHNICAL.md](./TECHNICAL.md#the-tools), each a pure function
-    with typed options and tests.
+  - The 29 tools listed in [TECHNICAL.md](./TECHNICAL.md#the-tools), each a pure function
+    with typed options and tests. The regex tester matches in a Web Worker with a 1 second
+    limit, so a runaway pattern cannot freeze the tab.
   - A "Utilities" right panel: search, categories, recent tools, tool view with live
     output and copy buttons.
   - A command palette submenu ("Utilities...") listing every tool; picking one opens it.
@@ -23,8 +24,9 @@ them leaves the device or is saved.
 - Out:
   - Server RPCs, MCP tools and a CLI (old Loom had all three; agents can already run these
     operations in a shell).
-  - JWT signature verification, key generation, encryption, regex testing (a runaway regex
-    would freeze the tab without a worker), YAML, and any tool that needs the network.
+  - JWT signature verification, key generation, encryption, YAML, and any tool that needs
+    the network.
+  - A BIP39 mnemonic generator (Kyle declined it).
   - Persisting inputs or outputs (they often hold tokens and secrets).
   - A settings section (nothing to configure) and mobile UI.
 
@@ -62,9 +64,9 @@ None.
 
 ## Size
 
-Medium-small: about 1,400 lines, half of it tests. One agent, 1.5 to 2 days. No new
+Medium-small: about 1,900 lines, half of it tests. One agent, 2 to 2.5 days. No new
 dependencies: it uses `@noble/hashes`, `jose`, `culori` and `@pierre/diffs`, which
-`apps/web` already depends on.
+`apps/web` already depends on, plus platform APIs (`RegExp`, `BigInt`, Web Workers).
 
 ## How an agent starts
 

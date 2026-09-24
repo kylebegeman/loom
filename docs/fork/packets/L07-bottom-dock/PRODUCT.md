@@ -83,19 +83,24 @@ Problem it solves: finding what happened in a long thread without scrolling the 
 
 What the user can do:
 
-- See a timeline of the thread, newest first: user and assistant messages (first line),
-  tool calls and their results, file changes, approvals requested and answered, questions,
-  errors and warnings, plan updates, checkpoints, and markers from other Loom features.
-- Search as they type across summaries, kinds and message text.
-- Filter with chips: All, Messages, Work, Decisions, Errors. Toggle "Group by turn".
+- See a timeline of the thread, newest first: tool calls and their results, file changes,
+  approvals requested and answered, questions, errors and warnings, plan updates,
+  checkpoints, and markers from other Loom features.
+- Chat messages are left out by default (the chat already shows them). A "Messages" toggle
+  next to the chips adds user and assistant messages (first line of each) to the timeline;
+  it is off each time the tab opens for a thread.
+- Search as they type across summaries and kinds, and, while "Messages" is on, message
+  text.
+- Filter with chips: All, Work, Decisions, Errors. Toggle "Group by turn".
 - Expand a row to see its details (the activity payload as formatted JSON, capped at 20 KB,
   or the full message text) and copy them.
 - Load older history ("Load older turns") when the thread has more than the client has
   loaded.
 
-States: empty thread ("Nothing has happened in this thread yet."); no matches ("No activity
-matches "<query>"." with Clear); older history available (button at the bottom); loading
-older (button shows a spinner).
+States: empty thread ("Nothing has happened in this thread yet."); only chat messages so far
+with "Messages" off ("Only chat messages so far." with a "Show messages" button); no matches
+("No activity matches "<query>"." with Clear); older history available (button at the
+bottom); loading older (button shows a spinner).
 
 Entry points: the Activity tab; `loom.bottom-dock.activity` (unbound); palette "Show
 Activity"; way out: collapse.
@@ -126,33 +131,65 @@ Entry points: the Approvals tab; `loom.bottom-dock.approvals` (unbound); palette
 Approvals"; the sidebar's existing "Pending Approval" pills are unchanged; way out: answer
 or collapse.
 
+## Approval risk badge (phase 5, Jev)
+
+Problem it solves: with several approvals waiting, Kyle wants to see at a glance which ones
+could do lasting damage, so he reads those first.
+
+What the user sees:
+
+- Each pending approval in the Approvals tab can carry a small badge: **Read-only**,
+  **Reversible** or **Irreversible**. Jev (TypeSafe's classifier, through the shared
+  `ext-decide` extension point) picks the label from the request text the approval panel
+  already shows (request kind, command or file list, app name).
+- Hovering the badge shows "Jev's estimate, confidence 0.82. Advisory only: read the request
+  before you answer." The badge is advice. It never approves, declines, reorders or hides
+  anything, and the Approve and Decline buttons behave exactly as without it.
+- No badge appears when Jev is not set up (no key), "Use Jev" is off globally or for this
+  feature, the thread's project has "Jev off for this project", Jev is slow (over 1 second) or
+  fails, or Jev's confidence is below the feature's threshold. Nothing else changes in those
+  cases, and no error is shown.
+- Read-only uses the muted badge style, never a green "safe" color, so the badge cannot read
+  as permission. Irreversible uses the warning style.
+
+Settings: the feature appears in the Loom settings page, "Jev" section, as "Approval risk
+badge" with its "Use Jev" switch (on by default, so badges appear once a Jev key is saved)
+and its confidence threshold shown read-only (default 0.6; L29 tunes it). The feature is
+registered with `agentTool: false`, so the section hides "Let agents use this" for it. Each
+classification is logged in the shared Jev decision log.
+
+Entry points: none of its own; it shows inside the Approvals tab. Way out: turn "Use Jev" off
+for the feature (or globally), or "Jev off for this project".
+
 ## Surfaces and connection modes
 
 - Web and desktop: all phases.
 - Mobile: not supported; mobile users answer approvals in each thread as today.
-- Remote and upstream servers: all phases work, since they use only upstream data and
-  upstream commands.
+- Remote and upstream servers: phases 1 to 4 work, since they use only upstream data and
+  upstream commands. The risk badge (phase 5) needs a Loom server with the `bottom-dock` and
+  `decide` capabilities; elsewhere no badge is shown and the tab is otherwise identical.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - The terminal tab is upstream's drawer, untouched. The fork adds a strip and sibling tabs;
-  it never wraps, restyles or re-implements the terminal.
-- One tab at a time, one shared height per thread (the terminal's own).
+  it never wraps, restyles or re-implements the terminal. Reason: zero drift from upstream's
+  terminal.
+- One tab at a time, one shared height per thread (the terminal's own). Reason: no height
+  jumps, and upstream already persists the height.
 - Tasks run in terminal sessions, exactly like upstream's script runner, so they behave the
-  same locally and remotely and survive closing the dock.
+  same locally and remotely and survive closing the dock. Reason: the terminal already has
+  streaming, stop and reconnect.
+- Tasks (`task-*` sessions) stay visible in the Terminal tab's session list too; the fork
+  does not hide them. Reason (Kyle): they are real terminal sessions, and hiding them would
+  need an extra seam in the drawer.
+- The tab strip is hidden while Terminal is the only tab and appears once a second tab ships.
+  Reason (Kyle): phase 1 alone changes nothing visible.
+- Activity leaves chat messages out by default, with a "Messages" toggle to include them.
+  Reason (Kyle): the chat already shows messages; the timeline is for the work around them.
 - Activity and Approvals are client-side views over data the client already has or can
-  subscribe to; no server work.
-- Run Ledger and Run Packets are dropped (brief).
-
-Open questions for Kyle:
-
-1. Should Tasks appear in the Terminal tab's session list too (they are terminal sessions,
-   and upstream lists every session of the thread there), or should the fork hide
-   `task-*` sessions from the drawer? Hiding needs a new seam in the drawer; the design
-   keeps them visible.
-2. Should the strip be visible when only the Terminal tab exists? The design hides it so
-   phase 1 alone changes nothing.
-3. Activity: is "first line of each message" enough, or should messages be excluded by
-   default (the chat already shows them)?
+  subscribe to. Reason: no server work, works on upstream servers.
+- Approvals get a Jev risk badge (read-only, reversible, irreversible) through `ext-decide`,
+  advisory only, with no badge as the fallback. Reason (Kyle, Jev cross-cutting decision):
+  triage help for several waiting approvals, without ever acting on them.
+- Run Ledger and Run Packets are dropped. Reason: they depended on old Loom systems T3 does
+  not have (brief).

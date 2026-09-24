@@ -44,8 +44,13 @@ packet on 2026-09-24). Old Loom (`bagelvault/loom` 0.13.10):
   Claude stop messages, window labels and wait formatting, parked-turn warning with detail.
 - `apps/server/src/provider/acp/XAiAcpExtension.ts:591-597`: Grok stop.
 - `packages/contracts/src/providerUsageLimits.ts:20-60`: usage windows and limits.
-- `packages/contracts/src/server.ts:146-148,189-238,251-252`: `ServerProvider`,
-  `continuation.groupKey`, `isProviderAvailable`.
+- `packages/contracts/src/server.ts:61-66,146-148,189-238,254-255`: `ServerProviderAuth`
+  (`type`), `ServerProvider`, `continuation.groupKey`, `isProviderAvailable`.
+- `apps/server/src/provider/Layers/CodexProvider.ts:97-103,532-545`: Codex `auth.type`
+  (`chatgpt`, `apiKey`, `amazonBedrock`), used to tell subscription accounts from metered
+  ones.
+- `apps/server/src/provider/Layers/ClaudeProvider.ts:139-158`: Claude `auth.type` (`apiKey`
+  or the subscription type).
 - `apps/server/src/provider/Drivers/instanceIdentity.ts:27`: where `continuation.groupKey`
   is published.
 - `apps/server/src/provider/Drivers/CodexHomeLayout.ts:45-66`,

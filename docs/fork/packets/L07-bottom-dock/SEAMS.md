@@ -11,9 +11,14 @@ byte as [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) specifies:
 | `ext-web-root`                                                             | 5       | `feat(fork): add the web root extension point`        |
 | `ext-keybindings`                                                          | 9       | `feat(fork): add the keybindings extension point`     |
 | `ext-palette`                                                              | 8       | `feat(fork): add the command palette extension point` |
+| `ext-settings` (phase 5 only, prerequisite of `ext-decide`)                | 7       | `feat(fork): add the settings extension point`        |
+| `ext-decide` (phase 5 only)                                                | 18      | `feat(fork): add the decide extension point`          |
 
-Record the ones this packet created, with commit hashes, when phase 1 lands. Phases 2 to 4
-create nothing.
+Record the ones this packet created, with commit hashes, when the phase lands. Phases 2 to 4
+create nothing. Phase 5 runs the `ext-decide` existence check from EXTENSION-POINTS.md
+section 18 and creates it if missing, exactly as specified there, in its own commit, after
+`ext-core` and `ext-settings` exist (`ext-decide` needs both; create `ext-settings` first if
+it is missing, in its own commit).
 
 ## Packet seams
 
@@ -21,7 +26,22 @@ create nothing.
 | -------------------------------------- | ------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/web/src/components/ChatView.tsx` | `fork: bottom-dock` | 3 (1 import, 1 marker comment, 1 JSX element) | The dock must sit in the chat column directly above upstream's terminal drawer list. No extension point covers the area under the chat: `ext-panels` is the right panel, `ext-composer` is inside the composer, `ext-web-root` mounts outside the layout. |
 
-Only phase 1 adds this seam. Phases 2 to 4 touch no upstream file.
+Only phase 1 adds this seam. Phases 2 to 5 touch no upstream file: phase 5's server code
+registers only through `ext-core` and `ext-decide` fork-owned registries.
+
+### Fork-owned registration lines (phase 5, not seams)
+
+| Fork file                                   | Line added                                         |
+| ------------------------------------------- | -------------------------------------------------- |
+| `packages/contracts/src/fork/index.ts`      | `export * from "./bottom-dock.ts";`                |
+| `packages/contracts/src/fork/rpc.ts`        | `BottomDockRpcGroup,` in `.merge(`                 |
+| `packages/client-runtime/src/fork/index.ts` | `export * from "./bottom-dock.ts";`                |
+| `apps/server/src/fork/features.ts`          | `"bottom-dock"`                                    |
+| `apps/server/src/fork/ForkRuntime.ts`       | `\| ApprovalRiskService`                           |
+| `apps/server/src/fork/ForkLayer.ts`         | `ApprovalRiskService.layer,`                       |
+| `apps/server/src/fork/rpc.ts`               | `...(yield* makeBottomDockRpcHandlers(auth)),`     |
+| `apps/server/src/fork/rpcAuthorization.ts`  | `approvalRisk`: `orchestration:read`               |
+| `apps/server/src/fork/decide/registry.ts`   | `APPROVAL_RISK_FEATURE,` in `FORK_DECIDE_FEATURES` |
 
 ### Diff (phase 1)
 

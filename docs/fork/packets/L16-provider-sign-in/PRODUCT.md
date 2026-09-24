@@ -17,15 +17,16 @@ wants it back, working for account N as well as account 1.
 - Sign a Codex instance in with ChatGPT in the browser, with a device code on any device, or
   with an OpenAI API key.
 - Sign a Claude instance in with a Claude subscription or an Anthropic Console account, or
-  give it an Anthropic API key.
+  give it an Anthropic API key, later replace or remove that key (never see it again).
 - Sign an instance out. Its running threads stop; thread history is kept.
 - Add another Codex or Claude account in one flow: name it, Loom picks the next free folder
   (`~/.codex_4`, `~/.claude_4`), creates the instance and opens sign-in.
 - Remove an account: sign out and remove the instance, and optionally move the folder Loom
   created out of the way.
 - Be warned when two instances are signed in to the same account ("Same account as Codex 2").
-- Be told, before signing in a second Codex account, when Codex stores credentials in the
-  system keychain, and switch Codex to file credentials with one confirmed click.
+- See at a glance that Codex stores logins in files (a green check), or be told, before
+  signing in a second Codex account, that Codex uses the system keychain, and let Loom change
+  that one line in `~/.codex/config.toml` after showing it and saving a backup.
 - For a Codex instance, open **Codex tools**: see each MCP server's auth state, tool count
   and errors, reload MCP configuration, start an MCP server's OAuth sign-in, and turn Codex
   skills on or off.
@@ -79,16 +80,27 @@ address to the environment's own loopback listener.
 3. Under it: "If Claude shows a code, paste it here." and a paste box with **Continue**.
    When the browser redirect reaches the environment directly, the box is not needed.
 4. Success shows the email and subscription reported by Claude.
-5. API key: a password field; saving writes `ANTHROPIC_API_KEY` as a sensitive environment
-   variable on the instance through the normal settings update, then refreshes status.
+5. API key: a password field and **Save key**; saving writes `ANTHROPIC_API_KEY` as a
+   sensitive environment variable on the instance through the normal settings update
+   (upstream stores it in its secret store and never sends it back to a client), then
+   refreshes status. Afterwards the row shows "An API key is saved for this account." with
+   **Replace key** (a new password field) and **Remove key** (confirmation "Remove the API
+   key from Claude 2? Claude will use its signed-in account, if any."). There is no way to
+   show or copy the saved key.
+
+A Claude instance whose environment sets `ANTHROPIC_BASE_URL` (a model endpoint or router,
+for example one made by L17) shows "This instance uses a custom endpoint. Sign-in does not
+apply; its key is in the instance's environment variables." and no sign-in buttons.
 
 ### Add an account
 
 1. Settings > Loom > Accounts > **Add Codex account** (or the palette).
 2. Dialog: name (default "Codex 4"), color, and the folder Loom will use, shown read-only
-   with **Change folder** for an advanced path. For Codex the folder is a shadow home over the
-   same `CODEX_HOME` as the default Codex instance, so the new account can continue the same
-   threads.
+   with **Change folder** for an advanced path. For Codex the folder is always a shadow home
+   over the same `CODEX_HOME` as the default Codex instance, so the new account can continue
+   the same threads; **Change folder** only moves the shadow home (there is no separate
+   `CODEX_HOME` option). For Claude, a switch "Share my Claude skills" (on) links the new
+   folder's `skills` to the default Claude folder's, like Kyle's `~/.claude_N` accounts.
 3. **Create and sign in** creates the folder (never reuses a non-empty one), adds the
    instance, and opens the sign-in flow for it. If sign-in is cancelled the account stays,
    signed out, with a **Sign in** button.
@@ -102,12 +114,30 @@ folder Loom created and only when no other instance uses it.
 
 ### Codex credential storage
 
+Settings > Loom > Accounts shows one row per shared Codex home: "Codex stores logins in
+files" with a green check when the shared `config.toml` sets
+`cli_auth_credentials_store = "file"` or leaves it unset (Codex's default is `"file"`).
+Kyle's machine already has it set, so he sees the check. A shadow-home instance's Account
+section shows the same check.
+
 Before a shadow-home sign-in, if the shared `config.toml` sets
-`cli_auth_credentials_store` to `"keyring"` or `"auto"` (Codex's default is `"file"`, which
-needs no change), the account section shows: "This account uses its own
-folder, so Codex must store its login in files. Codex is set to use the system keychain,
-which all accounts would share." with **Use file storage** (confirmation: "This changes
-~/.codex/config.toml, which the Codex command line uses too.") and **Sign in anyway**.
+`cli_auth_credentials_store` to `"keyring"` or `"auto"`, the account section shows: "This
+account uses its own folder, so Codex must store its login in files. Codex is set to use the
+system keychain, which all accounts would share." with **Use file storage** and **Sign in
+anyway**. **Use file storage** opens a confirmation that shows exactly what changes:
+
+```
+~/.codex/config.toml (also used by the Codex command line)
+- cli_auth_credentials_store = "keyring"
++ cli_auth_credentials_store = "file"
+A copy of the current file is saved first to
+<Loom data folder>/fork/provider-sign-in/backups/2026-09-24T10-15-00Z-config.toml
+```
+
+with **Change this line** and **Cancel**. Loom changes only that line and nothing else in
+the file. If the file changed since the confirmation opened, Loom stops and shows it again.
+If Loom cannot edit the line safely (for example the key is written in an unusual form), it
+says so and shows the line to set by hand.
 
 ### Codex tools
 
@@ -139,6 +169,11 @@ refreshes the provider.
 - Disabled instance: "Enable this instance to sign in." with **Enable**.
 - CLI missing: "Codex is not installed on this environment." (from the provider snapshot).
 - Upstream server: "Account management needs a Loom server." and nothing else.
+- Claude API key saved: "An API key is saved for this account." with **Replace key** and
+  **Remove key**.
+- Custom endpoint Claude instance: the endpoint message above, no buttons.
+- Credential storage: green check, warning with **Use file storage**, or "Loom could not
+  read ~/.codex/config.toml." (no action offered).
 - Read-only settings scope: status only, no buttons.
 
 ## Surfaces and connection modes
@@ -150,9 +185,7 @@ Against a Loom server, an upstream client sees the decorated snapshot: an "Open 
 setup" button and a message that also names the terminal command, so it is never worse off
 than upstream.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Codex sign-in uses `codex app-server` (`account/login/start`, `account/login/cancel`,
   `account/logout`), not the `codex login` CLI: the app-server reports completion as a
@@ -161,16 +194,18 @@ Decisions:
   used the same approach.
 - Sign-in state is server-side and streamed, so two clients see the same flow and a reload
   does not lose it.
-- The default Codex account folder name follows Kyle's pattern: `~/.codex_<n>` and
+- The default account folder name follows Kyle's pattern: `~/.codex_<n>` and
   `~/.claude_<n>` with the next free number.
+- "Add account" offers shadow homes only for Codex; **Change folder** stays as the advanced
+  option for exceptions and still makes a shadow home. No separate-`CODEX_HOME` option
+  (Kyle: shared threads across accounts matter more).
+- Claude API keys are instance environment variables marked Sensitive, upstream's mechanism
+  (the same way `~/.claude_api` works today). The value is never shown after save; the form
+  offers Replace and Remove only.
+- Loom may write `cli_auth_credentials_store = "file"` into the shared `~/.codex/config.toml`
+  after a confirmation showing the exact line, with a timestamped backup first, changing only
+  that key and leaving the rest of the file byte for byte. Loom edits the line itself rather
+  than through Codex's config writer, so "only that line" is guaranteed.
+- Claude instances that set `ANTHROPIC_BASE_URL` are custom-endpoint instances and get no
+  sign-in.
 - Removal never deletes files.
-
-Open questions for Kyle:
-
-1. Should "Add account" also offer a separate `CODEX_HOME` (no shadow home, no shared
-   threads)? Default in this packet: shadow home only, with **Change folder** for experts.
-2. Should Claude API keys be stored as instance environment variables (upstream's mechanism,
-   visible as "Sensitive" in the form) or kept out of settings entirely? Default: environment
-   variable.
-3. OK to write `cli_auth_credentials_store = "file"` into the shared `~/.codex/config.toml`
-   after confirmation, or should Loom only explain and leave the edit to Kyle?

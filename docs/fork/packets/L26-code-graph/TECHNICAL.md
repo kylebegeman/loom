@@ -14,7 +14,8 @@ installed version before relying on them; its CLI parses arguments by hand and c
  │ CodeGraphIndex    loads graph.json -> adjacency index     │                       Diff "Impact" button
  │   (LRU of 2 projects, reloaded on build)                  │                       Settings section
  │ CodeGraphService  status, build queue, queries, impact    │                       Palette items
- │ CodeGraphReactor  auto-update after turns, cleanup        │
+ │ CodeGraphReactor  auto-update after turns, cleanup        │  CodeGraphOpenWatcher (ForkRoot):
+ │   + noteProjectOpened: auto-update a stale graph          │  reports the active project
  │ fork_code_graph_* tables, <stateDir>/fork/code-graph/...   │  loom_code_graph_query (MCP)
  └──────────────────────────────────────────────────────────┘ ─────────────────────▶ agents
 ```
@@ -28,9 +29,15 @@ Graphify is used only as a graph **builder**. All queries run in TypeScript over
 
 `CodeGraphRunner.detect` runs `<command> --version` (timeout 10 s). The command is the
 configured argv, default `["graphify"]`; users with uv but no install can set
-`["uvx", "--from", "graphifyy==0.9.67", "graphify"]`. Parse the version; below
-`MIN_GRAPHIFY_VERSION = "0.9.67"` reports `outdated`. Cache the result for 60 s and on
+`["uvx", "--from", "graphifyy==0.9.67", "graphify"]`. Cache the result for 60 s and on
 "Check again".
+
+Version policy (Kyle): `TESTED_GRAPHIFY_VERSION = "0.9.67"` is pinned in every install
+command Loom shows (`uv tool install "graphifyy==0.9.67"`, the `uvx --from graphifyy==0.9.67`
+form, and `pipx install "graphifyy==0.9.67"`). Any other version, older or newer, still runs:
+status reports `available` with `tested: false`, and the UI labels it "Untested version
+<x>". Safety comes from the shape check on `graph.json` (below), not from refusing a
+version. A version string that does not parse is also `tested: false`.
 
 ### Commands Loom runs
 
@@ -128,7 +135,13 @@ NetworkX node-link JSON written by `graphify/export.py:272-417`:
   The index treats every link as directed source to target.
 
 Decoding: a permissive Effect Schema (unknown keys ignored, required fields checked) run on a
-streamed read; refuse files over `MAX_GRAPH_BYTES = 100 MB` (Graphify's own cap is 512 MiB,
+streamed read. This is the shape check: top level `nodes` and `links` arrays, every node with
+string `id`, `label`, `source_file`, every link with string `source`, `target`, `relation`,
+and optional `source_location` matching `L<n>`. A failure is `graph-invalid` with a clear
+message that names the version, for example "This graph was built by Graphify 0.10.2 and
+does not have the shape Loom reads (links[12] has no relation). Loom is tested with Graphify
+0.9.67: uv tool install \"graphifyy==0.9.67\"". The previous good index stays loaded, and
+the status keeps the failed build's error; refuse files over `MAX_GRAPH_BYTES = 100 MB` (Graphify's own cap is 512 MiB,
 `graphify/security.py:32`). The index:
 
 ```ts
@@ -198,17 +211,19 @@ export const CODE_GRAPH_WS_METHODS = {
   search: "loom.code-graph.search",
   neighborhood: "loom.code-graph.neighborhood",
   impact: "loom.code-graph.impact",
+  setAgentTool: "loom.code-graph.setAgentTool",
+  noteProjectOpened: "loom.code-graph.noteProjectOpened",
   getSettings: "loom.code-graph.getSettings",
   updateSettings: "loom.code-graph.updateSettings",
 } as const;
 
 export const CodeGraphAvailability = Schema.Union([
-  Schema.TaggedStruct("available", { version: Schema.String }),
+  /** tested is false for any version other than TESTED_GRAPHIFY_VERSION ("0.9.67"). */
+  Schema.TaggedStruct("available", { version: Schema.String, tested: Schema.Boolean }),
   Schema.TaggedStruct("missing", {
     command: Schema.Array(Schema.String),
-    installHint: Schema.String,
+    installHint: Schema.String, // always pins 0.9.67
   }),
-  Schema.TaggedStruct("outdated", { version: Schema.String, minimum: Schema.String }),
 ]);
 
 export const CodeGraphBuildState = Schema.Literals(["none", "building", "ready", "failed"]);
@@ -225,8 +240,12 @@ export const CodeGraphStatus = Schema.Struct({
   nodeCount: Schema.Number,
   edgeCount: Schema.Number,
   graphBytes: Schema.Number,
+  /** True while an update waits behind another project's build. */
+  queued: Schema.Boolean,
   progress: Schema.NullOr(Schema.Struct({ startedAt: Schema.String, lastLine: Schema.String })),
   error: Schema.NullOr(Schema.Struct({ summary: Schema.String, detail: Schema.String })),
+  /** Per project, off by default: whether loom_code_graph_query answers for this project. */
+  agentTool: Schema.Boolean,
 });
 
 export const CodeGraphNode = Schema.Struct({
@@ -269,7 +288,6 @@ export const CodeGraphImpactResult = Schema.Struct({
 export class CodeGraphError extends Schema.TaggedError<CodeGraphError>()("CodeGraphError", {
   reason: Schema.Literals([
     "graphify-missing",
-    "graphify-outdated",
     "no-graph",
     "graph-too-large",
     "graph-invalid",
@@ -277,14 +295,16 @@ export class CodeGraphError extends Schema.TaggedError<CodeGraphError>()("CodeGr
     "build-failed",
     "project-not-found",
     "node-not-found",
+    "agent-tool-off",
   ]),
   message: Schema.String,
 }) {}
 
 export const CodeGraphSettings = Schema.Struct({
   command: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
-  autoUpdateAfterTurns: Schema.Boolean,
-  agentTool: Schema.Boolean,
+  /** Off by default. Updates existing graphs after turns that change files and when a
+   * client opens a project whose graph is stale. Never builds a first graph. */
+  autoUpdate: Schema.Boolean,
 });
 ```
 
@@ -299,6 +319,8 @@ Summary, search and neighborhood results follow the same pattern (arrays of
 | `loom.code-graph.cancel`                                      | unary                                   | `orchestration:operate` |                                                                                                                         |
 | `loom.code-graph.delete`                                      | unary                                   | `orchestration:operate` | Deletes the project's output directory and row.                                                                         |
 | `loom.code-graph.summary`, `search`, `neighborhood`, `impact` | unary                                   | `orchestration:read`    |                                                                                                                         |
+| `loom.code-graph.setAgentTool`                                | unary                                   | `orchestration:operate` | `{ projectId, enabled }`; creates the project row (state `none`) if missing.                                            |
+| `loom.code-graph.noteProjectOpened`                           | unary                                   | `orchestration:read`    | `{ projectId }`; returns void at once. Queues an update only when `autoUpdate` is on, a graph exists, and it is stale.  |
 | `loom.code-graph.getSettings`                                 | unary                                   | `orchestration:read`    |                                                                                                                         |
 | `loom.code-graph.updateSettings`                              | unary                                   | `terminal:operate`      | Changing the command means choosing an executable to run on the server, so it takes the terminal-level scope.           |
 
@@ -315,9 +337,13 @@ Every error union is `Schema.Union([CodeGraphError, EnvironmentAuthorizationErro
 - `CodeGraphIndex.ts`: decode and index `graph.json`; `impact`, `neighborhood`, `path`,
   `search`, `summary` as pure functions over the index (the bulk of the tests).
 - `CodeGraphStore.ts`: repository for the two tables (below).
-- `CodeGraphService.ts`: `Context.Service` combining them: per-project build queue (one build
-  per project, one build at a time per server by default, `Semaphore`), status `PubSub` for
-  subscriptions, LRU of indexes, staleness. Resolves `projectId` to `workspaceRoot` and a
+- `CodeGraphService.ts`: `Context.Service` combining them: a build queue with one build at a
+  time per environment (`Semaphore(1)`, Kyle's decision) and at most one queued entry per
+  project (a second request for a queued project keeps its place; a manual full or force
+  build replaces a queued automatic update), status `PubSub` for subscriptions (`queued`
+  true while waiting), LRU of indexes, staleness. Other fork services may call its query
+  methods directly (`impact`, `neighborhood`, `search`); the per-project agent switch gates
+  only the MCP tool. Resolves `projectId` to `workspaceRoot` and a
   thread to its `worktreePath` through `ProjectionSnapshotQuery.getProjectShellById` /
   `getThreadShellById` (the same calls `apps/server/src/mcp/toolkits/pullRequests/handlers.ts:148-181`
   makes).
@@ -325,12 +351,17 @@ Every error union is `Schema.Union([CodeGraphError, EnvironmentAuthorizationErro
   `forkParked(...)` (`apps/server/src/serverActivation.ts:11-26`). It subscribes to
   `orchestrationEngine.streamDomainEvents` and:
   - on `thread.turn-diff-completed` (`packages/contracts/src/orchestration.ts:2084`) with
-    changed files, when `autoUpdateAfterTurns` is on and a graph exists for the thread's
-    project, queues an `update` (coalesced: at most one queued update per project, and not
-    more often than every 2 minutes);
+    changed files, when `autoUpdate` is on and a graph exists for the thread's project,
+    queues an `update` (coalesced: at most one queued update per project, and not more often
+    than every 2 minutes);
   - on `project.deleted` (`orchestration.ts:1944`) deletes the project's graph directory and
     row.
     Missing an event only means a later manual update; no cursor table is needed.
+- Opening a stale project (Kyle's decision): `noteProjectOpened({ projectId })` checks
+  `autoUpdate`, that a graph exists (`ready`, or `failed` with a previous `graph.json`), and
+  staleness (the same 30 s cached check), then queues an `update` in the background with the
+  same coalescing and 2 minute floor as the reactor. It never starts a first build and never
+  waits for the build. The web sends it from `CodeGraphOpenWatcher` (Clients).
 - `rpc.ts`: `makeCodeGraphRpcHandlers(auth)`, each handler
   `auth.effect(TAG, withForkRuntime(...))`.
 - `mcp.ts`: the toolkit (below).
@@ -355,6 +386,7 @@ CREATE TABLE IF NOT EXISTS fork_code_graph_projects (
   node_count        INTEGER NOT NULL DEFAULT 0,
   edge_count        INTEGER NOT NULL DEFAULT 0,
   graph_bytes       INTEGER NOT NULL DEFAULT 0,
+  agent_tool        INTEGER NOT NULL DEFAULT 0, -- per project, off by default
   last_error_json   TEXT,
   updated_at        TEXT NOT NULL
 );
@@ -390,7 +422,17 @@ loomFeatures.includes("code-graph") }`. The panel reads the thread's project fro
     written by the diff button and read by `ImpactTab`; the panel surface uses
     `forkPanelSurface("code-graph", "impact")` so the Impact tab opens as its own tab id.
   - `DiffImpactButton.tsx`: the `ext-diff-header` action (`codeGraphDiffHeaderAction`).
-  - `palette.tsx`, `settings.tsx` (settings section).
+  - `palette.tsx`, `settings.tsx` (settings section: Graphify command with the pinned install
+    command, "Update graphs automatically", and a per-project list with size, "Let agents
+    query the code graph" per project, and "Delete graph").
+  - The Overview tab header shows the same per-project switch, "Let agents query the code
+    graph for this project", and the version label ("Graphify 0.9.67", or "Graphify 0.10.2,
+    untested version" in a warning tone).
+  - `CodeGraphOpenWatcher.tsx`, a `ForkRoot` component (`ext-web-root`): reads the active
+    thread's environment and project from the route and, when the project changes and the
+    environment has `code-graph`, calls `noteProjectOpened` once. It remembers the last 20
+    `(environmentId, projectId)` pairs it reported in memory and skips a pair reported in the
+    last 10 minutes, so switching threads inside a project sends nothing. Renders nothing.
   - "Open file" uses `useRightPanelStore.getState().openFile(threadRef, file, line)`.
   - "Add to message" appends a compact Markdown list (at most 40 lines: files by depth, top
     symbols) to the thread's composer draft with `useComposerDraftStore.getState()`'s
@@ -421,8 +463,15 @@ const CodeGraphQueryInput = Schema.Struct({
 - Output: plain text lines `label  kind  file:line  (relation, depth)`, capped at about
   2,000 tokens, ending with "Graph built at <sha>; stale" when stale.
 - Handler reads `McpInvocationContext` (`threadId`), resolves the thread's project, and fails
-  with a typed error when `agentTool` is off, Graphify never built a graph for the project, or
-  the feature is missing. It never starts a build.
+  with a typed error when the project's `agent_tool` is off ("The code graph tool is off for
+  this project. Turn on 'Let agents query the code graph' in the Code map panel."), Graphify
+  never built a graph for the project, or the feature is missing. It never starts a build.
+- The per-project switch gates calls, not listing: upstream's MCP server lists every tool to
+  every session (EXTENSION-POINTS.md, section 10), so the short description is paid in every
+  session whatever the switch says. That cost is why the description stays one sentence.
+- If L15 (AI code review) is present, it reads impact server-side through
+  `CodeGraphService.impact` for its reviewer brief, whatever the agent switch says; no agent
+  queries the graph in that path.
 - Annotations: `Tool.Title` "Query code graph", `Tool.Readonly` true.
 
 ## Provider decisions

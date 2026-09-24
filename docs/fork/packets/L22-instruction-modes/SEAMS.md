@@ -28,13 +28,14 @@ Record here, once implemented, the commit that created each (or "existed").
 | `FORK_COMPOSER_BLOCKS`             | `apps/web/src/fork/composer/registry.tsx`             | `{ id: "instruction-modes", Component: ComposerModesControl }`                        |
 | `FORK_SETTINGS_SECTIONS`           | `apps/web/src/fork/settings/registry.ts`              | `instructionModesSettings`                                                            |
 | `FORK_COMMAND_PALETTE_SOURCES`     | `apps/web/src/fork/commandPalette/registry.ts`        | `instructionModesPaletteSource`                                                       |
-| `FORK_KEYBINDING_COMMANDS`         | `packages/contracts/src/fork/keybindings.ts`          | `"loom.instruction-modes.open"`                                                       |
+| `FORK_KEYBINDING_COMMANDS`         | `packages/contracts/src/fork/keybindings.ts`          | `"loom.instruction-modes.open"` (fork keydown listener, never in `keybindings.json`)  |
 | client-runtime fork index          | `packages/client-runtime/src/fork/index.ts`           | `export * from "./instruction-modes.ts";`                                             |
 
 ## Packet seams
 
 None. Delivery goes through `ext-turn-input`, whose seam in `ProviderService.ts` belongs to
-the extension point.
+the extension point. Mode files live in a folder outside the repository and are not upstream
+files.
 
 ## Merge check
 

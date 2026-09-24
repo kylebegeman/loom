@@ -18,6 +18,7 @@ apps/web/src/fork/file-outline/
   languages/python.ts
   languages/go.ts
   languages/rust.ts
+  languages/kotlin.ts
   languages/markdown.ts
   outlineCache.ts            single-entry memo keyed by (path, contents)
   filter.ts                  subsequence filter that keeps ancestors
@@ -38,7 +39,7 @@ apps/web/src/fork/file-outline/
 2. **Scanner.** `scanner.ts` with `maskSource(source, config): string` (same length, newlines
    kept) and `walkBraces(masked, onOpen, onClose)`. Test masking on each language's tricky
    literals first (template literals with `${}`, Python triple quotes, Rust raw strings and
-   lifetimes, Swift `#"..."#`, nested block comments).
+   lifetimes, Swift `#"..."#`, Kotlin raw strings with templates, nested block comments).
 3. **Extractors.** One file per language, each exporting an `OutlineExtractor`. Write the
    fixture and the expected symbol list first, then the rules. Keep each rule table
    declarative:
@@ -97,6 +98,32 @@ Commit the extension points separately, then the packet as
 - **Hooks in the palette.** `items()` must not call hooks; read the store with `getState()`.
 - **Existing tests.** `FilePreviewPanel.test.ts` covers logic helpers only; the seams must not
   change its imports or exported helpers.
+
+## Phase 2 (conditional): tree-sitter
+
+Not part of the v1 build. Start it only when the trigger is met.
+
+Trigger: Kyle reports (or a tracking issue records) real files where the v1 outline misses
+or misplaces symbols, and the fix is not a reasonable scanner rule (for example it needs
+real parsing of a construct rather than one more pattern). Record the failing files as
+fixtures first; they become the phase 2 acceptance tests.
+
+Steps, only for the languages that failed:
+
+1. Measure: WASM size and load time for each needed grammar from `@vscode/tree-sitter-wasm`
+   or `tree-sitter-wasms` (check the license and that the grammar exists; Swift and Kotlin
+   availability is unverified). Pick the smaller maintained source.
+2. Add `web-tree-sitter` to `apps/web` (dependency approved by Kyle) and the grammar files;
+   commit only the intended lockfile change.
+3. `treeSitter/` provider per TECHNICAL.md, "Phase 2 (conditional)"; switch those languages
+   in the extractor map with the scanner as fallback.
+4. Run the language fixture tests against the new provider (the expected symbol lists stay
+   the same) plus the recorded failing files; add a test that a grammar load failure falls
+   back to the scanner.
+5. Check the web build and the desktop build both serve the WASM (manual pass with Kyle's
+   permission).
+
+Commit as `feat(fork-file-outline): parse <languages> outlines with tree-sitter`.
 
 ## Done when
 

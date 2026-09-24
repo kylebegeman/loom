@@ -31,6 +31,9 @@
 - `formatShellAttachment`: exit code, duration formatting, stderr section only when
   non-empty, fence lengthening, truncation note, home directory shortened to `~` in the
   cwd label.
+- `readShellSettings`: missing or throwing storage gives 30 s and 64 KB; values outside
+  the choice lists (for example 120,000,000 ms or 5 MB) fall back to the defaults; valid
+  choices round-trip.
 
 `once.test.ts`:
 
@@ -52,13 +55,18 @@ directory and the real `ProcessRunner` layer, POSIX only; skip on Windows CI):
   fails `unknown-thread`; an unknown project fails `unknown-project`; a missing directory
   fails `no-workspace`.
 - `exit 3` returns exit code 3 (not an error).
-- A command that prints more than 64 KB returns `truncated: true` and at most the cap plus
-  the marker.
+- A command that prints more than 64 KB with `maxOutputBytes` 64 KB returns
+  `truncated: true` and at most the cap plus the marker per stream; the same command with
+  `maxOutputBytes` 1 MB and output under 1 MB returns it whole.
 - `sleep 5` with a 1-second timeout returns `timedOut: true` promptly. Use the smallest
   timeout the schema allows (1,000 ms); this is the runner's own timeout, not a sleep in
   the test.
 - Projection data for these tests comes from a stub `ProjectionSnapshotQuery` layer with
   `getThreadShellById` and `getProjectShellById` only.
+
+`packages/contracts/src/fork/composer-drawers.test.ts`: `ComposerShellRunInput` rejects
+`timeoutMs` above 600,000 and below 1,000, and `maxOutputBytes` above 1,048,576; every
+value in the two choice lists decodes.
 
 `apps/server/src/fork/rpcAuthorization.test.ts` (ext-core): the new tag has a scope and a
 `loom.` prefix.
@@ -72,6 +80,7 @@ vp test run apps/web/src/fork/composer-drawers/clipboardFilter.test.ts \
   apps/web/src/fork/composer-drawers/shell.test.ts \
   apps/web/src/fork/composer-drawers/once.test.ts \
   apps/server/src/fork/composer-drawers/ShellRunner.test.ts \
+  packages/contracts/src/fork/composer-drawers.test.ts \
   apps/server/src/fork/rpcAuthorization.test.ts \
   packages/contracts/src/fork/keybindings.test.ts
 vp lint apps/web/src/fork/composer-drawers apps/server/src/fork/composer-drawers \
@@ -99,8 +108,11 @@ signed-in provider:
    turn end: the restore still happens.
 3. Schema: paste a schema, add to prompt, send to a provider; save and reuse.
 4. Shell: `git status --short` attaches a fenced block; `exit 3` shows the red code;
-   `yes | head -c 200000` shows truncation; `sleep 60` with 10 s stops at 10 s; on a thread
-   with a worktree the cwd is the worktree.
+   `yes | head -c 200000` shows truncation at 64 KB; raise "Output limit" to 256 KB in
+   settings and the same command returns whole; `sleep 60` with 10 s stops at 10 s; change
+   "Default timeout" to 2 min and the tab preselects it; `sleep 610` with 10 min stops at
+   10 minutes and the result still arrives (long unary RPC); on a thread with a worktree
+   the cwd is the worktree.
 5. Clipboard: off by default (tab explains, "Turn on"). On: copy a code block with its
    copy button and a selected paragraph: both appear. Copy a fake `ghp_` token: not
    recorded. Desktop: copy in another app, switch back to Loom: the item appears. Insert
@@ -122,4 +134,5 @@ upstream merge, rerun `once.test.ts`: it is the guard for the composer store cou
 - No change to upstream's send path; every override goes through upstream controls and
   commands.
 - No clipboard data leaves the client; nothing is captured while disabled.
-- Shell output is bounded (64 KB) and time-bounded (at most 2 minutes).
+- Shell output is bounded (64 KB per stream by default, never more than 1 MB per stream)
+  and time-bounded (30 s by default, never more than 10 minutes), enforced by the server.

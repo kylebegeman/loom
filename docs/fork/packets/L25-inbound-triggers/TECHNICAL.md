@@ -7,15 +7,16 @@ Citations are to this fork at upstream v0.0.42 (`a931bd85f3`).
 ```
                  +------------------------- InboundTriggersService (ForkLayer) -------------------------+
  gh api (poll) ->| Sources: assigned, labeled, notifications (mention, review), actions runs (ci)       |
- webhook (ph.3)->|   -> IncomingEvent (normalized, untrusted text clamped)                              |
+                 |   -> IncomingEvent (normalized, untrusted text clamped)                              |
                  |   -> dedupe: fork_inbound_triggers_events UNIQUE(trigger_id, event_key)              |
                  |   -> decide: ask (Inbox) | auto (guards)                                            |
-                 |   -> Starter: worktree (GitWorkflowService.createWorktree)                           |
-                 |               thread.create + thread.turn.start via OrchestrationEngineService       |
+                 |   -> Starter: worktree (GitWorkflowService.createWorktree), thread.create,           |
+                 |               setup script (ProjectSetupScriptRunner), thread.turn.start             |
                  |               deterministic ids -> engine receipts make retries idempotent           |
                  |   -> Inbox summary (SubscriptionRef) -> loom.inbound-triggers.subscribeInbox         |
                  +--------------------------------------------------------------------------------------+
- web: /loom/triggers (Inbox, Triggers), settings section, palette, toast coordinator in ForkRoot
+ web: /loom/triggers (Inbox, Triggers), settings section, palette, inbox notifier in ForkRoot
+      (system notification for events waiting on you, in-app toast for the rest)
 ```
 
 Upstream pieces reused:
@@ -35,15 +36,21 @@ Upstream pieces reused:
   WebSocket bootstrap does (`apps/server/src/ws.ts:1303-1470`: base ref, optional
   start-from-origin, `newRefName` = the temporary branch). The bootstrap itself is a closure
   inside the per-connection handler and cannot be called from a service.
+- Setup scripts: `ProjectSetupScriptRunner.runForThread(input)`
+  (`apps/server/src/project/ProjectSetupScriptRunner.ts:56-70,108-115`), provided with the
+  Git layers in `RuntimeCoreDependenciesLive` (`apps/server/src/server.ts:335-336,491`), so
+  ForkLayer can use it. Upstream's two callers: the WebSocket bootstrap runs it after
+  `thread.create`, records `setup-script.requested` / `setup-script.started` /
+  `setup-script.failed` thread activities, and waits for completion before the turn when the
+  script is not `async` (`apps/server/src/ws.ts:750-775,1099-1160,1185-1298`);
+  `GitManager.preparePullRequestThread` runs it fire-and-forget
+  (`apps/server/src/git/GitManager.ts:2300-2320,2551`).
 - Temporary branch naming `buildTemporaryWorktreeBranchName` (`packages/shared/src/git.ts:95`);
   the first-turn rename in `ProviderCommandReactor` then gives the branch a real name, for
   server-created threads too.
 - Background start: `forkParked` (`apps/server/src/serverActivation.ts:12-27`); host state:
   `BackgroundPolicy.snapshot` (`apps/server/src/background/BackgroundPolicy.ts:29-56`,
   snapshot shape `packages/contracts/src/background.ts:102-110`).
-- Secrets (phase 3): `ServerSecretStore.getOrCreateRandom(name, bytes)`
-  (`apps/server/src/auth/ServerSecretStore.ts:138-150`), files under `<stateDir>/secrets`,
-  mode 0700.
 - `VcsProcess.run` for `gh` (`apps/server/src/vcs/VcsProcess.ts:47-58`, GitHub concurrency 4),
   as in L06 and L19: `GitHubCli` is not reachable from ForkLayer
   (`apps/server/src/server.ts:278-290`).
@@ -66,7 +73,6 @@ export const INBOUND_TRIGGERS_WS_METHODS = {
   restoreEvent: "loom.inbound-triggers.restoreEvent",
   pollNow: "loom.inbound-triggers.pollNow",
   subscribeInbox: "loom.inbound-triggers.subscribeInbox",
-  webhookInfo: "loom.inbound-triggers.webhookInfo", // phase 3
 } as const;
 
 export const TriggerKind = Schema.Literals([
@@ -147,14 +153,18 @@ export const InboxSummary = Schema.Struct({
       title: Schema.String,
       repository: Schema.String,
       kind: TriggerKind,
+      /** "pending" waits on the user; every other status is informational. */
+      status: TriggerEventStatus,
+      threadId: Schema.NullOr(ThreadId),
       receivedAt: IsoDateTime,
+      changedAt: IsoDateTime,
     }),
-  ), // up to 5
+  ), // the 5 most recently changed events
 });
 
 export const InboundTriggersSettings = Schema.Struct({
   enabled: Schema.Boolean, // default false: nothing polls until turned on
-  pollIntervalMinutes: Schema.Int.check(Schema.isBetween({ minimum: 2, maximum: 120 })), // default 5
+  pollIntervalMinutes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 120 })), // default 5
 });
 
 export class InboundTriggersError extends Schema.TaggedErrorClass<InboundTriggersError>()(
@@ -189,7 +199,6 @@ export class InboundTriggersError extends Schema.TaggedErrorClass<InboundTrigger
 | `restoreEvent`   | `{ eventId }`                                                            | `TriggerEvent`                     | `orchestration:operate` | unary  |
 | `pollNow`        | `{ triggerId?: string }`                                                 | `{ newEvents: number }`            | `orchestration:operate` | unary  |
 | `subscribeInbox` | `{}`                                                                     | `InboxSummary`                     | `orchestration:read`    | stream |
-| `webhookInfo`    | `{ triggerId; rotate: boolean }` (phase 3)                               | `{ path: string; secret: string }` | `orchestration:operate` | unary  |
 
 Every `error` is `Schema.Union([InboundTriggersError, EnvironmentAuthorizationError])`.
 `subscribeInbox` is the packet's durable subscription: add its tag to
@@ -201,36 +210,35 @@ API quota and reveals issue text.
 
 `apps/server/src/fork/inbound-triggers/`:
 
-| File                 | Role                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------- |
-| `InboundTriggers.ts` | `InboundTriggersService` and `layer` (RPC-facing methods).                            |
-| `store.ts`           | Repositories for definitions, state, events, settings.                                |
-| `migrations.ts`      | `InboundTriggersMigrations` (slug `inbound-triggers`).                                |
-| `github.ts`          | `gh api` calls and decoders per source; `ghLogin` (cached `gh api user --jq .login`). |
-| `sources.ts`         | Kind to query mapping and normalization into `IncomingEvent` (pure given responses).  |
-| `templates.ts`       | Default templates and `renderPrompt` (pure).                                          |
-| `guards.ts`          | `decideApproval(event, trigger, login)` (pure).                                       |
-| `starter.ts`         | Creates the worktree and dispatches the commands, or the follow-up turn.              |
-| `poller.ts`          | The background loop (`Layer.effectDiscard` with `forkParked`) and `pollOnce`.         |
-| `webhook.ts`         | Phase 3 route and signature check.                                                    |
-| `rpc.ts`             | Handlers.                                                                             |
+| File                 | Role                                                                                         |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `InboundTriggers.ts` | `InboundTriggersService` and `layer` (RPC-facing methods).                                   |
+| `store.ts`           | Repositories for definitions, state, events, settings.                                       |
+| `migrations.ts`      | `InboundTriggersMigrations` (slug `inbound-triggers`).                                       |
+| `github.ts`          | `gh api` calls and decoders per source; `ghLogin` (cached `gh api user --jq .login`).        |
+| `sources.ts`         | Kind to query mapping and normalization into `IncomingEvent` (pure given responses).         |
+| `templates.ts`       | Default templates and `renderPrompt` (pure).                                                 |
+| `guards.ts`          | `decideApproval(event, trigger, login)` (pure).                                              |
+| `starter.ts`         | Creates the worktree, dispatches the commands, runs the setup script, or the follow-up turn. |
+| `poller.ts`          | The background loop (`Layer.effectDiscard` with `forkParked`) and `pollOnce`.                |
+| `rpc.ts`             | Handlers.                                                                                    |
 
 Service dependencies (all reachable from ForkLayer): `SqlClient`, `VcsProcess`,
 `OrchestrationEngineService`, `ProjectionSnapshotQuery`, `ServerSettingsService`,
-`GitWorkflowService`, `BackgroundPolicy`, `ServerSecretStore` (phase 3), `Clock`.
+`GitWorkflowService`, `ProjectSetupScriptRunner`, `BackgroundPolicy`, `Clock`.
 
 ### Sources
 
 All requests go through `VcsProcess.run({ command: "gh", args: ["api", "-X", "GET", ...], cwd: homedir, timeoutMs: 30_000, maxOutputBytes: 4 MiB, env: { GH_PROMPT_DISABLED: "1" } })`.
 User-wide requests run once per tick and are shared by every trigger that needs them.
 
-| Kind               | Request                                                                                                                                 | Event key                           | External key                 |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------- |
-| `issue-assigned`   | `issues -f filter=assigned -f state=open -f since=<cursor> -f per_page=50` (user-wide; keep items whose `repository.full_name` matches) | `assigned:<repo>#<n>`               | `github:<repo>#<n>`          |
-| `issue-labeled`    | `repos/<repo>/issues -f labels=<label> -f state=open -f since=<cursor> -f per_page=50`, one request per label (REST `labels` is AND)    | `labeled:<repo>#<n>:<label>`        | `github:<repo>#<n>`          |
-| `mention`          | `notifications -f participating=true -f since=<cursor> -f per_page=50` (user-wide), reason `mention` or `team_mention`                  | `mention:<repo>#<n>`                | `github:<repo>#<n>`          |
-| `review-requested` | same notifications response, reason `review_requested`                                                                                  | `review:<repo>#<n>`                 | `github:<repo>#<n>`          |
-| `ci-failure`       | `repos/<repo>/actions/runs -f status=failure -f created=>=<cursor date> -f per_page=50`, keep `head_branch` in the target branch set    | `run:<repo>:<run id>:<run_attempt>` | `github-run:<repo>:<branch>` |
+| Kind               | Request                                                                                                                                                                                   | Event key                           | External key                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- | ---------------------------- |
+| `issue-assigned`   | `issues -f filter=assigned -f state=open -f since=<cursor> -f per_page=50` (user-wide; keep items whose `repository.full_name` matches)                                                   | `assigned:<repo>#<n>`               | `github:<repo>#<n>`          |
+| `issue-labeled`    | `repos/<repo>/issues -f labels=<label> -f state=open -f since=<cursor> -f per_page=50`, one request per label (REST `labels` is AND)                                                      | `labeled:<repo>#<n>:<label>`        | `github:<repo>#<n>`          |
+| `mention`          | `notifications -f participating=true -f since=<cursor> -f per_page=50` (user-wide), reason `mention` or `team_mention`, kept only when `repository.full_name` is the project's repository | `mention:<repo>#<n>`                | `github:<repo>#<n>`          |
+| `review-requested` | same notifications response, reason `review_requested`                                                                                                                                    | `review:<repo>#<n>`                 | `github:<repo>#<n>`          |
+| `ci-failure`       | `repos/<repo>/actions/runs -f status=failure -f created=>=<cursor date> -f per_page=50`, keep `head_branch` in the target branch set                                                      | `run:<repo>:<run id>:<run_attempt>` | `github-run:<repo>:<branch>` |
 
 - `<repo>`: the project's GitHub `owner/name`, from `project.repositoryIdentity`
   (`packages/contracts/src/environment.ts:197-205`) through
@@ -241,6 +249,9 @@ User-wide requests run once per tick and are shared by every trigger that needs 
   `https://api.github.com/repos/o/r/issues/12`) and `subject.title`; derive the number and
   the HTML URL from it; fetch `repos/<repo>/issues/<n>` for body and author when an event is
   new (one call per new event, not per poll).
+- Mentions (and review requests) in repositories other than the project's own are dropped
+  (Kyle's decision): there is no default project to start them in, and a mention elsewhere
+  is not work for this project.
 - `issue-assigned` excludes pull requests (items with a `pull_request` field) unless
   `includePullRequests`.
 - `ci-failure` target branches: branches of active (not archived) threads in the project
@@ -315,7 +326,8 @@ Find the cause with `gh run view` or the job logs, fix it, and push when the fix
 ### Starter
 
 `startEvent(eventId, overrides)` and auto starts share one path, serialized by a
-`Semaphore` per `externalKey`:
+`Semaphore` per `externalKey`. The poller forks auto starts into the service scope instead
+of awaiting them, so a long setup script never delays the next check:
 
 1. Load the event; refuse unless `pending`, `waiting` or `failed`. Set `starting`.
 2. Ids: `hash = sha256(triggerId + "\0" + eventKey)`, formatted as a UUID for the thread
@@ -339,6 +351,26 @@ Find the cause with `gh run view` or the job logs, fix it, and push when the fix
      `createWorktree({ cwd: workspaceRoot, refName: base, newRefName: buildTemporaryWorktreeBranchName(randomHex), baseRefName: defaultBranch, path: null })`.
      Store `worktree_path` and branch on the event row before dispatching.
    - Dispatch `thread.create { threadId, projectId, title: "#<n> <title>" (clamp 80), modelSelection, runtimeMode, interactionMode, branch, worktreePath, createdAt }`.
+   - Setup script (worktree threads only, Kyle's decision: the same as a manual worktree
+     thread). Skip when the event row's `setup_state` is already set (a retry after the
+     script ran). Otherwise dispatch a `thread.activity.append` with kind
+     `setup-script.requested` and summary "Starting setup script", then call
+     `ProjectSetupScriptRunner.runForThread({ threadId, projectId, projectCwd: workspaceRoot, worktreePath, observeCompletion: {} })`:
+     - `no-script`: set `setup_state = "no-script"` and go on.
+     - `started`: dispatch `setup-script.started` ("Setup script started", payload
+       `{ scriptId, scriptName, terminalId, worktreePath }`, the payload upstream records),
+       set `setup_state = "started"`. When the script is not `async`, wait for `completion`
+       (at most 30 minutes, `Effect.timeoutOption`) before the turn, as upstream's bootstrap
+       does; exit 0 sets `done`, anything else sets `failed`. When it is `async`, fork the
+       completion wait (scoped to the service) only to record `done` or `failed`.
+     - Runner error: dispatch `setup-script.failed` ("Setup script failed to start", tone
+       `error`, payload `{ detail, worktreePath }`), set `setup_state = "failed"`.
+     - Best effort, like upstream: a failed or timed-out script never fails the event; the
+       turn still starts and `statusDetail` says "Setup script failed (exit 1); started
+       anyway" or "Setup script still running after 30 minutes; started anyway".
+     - Activity command ids are deterministic
+       (`server:loom-trigger:<hash16>:setup-requested`, `:setup-started`, `:setup-failed`)
+       and activity ids reuse the same suffixes, so a retry cannot duplicate them.
    - Dispatch `thread.turn.start { threadId, message: { messageId, role: "user", text: prompt, attachments: [] }, titleSeed: title, runtimeMode, interactionMode, createdAt }`.
 5. Follow-up (`ci-failure`): read the thread shell; if its `session.status` is `starting`
    or `running`, or it has pending approvals or user input, set `waiting` and retry on the
@@ -361,7 +393,7 @@ export const InboundTriggersPollerLive = Layer.effectDiscard(
           if (settings.enabled && (yield* hostAllowsPolling)) {
             yield* service.pollOnce.pipe(Effect.ignoreCause({ log: true }));
           }
-          yield* Effect.sleep(Duration.minutes(Math.max(2, settings.pollIntervalMinutes)));
+          yield* Effect.sleep(Duration.minutes(Math.max(1, settings.pollIntervalMinutes)));
         }
       }),
     );
@@ -370,7 +402,11 @@ export const InboundTriggersPollerLive = Layer.effectDiscard(
 ```
 
 - One loop, never overlapping ticks (old Loom double-claimed with concurrent ticks); `pollNow`
-  runs `pollOnce` under the same `Semaphore(1)`.
+  ("Check now" in the Inbox header, the empty Inbox, each trigger row and the palette) runs
+  `pollOnce` under the same `Semaphore(1)`; a `pollNow` while a tick runs waits for it and
+  returns that tick's count instead of starting a second one.
+- Interval: default 5 minutes, adjustable from 1 to 120 in settings. Changing it takes
+  effect after the current sleep; the settings section says "Next check in N minutes".
 - `hostAllowsPolling`: `BackgroundPolicy.snapshot`, skip while `hostPower.suspended` or
   thermal state `serious` or `critical`. Do not gate on client leases or on the lock screen:
   `shouldRunScopeWork` and `shouldRunOpportunisticWork` need a foreground client
@@ -380,25 +416,6 @@ export const InboundTriggersPollerLive = Layer.effectDiscard(
   `pending`.
 - Tests call `pollOnce` directly with stubbed `gh` output; the loop itself is not tested
   with time.
-
-### Phase 3: webhooks (optional)
-
-`webhook.ts` adds to `ForkRoutesLayer`:
-
-- `POST /api/loom/inbound-triggers/github/:triggerId`.
-- Read at most 1 MiB of raw body; reject larger with 413.
-- Secret: `ServerSecretStore.getOrCreateRandom("loom-inbound-triggers-webhook-<triggerId>", 32)`;
-  shown hex-encoded through `webhookInfo` (with `rotate` to replace it).
-- Verify `X-Hub-Signature-256` (`sha256=<hex>` HMAC of the raw body) with `timingSafeEqual`
-  before parsing JSON; 401 on mismatch.
-- `X-GitHub-Event: ping` answers 200. Map `issues` (`assigned` to the login, `labeled` with
-  a watched label), `issue_comment.created` mentioning `@<login>`, `pull_request`
-  `review_requested` for the login, `workflow_run.completed` with `conclusion: failure` into
-  `IncomingEvent` with the same event keys as polling, so polling and webhooks can run
-  together without duplicates.
-- Respond 202 after inserting; start work asynchronously.
-- The Mac is not reachable; this route is for a home-lab relay that forwards GitHub's
-  deliveries to the server's port over Tailscale. Setting up that relay is out of scope.
 
 ## Storage
 
@@ -441,6 +458,7 @@ CREATE TABLE IF NOT EXISTS fork_inbound_triggers_events (
   thread_id TEXT,
   worktree_path TEXT,
   worktree_branch TEXT,
+  setup_state TEXT, -- null | no-script | started | done | failed
   received_at TEXT NOT NULL,
   decided_at TEXT,
   UNIQUE (trigger_id, event_key)
@@ -482,10 +500,37 @@ CREATE TABLE IF NOT EXISTS fork_inbound_triggers_settings (
     `TriggerEditor.tsx` (dialog with the sections in PRODUCT.md; model picker reuses
     upstream's model selection component if it is reusable outside the composer, otherwise a
     plain provider and model select from the server config's providers), `DryRunResults.tsx`.
-  - `InboxToastCoordinator.tsx` in `FORK_ROOT_COMPONENTS`: for each connected environment
-    with the feature, subscribe to the summary; on a revision increase with new ids (not on
-    the first snapshot), show a toast with "Review". Renders nothing.
-  - `settingsSection.tsx`, `palette.tsx` (the pending count comes from the same summary
+  - `InboxNotifier.tsx` in `FORK_ROOT_COMPONENTS`: for each connected environment with the
+    feature, subscribe to the summary; on a revision increase, diff `recent` against the
+    previous snapshot by `id + status` (never on the first snapshot, so a reload does not
+    replay old events). Renders nothing. Per change:
+    - An event that became `pending` waits on the user ("Ask me first", or held by the
+      auto-start guards). When Loom's window is visible and focused, show a toast "New from
+      GitHub: <title>" with "Review". Otherwise, when the system notification setting is on
+      and `Notification.permission === "granted"`, show
+      `new Notification("Waiting for you: <title>", { body: "<repository> #<n>", tag: "loom-trigger:<environmentId>:<id>", silent: true })`;
+      clicking it focuses the window and opens `/loom/triggers?tab=inbox&environmentId=...`.
+      This is upstream's own pattern (`apps/web/src/components/ThreadNotificationCoordinator.tsx:170-200`),
+      which on the desktop app shows a macOS notification; it also works in browsers that
+      allow notifications.
+    - Any other status change is informational (auto-started, CI follow-up sent, failed,
+      skipped): an in-app toast only, and only while Loom is visible ("Started from GitHub:
+      <title>" with "Open thread", "Could not start: <title>" with "Review"). Never a system
+      notification.
+    - "In-app toasts" off suppresses every toast above; "System notification" off suppresses
+      the system notification (the event still waits in the Inbox and the palette count).
+    - The notifier does not touch upstream's notification badge or sound.
+  - `notificationPrefs.ts`: client-local preferences (per device, like upstream's
+    notification mode), `loom:inbound-triggers:notifications:v1` =
+    `{ systemForWaiting: boolean; toasts: boolean }`, both default true, read and written
+    through `resolveStorage` in try/catch.
+  - `settingsSection.tsx`: environment settings (on or off, check interval 1 to 120 minutes
+    with default 5, "Check now", "Open triggers") and the two per-device notification
+    switches: "System notification when an event waits for me" (with "Allow notifications"
+    when `Notification.permission` is `default`, which calls `Notification.requestPermission`
+    from the click; a denied permission shows upstream's wording, "Allow notifications in
+    your browser or system settings") and "In-app toasts for trigger activity".
+  - `palette.tsx` (the pending count comes from the same summary
     atom), `ShortcutHost.tsx`.
   - Route `apps/web/src/routes/loom.triggers.tsx`.
 - Events render as text. Titles and bodies never go through Markdown-to-HTML with raw HTML
@@ -508,15 +553,20 @@ None. Triggers are configured by the user; agents receive their work as a normal
 
 ## Alternatives considered
 
-- **Webhooks first.** Needs a public endpoint; the Mac has none. Designed as phase 3.
+- **Webhooks.** Needs a public endpoint; the Mac has none. Kyle chose polling through `gh`
+  only; webhooks are a recorded follow-up, not designed.
 - **Notifications API for every kind.** Depends on the user's notification settings (for
   example CI notifications are opt-in and only for runs you triggered); direct endpoints are
   more predictable for assignment, labels and CI.
 - **A new orchestration command for "triggered thread".** Forbidden by the orchestration
   rules and unnecessary; `thread.create` plus `thread.turn.start` suffice.
 - **Extracting upstream's `dispatchBootstrapTurnStart` into a service.** A large upstream
-  refactor in `ws.ts`. The fork repeats the worktree steps it needs instead and skips the
-  setup script (open question).
+  refactor in `ws.ts`. The fork repeats the worktree steps it needs instead and calls the
+  public `ProjectSetupScriptRunner` service for the setup script, the same service upstream's
+  bootstrap and `GitManager` call.
+- **Upstream's worktree setup card (`WorktreeSetupTracker`) for triggered threads.** It is
+  driven by the WebSocket bootstrap's per-request state; the thread activities the starter
+  records already show the setup script in the thread.
 - **Old Loom's automation stack** (trigger registry, automation occurrence engine, conversation
   gateways, Postgres scheduler, about 20k lines). Kept the ideas: deterministic identities,
-  verify-before-parse webhooks, run-saved-instructions semantics, paused by default.
+  run-saved-instructions semantics, paused by default.

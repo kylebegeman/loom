@@ -46,5 +46,13 @@ Registry" with review and promotion, and a generator-based authoring studio.
   others, installs into them and adds provider hook manifests (README "Installation"); skill
   copies ship a launcher that downloads a binary on first run. Exactly the kind of installer
   this packet never runs; a copied impeccable skill gets the "contains scripts" warning.
+- typesafe-ai/skills, https://github.com/typesafe-ai/skills, MIT. One skill at
+  `skills/typesafe-ai/SKILL.md` (with its own `LICENSE`) plus a Claude plugin manifest in
+  `.claude-plugin/`; the registry copies only the skill folder. The L29 drafting brief links
+  to it.
+- Suggested source layouts and licenses checked with `gh api repos/<owner>/<repo>` and the
+  git tree on 2026-09-24: ponytail skills at `skills/ponytail*` (also mirrored under
+  `.openclaw/skills/`), impeccable per-tool copies at `.claude/skills/impeccable`,
+  `.agents/skills/impeccable`, `plugin/skills/impeccable` and others.
 - Claude Code skills and settings (`skillOverrides`, `disable-model-invocation`,
   `user-invocable`): as encoded and verified in upstream's `ClaudeSkills.ts` comments.

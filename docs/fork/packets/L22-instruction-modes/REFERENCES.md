@@ -36,6 +36,13 @@ closest prior art is thread goals:
 - `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:217`
   (`getThreadShellById`), `Services/OrchestrationEngine.ts:83` (`streamDomainEvents`),
   `apps/server/src/serverActivation.ts:11-26` (`forkParked`).
+- `apps/server/src/environmentTheme.ts:264-283` (a debounced `fs.watch` on a folder that
+  re-reads everything on each event: the model for the modes folder watcher),
+  `apps/server/src/serverSettings.ts:920` and `apps/server/src/keybindings.ts:569` (the same
+  pattern for settings files), `apps/server/src/atomicWrite.ts:5` (atomic writes),
+  `apps/server/src/pathExpansion.ts:19` (`expandHomePath`), `apps/server/src/config.ts:117-121`
+  (`stateDir`).
+- `.repos/effect-smol/packages/effect/src/FileSystem.ts:361` (`FileSystem.watch`).
 - EXTENSION-POINTS.md section 11 (composer blocks) and section 12, rule 5 (injected content).
 
 ## External

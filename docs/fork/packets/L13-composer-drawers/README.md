@@ -1,6 +1,6 @@
 # L13: Composer drawers
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 One "Composer tools" drawer that opens above the composer with four tabs:
 
@@ -25,23 +25,25 @@ Selection items: P15 (Composer drawers) and the clipboard part of F8, see
   - Schema tab: edit or pick a saved schema, validate it as JSON, insert a short
     instruction plus the schema into the prompt; save up to 10 schemas per client.
   - Shell tab: run a command through a fork RPC (timeout, output cap), preview the result,
-    attach it as a fenced block; recent commands per client.
+    attach it as a fenced block; recent commands per client. Defaults 30 s and 64 KB,
+    adjustable in Settings > Loom > Composer drawers up to 10 minutes and 1 MB.
   - Clipboard tab: capture of copies made inside Loom, plus (desktop) the clipboard
     content when Loom regains focus; filters, limits, pin nothing, clear all, delete one.
-  - Loom settings section for clipboard history.
+  - Loom settings section: clipboard history, and the shell's default timeout and output
+    limit.
   - Keybinding commands and palette items for each tab.
 - Out:
-  - Native structured output (Codex `outputSchema` on `turn/start`): needs a new optional
-    field on upstream's `thread.turn.start` contract and adapter seams. Old Loom did it for
-    Codex only. The prompt-level schema works for every provider; native enforcement is a
-    follow-up for a provider-seam packet.
+  - Follow-up: native structured output (Codex `outputSchema` on `turn/start`, and Claude's
+    structured output if its SDK supports it), pending SDK verification. It needs a new
+    optional field on upstream's `thread.turn.start` contract and adapter seams. Kyle chose
+    the prompt-level schema for v1; it works for every provider.
   - Per-turn working directory, personality or sandbox fields (old Loom's drawer): the
     permission level covers sandboxing through upstream's runtime modes.
   - Codex's native `thread/shellCommand` (old Loom's shell): provider-specific; the fork
     RPC works for every provider.
-  - Reading clipboard content copied in other apps while Loom is in the background
-    (needs Electron main-process polling through `ext-desktop`; see TECHNICAL.md,
-    Alternatives).
+  - Follow-up: reading clipboard content copied in other apps while Loom is in the
+    background (Electron main-process polling through `ext-desktop`; see TECHNICAL.md,
+    Alternatives). Kyle chose "latest item when Loom regains focus" for v1.
   - Mobile.
 
 ## Surfaces

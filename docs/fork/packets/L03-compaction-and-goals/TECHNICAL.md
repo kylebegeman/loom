@@ -11,7 +11,7 @@ search for the quoted code when they do.
                              --> upstream ProviderCommandReactor /compact path (unchanged)
 
  Goals
-   chip / palette / keybinding --> loom.compaction-and-goals.{getGoal,setGoal,clearGoal}
+   chip / footer button / palette / keybinding --> loom.compaction-and-goals.{getGoal,setGoal,clearGoal}
                                     --> ThreadGoalStore (fork_compaction_and_goals_goals)
    ProviderService.sendTurn --(ext-turn-input)--> goal contributor
                                     --> prepends <loom_goal> to the provider input when active
@@ -272,15 +272,16 @@ What this means per provider:
   `packages/client-runtime/src/state/runtime.ts:612,678`.
 - `apps/web/src/fork/compaction-and-goals/`:
 
-| File                   | Purpose                                                                                                                                                                 |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `state.ts`             | Atom instances with `connectionAtomRuntime`; `useThreadGoal(ref)`; capability check.                                                                                    |
-| `compaction.ts`        | `resolveCompactionAvailability`, `useCompactThread()`.                                                                                                                  |
-| `goalEditorStore.ts`   | Small zustand store `{ openFor: ScopedThreadRef                                                                                                                         | null }`. |
-| `ThreadGoalChip.tsx`   | The chip (seam component). Renders `null` without the feature, a server thread, or a goal.                                                                              |
-| `GoalEditor.tsx`       | Popover content with the 4,000-character textarea and counter.                                                                                                          |
-| `GoalCommandsHost.tsx` | `ForkRoot` component: subscribes to the two keybinding commands; renders the editor dialog when opened from the palette or keybinding (the chip opens its own popover). |
-| `palette.tsx`          | Palette source for compaction and goal items.                                                                                                                           |
+| File                     | Purpose                                                                                                                                                                 |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state.ts`               | Atom instances with `connectionAtomRuntime`; `useThreadGoal(ref)`; capability check.                                                                                    |
+| `compaction.ts`          | `resolveCompactionAvailability`, `useCompactThread()`.                                                                                                                  |
+| `goalEditorStore.ts`     | Small zustand store `{ openFor: ScopedThreadRef \| null }`.                                                                                                             |
+| `ThreadGoalChip.tsx`     | The chip (seam component). Renders `null` without the feature, a server thread, or a goal.                                                                              |
+| `GoalComposerButton.tsx` | `ext-composer` footer block (`FORK_COMPOSER_BLOCKS` entry, id `compaction-and-goals`). Opens the editor dialog through `goalEditorStore`.                               |
+| `GoalEditor.tsx`         | Popover content with the 4,000-character textarea and counter.                                                                                                          |
+| `GoalCommandsHost.tsx`   | `ForkRoot` component: subscribes to the two keybinding commands; renders the editor dialog when opened from the palette or keybinding (the chip opens its own popover). |
+| `palette.tsx`            | Palette source for compaction and goal items.                                                                                                                           |
 
 `ThreadGoalChip` layout: it sits in the banner overlay at the top of the chat column
 (`ChatView.tsx:9423-9437`), which is `pointer-events-none absolute inset-x-0 top-0 z-20`;
@@ -288,6 +289,16 @@ the chip sets `pointer-events-auto`, centers itself with the timeline's max widt
 (`max-w-3xl`, as the timeline root does), wraps long text (`wrap-anywhere`, one line
 collapsed, full text expanded), and never animates continuously. It refetches the goal on
 window focus through the query's stale time.
+
+`GoalComposerButton` receives `{ environmentId, threadRef, size }` from ext-composer
+(EXTENSION-POINTS.md, section 11). It renders `null` without the feature or when
+`useThreadShell(threadRef)` (`apps/web/src/state/entities.ts:99`) returns `null` (a draft
+thread). Otherwise it renders a small ghost button sized by `size` (target icon, label
+"Goal" at `sm`, icon only at `xs`) with the tooltip "Set goal" or "Edit goal" from
+`useThreadGoal(threadRef)`; clicking sets `goalEditorStore.openFor = threadRef`, and
+`GoalCommandsHost` renders the same editor dialog the palette uses. The block is appended
+by ext-composer, so upstream hides it first when the footer runs out of space; the palette,
+keybinding and chip remain.
 
 Goal gating: `supportsLoomFeature(serverConfig?.environment.capabilities, "compaction-and-goals")`
 for the thread's environment.
@@ -319,9 +330,10 @@ but it does not meet "passed to the provider").
   without restarting the session, and it needs adapter seams in each driver.
 - **Codex native goals** (`thread/goal/set|get|clear`, `V2ThreadGoalSetParams` at
   `packages/effect-codex-app-server/src/_generated/schema.gen.ts:40443`, statuses at 6899).
-  Deferred: needs access to the running Codex session from fork code (a Codex adapter seam),
-  covers only one provider, and would double-deliver alongside the text path unless the
-  contributor skipped Codex.
+  Follow-up (decided: not now): needs access to the running Codex session from fork code (a
+  Codex adapter seam), covers only one provider, and would double-deliver alongside the
+  text path unless the contributor skipped Codex. Revisit only if Codex native goals add
+  behavior the text path lacks, such as persistence across Codex's own compaction.
 - **A composer context record per turn** (the zero-seam path L02 uses for transcripts).
   Rejected: it must be attached by the client at send time, again needing a send hook, and
   would show a chip in every message.

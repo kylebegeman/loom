@@ -13,7 +13,7 @@ file in this folder. Work in a worktree seeded with a copy of real data for the 
 ### 1. Extension points
 
 Existence checks, in order: `ext-core`, `ext-web-root`, `ext-keybindings`, `ext-palette`
-(`ext-turn-input` follows in step 3).
+(`ext-turn-input` follows in step 3, `ext-composer` in step 7).
 Create missing ones exactly as EXTENSION-POINTS.md specifies, one commit each, with FORK.md
 rows.
 
@@ -70,11 +70,17 @@ Typecheck `@t3tools/contracts`.
 5. Palette goal items, returning `[]` without the feature or without a server thread; show
    "Set goal" or "Edit goal", and state items according to the current goal.
 6. Clear shows a toast with Undo, which calls `setGoal` with the returned objective and state.
+7. `ext-composer`: run its existence check
+   (`git grep -c 'fork: ext-composer' -- apps/web/src/components/chat/ChatComposer.tsx`
+   prints 5); if missing, create it exactly as EXTENSION-POINTS.md section 11 specifies, in
+   its own commit with its FORK.md row. Then `GoalComposerButton.tsx` (TECHNICAL.md,
+   Clients) and its `FORK_COMPOSER_BLOCKS` entry.
 
 ### 8. Documentation and status
 
-- `docs/fork/user/compaction-and-goals.md`: how to compact from the palette, what a goal
-  does, that the agent receives it with every turn while active, that it costs tokens, and
+- `docs/fork/user/compaction-and-goals.md`: how to compact from the palette, how to set a
+  goal (composer "Goal" button, palette, keybinding), what a goal does, that the agent
+  receives it before every message while active, that it costs tokens, and
   that it appears in the provider's own session history.
 - FORK.md rows; packet index Status.
 
@@ -89,6 +95,10 @@ Typecheck `@t3tools/contracts`.
 - `thread.latestUserMessageAt` ignores imported messages; this matches upstream's rule that
   compaction needs a real conversation.
 - Never write goal data into upstream `ServerSettings` or thread metadata.
+- The goal block is prepended by `ext-turn-input`, never appended: appended text would
+  become a Claude skill's arguments. Docs and copy say "prepended" or "before the message".
+- The footer button must not subscribe to anything beyond the goal query it already shares
+  with the chip; the composer re-renders often.
 
 ## Done when
 
@@ -100,4 +110,6 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
   provider's native transcript or with a debug log of the sent length), and the
   timeline shows only the typed text.
 - Paused and met goals are not sent; resuming sends again.
+- The composer footer button opens the goal editor on a server thread and is absent on
+  draft threads and servers without the feature.
 - Deleting a thread removes its goal.

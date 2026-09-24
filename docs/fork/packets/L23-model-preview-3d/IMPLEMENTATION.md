@@ -6,9 +6,8 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 
 - Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
   folder. Work in a worktree.
-- Ask Kyle to approve `three` and `@types/three` (PRODUCT.md question 1). Without approval,
-  phases 1 and 2 (server, contracts, route, OpenSCAD) can still be built and tested; the viewer
-  waits.
+- `three` and `@types/three` are approved (PRODUCT.md, Decisions). No other dependency is
+  added; STEP is out of scope (no `occt-import-js`).
 - OpenSCAD is not installed on Kyle's Mac (checked 2026-09-24). For the manual check, ask Kyle
   to install a development snapshot (openscad.org downloads, snapshots section), then record
   `openscad --version`, `openscad --help` and `openscad --help-export` into the packet's
@@ -27,8 +26,9 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 
 ## Phase 1: server core
 
-1. Contracts `packages/contracts/src/fork/model-preview-3d.ts`; registration; keybinding
-   commands.
+1. Contracts `packages/contracts/src/fork/model-preview-3d.ts` (including `BuildPlatePresetId`,
+   `BUILD_PLATE_PRESETS` and `BuildPlateSetting`, default preset `bambu-h2d`); registration;
+   keybinding commands.
 2. Pure modules with tests:
    - `signedFiles.ts`: `mintToken({ root, base, exp, large }, key)`, `verifyToken(token, key,
 now)`, `resolveTokenPath(claims, requestPath)` (containment after normalization; `..`
@@ -77,26 +77,25 @@ now)`, `resolveTokenPath(claims, requestPath)` (containment after normalization;
 8. Add `three` and `@types/three` to `apps/web` (approved). Commit the dependency with only the
    intended lockfile change.
 9. `apps/web/src/fork/model-preview-3d/viewer/`: `createViewer`, `loadModel`, view presets,
-   capture, dispose, theme colors. No `requestAnimationFrame` loop; one coalesced frame per
-   request.
-10. `ModelPanel.tsx`, picker, toolbar, parameters sheet, log, status bar, states from PRODUCT.md;
-    `panel.tsx` definition (letter `O`), lazy body.
+   capture, dispose, theme colors, grid sized from the build plate setting. No
+   `requestAnimationFrame` loop; one coalesced frame per request. `buildPlate.ts`:
+   `resolveBuildVolume(setting)` and `fitsBuildVolume(sizeMm, volumeMm)`, pure.
+10. `ModelPanel.tsx`, picker, toolbar, parameters sheet, log, status bar (with the "Larger than
+    the build volume" note), states from PRODUCT.md including the STEP pointer to the
+    Fabrication app; `panel.tsx` definition (letter `O`), lazy body.
 11. Capture to composer (`addImage` path from TECHNICAL.md).
-12. Palette source, shortcuts component, settings section.
+12. Palette source, shortcuts component, settings section (build plate select: H2D, H2C,
+    Kobra S1, Custom with three mm fields; the preset's note shown underneath).
 
-## Phase 4: STEP (only with approval)
+## Phase 4: documentation and finish
 
-13. Add `occt-import-js`; dynamic import and wasm asset URL through Vite (`?url` import);
-    convert its mesh output to `BufferGeometry`; enable `.step` / `.stp` in the list.
-
-## Phase 5: documentation and finish
-
-14. `docs/fork/user/model-preview-3d.md`: supported formats, how reload works, OpenSCAD
+13. `docs/fork/user/model-preview-3d.md`: supported formats, how reload works, OpenSCAD
     (install a snapshot; why not 2021.01), parameters and sets, captures, the agent tool,
     **Blender MCP setup and Kyle's broken Codex entry with the three fix options** (TECHNICAL.md,
-    "Blender MCP"), and the optional Fabrication link.
-15. Packet index Status and README Status.
-16. Merge check and definition of done.
+    "Blender MCP"), the build plate presets, that STEP files belong to the Fabrication app, and
+    the optional Fabrication link.
+14. Packet index Status and README Status.
+15. Merge check and definition of done.
 
 ## Pitfalls
 

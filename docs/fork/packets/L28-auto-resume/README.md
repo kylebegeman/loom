@@ -1,13 +1,13 @@
 # L28: Auto-resume after usage limits
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 When a provider stops a thread's turn because the account ran out of usage, Loom's server
 notices, works out when the limit resets, and continues the thread by itself once it has.
-If Kyle allows it, it can instead continue right away on another configured account of the
-same provider that can pick up the conversation (for example a second Codex account set up
-as a shadow home). A small marker in the thread says what is scheduled, and the user can
-resume now or cancel.
+When another subscription account of the same provider can pick up the conversation (for
+example a second Codex account set up as a shadow home), it moves the thread there right
+away instead; this is on by default. A small marker in the thread says what is scheduled,
+and the user can resume now, cancel, or turn auto-resume off for that thread.
 
 ## Scope
 
@@ -20,9 +20,14 @@ resume now or cancel.
     `thread.turn.start` command with a continue message (or the original message when the
     stopped turn produced nothing).
   - Automatic cancel when the user sends a message, the thread is archived or deleted, or
-    a turn is already running.
-  - Optional account switching to another enabled, signed-in instance of the same driver
-    in the same continuation group (upstream only lets a thread move between those).
+    a turn is already running. A per-thread "Don't auto-resume" switch.
+  - Account switching, on by default, to another enabled, signed-in instance of the same
+    driver in the same continuation group (upstream only lets a thread move between those):
+    subscription accounts by default, API-key accounts only when opted in per account;
+    most headroom first when every candidate reports usage, otherwise a fixed order from
+    settings.
+  - "Needs attention" instead of retries for Codex workspace credit and spend-limit stops
+    with no window to wait for.
   - Timeline markers (`thread.activity.append`, kinds `loom.auto-resume.*`) that every
     client renders, including upstream web and the App Store mobile app.
   - A composer chip on web and desktop with the countdown, Resume now and Cancel.
@@ -36,6 +41,11 @@ resume now or cancel.
     Usage; spending a credit stays a human decision).
   - Resuming turns stopped for any other reason (crashes, network errors, auth expiry).
   - Mobile UI for settings or cancel. On mobile, sending any message cancels the schedule.
+  - Switching Claude threads between accounts. Kyle's `~/.claude_N` homes share only
+    `CLAUDE.md`, `settings.json` and skills, and each home is its own continuation group, so
+    Claude waits for the reset on the same account.
+  - Follow-up: investigate sharing Claude session folders across homes plus an upstream
+    grouping change, which would make Claude accounts switchable. Recorded, not designed.
 
 ## Surfaces
 
@@ -64,8 +74,9 @@ markers appear there like any other activity with no extra work.
 
 ## Size
 
-Medium: about 1,500 lines including tests. One agent, 2 to 3 days. Most of the risk is in
-the detection rules and the reactor's cancel conditions, which are unit tested.
+Medium: about 1,800 lines including tests. One agent, 2.5 to 3.5 days. Most of the risk is
+in the detection rules, the switch target rules and the reactor's cancel conditions, which
+are unit tested.
 
 ## How an agent starts
 

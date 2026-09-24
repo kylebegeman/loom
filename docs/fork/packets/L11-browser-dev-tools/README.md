@@ -1,11 +1,11 @@
 # L11: Browser dev tools
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 Makes the browser preview a small dev environment. A **Dev environment** right panel starts,
 stops and restarts the project's dev servers (in thread terminals, so upstream's port discovery
 links each server to its URL and the preview opens it), runs Docker Compose stacks, starts
-throwaway local Postgres and Redis containers with a copyable connection URL, and has a compact
+throwaway local Postgres and Redis (Valkey) containers with a copyable connection URL, and has a compact
 HTTP request lab. Inside upstream's preview panel, a slim **dev dock** under the page shows the
 page's console messages and network requests, live, with one click to send errors to the
 composer. Agents get an optional fast page fetcher (Obscura) that returns Markdown or links and
@@ -20,7 +20,9 @@ packet builds on those and replaces none of them.
 - In:
   - Dev servers: candidates from upstream project scripts plus `package.json` scripts (`dev`,
     `start`, `serve`, `preview`, `storybook`), package manager from the lockfile; start, stop,
-    restart in a thread terminal named `loom-dev-<key>`; state (starting, running, exited with
+    restart in a thread terminal named `loom-dev-<key>`, from any thread of the project (each
+    row shows the owning thread and worktree with a link; stopping another thread's server
+    asks a light confirmation); state (starting, running, exited with
     code), linked URLs from upstream's port discovery, an 8 KB output tail, "Show in terminal",
     "Open in preview" (desktop) or "Open in browser" (web). Honors upstream's
     `ProjectScript.previewUrl` and `autoOpenPreview`, which upstream stores but never acts on.
@@ -28,7 +30,8 @@ packet builds on those and replaces none of them.
     `varlock` is installed.
   - Docker Compose: detect compose files, list services with state, health and ports, `up -d`,
     `down`, `restart <service>`, last 200 log lines, "Follow logs in terminal".
-  - Local databases: one-click Postgres or Redis container per project on a free loopback port,
+  - Local databases: one-click Postgres or "Redis (Valkey)" container (default images
+    `postgres:17-alpine` and `valkey/valkey:8-alpine`, both configurable) per project on a free loopback port,
     labeled for Loom, with the password in the server secret store; start, stop, remove (keep or
     delete the data volume); copy the connection URL.
   - HTTP lab: method, URL (defaulting to a running dev server), headers, body; the request runs

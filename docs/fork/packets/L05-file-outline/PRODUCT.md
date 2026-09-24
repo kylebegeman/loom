@@ -74,22 +74,18 @@ The open or closed state is visible from the pressed state of the header button.
 - Empty: "No symbols found in this file."
 - Truncated: "Outline covers the first 1 MB."
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Client-only, like old Loom (its decision D7): no server RPC, works with upstream servers.
 - Inside the Files panel, not a separate right panel tab: the right panel shows one surface at
   a time, so a separate Outline tab would hide the file it outlines.
 - v1 uses fork-owned lightweight extractors (a comment- and string-aware scanner plus
-  per-language declaration rules), no new dependency. Tree-sitter is deferred (TECHNICAL,
-  "Parser choice").
+  per-language declaration rules), no new dependency (TECHNICAL, "Parser choice").
+- `web-tree-sitter` plus grammar WASM files are approved as a conditional phase 2, built only
+  if the v1 scanners prove unreliable in real use, and then only for the languages that
+  failed. The scanner stays as the fallback, so phase 2 never removes coverage.
+- v1 languages: TypeScript, TSX, JavaScript, Swift, Python, Go, Rust, Markdown and Kotlin.
+  Kotlin joins the brief's list at Kyle's request; Java, C# and Ruby come later on
+  demand (follow-up in README).
 - The keybinding ships unbound, per EXTENSION-POINTS.md (defaults leak into upstream's
   `keybindings.json`).
-
-Questions for Kyle:
-
-1. Approve `web-tree-sitter` plus grammar WASM files as a later phase if the lightweight
-   extractors miss too much in practice? (Not needed for v1.)
-2. Any languages beyond the brief's list worth adding in v1? Kotlin, Java, C# and Ruby are
-   each about 40 lines with the same scanner.

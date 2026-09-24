@@ -1,6 +1,6 @@
 # L24: PCB preview
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 A right panel that shows the circuit boards in the thread's project. It finds KiCad projects
 and tscircuit circuits in the workspace, renders their schematic and board views to SVG on
@@ -19,10 +19,14 @@ edits it.
     presets) as SVG, with fit, zoom and pan.
   - Automatic re-render while the panel is visible and the design's files change on disk.
   - KiCad ERC and DRC on demand, violations grouped by severity with their location text,
-    and a copyable plain-text summary for pasting into the chat.
+    and a plain-text summary: "Send summary to chat" puts it in the thread's composer (never
+    sends), "Copy summary" copies it.
   - Tool detection with clear setup states ("KiCad not found", "tscircuit CLI not found").
+    Detection only: `PATH`, `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`, and the
+    project's `node_modules/.bin/tsci`.
   - A Loom settings section showing the detected tools, and an optional link to the
-    standalone Electronics app.
+    standalone Electronics app. "Open in Electronics" deep-links to the design with
+    `<url>/designs/by-path?path=<abs>`, a page Kyle's Electronics spec now defines.
   - Command palette entry and an unbound keybinding command to toggle the panel.
 - Out:
   - Editing boards or schematics, part search, BOM, costing, Gerbers, order packages, 3D
@@ -33,7 +37,8 @@ edits it.
     Electronics app owns it).
   - Agent-facing MCP tools. Agents can already run `kicad-cli` in the terminal, and the
     Electronics app has its own MCP server.
-  - Tool path overrides in settings (detection only in v1; see PRODUCT.md, open questions).
+  - Follow-up: custom tool paths per environment in settings. Kyle chose detection only for
+    v1; add overrides only if a real install is missed.
   - Mobile UI.
 
 ## Surfaces
@@ -53,6 +58,9 @@ edits it.
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), may create it.
 - [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) and [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (for the unbound toggle command), may create them.
 
+Not `ext-composer`: "Send summary to chat" writes the draft through upstream's public
+composer draft store (`setPrompt`), the same path L06 uses, so it needs no composer seam.
+
 No persistence migrations: the render cache is files under `<stateDir>/fork/pcb-preview/`.
 
 ## Packet seams
@@ -63,20 +71,23 @@ None. Everything goes through extension points.
 
 - The standalone Electronics app (`~/Developer/docs/apps/electronics/`, default port 7450).
   If the user sets its URL in the Loom settings section, the panel shows "Open in
-  Electronics". Nothing in this packet requires the app to exist or be running.
+  Electronics", which opens `/designs/by-path?path=<absolute entry path>` (defined in the
+  Electronics spec, SPEC.md section 5 and ARCHITECTURE.md "Loom preview contract"). Nothing
+  in this packet requires the app to exist or be running.
 - If packet L12 (panel picker) is present, the panel shows up there automatically through the
   fork panel registry. No work in this packet.
 
 ## Size
 
-Medium: about 1,800 lines including tests. One agent, 2 to 3 days.
+Medium: about 1,850 lines including tests. One agent, 2 to 3 days.
 
 ## How an agent starts
 
 Read `AGENTS.md`, `FORK.md`, the packets `README.md`, `CONVENTIONS.md`,
 `EXTENSION-POINTS.md`, then this folder in order: PRODUCT, TECHNICAL, SEAMS,
-IMPLEMENTATION, TESTING, REFERENCES. Install KiCad 10 (and optionally `tscircuit`) before
-the manual check; the automated tests do not need either tool.
+IMPLEMENTATION, TESTING, REFERENCES. KiCad is not installed on Kyle's Mac yet (2026-09-24):
+ask Kyle to install KiCad 10 (and optionally `tscircuit`) before the manual check; the
+automated tests do not need either tool.
 
 ## Documents
 

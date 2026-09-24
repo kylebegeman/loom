@@ -44,6 +44,8 @@ discussed in selections.md; Kyle's brief fixes it at two tools), multi-model com
 | `apps/web/src/components/ChatView.tsx:1900,7918-7938`                                                                                         | Default runtime mode; how the web starts worktree threads with bootstrap.              |
 | `apps/web/src/providerInstances.ts:78-127`                                                                                                    | Provider instance entries for the dialog.                                              |
 | `apps/web/src/state/entities.ts:77`, `apps/web/src/components/Sidebar.logic.ts:985`, `apps/web/src/components/ThreadStatusIndicators.tsx:426` | Shells and status presentation for member rows.                                        |
+| `apps/server/src/checkpointing/CheckpointDiffQuery.ts:37-58`, `packages/contracts/src/orchestration.ts:2127-2133`                             | Whole-thread diff for the ranking excerpt.                                             |
+| `packages/contracts/src/model.ts:10-53,125-127`, `packages/contracts/src/server.ts:69-80`                                                     | Effort option descriptors and selections for routing.                                  |
 
 ## External
 
@@ -51,3 +53,10 @@ discussed in selections.md; Kyle's brief fixes it at two tools), multi-model com
   `McpHttpServer.ts:624-629`): https://modelcontextprotocol.io/specification/2025-06-18/server/tools
 - withastro/flue (https://github.com/withastro/flue, reviewed in selections.md): agent
   channels and delegation ideas; no code reused.
+- TypeSafe Jev, docs read 2026-09-24: API, Choice answers with `probabilities` and
+  `confidence` (https://docs.typesafe.ai/api); confidence-gated fallback
+  (https://docs.typesafe.ai/confidence); keep state small, literal criteria, no counting or
+  arithmetic asked of the model (https://docs.typesafe.ai/model-jaggedness/jev-1.13); 64k
+  tokens per request and 32k for state plus the longest question, version pinning
+  (https://docs.typesafe.ai/models). Client, redaction, budget, diff excerpt and the decision
+  log come from `ext-decide` (EXTENSION-POINTS.md section 18).

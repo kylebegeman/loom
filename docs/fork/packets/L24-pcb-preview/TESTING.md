@@ -14,7 +14,7 @@ layer.
 | `apps/server/src/fork/pcb-preview/cache.test.ts`             | `isRenderKey` and `isSheetFileName` reject traversal (`../x.svg`, `a/b.svg`, `x.svg.exe`); render key changes with tool version and preset; prune picks oldest first until under both limits.                                                                                                                                                                                                                                                                                                        |
 | `apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts` | With test layers (no database needed): a fake `ProcessRunner`, fake `ProjectionSnapshotQuery` and a temp workspace: `render` writes `manifest.json` and reports sheets; a second call returns `cached: true` without running the process; exit code 5 on `check` is `violations`, 1 is `failed`, `timedOut` is `timed-out`; a design id with `..` fails `path-outside-workspace`; `readSheet` refuses a file over the cap; `tsci` runs get an environment without `T3CODE_*` or `*TOKEN*` variables. |
 | `apps/web/src/fork/pcb-preview/usePcbPreview.logic.test.ts`  | No render while hidden; render when visible and the watch hash differs from the last render; no render when equal; view or preset change requests a render; tscircuit untrusted project yields `needs-trust`.                                                                                                                                                                                                                                                                                        |
-| `apps/web/src/fork/pcb-preview/summary.test.ts`              | Plain-text summary: counts line, one line per violation with position and units, excluded omitted, clean message.                                                                                                                                                                                                                                                                                                                                                                                    |
+| `apps/web/src/fork/pcb-preview/summary.test.ts`              | Plain-text summary: counts line, one line per violation with position and units, excluded omitted, clean message, cap at 100 with "and N more". `electronicsDesignUrl`: `http://mini:7450` and `http://mini:7450/` give the same URL; a path prefix (`https://host/electronics/`) is kept; spaces and `#` in the absolute path are encoded; an invalid base returns null.                                                                                                                            |
 
 Registry invariants are covered by the extension points' own tests
 (`apps/web/src/fork/panels/registry.test.ts`, `packages/contracts/src/fork/keybindings.test.ts`,
@@ -51,8 +51,9 @@ Ask Kyle before starting a dev server or a browser (AGENTS.md). With permission,
    click fits.
 4. Edit the schematic in KiCad and save. The panel updates within about a second. Collapse
    the right panel, save again, expand: exactly one render runs on expand.
-5. Run ERC and DRC. Counts match KiCad's own ERC/DRC dialogs. Copy summary, paste into the
-   composer.
+5. Run ERC and DRC. Counts match KiCad's own ERC/DRC dialogs. "Send summary to chat" puts
+   the summary in the composer without sending; with a draft already typed, the summary is
+   appended after a blank line. "Copy summary" copies the same text.
 6. tscircuit design: the trust prompt appears once; after Render the schematic and PCB show.
    Break the circuit code: the failure state shows the build log and keeps the last render.
 7. Rename `kicad-cli` out of reach (or run on a machine without KiCad): the missing-tool
@@ -60,7 +61,10 @@ Ask Kyle before starting a dev server or a browser (AGENTS.md). With permission,
 8. Connect this client to an upstream T3 server: the launcher entry is disabled with
    "Needs a Loom server with PCB preview".
 9. Remote: pair a second browser over the tailnet and repeat step 3 from it.
-10. Bind `loom.pcb-preview.toggle` in Settings, Keybindings and check it opens and closes the
+10. Set the Electronics URL in settings: "Open in Electronics" opens
+    `<url>/designs/by-path?path=<encoded absolute path of the .kicad_pro>`. Clear the URL: the
+    item disappears. (The Electronics app does not exist yet; check the opened URL only.)
+11. Bind `loom.pcb-preview.toggle` in Settings, Keybindings and check it opens and closes the
     panel; the palette item does the same.
 
 ## Merge safety

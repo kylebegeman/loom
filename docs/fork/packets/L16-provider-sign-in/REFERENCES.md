@@ -62,9 +62,16 @@ Ledger entries:
   paste box).
 - `apps/web/src/components/chat/ProviderStatusBanner.tsx:34-60` (`hasProviderSetup` and its
   messages).
+- `apps/server/src/serverSettings.ts:153-165` (sensitive environment values redacted for
+  clients), `740-830` (write path: sensitive values go to the secret store; removed ones are
+  deleted from it); `packages/contracts/src/providerInstance.ts:104-109`
+  (`ProviderInstanceEnvironmentVariable` with `sensitive` and `valueRedacted`).
+- `apps/server/src/provider/ProviderInstanceEnvironment.ts:5` (`mergeProviderInstanceEnvironment`,
+  used for the custom-endpoint check).
 - `packages/effect-codex-app-server/src/_generated/schema.gen.ts`: `V2LoginAccountParams`
   (38927), `V2LoginAccountResponse` (38996), `V2AccountLoginCompletedNotification` (37014),
-  `V2ConfigValueWriteParams` (37743), `V2McpServerOauthLoginParams` (39131),
+  `V2ConfigValueWriteParams` (37743, considered for the credential store and not used),
+  `V2McpServerOauthLoginParams` (39131),
   `V2SkillsConfigWriteParams` (39928), `V2ExternalAgentConfigDetectParams` (37972),
   `V2ExternalAgentConfigImportParams` (38042).
 - `docs/user/providers-codex.md` ("Use multiple accounts") and

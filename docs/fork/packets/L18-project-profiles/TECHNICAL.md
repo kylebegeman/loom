@@ -1,7 +1,9 @@
 # L18 technical design
 
 Citations are to this fork at upstream v0.0.42 (`a931bd85f3`) and to
-`dmno-dev/varlock@1f4ca0e` (`varlock` 1.20.0, `@env-spec/parser` 0.6.0).
+`dmno-dev/varlock@1f4ca0e` (`varlock` 1.20.0, `@env-spec/parser` 0.6.0). The parser is a
+server dependency pinned to exactly `0.6.0` (`"@env-spec/parser": "0.6.0"` in
+`apps/server/package.json`, no range), approved by Kyle; there is no fallback parser.
 
 ## Overview
 
@@ -15,7 +17,8 @@ apps/server/src/fork/project-profiles/
   rpc.ts / mcp.ts     loom.project-profiles.* and loom_project_profiles_get
 apps/web/src/fork/project-profiles/
   EnvPanel (right panel "Env"), ProfileSettingsSection (Loom settings), palette items,
-  bindingSources registry (optional integrations)
+  composer "%" menu (Insert project notes) and its ForkRoot bridge,
+  bindingSources and profileRows registries (optional integrations)
 ```
 
 ## What upstream already owns (do not duplicate)
@@ -125,7 +128,7 @@ export const VarlockValidation = Schema.Struct({
 });
 
 export const BudgetStatus = Schema.Struct({
-  day: Schema.String,                               // server-local YYYY-MM-DD
+  day: Schema.String,                               // server-local YYYY-MM-DD (ends at local midnight)
   projectTokensToday: Schema.Number,
   dailyTokens: Schema.NullOr(Schema.Number),
   thread: Schema.NullOr(Schema.Struct({
@@ -154,7 +157,7 @@ export class ProjectProfileError extends Schema.TaggedError<ProjectProfileError>
 | `loom.project-profiles.varlockValidate`                | `{ projectId, threadId? }`                                     | `VarlockValidation`                          | `terminal:operate` (runs project-configured code: plugins, generators) |
 | `loom.project-profiles.varlockCommand`                 | `{ projectId, threadId?, target: { intent } \| { scriptId } }` | `{ commandLine, cwd }`                       | `terminal:operate`                                                     |
 | `loom.project-profiles.budgetStatus`                   | `{ projectId, threadId? }`                                     | `BudgetStatus`                               | `orchestration:read`                                                   |
-| `loom.project-profiles.getSettings` / `updateSettings` | `{}` / `{ agentTool: boolean }`                                | `{ agentTool }`                              | read / `orchestration:operate`                                         |
+| `loom.project-profiles.getSettings` / `updateSettings` | `{}` / `{ agentTool: boolean }`                                | `{ agentTool }` (default `true`)             | read / `orchestration:operate`                                         |
 
 All unary. Every error union is `Schema.Union([ProjectProfileError, EnvironmentAuthorizationError])`.
 The panel refreshes on open, on a "Refresh" button and after a varlock run; no subscription
@@ -246,7 +249,11 @@ A `Layer.effectDiscard` in `ForkServicesLive`, started with `forkParked(...)`
    "not reported".
 3. Delta per thread: `new >= last ? new - last : new` (a lower value means a new provider
    session). Update `fork_project_profiles_thread_usage` and
-   `fork_project_profiles_daily_usage` in one transaction. Thread to project via a small cache
+   `fork_project_profiles_daily_usage` in one transaction. The `day` key is the activity's
+   `createdAt` converted to the server process's local date (`YYYY-MM-DD` from the local
+   year, month and day of a `Date`), so a day ends at the server's local midnight. A pure
+   `serverLocalDay(iso, timeZoneOffsetMinutes?)` helper does the conversion and is tested
+   across midnight and a DST change; `budgetStatus` uses the same helper for "today". Thread to project via a small cache
    over `getThreadShellById`.
 4. When the project has budgets, compare after the update. On first crossing of 80% and of
    100% (per day for the project budget, per thread for the thread budget; remembered in
@@ -358,19 +365,73 @@ The Bindings section renders only when at least one source is registered and its
 present. Other packets read bindings through `loom.project-profiles.get` when
 `project-profiles` is in `loomFeatures`.
 
+### Profile rows (optional integrations)
+
+```ts
+export interface ProfileSectionRow {
+  readonly id: string; // "<slug>-<name>"
+  readonly feature: string; // loomFeatures slug that must be present
+  /** Renders one SettingsRow; owns its own RPCs and states. */
+  readonly Component: ComponentType<{ environmentId: EnvironmentId; projectId: ProjectId }>;
+}
+/** Empty in this packet. L20 appends its "No AI identification" row when both exist. */
+export const PROFILE_SECTION_ROWS: ReadonlyArray<ProfileSectionRow> = [];
+```
+
+`ProfileSettingsSection` renders the rows whose feature is present, after "Bindings", under
+the heading "More". With several targets in the scope it renders each row once per target
+environment (a row edits one project on one environment).
+
+## Composer: "Insert project notes"
+
+Uses `ext-composer-menu` (EXTENSION-POINTS.md, section 11b) and `ext-web-root`. Nothing is
+sent to the server beyond the `get` query the panel already uses; the notes become plain
+message text, so every provider receives them.
+
+- **Trigger** (`apps/web/src/fork/project-profiles/composerMenu.ts`, registered in
+  `FORK_COMPOSER_TRIGGERS`): id `project-profiles`, kind `loom:project-profiles`. A token that
+  starts at the beginning of a line or after whitespace, is `%` followed by zero or more of
+  `[a-z-]`, and ends at the cursor (`^%([a-z-]*)$` on the token, found the way
+  `detectComposerTrigger` finds tokens, `apps/web/src/composer-logic.ts:209-256`). `%` is not
+  used by any upstream trigger (`/` at line start, `#`, `$`, `@`) nor by L01 (`;`). `detect`
+  returns `null` unless the bridge says the active thread's environment supports
+  `project-profiles`, so on other servers `%` stays plain text and the menu never opens
+  empty.
+- **Bridge** (`ProjectNotesComposerBridge.tsx`, in `FORK_ROOT_COMPONENTS`): renders `null`;
+  reads `useHandleNewThread()` (`apps/web/src/hooks/useHandleNewThread.ts:473-482`,
+  `activeThread ?? activeDraftThread`) and the environment's capabilities, and writes
+  `{ environmentId, projectId, supported }` into a module-level store read synchronously by
+  `detect`. Verify the draft thread's `environmentId` and `projectId` field names when
+  implementing.
+- **Items** (`useItems(query)`, a hook): reads the same store and the `get` query atom for
+  the project. One item, filtered by `query` against "insert project notes":
+  - notes non-empty: `{ label: "Insert project notes", description: <first line, 80 chars>,
+value: { kind: "insert", notes } }`;
+  - notes empty: `{ label: "Add project notes", description: "Opens the project profile",
+value: { kind: "edit" } }`;
+  - loading: `{ label: "Loading project notes...", value: { kind: "none" } }` (select does
+    nothing).
+- **Select**: `insert` calls `replace(trigger.rangeStart, trigger.rangeEnd,
+"Project notes:\n" + notes + "\n", { expectedText: token })`; `edit` navigates to the
+  profile the way "Edit profile" does and removes the `%` token.
+- The inserted text counts toward upstream's message limits like typed text; notes are at
+  most 8,000 characters, well below `PROVIDER_SEND_TURN_MAX_INPUT_CHARS`.
+
 ## Agent-facing tools
 
 `loom_project_profiles_get`, registered in `ForkMcpToolkitsLive`:
 
 - Parameters: `{ include: Schema.optional(Schema.Array(Schema.Literals(["notes", "commands",
 "env"]))) }` (non-empty struct as required).
-- Description: "Get the user's private notes, preferred commands and environment variable
-  status for this project. Read it before running project commands."
+- Description (kept to two short sentences, since it costs prompt tokens in every session):
+  "Get the user's private notes, preferred commands and environment variable status for
+  this project. Read it before running project commands."
 - Output: plain text: the notes, then `test: <command>` style lines resolved from upstream
   actions, then `KEY  type  required|optional  sensitive|public  status` lines (no values).
   Capped at about 1,500 tokens.
 - Resolves the thread and project from `McpInvocationContext`; fails with a typed error when
-  the setting "Share profile with agents" is off.
+  the setting "Share profile with agents" is off. The setting defaults to on: a missing or
+  invalid settings row decodes to `{ agentTool: true }`.
 - `Tool.Readonly` true.
 
 ## Provider decisions
@@ -403,5 +464,9 @@ present. Other packets read bindings through `loom.project-profiles.get` when
   generated files; kept on demand.
 - **Enforcing budgets** by refusing `thread.turn.start`: an orchestration seam in the hottest
   path; not worth it for an advisory need.
-- **Injecting notes into every turn**: no generic hook (EXTENSION-POINTS.md, Orchestration
-  rule 5); the MCP tool is the preferred path.
+- **Injecting notes into every turn** through `ext-turn-input` (EXTENSION-POINTS.md, section
+  16): possible, but it spends up to 8,000 characters on every turn whether or not the notes
+  matter. The MCP tool (the agent pulls) and the composer item (the user pushes, visibly)
+  cover the need.
+- **A hand-written env-spec parser**: planned as a fallback while the dependency was
+  unapproved; dropped once Kyle approved `@env-spec/parser`.

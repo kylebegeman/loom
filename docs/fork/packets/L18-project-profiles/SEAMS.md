@@ -3,9 +3,16 @@
 ## Extension points created by this packet
 
 None specific. It uses `ext-core` (with persistence and a reactor), `ext-panels`,
-`ext-settings`, `ext-palette` and `ext-mcp`. Run each existence check; create any missing one
-exactly as specified in [EXTENSION-POINTS.md](../EXTENSION-POINTS.md), one commit each, and
-record the commits here.
+`ext-settings`, `ext-palette`, `ext-mcp`, `ext-composer-menu` and `ext-web-root`. Run each
+existence check; create any missing one exactly as specified in
+[EXTENSION-POINTS.md](../EXTENSION-POINTS.md), one commit each, and record the commits here.
+
+Note on `ext-composer-menu`: EXTENSION-POINTS.md section 11b specifies its seams in prose
+and its registry by shape (`{ id, detect(text, cursor), useItems(query), select(item,
+context) }`). If this packet creates it (L01 has not), write the registry
+(`apps/web/src/fork/composer/menu.ts`) and the three seams to that shape, keep the commit
+generic (nothing profile-specific), and add the exact code to EXTENSION-POINTS.md in the same
+commit so later packets copy the same bytes, as L01's SEAMS.md describes.
 
 ## Packet seams
 
@@ -21,6 +28,8 @@ Everything the packet needs is reachable without editing upstream files:
 | Resolve project actions                             | `resolveProjectScripts` from `@t3tools/shared/projectScripts` and `ServerSettingsService` on the server                                             |
 | Budget markers in the timeline                      | Existing `thread.activity.append` command dispatched by a fork reactor (EXTENSION-POINTS.md, Orchestration rule 3)                                  |
 | Agents reading the profile                          | `ext-mcp` tool                                                                                                                                      |
+| Insert project notes from the composer              | `ext-composer-menu` trigger `%` plus an `ext-web-root` bridge component                                                                             |
+| Other packets' rows in the profile (L20)            | `PROFILE_SECTION_ROWS`, a fork-owned registry in this packet                                                                                        |
 
 Rejected seams, recorded so nobody adds them casually:
 

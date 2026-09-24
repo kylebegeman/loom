@@ -9,6 +9,9 @@ one commit each, before the part that needs it:
 - Part B: `ext-settings`.
 - Part C: `ext-composer`, `ext-keybindings`, `ext-palette`.
 - Part D: `ext-core`, `ext-mcp`.
+- Part E: `ext-core`, `ext-decide` (EXTENSION-POINTS.md section 18; create if missing,
+  exactly as specified there), and part C's `ext-composer`, `ext-keybindings`,
+  `ext-palette`, plus `ext-settings`.
 
 Record the commits here when done.
 
@@ -18,10 +21,11 @@ Record the commits here when done.
 | ------------------------------------------ | ------------------------- | ----- | ---- | -------------------------------------------------------------------------------------------------- |
 | `apps/web/src/components/ChatView.tsx`     | `fork: chat-conveniences` | 2     | A    | The fork needs the timeline's list ref and live-follow cancel, which exist only inside `ChatView`. |
 | `apps/web/src/components/ChatMarkdown.tsx` | `fork: chat-conveniences` | 2     | B    | Code blocks render in a private `pre` component; no extension point covers Markdown renderers.     |
-| `apps/web/package.json` (no marker)        | -                         | 1     | B    | The `mermaid` dependency. Needs Kyle's approval first.                                             |
+| `apps/web/package.json` (no marker)        | -                         | 1     | B    | The `mermaid` dependency, approved by Kyle (lazy chunk).                                           |
 | `pnpm-lock.yaml` (no marker)               | -                         | -     | B    | The intended lockfile change for `mermaid` only (CONVENTIONS.md, The lockfile rule).               |
 
-Parts C and D have no packet seams.
+Parts C, D and E have no packet seams. Part A's default `mod+F` is a fork listener, so it
+adds nothing to `packages/shared/src/keybindings.ts` (no `FORK_DEFAULT_KEYBINDINGS`).
 
 ### ChatView.tsx (part A)
 

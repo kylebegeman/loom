@@ -30,26 +30,27 @@ report it rather than guessing.
 
 ## Summary
 
-| Extension point                                                            | Marker                      | Upstream files touched                              | Prerequisite |
-| -------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------- | ------------ |
-| [1. Server core](#1-server-core-ext-core)                                  | `fork: ext-core`            | 8 (2 of them `package.json`, no marker)             | none         |
-| [2. Persistence](#2-persistence)                                           | none                        | 0 (part of server core)                             | ext-core     |
-| [3. HTTP routes](#3-http-routes)                                           | none                        | 0 (part of server core)                             | ext-core     |
-| [4. Background work and reactors](#4-background-work-and-reactors)         | none                        | 0 (part of server core)                             | ext-core     |
-| [5. Web root](#5-web-root-ext-web-root)                                    | `fork: ext-web-root`        | 1                                                   | none         |
-| [6. Right panels](#6-right-panels-ext-panels)                              | `fork: ext-panels`          | 3                                                   | ext-core     |
-| [7. Settings](#7-settings-ext-settings)                                    | `fork: ext-settings`        | 2, plus one route file and the generated route tree | none         |
-| [8. Command palette](#8-command-palette-ext-palette)                       | `fork: ext-palette`         | 1                                                   | ext-core     |
-| [9. Keybindings](#9-keybindings-ext-keybindings)                           | `fork: ext-keybindings`     | 1                                                   | ext-web-root |
-| [10. MCP tools](#10-agent-facing-mcp-tools-ext-mcp)                        | `fork: ext-mcp`             | 1                                                   | ext-core     |
-| [11. Composer](#11-composer-ext-composer)                                  | `fork: ext-composer`        | 1                                                   | none         |
-| [11b. Composer menu trigger](#11b-composer-menu-trigger-ext-composer-menu) | `fork: ext-composer-menu`   | 3                                                   | ext-composer |
-| [12. Orchestration](#12-orchestration-and-thread-behavior)                 | guidance only               | 0 by default                                        | ext-core     |
-| [13. Desktop IPC](#13-desktop-ipc-ext-desktop-optional)                    | `fork: ext-desktop`         | 3 (optional)                                        | ext-core     |
-| [14. Mobile settings](#14-mobile-ext-mobile-settings-optional)             | `fork: ext-mobile-settings` | 3 (optional)                                        | ext-core     |
-| [15. Provider drivers](#15-provider-drivers-ext-providers)                 | `fork: ext-providers`       | 4                                                   | none         |
-| [16. Provider turn input](#16-provider-turn-input-ext-turn-input)          | `fork: ext-turn-input`      | 1                                                   | ext-core     |
-| [17. Diff panel header](#17-diff-panel-header-ext-diff-header)             | `fork: ext-diff-header`     | 1                                                   | none         |
+| Extension point                                                            | Marker                      | Upstream files touched                              | Prerequisite           |
+| -------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------- | ---------------------- |
+| [1. Server core](#1-server-core-ext-core)                                  | `fork: ext-core`            | 8 (2 of them `package.json`, no marker)             | none                   |
+| [2. Persistence](#2-persistence)                                           | none                        | 0 (part of server core)                             | ext-core               |
+| [3. HTTP routes](#3-http-routes)                                           | none                        | 0 (part of server core)                             | ext-core               |
+| [4. Background work and reactors](#4-background-work-and-reactors)         | none                        | 0 (part of server core)                             | ext-core               |
+| [5. Web root](#5-web-root-ext-web-root)                                    | `fork: ext-web-root`        | 1                                                   | none                   |
+| [6. Right panels](#6-right-panels-ext-panels)                              | `fork: ext-panels`          | 3                                                   | ext-core               |
+| [7. Settings](#7-settings-ext-settings)                                    | `fork: ext-settings`        | 2, plus one route file and the generated route tree | none                   |
+| [8. Command palette](#8-command-palette-ext-palette)                       | `fork: ext-palette`         | 1                                                   | ext-core               |
+| [9. Keybindings](#9-keybindings-ext-keybindings)                           | `fork: ext-keybindings`     | 1                                                   | ext-web-root           |
+| [10. MCP tools](#10-agent-facing-mcp-tools-ext-mcp)                        | `fork: ext-mcp`             | 1                                                   | ext-core               |
+| [11. Composer](#11-composer-ext-composer)                                  | `fork: ext-composer`        | 1                                                   | none                   |
+| [11b. Composer menu trigger](#11b-composer-menu-trigger-ext-composer-menu) | `fork: ext-composer-menu`   | 3                                                   | ext-composer           |
+| [12. Orchestration](#12-orchestration-and-thread-behavior)                 | guidance only               | 0 by default                                        | ext-core               |
+| [13. Desktop IPC](#13-desktop-ipc-ext-desktop-optional)                    | `fork: ext-desktop`         | 3 (optional)                                        | ext-core               |
+| [14. Mobile settings](#14-mobile-ext-mobile-settings-optional)             | `fork: ext-mobile-settings` | 3 (optional)                                        | ext-core               |
+| [15. Provider drivers](#15-provider-drivers-ext-providers)                 | `fork: ext-providers`       | 4                                                   | none                   |
+| [16. Provider turn input](#16-provider-turn-input-ext-turn-input)          | `fork: ext-turn-input`      | 1                                                   | ext-core               |
+| [17. Diff panel header](#17-diff-panel-header-ext-diff-header)             | `fork: ext-diff-header`     | 1                                                   | none                   |
+| [18. Decisions with Jev](#18-decisions-with-jev-ext-decide)                | none                        | 0                                                   | ext-core, ext-settings |
 
 `ext-panels` and `ext-palette` need server core only for `loomFeaturesOf` from
 `@t3tools/client-runtime/fork`; a client-only packet that uses them runs the `ext-core`
@@ -1010,6 +1011,8 @@ export interface ForkPanelDefinition {
   readonly icon: ComponentType<{ className?: string }>;
   /** The panel's letter from "Launcher letters" in EXTENSION-POINTS.md; "" for none. */
   readonly shortcut: string;
+  /** Optional one-sentence description, shown by the panel picker (L12). */
+  readonly description?: string;
   readonly unavailableHint: string;
   readonly isAvailable: (context: ForkPanelAvailabilityContext) => boolean;
   readonly Component: ComponentType<ForkPanelProps>;
@@ -1051,6 +1054,7 @@ export interface ForkSurfaceAction {
   readonly label: string;
   readonly icon: ComponentType<{ className?: string }>;
   readonly shortcut: string;
+  readonly description?: string;
   readonly available: boolean;
   readonly disabledReason: string;
   readonly onClick: () => void;
@@ -1089,6 +1093,7 @@ export function useForkPanelActions(
         label: panel.title,
         icon: panel.icon,
         shortcut: panel.shortcut,
+        ...(panel.description === undefined ? {} : { description: panel.description }),
         available: panel.isAvailable({ threadRef, loomFeatures }),
         disabledReason: panel.unavailableHint,
         badgeCount: 0,
@@ -1140,6 +1145,7 @@ L (Linked pull requests), M (Device), P (Pull request) and T (Terminal)
 | G      | Source control  | `source-control-cockpit`  | L06    |
 | H      | Side by side    | `thread-lineage:thread`   | L02    |
 | I      | Inspector       | `thread-inspector`        | L04    |
+| J      | Decisions       | `jev-hub`                 | L29    |
 | K      | Skills          | `skill-registry`          | L21    |
 | N      | Runs            | `multi-thread-runs`       | L08    |
 | O      | 3D model        | `model-preview-3d`        | L23    |
@@ -1153,11 +1159,10 @@ L (Linked pull requests), M (Device), P (Pull request) and T (Terminal)
 | Y      | Code map        | `code-graph`              | L26    |
 | Z      | PCB preview     | `pcb-preview`             | L24    |
 
-J is the only letter left. A later panel takes J or uses `""` and is reached through the
-"+" menu, the palette or the panel picker (L12). If upstream adds a surface whose letter is
+Every letter is now taken. A later panel uses `""` and is reached through the "+" menu, the
+palette or the panel picker (L12). If upstream adds a surface whose letter is
 already assigned here, the fork panel gives it up (reassign it here and in its packet):
 upstream's actions come first in both lists, so upstream's surface would win the key anyway.
-L15's panel id is provisional until its design session; the letter stays with the packet.
 
 ### Registering a panel
 
@@ -1486,11 +1491,14 @@ SCRIPT_RUN_COMMAND_PATTERN])` (`packages/contracts/src/keybindings.ts:57-105`), 
    "sidebar.toggle",
 ```
 
-Default bindings are discouraged: the server writes them into the user's
-`keybindings.json`, and upstream T3 Code (or a rollback) then reports them as invalid
-entries. A packet that truly needs one adds, as its own packet seam in
-`packages/shared/src/keybindings.ts`, a `...FORK_DEFAULT_KEYBINDINGS,` spread at the start of
-`DEFAULT_KEYBINDINGS`, with the list in `packages/contracts/src/fork/keybindings.ts`.
+Default bindings are never written into `keybindings.json`: the server backfills defaults
+into the user's file, and upstream T3 Code (or a rollback) then reports fork commands as
+invalid entries. A packet that wants a default key adds a fork `keydown` listener in a
+`ForkRoot` component, guarded by a client setting (on by default) that turns it off. The
+listener returns without `preventDefault` when the event is already handled, when the command
+palette is open, or when `resolveShortcutCommand` resolves any user binding for the event, so
+user bindings always win. The fork command stays unbound and bindable. L12 (`mod+shift+'`) and
+L14 (`mod+F`) follow this pattern.
 
 ### Fork-owned files
 
@@ -1880,7 +1888,9 @@ with a fixed composition written when the first drawer lands, and update this fi
 ## 11b. Composer menu trigger (`ext-composer-menu`)
 
 Optional; create only when a packet needs a new `@`-style menu (for example a snippet picker
-that opens on a prefix). Tab expansion alone does not need it.
+that opens on a prefix). Tab expansion alone does not need it. Fork trigger prefixes in
+use: `;` (L01 snippets), `%` (L18 project notes). A new packet picks an unused prefix and adds
+it here.
 
 ### Current upstream mechanism
 
@@ -2439,7 +2449,7 @@ test -f apps/server/src/fork/providers/drivers.ts && test -f apps/web/src/fork/p
 ## 16. Provider turn input (`ext-turn-input`)
 
 Prerequisite: server core (contributors are registered by fork services in `ForkLayer`).
-Used by L03 (pinned goals) and L22 (instruction modes).
+Used by L03 (pinned goals), L20 (private mode) and L22 (instruction modes).
 
 ### Purpose
 
@@ -2480,10 +2490,11 @@ what T3's timeline shows. This replaces the "packet seam in the provider command
 - **Deterministic order.** Blocks are prepended to the user's text sorted by `order`, then
   `id`, regardless of which packet registered first. Assigned orders:
 
-  | Order | Contributor id         | Packet | Block                      |
-  | ----- | ---------------------- | ------ | -------------------------- |
-  | 10    | `instruction-modes`    | L22    | `<loom_instruction_modes>` |
-  | 20    | `compaction-and-goals` | L03    | `<loom_goal>`              |
+  | Order | Contributor id              | Packet | Block                      |
+  | ----- | --------------------------- | ------ | -------------------------- |
+  | 5     | `small-extras-private-mode` | L20    | `<loom_private_mode>`      |
+  | 10    | `instruction-modes`         | L22    | `<loom_instruction_modes>` |
+  | 20    | `compaction-and-goals`      | L03    | `<loom_goal>`              |
 
   A new contributor adds a row here with an unused order.
 
@@ -2655,7 +2666,7 @@ Upstream's `ProviderService.test.ts` keeps passing unchanged.
 ## 17. Diff panel header (`ext-diff-header`)
 
 Prerequisite: none (entries usually open a fork panel, so they also use `ext-panels`). Used by
-L26 (the "Impact" button) and, if its design session keeps the button, L15 (start a review).
+L26 (the "Impact" button) and L15 (the "Review changes" button, which starts a review).
 
 ### Purpose
 
@@ -2761,6 +2772,1034 @@ test -f apps/web/src/fork/diffHeader/registry.ts \
 
 `apps/web/src/fork/diffHeader/registry.test.ts`: action ids are unique. Typecheck
 `@t3tools/web`.
+
+---
+
+## 18. Decisions with Jev (`ext-decide`)
+
+Prerequisites: [Server core](#1-server-core-ext-core) (RPC group, `ForkLayer`, persistence,
+capability) and [Settings](#7-settings-ext-settings) (the "Jev" section). Used by:
+
+| Packet | Feature ids                                                                                    |
+| ------ | ---------------------------------------------------------------------------------------------- |
+| L07    | `bottom-dock.approval-risk`                                                                    |
+| L08    | `multi-thread-runs.delegate-routing`, `multi-thread-runs.compare-rank`                         |
+| L14    | `chat-conveniences.auto-preset`                                                                |
+| L15    | `ai-code-review.reviewer-pick`, `ai-code-review.turn-suggest`, `ai-code-review.finding-merge`  |
+| L20    | `small-extras.branch-type`                                                                     |
+| L29    | `jev-hub.playground`, `jev-hub.ask` (the Jev hub, which also reads the log and tunes features) |
+
+### Purpose
+
+Give packets one way to ask Jev, TypeSafe's decision model, a small typed question (Choice,
+Score or Noul) and get a calibrated answer, with the parts every consumer needs in one place:
+the HTTP client, the API key kept on the server, a per-feature switch (off, manual, manual plus
+agents), a per-project "Jev off", secret redaction and the token budget applied to every
+request, a decision log, 30-day retention of what was sent, and a guaranteed fallback. Without
+it, each of six packets would carry its own client, key setting, log and redaction, and the
+user would have six places to turn Jev off.
+
+Every use of Jev is optional. A caller always has a non-Jev fallback, and `decide` resolves
+within its timeout (1 second by default) and never fails, so no Loom behavior waits on or
+breaks because of Jev.
+
+### Current upstream mechanism
+
+Nothing in upstream calls TypeSafe; this extension point adds no upstream seam. It builds on:
+
+- **Secrets.** `ServerSecretStore` (`apps/server/src/auth/ServerSecretStore.ts:138-150`,
+  `get`, `set`, `remove`) writes each secret to `<stateDir>/secrets/<name>.bin` with mode
+  `0600` in a `0700` directory (`ServerSecretStore.ts:159-170,188-221`; `secretsDir` is
+  `join(stateDir, "secrets")`, `apps/server/src/config.ts:145`). Upstream uses it for
+  sensitive provider environment variables and usage-limit hub keys: the settings file keeps a
+  redaction marker, the value lives in the store under a derived name
+  (`providerEnvironmentSecretName` and `usageLimitSourceSecretName`,
+  `apps/server/src/serverSettings.ts:135-151`; writes at 782 and 862-863), and clients only
+  learn that a value is set (`redactProviderEnvironmentVariable` and
+  `redactServerSettingsForClient`, `serverSettings.ts:153-190`). The layer is merged into
+  `RuntimeCoreDependenciesLive` after `ForkLayer` (`apps/server/src/server.ts:532`), so fork
+  services can use it (see "What ForkLayer can use").
+- **Settings scope.** Upstream settings updates, including secret values, need
+  `orchestration:operate` (`WS_METHODS.serverUpdateSettings`,
+  `apps/server/src/auth/RpcAuthorization.ts:52`); reads need `orchestration:read` (51).
+- **Thread to project.** `ProjectionSnapshotQuery.getThreadShellById`
+  (`apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:217-219`) resolves a
+  thread's project for the per-project switch.
+- **Background work.** `forkParked` (`apps/server/src/serverActivation.ts:11-26`) starts the
+  retention job after server activation ([Background work](#4-background-work-and-reactors)).
+- **Outbound HTTP.** Global `fetch` (Node 24, `package.json` engines). The server also has
+  Effect's `FetchHttpClient` at the outermost layer (`server.ts:801`); a plain `fetch` with an
+  injectable implementation keeps the client dependency-free and trivially testable.
+- **Jev API** (TypeSafe docs, 2026-09-24): `POST https://api.typesafe.ai/v1/systemone` with
+  `Authorization: Bearer <key>` and `{ state, model, questions }`; answers per question id plus
+  `usage.input_tokens` and `output_tokens`; errors `401`, `422`, `429` (back off, honor
+  `retry-after`), `529`; `GET /v1/models` lists the aliases the account can use
+  (<https://docs.typesafe.ai/api>, <https://docs.typesafe.ai/models>). Limits: 64k tokens per
+  request, 32k for `state` plus the longest question, at most 255 Choice options, Score levels
+  2 to 10. `jev-latest` and `jev-preview` currently resolve to `jev-1.13.0`; pin the versioned
+  id once a feature's threshold is tuned. Choice and Score answers carry `confidence`; Noul
+  answers do not (<https://docs.typesafe.ai/confidence>). Price: $0.042 per million input
+  tokens, output free (subject to change).
+
+### Design
+
+- **One service, `LoomDecide`,** in `ForkLayer`. Consumers call
+  `decide(featureId, { state, questions, threshold? }, { origin, threadId?, projectId? })` and
+  get `{ status: "answered", answers, model, latencyMs, decisionId }` or
+  `{ status: "fallback", reason }`, with `reason` one of `disabled`, `no-key`, `project-off`,
+  `agent-not-allowed`, `timeout`, `error`, `low-confidence`. Fallbacks for requests that were
+  sent (`timeout`, `error`, `low-confidence`) also carry the `decisionId`; `low-confidence`
+  carries the `answers` too, so a caller can say "Jev suggested X, not sure enough".
+- **A static feature registry,** like the other registries: each consumer adds one
+  `DecideFeature` (`{ id, packet, label, description, defaultMode, defaultThreshold?,
+agentTool? }`) with id `<packet-slug>.<name>` and `packet` the packet id (`"L15"`). The Jev
+  settings section lists every registered feature, grouped by packet.
+- **Modes per feature**, stored only when the user changes them: `off`; `manual` (uses the user
+  starts, and automatic Loom uses such as a suggestion after a turn); `manual-agents` (also
+  agents, through the feature's MCP tool). The UI shows two switches: "Use Jev" (off or
+  manual) and "Let agents use this" (manual plus agents), off by default. A feature
+  registered with `agentTool: false` (no MCP tool reaches it, for example
+  `chat-conveniences.auto-preset`, `bottom-dock.approval-risk`,
+  `multi-thread-runs.compare-rank`) has only `off` and `manual`: the settings UI hides "Let
+  agents use this", `updateFeature` rejects `manual-agents` for it, and a stored
+  `manual-agents` row is read as `manual`. `agentTool` defaults to true.
+- **Order of checks** in `decide`, each returning a fallback without contacting TypeSafe:
+  global "Use Jev" off or feature `off` (`disabled`); `origin: "agent"` without
+  `manual-agents` (`agent-not-allowed`); the project, given or derived from `threadId`, has
+  "Jev off for this project" (`project-off`); no key (`no-key`). Then the request is built:
+  question overrides applied, questions validated, state redacted, budget fitted. A request
+  that cannot be made valid (over 255 options, Score levels outside 2 to 10, questions alone
+  over budget) is `error` and is not sent.
+- **Redaction and budget cannot be skipped.** `decide` always runs `redactState` and
+  `fitBudget` on the state it sends, even when the caller already did. Both are exported so
+  consumers can preview exactly what will be sent.
+- **Log every request that was sent** in `fork_decide_decisions`: feature, origin, thread and
+  project, requested and answering model, the state exactly as sent, the questions (deduped by
+  hash), the answers, status and fallback reason, threshold, latency, tokens, redaction
+  counts, and a rating column that L29 fills. Requests that were never sent are not logged.
+- **Threshold, applied by `decide` itself.** The effective threshold is the call's
+  `threshold`, else the feature's configured threshold (the user's value from L29 Tuning,
+  else the registry's `defaultThreshold`), else none. It applies to every Choice and Score
+  answer in the request: when any of their `confidence` values is below it, `decide` returns
+  `{ status: "fallback", reason: "low-confidence", answers, lowConfidenceKeys, decisionId }`,
+  where `lowConfidenceKeys` lists the question ids that fell below the threshold. Callers never
+  re-check confidence against the threshold; a caller that can still use part of a
+  low-confidence result (one confident question of two) reads `answers` for the keys not in
+  `lowConfidenceKeys`.
+  Noul answers carry no confidence and are never gated; the caller applies its own cut-off
+  to the `noul` value. So that L29's tuning takes effect, consumers put their threshold in
+  `defaultThreshold` and pass `threshold` only when a call genuinely needs a different one.
+- **Question overrides.** A feature's stored settings may carry per-question overrides of the
+  wording (written by L29's "Use for this feature"; empty otherwise). Overrides never add or
+  remove Choice options or change a Score's level count, so the caller's code paths stay
+  valid.
+- **Timeouts and retries.** Default timeout 1,000 ms, per call `timeoutMs` for user-started
+  work (L29's playground uses 10 seconds). `decide` never retries; a `429` or `529` is an
+  `error` fallback. `evaluate` (unlogged, for L29's replays) retries `429` and `529` with
+  exponential backoff that honors `retry-after`. At most 8 requests are in flight per server.
+- **The key** lives in `ServerSecretStore` under `loom-decide-jev-api-key`. It is never
+  returned by any RPC, never logged, and never sent to clients; clients see only whether a key
+  is set, when, and the last test result.
+- **Retention.** A job nulls `state_json` on decisions older than 30 days unless they are
+  rated or kept (in an L29 test set). Answers, ratings and metadata stay until the user deletes
+  them (L29). It runs once after activation and then every 24 hours.
+- **Capability** `decide` in `LOOM_SERVER_FEATURES`. Clients hide every Jev control when it
+  is absent, which covers upstream servers and Loom servers built without this extension
+  point.
+
+### Seams
+
+None. Every registration goes into fork-owned registry files of `ext-core` and
+`ext-settings`.
+
+### Fork-owned files
+
+**`packages/contracts/src/fork/decide.ts`** (add `export * from "./decide.ts";` to
+`packages/contracts/src/fork/index.ts` and `DecideRpcGroup,` to the `.merge(` in
+`packages/contracts/src/fork/rpc.ts`):
+
+```ts
+import * as Schema from "effect/Schema";
+import * as Rpc from "effect/unstable/rpc/Rpc";
+import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+
+import { EnvironmentAuthorizationError } from "../auth.ts";
+import { IsoDateTime, ProjectId, TrimmedNonEmptyString } from "../baseSchemas.ts";
+
+export const DECIDE_WS_METHODS = {
+  getSettings: "loom.decide.getSettings",
+  updateSettings: "loom.decide.updateSettings",
+  updateFeature: "loom.decide.updateFeature",
+  setProjectOff: "loom.decide.setProjectOff",
+  setKey: "loom.decide.setKey",
+  removeKey: "loom.decide.removeKey",
+  testKey: "loom.decide.testKey",
+} as const;
+
+/** Jev 1.13 limits and Loom defaults (https://docs.typesafe.ai/models, /api). */
+export const JEV_LIMITS = {
+  stateAndLongestQuestionTokens: 32_000,
+  requestTokens: 64_000,
+  choiceOptionsMax: 255,
+  scoreLevelsMin: 2,
+  scoreLevelsMax: 10,
+  defaultTimeoutMs: 1_000,
+  stateRetentionDays: 30,
+} as const;
+
+export const JEV_DEFAULT_MODEL = "jev-latest";
+
+/** String, object, array or null, as the API accepts for instructions and criteria entries. */
+export const JevEntry = Schema.Json;
+
+export const JevNoulQuestion = Schema.Struct({
+  type: Schema.Literal("noul"),
+  instructions: JevEntry,
+  criteria: Schema.optionalKey(
+    Schema.Struct({ true: Schema.optionalKey(JevEntry), false: Schema.optionalKey(JevEntry) }),
+  ),
+});
+export const JevChoiceQuestion = Schema.Struct({
+  type: Schema.Literal("choice"),
+  instructions: JevEntry,
+  criteria: Schema.Record(Schema.String, JevEntry),
+});
+export const JevScoreQuestion = Schema.Struct({
+  type: Schema.Literal("score"),
+  instructions: JevEntry,
+  criteria: Schema.Array(JevEntry),
+});
+export const JevQuestion = Schema.Union([JevNoulQuestion, JevChoiceQuestion, JevScoreQuestion]);
+export type JevQuestion = typeof JevQuestion.Type;
+export const JevQuestions = Schema.Record(Schema.String, JevQuestion);
+export type JevQuestions = typeof JevQuestions.Type;
+
+export const JevAnswer = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("noul"), noul: Schema.Number }),
+  Schema.Struct({
+    type: Schema.Literal("choice"),
+    choice: Schema.String,
+    probabilities: Schema.Record(Schema.String, Schema.Number),
+    confidence: Schema.Number,
+  }),
+  Schema.Struct({
+    type: Schema.Literal("score"),
+    score: Schema.Number,
+    legend: Schema.Record(Schema.String, Schema.String),
+    probabilities: Schema.Record(Schema.String, Schema.Number),
+    confidence: Schema.Number,
+  }),
+]);
+export type JevAnswer = typeof JevAnswer.Type;
+export const JevAnswers = Schema.Record(Schema.String, JevAnswer);
+
+/**
+ * Choice and Score: the API's confidence (the value `decide` gates on). Noul has none; for
+ * display and calibration only, its distance from 0.5. `decide` never gates Noul answers.
+ */
+export const answerConfidence = (answer: JevAnswer): number =>
+  answer.type === "noul" ? Math.abs(2 * answer.noul - 1) : answer.confidence;
+
+export const DecideMode = Schema.Literals(["off", "manual", "manual-agents"]);
+export type DecideMode = typeof DecideMode.Type;
+export const DecideOrigin = Schema.Literals(["user", "agent", "auto"]);
+export type DecideOrigin = typeof DecideOrigin.Type;
+export const DecideFallbackReason = Schema.Literals([
+  "disabled",
+  "no-key",
+  "project-off",
+  "agent-not-allowed",
+  "timeout",
+  "error",
+  "low-confidence",
+]);
+export type DecideFallbackReason = typeof DecideFallbackReason.Type;
+
+/** What `LoomDecide.decide` returns; also served by L29's playground RPC. */
+export const DecideResult = Schema.Union([
+  Schema.Struct({
+    status: Schema.Literal("answered"),
+    answers: JevAnswers,
+    /** The versioned id that answered, e.g. "jev-1.13.0". */
+    model: Schema.String,
+    latencyMs: Schema.Number,
+    decisionId: Schema.String,
+  }),
+  Schema.Struct({
+    status: Schema.Literal("fallback"),
+    reason: DecideFallbackReason,
+    /** Present when the request was sent and logged (timeout, error, low-confidence). */
+    decisionId: Schema.optionalKey(Schema.String),
+    /** Present for low-confidence. */
+    answers: Schema.optionalKey(JevAnswers),
+    /** Present for low-confidence: the question ids whose confidence fell below the threshold. */
+    lowConfidenceKeys: Schema.optionalKey(Schema.Array(Schema.String)),
+    /** Short and safe to show, e.g. "over-budget" or "TypeSafe returned 529". */
+    detail: Schema.optionalKey(Schema.String),
+  }),
+]);
+export type DecideResult = typeof DecideResult.Type;
+
+/** `evaluate` (unlogged) could not send the request. */
+export class DecideUnavailableError extends Schema.TaggedError<DecideUnavailableError>()(
+  "DecideUnavailableError",
+  {
+    reason: Schema.Literals(["disabled", "no-key", "over-budget", "invalid-question"]),
+    message: Schema.String,
+  },
+) {}
+
+/** Replaces wording only. Choice criteria merge by existing option key; Score only at equal length. */
+export const DecideQuestionOverride = Schema.Struct({
+  instructions: Schema.optionalKey(JevEntry),
+  criteria: Schema.optionalKey(Schema.Json),
+  /** Display only: the L29 template it came from. */
+  templateName: Schema.optionalKey(Schema.String),
+});
+
+export const DecideFeatureView = Schema.Struct({
+  id: Schema.String,
+  packet: Schema.String,
+  label: Schema.String,
+  description: Schema.String,
+  defaultMode: DecideMode,
+  mode: DecideMode,
+  /** False: no MCP tool reaches this feature; only "off" and "manual" apply. */
+  agentTool: Schema.Boolean,
+  defaultThreshold: Schema.NullOr(Schema.Number),
+  /** The user's value (L29 calibration); null uses the call's or the default. */
+  threshold: Schema.NullOr(Schema.Number),
+  /** A pinned versioned id such as "jev-1.13.0"; null means JEV_DEFAULT_MODEL. */
+  model: Schema.NullOr(Schema.String),
+  overrides: Schema.Record(Schema.String, DecideQuestionOverride),
+});
+export type DecideFeatureView = typeof DecideFeatureView.Type;
+
+export const DecideKeyStatus = Schema.Struct({
+  set: Schema.Boolean,
+  updatedAt: Schema.NullOr(IsoDateTime),
+  lastTest: Schema.NullOr(
+    Schema.Struct({ at: IsoDateTime, ok: Schema.Boolean, message: Schema.String }),
+  ),
+});
+
+export const DecideRedaction = Schema.Struct({
+  /** Globs relative to a checkout root, e.g. "config/secrets/**". `.env*` is always excluded. */
+  paths: Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(200))).check(
+    Schema.isMaxLength(100),
+  ),
+  /** Literal strings replaced wherever they appear. */
+  literals: Schema.Array(TrimmedNonEmptyString.check(Schema.isMaxLength(200))).check(
+    Schema.isMaxLength(100),
+  ),
+});
+
+export const DecideSettingsView = Schema.Struct({
+  enabled: Schema.Boolean,
+  key: DecideKeyStatus,
+  features: Schema.Array(DecideFeatureView),
+  projectsOff: Schema.Array(ProjectId),
+  redaction: DecideRedaction,
+});
+export type DecideSettingsView = typeof DecideSettingsView.Type;
+
+export const JevModelInfo = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  releaseDate: Schema.String,
+});
+
+export class DecideSettingsError extends Schema.TaggedError<DecideSettingsError>()(
+  "DecideSettingsError",
+  {
+    reason: Schema.Literals([
+      "unknown-feature",
+      "invalid-mode", // manual-agents for a feature registered with agentTool: false
+      "invalid-threshold",
+      "invalid-model",
+      "invalid-override",
+      "storage",
+    ]),
+    message: Schema.String,
+  },
+) {}
+
+const DecideError = Schema.Union([DecideSettingsError, EnvironmentAuthorizationError]);
+
+const GetSettingsRpc = Rpc.make(DECIDE_WS_METHODS.getSettings, {
+  payload: Schema.Struct({}),
+  success: DecideSettingsView,
+  error: DecideError,
+});
+// updateSettings { enabled?, redaction? } -> DecideSettingsView
+// updateFeature { featureId, mode?, threshold?: number | null, model?: string | null,
+//   overrides?: Record<string, DecideQuestionOverride> } -> DecideSettingsView
+// setProjectOff { projectId, off: boolean } -> DecideSettingsView
+//   (an explicit choice: setProjectOverride(projectId, off ? "off" : "on"))
+// setKey { key: string (8 to 512 chars, trimmed) } -> DecideSettingsView (never echoes the key)
+// removeKey {} -> DecideSettingsView
+// testKey {} -> { ok: boolean, status: number | null, message: string, models: JevModelInfo[] }
+//   (calls GET /v1/models; a rejected key is ok: false, not an RPC error)
+// Every error: DecideError.
+
+export const DecideRpcGroup = RpcGroup.make(
+  GetSettingsRpc,
+  // ...the rest
+);
+```
+
+**`apps/server/src/fork/decide/registry.ts`**
+
+```ts
+import type { DecideMode } from "@t3tools/contracts/fork";
+
+export interface DecideFeature {
+  /** `<packet-slug>.<name>`, e.g. "ai-code-review.reviewer-pick". */
+  readonly id: string;
+  /** The owning packet's id, e.g. "L15". */
+  readonly packet: string;
+  /** Short, user-facing, e.g. "Pick the reviewer model". */
+  readonly label: string;
+  /** One sentence: what Jev decides and what happens without it. */
+  readonly description: string;
+  readonly defaultMode: DecideMode;
+  /** 0 to 1. Answers below it fall back with "low-confidence". */
+  readonly defaultThreshold?: number;
+  /** False when no MCP tool reaches the feature: modes are only off and manual. Default true. */
+  readonly agentTool?: boolean;
+}
+
+/** One line per consumer. Order is the order in the Jev settings section. */
+export const FORK_DECIDE_FEATURES: ReadonlyArray<DecideFeature> = [
+  // ...aiCodeReviewDecideFeatures,
+];
+
+export const findDecideFeature = (id: string): DecideFeature | null =>
+  FORK_DECIDE_FEATURES.find((feature) => feature.id === id) ?? null;
+```
+
+**`apps/server/src/fork/decide/JevClient.ts`**
+
+```ts
+import type { JevAnswers, JevQuestions } from "@t3tools/contracts/fork";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+
+export const JEV_API_BASE_URL = "https://api.typesafe.ai";
+
+export interface JevRequest {
+  readonly state: Schema.Json;
+  readonly model: string;
+  readonly questions: JevQuestions;
+}
+export interface JevResponse {
+  readonly model: string;
+  readonly answers: typeof JevAnswers.Type;
+  readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
+}
+
+export class JevCallError extends Schema.TaggedError<JevCallError>()("JevCallError", {
+  reason: Schema.Literals([
+    "timeout",
+    "unauthorized", // 401
+    "invalid-request", // 422
+    "rate-limited", // 429
+    "overloaded", // 529
+    "http",
+    "network",
+    "decode",
+  ]),
+  status: Schema.optionalKey(Schema.Number),
+  retryAfterMs: Schema.optionalKey(Schema.Number),
+  /** Never contains the key or the request body. */
+  message: Schema.String,
+}) {}
+
+export interface JevClientOptions {
+  readonly apiKey: string;
+  readonly fetch?: typeof globalThis.fetch; // injected in tests
+  readonly baseUrl?: string;
+}
+
+/** Direct HTTP client for POST /v1/systemone and GET /v1/models. No SDK, no retries. */
+export const makeJevClient = (options: JevClientOptions) => {
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const baseUrl = options.baseUrl ?? JEV_API_BASE_URL;
+  const headers = {
+    authorization: `Bearer ${options.apiKey}`,
+    "content-type": "application/json",
+  };
+  const call = (path: string, init: RequestInit, timeoutMs: number) =>
+    Effect.tryPromise({
+      // Interrupting the effect (the timeout below) aborts the signal and the request.
+      try: (signal) => fetchImpl(`${baseUrl}${path}`, { ...init, headers, signal }),
+      catch: (cause) => new JevCallError({ reason: "network", message: networkMessage(cause) }),
+    }).pipe(
+      Effect.flatMap((response) => (response.ok ? readJson(response) : httpError(response))),
+      Effect.timeoutFail({
+        duration: timeoutMs,
+        onTimeout: () =>
+          new JevCallError({ reason: "timeout", message: `No answer in ${timeoutMs} ms.` }),
+      }),
+    );
+  return {
+    systemOne: (request: JevRequest, timeoutMs: number): Effect.Effect<JevResponse, JevCallError> =>
+      call("/v1/systemone", { method: "POST", body: JSON.stringify(request) }, timeoutMs).pipe(
+        Effect.flatMap(decodeSystemOneResponse), // maps usage.input_tokens -> inputTokens
+      ),
+    listModels: (timeoutMs: number) =>
+      call("/v1/models", { method: "GET" }, timeoutMs).pipe(Effect.flatMap(decodeModelsResponse)),
+  };
+};
+export type JevClient = ReturnType<typeof makeJevClient>;
+```
+
+`httpError` maps 401, 422, 429 and 529 to their reasons, reads `retry-after` (seconds or an
+HTTP date) into `retryAfterMs`, and keeps at most 300 characters of the response body's
+message. If an Effect name differs in the installed version (`tryPromise` with a signal,
+`timeoutFail`), use the equivalent and update this section in the same commit.
+
+**`apps/server/src/fork/decide/redact.ts`**
+
+```ts
+import type * as Schema from "effect/Schema";
+
+export interface Redaction {
+  /** JSON pointer into the state, e.g. "/turn/diff" or "/files/2". */
+  readonly path: string;
+  readonly kind: string; // "env-file", "excluded-path", "private-key", "github-token", "literal", ...
+  readonly count: number;
+}
+
+export interface RedactOptions {
+  /** User globs from settings; `.env` and `.env.*` are always excluded. */
+  readonly excludedPaths?: ReadonlyArray<string>;
+  /** User literal strings from settings. */
+  readonly literals?: ReadonlyArray<string>;
+}
+
+/** Pure. Removes secrets from any JSON state. Idempotent. */
+export function redactState(
+  state: Schema.Json,
+  options?: RedactOptions,
+): { readonly state: Schema.Json; readonly redactions: ReadonlyArray<Redaction> };
+```
+
+Rules, applied to every string leaf and object while walking the value:
+
+1. **Excluded files.** An object with a string `path` or `file` field whose basename is `.env`
+   or starts with `.env.`, or that matches a user glob, keeps that field and has every other
+   string field replaced with `[redacted: excluded file]` (kind `env-file` or
+   `excluded-path`). An object key that is itself such a path has its value replaced the same
+   way. A string containing unified diff sections (`diff --git a/...`) loses the sections of
+   excluded files, keeping one line `[redacted: diff of <path>]`.
+2. **Key-like strings**, replaced with `[redacted: <kind>]`: PEM private key blocks
+   (`-----BEGIN ... PRIVATE KEY-----` to its `END` line), AWS access key ids
+   (`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`), GitHub tokens (`gh[pousr]_[A-Za-z0-9]{36,}`,
+   `github_pat_[A-Za-z0-9_]{50,}`), `sk-` style API keys (`\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}`,
+   which covers OpenAI, Anthropic and TypeSafe style keys), Slack tokens
+   (`xox[abprs]-[A-Za-z0-9-]{10,}`), Google API keys (`AIza[0-9A-Za-z_-]{35}`), Stripe keys
+   (`(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}`), JWTs (three base64url parts, the first two
+   starting `eyJ`), the token after `Bearer `, credentials in URLs
+   (`scheme://user:<secret>@`), and the value in assignments such as
+   `API_KEY=...`, `"password": "..."` or `client_secret: ...` (names matching
+   `api[_-]?key|secret|token|passw(or)?d|pwd|access[_-]?key|private[_-]?key`, values of 8 or
+   more non-space characters).
+3. **User literals** from settings, replaced with `[redacted: literal]`.
+
+Globs support `*`, `**` and `?` through a 20-line converter in the same file (no dependency;
+Node's `path.matchesGlob` is avoided because older supported Node versions flag it as
+experimental). The result lists each redaction with its JSON pointer and count, never the
+removed text.
+
+**`apps/server/src/fork/decide/budget.ts`**
+
+```ts
+import { JEV_LIMITS, type JevQuestions } from "@t3tools/contracts/fork";
+import type * as Schema from "effect/Schema";
+
+/** Conservative estimate: UTF-8 bytes / 3, rounded up. Jev's tokenizer is not public. */
+export const estimateTokens = (value: Schema.Json): number =>
+  Math.ceil(Buffer.byteLength(typeof value === "string" ? value : JSON.stringify(value)) / 3);
+
+export interface BudgetReport {
+  readonly stateTokens: number;
+  readonly longestQuestionTokens: number;
+  readonly questionsTokens: number;
+  /** stateTokens + longestQuestionTokens, compared with 32k. */
+  readonly primaryTokens: number;
+  /** stateTokens + questionsTokens, compared with 64k. */
+  readonly totalTokens: number;
+}
+
+export interface Trim {
+  readonly path: string; // JSON pointer
+  readonly removedChars?: number;
+  readonly removedItems?: number;
+}
+
+/** Pure. Trims the state until both limits hold, or reports that it cannot. */
+export function fitBudget(
+  state: Schema.Json,
+  questions: JevQuestions,
+  limits?: { readonly primary?: number; readonly total?: number },
+): {
+  readonly state: Schema.Json;
+  readonly before: BudgetReport;
+  readonly after: BudgetReport;
+  readonly trimmed: ReadonlyArray<Trim>;
+  /** False when the questions alone exceed the limits; the request must not be sent. */
+  readonly fits: boolean;
+};
+```
+
+Trimming, repeated until the limits hold: drop elements from the start of the longest array
+(oldest first; context builders put the oldest items first), then shorten the longest string
+leaf from its middle to half its length with a `[... N characters trimmed ...]` marker. A
+string state is shortened the same way. Limits default to `JEV_LIMITS`. The estimate is
+deliberately high (about 3 bytes per token for code and JSON, where English prose runs near
+4), so a fitted request is under the real limit; the log records the real `input_tokens`
+next to the estimate.
+
+**`apps/server/src/fork/decide/diffExcerpt.ts`**
+
+```ts
+export interface DiffExcerptFile {
+  readonly path: string;
+  readonly added: number;
+  readonly removed: number;
+  readonly binary: boolean;
+  readonly included: "full" | "partial" | "header-only" | "redacted";
+}
+
+/** Pure. A capped excerpt of a unified diff, with per-file line counts computed in code. */
+export function diffExcerpt(
+  diff: string,
+  options: { readonly maxTokens: number; readonly excludedPaths?: ReadonlyArray<string> },
+): {
+  readonly text: string;
+  readonly files: ReadonlyArray<DiffExcerptFile>;
+  readonly totals: { readonly files: number; readonly added: number; readonly removed: number };
+  readonly truncated: boolean;
+};
+```
+
+Parses `diff --git` sections and their hunks. `.env*` files and user-excluded paths become
+`redacted` (header line only). Binary files are `header-only`. Every other file keeps its
+`diff --git` and `@@` headers; hunks are added in file order, one hunk per file per round, until
+`maxTokens` (by `estimateTokens`) is reached; files cut short end with
+`[N more hunks omitted]`. Counts come from `+` and `-` lines, excluding `+++` and `---`.
+
+**`apps/server/src/fork/decide/overrides.ts`**
+
+```ts
+/** Pure. Applies stored wording overrides without changing option keys or level counts. */
+export function applyQuestionOverrides(
+  questions: JevQuestions,
+  overrides: Readonly<Record<string, DecideQuestionOverride>>,
+): JevQuestions;
+```
+
+For each question key with an override: `instructions` replaces the question's instructions,
+except when the original is an object with a `question` field, where only that field is
+replaced (callers put data next to it). Choice `criteria` (an object) replaces the
+descriptions of option keys present in both; options are never added or removed. Score
+`criteria` (an array) applies only when its length equals the call's. Noul `criteria` (an
+object with `true` and `false`) replaces the call's. An override that does not apply is
+ignored and logged at debug level.
+
+**`apps/server/src/fork/decide/migrations.ts`** (slug `decide`, tracking table
+`fork_migrations_decide`, added to `FORK_MIGRATION_SETS`), migration 1 `"Decisions"`:
+
+```sql
+CREATE TABLE IF NOT EXISTS fork_decide_decisions (
+  decision_id       TEXT PRIMARY KEY,              -- 'dcs_<uuid>'
+  feature_id        TEXT NOT NULL,
+  origin            TEXT NOT NULL,                 -- user | agent | auto
+  thread_id         TEXT,
+  project_id        TEXT,
+  model_requested   TEXT NOT NULL,                 -- 'jev-latest' or a pinned id
+  model             TEXT,                          -- versioned id that answered; NULL without an answer
+  state_json        TEXT,                          -- exactly what was sent; NULL after the 30-day purge
+  state_purged_at   TEXT,
+  questions_hash    TEXT NOT NULL,                 -- fork_decide_question_sets
+  answers_json      TEXT,                          -- NULL for timeout and error
+  status            TEXT NOT NULL,                 -- answered | fallback
+  fallback_reason   TEXT,                          -- timeout | error | low-confidence
+  error_detail      TEXT,                          -- short; never the key or the state
+  threshold         REAL,
+  latency_ms        INTEGER NOT NULL,
+  estimated_tokens  INTEGER NOT NULL,
+  input_tokens      INTEGER,                       -- from usage; NULL without an answer
+  output_tokens     INTEGER,
+  redactions_json   TEXT NOT NULL DEFAULT '[]',    -- Redaction[] (kinds, paths, counts)
+  rating_json       TEXT,                          -- per question key, written by L29
+  rated_at          TEXT,
+  kept              INTEGER NOT NULL DEFAULT 0,    -- 1 while in an L29 test set
+  created_at        TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS fork_decide_decisions_feature ON fork_decide_decisions (feature_id, created_at);
+CREATE INDEX IF NOT EXISTS fork_decide_decisions_created ON fork_decide_decisions (created_at);
+CREATE INDEX IF NOT EXISTS fork_decide_decisions_thread ON fork_decide_decisions (thread_id);
+
+CREATE TABLE IF NOT EXISTS fork_decide_question_sets (
+  questions_hash  TEXT PRIMARY KEY,                -- sha256 of the canonical JSON
+  questions_json  TEXT NOT NULL,
+  created_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fork_decide_settings (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  settings_json  TEXT NOT NULL,                    -- enabled, redaction, key metadata (never the key)
+  updated_at     TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fork_decide_features (
+  feature_id      TEXT PRIMARY KEY,
+  mode            TEXT NOT NULL,
+  threshold       REAL,
+  model           TEXT,
+  overrides_json  TEXT NOT NULL DEFAULT '{}',
+  updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fork_decide_projects (
+  project_id  TEXT PRIMARY KEY,
+  jev_off     INTEGER NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+```
+
+All tables follow `fork_<slug>_<noun>` with the slug `decide`. A `fork_decide_projects` row
+records an explicit choice (`jev_off` 1 or 0); no row means the user never chose, which
+packets such as L20 use to apply their own default without overriding the user. No foreign keys into upstream
+tables. A feature row exists only after the user changes something; otherwise the registry
+defaults apply. Rows of features no longer registered are kept and shown in L29 as "Removed
+feature".
+
+**`apps/server/src/fork/decide/LoomDecide.ts`**
+
+```ts
+import type { ProjectId, ThreadId } from "@t3tools/contracts";
+import type {
+  DecideOrigin,
+  DecideResult,
+  DecideSettingsError,
+  DecideSettingsView,
+  DecideUnavailableError,
+  DecisionPage,
+  DecisionQuery,
+  DecisionRating,
+  DecisionRecord,
+  JevQuestions,
+} from "@t3tools/contracts/fork";
+import * as Context from "effect/Context";
+import type * as Effect from "effect/Effect";
+import type * as Schema from "effect/Schema";
+import type * as Stream from "effect/Stream";
+
+import type { JevCallError, JevResponse } from "./JevClient.ts";
+
+export interface DecideRequest {
+  readonly state: Schema.Json;
+  readonly questions: JevQuestions;
+  /** Overrides the feature's configured threshold for this call; gates Choice and Score answers. */
+  readonly threshold?: number;
+}
+
+export interface DecideCallContext {
+  readonly origin: DecideOrigin;
+  readonly threadId?: ThreadId;
+  readonly projectId?: ProjectId;
+  /** Default JEV_LIMITS.defaultTimeoutMs. */
+  readonly timeoutMs?: number;
+}
+
+export class LoomDecide extends Context.Service<
+  LoomDecide,
+  {
+    /** Never fails. Resolves within timeoutMs plus local work. */
+    readonly decide: (
+      featureId: string,
+      request: DecideRequest,
+      context: DecideCallContext,
+    ) => Effect.Effect<DecideResult>;
+    /** Unlogged call for L29 replays: same key, enabled check, redaction and budget; retries 429/529. */
+    readonly evaluate: (
+      request: DecideRequest & { readonly model: string },
+      options: { readonly timeoutMs: number; readonly retries: number },
+    ) => Effect.Effect<JevResponse, JevCallError | DecideUnavailableError>;
+    readonly settings: Effect.Effect<DecideSettingsView, DecideSettingsError>;
+    /** The project's explicit Jev choice: "off", "on", or null when the user never chose. */
+    readonly getProjectOverride: (
+      projectId: ProjectId,
+    ) => Effect.Effect<"on" | "off" | null, DecideSettingsError>;
+    /** Writes the fork_decide_projects row ("on" / "off"), or deletes it for null. */
+    readonly setProjectOverride: (
+      projectId: ProjectId,
+      value: "on" | "off" | null,
+    ) => Effect.Effect<void, DecideSettingsError>;
+    // updateSettings, updateFeature, setProjectOff, setKey, removeKey, testKey (the RPCs)
+    readonly log: DecisionLog;
+  }
+>()("loom/decide/LoomDecide") {}
+
+/** Read and maintain fork_decide_decisions. Used by L29; consumers never need it. */
+export interface DecisionLog {
+  readonly list: (query: DecisionQuery) => Effect.Effect<DecisionPage, DecideSettingsError>;
+  readonly get: (decisionId: string) => Effect.Effect<DecisionRecord | null, DecideSettingsError>;
+  /** null clears the rating. */
+  readonly rate: (
+    decisionId: string,
+    rating: DecisionRating | null,
+  ) => Effect.Effect<void, DecideSettingsError>;
+  readonly setKept: (decisionId: string, kept: boolean) => Effect.Effect<void, DecideSettingsError>;
+  readonly remove: (
+    target: { readonly decisionIds: ReadonlyArray<string> } | { readonly featureId: string },
+  ) => Effect.Effect<number, DecideSettingsError>;
+  /** Ids of decisions as they are logged or changed. Small; never carries state. */
+  readonly changes: Stream.Stream<{ readonly decisionId: string; readonly featureId: string }>;
+  /** Nulls state older than the retention window unless rated or kept. Returns rows purged. */
+  readonly purgeExpiredState: (now: Date) => Effect.Effect<number, DecideSettingsError>;
+}
+```
+
+`DecisionQuery`, `DecisionPage`, `DecisionRecord` and `DecisionRating` are schemas in
+`packages/contracts/src/fork/decide.ts` next to the others, so L29 serves them without
+redefining them:
+
+- `DecisionRating`: `Record<questionKey, { verdict: "right" } | { verdict: "wrong", expected: string | number | boolean }>`
+  (a Choice option key, a Score level index, or a Noul yes/no).
+- `DecisionQuery`: optional `featureId`, `origin`, `status`, `reason`, `rated`
+  (`"any" | "unrated" | "right" | "wrong"`), `model`, `threadId`, `projectId`, `since`,
+  `until`; `cursor` (opaque, `created_at` plus id) and `limit` (at most 100).
+- `DecisionPage`: `items` (summary rows without state or questions), `nextCursor`, and
+  `totals` for the whole filter (`count`, `answered`, `fallbacks`, `inputTokens`,
+  `averageLatencyMs`).
+- `DecisionRecord`: every column, with `state` null after the purge and `questions` resolved
+  from the question set.
+- `Redaction`, `Trim` and `BudgetReport`: schema versions of the interfaces `redactState` and
+  `fitBudget` return (below), so previews can cross the wire.
+
+The layer, in outline:
+
+```ts
+export const layer = Layer.effect(
+  LoomDecide,
+  Effect.gen(function* () {
+    const store = yield* DecideStore; // repository over SqlClient, below
+    const secrets = yield* ServerSecretStore.ServerSecretStore;
+    const projections = yield* ProjectionSnapshotQuery;
+    const inFlight = yield* Semaphore.make(8);
+    const changes = yield* PubSub.unbounded<{ decisionId: string; featureId: string }>();
+    const key = yield* Ref.make<Option.Option<string>>(yield* readKey(secrets)); // refreshed by setKey/removeKey
+
+    // Retention: once after activation, then every 24 hours.
+    yield* forkParked(
+      purgeExpiredState(new Date()).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Loom decide: retention purge failed.", { cause }),
+        ),
+        Effect.repeat(Schedule.spaced("24 hours")),
+      ),
+    );
+
+    const decide = (featureId, request, context) =>
+      Effect.gen(function* () {
+        // 1. registry lookup (unknown id: error fallback and a warning), settings, feature row
+        // 2. disabled / agent-not-allowed / project-off / no-key, in that order, not logged
+        // 3. applyQuestionOverrides, validate limits (error, not sent)
+        // 4. redactState, then fitBudget (fits false: error "over-budget", not sent)
+        // 5. inFlight.withPermits(1)(client.systemOne({ state, model, questions }, timeoutMs))
+        // 6. threshold (call, else configured, else default) over Choice and Score
+        //    confidences -> answered, or low-confidence with the answers and lowConfidenceKeys
+        // 7. store.insertDecision(...) then PubSub.publish(changes, ...)
+      }).pipe(
+        Effect.catchCause(/* log a warning, return { status: "fallback", reason: "error" } */),
+      );
+    // ...
+  }),
+).pipe(Layer.provide(DecideStore.layer));
+```
+
+The key is read with `secrets.get("loom-decide-jev-api-key")` and decoded as UTF-8;
+`setKey` trims it and writes it with `secrets.set`, updating `key.updatedAt` in the settings
+row; `removeKey` calls `secrets.remove`. A failed secret read is treated as "no key" and
+logged without the value. `testKey` calls `listModels` with a 5-second timeout and records
+`lastTest`. Names of Effect modules (`Semaphore`, `PubSub`, `Schedule`, `Ref`) follow the
+installed version; use the equivalents if they differ.
+
+**`apps/server/src/fork/decide/DecideStore.ts`**: the repository (upstream pattern
+`apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts:16-90`). Pure SQL: read
+and write settings, feature rows, project rows, question sets (insert or ignore by hash),
+decisions (insert, page with totals, get, rate, keep, delete, purge). Every JSON column is
+decoded with its schema; a row that fails to decode is skipped with a warning.
+
+**`apps/server/src/fork/decide/rpc.ts`**: `makeDecideRpcHandlers(auth)`, one thin handler per
+tag, spread into `ForkRpcGroup.of({...})`. Scopes in `FORK_RPC_REQUIRED_SCOPES`:
+`getSettings` `orchestration:read`; every other tag `orchestration:operate` (the same scope
+upstream requires to update settings and sensitive provider variables).
+
+**`packages/client-runtime/src/fork/decide.ts`**, exported from
+`client-runtime/src/fork/index.ts`: `createDecideEnvironmentAtoms(runtime)` with a query atom
+family for `getSettings` (label `loom:decide:settings`) and one command per mutation, which
+refresh the settings atom on success; plus the pure client settings helper every consumer
+uses (web and, later, mobile):
+
+```ts
+export interface DecideFeatureState {
+  /** `decide` is in the environment's loomFeatures. */
+  readonly supported: boolean;
+  /** The feature's current mode; "off" when unsupported, unknown or not loaded. */
+  readonly mode: DecideMode;
+  /** Jev can run for this feature now: supported, "Use Jev" on, key set, mode not off. */
+  readonly usable: boolean;
+  /** mode is manual-agents (always false for agentTool: false features). */
+  readonly agentsAllowed: boolean;
+  readonly feature: DecideFeatureView | null;
+}
+
+export function decideFeatureState(
+  capabilities: ExecutionEnvironmentCapabilities | null | undefined,
+  settings: DecideSettingsView | null,
+  featureId: string,
+): DecideFeatureState;
+```
+
+**`apps/web/src/fork/decide/state.ts`**
+
+```ts
+export const decideEnvironment = createDecideEnvironmentAtoms(connectionAtomRuntime);
+
+/**
+ * For consumer UIs: a feature's current mode and whether to offer a Jev control ("Auto (Jev)",
+ * "Rank with Jev"). `decideFeatureState` over the environment's capabilities and settings.
+ */
+export function useDecideFeature(
+  environmentId: EnvironmentId | null,
+  featureId: string,
+): DecideFeatureState;
+```
+
+It checks `supportsLoomFeature(capabilities, "decide")` first and mounts the settings atom
+only when supported, so an upstream server never receives a `loom.decide.*` request.
+
+**`apps/web/src/fork/decide/JevSettingsSection.tsx`**, registered as
+`{ id: "decide", title: "Jev", Component: JevSettingsSection }` in `FORK_SETTINGS_SECTIONS`.
+It edits the environment of the selected settings scope (`useSettingsScope()`,
+`apps/web/src/components/settings/SettingsScopeContext.tsx:61`):
+
+- An intro line: "Jev is TypeSafe's decision model. Loom can use it for small optional
+  decisions; every use has a non-Jev fallback. What is sent is shown in the Decisions panel."
+- "Use Jev" switch (global `enabled`).
+- API key: "No key" or "Key saved on <date>"; a password field with "Save", then "Replace"
+  and "Remove" (Remove asks for confirmation); "Test key" shows "Key works. Models:
+  jev-latest, jev-preview" or the failure ("TypeSafe rejected this key (401)", "Could not
+  reach api.typesafe.ai"). A link to `https://console.typesafe.ai/keys`.
+- Features: one row per registered feature, grouped by packet: label, description, a "Use
+  Jev" switch (off or manual) and, unless the feature has `agentTool: false`, a "Let agents
+  use this" switch (manual-agents; disabled while "Use Jev" is off). Pinned model and threshold are shown read-only ("jev-1.13.0,
+  threshold 0.62"); L29 edits them. Empty state: "No Loom feature on this server uses Jev
+  yet."
+- With a project scope: "Jev off for this project" for each target in the scope
+  (`targets`, one `setProjectOff` per environment and project), "Mixed" when they differ.
+- Redaction: "Never send files matching" (globs, one per line) and "Never send this text"
+  (literals, one per line), with the fixed rules summarized: ".env files, private keys,
+  tokens and password assignments are always removed."
+- Unsupported environment: "This environment does not run Loom's Jev support."
+
+### Registering a packet
+
+1. **Feature.** `apps/server/src/fork/<slug>/decide.ts` exports one `DecideFeature` per use,
+   id `<slug>.<name>`, `packet` the packet id, a label and a one-sentence description that
+   says what happens without Jev. Set `agentTool: false` when no MCP tool reaches the
+   feature. Put the feature's confidence threshold in `defaultThreshold`. Append them to
+   `FORK_DECIDE_FEATURES`. Choose `defaultMode: "manual"` unless the packet's PRODUCT.md
+   decided otherwise; agent use is always opt-in.
+2. **Call.** In the packet's service, `yield* LoomDecide` and call
+   `decide(featureId, { state, questions }, { origin, threadId?, projectId? })`.
+   Build `state` with named, pre-computed fields (counts, sizes and dates as buckets computed
+   in code, per the Jev 1.13 jaggedness notes), keep it to what the question needs, and use
+   `diffExcerpt` for diffs. Treat `answered` as confident (the threshold was already applied
+   to every Choice and Score answer) and handle every `fallback` with the non-Jev behavior;
+   never retry in a loop and never block a user action on the result.
+3. **Agents.** An MCP tool that runs a Jev decision passes `origin: "agent"`; `decide` returns
+   `agent-not-allowed` unless the user turned on "Let agents use this", and the tool reports
+   that in one line. Do not add a second gate.
+4. **Client.** Offer Jev controls only when `useDecideFeature(environmentId, id).usable`
+   (mode, key and switches), and hide them when `supported` is false. Show what Jev chose
+   and its confidence where the decision is visible, and say when the fallback was used.
+5. **Tests.** Test the packet's state builder and fallback handling with a test layer for
+   `LoomDecide` that returns scripted results; do not call TypeSafe in tests.
+
+Also add the feature to the catalog in L29's PRODUCT.md when the packet documents change.
+
+### Capability
+
+`"decide"` appended to `LOOM_SERVER_FEATURES` by the creating commit. Consumers check it,
+not their own slug, before offering Jev controls.
+
+### Existence check
+
+```sh
+test -f packages/contracts/src/fork/decide.ts \
+  && test -f apps/server/src/fork/decide/LoomDecide.ts \
+  && test -f apps/web/src/fork/decide/JevSettingsSection.tsx \
+  && git grep -q '"decide"' -- apps/server/src/fork/features.ts
+```
+
+Create it, if missing, in its own commit (`feat(fork): add the decide extension point`) after
+`ext-core` and `ext-settings` exist, with empty `FORK_DECIDE_FEATURES`.
+
+### Tests
+
+- `apps/server/src/fork/decide/registry.test.ts`: feature ids are unique, match
+  `^[a-z0-9-]+\.[a-z0-9-]+$`; `packet` matches `^L\d{2}$`; `defaultThreshold` is between
+  0 and 1; labels and descriptions are non-empty.
+- `apps/server/src/fork/decide/JevClient.test.ts` (injected `fetch`): request URL, method,
+  bearer header and body; response decode including `usage`; 401, 422, 429 with
+  `retry-after`, 529 and other statuses map to their reasons; a hanging fetch times out under
+  `TestClock` and its signal is aborted; no error message contains the key.
+- `apps/server/src/fork/decide/redact.test.ts`: each built-in kind is removed; `.env`,
+  `.env.local` and user globs are excluded in objects, keys and diff strings, while
+  `environment.ts` is not; user literals; JSON pointers and counts; idempotence; nothing
+  outside a match changes.
+- `apps/server/src/fork/decide/budget.test.ts`: estimates; no trim when within limits; arrays
+  trimmed from the start before strings; a string state trimmed from the middle; the 64k
+  total; `fits: false` when the questions alone are too large.
+- `apps/server/src/fork/decide/diffExcerpt.test.ts`: counts per file; excluded and binary
+  files; round-robin hunks under a small budget; omitted-hunk markers; empty diff.
+- `apps/server/src/fork/decide/overrides.test.ts`: instructions and `question` field
+  replacement; Choice keys never added or removed; Score only at equal length; Noul criteria.
+- `apps/server/src/fork/decide/LoomDecide.test.ts` (on `SqlitePersistenceMemory` with the
+  fork migrations, a test `ServerSecretStore`, a scripted fetch): each fallback reason in the
+  check order, and nothing sent or logged for the first four; `manual` rejects `agent` and
+  allows `auto`; project derived from `threadId`; threshold precedence (call, user value,
+  default) over every Choice and Score answer, Noul never gated; `agentTool: false` features
+  reject `manual-agents` in `updateFeature` and read a stored `manual-agents` as `manual`; low-confidence logs answers and returns them; timeout and 529 log a
+  fallback with the decision id; the logged state is the redacted, trimmed state; question
+  sets dedupe; `changes` emits after the insert; `setKey` then `getSettings` never contains
+  the key (search the JSON); `removeKey` yields `no-key`.
+- `apps/server/src/fork/decide/retention.test.ts`: with `TestClock`, unrated, unkept rows
+  older than 30 days lose `state_json` and gain `state_purged_at`; rated, kept and newer rows
+  keep it; answers and ratings stay; the job repeats after 24 hours.
+- The ext-core tests (`rpcAuthorization.test.ts`, `features.test.ts`,
+  `persistence/migrations.test.ts`) and `apps/web/src/fork/settings/registry.test.ts` cover
+  the registrations.
+- Typecheck `@t3tools/contracts`, `t3`, `@t3tools/client-runtime`, `@t3tools/web`,
+  `@t3tools/mobile`.
+
+### Known limits
+
+- Everything sent to Jev leaves the machine for `api.typesafe.ai`. Redaction removes common
+  secret shapes and excluded files; it cannot recognize every secret. The Jev hub (L29) shows
+  exactly what each request sent.
+- The token estimate is conservative; very dense text can still differ from Jev's count. A
+  `422` for size is logged as an `error` fallback.
+- `jev-latest` moves when TypeSafe ships a release. Thresholds tuned on one version may not
+  hold on the next; L29 flags a model change and offers a replay.
+- Rate limits are account-wide (1,200 requests per minute on 2026-09-24) and can change
+  without notice; `decide` treats `429` as a fallback rather than waiting.
 
 ---
 

@@ -38,7 +38,10 @@ Old Loom is `bagelvault/loom` at `a79ec506` (0.13.10).
   (`latestUserMessageAt`, `latestTurn`, `modelSelection`, `runtimeMode`);
   `OrchestrationLatestTurn` (616-625).
 - Process runner: `apps/server/src/processRunner.ts` (input 20-36, output 38-47, service
-  140-145); default shell resolution `apps/server/src/terminal/Manager.ts:468-472`.
+  140-145, per-stream output limit 356 and 367); default shell resolution
+  `apps/server/src/terminal/Manager.ts:468-472`.
+- RPC client session: `packages/client-runtime/src/rpc/session.ts:45` (socket-open timeout;
+  no per-request timeout found).
 - Large paste threshold: `packages/client-runtime/src/textPaste.ts:1`.
 - Runtime modes: `packages/contracts/src/orchestration.ts:128-135`.
 
@@ -53,4 +56,6 @@ Old Loom is `bagelvault/loom` at `a79ec506` (0.13.10).
   <http://nspasteboard.org/> (for the deferred desktop polling follow-up).
 - JSON Schema: <https://json-schema.org/understanding-json-schema/>.
 - Codex app server `turn/start` `outputSchema` (for the native follow-up): OpenAI Codex
-  repository, `codex-rs/app-server-protocol` (not verified at a specific version).
+  repository, `codex-rs/app-server-protocol` (not verified at a specific version). Claude
+  structured output support in the Agent SDK is unverified; checking both is the first step
+  of that follow-up.

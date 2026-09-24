@@ -26,6 +26,8 @@ Profile (Settings, Loom, "Project profile", with a project selected in the scope
   `.env.schema` exists and varlock is installed), or Never. Set the schema path if it is not
   `.env.schema` at the checkout root.
 - Bind snippets or skills to the project when those Loom features are installed.
+- Turn "No AI identification" on or off for the project when Loom's small extras (L20) are
+  installed; the row is L20's switch, shown here too.
 - See links to upstream's Project settings for model, permissions, worktrees and actions.
 - Reset the profile (delete it).
 
@@ -41,12 +43,20 @@ Env panel (right panel "Env", per thread's checkout):
   secret managers and run code generators the project configured).
 - Run any project action, or an intent command, "with varlock" (`varlock run -- <command>`)
   in the thread's terminal.
-- See the project's budget use today and the current thread's use.
+- See the project's budget use today (the day ends at the server's local midnight) and the
+  current thread's use.
+
+Composer (every provider):
+
+- Type `%` at the start of a word to open Loom's project menu and choose "Insert project
+  notes". The notes are inserted into the message as plain text, so every provider gets
+  them, including threads where MCP tools are off. With no notes yet, the item reads "Add
+  project notes" and opens the profile.
 
 Agents:
 
 - Call `loom_project_profiles_get` to read the notes, the commands by intent, and the env
-  variable names with status (no values).
+  variable names with status (no values). On by default ("Share profile with agents").
 
 ## Entry points
 
@@ -56,10 +66,11 @@ Agents:
 | Command palette: "Open project env"                                                              | Same.                                                                                                                               | n/a                                                   |
 | Command palette: "Run tests with varlock", "Run build with varlock", ... (one per mapped intent) | Runs the mapped command through `varlock run` in the thread's terminal. Listed only when an intent is mapped and varlock is usable. | Stop it in the terminal.                              |
 | Command palette: "Edit project profile"                                                          | Opens Settings, Loom, with the thread's project selected.                                                                           | Leave settings.                                       |
+| Composer: `%` menu, "Insert project notes"                                                       | Replaces the `%` token with "Project notes:" and the notes. "Add project notes" when empty (opens the profile).                     | Edit or delete the inserted text before sending.      |
 | Settings, Loom page, "Project profile" section                                                   | Edit the profile of the selected project scope.                                                                                     | "Reset profile".                                      |
 | Env panel header: "Edit profile"                                                                 | Same as the palette item.                                                                                                           | n/a                                                   |
 | Timeline marker                                                                                  | "Project token budget 80% used today" / "Thread token budget reached" row in the thread that crossed it.                            | Informational; budgets can be cleared in the profile. |
-| Agents: `loom_project_profiles_get`                                                              | Returns the profile summary.                                                                                                        | Setting "Share profile with agents".                  |
+| Agents: `loom_project_profiles_get`                                                              | Returns the profile summary.                                                                                                        | Setting "Share profile with agents" (on by default).  |
 | Keybinding                                                                                       | None in v1.                                                                                                                         | n/a                                                   |
 
 ## States
@@ -80,6 +91,9 @@ Agents:
 - **Budget not reported**: for threads on providers that do not report token usage (Cursor,
   Grok, OpenCode, Antigravity), "Token usage is not reported by <provider>".
 - **Loading, error**: standard panel spinner; RPC failures show the error and "Try again".
+- **Composer menu**: "Loading project notes..." (disabled) while the profile loads; "Add
+  project notes" when empty; the `%` menu does not open at all on a server without project
+  profiles, so `%` stays plain text there.
 
 ## Surfaces and connection modes
 
@@ -91,14 +105,15 @@ both at once).
 ## Copy
 
 Section title "Project profile". Fields: "Agent notes", "Commands", "Token budgets", "Env",
-"Bindings". Budget labels "Tokens per day for this project", "Tokens per thread". Varlock
+"Bindings". Agents setting: "Share profile with agents" (on), description "Agents can read
+your notes, commands and env variable status (never values) with one tool." Composer items
+"Insert project notes" (description: the first line of the notes) and "Add project notes".
+Inserted text starts with "Project notes:" on its own line. Budget labels "Tokens per day for this project", "Tokens per thread". Varlock
 choice "Use varlock for commands: Automatic / Never". Env statuses "Set in .env.local",
 "Set in server environment", "Missing", "Empty", "Invalid: expected a URL", "Resolved by
 varlock". Timeline markers as in the table above.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - The profile never duplicates an upstream setting; it links to it.
 - Command intents reference upstream project actions by id (falling back to a literal command
@@ -111,13 +126,14 @@ Decisions:
 - varlock runs only on explicit user actions.
 - The profile lives in Loom's database, not a file in the repository (old Loom made the same
   choice; nothing to commit, nothing to leak).
-
-Questions for Kyle:
-
-1. Approve `@env-spec/parser` as a server dependency (MIT, zero runtime dependencies)?
-   Without it the packet ships a smaller hand-written parser for the subset it needs.
-2. Should "Share profile with agents" default to on? The tool costs prompt tokens every turn
-   in every session, and notes are only useful if agents read them. Recommendation: on.
-3. Should the agent notes also be offered as a one-click insert into the composer for
-   providers where MCP tools are off? (Not in v1.)
-4. Budget day boundary: the server's local midnight (recommended) or UTC?
+- `@env-spec/parser` is approved as a server dependency, pinned to an exact version (0.6.0,
+  MIT, no runtime dependencies, current on npm on 2026-09-24). There is no hand-written
+  fallback parser. Reason: varlock's own parser is the format's reference; Kyle approved it.
+- "Share profile with agents" defaults to on, and the tool description stays at one or two
+  lines. Reason: notes only help if agents read them; a short description keeps the per-turn
+  prompt cost small.
+- "Insert project notes" ships in v1 as a composer menu item (the `%` menu, through
+  `ext-composer-menu`), for every provider. Reason: it covers providers and threads where MCP
+  tools are off, with plain text the user can see and edit.
+- The budget day ends at the server's local midnight. Reason: Kyle's answer; "today" then
+  matches the clock of the machine doing the work, which is easier to read than UTC.

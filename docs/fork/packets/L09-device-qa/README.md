@@ -1,6 +1,6 @@
 # L09: Device QA and flows
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 Adds quality checks on top of upstream's Device panel. A "Device QA" right panel lists the
 project's recorded UI flows (Software Mansion's argent flows in `.argent/flows/`), runs one or
@@ -27,7 +27,10 @@ run flows and capture evidence, gated by upstream's existing "Agent device acces
   - Evidence per thread: screenshot (local simulators and emulators directly, SSH-hosted devices
     through upstream's `DeviceService.screenshot`), screen recording up to 180 seconds (local
     iOS simulators and Android emulators), app install of a built `.app` or `.apk`, and flow
-    run reports. View, delete, attach to the composer.
+    run reports. View, delete, attach to the composer. Kept until the thread is deleted, with
+    an optional "Delete evidence older than N days" setting (off by default), the thread's
+    total evidence size in the tab, and "Delete all for this thread".
+  - argent install command pinned to 0.25.2 in one constant.
   - Clean status bar for iOS simulator screenshots (`simctl status_bar override`) and clear it.
   - A small packet seam in upstream's Device panel toolbar: "Capture screenshot" and "Open
     Device QA" buttons for the device being watched.
@@ -40,8 +43,10 @@ run flows and capture evidence, gated by upstream's existing "Agent device acces
     agent-driven). Flow YAML is edited as a file.
   - Bundling argent or its proprietary binaries (`simulator-server`, `ax-service`, the
     `native-devtools-ios` dylibs). Loom calls the user-installed CLI only.
-  - Running flows on SSH device hosts or physical iPhones (argent supports physical iPhones;
-    Loom v1 lists only simulators and emulators for flows).
+  - Running flows on SSH device hosts.
+  - Follow-up: flow runs on physical iPhones. argent supports them over USB, but they need a
+    cable to the environment host and a subset of argent's tools; Kyle chose simulators and
+    emulators only for v1.
   - argent profiling, Argent Lens, and argent's remote tool-server (`argent link`).
   - Mobile UI.
 
@@ -77,7 +82,7 @@ run flows and capture evidence, gated by upstream's existing "Agent device acces
 
 ## Size estimate
 
-Large: about 3,500 lines including tests (server about 1,700, web about 1,500).
+Large: about 3,600 lines including tests (server about 1,750, web about 1,550).
 
 ## How an agent starts
 

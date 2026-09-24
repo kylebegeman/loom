@@ -218,8 +218,8 @@ visible, with `visible` and `drawerHeight` passed from the dock.
 
 Task sessions are ordinary terminal sessions, so upstream's drawer lists them in its
 terminal sidebar like setup-script terminals (`setup-<id>`,
-`apps/server/src/project/ProjectSetupScriptRunner.ts:341`). This is accepted (PRODUCT.md,
-open question 1). Tasks never allocate ids from the drawer's `term-N` sequence, so the
+`apps/server/src/project/ProjectSetupScriptRunner.ts:341`). Kyle decided to keep them
+visible there (PRODUCT.md, Decisions), so no drawer seam is needed. Tasks never allocate ids from the drawer's `term-N` sequence, so the
 drawer's own id allocation (`ChatView.tsx:977-986,1991-1994`) is unaffected.
 
 ### Recent commands
@@ -247,7 +247,7 @@ dock costs no extra subscription.
 
 | Source                                                | Row kind                               | Tone for filters |
 | ----------------------------------------------------- | -------------------------------------- | ---------------- |
-| `messages` (user, assistant; skip streaming partials) | message                                | Messages         |
+| `messages` (user, assistant; skip streaming partials) | message                                | Messages toggle  |
 | `activities` with tone `tool`                         | work                                   | Work             |
 | `activities` with tone `approval`                     | decision                               | Decisions        |
 | `activities` with tone `error`, and `runtime.warning` | error or warning                       | Errors           |
@@ -261,6 +261,10 @@ for messages, the full text up to 4 KB), and a lazy `detail()` returning the pay
 formatted JSON (capped at 20 KB) or the message text. Sorted newest first by `createdAt`,
 then `sequence`.
 
+`deriveActivityRows(thread, { includeMessages })` skips the `messages` source entirely when
+`includeMessages` is false (the default), so a long chat costs nothing until the toggle is
+on. The memo key includes the flag.
+
 Upstream's work-log derivation (`deriveWorkLogEntries`, `apps/web/src/session-logic.ts:451`)
 hides noise rows (tool started, progress, context-window updates, internal agent rows).
 Activity uses the same exclusions by calling the exported predicates where they are exported,
@@ -270,8 +274,10 @@ and otherwise a local copy of the kind list with a comment pointing at the upstr
 
 The query uses `useDeferredValue`; matching is token-based substring over `searchText`
 (every token must match), the same rule as the command palette
-(`CommandPalette.logic.ts:420-423`). Filter chips and "Group by turn" are in-memory state
-per thread (not persisted).
+(`CommandPalette.logic.ts:420-423`). Filter chips (All, Work, Decisions, Errors), the
+"Messages" toggle (default off) and "Group by turn" are in-memory state per thread (not
+persisted). When the toggle is off and the thread has messages but no other rows, the empty
+state is "Only chat messages so far." with a "Show messages" button that turns the toggle on.
 
 ### Rendering
 
@@ -301,7 +307,7 @@ same button when older history exists.
 - What is pending: one `ApprovalThreadGroup` component per flagged thread, each calling
   `useThreadDetail(ref)` (`entities.ts:105-109`) and
   `derivePendingRequests(detail.activities)`
-  (`packages/client-runtime/src/pendingRequests.ts:121`, `PendingApproval` at `:12-19`).
+  (`packages/client-runtime/src/pendingRequests.ts:122`, `PendingApproval` at `:12-19`).
   At most 20 groups subscribe (oldest pending first); the rest render from shell data with
   "Open thread to review". Subscriptions exist only while the Approvals tab is visible,
   because tab content is unmounted when hidden.
@@ -325,11 +331,198 @@ Count of shells with `hasPendingApprovals` (cheap; shell data). It counts thread
 requests, because request counts need details; the label says "Approvals 3" meaning three
 threads, with the tooltip "3 threads waiting".
 
+## Phase 5: approval risk badge (Jev)
+
+Advisory labels on pending approvals, from Jev through the shared `ext-decide` extension
+point (EXTENSION-POINTS.md section 18). This is the only phase with server code.
+
+### Feature registration
+
+```ts
+// apps/server/src/fork/bottom-dock/decide.ts
+import type { DecideFeature } from "../decide/registry.ts";
+
+export const APPROVAL_RISK_FEATURE: DecideFeature = {
+  id: "bottom-dock.approval-risk",
+  packet: "L07",
+  label: "Approval risk badge",
+  description:
+    "Labels each pending approval in the bottom dock as read-only, reversible or irreversible; without Jev no badge is shown.",
+  defaultMode: "manual",
+  defaultThreshold: 0.6,
+  agentTool: false,
+};
+```
+
+Appended to `FORK_DECIDE_FEATURES` in `apps/server/src/fork/decide/registry.ts`. `manual`
+means the badge is computed for every approval the Approvals tab shows once a Jev key is saved
+(an automatic Loom use, origin `"auto"`). With `agentTool: false` the feature has only `off`
+and `manual`: the Jev settings section hides "Let agents use this", `updateFeature` rejects
+`manual-agents`, and agents never trigger this call.
+
+### Contract (`packages/contracts/src/fork/bottom-dock.ts`)
+
+```ts
+export const BOTTOM_DOCK_WS_METHODS = {
+  approvalRisk: "loom.bottom-dock.approvalRisk",
+} as const;
+
+export const ApprovalRiskLabel = Schema.Literals(["read-only", "reversible", "irreversible"]);
+
+export const ApprovalRiskResult = Schema.Union([
+  Schema.TaggedStruct("labeled", {
+    label: ApprovalRiskLabel,
+    confidence: Schema.Number,
+    decisionId: Schema.String,
+  }),
+  /** No badge: Jev fell back (reason from ext-decide) or the request is no longer pending. */
+  Schema.TaggedStruct("none", {
+    reason: Schema.Literals([
+      "not-pending",
+      "disabled",
+      "no-key",
+      "project-off",
+      "agent-not-allowed",
+      "timeout",
+      "error",
+      "low-confidence",
+    ]),
+  }),
+]);
+
+export const BottomDockRpcGroup = RpcGroup.make(
+  Rpc.make(BOTTOM_DOCK_WS_METHODS.approvalRisk, {
+    payload: Schema.Struct({ threadId: ThreadId, requestId: ApprovalRequestId }),
+    success: ApprovalRiskResult,
+    error: EnvironmentAuthorizationError,
+  }),
+);
+```
+
+Scope `orchestration:read` (it reads a thread and changes nothing). Jev failures are not RPC
+errors: they come back as `none` with the reason, so the client has one code path.
+
+### Server (`apps/server/src/fork/bottom-dock/`)
+
+| File                     | Contents                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `decide.ts`              | Feature definition above, the question, `buildApprovalRiskState`.                  |
+| `pendingApproval.ts`     | `findPendingApproval(activities, requestId)` (pure).                               |
+| `ApprovalRiskService.ts` | `loom/ApprovalRiskService`: lookup, in-flight dedupe, per-request cache, `decide`. |
+| `rpc.ts`                 | `makeBottomDockRpcHandlers(auth)`.                                                 |
+
+Data flow for `approvalRisk({ threadId, requestId })`:
+
+1. Cache: an in-memory `Map<requestId, ApprovalRiskResult>` (request ids are unique; at most
+   500 entries, oldest dropped) and a map of in-flight `Deferred`s, so two clients asking for
+   the same request cause one Jev call.
+2. Lookup: `ProjectionSnapshotQuery.getThreadDetailById(threadId)` (`apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:249`),
+   then `findPendingApproval(detail.activities, requestId)`. The server cannot import
+   `@t3tools/client-runtime` (not an `apps/server` dependency), so `pendingApproval.ts` is a
+   short copy of the approval half of `derivePendingRequests`
+   (`packages/client-runtime/src/pendingRequests.ts:122-196`: an `approval.requested`
+   activity with that `requestId`, not followed by `approval.resolved` or a stale
+   `provider.approval.respond.failed`; `requestKind` from the payload, else from
+   `requestType` as `requestKindFromRequestType` maps it, `:49-66`), with a comment pointing
+   at the upstream lines. Not pending gives `none` / `not-pending` without calling Jev.
+3. State, built in code and kept to what the question needs (jev-1.13 accuracy drops with
+   unrelated state, https://docs.typesafe.ai/model-jaggedness/jev-1.13):
+
+   ```ts
+   // buildApprovalRiskState(approval)
+   {
+     request_kind: "command" | "file-read" | "file-change" | "mcp-elicitation",
+     app_name: string | null,          // payload.appName
+     request_text: string,             // payload.detail, capped in code (below)
+   }
+   ```
+
+   `request_text` is capped in code at 4,000 estimated tokens with `estimateTokens` from
+   `apps/server/src/fork/decide/budget.ts` (longer text keeps the head and tail around a
+   `[... N characters trimmed ...]` marker). The builder does not redact: `decide` always
+   runs `redactState` and `fitBudget` on the state it sends, so key-like strings and `.env*`
+   contents never leave the machine. No thread history, no file contents, no paths outside
+   the request text.
+
+4. Question (one Choice, criteria written literally, per the jev-1.13 guidance on literal
+   reading):
+
+   ```ts
+   const APPROVAL_RISK_QUESTIONS = {
+     risk: {
+       type: "choice",
+       instructions:
+         "The coding agent asks permission for the action in `request_text`. " +
+         "What is the worst lasting effect of allowing exactly that action?",
+       criteria: {
+         "read-only":
+           "Only reads or inspects: lists or reads files, searches, shows status, diffs or logs, " +
+           "runs a build or tests that write only build output. Nothing outside build output changes.",
+         reversible:
+           "Changes files or local state that can be undone locally: edits or creates files in the " +
+           "project, installs dependencies, creates a local branch or commit, starts or stops a local process.",
+         irreversible:
+           "Cannot be undone locally: deletes files outside version control, discards uncommitted work, " +
+           "rewrites or force-pushes git history, pushes, publishes or deploys, changes remote services " +
+           "or accounts, sends messages or payments, or changes system settings.",
+       },
+     },
+   } as const;
+   ```
+
+5. `LoomDecide.decide("bottom-dock.approval-risk", { state, questions }, { origin: "auto",
+threadId, projectId })` (no `threshold`: the feature's configured threshold, else its
+   `defaultThreshold` 0.6, applies). `decide` applies the threshold itself, so `answered` is
+   already confident: it gives `labeled` with `answers.risk.choice` and
+   `answers.risk.confidence`, with no second check here. Every `fallback` gives `none` with
+   the same reason; the answers a `low-confidence` fallback carries are ignored (no badge).
+   `projectId` comes from the thread shell (`decide` could derive it from `threadId`; passing
+   it saves a lookup). The decision is logged by `ext-decide` in `fork_decide_decisions`.
+6. Cache the result, including `none` results except `timeout` and `error` (those may
+   succeed on the next tab open).
+
+The service never dispatches an orchestration command. It has no access to
+`respondToApproval`, and a test asserts that no command is dispatched.
+
+Registration (fork-owned files): `BottomDockRpcGroup` in `packages/contracts/src/fork/rpc.ts`,
+`"bottom-dock"` in `LOOM_SERVER_FEATURES`, `ApprovalRiskService` in `ForkServices` and
+`ForkServicesLive`, the handler spread in `apps/server/src/fork/rpc.ts`, the scope in
+`rpcAuthorization.ts`, and `APPROVAL_RISK_FEATURE` in `FORK_DECIDE_FEATURES`
+(`apps/server/src/fork/decide/registry.ts`).
+
+### Client
+
+- `packages/client-runtime/src/fork/bottom-dock.ts`: `createBottomDockAtoms(runtime)` with
+  one query family `approvalRisk` keyed by `(environmentId, threadId, requestId)`,
+  `staleTimeMs: Infinity` (the answer for a request id never changes).
+- `apps/web/src/fork/bottom-dock/approvals/RiskBadge.tsx`: rendered by
+  `ApprovalThreadGroup` next to each approval's header. `ApprovalsTab` calls
+  `useDecideFeature(environmentId, "bottom-dock.approval-risk")`
+  (`apps/web/src/fork/decide/state.ts`) once per environment; the badge mounts its query only
+  when that state is `usable` (the `decide` capability, "Use Jev" on, a key set, the feature
+  not off) and the environment's `loomFeatures` includes `bottom-dock`; otherwise it renders
+  nothing and sends nothing. "Jev off for this project" is not in that state; the server
+  answers `none` / `project-off` for those threads. While loading it renders nothing (no spinner: the badge is
+  optional and a spinner per row would be noise). `labeled` renders the badge with the
+  tooltip "Jev's estimate, confidence 0.82. Advisory only: read the request before you
+  answer."; `none` renders nothing.
+- Styles: Read-only and Reversible use the muted badge variant; Irreversible uses the warning
+  variant. No success (green) variant.
+- The badge sits outside `ComposerPendingApprovalActions`; it has no click handler.
+
+Because the Approvals tab mounts at most 20 thread groups, and only while visible, at most the
+pending approvals of those groups are classified, each once per server run.
+
 ## Surfaces and version skew
 
-Every phase is client-only and uses upstream RPCs and data, so there is no `loomFeatures`
+Phases 1 to 4 are client-only and use upstream RPCs and data, so they have no `loomFeatures`
 entry and no server change. A Loom client on an upstream server gets the full dock.
 Upstream clients are unaffected.
+
+Phase 5 adds the `bottom-dock` capability and one fork RPC. The badge is shown only when the
+environment reports `bottom-dock` and `useDecideFeature` reports the feature `usable` (which
+includes the `decide` capability); a Loom client on an upstream server, or on a Loom server
+without Jev, shows the Approvals tab without badges and sends no `loom.decide.*` request.
 
 ## Performance
 
@@ -339,6 +532,9 @@ Upstream clients are unaffected.
 - Activity derivation is memoized on the thread's arrays; search is deferred; the list is
   virtualized.
 - Approvals subscribe to at most 20 thread details, only while visible.
+- Risk badges: one small unary RPC per visible pending approval, cached forever on the client
+  and per server run on the server; Jev calls are bounded by `ext-decide`'s 1 second timeout
+  and never block the buttons.
 - Tasks mounts one terminal viewport at a time.
 - No continuous animation; the only transition is upstream's panel animation during open,
   close and tab switches.

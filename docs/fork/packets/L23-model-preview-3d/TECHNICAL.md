@@ -1,7 +1,7 @@
 # L23 technical design
 
 Upstream citations are to this fork at `a931bd85f3` (upstream v0.0.42). Library facts: three.js
-0.186.0 and occt-import-js 0.0.23 from npm on 2026-09-24; OpenSCAD facts from the Fabrication
+0.186.0 from npm on 2026-09-24; printer build volumes from vendor pages (REFERENCES.md); OpenSCAD facts from the Fabrication
 packet's verified references (`~/Developer/docs/apps/fabrication/REFERENCES.md`, 2026-09-24) and
 OpenSCAD's docs. OpenSCAD itself is not installed on Kyle's Mac, so its flags must be rechecked
 against the installed snapshot during implementation (`openscad --help`, `--help-export`).
@@ -138,13 +138,41 @@ export const ScadRenderResult = Schema.Struct({
   ),
 });
 
+export const BuildPlatePresetId = Schema.Literals([
+  "bambu-h2d",
+  "bambu-h2c",
+  "anycubic-kobra-s1",
+  "custom",
+]);
+
+/** Vendor build volumes in mm (X, Y, Z). The note is shown under the preset in settings. */
+export const BUILD_PLATE_PRESETS = {
+  "bambu-h2d": {
+    label: "Bambu Lab H2D",
+    volumeMm: [350, 320, 325],
+    note: "One nozzle: 325 x 320 x 325 mm. Both nozzles: 300 x 320 x 325 mm.",
+  },
+  "bambu-h2c": {
+    label: "Bambu Lab H2C",
+    volumeMm: [330, 320, 325],
+    note: "Left nozzle: 325 x 320 x 320 mm. Both nozzles: 300 x 320 x 325 mm.",
+  },
+  "anycubic-kobra-s1": { label: "Anycubic Kobra S1", volumeMm: [250, 250, 250], note: null },
+} as const;
+
+export const BuildPlateSetting = Schema.Struct({
+  preset: BuildPlatePresetId,
+  /** Used only when preset is "custom"; each axis 10 to 2000 mm. */
+  customMm: Schema.Tuple([Schema.Number, Schema.Number, Schema.Number]),
+});
+
 export const ModelPreviewSettings = Schema.Struct({
   openscadPath: Schema.NullOr(Schema.String),
   backend: Schema.Literals(["auto", "manifold", "cgal"]),
   renderTimeoutSeconds: Schema.Int, // default 120
   renderColors: Schema.Boolean, // 3MF output with colors; default false (binary STL)
   maxFileMegabytes: Schema.Int, // default 150
-  buildPlateMm: Schema.Tuple([Schema.Number, Schema.Number]), // default [256, 256]
+  buildPlate: BuildPlateSetting, // default { preset: "bambu-h2d", customMm: [350, 320, 325] }
   fabricationUrl: Schema.NullOr(Schema.String),
   agentToolEnabled: Schema.Boolean, // default true
 });
@@ -156,7 +184,7 @@ export class ModelPreviewError extends Schema.TaggedError<ModelPreviewError>()(
       "workspace-not-found",
       "not-found",
       "invalid-path",
-      "unsupported-format",
+      "unsupported-format", // includes STEP, which stays with the Fabrication app
       "too-large",
       "openscad-missing",
       "invalid-parameter",
@@ -368,12 +396,18 @@ loomFeatures.includes("model-preview-3d") }`. A surface without `resourceId` sho
     picker; picking opens `openSurface(threadRef, { ...forkPanelSurface("model-preview-3d",
 path), title: basename(path) })` so each file gets its own tab.
   - `ModelPanel.tsx`: picker, toolbar, viewer, side sheet (parameters and log for `.scad`),
-    status bar (dimensions, triangles, manifold, revision time).
+    status bar (dimensions, triangles, manifold, revision time). When any bounding box axis
+    exceeds the build volume's matching axis, the status bar adds "Larger than the <label>
+    build volume (X x Y x Z mm)". The check is `fitsBuildVolume(sizeMm, volumeMm)` in
+    `buildPlate.ts`, a pure helper that compares axis by axis (no rotation search).
+  - STEP entries (`.step`, `.stp`) show "STEP files open in the Fabrication app." and, when
+    `fabricationUrl` is set, "Open in Fabrication". They never load into the viewer.
   - `viewer/` (all `three` imports live here and load through `React.lazy`, like upstream's
     `DevicePanel`, `apps/web/src/components/ChatView.tsx:600-606`):
     - `createViewer(canvas, options)`: `WebGLRenderer({ antialias: true, alpha: true })`,
       `PerspectiveCamera`, `OrbitControls` without damping, hemisphere plus directional light,
-      `GridHelper` sized to the build plate, optional `AxesHelper`. `requestRender()` coalesces
+      `GridHelper` sized to the build plate's X and Y (the preset's `volumeMm`, or `customMm`),
+      optional `AxesHelper`. `requestRender()` coalesces
       renders into one `requestAnimationFrame`; controls `change`, resize (`ResizeObserver`),
       model load and toggles call it. **No render loop.**
     - `loadModel(format, url)`: `STLLoader`, `ThreeMFLoader`, `OBJLoader`, `GLTFLoader` from
@@ -404,8 +438,9 @@ path), title: basename(path) })` so each file gets its own tab.
     `syncPersistedAttachments`, following `deliverSnapShot`
     (`apps/web/src/components/desktop/SnapShotCoordinator.tsx:139-184`).
   - `palette.tsx` (the "Open file..." submenu uses `listModels`), `shortcuts.tsx`,
-    `settings.tsx` (OpenSCAD status with "Refresh detection", options, limits, Fabrication URL,
-    "Clear render cache").
+    `settings.tsx` (OpenSCAD status with "Refresh detection", options, limits, build plate
+    select with the three presets plus "Custom" (three number fields in mm when chosen) and the
+    preset's note underneath, Fabrication URL, "Clear render cache").
 - Theme: read the panel's computed CSS variables for background, grid and mesh colors when the
   theme changes (listen to the theme store the app uses; do not poll).
 
@@ -471,13 +506,13 @@ CREATE TABLE IF NOT EXISTS fork_model_preview_3d_settings (
 Files: `<stateDir>/fork/model-preview-3d/renders/` (LRU, 300 files or 1 GiB). Rows of deleted
 projects are removed by a startup sweep.
 
-## STEP (phase 4, optional)
+## STEP files
 
-`occt-import-js` (LGPL-2.1) reads STEP and IGES in WebAssembly and returns triangulated meshes.
-Load it only when a STEP file is opened (dynamic `import()` of a separate chunk; the `.wasm`
-served as a static asset by Vite). Unmodified, dynamically loaded LGPL code is the usual
-compliant pattern, but Kyle must approve the dependency (PRODUCT.md question 2). Until then STEP
-files are listed as "STEP preview is not enabled".
+Not previewed. Kyle declined `occt-import-js` (LGPL-2.1, about 11.6 MB with WebAssembly), so
+STEP stays with the Fabrication app. `listModels` still returns `.step` / `.stp` entries (format
+`step`) so the picker can point at the Fabrication app; `fileUrl` refuses them with
+`unsupported-format`. Follow-up (not designed): STEP preview, only if the Fabrication app never
+covers it.
 
 ## Performance
 
@@ -502,3 +537,5 @@ files are listed as "STEP preview is not enabled".
   real CLI and the files.
 - **Online3DViewer (MIT) as a drop-in viewer.** Bundles many formats and occt-import-js, but pulls
   a large dependency and its own UI; the needed loaders are four three.js addons.
+- **`occt-import-js` for STEP.** Declined by Kyle; see "STEP files".
+- **A generic 256 mm grid.** Matches none of Kyle's printers; presets from vendor specs do.

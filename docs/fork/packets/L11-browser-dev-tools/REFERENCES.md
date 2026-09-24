@@ -69,5 +69,15 @@ all four panels were side panels of
   `webContents.getType()`: https://www.electronjs.org/docs/latest/api/web-contents,
   https://www.electronjs.org/docs/latest/api/web-request (check against the installed typings).
 - Docker Compose `ps --format json`: https://docs.docker.com/reference/cli/docker/compose/ps/
-- Redis licensing change (RSALv2/SSPLv1 from 7.4, AGPLv3 option from 8.0) behind PRODUCT.md
-  question 2: https://redis.io/legal/licenses/ (not re-verified for this packet).
+- Redis licensing change (RSALv2/SSPLv1 from 7.4, AGPLv3 option from 8.0), the reason for the
+  Valkey default: https://redis.io/legal/licenses/ (not re-verified for this packet).
+- Valkey container image (BSD-3-Clause, per the GitHub license API on 2026-09-24):
+  https://github.com/valkey-io/valkey-container. Checked on 2026-09-24: `docker-entrypoint.sh`
+  prepends `valkey-server` when the first argument starts with `-`; the 8.x Alpine Dockerfiles
+  set `WORKDIR /data`, `EXPOSE 6379` and `CMD ["valkey-server"]`; Docker Hub lists the
+  `valkey/valkey:8-alpine` tag (https://hub.docker.com/r/valkey/valkey).
+- docker-library/redis `docker-entrypoint.sh` (same pattern, prepends `redis-server`), so a
+  user-configured Redis image takes the same flags:
+  https://github.com/docker-library/redis/blob/master/docker-entrypoint.sh
+- Upstream thread deletion closes the thread's terminals, which stops its dev servers:
+  `apps/server/src/orchestration/Layers/ThreadDeletionReactor.ts:53-65`.

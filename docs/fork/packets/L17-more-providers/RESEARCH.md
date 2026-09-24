@@ -15,9 +15,9 @@ already drive this model, and how much fork code does connecting it take?
 | LM Studio                     | Same, if its Anthropic-compatible endpoint works; else OpenCode                      | Preset dialog only            | Medium: verify                   |
 | Other Anthropic-compatible    | Same, "Other" preset                                                                 | Preset dialog only            | High                             |
 | OpenAI-compatible only        | Upstream OpenCode driver (configures OpenAI-compatible providers natively)           | None (docs link)              | High                             |
-| GitHub Copilot CLI            | Fork ACP driver `loomCopilot` (`copilot --acp`)                                      | Generic ACP adapter + profile | Medium: verify flags and auth    |
-| Gemini CLI                    | Fork ACP driver `loomGemini` (`gemini --acp`), low priority                          | Profile on the same adapter   | Medium                           |
-| Any ACP agent                 | Fork ACP driver `loomAcp` with a user-supplied command                               | Profile on the same adapter   | Medium                           |
+| Any ACP agent                 | Fork ACP driver `loomAcp` with a user-supplied command                               | Generic ACP adapter + profile | Medium                           |
+| Gemini CLI                    | A `loomAcp` instance running `gemini --acp` (no driver of its own)                   | None beyond `loomAcp`         | Medium                           |
+| GitHub Copilot CLI            | Fork ACP driver `loomCopilot` (`copilot --acp`), built last                          | Profile on the same adapter   | Medium: verify flags and auth    |
 | Raw model API with no harness | Not supported                                                                        | None                          | Decision                         |
 
 ## DeepSeek
@@ -44,7 +44,8 @@ Code's SDK probe will not mean anything. The instance's status may read "warning
 than "ready"; that is acceptable if turns work.
 
 Alternative: OpenCode supports DeepSeek natively. Upstream supports OpenCode, so a user can
-choose it today; the preset is simply the faster path for Kyle, who already runs Claude Code.
+choose it today by hand. Kyle decided against an OpenCode preset: DeepSeek is a Claude-based
+preset only, documented and tested, and he is not setting it up now.
 
 ## Ollama and LM Studio
 
@@ -69,8 +70,9 @@ Copilot CLI 1.0.88 (installed locally) lists `--acp` ("Start as Agent Client Pro
 server"). Old Loom launched it as `copilot --acp --stdio`; the local help does not list
 `--stdio`, so the driver starts with `--acp` and the implementing agent checks whether stdio
 is the default. Authentication belongs to the CLI (its own login, or a GitHub token in the
-environment); the driver reports "Sign in with the Copilot CLI on this environment" when ACP
-`initialize` or `session/new` asks for authentication. Copilot also supports custom model
+environment); the driver's signed-out message suggests the CLI's own login first and a
+`GH_TOKEN` environment variable second (Kyle's decision) when ACP `initialize` or
+`session/new` asks for authentication. Kyle does not use Copilot, so it is built last. Copilot also supports custom model
 providers ("BYOK") and DeepSeek documents a Copilot CLI integration, so Copilot is a second
 route to endpoint models for users who prefer it.
 
@@ -79,9 +81,9 @@ route to endpoint models for users who prefer it.
 Google stopped serving Gemini CLI for individual accounts (free, Google AI Pro and Ultra) on
 June 18, 2026, in favor of Antigravity CLI, which upstream T3 already supports with in-app
 sign-in. Gemini CLI still serves Gemini Code Assist Standard and Enterprise licenses and
-keeps `--acp` (Gemini CLI 0.46.0 installed locally). The `loomGemini` profile costs little on
-the shared ACP adapter, so it stays in scope but last in order, and its settings copy points
-individual users to Antigravity.
+keeps `--acp` (Gemini CLI 0.46.0 installed locally). Decision (Kyle): no dedicated
+`loomGemini` driver. Code Assist users run Gemini CLI as a custom ACP agent (`loomAcp` with
+command `gemini` and argument `--acp`); everyone else uses Antigravity through upstream.
 
 ## Generic ACP agents and the registry
 

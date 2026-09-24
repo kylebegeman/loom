@@ -70,20 +70,14 @@ No settings.
 Web and desktop, identical. Mobile: not supported (upstream's tablet inspector is
 unrelated). Remote and upstream servers: supported (client-only).
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Client-only, like old Loom's inspector: no RPCs, no persisted state.
 - The card is anchored under its header button and rendered in a portal, so it needs one
   header seam and nothing in the chat layout.
-- Light dismissal follows Kyle's last recorded direction for old Loom's card (ledger 1359):
-  the eye button is the only way in, and the first interaction elsewhere closes it. Long
-  watching belongs to the panel tab, which stays open.
+- Light dismissal only, confirmed by Kyle (and his last recorded direction for old Loom's
+  card, ledger 1359): the eye button is the only way in, and the first interaction
+  elsewhere closes it. There is no pin on the card; the panel tab is the keep-open view for
+  long watching.
 - Compact density (Status and Attention first, other sections collapsed to one line each)
   when the window is narrower than 900 px.
-
-Open questions for Kyle:
-
-- Keep light dismissal, or add a "keep open" pin on the card itself? The packet ships light
-  dismissal only.

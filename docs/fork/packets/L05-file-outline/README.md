@@ -1,6 +1,6 @@
 # L05: File outline
 
-Status: Not started.
+Status: Ready to build.
 
 A symbol list for the file open in the Files panel. A toggle in the file header opens an
 outline column beside the source (functions, classes, types, methods, Markdown headings);
@@ -14,7 +14,7 @@ the panel already loaded, so it needs no server support and works against any T3
   - An outline column inside the Files panel (`FilePreviewPanel`), toggled from the file
     header, remembered across files and restarts.
   - Symbol extraction for TypeScript, TSX, JavaScript (all module flavors), Swift, Python, Go,
-    Rust and Markdown (headings), with nesting, a filter box and keyboard navigation.
+    Rust, Kotlin and Markdown (headings), with nesting, a filter box and keyboard navigation.
   - Click (or Enter) jumps to the symbol's line using upstream's existing reveal mechanism.
   - The outline follows edits in the editable file surface (debounced re-parse).
   - Command palette: "Toggle file outline" and a "Go to symbol in file" submenu.
@@ -22,9 +22,11 @@ the panel already loaded, so it needs no server support and works against any T3
 - Out:
   - Scroll-sync (highlighting the symbol under the viewport while scrolling). The virtualized
     `@pierre/diffs` surface gives no cheap scroll-to-line mapping; revisit later.
-  - Tree-sitter parsing. Evaluated in [TECHNICAL.md](./TECHNICAL.md#parser-choice); a
-    possible phase 2 behind the same interface, which needs a new dependency and Kyle's
-    approval.
+  - Tree-sitter parsing in v1. Kyle approved `web-tree-sitter` plus grammar WASM files as a
+    conditional phase 2 behind the same interface, built only if the v1 scanners prove
+    unreliable in real use (trigger and steps in [IMPLEMENTATION.md](./IMPLEMENTATION.md#phase-2-conditional-tree-sitter)).
+  - Follow-up: Java, C# and Ruby outlines, added later on demand (each is about 40 lines
+    with the same scanner; no one needs them yet).
   - Project-wide symbol search and cross-file references. That is the code graph (L26).
   - Outlines inside the diff panel, pull request panel or chat code blocks.
   - Mobile UI.
@@ -54,7 +56,17 @@ if missing. The packet registers nothing in it: no RPC, table or capability entr
 
 ## Size
 
-Small to medium: about 900 to 1,200 lines including tests. Most of it is the extractors.
+Small to medium: about 950 to 1,300 lines including tests (Kotlin adds about 100). Most of
+it is the extractors. The conditional phase 2 would add about 300 to 500 lines plus the
+dependency and WASM assets.
+
+## Dependencies
+
+- v1: none.
+- Phase 2 (conditional, approved by Kyle): `web-tree-sitter` (MIT) as an `apps/web`
+  production dependency plus prebuilt grammar WASM files for the languages that need it.
+  Added only when the phase 2 trigger is met; the lockfile change is then intended and
+  committed.
 
 ## How an agent starts
 

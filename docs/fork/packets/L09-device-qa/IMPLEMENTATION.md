@@ -58,8 +58,11 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
      for `runEvents`, `SubscriptionRef` of runs per project for `watchRuns`, report JSON and a
      `flow-report` evidence row at the end, retention.
    - Evidence: `capture` (screenshot now, or start a recording and return the `recording` row),
-     `stopRecording`, `installApp`, `statusBar`, `deleteEvidence` (row and file),
-     `watchEvidence`.
+     `stopRecording`, `installApp`, `statusBar`, `deleteEvidence` (row and file; row only for
+     `flow-report`), `deleteAllEvidence` (skips an active recording), `watchEvidence` with
+     `totalCount` and `totalBytes`.
+   - `runFlows` accepts only targets listed in `status.localDevices` (simulators and
+     emulators).
    - Settings with defaults.
    - Startup: mark stale runs `interrupted` and stale recordings `failed`.
      Recording sketch (iOS):
@@ -109,6 +112,8 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 
 8. `reactor.ts`: `DeviceQaCleanupReactorLive` (`forkParked` + `streamDomainEvents`, filter
    `thread.deleted`; startup sweep of evidence whose thread is missing from the projection).
+   Add the expiry sweep: a pure `expiryCutoff(now, days)` plus a store query, run at startup,
+   every 6 hours and after a settings change, only when `evidenceExpireDays` is set.
 9. Register the service, reactor, feature slug, handlers, scopes.
 10. `mcp.ts`: `loom_device_qa_flow` and `loom_device_qa_capture`, gated with
     `requireMcpCapability("device")`; default device resolution: the thread's open device
@@ -119,11 +124,15 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 
 11. `packages/client-runtime/src/fork/device-qa.ts` atoms.
 12. `apps/web/src/fork/device-qa/`: panel definition (`Q`), lazy panel body with the three tabs,
-    device picker, flow list and run view, evidence list with thumbnails and attach, install
-    form, argent setup card (copy command, "Type in terminal", telemetry off).
+    device picker (physical devices get the "simulators and emulators" note in the Flows tab),
+    flow list and run view, evidence list with thumbnails, attach, the size header and "Delete
+    all for this thread", install form, argent setup card (copy command, "Type in terminal",
+    telemetry off).
 13. `DeviceToolbarActions.tsx` and the Device panel seam (SEAMS.md). Test the seam by hand:
     buttons render only for Loom servers.
-14. Palette source, `ForkRoot` shortcuts component, settings section.
+14. Palette source, `ForkRoot` shortcuts component, settings section (argent path, run history
+    size, "Delete evidence older than N days" as a switch plus a number field, 1 to 365,
+    default 30 when switched on; default clean status bar).
 15. Optional integrations (README): if `apps/web/src/fork/apple-build-tooling/` exists, list its
     latest successful build products in the Install tab through its atoms; do not add the import
     otherwise.
@@ -163,4 +172,6 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
 - A failing flow shows the failing step's reason and the three snapshot images.
 - A screenshot captured from the Device panel toolbar can be attached to the composer and sent.
 - Deleting a thread removes its evidence files (checked on disk).
+- "Delete all for this thread" empties the Evidence tab and its total; with expiry set to 1
+  day, items older than a day disappear after the next sweep (tested with `TestClock`).
 - No argent process Loom starts runs without `DO_NOT_TRACK=1` (unit test on the spawn env).

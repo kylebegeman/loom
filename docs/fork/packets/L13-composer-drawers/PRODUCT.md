@@ -37,15 +37,15 @@ them as one compact drawer.
 
 ## Entry points
 
-| Way in                                       | What happens                                                                                                                 | Way out                          |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| Composer footer tools button (wrench icon)   | Opens the drawer on the last used tab.                                                                                       | Same button, Escape, or sending. |
-| Keybinding `loom.composer-drawers.tools`     | Toggles the drawer.                                                                                                          | Same key or Escape.              |
-| Keybinding `loom.composer-drawers.once`      | Arms Once (opens the drawer on Once); again cancels.                                                                         | Same key, "Cancel", or sending.  |
-| Keybinding `loom.composer-drawers.shell`     | Opens the drawer on Shell with the input focused.                                                                            | Escape.                          |
-| Keybinding `loom.composer-drawers.clipboard` | Opens the drawer on Clipboard.                                                                                               | Escape.                          |
-| Command palette                              | "Composer tools", "Next message only", "Run a shell command for the prompt", "Clipboard history", "Clear clipboard history". | As above.                        |
-| Settings > Loom > Composer drawers           | Clipboard history on or off, remember across restarts, read on focus (desktop), clear.                                       | Switch off (also clears).        |
+| Way in                                       | What happens                                                                                                                   | Way out                                            |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Composer footer tools button (wrench icon)   | Opens the drawer on the last used tab.                                                                                         | Same button, Escape, or sending.                   |
+| Keybinding `loom.composer-drawers.tools`     | Toggles the drawer.                                                                                                            | Same key or Escape.                                |
+| Keybinding `loom.composer-drawers.once`      | Arms Once (opens the drawer on Once); again cancels.                                                                           | Same key, "Cancel", or sending.                    |
+| Keybinding `loom.composer-drawers.shell`     | Opens the drawer on Shell with the input focused.                                                                              | Escape.                                            |
+| Keybinding `loom.composer-drawers.clipboard` | Opens the drawer on Clipboard.                                                                                                 | Escape.                                            |
+| Command palette                              | "Composer tools", "Next message only", "Run a shell command for the prompt", "Clipboard history", "Clear clipboard history".   | As above.                                          |
+| Settings > Loom > Composer drawers           | Clipboard history on or off, remember across restarts, read on focus (desktop), clear; shell default timeout and output limit. | Switch off (also clears); pick the defaults again. |
 
 All keybindings are unbound by default.
 
@@ -62,9 +62,10 @@ All keybindings are unbound by default.
   prompt". A schema that is valid JSON but not an object or boolean shows "A JSON Schema
   is an object."
 - Shell running: spinner and elapsed seconds; the Run button becomes disabled. Timeout:
-  "Stopped after 30 s." with any output captured before the timeout discarded (upstream's
-  runner does not keep partial output on timeout). Exit code non-zero: shown in red but
-  still attachable. Output over the cap: "Output truncated to 64 KB."
+  "Stopped after 30 s." (the run's timeout) with any output captured before the timeout
+  discarded (upstream's runner does not keep partial output on timeout). Exit code
+  non-zero: shown in red but still attachable. Output over the cap: "Output truncated to
+  64 KB." (the configured limit).
 - Shell unavailable: on an upstream server, "Running commands needs a Loom server."; with
   no workspace (thread without a project path), "This thread has no workspace to run in."
 - Clipboard off: the tab explains the feature and has "Turn on" (goes to settings, or
@@ -81,7 +82,12 @@ All keybindings are unbound by default.
   `Respond with only JSON that matches this JSON Schema:` followed by a ` ```json `
   block.
 - Shell: placeholder "Command to run in the workspace"; buttons "Run", "Attach"; timeout
-  select "10 s", "30 s", "2 min". Attached block header: `` `$ command` exited with 0 in 1.2 s ``.
+  select "10 s", "30 s", "1 min", "2 min", "5 min", "10 min", preselected to the default
+  from settings. Attached block header: `` `$ command` exited with 0 in 1.2 s ``.
+- Settings, shell: "Default timeout" (same choices, default "30 s"), description "How long
+  a command may run before Loom stops it. You can change it per run."; "Output limit"
+  ("64 KB", "256 KB", "512 KB", "1 MB", default "64 KB"), description "Output beyond this
+  is cut off. Applies to standard output and errors separately."
 - Clipboard: "Recent clipboard", "Clear all", per item "Insert", "Delete". Footer: "Stored
   on this device only."
 
@@ -92,23 +98,20 @@ tab runs on the thread's environment in every connection mode, with the `termina
 scope (the same power as opening a terminal). On an upstream server only the Shell tab is
 unavailable.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Once uses upstream's own pickers instead of a second set of controls, so provider locks,
   model validation and effort options stay upstream's. The fork only snapshots and restores.
-- Output schema is prompt-level (visible text in the message), because native schemas need
-  upstream contract and adapter seams for one provider.
-- The shell runs on the server (fork RPC), not in a terminal session, with a 30-second
-  default timeout and a 64 KB output cap, and nothing runs without the user pressing Run.
+- Output schema is prompt-level (visible text in the message) in v1, because it works for
+  every provider. Native `outputSchema` for Codex and Claude's structured output are a
+  follow-up, pending SDK verification (they need upstream contract and adapter seams).
+- The shell runs on the server (fork RPC), not in a terminal session, and nothing runs
+  without the user pressing Run. Defaults are a 30-second timeout and a 64 KB output cap,
+  both adjustable in the Loom settings page up to 10 minutes and 1 MB; the server enforces
+  those maximums whatever the client sends.
+- Clipboard capture from other apps is "latest item when Loom regains focus" (desktop) in
+  v1. Background polling in Electron's main process is a possible later option, not
+  designed here.
 - Clipboard history is off by default, in memory by default, never sent to a server, and
-  filtered for secrets before it is stored.
-
-Open questions for Kyle:
-
-1. Clipboard capture from other apps while Loom is in the background needs polling in
-   Electron's main process (old Loom polled every 1.5 s) through `ext-desktop` (EXTENSION-POINTS.md section 13). Is "latest item when Loom regains focus" enough for now?
-2. Is the prompt-level schema acceptable, or should a later provider packet add native
-   `outputSchema` for Codex (and Claude's structured output, if the SDK supports it)?
-3. Default shell timeout 30 s and cap 64 KB: right numbers?
+  filtered for secrets locally before it is stored. No clipboard content is ever sent to
+  Jev or any other service for secret detection (rejected in the Jev review).

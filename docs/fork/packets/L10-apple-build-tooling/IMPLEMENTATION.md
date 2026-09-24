@@ -14,6 +14,16 @@ checks from [TESTING.md](./TESTING.md).
   scratch directory (not in the repo). Store trimmed copies under
   `apps/server/src/fork/apple-build-tooling/__fixtures__/`. Scrub absolute home paths to
   `/Users/test/...`.
+- For the package parsers, create a scratch Swift package outside the repo with one passing
+  and one failing XCTest, one passing, one failing and one disabled Swift Testing test, run
+  `mkdir -p out && swift test --parallel --xunit-output out/xunit.xml > log.txt 2>&1`, and
+  store trimmed copies of `log.txt`, `out/xunit.xml` and `out/xunit-swift-testing.xml`. Add a
+  compile error for one `swift build` log. TECHNICAL.md, "Swift packages", lists the shapes
+  to expect.
+- For devicectl, write the `list devices` fixture by hand from the field names in
+  TECHNICAL.md (one physical paired device with Developer Mode enabled, one unpaired, one
+  simulated entry to be filtered out, in both the `properties` and the deprecated form). Do
+  not copy real device names, serial numbers or UDIDs.
 - No dev server is needed until the manual check; ask Kyle before starting one or using a
   browser (AGENTS.md).
 
@@ -61,12 +71,20 @@ with its FORK.md rows. Do not mix packet code into those commits.
    ```
 
 4. Server pure modules with unit tests (no I/O):
-   - `commands.ts`: argv builders and `destinationSpecifier`.
+   - `commands.ts`: argv builders and `destinationSpecifier`, including `swift build`,
+     `swift test --parallel --xunit-output` with `--filter` per escaped identifier, and the
+     devicectl install and launch argv. No builder ever emits `-allowProvisioningUpdates`,
+     `-allowProvisioningDeviceRegistration`, `-authenticationKey*` or signing overrides.
    - `xcresult.ts`: decode `BuildResults` and test `Summary` JSON into `AppleRunSummary`;
      `parseSourceUrl(sourceURL, cwd)`.
    - `simulators.ts`: parse `simctl list devices available -j`, `simctl list runtimes -j`,
-     `devicectl list devices --json-output -` (schema version 5; tolerate unknown keys and the
-     `_deprecationNotice` field).
+     `devicectl list devices --json-output -` (schema version 5; `properties` first, deprecated
+     dictionaries as fallback; physical devices only; `developerModeStatus` as string or
+     keyed object; tolerate unknown keys and the `_deprecationNotice` field).
+   - `diagnostics.ts`: `parseCompilerDiagnostics`, `parseTestFailureLines`,
+     `classifySigningIssue` (TECHNICAL.md, "Physical devices and signing" and "Swift
+     packages").
+   - `xunit.ts`: `readXunit(xml)` and `mergeSwiftTestSummary(xctest, swiftTesting, failureLines)`.
    - `readiness.ts`: pure evaluation from a build settings object plus file facts.
    - `detect.ts`: pure classification of a path list into containers (walk is separate).
 
@@ -88,6 +106,12 @@ with its FORK.md rows. Do not mix packet code into those commits.
      per cwd), `tailLog` (ring catch-up from `fromOffset`, then the PubSub until done).
    - Settings read/write through the settings table with defaults.
    - Optional Device panel open after a simulator launch.
+   - `run` on a `device` destination: build, `-showBuildSettings -json` for the destination,
+     devicectl install and launch; on a failed build set `hint: "signing"` when
+     `classifySigningIssue` matches; on a devicectl failure set `hint: "device-unavailable"`.
+   - `swiftBuild` / `swiftTest`: create the run directory first, run in the package
+     directory, then build the summary from `parseCompilerDiagnostics` and, for tests,
+     `readXunit` of both files plus `parseTestFailureLines`.
      Sketch of the run core:
 
    ```ts
@@ -158,20 +182,21 @@ with its FORK.md rows. Do not mix packet code into those commits.
 
 ## Phase 4: optional pieces
 
-16. `swiftBuild` / `swiftTest` kinds with an xUnit parser (`xunit.xml`; Swift Testing may write
-    a second file named with a `-swift-testing` suffix, verify with the installed toolchain
-    before relying on it). Skip if Kyle answers PRODUCT.md question 3 with "later".
-17. If L09 exists in the tree, the "Run flows after launch" option (README, optional
+16. If L09 exists in the tree, the "Run flows after launch" option (README, optional
     integrations).
+
+(Swift packages and physical devices are v1 scope and are built in phases 1 to 3 above.)
 
 ## Phase 5: documentation and finish
 
-18. `docs/fork/user/apple-build-tooling.md`: what the panel does, how to start, the
-    toolchain fixes, how runs and history work, agent tools and how to turn them off, and a
+17. `docs/fork/user/apple-build-tooling.md`: what the panel does, how to start, the
+    toolchain fixes, how runs and history work (count-based, the setting), Swift packages,
+    running on an iPhone (pair in Xcode, Developer Mode, signing set up in Xcode; Loom never
+    manages certificates or profiles), agent tools and how to turn them off, and a
     short "Xcode's own MCP server" section (`xcrun mcpbridge`, needs a running Xcode unless the
     Xcode 27 headless preview is enabled with `sudo xcrun mcp-server enable`).
-19. Set the packet Status in `docs/fork/packets/README.md` and in this folder's README.
-20. Merge check (SEAMS.md) and the definition of done (CONVENTIONS.md).
+18. Set the packet Status in `docs/fork/packets/README.md` and in this folder's README.
+19. Merge check (SEAMS.md) and the definition of done (CONVENTIONS.md).
 
 ## Pitfalls
 
@@ -180,7 +205,12 @@ with its FORK.md rows. Do not mix packet code into those commits.
   cold cache). Show "Resolving packages..." and allow cancel; do not run it on every panel
   open (cache).
 - `simctl boot` on a booted device exits non-zero; treat "current state: Booted" as success.
-- `devicectl` human output is not stable; always `--json-output -`.
+- `devicectl` human output is not stable; always `--json-output -`. On Xcode 27 it also lists
+  simulators; filter to physical devices.
+- `swift test --xunit-output` writes nothing when the directory is missing, and writes the
+  XCTest file only with `--parallel`.
+- Never add provisioning or signing flags to "make device builds work"; a signing failure is
+  the user's fix in Xcode, and the panel says so.
 - `xcodebuild` prints the result bundle path at the end; do not parse it, you chose it.
 - Test failures do not always have a `sourceURL`; the summary must render without file and line.
 - Do not pass `-skipMacroValidation` or `-skipPackagePluginValidation`.
@@ -198,3 +228,7 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
 - A failing test run shows each failure with its identifier, and "Test only this" re-runs it.
 - Old Loom's XCResult bug is covered by a fixture test (non-zero counts decode as non-zero).
 - A cancelled build leaves no `xcodebuild` child running (checked by pid, not by name).
+- A Swift package with a failing XCTest and a failing Swift Testing test shows both failures
+  with messages, and "Test only this" runs one of them.
+- On Kyle's iPhone (manual), "Build and run" installs and launches a project whose signing is
+  set up in Xcode, and a project without a team shows the signing message.

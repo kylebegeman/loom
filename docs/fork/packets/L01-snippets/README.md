@@ -1,6 +1,6 @@
 # L01: Snippets library and panel
 
-Status: Not started. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
+Status: Ready to build. <!-- Not started | Designing | Ready | In progress | Done | Blocked: reason -->
 
 A saved library of reusable prompt text that lives on the environment, so it follows the
 machine to every client. Search it as you type from anywhere (a palette-style dialog with
@@ -21,14 +21,16 @@ Selection items: P1 (Snippets panel) and F1 (Snippets library), see
     edit, pin, delete with restore, revision history with restore, import and export.
   - Snippet search dialog: live results as you type, preview, insert into the composer,
     copy, send to terminal, open in the panel.
-  - Inline composer menu on `;` plus at least one character, filtering as you type; Tab
-    or Enter inserts, so `;alias` + Tab expands an exact alias.
+  - Inline composer menu on `;` immediately followed by a non-space character, filtering
+    by what follows; Tab or Enter inserts, so `;alias` + Tab expands an exact alias. A bare
+    `;` or `; ` stays plain text.
   - Fill-in fields with `[[name]]` and `[[name|default]]`, built-in values
     (`[[cursor]]`, `[[date]]`, `[[time]]`, `[[datetime]]`, `[[project.name]]`,
     `[[project.path]]`, `[[branch]]`), filled in a drawer above the composer.
   - Import of `.loom-snippet.md` files, including old Loom's `{{name}}` syntax (converted).
   - Export of one snippet or the whole library.
-  - Command palette entries and unbound keybinding commands.
+  - Command palette entries and keybinding commands with no default binding (reachable
+    from the command palette and the panel launcher).
   - Send a snippet to the thread's active terminal (never presses Enter).
 - Out:
   - Agent access through MCP tools (old Loom planned "MCP parity"; every tool costs prompt

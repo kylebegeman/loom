@@ -39,10 +39,22 @@ export const COMPOSER_DRAWERS_WS_METHODS = {
 
 export const COMPOSER_SHELL_LIMITS = {
   commandMax: 4_000,
-  outputBytesMax: 64 * 1024,
+  outputBytesDefault: 64 * 1024,
+  outputBytesMax: 1024 * 1024,
   timeoutMsDefault: 30_000,
-  timeoutMsMax: 120_000,
+  timeoutMsMax: 10 * 60_000,
 } as const;
+
+/** The choices the settings page and the Shell tab offer. */
+export const COMPOSER_SHELL_TIMEOUT_CHOICES_MS = [
+  10_000, 30_000, 60_000, 120_000, 300_000, 600_000,
+] as const;
+export const COMPOSER_SHELL_OUTPUT_CHOICES_BYTES = [
+  64 * 1024,
+  256 * 1024,
+  512 * 1024,
+  1024 * 1024,
+] as const;
 
 export const ComposerShellRunInput = Schema.Struct({
   projectId: ProjectId,
@@ -51,6 +63,10 @@ export const ComposerShellRunInput = Schema.Struct({
   command: TrimmedNonEmptyString.check(Schema.isMaxLength(COMPOSER_SHELL_LIMITS.commandMax)),
   timeoutMs: Schema.Int.check(
     Schema.isBetween({ minimum: 1_000, maximum: COMPOSER_SHELL_LIMITS.timeoutMsMax }),
+  ),
+  /** Per stream (stdout and stderr each). The server rejects anything over 1 MB. */
+  maxOutputBytes: Schema.Int.check(
+    Schema.isBetween({ minimum: 1_024, maximum: COMPOSER_SHELL_LIMITS.outputBytesMax }),
   ),
 });
 
@@ -130,7 +146,7 @@ const output =
     ...shell,
     cwd,
     timeout: Duration.millis(input.timeoutMs),
-    maxOutputBytes: COMPOSER_SHELL_LIMITS.outputBytesMax,
+    maxOutputBytes: input.maxOutputBytes,
     outputMode: "truncate",
     truncatedMarker: "\n[output truncated]\n",
     timeoutBehavior: "timedOutResult",
@@ -143,6 +159,11 @@ const output =
 - `ProcessRunInput` fields used: `timeout`, `maxOutputBytes`, `outputMode: "truncate"`,
   `truncatedMarker`, `timeoutBehavior: "timedOutResult"` (`processRunner.ts:20-36`). A
   timed-out run returns no partial output (documented at line 32-34); the UI says so.
+- `maxOutputBytes` applies to stdout and stderr separately (the runner collects each
+  stream with the same limit, `processRunner.ts:356,367`), so one run returns at most twice
+  the limit plus the markers. `truncated` is `stdoutTruncated || stderrTruncated`.
+- Limits are enforced by the input schema, not by trusting the client's settings: a
+  client cannot ask for more than 10 minutes or 1 MB per stream.
 - `stdin` is empty; interactive commands get EOF and usually exit.
 - Map `ProcessSpawnError` to `ComposerShellError` `spawn-failed`; other runner errors to
   the same with their message. Log the command at debug level only (commands can contain
@@ -161,6 +182,7 @@ No server storage. Client storage (all through `resolveStorage`, wrapped in try/
 | `loom:composer-drawers:shell-recent:v1`       | up to 20 recent commands (strings, newest first)        |
 | `loom:composer-drawers:once:v1`               | armed and restoring records, below                      |
 | `loom:composer-drawers:clipboard-settings:v1` | `{ enabled: false, persist: false, readOnFocus: true }` |
+| `loom:composer-drawers:shell-settings:v1`     | `{ timeoutMs: 30000, maxOutputBytes: 65536 }`           |
 | `loom:composer-drawers:clipboard:v1`          | entries, only when `persist` is on                      |
 
 Shell history can contain secrets typed on the command line; it is per client, capped, and
@@ -284,8 +306,13 @@ Cancel before sending: restore the composer from the snapshot and delete the rec
 - Input: single-line or multi-line textarea (mod+Enter runs); up and down arrows on an
   empty input walk the recent commands.
 - Running: `useAtomCommand(composerDrawersEnvironment.runCommand)` with
-  `{ projectId, threadId, command, timeoutMs }`; the project id comes from the thread shell
-  (or draft thread context), `threadId` only for server threads.
+  `{ projectId, threadId, command, timeoutMs, maxOutputBytes }`; the project id comes from
+  the thread shell (or draft thread context), `threadId` only for server threads.
+  `timeoutMs` is the tab's select (preselected from the shell settings, changeable per
+  run); `maxOutputBytes` comes from the shell settings. Stored values that are not one of
+  the `COMPOSER_SHELL_*_CHOICES` fall back to the defaults when read.
+- The elapsed-seconds counter updates once per second while a run is in flight (a text
+  update, not an animation), and stops when the run settles.
 - Result preview: exit code, duration, cwd, and the first 200 lines of combined output in
   a `pre` with its own scroll area.
 - `formatShellAttachment(result, command)` builds:
@@ -362,6 +389,10 @@ Section id `composer-drawers`, title "Composer drawers":
   is skipped."
 - "Keep across restarts": switch, off, disabled while history is off.
 - "Read the clipboard when Loom is focused": switch, on, desktop only (hidden on web).
+- "Default timeout": select over `COMPOSER_SHELL_TIMEOUT_CHOICES_MS` ("10 s" to "10 min"),
+  default 30 s.
+- "Output limit": select over `COMPOSER_SHELL_OUTPUT_CHOICES_BYTES` ("64 KB" to "1 MB"),
+  default 64 KB.
 - Buttons: "Clear clipboard history", "Clear recent commands".
 
 Client preferences only, so the section works with any environment selected.
@@ -387,7 +418,10 @@ None.
 - `OnceRestorer` subscribes to thread shells only for threads with a record (usually none).
 - Clipboard capture adds one `copy` listener and one `focus` listener while enabled, no
   timers and no polling.
-- The shell RPC returns at most 64 KB of text per run and only when the user presses Run.
+- The shell RPC runs only when the user presses Run and returns at most the output limit
+  per stream: 64 KB by default, 1 MB per stream when the user raises it. The preview
+  renders only the first 200 lines; attaching a large result goes through upstream's
+  large-paste folding.
 
 ## Alternatives considered
 
@@ -400,7 +434,14 @@ None.
   `apps/desktop/src/clipboard/ClipboardHistory.ts`): captures copies from other apps while
   Loom is in the background and can honor macOS `org.nspasteboard.ConcealedType`, but needs
   the `ext-desktop` extension point (EXTENSION-POINTS.md section 13) and a desktop-only
-  collector. Deferred; a follow-up can add it without changing the store.
+  collector. Follow-up by Kyle's decision (focus-regain capture is enough for v1); it can be
+  added later without changing the store.
+- Native structured output (Codex `outputSchema`, Claude structured output): follow-up by
+  Kyle's decision, pending verification of what each SDK accepts. It needs an optional field
+  on upstream's `thread.turn.start` and adapter seams, so it belongs to a provider-seam
+  packet.
+- Sending clipboard text to Jev for secret detection: rejected, because it would send the
+  clipboard to a third party. The local regex filter stays.
 - A terminal-context chip for shell output (`handle.addTerminalContext`): renders nicely,
   but the chip points at a terminal id that does not exist; a fenced block is honest and
   works in every provider.

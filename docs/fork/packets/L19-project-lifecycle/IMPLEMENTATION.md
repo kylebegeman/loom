@@ -11,7 +11,9 @@ Ordered steps for one agent. Each step leaves the tree compiling. Commit per ste
   (AGENTS.md, "Test data") so projects exist to match.
 - Never point Park at a real checkout while developing. Use the fixture script in
   TESTING.md, which builds throwaway repositories and a bare "origin" under a temp directory,
-  and set the clone location to that directory in the dev server's Loom settings.
+  and set the dev server's Settings, General, "Add project starts in" to that directory (the
+  dev server's own worktree state, never Kyle's live settings). That value is the clone
+  location.
 - Read `/Users/kyle/.local/bin/dev-park` once: its checks are the behavioral baseline.
 
 ## Steps
@@ -190,16 +192,19 @@ In `apps/web/src/fork/project-lifecycle/`:
    `sourceControlEnvironment.startProjectClone`, then opens a new thread in the project like
    `CommandPalette.tsx:2236-2269`.
 6. `ParkDialog.tsx`: runs `assessPark` on open, renders blockers, the push button (only when
-   every remaining blocker is `fixableByPush`, or alongside others), ignored groups with the
-   acknowledgement checkbox, the archive checkbox, and "Move to Trash". Disabled while any
-   blocker remains. Sends the assessment `token`. On `stale-assessment`, re-runs the
+   every remaining blocker is `fixableByPush`, or alongside others), the Keep list (every
+   path, one per line, with "and N more" past 1,000) with the "I have these elsewhere"
+   checkbox, the Review summary with the general acknowledgement, the archive checkbox, and
+   "Move to Trash". Disabled while any blocker remains or a shown acknowledgement is
+   unticked. Sends the assessment `token`, `acknowledgeKeep` and `acknowledgeReview`. On `stale-assessment`, re-runs the
    assessment and says "Something changed. Review the report again."
 7. `ReopenDialog.tsx`: existing project path calls `reopen`; `not-found` falls back to the
    Clone dialog seeded with the old path, then `forgetParked`.
 8. `settingsSection.tsx`: environment-scoped section (read the selected scope as described in
-   EXTENSION-POINTS.md, Settings) with clone location input, two pattern textareas (one
-   pattern per line) and "Open Repositories". Shows "Needs a Loom server" when the scoped
-   environment lacks the feature.
+   EXTENSION-POINTS.md, Settings) showing the clone location in use and its source (from
+   `listRepositories`) with a "Change in General settings" link to `/settings/general`, two
+   pattern textareas (one pattern per line) and "Open Repositories". Shows "Needs a Loom
+   server" when the scoped environment lacks the feature.
 9. `palette.tsx`: items `action:loom:project-lifecycle:open`,
    `action:loom:project-lifecycle:park-active` (only with an active thread whose project is
    on an environment with the feature), `action:loom:project-lifecycle:reopen`. `run`
@@ -208,13 +213,16 @@ In `apps/web/src/fork/project-lifecycle/`:
     renders null. Register in `FORK_ROOT_COMPONENTS`.
 11. Route file `apps/web/src/routes/loom.repositories.tsx` (SEAMS.md), then regenerate the
     route tree with `vp run --filter @t3tools/web build`.
-12. Typecheck `@t3tools/web`.
+12. `SidebarItem.tsx` (`RepositoriesSidebarItem`, TECHNICAL.md, Clients), then the two marked
+    lines in `apps/web/src/components/sidebar/SidebarChrome.tsx` exactly as SEAMS.md shows,
+    then `vp fmt` on that file and check both markers are still attached.
+13. Typecheck `@t3tools/web`.
 
 ### 7. Documentation
 
 - `docs/fork/user/project-lifecycle.md`: what Repositories does, how to open it, what Park
   checks, where parked folders go, how to reopen, and the Windows and Linux limits.
-- FORK.md rows from SEAMS.md.
+- FORK.md rows from SEAMS.md (the `SidebarChrome.tsx` row is new).
 - Packet index Status in `docs/fork/packets/README.md`.
 
 ## Pitfalls

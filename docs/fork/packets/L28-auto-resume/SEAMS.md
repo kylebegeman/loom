@@ -31,7 +31,7 @@ None. Registrations in fork-owned files:
 | `apps/server/src/fork/ForkLayer.ts`              | `AutoResumeLive,` in `ForkServicesLive` (service plus reactor)                                                       |
 | `apps/server/src/fork/persistence/migrations.ts` | `AutoResumeMigrations,`                                                                                              |
 | `apps/server/src/fork/rpc.ts`                    | `...(yield* makeAutoResumeRpcHandlers(auth)),`                                                                       |
-| `apps/server/src/fork/rpcAuthorization.ts`       | five scope entries                                                                                                   |
+| `apps/server/src/fork/rpcAuthorization.ts`       | seven scope entries                                                                                                  |
 | `apps/web/src/fork/composer/registry.tsx`        | `{ id: "auto-resume", Component: AutoResumeComposerChip },` in `FORK_COMPOSER_BLOCKS`                                |
 | `apps/web/src/fork/settings/registry.ts`         | `autoResumeSettings,`                                                                                                |
 | `apps/web/src/fork/commandPalette/registry.ts`   | `autoResumePaletteSource,`                                                                                           |
@@ -47,6 +47,10 @@ classifier needs updating (TESTING.md):
 - `thread.session-set` with `lastError` from ingestion:
   `apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts:1719-1727,2038-2060`.
 - Instance switch rules: `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts:663-686`.
+- Account kind from `ServerProvider.auth.type`: `apps/server/src/provider/Layers/CodexProvider.ts:97-103,532-545`
+  and `apps/server/src/provider/Layers/ClaudeProvider.ts:139-158`. A new or renamed type
+  counts as metered, so a change can only make switching more cautious; `switchTarget.test.ts`
+  pins the known values.
 
 ## Merge check
 

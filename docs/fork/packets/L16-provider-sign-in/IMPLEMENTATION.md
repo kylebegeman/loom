@@ -68,8 +68,11 @@ docs/fork/user/provider-sign-in.md
      `validateAntigravityCallbackUrl` (`apps/server/src/provider/antigravityCallback.ts:13`)
      to `localhost` and `127.0.0.1`; `forwardLoopbackCallback(url)` with `node:http`, 10 s
      limit, no redirects. Copy the code; do not import the Antigravity module's internals.
-   - `decorator.ts`: `decorateSnapshot` (setup flag, Codex message rewrite).
-   - `codexTools.ts`: `parseCredentialStore(configTomlText)` and the MCP/skill normalizers.
+   - `decorator.ts`: `decorateSnapshot` (setup flag, Codex message rewrite) and
+     `usesCustomEndpoint(input)`.
+   - `codexTools.ts`: `inspectCredentialStore(configTomlText)`,
+     `setCredentialStoreFile(configTomlText)` (write the byte-preservation cases first) and
+     the MCP/skill normalizers.
    - `accountFolders.ts`: `suggestAccountFolder(settings, existingPaths)` as a pure function
      over settings plus a set of existing paths.
 
@@ -82,19 +85,22 @@ docs/fork/user/provider-sign-in.md
      timeout (with `TestClock`), process exit, instance scope closed, sign-out during a flow.
 
 5. **Decorator and registration.** `providerSignInDecorator` wraps `create` for `codex` and
-   `claudeAgent`, builds the manager in the instance scope, decorates the snapshot shape and
-   `snapshotForCwd`, registers the manager. Append it to `FORK_PROVIDER_DRIVER_DECORATORS`.
+   `claudeAgent` (skipping disabled instances and custom-endpoint Claude instances), builds
+   the manager in the instance scope, decorates the snapshot shape and `snapshotForCwd`,
+   registers the manager. Append it to `FORK_PROVIDER_DRIVER_DECORATORS`.
    Test with a fake driver whose `create` returns a minimal instance: the decorated instance
    has the same `instanceId`, `driverKind`, `adapter` and `textGeneration`; the snapshot has
    `setup.canAuthenticate`; a disabled instance is returned untouched.
 
 6. **Storage and service.** `migrations.ts` (set `provider-sign-in`, table
    `fork_provider_sign_in_account_folders`), `ProviderSignInService.ts`, `accountFolders.ts`
-   IO, `codexTools.ts` IO. Add the service to `ForkServicesLive` and `ForkServices`, the
+   IO, `codexTools.ts` IO (the credential-store edit: hash check, backup first, temp file
+   plus rename, mode kept). Add the service to `ForkServicesLive` and `ForkServices`, the
    migration set to `FORK_MIGRATION_SETS`, `"provider-sign-in"` to `LOOM_SERVER_FEATURES`.
    Tests on `SqlitePersistenceMemory` and a temp directory: prepare refuses a non-empty
    folder, a path outside home, and a path another instance uses; release moves only recorded
-   folders and never deletes; stopSessions runs before sign-out (fake ProviderService).
+   folders and never deletes; stopSessions runs before sign-out (fake ProviderService); the
+   credential-store edit writes the backup before the file and refuses a changed file.
 
 7. **RPC handlers.** `rpc.ts` with `makeProviderSignInRpcHandlers(auth)`, each handler
    `auth.effect(TAG, withForkRuntime(...))` (`subscribe` uses `auth.stream`). Spread into
@@ -108,16 +114,20 @@ docs/fork/user/provider-sign-in.md
 9. **Web setup section.** `providerSetup.tsx` and `AccountSection.tsx`: status line, method
    menu (default from `defaultCodexMethod`), waiting states with Open, Copy, QR code and
    Cancel, the paste box, Sign out with confirmation (text in PRODUCT.md), the credential-store
-   notice, "Same account as" warning, Claude API key form writing a sensitive
-   `ANTHROPIC_API_KEY` environment variable through `useUpdateEnvironmentSettings`. Register
-   in `FORK_PROVIDER_SETUP_SECTIONS`. Use upstream primitives only; match
-   `ProviderSetupSection.tsx`'s row layout.
+   check or notice with the confirmation that shows the exact line and backup location, the
+   "Same account as" warning, the custom-endpoint message, and the Claude API key rows (Save,
+   then only Replace and Remove, never a reveal or copy) writing a sensitive
+   `ANTHROPIC_API_KEY` environment variable through `useUpdateEnvironmentSettings` with
+   `withClaudeApiKey`. Register in `FORK_PROVIDER_SETUP_SECTIONS`. Use upstream primitives
+   only; match `ProviderSetupSection.tsx`'s row layout.
 
 10. **Codex tools and import dialogs.** `CodexToolsDialog.tsx` (two tabs) and
     `ImportDialog.tsx`, opened from rows in the setup section.
 
 11. **Accounts section and account lifecycle.** `settings.tsx` ("Accounts" in the Loom
-    settings page, scope-gated like General), `AddAccountDialog.tsx`,
+    settings page, scope-gated like General, with the per-shared-home credential storage row
+    and its green check), `AddAccountDialog.tsx` (shadow home only for Codex, **Change
+    folder** as the advanced path, "Share my Claude skills" for Claude),
     `RemoveAccountDialog.tsx`. The client writes `providerInstances` exactly as
     `AddProviderInstanceDialog.tsx` does and removes an instance the way the provider editor's
     delete action does (`ProviderSettingsPanel.tsx:817`, `deleteProviderInstance`).
@@ -129,7 +139,9 @@ docs/fork/user/provider-sign-in.md
     `openProviderSetup` does (`apps/web/src/components/ChatView.tsx:4468-4476`).
 
 13. **Docs and status.** `docs/fork/user/provider-sign-in.md` (how to sign in, add an
-    account, what the credential-storage notice means, remote sign-in tips). Update the packet
+    account, what the credential-storage check and notice mean and where the backup goes,
+    that saved Claude API keys can be replaced or removed but not shown, why custom-endpoint
+    Claude instances have no sign-in, remote sign-in tips). Update the packet
     index Status. Fill SEAMS.md "Extension points created" and "Merge check".
 
 ## Pitfalls
@@ -154,6 +166,9 @@ docs/fork/user/provider-sign-in.md
   snapshot) but no sign-in UI. The rewritten message keeps the terminal command, so nothing
   gets worse for them.
 - **Tests never spawn real CLIs.** All process boundaries are injected.
+- **Kyle's real `~/.codex/config.toml`.** Never run the credential-store edit against it
+  during development; tests and the manual check use the scratch shared home. On Kyle's
+  machine the store is already `file`, so the real flow only shows the green check.
 
 ## Done when
 
@@ -164,6 +179,9 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
   with the same `CODEX_HOME`.
 - A Claude instance created with "Add Claude account" signs in, reports its email, and signs
   out, with the default Claude instance unaffected.
+- A saved Claude API key can be replaced and removed, and no client ever receives its value.
+- Switching a scratch shared home from `keyring` to `file` changes one line, leaves every
+  other byte identical, and leaves a backup.
 - Every waiting state has a working Cancel, and a server restart during a flow leaves the
   instance idle with no stray `codex app-server` or `claude` process (check with
   `ps -o pid,command -p <pid>` on the PIDs the test recorded, never by pattern).

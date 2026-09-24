@@ -1,12 +1,13 @@
 # L18: Project profiles and env panel
 
-Status: Not started.
+Status: Ready to build.
 
 Per-project knowledge that T3 Code's project settings do not cover, plus a view of the
 project's environment variables. A **project profile** holds private agent notes (preferences
 you cannot or do not want to commit to the repository), which project action is the project's
 test, build, typecheck, lint or dev command, advisory token budgets, and optional bindings to
-other Loom features. Agents read it through one MCP tool. The **Env panel** reads the
+other Loom features. Agents read it through one MCP tool (on by default), and the user can
+insert the notes into any message from the composer's `%` menu. The **Env panel** reads the
 project's `.env.schema` (the varlock / env-spec format) and shows each variable's type,
 whether it is required and sensitive, and whether it is set, never its value. When varlock is
 installed, project commands can be launched through `varlock run` from the panel.
@@ -25,8 +26,12 @@ installed, project commands can be launched through `varlock run` from the panel
   - "Validate with varlock" on demand (errors only) and "Run with varlock" for the project's
     actions, in the thread's terminal.
   - MCP tool `loom_project_profiles_get` (notes, commands by intent, env variable names and
-    status).
+    status), shared by default.
+  - "Insert project notes" in a `%` composer menu (`ext-composer-menu`), plain text, for
+    every provider.
   - Command palette entries.
+  - An empty `PROFILE_SECTION_ROWS` registry so other packets (L20's "No AI
+    identification" switch) can show a row in the profile.
 - Out:
   - Anything upstream already owns: default model and effort, runtime mode, thread env mode,
     the project actions (scripts) themselves and `t3.json`, agent browser and device access,
@@ -51,34 +56,42 @@ server", settings section shows the same.
 ## Extension points used
 
 [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core) (RPC, ForkLayer, persistence, reactor, capability `"project-profiles"`),
-[`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), [`ext-mcp`](../EXTENSION-POINTS.md#10-agent-facing-mcp-tools-ext-mcp). Create any that are missing.
+[`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), [`ext-mcp`](../EXTENSION-POINTS.md#10-agent-facing-mcp-tools-ext-mcp),
+[`ext-composer-menu`](../EXTENSION-POINTS.md#11b-composer-menu-trigger-ext-composer-menu) (the `%` trigger) and [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) (a
+small bridge that tells the trigger whether the active thread's environment has project
+profiles). Create any that are missing.
 
 ## Packet seams
 
 None. See [SEAMS.md](./SEAMS.md).
 
-## Dependencies needing approval
+## Dependencies
 
-`@env-spec/parser@0.6.0` (MIT, zero runtime dependencies) in `apps/server`, for parsing
-`.env.schema` and `.env` files. A new production dependency needs Kyle's approval before
-implementation (CONVENTIONS.md, lockfile rule). TECHNICAL describes the fallback if declined.
+`@env-spec/parser`, pinned to the exact version `0.6.0` (MIT, zero runtime dependencies) in
+`apps/server`, for parsing `.env.schema` and `.env` files. Approved by Kyle on 2026-09-24.
+Commit only the intended lockfile change (CONVENTIONS.md, lockfile rule).
 
 ## Optional integrations
 
 - If L01 (snippets) or L21 (skill registry) is present, it may register a binding source so
   the profile's Bindings section can pick its items, and may read the profile's bindings to
   rank bound items first. L18 works without either.
+- If L20 (small extras) is present with its private mode part, the profile shows L20's "No
+  AI identification" switch through `PROFILE_SECTION_ROWS`. Whichever packet lands second
+  adds the one registration line.
 - If L26 (code graph) is present: no integration in v1.
 
 ## Size
 
-Medium to large: about 2,500 to 3,000 lines including tests.
+Medium to large: about 2,700 to 3,200 lines including tests (the composer menu and its
+bridge add about 200).
 
 ## How an agent starts
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md and EXTENSION-POINTS.md, then this
-folder. Confirm the parser dependency with Kyle. Start with the pure pieces (schema reading,
-presence computation, budget delta math) and their tests, then storage, service, RPC, UI.
+folder. Every question is answered (PRODUCT.md, Decisions). Start with the pure pieces
+(schema reading, presence computation, budget delta math) and their tests, then storage,
+service, RPC, UI.
 
 ## Documents
 

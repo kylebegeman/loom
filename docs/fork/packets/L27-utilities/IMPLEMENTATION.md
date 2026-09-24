@@ -18,14 +18,18 @@ apps/web/src/fork/utilities/
   tools/hash.ts           hash, hmac
   tools/generate.ts       uuid, ulid, password, token, lorem
   tools/convert.ts        number-base, timestamp, color, case
+  tools/chmod.ts          chmod parse and format
   tools/cron.ts           cron parser, describer, next runs
   tools/text.ts           json, list, slug, count
+  tools/regexMatch.ts     regex matching (pure; used by the worker), pattern and flag validation
   tools/web.ts            url-parse, query, user-agent
+  tools/cidr.ts           IPv4 and IPv6 parsing, block math, contains
   tools/limits.ts         byte-size check, output truncation
   tools/*.test.ts         one test file per tools file
   registry.test.ts
   store.ts
-  UtilitiesView.tsx  ToolList.tsx  ToolView.tsx  DiffToolView.tsx
+  regexWorker.ts  regexRunner.ts   worker entry; createRegexRunner (timeout, restart)
+  UtilitiesView.tsx  ToolList.tsx  ToolView.tsx  DiffToolView.tsx  RegexView.tsx  ChmodView.tsx
   panel.tsx  UtilitiesDialogHost.tsx  palette.tsx  open.ts
 docs/fork/user/utilities.md
 ```
@@ -111,6 +115,55 @@ docs/fork/user/utilities.md
    restricted, a day matches if either matches. `@reboot` returns an error "Not a
    time-based schedule."
 
+   Regex: `tools/regexMatch.ts` validates flags (only `dgimsuvy`, each at most once, not
+   both `u` and `v`) and compiles the pattern for `run`; `matchAll` there does the matching
+   for the worker. `regexRunner.ts`:
+
+   ```ts
+   export function createRegexRunner(makeWorker: () => Worker, timeoutMs = 1000) {
+     let worker: Worker | null = null;
+     let nextId = 0;
+     return {
+       run(request: RegexRequest): Promise<RegexResponse> {
+         worker ??= makeWorker();
+         const id = ++nextId;
+         const current = worker;
+         return new Promise((resolve) => {
+           const timer = setTimeout(() => {
+             current.terminate();
+             if (worker === current) worker = null;
+             resolve({ kind: "timeout" });
+           }, timeoutMs);
+           current.onmessage = (event) => {
+             if (event.data.requestId !== id) return; // a stale answer
+             clearTimeout(timer);
+             resolve(event.data.response);
+           };
+           current.postMessage({ requestId: id, ...request });
+         });
+       },
+       dispose() {
+         worker?.terminate();
+         worker = null;
+       },
+     };
+   }
+   ```
+
+   `RegexView` creates it with `() => new RegexWorker()` from
+   `import RegexWorker from "./regexWorker.ts?worker"`, debounces 150 ms, ignores results
+   for superseded requests, and disposes on unmount.
+
+   CIDR: parse to `{ version: 4 | 6, address: bigint, prefix: number }`; mask =
+   `((1n << bits) - 1n) ^ ((1n << (bits - prefix)) - 1n)`; network = address AND mask;
+   last = network OR NOT mask within the width. IPv4 usable range excludes network and
+   broadcast except for /31 (both usable, RFC 3021) and /32 (one host). IPv6 has no
+   broadcast; every address counts.
+
+   chmod: parse to a 12-bit number; format octal (4 digits when a special bit is set, else
+   3), symbolic (`s`/`S`, `t`/`T` for the special bits), and the per-class sentence.
+   `ChmodView` toggles bits and writes the octal form back to the input.
+
    User agent: an ordered table of `{ test: RegExp, browser, versionGroup }` for Edge,
    Opera, Samsung Internet, Firefox, Chrome, Safari, plus engines (Blink, Gecko, WebKit),
    OS (Windows NT mapping, macOS, iOS, iPadOS hint, Android, Linux, ChromeOS) and bots
@@ -127,8 +180,8 @@ docs/fork/user/utilities.md
    in muted text, errors in the destructive color. `DiffToolView.tsx` wraps
    `MultiFileDiff` (check the `FileContents` shape in
    `node_modules/@pierre/diffs/dist/types.d.ts`; it carries a name and the contents).
-   `UtilitiesView.tsx` does search, categories, recents and the responsive list and detail
-   layout.
+   `RegexView.tsx` and `ChmodView.tsx` as above. `UtilitiesView.tsx` does search,
+   categories, recents and the responsive list and detail layout.
 
 6. **Panel, dialog, palette, command.**
 
@@ -149,7 +202,9 @@ docs/fork/user/utilities.md
    Append `"loom.utilities.open"` to `FORK_KEYBINDING_COMMANDS`.
 
 7. **Docs.** `docs/fork/user/utilities.md`: how to open it, that everything runs locally and
-   nothing is saved, that JWT signatures are not verified, and the cron dialect. Set the
+   nothing is saved, that JWT signatures are not verified, the cron dialect, that the regex
+   tester uses JavaScript's regex syntax and stops a match after 1 second, and that the CIDR
+   calculator handles IPv4 and IPv6. Set the
    packet index Status.
 
 ## Pitfalls
@@ -163,13 +218,22 @@ docs/fork/user/utilities.md
   message's position when present, otherwise show the message as is.
 - Keep `palette.tsx` free of implementation imports so the palette stays light.
 - Do not store drafts in localStorage, even "for convenience".
+- Never run a user regex on the main thread, not even "just to count matches"; only
+  compiling it there is safe.
+- `String.prototype.matchAll` throws without the `g` flag; use `exec` once in that case.
+- A zero-length match (for example `a*` on `bbb`) must advance, or the loop never ends;
+  `matchAll` handles it, a hand-written `exec` loop must bump `lastIndex`.
+- IPv4 parsing must reject `01.2.3.4` style octets rather than read them as octal, and
+  `256` or more in any octet.
 
 ## Done when
 
 The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done) (the
 server and `loomFeatures` items do not apply), plus:
 
-- All 26 tools pass their tests, including round trips for every two-way tool.
+- All 29 tools pass their tests, including round trips for every two-way tool.
+- `(a+)+$` against 40 `a`s followed by `b` in the regex tester stops after about a second
+  with the message, the page stays responsive, and the next pattern works.
 - The panel, the palette submenu and root actions, the dialog without a thread, and the
   keybinding all open the right tool.
 - A remote browser on plain `http` over Tailscale can hash, HMAC and generate UUIDs.

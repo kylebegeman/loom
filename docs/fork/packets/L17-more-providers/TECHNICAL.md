@@ -11,12 +11,15 @@ Two independent parts.
 Part A: model endpoints (no driver)
   web dialog ── loom.more-providers.endpointProbe ──> server probes the endpoint (HttpClient)
      │                                                    returns models, never stores the key
+     └── loom.more-providers.endpointPrepareFolder ──> creates the config folder (0700) and,
+            for cloud presets, the skills symlink
      └── upstream settings update: providerInstances[id] = Claude instance
             (own CLAUDE_CONFIG_DIR, endpoint env vars, customModels)
      └── loom.more-providers.endpointRecord ──> fork_more_providers_endpoints (no secrets)
+     └── loom.more-providers.endpointSetSkillsLink ──> per-instance switch, later
 
 Part B: ACP agents (fork drivers through ext-providers)
-  FORK_PROVIDER_DRIVERS = [loomCopilot, loomGemini, loomAcp]
+  FORK_PROVIDER_DRIVERS = [loomAcp, loomCopilot]   (loomCopilot added last, phase C)
      each = makeAcpAgentDriver(profile)
         snapshot: initialize-only probe (no session, no MCP, no auth side effects)
         adapter:  makeAcpAgentAdapter(profile) on upstream AcpSessionRuntime
@@ -37,6 +40,7 @@ export const ENDPOINT_PRESETS = {
     keyRequired: true,
     placeholderToken: null,
     folderSuffix: "deepseek",
+    shareSkillsDefault: true, // cloud endpoint
   },
   ollama: {
     label: "Ollama",
@@ -46,6 +50,7 @@ export const ENDPOINT_PRESETS = {
     keyRequired: false,
     placeholderToken: "ollama", // Ollama requires a token and ignores it
     folderSuffix: "ollama",
+    shareSkillsDefault: false, // local model
   },
   lmstudio: {
     label: "LM Studio",
@@ -55,6 +60,7 @@ export const ENDPOINT_PRESETS = {
     keyRequired: false,
     placeholderToken: "lmstudio",
     folderSuffix: "lmstudio",
+    shareSkillsDefault: false, // local model
   },
   other: {
     label: "Other Anthropic-compatible endpoint",
@@ -64,6 +70,7 @@ export const ENDPOINT_PRESETS = {
     keyRequired: false,
     placeholderToken: null,
     folderSuffix: "endpoint",
+    shareSkillsDefault: true, // treated as a cloud endpoint; the switch is right there
   },
 } as const;
 export type EndpointPresetId = keyof typeof ENDPOINT_PRESETS;
@@ -93,7 +100,16 @@ export const MORE_PROVIDERS_WS_METHODS = {
   endpointList: "loom.more-providers.endpointList",
   endpointForget: "loom.more-providers.endpointForget",
   endpointRefreshModels: "loom.more-providers.endpointRefreshModels",
+  endpointPrepareFolder: "loom.more-providers.endpointPrepareFolder",
+  endpointSetSkillsLink: "loom.more-providers.endpointSetSkillsLink",
 } as const;
+
+export const SkillsLinkState = Schema.Literals([
+  "linked", // <folder>/skills is Loom's symlink to the main Claude skills folder
+  "none", // no <folder>/skills
+  "own-folder", // a real directory or a symlink elsewhere: Loom never touches it
+  "no-source", // the main Claude skills folder does not exist
+]);
 
 export const EndpointProbeInput = Schema.Struct({
   preset: Schema.Literals(["deepseek", "ollama", "lmstudio", "other"]),
@@ -124,12 +140,19 @@ export const EndpointRecord = Schema.Struct({
   baseUrl: Schema.String,
   createdAt: IsoDateTime,
 });
+/** endpointList rows: the record plus the live skills state (read from disk, not stored). */
+export const EndpointListItem = Schema.Struct({
+  ...EndpointRecord.fields,
+  skills: SkillsLinkState,
+});
 // endpointProbe EndpointProbeInput -> EndpointProbeResult           (terminal:operate)
 // endpointSuggest { preset } -> { folder, instanceId, displayName }  (orchestration:read)
 // endpointRecord EndpointRecord minus createdAt -> EndpointRecord   (orchestration:operate)
-// endpointList {} -> { endpoints: EndpointRecord[] }                (orchestration:read)
+// endpointList {} -> { endpoints: EndpointListItem[] }              (orchestration:read)
 // endpointForget { instanceId } -> {}                               (orchestration:operate)
 // endpointRefreshModels { instanceId } -> EndpointProbeResult       (terminal:operate)
+// endpointPrepareFolder { folder, shareSkills } -> { folder, skills } (orchestration:operate)
+// endpointSetSkillsLink { instanceId, enabled } -> { skills }        (orchestration:operate)
 ```
 
 `endpointProbe` and `endpointRefreshModels` make the environment issue HTTP requests to a
@@ -155,24 +178,49 @@ content: "ping" }] }`, headers `anthropic-version: 2023-06-01`, `x-api-key` and
 - `EndpointStore.ts` over `fork_more_providers_endpoints`. A fork reactor is not needed:
   `endpointList` filters out records whose instance no longer exists in settings and deletes
   them lazily.
+- `SkillsLink.ts` (pure decisions plus small IO, tested in a temp directory):
+  - Source: the main Claude skills folder is `<home>/skills` where `<home>` is the
+    `homePath` of the default Claude instance (`defaultInstanceIdForDriver("claudeAgent")`,
+    `packages/contracts/src/providerInstance.ts:148`), expanded with `expandHomePath`, or
+    `~/.claude` when that is empty. This matches Kyle's layout
+    (`~/.claude_1/skills -> ~/.claude/skills`).
+  - `readSkillsLink(folder)`: `lstat(<folder>/skills)`; a symlink whose target resolves to
+    the source is `linked`; absent is `none` (or `no-source` when the source is missing);
+    anything else is `own-folder`.
+  - Link: only from `none`; create an absolute symlink `<folder>/skills` ->
+    source. Unlink: only from `linked`; remove the symlink itself (`unlink`, never a
+    recursive remove). `own-folder` and `no-source` refuse with the PRODUCT.md messages.
+- `endpointPrepareFolder`: expand `~`, require an absolute path inside the user's home
+  directory, refuse an existing non-empty directory, create it with mode `0700`, then link
+  skills when `shareSkills` is true. Claude Code fills the rest of the folder on first run.
+- `endpointSetSkillsLink`: only for recorded endpoint instances; reads the instance's
+  `homePath` from settings, then links or unlinks as above. Claude Code reads the skills
+  folder when a session starts, so the change applies to the next session; no instance
+  rebuild is needed.
 
 ### Web
 
 - `apps/web/src/fork/more-providers/EndpointDialog.tsx`: three steps (preset, connection,
-  models). On create: `endpointSuggest` returns a free folder (`~/.claude_<suffix>`, with a
-  number appended when the path exists on disk or is any instance's home), an unused instance
-  id and a display name; then one upstream settings update writes
+  models; the last one also holds the "Share my Claude skills" switch, defaulting to the
+  preset's `shareSkillsDefault`). On create: `endpointSuggest` returns a free folder
+  (`~/.claude_<suffix>`, with a number appended when the path exists on disk or is any
+  instance's home), an unused instance id and a display name; `endpointPrepareFolder`
+  creates it (and the link); then one upstream settings update writes
   `providerInstances[<id>] = { driver: "claudeAgent", displayName, accentColor, enabled: true,
 environment: buildEndpointEnvironment(...), config: { homePath: folder, customModels } }`
   the way `AddProviderInstanceDialog.tsx:195-208` does; then `endpointRecord`.
 - `settings.tsx`: the "Model endpoints" section: list from `endpointList` joined with live
-  provider snapshots (status, model count), **Add endpoint**, per row **Refresh models** and
-  **Open in Providers** (navigates to `/settings/providers` with `instanceId`).
+  provider snapshots (status, model count), **Add endpoint**, per row **Refresh models**,
+  a "Share Claude skills" switch (`endpointSetSkillsLink`; disabled with its message for
+  `own-folder` and `no-source`) and **Open in Providers** (navigates to
+  `/settings/providers` with `instanceId`).
 - `palette.ts`: "Add model endpoint".
 
-Claude Code creates its config directory contents on first run; the folder does not need
-preparing. It is a separate `CLAUDE_CONFIG_DIR` so the endpoint key never mixes with a
-cached Anthropic login (`docs/user/providers-claude.md`, "OpenRouter").
+Claude Code creates its config directory contents on first run; Loom only creates the empty
+folder and, when sharing, the `skills` link. It is a separate `CLAUDE_CONFIG_DIR` so the
+endpoint key never mixes with a cached Anthropic login (`docs/user/providers-claude.md`,
+"OpenRouter"). If L16 is present, its sign-in decorator skips these instances because they
+set `ANTHROPIC_BASE_URL`.
 
 ## Part B: ACP agents
 
@@ -200,9 +248,9 @@ export const LoomCopilotSettings = forkProviderSettingsSchema(
   },
   { order: ["binaryPath", "launchArgs"] },
 );
-// LoomGeminiSettings: same shape, placeholder "gemini".
-// LoomAcpSettings: command (required, text), args (textarea, one per line),
-//   displayHint (text, e.g. "Goose"), customModels (hidden).
+// LoomAcpSettings: command (required, text; description names the Gemini CLI example,
+//   PRODUCT.md), args (textarea, one per line), displayHint (text, e.g. "Gemini CLI"),
+//   customModels (hidden).
 ```
 
 Every fork driver defaults to `enabled: false` in its schema, like upstream's opt-in drivers,
@@ -212,15 +260,16 @@ and the Add dialog enables the instance it creates.
 
 ```ts
 export interface AcpAgentProfile<Settings> {
-  readonly driverKind: ProviderDriverKind; // "loomCopilot" | "loomGemini" | "loomAcp"
+  readonly driverKind: ProviderDriverKind; // "loomAcp" | "loomCopilot"
   readonly displayName: string;
   readonly settingsSchema: Schema.Codec<Settings, unknown>;
   readonly spawn: (settings: Settings, cwd: string, env: NodeJS.ProcessEnv) => AcpSpawnInput;
   /** Preferred ACP auth method ids, in order; the first one the agent advertises is used. */
   readonly authMethodPreference: ReadonlyArray<string>;
   readonly messages: {
-    readonly notInstalled: string;
-    readonly signedOut: string; // e.g. "Sign in with the Copilot CLI on this environment, then refresh."
+    readonly notInstalled: (settings: Settings) => string;
+    /** Receives the agent's advertised auth method names, possibly empty. */
+    readonly signedOut: (authMethodNames: ReadonlyArray<string>) => string;
   };
 }
 
@@ -292,21 +341,27 @@ handling, Cursor permission launch arguments). What remains and is generic:
 
 ### Profiles
 
-| Driver kind   | Spawn                                                        | Auth preference                                                                                                             | Notes                                                                                      |
-| ------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `loomCopilot` | `<binaryPath or "copilot"> --acp <launchArgs>`               | the agent's advertised login method                                                                                         | Verify whether `--stdio` is needed (old Loom passed it; 1.0.88's help lists only `--acp`). |
-| `loomGemini`  | `<binaryPath or "gemini"> --acp <launchArgs>`                | `gemini-api-key` when `GEMINI_API_KEY` or `GOOGLE_API_KEY` is set, else `oauth-personal` (old Loom's `GeminiAcpSupport.ts`) | Settings copy points individual users to Antigravity.                                      |
-| `loomAcp`     | `<command> <args...>` exactly as configured, `cwd` = project | the agent's first advertised method                                                                                         | The user owns the command; Loom never downloads it.                                        |
+Build order: `loomAcp` first (phase B), `loomCopilot` last (phase C).
+
+| Driver kind   | Spawn                                                        | Auth preference                     | Signed-out message                                                                                                                                                                | Notes                                                                                                                              |
+| ------------- | ------------------------------------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `loomAcp`     | `<command> <args...>` exactly as configured, `cwd` = project | the agent's first advertised method | "Not signed in. Sign in with this agent's own command on this environment, then refresh." plus the advertised method names                                                        | The user owns the command; Loom never downloads it. Gemini CLI runs here as `gemini` + `--acp`; sign in with the Gemini CLI first. |
+| `loomCopilot` | `<binaryPath or "copilot"> --acp <launchArgs>`               | the agent's advertised login method | "Not signed in. Run `copilot` on this environment and sign in with its login command, then refresh. Or add a `GH_TOKEN` environment variable to this provider." (CLI login first) | Built last. Verify whether `--stdio` is needed (old Loom passed it; 1.0.88's help lists only `--acp`) and the exact login command. |
+
+`GH_TOKEN` as a Copilot CLI credential (a token with Copilot access) is from GitHub's
+Copilot CLI documentation as remembered at writing time and was not re-verified; phase C's
+first step checks it with `copilot --help` and GitHub's docs, and adjusts the message if the
+variable name differs (for example `GITHUB_TOKEN`).
 
 ### Web (`apps/web/src/fork/more-providers/`)
 
-- `clientDefinitions.ts`: three `ProviderClientDefinition`s appended through
-  `FORK_PROVIDER_CLIENT_DEFINITIONS`: `{ value: "loomCopilot", label: "GitHub Copilot CLI",
-icon: GithubCopilotIcon, settingsSchema: LoomCopilotSettings, badgeLabel: "Loom" }`,
-  `{ value: "loomGemini", label: "Gemini CLI", icon: Gemini, ... }`,
-  `{ value: "loomAcp", label: "ACP agent", icon: ACPRegistryIcon, ... }`. The icons already
-  exist in upstream's `apps/web/src/components/Icons.tsx:568,738,749`.
-- `icons.ts`: the same three in `FORK_PROVIDER_ICONS`.
+- `clientDefinitions.ts`: two `ProviderClientDefinition`s appended through
+  `FORK_PROVIDER_CLIENT_DEFINITIONS`: `{ value: "loomAcp", label: "ACP agent", icon:
+ACPRegistryIcon, settingsSchema: LoomAcpSettings, badgeLabel: "Loom" }` (phase B) and
+  `{ value: "loomCopilot", label: "GitHub Copilot CLI", icon: GithubCopilotIcon, ... }`
+  (phase C). The icons already exist in upstream's `apps/web/src/components/Icons.tsx`
+  (`GithubCopilotIcon` and `ACPRegistryIcon`; line numbers drift, search for the names).
+- `icons.ts`: the same two in `FORK_PROVIDER_ICONS`.
 - The generic settings form, model picker, status banner and provider cards need nothing
   else: they are driven by the definition and the snapshot.
 
@@ -338,13 +393,15 @@ sensitive environment variables.
 
 ## Provider-by-provider decisions
 
-| Driver                                 | Decision                                                                             |
-| -------------------------------------- | ------------------------------------------------------------------------------------ |
-| Claude                                 | Endpoint instances are plain Claude instances. No Claude code changes.               |
-| Codex                                  | Not used for endpoints (its custom providers speak the Responses API; out of scope). |
-| OpenCode                               | Documented as the route for OpenAI-compatible-only endpoints; no code.               |
-| Cursor, Grok, Antigravity              | Untouched.                                                                           |
-| `loomCopilot`, `loomGemini`, `loomAcp` | New, on the generic ACP adapter.                                                     |
+| Driver                    | Decision                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------ |
+| Claude                    | Endpoint instances are plain Claude instances. No Claude code changes.               |
+| Codex                     | Not used for endpoints (its custom providers speak the Responses API; out of scope). |
+| OpenCode                  | Documented as the route for OpenAI-compatible-only endpoints; no code.               |
+| Cursor, Grok, Antigravity | Untouched.                                                                           |
+| `loomAcp`, `loomCopilot`  | New, on the generic ACP adapter; `loomCopilot` built last.                           |
+| Gemini CLI                | No driver of its own; runs as a `loomAcp` instance (`gemini --acp`).                 |
+| Antigravity               | Upstream's; the recommended Google route for individual accounts.                    |
 
 ## Agent-facing tools
 
@@ -352,6 +409,7 @@ None.
 
 ## Performance
 
+- The skills link is one `lstat` per endpoint row when the Model endpoints section loads.
 - Probes run on instance creation and settings changes (upstream's managed snapshot cadence),
   each an `initialize` round trip with a 10 s limit. No sessions in probes.
 - Each ACP thread owns one agent process, as Cursor and Grok do.
@@ -366,7 +424,12 @@ None.
   API to providers; DeepSeek and Ollama document Anthropic compatibility and Claude Code
   usage, so Claude is the surer path.
 - **One ACP driver kind with presets**: a single kind would share one icon and label in the
-  model picker. Three kinds cost three small profiles.
+  model picker. Copilot keeps its own kind for its icon and messages; everything else,
+  Gemini CLI included, uses `loomAcp`.
+- **A dedicated `loomGemini` driver**: dropped by Kyle. Individual Gemini CLI accounts
+  stopped working on 2026-06-18 and upstream supports Antigravity; the generic option
+  covers Code Assist users.
+- **An OpenCode preset for DeepSeek**: declined by Kyle; the Claude-based preset is enough.
 - **Reusing upstream's reserved kinds** (`githubCopilot`, `gemini`, `acpRegistry`): a future
   upstream driver would decode fork configs with its own schema. Rejected.
 - **ACP registry download**: deferred (supply-chain surface, platform archives).

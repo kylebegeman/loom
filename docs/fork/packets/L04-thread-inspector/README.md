@@ -1,6 +1,6 @@
 # L04: Thread Inspector
 
-Status: Not started.
+Status: Ready to build.
 
 One status card for the current thread: what it is doing, where it works (project, branch,
 worktree, pull request), what it changed (uncommitted files, last turn's files), its plan,
@@ -34,6 +34,8 @@ holds, so it works against any T3 server.
   - Old Loom's "Sources / Related context" section (it depended on old Loom's Context layer).
   - Mobile: upstream mobile already has its own tablet inspector (git, files and route
     panes), a different feature.
+  - A "keep open" pin on the card (decided: not wanted). The panel tab is the keep-open
+    view.
 
 ## Surfaces
 

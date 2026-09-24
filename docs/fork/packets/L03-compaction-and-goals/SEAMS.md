@@ -6,27 +6,29 @@ creates the extension point.
 ## Extension points
 
 Used: `ext-core` (with persistence and a reactor), `ext-web-root`, `ext-keybindings`,
-`ext-palette`, and `ext-turn-input` (section 16). Run each existence check from
+`ext-palette`, `ext-composer` (section 11, for the footer button) and `ext-turn-input`
+(section 16). Run each existence check from
 EXTENSION-POINTS.md; create missing ones exactly as specified, one commit each, before any
 packet code. Record which ones this packet created and their commits here.
 
 Registrations (fork-owned files only):
 
-| Registry                                               | Entry                                                                              |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| `packages/contracts/src/fork/index.ts`                 | `export * from "./compaction-and-goals.ts";`                                       |
-| `packages/contracts/src/fork/rpc.ts` `.merge(`         | `CompactionAndGoalsRpcGroup,`                                                      |
-| `packages/contracts/src/fork/keybindings.ts`           | `"loom.compaction-and-goals.compact"`, `"loom.compaction-and-goals.goal"`          |
-| `packages/client-runtime/src/fork/index.ts`            | `export * from "./compaction-and-goals.ts";`                                       |
-| `apps/server/src/fork/features.ts`                     | `"compaction-and-goals"`                                                           |
-| `apps/server/src/fork/ForkRuntime.ts` `ForkServices`   | `\| ThreadGoalStore \| ThreadGoalService`                                          |
-| `apps/server/src/fork/ForkLayer.ts` `ForkServicesLive` | store, service, cleanup reactor                                                    |
-| `apps/server/src/fork/persistence/migrations.ts`       | `CompactionAndGoalsMigrations`                                                     |
-| `apps/server/src/fork/rpcAuthorization.ts`             | four scopes                                                                        |
-| `apps/server/src/fork/rpc.ts`                          | `...(yield* makeCompactionAndGoalsRpcHandlers(auth)),`                             |
-| `apps/server/src/fork/turnInput/registry.ts`           | registered at runtime by `ThreadGoalService` (id `compaction-and-goals`, order 20) |
-| `apps/web/src/fork/ForkRoot.tsx`                       | `{ id: "compaction-and-goals", Component: GoalCommandsHost }`                      |
-| `apps/web/src/fork/commandPalette/registry.ts`         | `compactionAndGoalsPaletteSource,`                                                 |
+| Registry                                                         | Entry                                                                              |
+| ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `packages/contracts/src/fork/index.ts`                           | `export * from "./compaction-and-goals.ts";`                                       |
+| `packages/contracts/src/fork/rpc.ts` `.merge(`                   | `CompactionAndGoalsRpcGroup,`                                                      |
+| `packages/contracts/src/fork/keybindings.ts`                     | `"loom.compaction-and-goals.compact"`, `"loom.compaction-and-goals.goal"`          |
+| `packages/client-runtime/src/fork/index.ts`                      | `export * from "./compaction-and-goals.ts";`                                       |
+| `apps/server/src/fork/features.ts`                               | `"compaction-and-goals"`                                                           |
+| `apps/server/src/fork/ForkRuntime.ts` `ForkServices`             | `\| ThreadGoalStore \| ThreadGoalService`                                          |
+| `apps/server/src/fork/ForkLayer.ts` `ForkServicesLive`           | store, service, cleanup reactor                                                    |
+| `apps/server/src/fork/persistence/migrations.ts`                 | `CompactionAndGoalsMigrations`                                                     |
+| `apps/server/src/fork/rpcAuthorization.ts`                       | four scopes                                                                        |
+| `apps/server/src/fork/rpc.ts`                                    | `...(yield* makeCompactionAndGoalsRpcHandlers(auth)),`                             |
+| `apps/server/src/fork/turnInput/registry.ts`                     | registered at runtime by `ThreadGoalService` (id `compaction-and-goals`, order 20) |
+| `apps/web/src/fork/ForkRoot.tsx`                                 | `{ id: "compaction-and-goals", Component: GoalCommandsHost }`                      |
+| `apps/web/src/fork/commandPalette/registry.ts`                   | `compactionAndGoalsPaletteSource,`                                                 |
+| `apps/web/src/fork/composer/registry.tsx` `FORK_COMPOSER_BLOCKS` | `{ id: "compaction-and-goals", Component: GoalComposerButton }`                    |
 
 ## `ext-turn-input`
 
@@ -93,8 +95,9 @@ upstream; conflicts are acceptable only on the marked lines.
 | -------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------- |
 | `apps/web/src/components/ChatView.tsx` | `compaction-and-goals` | Goal chip in the timeline banner overlay. See `docs/fork/packets/L03-compaction-and-goals`. |
 
-"Extension point seams" (if this packet creates `ext-turn-input`):
+"Extension point seams" (only for the extension points this packet creates):
 
 | File                                                 | Marker                 | Why                                                                     |
 | ---------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------- |
 | `apps/server/src/provider/Layers/ProviderService.ts` | `fork: ext-turn-input` | Fork contributors prepend standing text to every provider turn's input. |
+| `apps/web/src/components/chat/ChatComposer.tsx`      | `fork: ext-composer`   | Fork key handlers, footer blocks and drawers in the composer.           |

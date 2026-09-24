@@ -3,17 +3,18 @@
 ## Extension points created by this packet
 
 None specific. It uses `ext-core` (with persistence, reactors), `ext-panels`, `ext-mcp`,
-`ext-settings`, `ext-palette` and `ext-diff-header`
+`ext-settings`, `ext-palette`, `ext-web-root` and `ext-diff-header`
 ([EXTENSION-POINTS.md, section 17](../EXTENSION-POINTS.md#17-diff-panel-header-ext-diff-header)). Run each existence check; create any missing
 one exactly as specified in [EXTENSION-POINTS.md](../EXTENSION-POINTS.md), one commit each,
 and record the commits here.
 
 ## Registrations (fork-owned files only)
 
-| Registry                   | File                                       | Entry                                                   |
-| -------------------------- | ------------------------------------------ | ------------------------------------------------------- |
-| `FORK_DIFF_HEADER_ACTIONS` | `apps/web/src/fork/diffHeader/registry.ts` | `codeGraphDiffHeaderAction` (id `code-graph`)           |
-| `FORK_PANELS`              | `apps/web/src/fork/panels/registry.ts`     | `codeGraphPanel` (id `code-graph`, launcher letter `Y`) |
+| Registry                   | File                                       | Entry                                                                |
+| -------------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| `FORK_DIFF_HEADER_ACTIONS` | `apps/web/src/fork/diffHeader/registry.ts` | `codeGraphDiffHeaderAction` (id `code-graph`)                        |
+| `FORK_PANELS`              | `apps/web/src/fork/panels/registry.ts`     | `codeGraphPanel` (id `code-graph`, launcher letter `Y`)              |
+| `FORK_ROOT_COMPONENTS`     | `apps/web/src/fork/ForkRoot.tsx`           | `{ id: "code-graph-open-watcher", Component: CodeGraphOpenWatcher }` |
 
 The other registrations (RPC group, services, migrations, MCP toolkit, settings section,
 palette source) follow EXTENSION-POINTS.md and are listed in TECHNICAL.md.

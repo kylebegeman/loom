@@ -15,9 +15,12 @@ when a line has moved.
    |- ParkAssessor        git status/for-each-ref/stash/worktree  subscribeProjectClones
    |- Trash               /usr/bin/trash | ~/.Trash rename | gio      (upstream clone toast)
    |- ParkedStore         fork_project_lifecycle_parked
-   |- SettingsStore       fork_project_lifecycle_settings
+   |- SettingsStore       fork_project_lifecycle_settings (extra patterns only)
    uses upstream services: VcsProcess, ProjectionSnapshotQuery, OrchestrationEngineService,
-   ProjectCloneTracker, RepositoryIdentityResolver, VcsStatusBroadcaster, ServerConfig
+   ProjectCloneTracker, RepositoryIdentityResolver, VcsStatusBroadcaster, ServerConfig,
+   ServerSettingsService (addProjectBaseDirectory, the clone location)
+
+ web sidebar footer: RepositoriesSidebarItem (packet seam in SidebarChrome.tsx) -> /loom/repositories
 ```
 
 What upstream already provides and this packet reuses instead of rebuilding:
@@ -44,8 +47,10 @@ What upstream already provides and this packet reuses instead of rebuilding:
   provided to the whole runtime (`apps/server/src/server.ts:803`) and caps git at 8 and
   GitHub at 4 concurrent processes (`VcsProcess.ts:57-58`).
 - **Add project base directory.** Upstream's per-environment server setting
-  `addProjectBaseDirectory` (`packages/contracts/src/settings.ts:1133`) seeds the Add Project
-  browser. This packet keeps its own clone location (PRODUCT.md, open question 1).
+  `addProjectBaseDirectory` (`packages/contracts/src/settings.ts:1133`, default `""`) seeds
+  the Add Project browser and is edited in Settings, General, "Add project starts in"
+  (`apps/web/src/components/settings/SettingsPanels.tsx:2831-2858`). This packet uses it as
+  the clone location and keeps no setting of its own (PRODUCT.md, Decisions).
 
 `GitHubCli` is not reachable from ForkLayer as a service: it is provided only into the
 source control provider registry (`apps/server/src/server.ts:278-290`,
@@ -72,16 +77,16 @@ export const PROJECT_LIFECYCLE_WS_METHODS = {
 } as const;
 
 export const ProjectLifecycleSettings = Schema.Struct({
-  /** As typed by the user; `~` allowed. */
-  cloneRoot: TrimmedNonEmptyString,
   extraSafePatterns: Schema.Array(TrimmedNonEmptyString),
   extraKeepPatterns: Schema.Array(TrimmedNonEmptyString),
 });
 export const DEFAULT_PROJECT_LIFECYCLE_SETTINGS: ProjectLifecycleSettings = {
-  cloneRoot: "~/Developer/active",
   extraSafePatterns: [],
   extraKeepPatterns: [],
 };
+
+/** Used when upstream's addProjectBaseDirectory is empty. */
+export const DEFAULT_CLONE_ROOT = "~/Developer/active";
 
 export const GitHubRepositoryEntry = Schema.Struct({
   nameWithOwner: TrimmedNonEmptyString,
@@ -136,6 +141,8 @@ export const ParkedRecord = Schema.Struct({
 export const RepositoriesResult = Schema.Struct({
   platform: Schema.Literals(["darwin", "linux", "win32", "other"]),
   cloneRoot: TrimmedNonEmptyString, // resolved absolute path
+  /** Where cloneRoot came from: upstream's "Add project starts in", or DEFAULT_CLONE_ROOT. */
+  cloneRootSource: Schema.Literals(["add-project-setting", "default"]),
   canPark: Schema.Boolean,
   parkUnavailableReason: Schema.NullOr(Schema.String),
   github: GitHubInventory,
@@ -173,7 +180,8 @@ export const ParkBlocker = Schema.Struct({
 export const IgnoredClass = Schema.Literals(["safe", "keep", "review"]);
 export const IgnoredGroup = Schema.Struct({
   class: IgnoredClass,
-  paths: Schema.Array(Schema.String), // capped at 200 per class, see `counts`
+  /** Capped at 1,000 for keep (the dialog lists each one) and 200 for safe and review; see `counts`. */
+  paths: Schema.Array(Schema.String),
 });
 
 export const ParkAssessment = Schema.Struct({
@@ -216,16 +224,16 @@ export class ProjectLifecycleError extends Schema.TaggedErrorClass<ProjectLifecy
 RPCs (all unary, none streaming; every `error` is
 `Schema.Union([ProjectLifecycleError, EnvironmentAuthorizationError])`):
 
-| Tag                | Payload                                                                 | Success                                             | Scope                   |
-| ------------------ | ----------------------------------------------------------------------- | --------------------------------------------------- | ----------------------- |
-| `getSettings`      | `{}`                                                                    | `ProjectLifecycleSettings`                          | `orchestration:read`    |
-| `updateSettings`   | `ProjectLifecycleSettings`                                              | `ProjectLifecycleSettings`                          | `orchestration:operate` |
-| `listRepositories` | `{ refreshGitHub: boolean }`                                            | `RepositoriesResult`                                | `orchestration:read`    |
-| `assessPark`       | `{ path: string }`                                                      | `ParkAssessment`                                    | `orchestration:read`    |
-| `pushAll`          | `{ path: string }`                                                      | `{ pushedBranches: string[]; pushedTags: boolean }` | `orchestration:operate` |
-| `park`             | `{ path; token; archiveThreads: boolean; acknowledgeIgnored: boolean }` | `ParkedRecord`                                      | `orchestration:operate` |
-| `reopen`           | `{ parkedId; unarchiveThreads: boolean }`                               | `{ projectId; cwd }`                                | `orchestration:operate` |
-| `forgetParked`     | `{ parkedId }`                                                          | `{ removed: boolean }`                              | `orchestration:operate` |
+| Tag                | Payload                                                                                          | Success                                             | Scope                   |
+| ------------------ | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- | ----------------------- |
+| `getSettings`      | `{}`                                                                                             | `ProjectLifecycleSettings`                          | `orchestration:read`    |
+| `updateSettings`   | `ProjectLifecycleSettings`                                                                       | `ProjectLifecycleSettings`                          | `orchestration:operate` |
+| `listRepositories` | `{ refreshGitHub: boolean }`                                                                     | `RepositoriesResult`                                | `orchestration:read`    |
+| `assessPark`       | `{ path: string }`                                                                               | `ParkAssessment`                                    | `orchestration:read`    |
+| `pushAll`          | `{ path: string }`                                                                               | `{ pushedBranches: string[]; pushedTags: boolean }` | `orchestration:operate` |
+| `park`             | `{ path; token; archiveThreads: boolean; acknowledgeKeep: boolean; acknowledgeReview: boolean }` | `ParkedRecord`                                      | `orchestration:operate` |
+| `reopen`           | `{ parkedId; unarchiveThreads: boolean }`                                                        | `{ projectId; cwd }`                                | `orchestration:operate` |
+| `forgetParked`     | `{ parkedId }`                                                                                   | `{ removed: boolean }`                              | `orchestration:operate` |
 
 `orchestration:operate` matches upstream's scope for `projectClone.start/cancel` and
 `sourceControl.cloneRepository` (`apps/server/src/auth/RpcAuthorization.ts:98-102`), which
@@ -320,8 +328,12 @@ TTL. `refreshGitHub: true` bypasses it. Concurrent callers share one in-flight f
 
 ### Local checkouts
 
-1. Resolve `cloneRoot` (settings, `expandHomePath` from `apps/server/src/pathExpansion.ts:19`,
-   then `realPath`). Missing root: return no scanned checkouts, not an error.
+1. Resolve `cloneRoot`: `ServerSettingsService.getSettings` on this environment gives
+   `addProjectBaseDirectory`; when it is empty after trimming, use `DEFAULT_CLONE_ROOT`
+   (`cloneRootSource` says which). Expand with `expandHomePath`
+   (`apps/server/src/pathExpansion.ts:19`), then `realPath`. Missing root: return no scanned
+   checkouts, not an error; the page still shows the path. This is the same value upstream's
+   palette reads for Add Project (`apps/web/src/components/CommandPalette.tsx:976`).
 2. Scan `cloneRoot` to depth 2. A directory that contains `.git` (file or directory) is a
    checkout; do not descend into it. Skip names starting with `.` and the usual heavy names
    (`node_modules`, `target`, `dist`, `build`, `Library`, `vendor`). Skip entries whose
@@ -417,17 +429,23 @@ branch; the dialog re-runs the assessment afterwards. Never `--force`.
 ### Park
 
 ```
-park({ path, token, archiveThreads, acknowledgeIgnored })
+park({ path, token, archiveThreads, acknowledgeKeep, acknowledgeReview })
   1. assessment := assessPark(path); refuse if assessment.token != token (stale-assessment)
   2. refuse if assessment.blockers is non-empty (blocked)
-  3. refuse if counts.keep + counts.review > 0 and not acknowledgeIgnored (blocked)
-  4. serialize per path with a Semaphore keyed by realpath (one park at a time per checkout)
-  5. moveToTrash(linked worktree paths), then moveToTrash(path)
-  6. insert fork_project_lifecycle_parked row
-  7. if archiveThreads: dispatch thread.archive for every non-archived thread of the
+  3. refuse if counts.keep > 0 and not acknowledgeKeep (blocked: "Confirm you have the
+     files to keep elsewhere")
+  4. refuse if counts.review > 0 and not acknowledgeReview (blocked)
+  5. serialize per path with a Semaphore keyed by realpath (one park at a time per checkout)
+  6. moveToTrash(linked worktree paths), then moveToTrash(path)
+  7. insert fork_project_lifecycle_parked row
+  8. if archiveThreads: dispatch thread.archive for every non-archived thread of the
      project and of its linked worktrees (server command ids `server:loom-park:<uuid>`)
-  8. return the record
+  9. return the record
 ```
+
+Keep files are a confirmation, not a blocker: they never appear in `blockers` and never
+change `decideParkBlockers`. Nothing in this packet reads, copies or uploads a Keep file's
+content (`.env` files included); the assessment carries only paths.
 
 Archiving comes after the move so a failed move leaves threads untouched. A failed archive
 dispatch is logged and reported in the result but does not undo the park (the folder is
@@ -530,9 +548,21 @@ CREATE TABLE IF NOT EXISTS fork_project_lifecycle_settings (
   - `RepositoriesPage.tsx`: header, environment select, filter tabs, search, table.
   - `repositoriesModel.ts`: pure join of GitHub rows, local checkouts, projects and parked
     records into `RepositoryRow[]`, plus filtering and sorting. Unit tested.
-  - `ParkDialog.tsx`, `ReopenDialog.tsx`, `CloneDialog.tsx` (destination field seeded with
+  - `ParkDialog.tsx` (Keep files listed one per line with the "I have these elsewhere"
+    checkbox; Review files summarized with the general acknowledgement; Park enabled only
+    when every blocker is gone and each shown acknowledgement is ticked), `ReopenDialog.tsx`,
+    `CloneDialog.tsx` (destination field seeded with
     `getCloneDestinationPath(cloneRoot, getCloneDirectoryName(nameWithOwner))`).
-  - `settingsSection.tsx`: the Loom settings section.
+  - `settingsSection.tsx`: the Loom settings section (clone location read only with a link
+    to `/settings/general`, pattern textareas, "Open Repositories").
+  - `SidebarItem.tsx`: `RepositoriesSidebarItem`, rendered by the packet seam in
+    `SidebarChrome.tsx` (SEAMS.md). It returns `null` unless some connected environment's
+    capabilities include `project-lifecycle` (the same test upstream uses for Pull Requests,
+    `SidebarChrome.tsx:147-149`, with `supportsLoomFeature`), and otherwise renders the same
+    markup as upstream's private `SidebarUtilityItem` (`SidebarChrome.tsx:103-126`:
+    `SidebarMenuItem`, `Tooltip`, `SidebarMenuButton size="icon"`) with `FolderGit2Icon`
+    (lucide) and the label "Repositories". Click closes the mobile sidebar (`useSidebar`) and
+    navigates to `/loom/repositories`.
   - `palette.tsx`: palette source.
   - `ShortcutHost.tsx`: `ForkRoot` component subscribing to `loom.project-lifecycle.open`.
 - Environment selection: `useEnvironments()` (`apps/web/src/state/environments.ts:37`),

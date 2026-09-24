@@ -45,7 +45,8 @@ headless Xcode and simulator tooling. T3 already has the device panel itself") i
 ## argent (software-mansion/argent)
 
 https://github.com/software-mansion/argent, reviewed at `3c1f2ae` (2026-09-21), package
-`@swmansion/argent` 0.25.2.
+`@swmansion/argent` 0.25.2. `npm view @swmansion/argent version` returned 0.25.2 on 2026-09-24
+(the version Loom's install command pins).
 
 - License: mixed. Source is Apache-2.0 (`LICENSE.txt`); the per-platform
   `bin/<platform>/simulator-server`, `bin/darwin/ax-service` and the `native-devtools-ios`

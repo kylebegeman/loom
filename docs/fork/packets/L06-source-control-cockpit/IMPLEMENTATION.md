@@ -76,6 +76,8 @@ In `apps/server/src/fork/source-control-cockpit/`:
 2. `laneFacts.ts`, `graph.ts`, `conflicts.ts`, `switchPreflight.ts`, `stash.ts` using the
    parsers. Stash operations run under a per-cwd `Semaphore` and call
    `VcsStatusBroadcaster.refreshLocalStatus(cwd)` afterwards, ignoring its failure.
+   `operationStep.ts` (continue and abort, TECHNICAL.md) shares that semaphore; its git
+   helper call overrides the env with `GIT_EDITOR=true` and the longer timeout.
 3. `checks.ts` and `checkLog.ts` with the cache from TECHNICAL.md (a `Ref<Map>` with
    timestamps; no new dependency).
 4. `leakScan.ts`: availability check and scan.
@@ -112,7 +114,10 @@ In `apps/web/src/fork/source-control-cockpit/`, in this order:
    call in `apps/web/src/components/GitActionsControl.tsx:1064-1070`), lane facts, sibling
    threads, PR rows, stash rows with Apply and Pop, operation banner.
 4. `graphLayout.ts` (pure, tested) and `GraphView.tsx`.
-5. `ConflictsView.tsx` and `prompts.ts` (`buildResolveLocalConflictsPrompt`).
+5. `ConflictsView.tsx` and `prompts.ts` (`buildResolveLocalConflictsPrompt`). Continue and
+   Abort buttons with `AlertDialog` confirmations and the disabled states from PRODUCT.md
+   (unmerged files remain; a thread on this checkout is working; bisect shows no buttons),
+   decided by a pure `operationButtons.ts` (`resolveOperationButtons`, tested).
 6. `SafeSwitch.tsx`: ref picker from `vcsEnvironment.listRefs`, preflight, then the switch
    sequence copied from `BranchToolbarBranchSelector.tsx:409-467` and its `setThreadBranch`
    (`:170-205`): `resolveBranchSelectionTarget`, `vcsEnvironment.switchRef`,
@@ -179,6 +184,14 @@ export function buildFixCheckPrompt(input: {
   (`useComposerDraftStore.getState().getComposerDraft(threadRef)`) and append. Verify the
   editor reflects external `setPrompt` calls; if it does not while mounted, fall back to
   copying the prompt to the clipboard with a toast.
+- "Ask the agent" must never call `startTurn` or any send path; it only edits the draft.
+- Continue and abort: never stage files for the user, never run them without the
+  confirmation, and always pass `expectedHead` so a repository that moved (an agent
+  committed, the user ran git in a terminal) is rejected as `stale`. `GIT_EDITOR=true` is
+  required, otherwise `git merge --continue` or `git rebase --continue` waits for an editor
+  on the environment until the timeout. An interactive rebase may run `exec` steps on
+  continue, as it would in a terminal.
+- Stash and switch: pass `includeUntracked: true`; never add `--all`.
 - Stash refs shift after a push or pop; always re-read the list after a stash operation and
   never cache `stash@{n}` across operations.
 
@@ -188,5 +201,8 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
 
 - Switching with an overlapping dirty file never reaches git's refusal: the preflight says
   "conflict" first and "Stash and switch" works, and the stash can be popped back.
-- A rebase with conflicts shows every unmerged file with its kind.
+- A rebase with conflicts shows every unmerged file with its kind; after resolving and
+  staging, Continue (confirmed) finishes it or stops at the next conflict; Abort (confirmed)
+  restores the pre-rebase branch.
+- "Ask the agent to fix" and "Ask the agent to resolve" fill the composer and send nothing.
 - A failed Actions job shows the end of its log.

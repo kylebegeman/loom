@@ -64,7 +64,9 @@ written, and where each ended up:
 Each selected item is built as an implementation packet under
 [packets/](./packets/README.md). F4 and F7 were first listed as not selected and are now
 packets L27 and L28. L22, L25 and L26 were not in the original selection; they came from the
-review of the reference repositories below.
+review of the reference repositories below. L29 (Jev hub) came from settling the packet
+questions: Jev, TypeSafe's decision model, is used optionally by several packets through the
+shared `ext-decide` extension point, and L29 adds the tools to trial and tune it.
 
 | Packet | Selection                           | Packet | Selection         |
 | ------ | ----------------------------------- | ------ | ----------------- |
@@ -82,6 +84,7 @@ review of the reference repositories below.
 | L12    | P14                                 | L26    | Repository review |
 | L13    | P15, F8 (clipboard history)         | L27    | F4                |
 | L14    | F8 (the rest)                       | L28    | F7                |
+|        |                                     | L29    | Jev hub           |
 
 ## Standalone apps, specified separately
 

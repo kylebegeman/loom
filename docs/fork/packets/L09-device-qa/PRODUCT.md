@@ -27,7 +27,11 @@ records a flow once, and anyone replays it without an LLM.
 - **Evidence tab:** capture a screenshot of the device (with an optional clean 9:41 status bar
   on iOS simulators), record the screen for up to three minutes, and see every screenshot,
   recording, install and flow report captured in this thread by Kyle or by an agent. Attach any
-  item to the composer, copy its path, or delete it.
+  item to the composer, copy its path, or delete it. The tab header shows how much disk the
+  thread's evidence uses ("Evidence: 14 items, 212 MB") and has "Delete all for this thread"
+  (with a confirmation naming the count and size).
+- Evidence is kept until its thread is deleted. An optional setting, "Delete evidence older
+  than N days" (off by default), removes older items automatically.
 - **Install tab:** install a built `.app` (iOS simulator) or `.apk` (Android emulator) from the
   workspace, optionally launching it after install.
 - Let agents run flows and capture screenshots through MCP tools when **Agent device access** is
@@ -43,7 +47,7 @@ records a flow once, and anyone replays it without an LLM.
 | Command palette: "Device QA: Open", "Device QA: Capture screenshot", "Device QA: Run last flow"       | As named; hidden when the feature is absent or no device is booted.                                                                               | "Device QA: Stop recording" while recording, "Device QA: Cancel flow run" while running. |
 | Keybinding commands `loom.device-qa.toggle`, `loom.device-qa.capture`, `loom.device-qa.run-last-flow` | Unbound by default.                                                                                                                               | Same as the palette.                                                                     |
 | Composer                                                                                              | "Attach" on an evidence item adds the image (or the recording, if under the upload limit) to the draft; "Record with the agent" fills the prompt. | Remove the attachment or text from the draft.                                            |
-| Settings, Loom page, "Device QA" section                                                              | argent path override, run history size, evidence retention, default clean status bar.                                                             | Toggle back.                                                                             |
+| Settings, Loom page, "Device QA" section                                                              | argent path override, run history size, "Delete evidence older than N days" (off by default), default clean status bar.                           | Toggle back.                                                                             |
 | Agent tools                                                                                           | `loom_device_qa_flow`, `loom_device_qa_capture`. Items they create appear in the panel marked "Agent".                                            | Turn off Agent device access upstream.                                                   |
 
 ## States
@@ -61,6 +65,9 @@ records a flow once, and anyone replays it without an LLM.
   toolbar button; Stop.
 - **Errors**: argent rejected the flow (validation error from argent, shown verbatim), the
   device went away, the recording failed to finalize. Each keeps the partial evidence.
+- **Physical device selected** (for example from the Device panel toolbar on a connected
+  iPhone): the Flows tab says "Flows run on simulators and emulators in this version." and
+  offers the booted simulators instead.
 - **Disabled**: server lacks `device-qa` in `loomFeatures`: launcher disabled, palette entries
   and toolbar buttons hidden.
 
@@ -72,26 +79,25 @@ SSH device hosts support screenshots only (through the device hub); flows, recor
 installs are local-host only in v1, and the panel says so for such a device. Mobile shows
 nothing. An upstream server hides everything.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Flows are argent YAML in the project (`.argent/flows/`), committed with the code. Loom adds no
-  second format.
+  second format. Reason: argent records flows through agents and replays them without an LLM.
 - argent is installed by the user, never bundled, and its telemetry is disabled for every run
-  Loom starts (`DO_NOT_TRACK=1`, which argent documents as always winning).
+  Loom starts (`DO_NOT_TRACK=1`, which argent documents as always winning). Reason: argent's
+  platform binaries are proprietary and telemetry is on by default.
+- The install command pins argent 0.25.2 (the current npm release), held in the single
+  `ARGENT_PINNED_VERSION` constant. Reason (Kyle): a known version for the command Loom types;
+  other installed versions still run.
 - Evidence belongs to the thread and lives under Loom's state directory, not in the workspace,
   so it never shows up in git.
+- Evidence is kept until the thread is deleted. "Delete evidence older than N days" is an
+  optional setting, off by default; the Evidence tab shows the thread's total evidence size and
+  has "Delete all for this thread". Reason (Kyle): nothing disappears unexpectedly, and disk use
+  stays visible and easy to reclaim.
+- Flow runs are limited to simulators and emulators in v1. Reason (Kyle): physical iPhones need
+  a cable to the environment host and a subset of argent's tools. Follow-up recorded in the
+  README.
 - Agent access reuses upstream's "Agent device access" capability; there is no second switch.
 - The Device panel gets one packet seam for two toolbar buttons, because capture belongs next to
   the device the user is looking at and no extension point reaches that toolbar.
-
-Open questions for Kyle:
-
-1. Pin which argent version for the install command? The reference clone is 0.25.2; the packet
-   pins the version in one constant.
-2. Evidence retention: keep until the thread is deleted (default in this design), or also expire
-   after N days?
-3. Should flow runs also be allowed on physical iPhones? argent supports them over USB (never
-   auto-selected; the device must be named), but they need a cable to the environment host and
-   a subset of argent's tools. v1 limits flows to simulators and emulators.

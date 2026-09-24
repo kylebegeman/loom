@@ -17,10 +17,17 @@ replacing it.
 - **Servers:** see the project's runnable servers, start one (it runs in a thread terminal you
   can open), see when it is listening and on which URL, open it in the preview, restart it, stop
   it. Use varlock to load environment variables when the project has an `.env.schema`.
+- **Servers from any thread:** each running server's row says where it runs ("Running in
+  <thread title>, worktree <folder>" or "project root") with a link that opens that thread.
+  Any thread of the project can stop or restart it. Stopping or restarting a server that
+  another thread started asks first: "Stop the dev server running in <thread title>? Its
+  terminal in that thread closes." with "Stop server" and "Cancel".
 - **Compose:** see the project's compose services and their state, bring the stack up or down,
   restart a service, read its recent logs or follow them in a terminal.
-- **Databases:** start a local Postgres or Redis for this project in one click, copy its URL,
-  stop it when done, remove it (optionally deleting its data).
+- **Databases:** start a local Postgres or "Redis (Valkey)" for this project in one click, copy
+  its URL, stop it when done, remove it (optionally deleting its data). The Redis option runs
+  Valkey (`valkey/valkey:8-alpine`, BSD licensed, speaks the Redis protocol, so `redis://` URLs
+  and Redis clients work); the image is a setting.
 - **HTTP lab:** send a request to the dev server or any URL the environment can reach, read the
   status, timing, headers and body, repeat a request from history, add an exchange to the
   composer.
@@ -34,16 +41,16 @@ replacing it.
 
 ## Entry points
 
-| Entry                                                             | What it does                                                                                                                                                    | Way out / state                                     |
-| ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Right panel launcher and "+" menu: "Dev environment" (letter `V`) | Opens the panel for the active thread's project.                                                                                                                | Close the tab; servers and containers keep running. |
-| Dev dock servers chip (in the preview)                            | Shows "2 servers running"; click opens the panel.                                                                                                               | n/a                                                 |
-| Dev dock bar                                                      | Click or `loom.browser-dev-tools.toggle-dock` expands or collapses the dock; the height is remembered.                                                          | Collapse.                                           |
-| Command palette                                                   | "Dev environment: Open", "Start dev server" (submenu of candidates), "Stop all dev servers", "Toggle dev dock", "Send console errors to composer".              | The reverse actions are listed next to each.        |
-| Keybinding commands                                               | `loom.browser-dev-tools.open`, `loom.browser-dev-tools.toggle-dock`, `loom.browser-dev-tools.start-default-server`, unbound by default.                         | Same.                                               |
-| Settings, Loom page, "Dev environment" section                    | Obscura path, obey robots, private network fetch, agent fetch tool on or off, database images, dev dock on or off, HTTP lab history size, "Clear HTTP history". | Toggle back.                                        |
-| Composer                                                          | "Add to composer" in the HTTP lab and "Send errors to composer" in the dock insert text context.                                                                | Remove from the draft.                              |
-| Agent tool                                                        | `loom_browser_dev_tools_fetch`.                                                                                                                                 | Turn off in settings.                               |
+| Entry                                                             | What it does                                                                                                                                                                                               | Way out / state                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Right panel launcher and "+" menu: "Dev environment" (letter `V`) | Opens the panel for the active thread's project.                                                                                                                                                           | Close the tab; servers and containers keep running. |
+| Dev dock servers chip (in the preview)                            | Shows "2 servers running"; click opens the panel.                                                                                                                                                          | n/a                                                 |
+| Dev dock bar                                                      | Click or `loom.browser-dev-tools.toggle-dock` expands or collapses the dock; the height is remembered.                                                                                                     | Collapse.                                           |
+| Command palette                                                   | "Dev environment: Open", "Start dev server" (submenu of candidates), "Stop all dev servers" (asks first when any belongs to another thread), "Toggle dev dock", "Send console errors to composer".         | The reverse actions are listed next to each.        |
+| Keybinding commands                                               | `loom.browser-dev-tools.open`, `loom.browser-dev-tools.toggle-dock`, `loom.browser-dev-tools.start-default-server`, unbound by default.                                                                    | Same.                                               |
+| Settings, Loom page, "Dev environment" section                    | Obscura path, obey robots, private network fetch, agent fetch tool on or off, database images ("Postgres image", "Redis (Valkey) image"), dev dock on or off, HTTP lab history size, "Clear HTTP history". | Toggle back.                                        |
+| Composer                                                          | "Add to composer" in the HTTP lab and "Send errors to composer" in the dock insert text context.                                                                                                           | Remove from the draft.                              |
+| Agent tool                                                        | `loom_browser_dev_tools_fetch`.                                                                                                                                                                            | Turn off in settings.                               |
 
 ## States
 
@@ -56,6 +63,10 @@ replacing it.
   HTTP lab are unaffected.
 - **Starting**: server row shows "Starting" until a port appears or 60 seconds pass (then
   "Running, no port detected yet").
+- **Running elsewhere**: a server started in another thread of the project shows that thread
+  and worktree with an "Open thread" link; Start is replaced by Stop and Restart (both with the
+  confirmation above). Deleting the owning thread stops its servers, because upstream closes
+  a deleted thread's terminals.
 - **Exited**: "Exited with code 1" and the output tail, with Restart.
 - **Pulling image**: database creation and `compose up` stream their output lines.
 - **Dock**: collapsed bar with counts; "Console capture starts when the page loads" before the
@@ -71,14 +82,20 @@ environment over LAN, Tailscale and T3 Connect. A database's URL points at the e
 host's loopback (`127.0.0.1:<port>`); for a remote environment the panel says so ("reachable
 from the environment host and its agents, not from this computer"). Mobile shows nothing.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Dev servers run in thread terminals, not hidden processes, so they appear in the terminal
   drawer, upstream's port discovery links URLs to them, and agents see the same terminals.
 - Only one start per server key per project at a time; starting from another thread shows
-  "Already running in thread X" with "Show".
+  "Already running in <thread title>" with "Open thread" and "Stop". Reason: one port, one
+  server.
+- Dev servers are stoppable (and restartable) from any thread of the project. Each row shows
+  the owning thread and worktree with a link, and stopping another thread's server asks a
+  light confirmation. Reason (Kyle): the server belongs to the project, and the confirmation
+  keeps one thread from surprising another.
+- The Redis option defaults to `valkey/valkey:8-alpine` (BSD, Redis protocol compatible), the
+  image stays configurable, and the option is labeled "Redis (Valkey)". Reason (Kyle): Redis
+  7.4 and later changed license; Valkey is the open fork and works with Redis clients.
 - Database passwords are generated per database and kept in the server secret store, never in
   SQLite or the client's storage.
 - The HTTP lab runs requests on the environment host and needs the `terminal:operate` scope,
@@ -87,10 +104,3 @@ Decisions:
   (`console-message`, `session.webRequest`), so it never conflicts with upstream's agent
   automation, which owns the webview's debugger.
 - Obscura is optional and user-installed; Loom never downloads it.
-
-Open questions for Kyle:
-
-1. Default database images: `postgres:17-alpine` and `redis:7-alpine` (both configurable). Would
-   you rather default Redis to Valkey (`valkey/valkey:8-alpine`, BSD) given Redis 7.4+ licensing?
-2. Should a dev server started from one thread be stoppable from any thread of the project (the
-   design says yes)?

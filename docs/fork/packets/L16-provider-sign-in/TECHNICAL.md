@@ -78,7 +78,9 @@ export const SignInAccount = Schema.Struct({
 export const SignInState = Schema.Struct({
   instanceId: ProviderInstanceId,
   driver: ProviderDriverKind,
-  supported: Schema.Boolean, // false: disabled instance or unsupported driver
+  supported: Schema.Boolean,
+  /** Why `supported` is false; null when supported. */
+  unsupportedReason: Schema.NullOr(Schema.Literals(["disabled", "driver", "custom-endpoint"])),
   flowId: Schema.NullOr(TrimmedNonEmptyString),
   method: Schema.NullOr(SignInMethod),
   phase: Schema.Literals([
@@ -166,9 +168,22 @@ export const ReleaseAccountFolderInput = Schema.Struct({
 
 export const CodexCredentialStore = Schema.Struct({
   sharedConfigPath: Schema.String,
-  /** "unset" means Codex's default, which is "file". */
+  /** "unset" means Codex's default, which is "file". "unknown": unreadable or unusual form. */
   store: Schema.Literals(["file", "keyring", "auto", "unset", "unknown"]),
   needsFileStore: Schema.Boolean, // true only for shadow-home instances with keyring/auto
+  /** sha256 of the file the answer was read from; null when the file does not exist. */
+  sha256: Schema.NullOr(Schema.String),
+  /** The existing top-level line, verbatim, or null when the key is absent. */
+  currentLine: Schema.NullOr(Schema.String),
+  /** Always `cli_auth_credentials_store = "file"`; shown in the confirmation. */
+  proposedLine: Schema.String,
+  /** False when Loom cannot change the line safely (quoted or dotted key, multi-line value). */
+  editable: Schema.Boolean,
+});
+export const CodexUseFileCredentialsInput = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  /** The sha256 the confirmation showed; the server refuses if the file changed since. */
+  expectedSha256: TrimmedNonEmptyString,
 });
 
 export const CodexMcpServer = Schema.Struct({
@@ -206,7 +221,8 @@ export const ImportItem = Schema.Struct({
 // prepareAccountFolder PrepareAccountFolderInput -> { folder: string };
 // releaseAccountFolder ReleaseAccountFolderInput -> { movedTo: string | null };
 // codexCredentialStore Target -> CodexCredentialStore;
-// codexUseFileCredentials Target -> CodexCredentialStore;
+// codexUseFileCredentials CodexUseFileCredentialsInput
+//   -> { store: CodexCredentialStore; backupPath: string };
 // codexToolsList Target & { cwd?: string } -> CodexToolsListResult;
 // codexMcpReload Target -> {}; codexMcpSignIn Target & { name } -> { authorizationUrl };
 // codexSkillSetEnabled Target & { path, enabled } -> { effectiveEnabled: boolean };
@@ -256,6 +272,7 @@ export const providerSignInDecorator: ForkProviderDriverDecorator = {
             Effect.gen(function* () {
               const instance = yield* driver.create(input);
               if (!input.enabled) return instance; // disabled: no manager, snapshot untouched
+              if (driver.driverKind === "claudeAgent" && usesCustomEndpoint(input)) return instance;
               const manager =
                 driver.driverKind === "codex"
                   ? yield* makeCodexSignIn({ input, onAuthChanged: instance.snapshot.refresh })
@@ -281,6 +298,13 @@ export const providerSignInDecorator: ForkProviderDriverDecorator = {
 
 `decorateSnapshot` is pure and tested:
 
+- Custom-endpoint Claude instances are left alone: when the merged instance environment
+  (`mergeProviderInstanceEnvironment`) has a non-empty `ANTHROPIC_BASE_URL` (pure
+  `usesCustomEndpoint(input)`), the decorator
+  returns the instance untouched and registers no manager, exactly like a disabled
+  instance. The service then reports `supported: false` with `unsupportedReason:
+"custom-endpoint"`. This covers L17's endpoint instances and hand-made routers
+  (upstream's OpenRouter recipe) without depending on L17.
 - Adds `setup: { canAuthenticate: true, canInstall: snapshot.setup?.canInstall ?? false }`
   when `installed` is true. That turns on upstream's "Open provider setup" affordances
   (`apps/web/src/components/chat/ProviderStatusBanner.tsx:34-40`,
@@ -402,7 +426,20 @@ process.cwd(), environment })` (`apps/server/src/provider/Layers/CodexProvider.t
   optional fields and treat anything unreadable as `unknown`.
 - API keys never go through this manager. The web section writes `ANTHROPIC_API_KEY` as a
   sensitive instance environment variable with the same settings update the provider form
-  uses; the instance rebuilds and the snapshot reflects it.
+  uses; the instance rebuilds and the snapshot reflects it. Upstream moves sensitive values
+  into its secret store on write and redacts them for clients (`value: ""`,
+  `valueRedacted: true`; `apps/server/src/serverSettings.ts:153-165` and `740-830`), so the
+  key is never readable again from any client. The web section therefore offers:
+  - **Save key** / **Replace key**: pure `withClaudeApiKey(environment, key)` returns the
+    instance's environment with every `ANTHROPIC_API_KEY` entry replaced by one
+    `{ name: "ANTHROPIC_API_KEY", value: key, sensitive: true }` (no `valueRedacted`, so the
+    server stores the new value).
+  - **Remove key**: `withClaudeApiKey(environment, null)` drops the entries; upstream's
+    write path removes the secret (`serverSettings.ts:822-830`).
+  - "Key saved" state: an `ANTHROPIC_API_KEY` entry that is `sensitive` with
+    `valueRedacted: true` in the client's settings copy. A non-sensitive entry (typed by hand
+    in the provider form) shows "An API key is set in this instance's environment
+    variables." and **Make it sensitive**, which rewrites it with `sensitive: true`.
 
 Known risk: `claude auth login` might require a TTY for the code prompt. Old Loom ran it with
 a plain pipe (`ClaudeLoginSessions.ts` in REFERENCES), but verify with the installed CLI first
@@ -437,14 +474,16 @@ in import detection), `ServerConfig`, `SqlClient`, `FileSystem`, `Path`,
   (`apps/server/src/provider/Layers/ProviderAuthService.ts:93-107`): take
   `registry.subscribeChanges`, re-resolve the instance on each change, `changesWith` on the
   manager identity, then `switchMap` to `SubscriptionRef.changes(manager.state)`. A missing
-  manager (disabled instance, other driver) yields one `supported: false` state. The first
-  subscription for an instance triggers `refreshAccount`.
+  manager yields one `supported: false` state whose `unsupportedReason` is `disabled` (the
+  instance config has `enabled: false`), `driver` (not `codex` or `claudeAgent`) or
+  `custom-endpoint` (an enabled Claude instance without a manager). The first subscription
+  for an instance triggers `refreshAccount`.
 - `signOut` stops the instance's sessions first, exactly as upstream's `stopSessions`
   (`ProviderAuthService.ts:33-76`): bindings from `ProviderSessionDirectory` plus live
   `ProviderService.listSessions()`, then `stopSession` for each.
-- Settings are never written by the server except `codexUseFileCredentials`, which writes
-  Codex's own `config.toml` through Codex. Provider instances are added and removed by the
-  client with upstream's settings update, which already handles sensitive values.
+- Settings are never written by the server except `codexUseFileCredentials`, which changes
+  one line of Codex's shared `config.toml` (below). Provider instances are added and removed
+  by the client with upstream's settings update, which already handles sensitive values.
 
 ### Account folders
 
@@ -472,13 +511,31 @@ in import detection), `ServerConfig`, `SqlClient`, `FileSystem`, `Path`,
 All through a one-shot `withCodexAppServerClient` scope on the instance's effective home and
 environment, bounded by 20 s (import: 120 s).
 
-- `codexCredentialStore`: read `<sharedHomePath>/config.toml` as text and take the top-level
-  `cli_auth_credentials_store = "<value>"` before the first `[table]` header (Codex's default
-  is `"file"`; see REFERENCES). `needsFileStore` is true only when the instance's layout mode
-  is `authOverlay` and the value is `keyring` or `auto`.
-- `codexUseFileCredentials`: `config/value/write` with
-  `{ keyPath: "cli_auth_credentials_store", value: "file", mergeStrategy: "replace" }` on an
-  app-server started with the shared home (`schema.gen.ts:37743`), then re-read.
+- `codexCredentialStore`: read `<sharedHomePath>/config.toml` as text (no app-server
+  needed) and run the pure `inspectCredentialStore(text)`: the top-level
+  `cli_auth_credentials_store = "<value>"` line before the first `[table]` header (Codex's
+  default is `"file"`; see REFERENCES), its verbatim text, the file's sha256, and
+  `editable`. `editable` is false when the key appears quoted (`"cli_auth_credentials_store"`),
+  dotted, with a multi-line value, or more than once. `needsFileStore` is true only when the
+  instance's layout mode is `authOverlay` and the value is `keyring` or `auto`. A missing
+  file reads as `unset` (nothing to change). The web shows the green check for `file` and
+  `unset`.
+- `codexUseFileCredentials` (Loom edits the file itself, not Codex's `config/value/write`,
+  so no other line can be reformatted):
+  1. Read the file; refuse with "config.toml changed since you opened this. Review it
+     again." when its sha256 differs from `expectedSha256`, and with the "set it by hand"
+     message when `editable` is false.
+  2. Copy the original bytes to
+     `<stateDir>/fork/provider-sign-in/backups/<ISO time with - for :>-config.toml`
+     (directory mode `0700`, file mode `0600`). The backup must succeed before anything else.
+  3. Pure `setCredentialStoreFile(text)`: replace exactly the matched line with
+     `cli_auth_credentials_store = "file"`, or, when the key is absent, insert that line as
+     the first line of the file. Every other byte stays as it was, including line endings
+     (`\r\n` kept when the file uses it), comments and a missing final newline.
+  4. Write to a temporary file in the same directory with the original file's mode, then
+     rename it over `config.toml` (atomic on one volume).
+  5. Re-read, return the new `CodexCredentialStore` and the backup path.
+     Backups are never deleted by Loom.
 - `codexToolsList`: `mcpServerStatus/list` paged with `cursor` (stop after 200 servers,
   `truncated: true`), and `skills/list` with `{ cwds: [cwd], forceReload: true }` where `cwd`
   is the active project's root or `process.cwd()`.
@@ -511,8 +568,9 @@ CREATE INDEX IF NOT EXISTS fork_provider_sign_in_account_folders_instance
   ON fork_provider_sign_in_account_folders (instance_id);
 ```
 
-Files: `<stateDir>/fork/provider-sign-in/removed/` for moved folders. Sign-in state is
-in memory only; a server restart returns every instance to idle, which is correct because the
+Files: `<stateDir>/fork/provider-sign-in/removed/` for moved folders and
+`<stateDir>/fork/provider-sign-in/backups/` for `config.toml` copies taken before Loom edits
+the credential-store line. Sign-in state is in memory only; a server restart returns every instance to idle, which is correct because the
 login processes died with it.
 
 ## Clients
@@ -532,12 +590,17 @@ login processes died with it.
   - `signIn.logic.ts`: pure helpers: `defaultCodexMethod({ clientOnEnvironmentMachine })`,
     `phaseLabel(state)`, `findSameAccountLabel(instanceId, driver, providers)` (from old
     Loom's `codexSignIn.logic.ts`), `isClientOnEnvironmentMachine(...)` (true for the
-    primary local environment when running in the desktop app or on a loopback hostname).
+    primary local environment when running in the desktop app or on a loopback hostname),
+    `withClaudeApiKey(environment, key | null)` and `claudeApiKeyState(environment)`
+    (`none`, `saved`, `plain`), `credentialStoreBadge(store)` (check, warning, unreadable).
   - `settings.tsx`: the "Accounts" `ForkSettingsSection`.
   - `palette.ts`: the palette source.
 - Opening links: `ensureLocalApi().shell.openExternal(url)` as upstream's
   `ProviderSetupSection.tsx` does, with copy as the fallback.
-- Add account (client side): `suggestAccount` -> dialog -> `prepareAccountFolder` -> write
+- Add account (client side): `suggestAccount` -> dialog (Codex: the folder is always a
+  shadow home; **Change folder** edits only `shadowHomePath`, and `homePath` stays the
+  shared home; Claude: "Share my Claude skills" sets `shareClaudeSkills`, default on) ->
+  `prepareAccountFolder` -> write
   `providerInstances[instanceId] = { driver, displayName, accentColor, enabled: true,
 config: codex ? { homePath: sharedHomePath, shadowHomePath: folder } : { homePath: folder } }`
   with `useUpdateEnvironmentSettings(environmentId)` the way
@@ -552,15 +615,15 @@ config: codex ? { homePath: sharedHomePath, shadowHomePath: folder } : { homePat
 
 ## Provider-by-provider decisions
 
-| Driver      | Decision                                                                                                 |
-| ----------- | -------------------------------------------------------------------------------------------------------- |
-| Codex       | Supported: browser, device code, API key; tools page; import.                                            |
-| Claude      | Supported: subscription and Console through the CLI; API key through instance environment variables.     |
-| Antigravity | Not decorated. Upstream already has in-app Google sign-in.                                               |
-| Cursor      | Not supported: `cursor-agent login` is interactive and upstream reports its status; revisit on request.  |
-| Grok        | Not supported: upstream deliberately avoids auth side effects in probes (`docs/internals/providers.md`). |
-| OpenCode    | Not supported: OpenCode owns many provider logins (`opencode auth`); out of scope.                       |
-| L17 drivers | Their packet decides. The setup slot is available to them.                                               |
+| Driver      | Decision                                                                                                                                                                                                                |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Codex       | Supported: browser, device code, API key; tools page; import.                                                                                                                                                           |
+| Claude      | Supported: subscription and Console through the CLI; API key through sensitive instance environment variables (Replace and Remove only). Instances with `ANTHROPIC_BASE_URL` are custom-endpoint instances: no sign-in. |
+| Antigravity | Not decorated. Upstream already has in-app Google sign-in.                                                                                                                                                              |
+| Cursor      | Not supported: `cursor-agent login` is interactive and upstream reports its status; revisit on request.                                                                                                                 |
+| Grok        | Not supported: upstream deliberately avoids auth side effects in probes (`docs/internals/providers.md`).                                                                                                                |
+| OpenCode    | Not supported: OpenCode owns many provider logins (`opencode auth`); out of scope.                                                                                                                                      |
+| L17 drivers | Their packet decides. The setup slot is available to them.                                                                                                                                                              |
 
 ## Agent-facing tools
 
@@ -588,3 +651,10 @@ None.
   flow invisible, and has no completion signal.
 - **Server writes provider instances.** Would duplicate upstream's settings update and its
   sensitive-value handling. The client does it.
+- **Codex's `config/value/write` for the credential store.** It goes through Codex's TOML
+  writer, which may reformat or reorder other parts of the file. Kyle asked for "only that
+  key, rest of the file untouched", so Loom edits the one line itself after a backup.
+- **A separate `CODEX_HOME` option in Add account.** Declined by Kyle; shadow homes keep
+  threads continuable across accounts.
+- **Keeping Claude API keys out of settings.** Declined by Kyle; upstream's sensitive
+  environment variables already store them in the secret store and never return them.

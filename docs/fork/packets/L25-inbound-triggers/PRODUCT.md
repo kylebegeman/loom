@@ -20,29 +20,35 @@ watch for these events and prepare (or start) the thread itself.
 - Follow a started event to its thread.
 - Retry a failed start; see why it failed.
 - Turn a trigger off and on, edit it, delete it.
-- Turn all triggers off for an environment in Settings, and set how often Loom checks.
-- Get a toast when new events arrive while Loom is open.
+- Turn all triggers off for an environment in Settings, and set how often Loom checks
+  (every 5 minutes by default, as often as every minute), or press "Check now".
+- Get a system notification when an event waits for them and Loom is in the background, and
+  in-app toasts for everything else; turn either off per device.
+- Get the same worktree setup as a manual worktree thread: a triggered worktree thread runs
+  the project's setup script before the agent starts.
 
 What each kind watches:
 
-| Kind               | Fires when                                                                         | Default action                                          |
-| ------------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| `issue-assigned`   | An open issue (optionally PR) in the project's repository is assigned to you       | New thread                                              |
-| `issue-labeled`    | An open issue in the project's repository carries one of the trigger's labels      | New thread                                              |
-| `mention`          | You are @mentioned (or your team is) on an issue or PR in the project's repository | New thread                                              |
-| `review-requested` | Your review is requested on a PR in the project's repository                       | New thread, plan mode, prompt asks for a review summary |
-| `ci-failure`       | A GitHub Actions run fails on a branch that a Loom thread in the project is on     | Follow-up message to that thread                        |
+| Kind               | Fires when                                                                                                          | Default action                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `issue-assigned`   | An open issue (optionally PR) in the project's repository is assigned to you                                        | New thread                                              |
+| `issue-labeled`    | An open issue in the project's repository carries one of the trigger's labels                                       | New thread                                              |
+| `mention`          | You are @mentioned (or your team is) on an issue or PR in the project's repository (mentions elsewhere are ignored) | New thread                                              |
+| `review-requested` | Your review is requested on a PR in the project's repository                                                        | New thread, plan mode, prompt asks for a review summary |
+| `ci-failure`       | A GitHub Actions run fails on a branch that a Loom thread in the project is on                                      | Follow-up message to that thread                        |
 
 ## Entry points
 
-| Entry           | Behavior                                                                                                 |
-| --------------- | -------------------------------------------------------------------------------------------------------- |
-| Page            | `/loom/triggers`, tabs Inbox and Triggers; `?environmentId=` and `?tab=`.                                |
-| Command palette | "Open inbound triggers" (shows the pending count), "Check triggers now", "New trigger for this project". |
-| Keybinding      | `loom.inbound-triggers.open`, unbound by default.                                                        |
-| Loom settings   | "Inbound triggers" section: on or off per environment, check interval, "Open triggers".                  |
-| Toast           | "New from GitHub: <title>" with "Review" (opens the Inbox) when events arrive while Loom is open.        |
-| Thread          | A started thread is an ordinary thread; its first message links back to the issue or run.                |
+| Entry               | Behavior                                                                                                                                                                           |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page                | `/loom/triggers`, tabs Inbox and Triggers; `?environmentId=` and `?tab=`.                                                                                                          |
+| Command palette     | "Open inbound triggers" (shows the pending count), "Check triggers now", "New trigger for this project".                                                                           |
+| Keybinding          | `loom.inbound-triggers.open`, unbound by default.                                                                                                                                  |
+| Loom settings       | "Inbound triggers" section: on or off per environment, check interval (1 to 120 minutes, default 5), "Check now", "Open triggers", and the two notification switches (per device). |
+| Inbox               | "Check now" in the header and on each trigger row.                                                                                                                                 |
+| Toast               | "New from GitHub: <title>" with "Review" when an event waits for you and Loom is focused; "Started from GitHub: <title>" or "Could not start: <title>" for informational events.   |
+| System notification | "Waiting for you: <title>" when an event waits for you and Loom is not focused (desktop app; browsers that allow notifications). Clicking opens the Inbox.                         |
+| Thread              | A started thread is an ordinary thread; its first message links back to the issue or run.                                                                                          |
 
 Reverse states: Dismiss has Restore; a trigger can be disabled and re-enabled; delete asks
 for confirmation and keeps past events (marked "trigger deleted"); auto-start can be switched
@@ -60,6 +66,11 @@ back to ask; the whole feature has an off switch per environment.
 - Feature off: page banner "Inbound triggers are off on <environment>." with "Turn on".
 - Disabled (server lacks `inbound-triggers`): "Inbound triggers need a Loom server."
 - Starting: the row shows a spinner until the thread exists, then "Started" with a link.
+  For a worktree thread with a setup script, the thread itself shows the script starting
+  and its terminal; a failed script shows "Setup script failed (exit N); started anyway" on
+  the event.
+- Notifications blocked: the settings switch shows "Allow notifications" (or, when denied,
+  "Allow notifications in your browser or system settings").
 - Failed: the reason and Retry.
 - Event waiting for a thread: CI follow-ups wait while the target thread is working and say
   "Waiting for <thread> to finish".
@@ -74,7 +85,11 @@ back to ask; the whole feature has an off switch per environment.
 - Prompt help: "Available fields: {{title}}, {{url}}, {{repository}}, {{number}},
   {{author}}, {{labels}}, {{body}}, {{branch}}, {{workflow}}, {{failedJobs}}, {{runUrl}}."
 - Inbox buttons: "Start", "Dismiss", "Restore", "Retry", "Open thread", "Open on GitHub".
-- Toast: "New from GitHub: <title>".
+- Toasts: "New from GitHub: <title>", "Started from GitHub: <title>", "Could not start:
+  <title>".
+- System notification: title "Waiting for you: <title>", body "<repository> #<number>".
+- Settings switches: "System notification when an event waits for me", "In-app toasts for
+  trigger activity".
 
 No em dashes in product copy.
 
@@ -88,9 +103,7 @@ No em dashes in product copy.
 - Upstream client talking to a Loom server: unaffected; threads created by triggers are
   ordinary threads with ordinary events.
 
-## Decisions and open questions
-
-Decisions (from the brief and this design):
+## Decisions
 
 - Polling first, no public webhook. The Mac is not reachable; `gh` is already signed in.
 - Default is "Ask me first". Issue bodies and comments are untrusted text written by other
@@ -107,16 +120,16 @@ Decisions (from the brief and this design):
   thread.
 - No new orchestration events or commands; threads are created with upstream's
   `thread.create` and `thread.turn.start`.
-
-Open questions for Kyle:
-
-1. This packet is not in `docs/fork/selections.md`; the packets README asks to confirm it
-   before building. Confirm it, and whether phase 3 (webhooks) should be designed further
-   now or left as is.
-2. Should triggered worktree threads run the project's setup script (upstream's bootstrap
-   does for manual worktree threads)? Phase 1 skips it.
-3. Default check interval: 5 minutes, or faster?
-4. For `mention`, include mentions in repositories that are not Loom projects (they would
-   need a default project), or only the project's repository (current design)?
-5. Do you want an OS notification (desktop) when an event arrives while Loom is in the
-   background, or is the in-app toast enough?
+- The packet is confirmed (Kyle, 2026-09-24), although it is not in `selections.md`.
+- Polling through `gh` only. Webhooks are a recorded follow-up and stay undesigned: the Mac
+  has no public endpoint and `gh` already covers the five kinds.
+- Triggered worktree threads run the project's setup script, the same as manual worktree
+  threads, so a triggered agent starts in a worktree prepared the same way. A failed script is best effort, as upstream treats it: the agent starts anyway and
+  the event says so.
+- Check interval defaults to 5 minutes, adjustable down to 1 minute, with "Check now": fast
+  enough for Kyle's use while staying far under GitHub's rate limit.
+- Mentions count only in the project's own repository: a mention elsewhere has no project to
+  start in.
+- System notification for events that wait on the user ("Ask me first", or held by the
+  auto-start guards), because those need a decision; in-app toasts only for informational
+  events, which need none. Both have a per-device off switch.

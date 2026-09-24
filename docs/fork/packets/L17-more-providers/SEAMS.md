@@ -13,20 +13,20 @@ Record here, once implemented, the commit that created each (or "existed").
 
 ## Registrations (fork-owned files only)
 
-| Registry                           | File                                                  | Entry                                                              |
-| ---------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
-| `ForkRpcGroup` merge, fork index   | `packages/contracts/src/fork/rpc.ts`, `index.ts`      | `MoreProvidersRpcGroup`, `export * from "./more-providers.ts";`    |
-| `FORK_RPC_REQUIRED_SCOPES`         | `apps/server/src/fork/rpcAuthorization.ts`            | one scope per tag (TECHNICAL.md)                                   |
-| `ForkRpcGroup.of` spread           | `apps/server/src/fork/rpc.ts`                         | `...(yield* makeMoreProvidersRpcHandlers(auth))`                   |
-| `ForkServicesLive`, `ForkServices` | `apps/server/src/fork/ForkLayer.ts`, `ForkRuntime.ts` | `MoreProvidersEndpoints`                                           |
-| `FORK_MIGRATION_SETS`              | `apps/server/src/fork/persistence/migrations.ts`      | `MoreProvidersMigrations`                                          |
-| `LOOM_SERVER_FEATURES`             | `apps/server/src/fork/features.ts`                    | `"more-providers"`                                                 |
-| `FORK_PROVIDER_DRIVERS`            | `apps/server/src/fork/providers/drivers.ts`           | `...MoreProvidersDrivers` (`loomCopilot`, `loomGemini`, `loomAcp`) |
-| `FORK_PROVIDER_CLIENT_DEFINITIONS` | `apps/web/src/fork/providers/registry.ts`             | `...moreProvidersClientDefinitions`                                |
-| `FORK_PROVIDER_ICONS`              | `apps/web/src/fork/providers/registry.ts`             | `...moreProvidersIcons`                                            |
-| `FORK_SETTINGS_SECTIONS`           | `apps/web/src/fork/settings/registry.ts`              | `moreProvidersSettings` ("Model endpoints")                        |
-| `FORK_COMMAND_PALETTE_SOURCES`     | `apps/web/src/fork/commandPalette/registry.ts`        | `moreProvidersPaletteSource`                                       |
-| client-runtime fork index          | `packages/client-runtime/src/fork/index.ts`           | `export * from "./more-providers.ts";`                             |
+| Registry                           | File                                                  | Entry                                                                |
+| ---------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------- |
+| `ForkRpcGroup` merge, fork index   | `packages/contracts/src/fork/rpc.ts`, `index.ts`      | `MoreProvidersRpcGroup`, `export * from "./more-providers.ts";`      |
+| `FORK_RPC_REQUIRED_SCOPES`         | `apps/server/src/fork/rpcAuthorization.ts`            | one scope per tag (TECHNICAL.md)                                     |
+| `ForkRpcGroup.of` spread           | `apps/server/src/fork/rpc.ts`                         | `...(yield* makeMoreProvidersRpcHandlers(auth))`                     |
+| `ForkServicesLive`, `ForkServices` | `apps/server/src/fork/ForkLayer.ts`, `ForkRuntime.ts` | `MoreProvidersEndpoints`                                             |
+| `FORK_MIGRATION_SETS`              | `apps/server/src/fork/persistence/migrations.ts`      | `MoreProvidersMigrations`                                            |
+| `LOOM_SERVER_FEATURES`             | `apps/server/src/fork/features.ts`                    | `"more-providers"`                                                   |
+| `FORK_PROVIDER_DRIVERS`            | `apps/server/src/fork/providers/drivers.ts`           | `...MoreProvidersDrivers` (`loomAcp`, then `loomCopilot` in phase C) |
+| `FORK_PROVIDER_CLIENT_DEFINITIONS` | `apps/web/src/fork/providers/registry.ts`             | `...moreProvidersClientDefinitions`                                  |
+| `FORK_PROVIDER_ICONS`              | `apps/web/src/fork/providers/registry.ts`             | `...moreProvidersIcons`                                              |
+| `FORK_SETTINGS_SECTIONS`           | `apps/web/src/fork/settings/registry.ts`              | `moreProvidersSettings` ("Model endpoints")                          |
+| `FORK_COMMAND_PALETTE_SOURCES`     | `apps/web/src/fork/commandPalette/registry.ts`        | `moreProvidersPaletteSource`                                         |
+| client-runtime fork index          | `packages/client-runtime/src/fork/index.ts`           | `export * from "./more-providers.ts";`                               |
 
 ## Packet seams
 

@@ -18,6 +18,11 @@ leaves their presentation to upstream. Replacing the presentation needs the list
 which are local variables inside `RightPanelEmptyState` and `RightPanelTabs`. Only this
 packet needs that, so a dedicated extension point would be machinery for one user.
 
+The default `mod+shift+'` shortcut adds no seam: it is a listener in a `ForkRoot` component,
+and nothing is added to `packages/shared/src/keybindings.ts` (no `FORK_DEFAULT_KEYBINDINGS`).
+Fork panel descriptions add none either: the optional `description` field is part of
+`ext-panels`.
+
 All citations below are before `ext-panels` is applied; with it, lines shift down by its
 marked lines. Match on the quoted code.
 

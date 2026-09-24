@@ -15,7 +15,8 @@ useful part with search-as-you-type as the main way in.
   and insert the chosen one into the composer, copy it, or send it to the terminal.
 - Type `;` and a few letters in the composer to get the same live results inline. Tab or
   Enter inserts the highlighted snippet; an exact alias is always first, so `;review` +
-  Tab expands the snippet with alias `review`.
+  Tab expands the snippet with alias `review`. A bare `;`, or `;` followed by a space, is
+  plain text and never opens the menu.
 - Fill in a snippet's fields (`[[ticket]]`, `[[scope|all files]]`) in a small drawer above
   the composer before it is inserted. Built-in values (date, time, project name and path,
   branch) fill themselves; `[[cursor]]` sets where the cursor lands.
@@ -34,9 +35,9 @@ useful part with search-as-you-type as the main way in.
 | --------------------------------- | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | Panel launcher and "+" menu       | "Snippets" (letter S) opens the Snippets panel for the thread.                              | Close the tab, or `rightPanel.close`. The tab shows the panel is open. |
 | Command palette                   | "Search snippets", "Open Snippets panel", "Save prompt as snippet".                         | Dialogs close with Escape; the panel closes like any tab.              |
-| Keybinding `loom.snippets.search` | Opens the snippet search dialog. Unbound by default; the user doc suggests `mod+shift+;`.   | Escape closes.                                                         |
+| Keybinding `loom.snippets.search` | Opens the snippet search dialog. Unbound by default; the user can bind it in Keybindings.   | Escape closes.                                                         |
 | Keybinding `loom.snippets.open`   | Toggles the Snippets panel (opens it, or closes it when it is the active surface). Unbound. | Same key again.                                                        |
-| Composer `;` menu                 | `;` plus at least one letter or digit, at the start of a line or after whitespace.          | Escape, moving the cursor away, or deleting the token closes it.       |
+| Composer `;` menu                 | `;` immediately followed by a non-space character, at the start of a line or after space.   | Escape, moving the cursor away, or deleting the token closes it.       |
 | Fill-in drawer                    | Opens above the composer when a chosen snippet has fields.                                  | Escape cancels and leaves the prompt unchanged.                        |
 | Settings                          | None. The library is managed in the panel.                                                  |                                                                        |
 
@@ -85,16 +86,21 @@ it created and skipped, and imported snippets can be deleted.
   environment.
 - Upstream T3 server: hidden or disabled as described above.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Server-side storage per environment (fork tables in `state.sqlite`): snippets follow the
   machine, and `loom.sh` already backs up that file.
 - Global and per-project snippets: a snippet is global unless it names a project. In a
   project, its own snippets rank first and its aliases win over global ones.
-- Field syntax is `[[name]]` (brief), not old Loom's `{{name}}`, because `{{ }}` appears in
-  real prompts (GitHub Actions `${{ }}`, Handlebars, Jinja). Import converts `{{ }}`.
+- Field syntax is `[[name]]` (confirmed by Kyle), not old Loom's `{{name}}`, because
+  `{{ }}` appears in real prompts (GitHub Actions `${{ }}`, Handlebars, Jinja). Import
+  converts old `{{name}}` fields and leaves GitHub Actions `${{ }}` untouched.
+- The `;` menu opens only when `;` (at the start of a line or after whitespace) is
+  immediately followed by a non-space character, and it filters by what follows. A bare
+  `;` or `; ` is plain text and never opens the menu, so punctuation in prose stays quiet.
+- Search and panel commands have no default keybindings: they are reachable from the
+  command palette and the panel launcher, and users bind them in Keybindings if they want
+  (EXTENSION-POINTS.md discourages default bindings).
 - Search runs on the client over the cached library, so results update on every keystroke
   with no RPC; the server pushes the library when it changes.
 - Pins and use counts live on the server (old Loom kept them in localStorage per device,
@@ -102,12 +108,3 @@ Decisions:
 - A non-matching `;token` never swallows Tab (old Loom did).
 - Revisions are recorded only when content changes, capped at 50 per snippet.
 - Deleting is a soft delete with a 30-day Deleted filter; history is kept until purge.
-
-Open questions for Kyle:
-
-1. Confirm `[[name]]` over `{{name}}`. The brief lists `[[name]]`; old Loom snippets used
-   `{{name}}` (`[[ ]]` was API Studio's syntax, Ledger 2371).
-2. Should the `;` trigger also open on a bare `;` to browse everything? The design needs at
-   least one character after `;` so punctuation in prose never opens a menu.
-3. Suggested bindings: `mod+shift+;` for search and none for the panel. Keep them unbound
-   by default (EXTENSION-POINTS.md discourages default bindings)?

@@ -59,6 +59,14 @@ tag has a scope and does not collide with upstream; run it.
 - Single-line text unchanged; multi-line wrapped in bracketed-paste markers; never a
   trailing newline; text over 65,536 characters rejected with a message.
 
+`apps/web/src/fork/snippets/composerMenu.test.ts` (pure `detect`):
+
+- `;r`, `;review`, `;.x` and `;)` at the start of a line or after whitespace open the menu
+  with the text after `;` as the query.
+- A bare `;`, `; ` and `;` at the end of a word (`done;`) or inside one (`a;b`) return
+  `null`.
+- The range covers the whole token from `;` to the cursor.
+
 Registry invariants come from the extension points' own tests (panel ids and letters,
 palette values `action:loom:`, keybinding commands `loom.`, composer ids). Run them after
 registering.
@@ -71,6 +79,7 @@ vp test run packages/client-runtime/src/fork/snippetsEngine.test.ts \
   apps/server/src/fork/rpcAuthorization.test.ts \
   apps/server/src/fork/persistence/migrations.test.ts \
   apps/web/src/fork/snippets/terminalSend.test.ts \
+  apps/web/src/fork/snippets/composerMenu.test.ts \
   apps/web/src/fork/panels/registry.test.ts \
   packages/contracts/src/fork/keybindings.test.ts
 vp lint packages/contracts/src/fork packages/client-runtime/src/fork apps/server/src/fork apps/web/src/fork
@@ -94,7 +103,8 @@ worktree `.t3`, then the desktop dev app:
 2. In a thread of that project, type `;rev`: the menu shows the project snippet first;
    Tab opens the fill-in drawer with "the diff" prefilled; Enter inserts; the cursor sits
    at the end. In another project, `;review` + Tab picks the global one.
-3. `;zzz` + Tab: no menu item, Tab behaves as without Loom (focus is not trapped).
+3. `;zzz` + Tab: no menu item, Tab behaves as without Loom (focus is not trapped). Typing
+   `;` alone, or `; ` followed by words, never opens the menu.
 4. Bind `loom.snippets.search` in Settings > Keybindings, open the dialog, type, insert,
    copy, send a multi-line snippet to an open terminal (no command runs).
 5. Edit the snippet twice; history shows three revisions; restore the first; delete and
@@ -120,5 +130,7 @@ typechecks yourself.
 - Every PRODUCT.md behavior works on web and desktop, with loading, empty, error and
   unsupported states.
 - No RPC is issued while typing in the `;` menu or the dialog.
+- A bare `;` or `; ` never opens the menu; `;` followed by any non-space character does.
+- No default keybinding is added for the snippet commands.
 - Unchanged saves add no revision; deletes are restorable for 30 days.
 - The upstream prompt stash, ArrowUp recall and `$` skills menu behave exactly as before.

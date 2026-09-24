@@ -35,7 +35,9 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
    - Start: terminal open, subscribe, write; state machine driven by `TerminalManager.subscribe`
      events and `PortDiscovery.subscribe` snapshots; `retain` held while anything runs; 8 KB
      tails; `SubscriptionRef` per project feeding `watchServers`.
-   - Stop and restart through `TerminalManager.close`.
+   - Stop and restart through `TerminalManager.close`, always on the owning thread and
+     terminal stored for the key (the caller's thread only resolves the project); restart
+     starts again in the owning thread.
      Sketch:
 
    ```ts
@@ -59,7 +61,7 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
        worktreePath: ws.worktreePath,
        env: candidate.env,
      });
-     yield* markStarting(ws.projectId, input.key, input.threadId, terminalId);
+     yield* markStarting(ws.projectId, input.key, input.threadId, terminalId, ws.worktreePath);
      yield* terminals.write({ threadId: input.threadId, terminalId, data: `${command}\r` });
      return yield* currentServer(ws.projectId, input.key);
    });
@@ -72,7 +74,11 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
    `httpClearHistory`.
 6. Handlers, scopes, feature slug `browser-dev-tools`.
 7. Web: panel with Servers and HTTP tabs, palette source, shortcuts, settings section (HTTP
-   history size, clear history). Auto-open preview on `running` for `autoOpenPreview` scripts
+   history size, clear history). Server rows show the owning thread (title from
+   `useThreadShells`) and worktree folder with an "Open thread" link; Stop and Restart on
+   another thread's server open the confirmation from PRODUCT.md; "Stop all dev servers"
+   confirms once when any server belongs to another thread. A pure
+   `serverRowActions(server, currentThreadId)` decides labels and whether to confirm. Auto-open preview on `running` for `autoOpenPreview` scripts
    (desktop only; on web open nothing automatically).
 
 ## Phase 2: Compose and databases
@@ -81,9 +87,12 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
    `composeLogs`, `composeFollowLogs` (terminal), databases (`createDatabase` stream,
    `databaseAction`, `databaseUrl` with `ServerSecretStore`, `listDatabases` with
    `docker inspect` state), startup orphan sweep for rows of deleted projects.
-9. Web: Compose and Databases tabs; confirmation dialogs for `down` and for "Remove and delete
-   data"; the remote-environment note on database URLs; settings for images and "Databases of
-   removed projects".
+9. Web: Compose and Databases tabs; the create buttons "Postgres" and "Redis (Valkey)";
+   confirmation dialogs for `down` and for "Remove and delete data"; the remote-environment
+   note on database URLs; settings for images ("Postgres image" default `postgres:17-alpine`,
+   "Redis (Valkey) image" default `valkey/valkey:8-alpine`, with the help text "Any
+   Redis-compatible image whose entrypoint accepts server flags.") and "Databases of removed
+   projects".
 
 ## Phase 3: Obscura agent tool
 
@@ -162,8 +171,10 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 ## Pitfalls
 
 - Terminal ids are per thread; the same server key in two threads would create two terminals.
-  The `already-running` check across threads prevents a second start; stop from any thread uses
-  the stored thread id.
+  The `already-running` check across threads prevents a second start; stop and restart from any
+  thread use the stored owning thread id, never the caller's.
+- Do not pass `redis-server` or `valkey-server` after the image; pass only flags and let the
+  image's entrypoint choose the binary.
 - `PortDiscovery` only reports ports that serve HTML (`PortScanner.ts:11-13`); an API-only server
   stays "Running, no page detected" with its terminal still linked. Say so in the row.
 - `docker compose ps --format json` changed shape between Compose releases; parse both.

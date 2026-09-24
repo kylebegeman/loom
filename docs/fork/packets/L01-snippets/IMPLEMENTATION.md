@@ -93,7 +93,9 @@ docs/fork/user/snippets.md
 12. `composerBridge.ts` and `fillInDrawer.tsx` + `fillInStore.ts`: register the drawer in
     `FORK_COMPOSER_DRAWERS`. The drawer hook always sets the bridge and returns content only
     while a request is pending for its thread.
-13. `composerMenu.ts`: the `;` trigger; register in `FORK_COMPOSER_TRIGGERS`.
+13. `composerMenu.ts`: the `;` trigger (`;` immediately followed by a non-space
+    character; bare `;` and `; ` never match); register in `FORK_COMPOSER_TRIGGERS`. Add
+    `composerMenu.test.ts` for `detect` (TESTING.md).
 14. Dialog and palette: switch insertion to the bridge's caret path (TECHNICAL.md, "The
     composer bridge"), add the Insert submenu and "Save prompt as snippet".
 15. Checks. Commit `feat(fork-snippets): insert snippets from the composer with ;alias`.
@@ -107,7 +109,8 @@ docs/fork/user/snippets.md
     call `loom.snippets.import`. Export one and export all.
 18. `terminalSend.ts` and its test (target resolution and bracketed-paste wrapping).
 19. `docs/fork/user/snippets.md`: what snippets are, `;alias`, fields syntax, suggested
-    keybindings, import from old Loom, the terminal caveat.
+    how to bind the two commands in Keybindings (they ship unbound), import from old
+    Loom, the terminal caveat.
 20. Update the packet index Status. Checks. Commit
     `feat(fork-snippets): restore history, import and export, and send to terminal`.
 

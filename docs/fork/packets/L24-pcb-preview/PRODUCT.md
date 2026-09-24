@@ -21,10 +21,12 @@ see the rule violations, while the agent works.
   while the panel is visible.
 - Run ERC (schematic) or DRC (board) for a KiCad design and read the violations, grouped
   into errors and warnings, each with its rule, description and the affected items with
-  positions. Copy a plain-text summary to paste into the chat for the agent.
+  positions. "Send summary to chat" puts a plain-text summary into the thread's composer for
+  the user to edit and send; "Copy summary" copies the same text.
 - See which tools the server found, in Settings, Loom, PCB preview, and follow a link to
   install instructions when one is missing.
-- Open the design in the standalone Electronics app, when its URL is set in settings.
+- Open the current design in the standalone Electronics app, when its URL is set in
+  settings: "Open in Electronics" goes straight to that board's page.
 
 ## Entry points
 
@@ -35,6 +37,8 @@ see the rule violations, while the agent works.
 | Keybinding                                           | `loom.pcb-preview.toggle`, unbound by default; the user binds it in Settings, Keybindings             | The same key closes it when it is the active surface      | Same                                                                      |
 | Settings                                             | Settings, Loom, PCB preview: detected `kicad-cli` and `tsci`, their versions, the Electronics app URL | Clear the URL field                                       | The section itself                                                        |
 | Chat                                                 | None in v1 (clicking a `.kicad_pcb` path in chat does not open the panel)                             |                                                           |                                                                           |
+| Checks view: "Send summary to chat"                  | Puts the check summary into the thread's composer (appended after a blank line if a draft exists)     | Edit or clear the composer; nothing is sent               | The composer                                                              |
+| Toolbar menu: "Open in Electronics"                  | Opens `<Electronics URL>/designs/by-path?path=<absolute entry path>` in the browser                   | Close that tab                                            | Only shown when the Electronics URL is set                                |
 
 ## States
 
@@ -65,7 +69,8 @@ see the rule violations, while the agent works.
   to preview here (N MiB). Open it in KiCad." instead of the drawing.
 - **Checks idle:** "Run ERC" / "Run DRC" buttons with "Not run yet".
 - **Checks running:** the button shows a spinner; other buttons stay usable.
-- **Checks passed:** "No violations. ERC ran <relative time> with KiCad <version>."
+- **Checks passed:** "No violations. ERC ran <relative time> with KiCad <version>." "Send
+  summary to chat" still works (it says there are no violations).
 - **Checks found violations:** counts in the tab label ("Checks 3"), grouped list,
   excluded violations hidden behind "Show excluded (n)".
 - **Checks failed to run:** the tool output, as for a render failure.
@@ -82,9 +87,7 @@ see the rule violations, while the agent works.
   SVG text and check results over the WebSocket.
 - Upstream T3 server: disabled entry, as above.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - SVG, not PNG or an embedded viewer. KiCad and tscircuit both export SVG, it scales without
   a GPU, and it keeps the payload text. The drawing is shown through an `<img>` element
@@ -95,14 +98,13 @@ Decisions:
 - tscircuit rendering asks once per project because it executes project code.
 - No dependency on the Electronics app. It owns fabrication, parts and ordering; this panel
   owns "look at the board next to the chat".
-
-Open questions for Kyle:
-
-1. Tool path overrides: detection covers `PATH`, `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`
-   and the project's `node_modules/.bin/tsci`. Is that enough, or should settings allow a
-   custom path per environment (a small fork settings file and two more RPCs)?
-2. Deep link into the Electronics app: its spec defines `/embed/pcb/<ref>` but no "open by
-   path" page. Until it does, "Open in Electronics" opens the app's home page. Should the
-   Electronics spec add `/designs/by-path?path=<abs>`?
-3. Should a "Send summary to chat" button insert the check summary into the composer? It
-   needs the composer extension point; v1 copies to the clipboard.
+- Tool detection only in v1 (Kyle): `PATH`, `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`
+  and the project's `node_modules/.bin/tsci`, with no custom path settings. It covers the
+  standard installs and needs no settings storage; custom paths are a follow-up. KiCad is not
+  installed on Kyle's Mac yet, so the missing-tool state is the first one he will see.
+- "Open in Electronics" deep-links to `/designs/by-path?path=<abs>` (Kyle), which the
+  Electronics spec now defines. The path is the design's entry file on the environment host,
+  so the link lands on the right board when the Electronics app runs on that machine.
+- "Send summary to chat" is in v1 (Kyle): it fills the composer and never sends, so the user
+  stays in control of what the agent reads. "Copy summary" stays for other destinations.
+  It writes through upstream's composer draft store, so it needs no composer extension point.

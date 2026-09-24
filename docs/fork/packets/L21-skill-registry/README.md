@@ -1,6 +1,6 @@
 # L21: Skill registry and creation lab
 
-Status: Not started.
+Status: Ready to build.
 
 One place to see every agent skill on an environment: which providers and accounts can use
 it, where it lives on disk, whether it is shared through a symlink, whether it is on or off,
@@ -24,7 +24,10 @@ installer, update or remove what Loom installed, and create a new skill: scaffol
     (`skills/config/write`). Other providers are read-only here.
   - Install from an `https` git URL: shallow clone into Loom's state folder, list the
     `SKILL.md` folders found, copy chosen skills into a chosen target folder, record the
-    source and commit. Update (fetch, show what changed, replace) and remove (move into
+    source and commit. Default Claude target: the shared `~/.claude/skills` (Kyle's
+    `~/.claude_N/skills` are symlinks to it); a single account's own folder and
+    `~/.agents/skills` (cross-provider) are selectable. Suggested sources: impeccable,
+    ponytail and typesafe-ai/skills, fetched only on request. Update (fetch, show what changed, replace) and remove (move into
     Loom's trash folder) only for skills Loom installed.
   - Creation lab: scaffold a skill from a form, edit `SKILL.md` in the panel with validation,
     and "Test in new thread" (refresh the provider, open a new thread in the chosen project
@@ -38,6 +41,8 @@ installer, update or remove what Loom installed, and create a new skill: scaffol
     thread.
   - Editing skill files other than `SKILL.md` (scripts, references) inside the panel.
   - Mobile UI.
+  - Follow-up: a Jev skill suggestion (L29's idea catalog; not selected for now).
+  - Follow-up: agent-facing MCP tools (for example scaffolding a skill from an agent).
 
 ## Surfaces
 
@@ -53,7 +58,9 @@ installer, update or remove what Loom installed, and create a new skill: scaffol
   `skill-registry`.
 - [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels): the Skills panel (launcher letter K).
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette): "Open skills", "Install skills from git", "Create a skill".
-- [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings): command `loom.skill-registry.toggle`, unbound by default.
+- [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings): command `loom.skill-registry.toggle`, unbound by default (fork keydown
+  listener, never written into `keybindings.json`), which requires
+  [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) for its shortcut host.
 
 ## Packet seams
 
@@ -64,11 +71,13 @@ None. See [SEAMS.md](./SEAMS.md).
 - If L16 is present, its Codex tools page also toggles Codex skills; both call Codex's
   `skills/config/write`, so they agree. Nothing is required from L16.
 - If L22 is present, nothing changes: instruction modes are not skills.
+- If L29 is present, its drafting brief links to the TypeSafe skill; installing it is the
+  user's click on the "TypeSafe" suggested source here. L21 never installs it on its own.
 
 ## Size estimate
 
-Large: about 3,000 to 3,800 lines including tests. Server inventory and scanner 700, git
-source and installs 700, Claude settings and Codex toggles 300, lab file IO and validation
+Large: about 3,100 to 3,900 lines including tests. Server inventory and scanner 700, git
+source, targets, suggestions and installs 800, Claude settings and Codex toggles 300, lab file IO and validation
 300, RPC and storage 300; web panel 1,200; tests 700.
 
 ## How an agent starts

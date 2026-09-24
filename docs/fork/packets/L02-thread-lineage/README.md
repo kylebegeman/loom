@@ -1,6 +1,6 @@
 # L02: Thread lineage
 
-Status: Not started.
+Status: Ready to build.
 
 Threads stop being isolated. From any message, the user forks the conversation into a new
 thread that starts with the history up to that point, optionally on another provider, model
@@ -16,11 +16,14 @@ steered at once. There is no automatic merge.
 
 - In:
   - Fork from any user or assistant message (hover action on the message, command palette,
-    unbound keybinding). The fork dialog chooses title, provider and model, workspace (same
-    workspace as the source, project root, or a new worktree) and how context is carried.
+    unbound keybinding). The fork dialog chooses title, provider and model, workspace (a new
+    worktree by default for forks, with "Same workspace" and "Project root" as options) and
+    how context is carried.
   - Context carried by replay in phase 1 (every provider): the visible history is copied into
     the child (as imported messages), and the model receives it as a transcript attached to
-    the child's first message as a composer context record. No upstream seam is needed for
+    the child's first message as a composer context record. The transcript budget is fixed
+    at about 90,000 characters (oldest messages dropped first) and the fork shows an
+    "earlier messages trimmed" notice when trimming happens. No upstream seam is needed for
     this.
   - Native provider forks in phase 2 (optional, behind a spike): Claude through the SDK's
     `forkSession`, Codex through app-server `thread/fork`. The child then resumes the forked
@@ -51,6 +54,8 @@ steered at once. There is no automatic merge.
   - A dedicated two-column split route. Side by side lives in the right panel, which the user
     can widen or maximize with upstream's layout controls.
   - Mobile UI.
+  - A setting for the transcript budget. It stays fixed at about 90,000 characters
+    (decided); it leaves room for the first message under upstream's input limit.
 
 ## Surfaces
 

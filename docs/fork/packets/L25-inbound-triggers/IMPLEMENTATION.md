@@ -1,12 +1,12 @@
 # L25 implementation plan
 
 Ordered for one agent; each phase leaves the tree compiling and can be its own commit
-(`feat(fork-inbound-triggers): ...`). Phases 1 and 2 are required; phase 3 is optional.
+(`feat(fork-inbound-triggers): ...`). Both phases are required. Webhooks are a follow-up and
+not part of this packet.
 
 ## Before starting
 
-- Confirm with Kyle that the packet is approved (it is not in `docs/fork/selections.md`;
-  see PRODUCT.md, question 1).
+- The packet is approved by Kyle (2026-09-24), polling through `gh` only.
 - Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
   folder.
 - Seed a worktree `.t3` from real data. Never enable a trigger with `approval: "auto"`
@@ -36,8 +36,10 @@ Ordered for one agent; each phase leaves the tree compiling and can be its own c
    login.
 6. `starter.ts`: model resolution (copy the order from
    `apps/server/src/serverRuntimeStartup.ts:207-262`), worktree creation mirroring
-   `apps/server/src/ws.ts:1303-1470` (base ref, start from origin, temporary branch), the two
-   dispatches, and the follow-up path.
+   `apps/server/src/ws.ts:1303-1470` (base ref, start from origin, temporary branch),
+   `thread.create`, the setup script through `ProjectSetupScriptRunner.runForThread` with the
+   three thread activities and the non-async wait (TECHNICAL.md, Starter), `thread.turn.start`,
+   and the follow-up path.
 7. `InboundTriggers.ts`: service methods for every RPC; `pollOnce` (settings, triggers,
    shared user-wide fetches, per-trigger fetches, insert, decide, auto-start, retry
    waiting, prune); the inbox summary in a `SubscriptionRef` with a revision counter.
@@ -68,8 +70,10 @@ export function triggerThreadId(hash: string): ThreadId {
   );
 }
 
-export const triggerCommandId = (hash: string, step: "create" | "turn") =>
-  CommandId.make(`server:loom-trigger:${hash.slice(0, 16)}:${step}`);
+export const triggerCommandId = (
+  hash: string,
+  step: "create" | "setup-requested" | "setup-started" | "setup-failed" | "turn",
+) => CommandId.make(`server:loom-trigger:${hash.slice(0, 16)}:${step}`);
 ```
 
 ## Phase 2: web
@@ -78,23 +82,25 @@ export const triggerCommandId = (hash: string, step: "create" | "turn") =>
 2. `apps/web/src/fork/inbound-triggers/state.ts`.
 3. `triggersSearch.ts` (pure, tested), `TriggersPage.tsx`, `InboxList.tsx`,
    `TriggerEditor.tsx` with `dryRun`, `DryRunResults.tsx`.
-4. `InboxToastCoordinator.tsx` and `ShortcutHost.tsx`; register in `FORK_ROOT_COMPONENTS`.
-5. `settingsSection.tsx` (environment-scoped; on or off, interval, "Open triggers").
+4. `notificationPrefs.ts`, `InboxNotifier.tsx` (system notification for events that wait
+   on the user, in-app toasts for the rest; `inboxNotifier.logic.ts` holds the pure diff of
+   two summaries into `{ waiting, informational }`) and `ShortcutHost.tsx`; register in
+   `FORK_ROOT_COMPONENTS`.
+5. `settingsSection.tsx` (environment-scoped: on or off, interval 1 to 120 minutes with
+   default 5, "Check now", "Open triggers"; per device: the two notification switches and
+   "Allow notifications"). "Check now" also goes in the Inbox header and on each trigger
+   row.
 6. `palette.tsx`.
 7. Route file (SEAMS.md) and route tree regeneration.
 8. Typecheck client-runtime and web.
 
-## Phase 3 (optional): webhooks
-
-1. `webhook.ts` route with raw body limit, HMAC check, event mapping to `IncomingEvent`, and
-   the shared insert path; add to `ForkRoutesLayer`.
-2. `webhookInfo` RPC and an editor section showing the path and secret with Rotate.
-3. Tests with recorded GitHub deliveries and signatures computed in the test.
-
 ## Documentation
 
-`docs/fork/user/inbound-triggers.md`: what triggers watch, the Inbox, auto-start guards,
-that Loom must be running to poll, and how to turn it off. FORK.md rows, packet index Status.
+`docs/fork/user/inbound-triggers.md`: what triggers watch (mentions only in the project's own
+repository), the Inbox, auto-start guards, that triggered worktree threads run the project's
+setup script, the check interval and "Check now", notifications (system notification for
+events waiting on you, toasts for the rest, both switchable per device), that Loom must be
+running to poll, and how to turn it off. FORK.md rows, packet index Status.
 
 ## Pitfalls
 
@@ -108,7 +114,13 @@ that Loom must be running to poll, and how to turn it off. FORK.md rows, packet 
 - `workflow_run` `created` filter uses dates, not times; the overlap plus dedupe handles
   the granularity.
 - Worktree creation is not idempotent; store the path before dispatching and reuse it on
-  retry.
+  retry. The same goes for the setup script: record `setup_state` before waiting, and skip
+  the script on a retry that finds it set.
+- The setup script opens a terminal for the thread, so run it after `thread.create`, never
+  before (upstream drains deletions through the create for the same reason,
+  `apps/server/src/ws.ts:1400-1404`).
+- `Notification` must be constructed only when permission is `granted`, and
+  `requestPermission` only from a click; wrap construction in try/catch as upstream does.
 - `thread.turn.start` for a thread whose session is running may be rejected or queued by
   upstream; the follow-up path checks first and uses `waiting`.
 - The poller must never hold the semaphore while starting many threads in a row with long
@@ -125,3 +137,8 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
   one thread even when Start is clicked twice or retried after a failure.
 - A CI failure on a Loom thread's branch posts one follow-up to that thread after it is idle.
 - Nothing polls when the feature is off.
+- A worktree thread started from a trigger in a project with a setup script shows the setup
+  script activities and its terminal, and the agent's turn starts after a non-async script
+  finishes.
+- With Loom in the background, a new "Ask me first" event raises one system notification on
+  the desktop app; an auto-started thread raises none, only a toast once Loom is visible.

@@ -211,8 +211,8 @@ None.
 
 - **Mount the card in `ChatView`'s banner overlay.** Would need a `ChatView` seam in
   addition to the header button; a portal positioned from the header keeps it to one seam.
-- **A persistent card.** Kyle chose light dismissal for old Loom's card (ledger
-  1359); the panel tab is the persistent view. Open question in PRODUCT.md.
+- **A persistent card or a "keep open" pin.** Rejected: Kyle confirmed light dismissal
+  only (as for old Loom's card, ledger 1359); the panel tab is the keep-open view.
 - **Reuse `ChatView`'s already-derived values** (pass them down). Would need props threaded
   through `ChatView` and `ChatHeader`: more seams. Recomputing from the same atoms is cheap.
 - **A server-side status RPC** (old Loom's later designs). Unnecessary: every datum is

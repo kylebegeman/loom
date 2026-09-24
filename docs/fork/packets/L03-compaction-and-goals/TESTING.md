@@ -26,7 +26,8 @@ vp test run apps/web/src/fork/compaction-and-goals/compaction.test.ts \
   apps/server/src/provider/Layers/ProviderService.test.ts
 
 vp lint apps/server/src/fork apps/web/src/fork packages/contracts/src/fork packages/client-runtime/src/fork \
-  apps/web/src/components/ChatView.tsx apps/server/src/provider/Layers/ProviderService.ts
+  apps/web/src/components/ChatView.tsx apps/server/src/provider/Layers/ProviderService.ts \
+  apps/web/src/components/chat/ChatComposer.tsx   # only if this packet created ext-composer
 
 vp run --filter @t3tools/contracts typecheck
 vp run --filter t3 typecheck
@@ -46,12 +47,13 @@ With Kyle's permission for a dev server and browser, on a worktree seeded with r
    compaction divider (with token counts when Claude reports them). While a turn runs, the
    item is disabled with "Wait for the current turn to finish".
 2. Same on a Codex thread (native compaction) and an OpenCode thread if one is configured.
-3. "Set goal": "Every answer must end with the word DONE." Send "What is 2+2?". The reply
+3. Composer footer "Goal" button: "Every answer must end with the word DONE." Send "What is 2+2?". The reply
    ends with DONE; the user bubble shows only "What is 2+2?".
 4. Pause the goal; send another message; the reply no longer follows the rule. Resume;
    it does again. Mark met; the chip shows Met and nothing is sent.
 5. Edit the goal text; the chip updates on a second browser window after focus.
-6. Clear; Undo restores it.
+6. Clear; Undo restores it. The footer button's tooltip switches between "Set goal" and
+   "Edit goal"; it is absent on a new draft thread.
 7. Send `/compact` with an active goal: compaction runs normally (no goal added to slash
    commands).
 8. Delete the thread; the goal row is gone (check the worktree database).

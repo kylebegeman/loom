@@ -40,6 +40,10 @@ None. Registrations happen only inside fork-owned registry files:
 
 When `ForkSubscriptionRpcTag` is still `never`, replace `never` with the first tag.
 
+"Send summary to chat" calls upstream's exported `useComposerDraftStore.getState().setPrompt`
+(`apps/web/src/composerDraftStore.ts:571,4073`) from fork code, so it adds no seam and does
+not need `ext-composer`.
+
 ## Merge check
 
 Run on the packet branch before asking for review:

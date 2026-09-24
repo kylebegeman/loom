@@ -11,13 +11,19 @@
 - Codex can ask a question and keep working; other providers either block on the question
   or cannot ask at all mid-turn. Kyle wants every provider to be able to ask without
   stopping.
+- Picking the right model and effort for each message is a judgment call Kyle makes many
+  times a day ("this is a rename, the fast model is fine"; "this is a design question, use
+  the strongest with high effort"). Jev can make that call in about a second, but it must
+  only suggest.
 
 ## What the user can do
 
 A. Find in thread
 
-- Press `mod+F` in a thread (or use the palette or a custom binding). A find bar appears at
-  the top right of the timeline with the search field focused.
+- Press `mod+F` in a thread (on by default; or use the palette or a custom binding). A find
+  bar appears at the top right of the timeline with the search field focused. Outside the
+  chat (terminal, browser preview, a right-panel surface) `mod+F` keeps its usual meaning,
+  including the browser's own find on web.
 - Type: matching messages are counted live ("3 of 12"), matches in visible messages are
   highlighted, and the current match is scrolled into view with a stronger highlight.
 - Enter goes to the next match, Shift+Enter to the previous (wrapping). Escape closes and
@@ -48,24 +54,48 @@ C. Model presets
 
 D. Ask without stopping
 
-- An agent (Claude, Cursor, Grok, OpenCode, Antigravity, and Codex if it chooses the tool)
-  can call `loom_chat_conveniences_ask` with up to three questions and optional choices.
-  The call returns immediately and the agent keeps working.
+- Any agent (Claude, Cursor, Grok, OpenCode, Antigravity and Codex; the tool is offered to
+  every provider) can call `loom_chat_conveniences_ask` with up to three questions and
+  optional choices. The call returns immediately and the agent keeps working.
 - The question appears in the thread's question panel exactly like a Codex async
   question: choose an option or type an answer, and send; or dismiss it.
 - The answer is sent as a new message in the thread: it reaches the running turn or starts
   a new one, as upstream does for Codex async answers.
 - Works from the phone too (upstream's mobile app already shows these questions).
 
+E. Auto preset (Jev)
+
+- In the presets list, "Set up Auto" opens the Auto editor: add 2 to 6 choices with "Add
+  current model" (the composer's provider account, model and other options), give each a
+  short description of when to use it (prefilled with the model name, edited by the user),
+  and pick its allowed effort range (lowest and highest effort, from that model's own
+  effort options; "No effort setting" when the model has none). Save.
+- Apply "Auto" from the presets list like any preset. An "Auto" chip appears in the
+  composer footer. The selection does not change.
+- Type a message. After a short pause Loom asks Jev, and the chip shows the pick: "Auto
+  suggests Opus, High (82% sure)" with **Use**. **Use** (or the bindable command) applies
+  that model and effort exactly as applying a preset does. Sending without pressing **Use**
+  sends with the current selection.
+- When the pick equals the current selection, the chip says "Auto: current model fits".
+- When Jev cannot help, the chip says "Auto: keeping current model" and, on hover, why:
+  Jev is off for Auto, no Jev key on this environment, Jev is off for this project, no
+  answer within a second, an error, or Jev was not sure.
+- Click the chip's close button, or apply another preset, to turn Auto off for this thread.
+- Turn "Suggest while typing" off in Settings > Loom > Chat conveniences to ask only when
+  clicking the chip ("Suggest").
+- While Auto is on, the message being typed is sent to Jev (TypeSafe) from the
+  environment's server, after secrets are redacted. The Auto editor says so.
+
 ## Entry points
 
-| Part     | Way in                                                                                                                                                                           | Way out / state                                                                                 |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| A        | `mod+F` in a thread view (on by default, switchable), keybinding command `loom.chat-conveniences.find` (unbound), palette "Find in thread"                                       | Escape or the close button; highlights clear.                                                   |
-| B        | Automatic for `mermaid` blocks                                                                                                                                                   | "Code" toggle per block; Settings switch turns rendering off everywhere.                        |
-| C        | Footer presets button; palette "Apply model preset: …", "Save model preset", "Manage model presets"; `loom.chat-conveniences.presets` (opens the list), `preset-1` to `preset-5` | Escape closes the list; delete has Undo; any preset change can be changed back with the picker. |
-| D        | Agent-initiated                                                                                                                                                                  | Answer or Dismiss in the question panel.                                                        |
-| Settings | Settings > Loom > Chat conveniences: "`mod+F` opens Find in thread", "Render Mermaid diagrams"                                                                                   | Switch back.                                                                                    |
+| Part     | Way in                                                                                                                                                                                                                            | Way out / state                                                                                              |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| A        | `mod+F` in a thread view (on by default, switchable), keybinding command `loom.chat-conveniences.find` (unbound), palette "Find in thread"                                                                                        | Escape or the close button; highlights clear.                                                                |
+| B        | Automatic for `mermaid` blocks                                                                                                                                                                                                    | "Code" toggle per block; Settings switch turns rendering off everywhere.                                     |
+| C        | Footer presets button; palette "Apply model preset: …", "Save model preset", "Manage model presets"; `loom.chat-conveniences.presets` (opens the list), `preset-1` to `preset-5`                                                  | Escape closes the list; delete has Undo; any preset change can be changed back with the picker.              |
+| D        | Agent-initiated                                                                                                                                                                                                                   | Answer or Dismiss in the question panel.                                                                     |
+| E        | Presets list "Set up Auto" and "Auto"; chip **Use** or **Suggest**; `loom.chat-conveniences.auto-accept` (unbound); palette "Use Auto suggestion", "Turn off Auto"                                                                | Chip close button, applying another preset, or the palette item. The model is never changed without **Use**. |
+| Settings | Settings > Loom > Chat conveniences: "`mod+F` opens Find in thread", "Render Mermaid diagrams", "Auto: suggest while typing"; Settings > Loom > Jev (ext-decide): the key and Auto's "Use Jev" switch (Auto has no agents switch) | Switch back.                                                                                                 |
 
 ## States
 
@@ -80,6 +110,14 @@ D. Ask without stopping
   saving with 9 presets: "Replace a preset" mode (choose one to overwrite, Escape cancels).
 - D: too many open questions from the tool on one thread (3): the tool fails with "There
   are already 3 unanswered questions in this thread. Wait for answers before asking more."
+- E: not set up: the presets list shows "Set up Auto"; Auto set up but Jev not usable for
+  it on this environment (no `decide` capability, "Use Jev" off, no key, or Auto's switch
+  off): "Auto" and "Set up Auto" are hidden. If Auto was already on for the thread, its chip
+  stays with the reason so it can be turned off. Asking: the chip reads "Auto: thinking" (text only, no
+  spinner). Suggested, fits, fallback: as above. A suggested model that is unavailable
+  (account removed, thread locked to another provider): "Auto suggests <model>, which this
+  thread can't use" with no **Use**. Message shorter than 12 characters: no request, the
+  chip reads "Auto".
 
 ## Copy
 
@@ -95,35 +133,56 @@ D. Ask without stopping
   on every turn): "Ask the user up to 3 questions without waiting. Returns immediately;
   their answer arrives later as a new user message. Keep working meanwhile. Use your
   built-in question tool instead when you cannot continue without the answer."
-- Settings section "Chat conveniences".
+- E: presets list "Auto", "Set up Auto", "Edit Auto". Editor title "Auto preset"; intro
+  "Loom asks Jev which of these choices fits each message and suggests it. Nothing changes
+  until you press Use. The message you are typing is sent to Jev from this environment,
+  with secrets removed."; "Add current model"; per choice "Description" (placeholder "When
+  to use it, for example: quick questions and small edits"), "Lowest effort", "Highest
+  effort", "No effort setting", "Remove"; "Save"; error "Add at least two choices." and
+  "Two choices have the same name." Chip: "Auto", "Auto: thinking", "Auto suggests
+  <model>, <effort> (<n>% sure)", "Use", "Auto: current model fits", "Auto: keeping
+  current model", "Suggest"; fallback reasons "Jev is off for Auto. Change it in Settings >
+  Loom > Jev.", "No Jev key on this environment.", "Jev is off for this project.", "Jev
+  didn't answer in time.", "Jev had an error.", "Jev wasn't sure.", and, when Jev's
+  unsure answer is known, "Jev leaned to <model>, <effort> but wasn't sure." (no **Use**).
+- Settings section "Chat conveniences"; switch "Auto: suggest while typing", description
+  "Off: Auto asks only when you click Suggest."
 
 ## Surfaces and connection modes
 
 A, B, C are client-side (web and desktop) and work with any environment, including
 upstream servers. D needs a Loom server with `chat-conveniences` in `loomFeatures`; the
-answer path is upstream's, so every client (including upstream mobile) handles it.
+answer path is upstream's, so every client (including upstream mobile) handles it. E needs
+a Loom server with `chat-conveniences` and `decide`; the Jev call runs on that server, so
+it works the same locally, over Tailscale and through T3 Connect, and the key never
+reaches a client.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Find searches message data (what the timeline has loaded), not the DOM, because the
   timeline is virtualized; highlighting uses the CSS Custom Highlight API on rendered rows,
   so no markup changes.
-- `mod+F` is handled directly by the fork (with a setting to turn it off) instead of a
-  default keybinding written into `keybindings.json`, which upstream T3 Code would flag as
-  invalid after a rollback (EXTENSION-POINTS.md, Keybindings).
-- Mermaid renders to an image (`<img>` with an SVG blob), so diagram content can never run
-  script or touch the page, and it is loaded only when a diagram appears.
+- `mod+F` opens Find in thread by default, with a setting to turn it off. The fork handles
+  the key directly instead of a default keybinding written into `keybindings.json`, which
+  upstream T3 Code would flag as invalid after a rollback (EXTENSION-POINTS.md,
+  Keybindings). Outside the chat the browser's find still works, and a user binding on
+  `mod+F` wins over the default.
+- `mermaid` is approved as a lazily loaded `apps/web` dependency in its own chunk. It
+  renders to an image (`<img>` with an SVG blob), so diagram content can never run script
+  or touch the page, and it is loaded only when a diagram appears.
 - Presets are per client (localStorage), like upstream's client settings.
 - Ask without stopping reuses upstream's message-mode question activity and answer path
-  (no new events, no new UI); the fork only adds the MCP tool that posts it.
-
-Open questions for Kyle:
-
-1. Approve `mermaid` as a new dependency of `apps/web` (MIT, loaded lazily into its own
-   chunk; old Loom used 11.16.0)?
-2. `mod+F` on by default?
-3. The ask tool is also listed to Codex sessions (MCP tool lists are not filtered per
-   provider, EXTENSION-POINTS.md, MCP tools). Its description steers agents with a native
-   async tool to prefer theirs. Acceptable, or should the handler refuse Codex threads?
+  (no new events, no new UI); the fork only adds the MCP tool that posts it. The tool is
+  offered to every provider, Codex included, with no per-provider refusal; its description
+  steers agents to their own blocking question tool when they cannot continue without the
+  answer.
+- Auto preset uses Jev through ext-decide (feature `chat-conveniences.auto-preset`) and
+  only suggests: it shows the pick and its confidence and waits for **Use**. The fallback
+  is always the current selection, so a Jev failure never blocks or changes a send.
+- Auto picks within the user's own ranges by construction: Jev chooses among the user's
+  described choices and a named effort level (light, standard, deep), and code maps the
+  level to the lowest, middle or highest effort in that choice's range (Jev jaggedness:
+  no numbers or ranges in the question).
+- Auto sends only the typed message and a few facts computed in code (length bucket,
+  images attached, new thread or follow-up), never the thread history, to keep Jev's state
+  small and relevant.

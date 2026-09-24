@@ -16,8 +16,14 @@ to the thread, offline, with nothing leaving the machine.
 
 - Open Utilities from the right panel launcher, the command palette ("Utilities..." submenu
   that lists every tool), or a keybinding they assign.
-- Search tools by name or keyword ("jwt", "sha", "epoch", "slug"), or browse by category:
-  Encode and decode, Hash, Generate, Convert, Text, Web.
+- Search tools by name or keyword ("jwt", "sha", "epoch", "slug", "regex", "subnet",
+  "chmod"), or browse by category: Encode and decode, Hash, Generate, Convert, Text, Web.
+- Test a regular expression against sample text and see every match and its groups
+  highlighted live; a pattern that would hang stops after a second with an explanation.
+- Work out a subnet: network, mask, usable range and host count for an IPv4 or IPv6 block,
+  and whether an address is inside it.
+- Convert file permissions between `rwxr-xr-x` and `755` by typing either or clicking a
+  read, write, execute grid.
 - Type or paste input and see the output update as they type; switch options (direction,
   algorithm, output encoding, case style) with plain controls.
 - Copy any output field with one click; the button says "Copied" for a moment.
@@ -55,15 +61,20 @@ Right panel as the home, palette as the fast path, dialog as the fallback.
 - **Valid input:** output fields, each with a label and a Copy button.
 - **Invalid input:** an inline message under the input in the error color, specific to the
   tool ("Not valid base64: unexpected character at position 12.", "A JWT has three parts
-  separated by dots; this has 2."). The last valid output is not kept, to avoid showing
-  stale results.
+  separated by dots; this has 2.", "Invalid regular expression: unterminated group.",
+  "255.255.0.255 is not a valid netmask."). The last valid output is not kept, to avoid
+  showing stale results.
+- **Regex stopped:** "Matching stopped after 1 second. The pattern may backtrack
+  catastrophically on this text." The next edit runs again.
 - **Warnings** shown with results where they matter: JWT decode "The signature is not
   verified."; MD5 and SHA-1 "Not suitable for security."; password strength estimate.
 - **Large input:** inputs over 1 MiB are refused with "Input is larger than 1 MiB."
   Outputs are capped at 2 MiB with "Output truncated".
 - **No search results:** "No tools match "<query>"."
 - There is no loading state: every tool is synchronous except the diff view, which reuses
-  upstream's diff renderer and shows its own lightweight placeholder while it lays out.
+  upstream's diff renderer and shows its own lightweight placeholder while it lays out, and
+  the regex tester, which shows "Matching..." only if its worker has not answered within
+  200 ms.
 
 ## Surfaces and connection modes
 
@@ -80,9 +91,7 @@ Right panel as the home, palette as the fast path, dialog as the fallback.
 - Only the list of recently used tool ids is stored (`loom:utilities:recent:v1`).
 - Generators use `crypto.getRandomValues`, never `Math.random`.
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Client-only. No server, MCP or CLI. Agents do these things in a shell.
 - No new dependencies: the web app already ships `@noble/hashes` (hashes, HMAC, MD5 and
@@ -91,8 +100,10 @@ Decisions:
 - Hand-written, tested implementations for the cron explainer, user-agent parser, ULID and
   UUID v7, kept deliberately small and honest about their limits (the UA parser names
   common browsers, engines and platforms; it is not a device database).
-
-Open questions for Kyle:
-
-1. Any tool from the old list worth adding beyond the 26 (for example a BIP39 mnemonic
-   generator, which old Loom faked with a small word list and this packet drops)?
+- 29 tools (Kyle): the original 26 plus a regex tester (native `RegExp`, live matches and
+  groups), a CIDR/subnet calculator (range, mask, address in block) and a chmod calculator
+  (rwx and octal both ways). All three are dependency-free.
+- The regex tester runs matching in a Web Worker with a 1 second limit. JavaScript cannot
+  interrupt a running regex, and a frozen tab is the one failure this panel must never cause.
+- No BIP39 mnemonic generator (Kyle).
+- No new dependencies, same as before the additions.

@@ -93,12 +93,17 @@ browser use, AGENTS.md):
 Dialog details:
 
 - On open, call `preview` for the fork point. Show "N messages will be copied" and, when
-  `omittedFromTranscript > 0`, "The oldest M messages are left out of the model's context".
+  `omittedFromTranscript > 0`, "Earlier messages trimmed: the oldest M messages are left out
+  of the model's context." After a successful fork with `omittedFromTranscript > 0`, show
+  the toast "Earlier messages trimmed. M older messages were not sent to the model." (the
+  child's chip label comes from the transcript builder).
 - Context choices: Conversation (default for fork), None (default for sidecar), Native
   (disabled with `nativeUnavailableReason` in phase 1).
-- Workspace default: sidecar "Same as source"; fork "New worktree" when
-  `sourceUsesWorktree`, otherwise "Same as source". Remember the last choice per kind in
-  `loom:thread-lineage:fork-defaults:v1` (try/catch around storage).
+- Workspace default: fork "New worktree"; sidecar "Same workspace". When
+  `worktreeAvailable` is false, "New worktree" is disabled with "This project is not a git
+  repository." and forks default to "Same workspace". The workspace is not remembered;
+  only the context choice per kind is, in `loom:thread-lineage:fork-defaults:v1`
+  (try/catch around storage).
 - First message: required for Conversation; prefilled from `prefillText`.
 - Submit: call `fork`; on success, fork kind navigates with
   `navigate({ to: "/$environmentId/$threadId", params })`; sidecar kind opens
@@ -144,7 +149,7 @@ fake strategies through a test layer; a real-provider check is manual (TESTING.m
 - The transcript must be referenced from the message text; unreferenced records are not sent
   to the provider (`projectComposerContextForProvider` only emits referenced records).
 - Context ids must match `^[a-z0-9_-]+$` and be at most 128 characters.
-- A sidecar in "Same as source" workspace shares files with the main thread: two agents can
+- A sidecar (or a fork the user switched to "Same workspace") shares files with the main thread: two agents can
   edit the same files. The dialog warns when the main thread is running.
 - `useThread` subscribes to a thread's detail; never call it for every related row. Rows use
   shells; only the selected row's pane and open pane tabs subscribe.
@@ -157,6 +162,8 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
 
 - A fork from an assistant message mid-thread creates a child with the visible history and
   a first turn whose reply shows the model knew the earlier conversation.
+- A fork opens with "New worktree" selected (or "Same workspace" in a non-git project); a
+  fork whose transcript was trimmed shows the "earlier messages trimmed" notice.
 - A fork from a user message pre-fills the dialog with that message and carries only the
   messages before it.
 - Forking a Claude thread into Codex works (replay).

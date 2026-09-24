@@ -46,6 +46,7 @@ export const DEVICE_QA_WS_METHODS = {
   stopRecording: "loom.device-qa.stopRecording",
   watchEvidence: "loom.device-qa.watchEvidence",
   deleteEvidence: "loom.device-qa.deleteEvidence",
+  deleteAllEvidence: "loom.device-qa.deleteAllEvidence",
   installApp: "loom.device-qa.installApp",
   statusBar: "loom.device-qa.statusBar",
   disableArgentTelemetry: "loom.device-qa.disableArgentTelemetry",
@@ -229,6 +230,17 @@ export const DeviceQaSettings = Schema.Struct({
   argentPath: Schema.NullOr(Schema.String), // override; null = PATH lookup
   keepRunsPerProject: Schema.Int, // default 20
   defaultCleanStatusBar: Schema.Boolean, // default true
+  /** null = keep evidence until its thread is deleted (default); else delete items older than N days. */
+  evidenceExpireDays: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 365 })),
+  ),
+});
+
+/** watchEvidence payload: the latest items plus totals over all of the thread's evidence. */
+export const DeviceQaEvidenceList = Schema.Struct({
+  items: Schema.Array(DeviceQaEvidence), // latest 200
+  totalCount: Schema.Int,
+  totalBytes: Schema.Number, // sum of size_bytes of the thread's evidence rows
 });
 
 export class DeviceQaError extends Schema.TaggedError<DeviceQaError>()("DeviceQaError", {
@@ -263,8 +275,9 @@ EnvironmentAuthorizationError])`):
 | `runEvents`                      | `{ runId }`                            | `DeviceQaRunEvent`                                            | stream command | `orchestration:read`                           |
 | `capture`                        | `DeviceQaCaptureInput`                 | `DeviceQaEvidence`                                            | no             | `terminal:operate`                             |
 | `stopRecording`                  | `{ evidenceId }`                       | `DeviceQaEvidence`                                            | no             | `terminal:operate`                             |
-| `watchEvidence`                  | `{ threadId }`                         | `{ items: DeviceQaEvidence[] }` (latest 200)                  | subscription   | `orchestration:read`                           |
+| `watchEvidence`                  | `{ threadId }`                         | `DeviceQaEvidenceList` (latest 200 plus totals)               | subscription   | `orchestration:read`                           |
 | `deleteEvidence`                 | `{ evidenceId }`                       | void                                                          | no             | `orchestration:operate`                        |
+| `deleteAllEvidence`              | `{ threadId }`                         | `{ deletedCount, freedBytes, skippedActive }`                 | no             | `orchestration:operate`                        |
 | `installApp`                     | `DeviceQaInstallInput`                 | `DeviceQaEvidence`                                            | no             | `terminal:operate`                             |
 | `statusBar`                      | `{ target, mode: "clean" \| "clear" }` | void                                                          | no             | `terminal:operate`                             |
 | `disableArgentTelemetry`         | `{}`                                   | `DeviceQaStatus["argent"]`                                    | no             | `terminal:operate`                             |
@@ -434,12 +447,30 @@ Files go to `<stateDir>/fork/device-qa/evidence/<threadId>/<evidenceId>.<ext>`.
 
 ### Clean-up and retention
 
-- Evidence lives until its thread is deleted or the user deletes it. The fork reactor
+- Evidence lives until its thread is deleted or the user deletes it, unless
+  `evidenceExpireDays` is set. The fork reactor
   (`reactor.ts`) is a `Layer.effectDiscard` in `ForkServicesLive` started with `forkParked`
   (`apps/server/src/serverActivation.ts:11-26`); it subscribes to
   `OrchestrationEngineService.streamDomainEvents`, and on `thread.deleted` removes the thread's
   rows and its evidence folder. A startup pass does the same for threads missing from the
   projection, so no cursor table is needed.
+- Expiry (only when `evidenceExpireDays` is not null): the same reactor layer runs a sweep at
+  startup, every 6 hours (`Effect.repeat` with `Schedule.spaced("6 hours")`, forked in the
+  layer's scope; check the schedule names against the installed effect version), and right
+  after `updateSettings` changes the value. The sweep deletes rows with `created_at` older than
+  the cutoff and status `ready` or `failed` (never `recording` or `finalizing`), and their
+  files. The cutoff is computed in code from the server clock.
+- Deleting evidence (one item, all of a thread, expiry or thread deletion) removes the row and
+  its file under `evidence/<threadId>/`. A `flow-report` item points into a run directory
+  (`runs/<runId>/report.json`), which belongs to the run history: deleting the item removes
+  only the row, and the run directory follows `keepRunsPerProject`.
+- `deleteAllEvidence({ threadId })` deletes every item of the thread except an active
+  recording (counted in `skippedActive`; stop it first), then removes the thread's evidence
+  folder if it is empty. It returns the count and bytes freed; `watchEvidence` emits the new
+  list and totals.
+- Totals: `SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) FROM fork_device_qa_evidence WHERE
+thread_id = ?` on every `watchEvidence` emission (indexed by thread, small). Install rows
+  have no file and count 0 bytes.
 - Runs beyond `keepRunsPerProject` are deleted with their run directories after each run.
 - Runs and recordings active at shutdown are marked `interrupted` / `failed` on start.
 
@@ -516,8 +547,16 @@ Files: `<stateDir>/fork/device-qa/evidence/<threadId>/`, `<stateDir>/fork/device
     `status.localDevices`, preferring the device the thread is watching
     (`DeviceServiceState.sessions`). A panel opened from the Device panel toolbar gets the
     device through the surface's `resourceId` (`forkPanelSurface("device-qa", "<hostId>:<deviceId>")`).
+    Flow runs accept only simulators and emulators (`runFlows` checks the target against
+    `status.localDevices`, which lists only booted simulators and running emulators, and
+    fails with `device-unavailable` otherwise); a physical device handed over from the Device
+    panel shows the note from PRODUCT.md and the simulator list. Physical iPhones for flows
+    are a follow-up (README).
   - `FlowList.tsx`, `FlowRunView.tsx` (steps with indentation by `depth`, snapshot image trio),
     `EvidenceList.tsx`, `InstallForm.tsx`, `ArgentSetup.tsx`.
+  - `EvidenceList.tsx` header: "Evidence: <totalCount> items, <totalBytes formatted>" and
+    "Delete all for this thread", which confirms with "Delete <n> items (<size>) captured in
+    this thread? This cannot be undone." and reports skipped active recordings.
   - `DeviceToolbarActions.tsx`: the component rendered by the Device panel seam. Renders
     nothing unless the environment has `device-qa` in `loomFeatures`. Two `DeviceButton`-sized
     icon buttons (Camera, ClipboardCheck); while a recording runs on that device the camera
@@ -613,8 +652,9 @@ optional integrations.
 
 ## Performance
 
-- Subscriptions send small records: at most 20 runs and 200 evidence items per event, and only
-  on changes. Step events stream only while a client watches that run.
+- Subscriptions send small records: at most 20 runs and 200 evidence items (plus two totals)
+  per event, and only on changes. The expiry sweep is one indexed query every 6 hours, and
+  only when expiry is on. Step events stream only while a client watches that run.
 - Images are fetched lazily through signed asset URLs; the WebSocket never carries image bytes.
 - Flow discovery runs on panel open and on refresh; it is bounded (1,000 files).
 - The Device panel toolbar component reads one capability flag and the recording state from the

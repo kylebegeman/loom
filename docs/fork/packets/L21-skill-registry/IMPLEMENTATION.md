@@ -26,6 +26,8 @@ apps/server/src/fork/skill-registry/
   ProviderReports.ts
   mergeInventory.ts    mergeInventory.test.ts
   toggles.ts           toggles.test.ts
+  targets.ts           targets.test.ts
+  suggestedSources.ts
   sources.ts           sources.test.ts
   installs.ts          installs.test.ts
   lab.ts  validate.ts  validate.test.ts
@@ -49,7 +51,9 @@ docs/fork/user/skill-registry.md
    upstream's `ClaudeSkills.ts:50-70` rather than importing a private function),
    `knownRoots.ts`, `mergeInventory.ts` (symlinked shared folder merges into one entry with
    several visibilities; shadowing; install attachment; `modifiedSinceInstall`),
-   `inventory.logic.ts` on the web side.
+   `inventory.logic.ts` on the web side, and `targets.ts` (`resolveTargets` over injected
+   instances and realpaths: shared folder detection, default choice, no duplicate account
+   rows).
 4. **Scanner and provider reports.** `SkillScanner.ts` with the budget and `realpath`;
    `ProviderReports.ts` with the concurrency, timeout and per-project cache.
 5. **Service, storage, handlers (read path).** `SkillRegistryService.inventory`, migrations,
@@ -62,10 +66,14 @@ docs/fork/user/skill-registry.md
    only `"on"`/`"off"`), Codex `skills/config/write`, then snapshot refresh. Switches in the
    Skills tab with the scope notes from PRODUCT.md.
 8. **Sources and installs.** `sources.ts` (URL policy, clone command, scan) as a stream
-   command; `installs.ts` (copy, marker file, record, update, remove to trash). Sources tab
-   UI with fetch progress, target picker (default per PRODUCT.md open question 1), install,
-   check updates, update with changed-file list, remove.
-9. **Lab.** `lab.ts` (scaffold, read, write with compare-and-swap), Lab tab with the editor and
+   command; `installs.ts` (create a missing target folder, copy, marker file, record, update,
+   remove to trash); `suggestedSources.ts` (the constant from TECHNICAL.md) served by
+   `sources`, and the `targets` handler. Sources tab UI with the Suggested list, fetch
+   progress, grouped same-name entries with their subpaths, preselection per target family,
+   target picker defaulting to the shared Claude folder, install, check updates, update with
+   changed-file list, remove.
+9. **Lab.** `lab.ts` (scaffold into any target from `targets`, including `~/.agents/skills`;
+   read; write with compare-and-swap), Lab tab with the editor and
    live validation (debounced 300 ms, through `validate`), "Test in new thread" and "Move to
    trash".
 10. **Docs and status.** `docs/fork/user/skill-registry.md`: what the panel shows, how
@@ -80,7 +88,10 @@ docs/fork/user/skill-registry.md
 - **Folder name is the skill name** for Claude (`ClaudeSkills.ts:346-351`). Toggles key on
   the folder name, not the frontmatter `name`.
 - **Shared folders.** Writing a skill into `~/.claude_1/skills` writes into Kyle's shared
-  `~/.claude/skills`. Resolve real paths first and show every account the change reaches.
+  `~/.claude/skills`. Resolve real paths first and show every account the change reaches;
+  the default target is the shared folder itself.
+- **Suggested sources are network fetches.** Nothing is fetched until the user clicks
+  Fetch; tests never touch the network.
 - **Codex per-cwd probes are expensive.** Never probe on keystrokes or on every render;
   cache per project.
 - **Git safety.** No hooks, no submodules, no LFS smudge (`GIT_LFS_SKIP_SMUDGE=1`), no

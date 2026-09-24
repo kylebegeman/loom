@@ -36,7 +36,7 @@ Selections: P8 (File Outline panel) and the file-outline part of F8 in
 ## External
 
 - web-tree-sitter (MIT): <https://github.com/tree-sitter/tree-sitter/tree/master/lib/binding_web>.
-  Phase 2 candidate; `tags.scm` query files in each grammar repository define
+  Conditional phase 2 (approved by Kyle); `tags.scm` query files in each grammar repository define
   `@definition.function`, `@definition.class` and similar captures.
 - `@vscode/tree-sitter-wasm` (MIT, prebuilt WASM grammars VS Code uses):
   <https://github.com/microsoft/vscode-tree-sitter-wasm>. Language list includes TypeScript,

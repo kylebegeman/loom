@@ -1,6 +1,6 @@
 # L16: In-app provider sign-in and setup
 
-Status: Not started.
+Status: Ready to build.
 
 Sign Codex and Claude accounts in and out from inside Loom, add a second or third account of
 the same provider without a terminal, and manage Codex's tools (MCP servers, skills) and a
@@ -24,15 +24,20 @@ login`" (`apps/server/src/provider/Layers/CodexProvider.ts:554`), and for Claude
   - Claude sign-in per instance through `claude auth login` (Claude subscription, or Anthropic
     Console with `--console`), with the authorization link shown in the app and a box for the
     code Claude shows. Sign out through `claude auth logout`. API key as a sensitive
-    environment variable on the instance.
+    environment variable on the instance (upstream's secret store); never shown after save,
+    with only Replace and Remove offered.
   - Remote sign-in: device code for Codex; "paste the final localhost URL" for Codex browser
     sign-in and Claude, forwarded to the environment's loopback listener.
   - Add account: create the next account folder (`~/.codex_<n>` as a shadow home over the
     shared `~/.codex`, or `~/.claude_<n>` as a `CLAUDE_CONFIG_DIR`), add the provider
-    instance, then open sign-in for it. Remove account: sign out, remove the instance, and
-    optionally move a Loom-created folder aside.
-  - Codex credential storage check: a shadow-home account needs file credentials; offer a
-    confirmed one-click switch to `cli_auth_credentials_store = "file"`.
+    instance, then open sign-in for it. Codex accounts are always shadow homes; an advanced
+    **Change folder** picks another location for the shadow home. Remove account: sign out,
+    remove the instance, and optionally move a Loom-created folder aside.
+  - Codex credential storage check: a shadow-home account needs file credentials. Shows a
+    green check when the shared `config.toml` already uses file storage (Kyle's machine
+    does). Otherwise Loom offers to set `cli_auth_credentials_store = "file"` itself, after a
+    confirmation that shows the exact line, with a timestamped backup first, changing only
+    that key.
   - "Same account as ..." warning when two instances of one provider report the same email.
   - Codex tools page per Codex instance: MCP servers with auth and tool status, reload MCP
     configuration, start an MCP server's OAuth sign-in, and enable or disable Codex skills.
@@ -48,6 +53,10 @@ login`" (`apps/server/src/provider/Layers/CodexProvider.ts:554`), and for Claude
   - Continuous sync of Claude configuration into Codex; import is one-shot.
   - Deleting account folders. Removal moves a Loom-created folder into Loom's state
     directory; nothing is deleted.
+  - A separate `CODEX_HOME` per Codex account (no shared threads). Kyle chose shadow homes
+    only; not planned.
+  - Showing or copying a saved Claude API key. Upstream keeps sensitive values in its
+    secret store and never sends them to clients; the form offers Replace and Remove.
 
 ## Surfaces
 
@@ -78,8 +87,11 @@ None. Every upstream touch goes through `ext-core`, `ext-providers`, `ext-settin
 - If L21 (skill registry) is present, the Codex tools page's skill list shows a link
   "Manage all skills" that opens L21's panel. Both packets call the same Codex method
   (`skills/config/write`), so they cannot disagree.
-- If L17 is present, its Gemini and Copilot drivers can register their own setup sections;
-  nothing in this packet depends on that.
+- If L17 is present, its Copilot driver (and its generic ACP agent option) could register
+  their own setup sections later; nothing in this packet depends on that. L17's model
+  endpoint instances are Claude instances that set `ANTHROPIC_BASE_URL`; this packet treats
+  every such instance as a custom-endpoint instance (no sign-in offered, see TECHNICAL.md),
+  whether or not L17 created it.
 
 ## Size estimate
 

@@ -6,13 +6,11 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 
 - Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
   folder.
-- Get Kyle's answer on `@env-spec/parser` (README, "Dependencies needing approval"). If
-  approved, add it to `apps/server/package.json` and commit only the intended lockfile change.
-  If declined, write `apps/server/src/fork/project-profiles/envSpec/parse.ts`: a hand-written
-  parser for the subset in TECHNICAL (comment blocks, `# @decorator` lines with bare, `=value`
-  and `(args)` forms, `KEY=value` with quotes and `fn(...)` values, the `# ---` header
-  divider), with the same output shape, and add fixtures from varlock's parser tests
-  (MIT; keep attribution in the fixture header).
+- Add `"@env-spec/parser": "0.6.0"` (exact, no `^`) to `apps/server/package.json`
+  dependencies (approved by Kyle, README "Dependencies"), install, and commit only the
+  intended lockfile change. If npm shows a newer version by then, still pin `0.6.0`: the
+  citations in TECHNICAL.md are to that version; a bump is its own change. Fixtures may be
+  adapted from varlock's parser tests (MIT; keep attribution in the fixture header).
 - Install varlock locally (`npm i -g varlock@1.20.0` or the project's documented method) for
   the manual pass. Seed the worktree `.t3` with real data (AGENTS.md, "Test data").
 
@@ -29,7 +27,8 @@ apps/server/src/fork/project-profiles/
   *.test.ts
 apps/web/src/fork/project-profiles/
   state.ts  panel.tsx  EnvPanel.tsx  EnvTable.tsx  CommandsBlock.tsx  BudgetBlock.tsx
-  runInTerminal.ts  ProfileSettingsSection.tsx  bindingSources.ts  palette.tsx
+  runInTerminal.ts  ProfileSettingsSection.tsx  bindingSources.ts  profileRows.ts  palette.tsx
+  composerMenu.ts  ProjectNotesComposerBridge.tsx  composerBridgeStore.ts
   *.test.ts
 docs/fork/user/project-profiles.md
 ```
@@ -37,7 +36,8 @@ docs/fork/user/project-profiles.md
 ## Steps
 
 1. **Extension points.** Existence checks for `ext-core`, `ext-panels`, `ext-settings`,
-   `ext-palette`, `ext-mcp`; create missing ones, one commit each.
+   `ext-palette`, `ext-mcp`, `ext-web-root`, `ext-composer-menu`; create missing ones, one
+   commit each (SEAMS.md has the note on writing `ext-composer-menu` to its shape).
 2. **Contracts.** Schemas and `ProjectProfilesRpcGroup` as in TECHNICAL; register in the fork
    group and index; `DEFAULT_PROJECT_PROFILE` helper. Typecheck contracts and consumers.
 3. **Pure server logic first.**
@@ -46,7 +46,8 @@ docs/fork/user/project-profiles.md
      type checks, function-call detection, value-free output.
    - `varlock.ts`: `buildVarlockCommandLine(command, os)` with POSIX single-quote escaping
      (`'` becomes `'\''`) and the Windows rule; `extractVarlockErrors(json, redact)`.
-   - `budget.ts`: `applyUsage(last, next)` delta rule and `crossedLevels(before, after, budget)`.
+   - `budget.ts`: `applyUsage(last, next)` delta rule, `crossedLevels(before, after, budget)`
+     and `serverLocalDay(iso)` (the day ends at the server's local midnight).
 4. **Storage.** `migrations.ts` (`ProjectProfilesMigrations`, slug `project-profiles`, id 1)
    in `FORK_MIGRATION_SETS`; `ProfileStore.ts` repository.
 5. **Services.** `EnvInspectorLive.ts` (file reading with size limits and realpath checks
@@ -64,17 +65,26 @@ docs/fork/user/project-profiles.md
 9. **Web.** Panel (`E`), Env table with filter and search, Commands block with "Run with
    varlock" via `runInTerminal.ts`, Budget block, settings section (scope-aware, multi-target
    saves, links to upstream Project settings), empty `PROFILE_BINDING_SOURCES`, palette items
-   (`action:loom:project-profiles:open-env`, `:edit`, `:run-<intent>`). A one-time
-   confirmation before the first "Validate with varlock" per environment, remembered in
-   `loom:project-profiles:varlock-confirmed:v1` (try/catch around storage).
-10. **Docs.** `docs/fork/user/project-profiles.md` (what the profile is for, what stays in
+   (`action:loom:project-profiles:open-env`, `:edit`, `:run-<intent>`). The "Share profile
+   with agents" switch in the section defaults to on. Empty `PROFILE_SECTION_ROWS` rendered
+   under "More" (and, if L20's private mode already exists, add its row registration here).
+10. **Composer menu.** `composerBridgeStore.ts` (module store), `ProjectNotesComposerBridge`
+    in `FORK_ROOT_COMPONENTS`, and `composerMenu.ts` in `FORK_COMPOSER_TRIGGERS` (TECHNICAL,
+    "Composer: Insert project notes"). Pure `detectProjectNotesTrigger(text, cursor,
+supported)` tested on its own. A one-time
+    confirmation before the first "Validate with varlock" per environment, remembered in
+    `loom:project-profiles:varlock-confirmed:v1` (try/catch around storage).
+11. **Docs.** `docs/fork/user/project-profiles.md` (what the profile is for, what stays in
     upstream Project settings, the `.env.schema` format in two paragraphs with a link to
-    varlock, that values never leave the server, budgets are advisory and which providers
-    report usage). Status in the packets index.
+    varlock, that values never leave the server, that agents can read the profile by
+    default and how to turn that off, the `%` menu for inserting notes, budgets are advisory,
+    reset at the server's local midnight, and which providers report usage). Status in the
+    packets index.
 
 Commits: extension points separately, then
 `feat(fork-project-profiles): keep private project notes, budgets and an env panel`. Revert
-`pnpm-lock.yaml` noise unless the approved dependency is the change.
+`pnpm-lock.yaml` noise; the only intended lockfile change is the approved
+`@env-spec/parser@0.6.0` entry.
 
 ## Pitfalls
 
@@ -95,6 +105,10 @@ Commits: extension points separately, then
   never inside it.
 - **Do not add keys to upstream `ServerSettings`.** All state is in fork tables
   (EXTENSION-POINTS.md, Persistence).
+- **The `%` trigger must never open an empty menu.** `detect` returns `null` until the bridge
+  reports support; test it.
+- **Local midnight, not UTC.** Compute the budget day with local date parts, never
+  `toISOString().slice(0, 10)`.
 
 ## Done when
 
@@ -105,3 +119,5 @@ The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done)
   `.env.local`.
 - "Run with varlock" runs a mapped test action in the thread's terminal.
 - A Codex or Claude thread crossing 80% of a small daily budget gets exactly one marker.
+- Typing `%` in a thread's composer offers "Insert project notes", which inserts the notes as
+  text; on an upstream server `%` stays plain text.

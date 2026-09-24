@@ -44,10 +44,11 @@ None.
 Client only, through `resolveStorage` (`apps/web/src/lib/storage.ts`), every access in
 try/catch:
 
-| Key                            | Value                                     |
-| ------------------------------ | ----------------------------------------- |
-| `loom:panel-picker:enabled:v1` | `"true"` or `"false"`; missing means true |
-| `loom:panel-picker:recent:v1`  | JSON array of up to 5 action labels       |
+| Key                             | Value                                     |
+| ------------------------------- | ----------------------------------------- |
+| `loom:panel-picker:enabled:v1`  | `"true"` or `"false"`; missing means true |
+| `loom:panel-picker:shortcut:v1` | `"true"` or `"false"`; missing means true |
+| `loom:panel-picker:recent:v1`   | JSON array of up to 5 action labels       |
 
 Recents are keyed by label because labels are the only stable identity both arrays share
 (upstream uses the label as the React key). A renamed surface simply drops out of recents.
@@ -61,11 +62,13 @@ Directory: `apps/web/src/fork/panel-picker/`.
 | `types.ts`                   | `PanelPickerAction` (structural subset of both upstream arrays).                                      |
 | `rank.ts`                    | Pure `rankPanelActions(actions, query, recents)` and `upstreamSurfaceDescription(label)`.             |
 | `rank.test.ts`               | Ranking and grouping tests.                                                                           |
-| `preferences.ts`             | `useLoomPanelPicker()` (enabled flag via `useSyncExternalStore`), recents read and write.             |
+| `preferences.ts`             | `useLoomPanelPicker()` (enabled and shortcut flags via `useSyncExternalStore`), recents.              |
 | `PanelPickerList.tsx`        | Search field, grouped list, keyboard handling, Browser profile expansion.                             |
 | `PanelPicker.tsx`            | `LoomPanelPickerLauncher`, `LoomPanelPickerButton` (exports used by the seams), request subscription. |
 | `requests.ts`                | Tiny store: `requestPanelPicker()` increments a counter; components consume it.                       |
-| `PanelPickerCommandHost.tsx` | `ForkRoot` component: handles `loom.panel-picker.open`.                                               |
+| `PanelPickerCommandHost.tsx` | `ForkRoot` component: handles `loom.panel-picker.open` and the default `mod+shift+'` listener.        |
+| `defaultShortcut.ts`         | Pure `isPanelPickerDefaultShortcut(event, platform)` and `shouldOpenFromDefaultShortcut(input)`.      |
+| `defaultShortcut.test.ts`    | Matcher tests.                                                                                        |
 | `palette.tsx`                | `panelPickerPaletteSource`.                                                                           |
 | `settings.tsx`               | `panelPickerSettings: ForkSettingsSection` (id `panel-picker`, title "Panel picker").                 |
 
@@ -127,7 +130,9 @@ export function rankPanelActions(
     No match drops the action. Sort by score, then recents position, then given order. No
     `recent` group while searching; unavailable matches still go to `unavailable`.
 - Descriptions: `action.description ?? upstreamSurfaceDescription(action.label)` where the
-  map holds the copy in PRODUCT.md, keyed by upstream label.
+  map holds the copy in PRODUCT.md, keyed by upstream label. Fork panels carry their own
+  `description` through `ext-panels`; a fork panel without one gets `undefined` from both
+  and shows only its title.
 
 ### List component
 
@@ -182,29 +187,59 @@ containing `PanelPickerList mode="popover"`. The popover opens with the input fo
 closes on pick, Escape (after clearing a non-empty query) or outside click. It also opens
 when a request fires and the button is visible.
 
-### Command and palette
+### Command, default shortcut and palette
 
 - `FORK_KEYBINDING_COMMANDS` gains `"loom.panel-picker.open"`. `PanelPickerCommandHost`
   (in `FORK_ROOT_COMPONENTS`) subscribes with `onForkCommand`: it reads the active thread
   (`useHandleNewThread().activeThread`, as the ext-palette registry does), calls
   `useRightPanelStore.getState().show(ref)` (`apps/web/src/rightPanelStore.ts`, `show`
   in the store interface), then `requestPanelPicker()` on the next animation frame so the
-  launcher or button is mounted when the request lands.
+  launcher or button is mounted when the request lands. The command is unbound by default;
+  users bind it in Settings > Keybindings like any command.
+- Default shortcut `mod+shift+'`. Not a `DEFAULT_KEYBINDINGS` entry and no
+  `FORK_DEFAULT_KEYBINDINGS` seam: the server backfills defaults into the user's
+  `keybindings.json` (`apps/server/src/keybindings.ts:451-546`), and upstream T3 Code then
+  reports the fork command as invalid after a rollback. Instead `PanelPickerCommandHost`
+  adds one `window` `keydown` listener (bubble phase) while the shortcut setting is on:
+
+  1. Return when `event.defaultPrevented`, `event.repeat`, `isCommandPaletteOpen()`
+     (`~/commandPaletteBus`), or `!isPanelPickerDefaultShortcut(event, navigator.platform)`.
+  2. Return when the user's keybindings claim this key:
+     `resolveShortcutCommand(event, keybindings, { context: { terminalFocus: isTerminalFocused(), previewFocus: isPreviewFocused() } }) !== null`
+     (`apps/web/src/keybindings.ts:227`, keybindings from `primaryServerKeybindingsAtom`,
+     exactly as `ForkGlobalShortcuts` reads them). A user binding on the same key, including
+     one for `loom.panel-picker.open`, therefore always wins and never fires twice.
+  3. Return when there is no active thread.
+  4. Otherwise `event.preventDefault()`, then run the same handler as the command.
+
+  Steps 1 to 3 are one pure function, `shouldOpenFromDefaultShortcut({ enabled, matches,
+defaultPrevented, repeat, paletteOpen, boundCommand, hasThread })`, so the rules are
+  tested without a DOM; the listener only gathers its inputs.
+
+  `isPanelPickerDefaultShortcut` (pure, tested): `shortcutKeyFromEvent(event) === "'"`
+  (`apps/web/src/keybindings.ts:83`; it maps the physical `Quote` key to `'` even when Shift
+  turns it into `"`), `shiftKey` true, `altKey` false, and `metaKey` on macOS or `ctrlKey`
+  elsewhere, the other one false (`isMacPlatform` from `~/lib/utils`). The key is free in
+  upstream's defaults (`packages/shared/src/keybindings.ts:21-70`: no binding on `'`).
+  Idle cost: one listener and a storage-backed flag.
+
 - Palette source: one item `action:loom:panel-picker:open`, title "Open panel picker",
   `shortcutCommand: "loom.panel-picker.open"`, only when there is an active thread; its
   `run` calls `dispatchForkCommand("loom.panel-picker.open")`.
 
 ### Settings
 
-`panelPickerSettings` renders one `SettingsRow` with a `Switch` bound to
-`loom:panel-picker:enabled:v1`. Client preference only, so it needs no environment scope and
-works on any server.
+`panelPickerSettings` renders two `SettingsRow`s with a `Switch` each: "Use the compact
+panel picker" (`loom:panel-picker:enabled:v1`) and "`mod+shift+'` opens the panel picker"
+(`loom:panel-picker:shortcut:v1`), copy in PRODUCT.md. Client preferences only, so they
+need no environment scope and work on any server. Both apply without a reload.
 
-### Fork panel descriptions (pending Kyle's answer)
+### Fork panel descriptions
 
-With an optional `description?: string` on `ForkPanelDefinition` and `ForkSurfaceAction`,
-and `description: panel.description` in `useForkPanelActions`, fork panels flow through
-`action.description` with no change here. Until then, fork rows show only their title.
+`ForkPanelDefinition` and `ForkSurfaceAction` carry an optional `description` and
+`useForkPanelActions` passes it through (EXTENSION-POINTS.md, Right panels). Fork rows reach
+the picker as `action.description` with no code here. The field is optional: this packet
+never requires it, and other packets set it as one short sentence.
 
 ## Agent-facing tools
 
@@ -215,6 +250,8 @@ None.
 - The list is at most about 25 rows; ranking is trivial and runs per keystroke in memory.
 - Nothing renders or subscribes while the popover is closed; the launcher only exists while
   the panel has no surfaces (as upstream's).
+- The default shortcut is one `keydown` listener that returns after two property checks for
+  every other key.
 - No animation beyond the popover's default open transition.
 
 ## Alternatives considered
@@ -228,3 +265,6 @@ None.
   in `ChatView.tsx` (the busiest upstream file) and would duplicate availability logic.
 - A new extension point for "render the launcher": only this packet needs it; a packet
   seam is smaller and honest.
+- A default binding through a `FORK_DEFAULT_KEYBINDINGS` spread in
+  `packages/shared/src/keybindings.ts`: one more packet seam, and the backfilled entry in
+  `keybindings.json` breaks rollbacks. Rejected by Kyle in favor of the listener.

@@ -11,7 +11,8 @@ work without adopting its agent-config installers.
 ## What the user can do
 
 - See whether Graphify is available on the environment, and if not, the exact command to
-  install it.
+  install it (pinned to 0.9.67, the tested version). Another installed version still works
+  and shows "Untested version".
 - Build the graph for the current project with one click, see progress, and later update it
   incrementally. See when the graph is stale (built at an older commit, or the tree has
   uncommitted changes).
@@ -28,21 +29,26 @@ work without adopting its agent-config installers.
   Impact uses the thread's working tree changes.
 - Add an impact summary to the composer as context ("Add to message"), so the agent gets the
   same list.
-- Let agents query the graph through a Loom MCP tool, or turn that tool off.
-- Turn on automatic graph updates after turns that changed files.
+- Let agents query the graph through a Loom MCP tool, per project ("Let agents query the code
+  graph", off by default), and turn it off again.
+- Turn on automatic graph updates: after turns that changed files, and in the background
+  when opening a project whose graph is stale. Only one graph builds at a time per
+  environment; others wait with "Waiting for another build".
 - Delete a project's graph.
 
 ## Entry points
 
-| Entry                                                                                    | Behavior                                                                                                                                                            | Reverse / visibility                       |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Right panel launcher and "+" menu: "Code map" (letter Y)                                 | Opens the panel on Overview.                                                                                                                                        | Close the tab.                             |
-| Diff panel header: "Impact" button (network icon)                                        | Opens the panel on Impact with the files in the diff's current scope (working tree, branch or turn). Hidden when the server lacks the feature or the diff is empty. | Close the tab.                             |
-| Command palette: "Open code map", "Show impact of current changes", "Rebuild code graph" | As named. Hidden without the feature.                                                                                                                               | n/a                                        |
-| Keybinding                                                                               | None in v1 (panel toggles can be added through `ext-keybindings` later).                                                                                            | n/a                                        |
-| Settings, Loom page, "Code graph" section                                                | Graphify command, auto-update after turns, agent tool on or off, per-project graph list with size and "Delete graph".                                               | Same section.                              |
-| Agents: `loom_code_graph_query`                                                          | Search, neighbors, impact, path.                                                                                                                                    | Setting "Let agents query the code graph". |
-| Composer                                                                                 | "Add to message" in the Impact tab inserts a compact impact summary into the draft.                                                                                 | Remove text from the draft.                |
+| Entry                                                                                    | Behavior                                                                                                                                                               | Reverse / visibility                           |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Right panel launcher and "+" menu: "Code map" (letter Y)                                 | Opens the panel on Overview.                                                                                                                                           | Close the tab.                                 |
+| Diff panel header: "Impact" button (network icon)                                        | Opens the panel on Impact with the files in the diff's current scope (working tree, branch or turn). Hidden when the server lacks the feature or the diff is empty.    | Close the tab.                                 |
+| Command palette: "Open code map", "Show impact of current changes", "Rebuild code graph" | As named. Hidden without the feature.                                                                                                                                  | n/a                                            |
+| Keybinding                                                                               | None in v1 (panel toggles can be added through `ext-keybindings` later).                                                                                               | n/a                                            |
+| Settings, Loom page, "Code graph" section                                                | Graphify command (with the pinned install command), "Update graphs automatically", per-project graph list with size, the per-project agent switch, and "Delete graph". | Same section.                                  |
+| Code map panel, Overview header                                                          | "Let agents query the code graph for this project" switch and the Graphify version label.                                                                              | Same switch.                                   |
+| Opening a project                                                                        | With auto-update on and a stale graph, an update starts in the background.                                                                                             | Turn auto-update off.                          |
+| Agents: `loom_code_graph_query`                                                          | Search, neighbors, impact, path. Answers only in projects with the agent switch on.                                                                                    | Per-project "Let agents query the code graph". |
+| Composer                                                                                 | "Add to message" in the Impact tab inserts a compact impact summary into the draft.                                                                                    | Remove text from the draft.                    |
 
 ## States
 
@@ -50,7 +56,13 @@ work without adopting its agent-config installers.
   "Needs a Loom server"; diff button and palette items hidden.
 - **Graphify missing**: panel shows "Graphify is not installed on <environment name>." with
   the install command and a "Check again" button. Settings shows the same.
-- **Python or Graphify too old**: "Graphify 0.9.67 or newer is needed (found X)."
+- **Untested Graphify version**: a warning label "Graphify X, untested version (Loom is
+  tested with 0.9.67)" next to the version; everything else works as usual.
+- **Graph shape mismatch**: when a build's `graph.json` does not have the shape Loom reads,
+  "This graph was built by Graphify X and does not have the shape Loom reads. Loom is tested
+  with Graphify 0.9.67." with the pinned install command; the previous graph stays in use.
+- **Queued**: "Waiting for another build" while a different project's graph builds.
+- **Agent tool off** (what an agent sees): "The code graph tool is off for this project."
 - **No graph yet**: "No code graph for <project>." with "Build graph" and an estimate note
   ("Large repositories can take a few minutes").
 - **Building / updating**: progress line with elapsed time and the last Graphify output line;
@@ -74,9 +86,7 @@ The graph is per environment: two environments with the same project each build 
 Panel title "Code map". Tabs "Overview", "Search", "Impact". Buttons "Build graph", "Update",
 "Cancel", "Delete graph", "Add to message", "Open file". Settings section "Code graph".
 
-## Decisions and open questions
-
-Decisions:
+## Decisions
 
 - Graphify runs only with local, deterministic options (`--code-only`, no labeling), with LLM
   API keys stripped from its environment. No network, no API spend.
@@ -85,13 +95,15 @@ Decisions:
   crosses the WebSocket.
 - One MCP tool with a `mode` parameter, per EXTENSION-POINTS.md guidance on tool cost.
 - Loom does not install Graphify; it shows the command.
-
-Questions for Kyle:
-
-1. Confirm L26 is in scope (it is not in selections.md).
-2. Default for "Let agents query the code graph": on (tool present in every session, costs
-   prompt tokens every turn) or off until enabled? Recommendation: off, since most sessions
-   will not use it; the settings copy explains the cost.
-3. Pin Graphify to an exact version (`0.9.67`, tested) or accept any newer version? The
-   `graph.json` schema has no version field; pinning is safer.
-4. Should auto-update also run on project open when the graph is stale, or only after turns?
+- L26 is confirmed (Kyle, 2026-09-24), although it is not in selections.md.
+- "Let agents query the code graph" is off by default and enabled per project (Kyle): most
+  sessions will not use it, and a project where agents benefit can opt in. Upstream lists
+  every MCP tool to every session, so the one-sentence description is still paid everywhere;
+  the switch decides whether calls answer. L15 reads the graph server-side regardless of
+  this switch, because no agent is querying in that path.
+- Graphify 0.9.67 is pinned in every install command Loom shows (Kyle). Other versions still
+  run, labeled "untested version", and a `graph.json` shape check fails with a clear message
+  instead of showing wrong results. `graph.json` has no schema version, so the shape check is
+  the real guard.
+- Auto-update also runs when a project with a stale graph is opened, in the background, with
+  one build at a time per environment (Kyle). It never builds a first graph on its own.

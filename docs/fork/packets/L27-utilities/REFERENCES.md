@@ -14,7 +14,8 @@ packet on 2026-09-24). Old Loom (`bagelvault/loom` 0.13.10):
   MD5; use `@noble/hashes` instead. Fix: `cron.describe` only echoed the five fields,
   `text.diff` compared line N to line N, `web.user-agent` was a few regexes,
   `randomString` used a biased `byte % length`, `bip39.mnemonic` was not real BIP39,
-  `ulid.generate` was "ULID-like". Drop: BIP39, MIME table, the server copy.
+  `ulid.generate` was "ULID-like". Drop: BIP39 (Kyle confirmed on 2026-09-24), MIME table,
+  the server copy.
 - https://github.com/bagelvault/loom/blob/a79ec506/packages/utilities/src/index.test.ts
   (4 tests). This packet tests every tool.
 - https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/code/UtilitiesSurface.tsx
@@ -40,7 +41,8 @@ packet on 2026-09-24). Old Loom (`bagelvault/loom` 0.13.10):
 - `apps/web/src/components/chat/MessagesTimeline.tsx`: `FileDiff` from `@pierre/diffs/react`;
   `MultiFileDiff` is exported from the same entry
   (`node_modules/@pierre/diffs/dist/react/MultiFileDiff.d.ts`).
-- `apps/web/src/components/DiffWorkerPoolProvider.tsx`: the diff worker pool.
+- `apps/web/src/components/DiffWorkerPoolProvider.tsx`: the diff worker pool; line 3 imports
+  a worker with Vite's `?worker` suffix, the pattern the regex tester's worker follows.
 - `apps/web/src/components/CommandPalette.logic.ts:127-155,369-443`: item types, and root
   search not descending into submenus.
 - `apps/web/src/components/ui/`: `dialog.tsx`, `textarea.tsx`, `select.tsx`, `switch.tsx`,
@@ -64,4 +66,14 @@ packet on 2026-09-24). Old Loom (`bagelvault/loom` 0.13.10):
 - HMAC test vectors: RFC 4231, https://www.rfc-editor.org/rfc/rfc4231.
 - Cron field semantics (the day-of-month or day-of-week rule): `man 5 crontab`
   (https://man7.org/linux/man-pages/man5/crontab.5.html).
+- Web Workers are available in insecure contexts; `Worker.terminate()` stops a running
+  script immediately: https://developer.mozilla.org/en-US/docs/Web/API/Worker/terminate.
+  Vite worker imports: https://vite.dev/guide/features#web-workers.
+- `String.prototype.matchAll` requires the `g` flag:
+  https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/matchAll.
+  Named groups and the `d` flag: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_expressions/Groups_and_backreferences.
+- IPv6 text form: RFC 5952, https://www.rfc-editor.org/rfc/rfc5952. /31 point-to-point
+  links: RFC 3021, https://www.rfc-editor.org/rfc/rfc3021.
+- File mode bits and `ls -l` notation (`s`, `S`, `t`, `T`): `man 1 chmod`
+  (https://man7.org/linux/man-pages/man1/chmod.1.html) and `man 1 ls`.
 - Reference repositories in selections.md: none relevant.

@@ -76,6 +76,21 @@ second test reads `ClaudeAdapter.ts` and `XAiAcpExtension.ts` as text and assert
 literal prefixes still occur, so an upstream wording change fails the fork tests on the next
 merge instead of silently disabling the feature.
 
+Before scheduling, the reactor applies three gates, in order:
+
+1. **Driver off**: the stopped instance's driver is not in `enabledDrivers`: nothing.
+2. **Thread off**: the thread is in `fork_auto_resume_threads_off` (the per-thread "Don't
+   auto-resume" switch): no schedule and no switch; one marker `loom.auto-resume.off`,
+   "Auto-resume is off for this thread."
+3. **Workspace cap** (Kyle's decision): `workspaceCap` is true (the Codex stop names
+   `workspace_owner_credits_depleted` or a `workspace_*_usage_limit_reached` type) and the
+   stopped instance has no window with `usedPercent >= 100` and a future `resetsAt`. Waiting
+   cannot help and another account is not tried: the row is written in state
+   `needs_attention` with marker `loom.auto-resume.needs-attention`, "Needs attention: <account>
+   hit a workspace credit or spend limit. Loom will not retry. Add credits or raise the limit,
+   then send a message." When a window with a reset time is also exhausted, the stop is handled
+   like any other limit.
+
 Deduplication: a Codex stop produces two `session-set` events (runtime error, then failed
 turn). The job key is the thread; a second detection for the same `failedTurnId`
 (`session.activeTurnId`, falling back to the thread's `latestTurn.turnId`) is ignored.
@@ -103,20 +118,51 @@ the windows; if they still show an exhausted window with a future reset, it move
 
 ## Account switching
 
-Only when `allowAccountSwitch` is on and the stop is not a workspace cap. Candidates are
-`ServerProvider` entries with the same `driver`, the same `continuation.groupKey`
-(`packages/contracts/src/server.ts:146-148,195`), `enabled`, `availability !== "unavailable"`,
-`auth.status === "authenticated"`, and no window at 100% with a future reset. Pick the one
-with the lowest maximum `usedPercent`; ties by `instanceId`. Upstream enforces the same
-rule when the turn starts (`apps/server/src/orchestration/Layers/ProviderCommandReactor.ts:663-686`,
-`apps/server/src/provider/Layers/ProviderService.ts:1438-1457`); continuation keys are
+On by default (Kyle's decision, a change from the first draft): when a thread stops on a
+limit and another qualifying account exists, Loom moves the thread there right away instead
+of waiting for the reset. When none qualifies, the thread waits for the reset on the same
+account. Switching runs only when `allowAccountSwitch` is on (the default) and the stop
+passed the detection gates (so never for a thread with auto-resume off or a workspace cap).
+
+Candidates are `ServerProvider` entries with the same `driver`, the same
+`continuation.groupKey` (`packages/contracts/src/server.ts:146-148,198`), `enabled`,
+`isProviderAvailable` (`server.ts:254-255`), `auth.status === "authenticated"`, the thread's
+model id in `models`, no window at 100% with a future reset, and included in automatic
+switching:
+
+- **Account kind** from `auth.type`: Codex `chatgpt` is a subscription account
+  (`apps/server/src/provider/Layers/CodexProvider.ts:97-103,532-545`); Claude reports
+  `apiKey` for API keys and the subscription type otherwise
+  (`apps/server/src/provider/Layers/ClaudeProvider.ts:139-158`). `apiKey`, `amazonBedrock`,
+  and a missing or unknown type count as metered.
+- **Included by default**: subscription accounts. Metered accounts (Kyle's `~/.codex_api` and
+  `~/.claude_api` instances) are never picked automatically unless their row in settings has
+  "Include in automatic switching" on (`accountRules`). A subscription account can be
+  excluded the same way.
+
+Order (Kyle's decision): when every candidate reports usage windows (Codex reports an
+account's usage once it has been used), pick the most headroom, `100 - max(usedPercent)`,
+ties broken by the fixed order. When any candidate has no usage data, use the fixed order
+from settings (`accountOrder`; instances not listed come after, sorted by `instanceId`).
+
+Upstream enforces the same group rule when the turn starts
+(`apps/server/src/orchestration/Layers/ProviderCommandReactor.ts:663-686`,
+`apps/server/src/provider/Layers/ProviderService.ts:1438-1457`). Continuation keys are
 `codex:home:<shared home>` for Codex, so shadow-home accounts over one shared home qualify
 (`apps/server/src/provider/Drivers/CodexHomeLayout.ts:45-66`), and `claude:home:<home>` for
 Claude (`apps/server/src/provider/Drivers/ClaudeHome.ts:40-45`).
 
-A switch schedules the resume at `now + 10 s` with `target_instance_id` set, and the resume
-passes `modelSelection: { ...thread.modelSelection, instanceId: target }`. The same model id
-must exist on the target; if the target's `models` list lacks it, the candidate is skipped.
+Claude in practice: Kyle's `~/.claude_N` homes share only `CLAUDE.md`, `settings.json` and
+skills, not session history, and each home is its own continuation group, so a Claude thread
+has no candidate and waits for the reset on the same account. Follow-up (recorded, not
+designed): investigate sharing Claude session folders across homes plus an upstream grouping
+change, which would make Claude accounts switchable.
+
+A switch schedules the resume at `now + 10 s` (so Cancel can still win) with
+`target_instance_id` set, marker `loom.auto-resume.switching`, and the resume passes
+`modelSelection: { ...thread.modelSelection, instanceId: target }`. If the target is no
+longer a valid candidate at resume time (signed out, exhausted, disabled), pick again once;
+with no candidate left, fall back to waiting for the original account's reset.
 
 ## Resuming
 
@@ -163,7 +209,8 @@ Our own `thread.turn-start-requested` event carries our `commandId` prefix; the 
 ignores it when checking for "user took over".
 
 Markers: `thread.activity.append` (`orchestration.ts:1492-1498`) with
-`tone: "info"`, `kind: "loom.auto-resume.<scheduled|resumed|cancelled|gave-up|failed|switching|deferred>"`,
+`tone: "info"` (`needs-attention` uses `"error"`),
+`kind: "loom.auto-resume.<scheduled|resumed|cancelled|gave-up|failed|switching|deferred|needs-attention|off>"`,
 `summary` as the PRODUCT.md copy, `payload: { jobId, resumeAt, attempt, instanceId }`,
 `turnId: null`. Upstream's work log renders unknown kinds as generic rows
 (`apps/web/src/session-logic.ts:451-512` filters only known noise kinds), so markers show on
@@ -171,12 +218,12 @@ every client. They are markers, not storage: the job row is the source of truth.
 
 ## Cancellation triggers (reactor)
 
-| Event                               | Condition                                           | Result                                 |
-| ----------------------------------- | --------------------------------------------------- | -------------------------------------- |
-| `thread.turn-start-requested`       | `commandId` not ours                                | cancel "You sent a message"            |
-| `thread.session-set`                | `status` `running` or `starting` and not our resume | cancel "A turn is already running"     |
-| `thread.archived`, `thread.deleted` | any                                                 | cancel silently (deleted: row removed) |
-| `project.deleted`                   | threads of that project                             | rows removed                           |
+| Event                               | Condition                                           | Result                                                                   |
+| ----------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------ |
+| `thread.turn-start-requested`       | `commandId` not ours                                | cancel "You sent a message"; a `needs_attention` row is cleared silently |
+| `thread.session-set`                | `status` `running` or `starting` and not our resume | cancel "A turn is already running"                                       |
+| `thread.archived`, `thread.deleted` | any                                                 | cancel silently (deleted: job row and the thread's "off" row removed)    |
+| `project.deleted`                   | threads of that project                             | rows removed                                                             |
 
 ## Contracts (`packages/contracts/src/fork/auto-resume.ts`)
 
@@ -187,17 +234,27 @@ export const AUTO_RESUME_WS_METHODS = {
   subscribeJobs: "loom.auto-resume.subscribeJobs",
   cancel: "loom.auto-resume.cancel",
   resumeNow: "loom.auto-resume.resumeNow",
+  setThreadAutoResume: "loom.auto-resume.setThreadAutoResume",
+  dismiss: "loom.auto-resume.dismiss",
 } as const;
+
+/** Overrides the default inclusion (subscription accounts in, metered accounts out). */
+export const AutoResumeAccountRule = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  include: Schema.Boolean, // "Include in automatic switching"
+});
 
 export const AutoResumeSettings = Schema.Struct({
   enabledDrivers: Schema.Array(ProviderDriverKind), // default ["codex", "claudeAgent", "grok"]
-  allowAccountSwitch: Schema.Boolean, // default false
+  allowAccountSwitch: Schema.Boolean, // default true
+  accountOrder: Schema.Array(ProviderInstanceId), // fixed order when headroom is unknown; default []
+  accountRules: Schema.Array(AutoResumeAccountRule), // default []
   continueMessage: TrimmedNonEmptyString.check(Schema.isMaxLength(2000)),
   graceMinutes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(60)), // default 2
   maxAttempts: PositiveInt.check(Schema.isLessThanOrEqualTo(10)), // default 6
 });
 
-export const AutoResumeJobState = Schema.Literals(["scheduled", "resuming"]);
+export const AutoResumeJobState = Schema.Literals(["scheduled", "resuming", "needs_attention"]);
 export const AutoResumeJob = Schema.Struct({
   threadId: ThreadId,
   state: AutoResumeJobState,
@@ -213,8 +270,16 @@ export const AutoResumeJob = Schema.Struct({
   detectedAt: IsoDateTime,
 });
 
-export const AutoResumeJobsSnapshot = Schema.Struct({ jobs: Schema.Array(AutoResumeJob) });
+export const AutoResumeJobsSnapshot = Schema.Struct({
+  jobs: Schema.Array(AutoResumeJob),
+  /** Threads with the per-thread "Don't auto-resume" switch on. */
+  threadsOff: Schema.Array(ThreadId),
+});
 export const AutoResumeThreadInput = Schema.Struct({ threadId: ThreadId });
+export const AutoResumeThreadSwitchInput = Schema.Struct({
+  threadId: ThreadId,
+  enabled: Schema.Boolean,
+});
 
 export class AutoResumeError extends Schema.TaggedError<AutoResumeError>()("AutoResumeError", {
   reason: Schema.Literals(["no-pending-resume", "thread-not-found", "invalid-settings"]),
@@ -224,15 +289,18 @@ export class AutoResumeError extends Schema.TaggedError<AutoResumeError>()("Auto
 
 RPCs (error: `Schema.Union([AutoResumeError, EnvironmentAuthorizationError])`):
 
-| Tag             | Payload                 | Success                                                  | Stream                        | Scope                   |
-| --------------- | ----------------------- | -------------------------------------------------------- | ----------------------------- | ----------------------- |
-| `getSettings`   | `{}`                    | `AutoResumeSettings`                                     | no                            | `orchestration:read`    |
-| `setSettings`   | `AutoResumeSettings`    | `AutoResumeSettings`                                     | no                            | `orchestration:operate` |
-| `subscribeJobs` | `{}`                    | `AutoResumeJobsSnapshot` (full snapshot on every change) | yes, `ForkSubscriptionRpcTag` | `orchestration:read`    |
-| `cancel`        | `AutoResumeThreadInput` | `{}`                                                     | no                            | `orchestration:operate` |
-| `resumeNow`     | `AutoResumeThreadInput` | `{}`                                                     | no                            | `orchestration:operate` |
+| Tag                   | Payload                       | Success                                                                                   | Stream                        | Scope                   |
+| --------------------- | ----------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------- | ----------------------- |
+| `getSettings`         | `{}`                          | `AutoResumeSettings`                                                                      | no                            | `orchestration:read`    |
+| `setSettings`         | `AutoResumeSettings`          | `AutoResumeSettings`                                                                      | no                            | `orchestration:operate` |
+| `subscribeJobs`       | `{}`                          | `AutoResumeJobsSnapshot` (full snapshot on every change)                                  | yes, `ForkSubscriptionRpcTag` | `orchestration:read`    |
+| `cancel`              | `AutoResumeThreadInput`       | `{}`                                                                                      | no                            | `orchestration:operate` |
+| `resumeNow`           | `AutoResumeThreadInput`       | `{}`                                                                                      | no                            | `orchestration:operate` |
+| `setThreadAutoResume` | `AutoResumeThreadSwitchInput` | `{}` (turning it off also cancels a pending job with reason "turned off for this thread") | no                            | `orchestration:operate` |
+| `dismiss`             | `AutoResumeThreadInput`       | `{}` (clears a `needs_attention` row)                                                     | no                            | `orchestration:operate` |
 
-Only pending jobs (`scheduled`, `resuming`) are in the snapshot; finished jobs are
+Only pending and attention rows (`scheduled`, `resuming`, `needs_attention`) are in the
+snapshot; finished jobs are
 history in the table and in the timeline markers.
 
 ## Server (`apps/server/src/fork/auto-resume/`)
@@ -240,7 +308,8 @@ history in the table and in the timeline markers.
 | File                   | Contents                                                                                                                                                                                                                                                 |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `classify.ts`          | Patterns, `classifyUsageLimitStop`, `parseWait`. Pure.                                                                                                                                                                                                   |
-| `resetTime.ts`         | `resolveResetTime(windows, claudeHint, stop, occurredAt, now)`, `exhaustedUntil(windows, now)`, `pickSwitchTarget(providers, stoppedInstance, modelId, now)`. Pure.                                                                                      |
+| `resetTime.ts`         | `resolveResetTime(windows, claudeHint, stop, occurredAt, now)`, `exhaustedUntil(windows, now)`. Pure.                                                                                                                                                    |
+| `switchTarget.ts`      | `accountKind(provider)`, `isIncluded(provider, accountRules)`, `pickSwitchTarget({ providers, stopped, modelId, accountOrder, accountRules, nowMs })`. Pure.                                                                                             |
 | `AutoResumeStore.ts`   | Repository over the three tables (`SqlClient`, `SqlSchema`, as upstream's `apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts:16-90`).                                                                                                   |
 | `AutoResumeService.ts` | Settings, job changes (`PubSub` of snapshots for `subscribeJobs`), `cancel`, `resumeNow`, `resume(job)`.                                                                                                                                                 |
 | `AutoResumeReactor.ts` | `Layer.effectDiscard` started with `forkParked` (`apps/server/src/serverActivation.ts:12-26`): catch up from the cursor with `readEvents(cursor)` then consume `subscribeDomainEvents` (`OrchestrationEngine.ts:47-50,89-93`); plus the scheduler fiber. |
@@ -273,7 +342,8 @@ Migrations set `auto-resume`, tracking table `fork_migrations_auto_resume`.
 CREATE TABLE IF NOT EXISTS fork_auto_resume_jobs (
   thread_id           TEXT PRIMARY KEY,
   state               TEXT NOT NULL CHECK (state IN
-                        ('scheduled','resuming','resumed','cancelled','gave_up','failed')),
+                        ('scheduled','resuming','needs_attention','resumed','cancelled',
+                         'gave_up','failed','cleared')),
   driver              TEXT NOT NULL,
   instance_id         TEXT NOT NULL,
   target_instance_id  TEXT,
@@ -297,6 +367,11 @@ CREATE TABLE IF NOT EXISTS fork_auto_resume_settings (
   updated_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS fork_auto_resume_threads_off (
+  thread_id   TEXT PRIMARY KEY,
+  created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS fork_auto_resume_cursor (
   id        INTEGER PRIMARY KEY CHECK (id = 1),
   sequence  INTEGER NOT NULL
@@ -316,18 +391,18 @@ CREATE TABLE IF NOT EXISTS fork_auto_resume_cursor (
 Shared atoms (`packages/client-runtime/src/fork/auto-resume.ts`):
 `autoResumeJobsAtomFamily` (subscription over `subscribeJobs`, keyed by environment),
 `autoResumeSettingsAtomFamily` (query), and commands for `setSettings`, `cancel`,
-`resumeNow` via `createEnvironmentRpcCommand`
+`resumeNow`, `setThreadAutoResume`, `dismiss` via `createEnvironmentRpcCommand`
 (`packages/client-runtime/src/state/runtime.ts:612,646,678`).
 
 Web (`apps/web/src/fork/auto-resume/`):
 
-| File               | Contents                                                                                                                                                                                                                           |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ComposerChip.tsx` | `ForkComposerBlockProps` component: finds the job for `threadRef.threadId`; renders nothing when none or when the environment lacks the feature. Countdown text from a one-minute `setInterval` started only while a job is shown. |
-| `composer.ts`      | `FORK_COMPOSER_BLOCKS` entry `{ id: "auto-resume", Component: AutoResumeComposerChip }`.                                                                                                                                           |
-| `settings.tsx`     | Loom settings section: per-driver toggles, account switch toggle with the qualifying rule, continue message, grace, max attempts, pending list across threads with Cancel.                                                         |
-| `palette.tsx`      | Two items when the active thread has a pending job.                                                                                                                                                                                |
-| `format.ts`        | `formatWait(ms)` matching upstream's style (`3h 20m`, `5d 5h`, `12m`).                                                                                                                                                             |
+| File               | Contents                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ComposerChip.tsx` | `ForkComposerBlockProps` component: finds the job for `threadRef.threadId`; renders nothing when none or when the environment lacks the feature. "Resumes in 3h 20m" (or "Continuing on <account> in 10s" while switching, "Needs attention" for a workspace cap) with Resume now, Cancel (Dismiss for attention), and a menu item "Don't auto-resume this thread". Countdown text from a one-minute `setInterval` started only while a job is shown (the 10 second switch grace shows "in a few seconds", no per-second timer). |
+| `composer.ts`      | `FORK_COMPOSER_BLOCKS` entry `{ id: "auto-resume", Component: AutoResumeComposerChip }`.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `settings.tsx`     | Loom settings section: per-driver toggles; "Switch accounts when one hits a limit" (on) with the qualifying rule; an accounts list per continuation group from the server config's providers (name, "Subscription" or "API key", usage when known, "Include in automatic switching", up and down buttons for the fixed order); continue message, grace, max attempts; pending and attention list across threads with Cancel or Dismiss; threads with auto-resume off, each with "Allow".                                         |
+| `palette.tsx`      | On the active thread: "Resume now after usage limit" and "Cancel auto-resume" when a job is pending; "Don't auto-resume this thread" or "Allow auto-resume for this thread" always.                                                                                                                                                                                                                                                                                                                                              |
+| `format.ts`        | `formatWait(ms)` matching upstream's style (`3h 20m`, `5d 5h`, `12m`).                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 The chip is a footer block, so it hides on narrow composers
 (EXTENSION-POINTS.md, Composer: blocks are hidden from the end when space runs out). The
@@ -337,8 +412,8 @@ timeline marker still shows there.
 
 | Driver                        | v1 behavior                                                                                                                                                                                       |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Codex                         | Supported: detection, reset from windows or message, account switch among shadow homes.                                                                                                           |
-| Claude (failed turn)          | Supported: detection, reset from warning detail or windows. Account switch only among instances sharing a Claude home.                                                                            |
+| Codex                         | Supported: detection, reset from windows or message, account switching on by default among subscription shadow-home accounts in one group; workspace caps get "Needs attention".                  |
+| Claude (failed turn)          | Supported: detection, reset from warning detail or windows. Waits for the reset on the same account: separate Claude homes are separate groups (follow-up recorded under Account switching).      |
 | Claude (parked turn)          | Not handled; Claude continues by itself.                                                                                                                                                          |
 | Grok                          | Supported with the probe schedule (no reset time). Whether the message reaches `lastError` verbatim is UNVERIFIED; the implementing agent confirms with a unit test on ingestion or a manual run. |
 | Cursor, OpenCode, Antigravity | Not supported: no usage-limit signal.                                                                                                                                                             |

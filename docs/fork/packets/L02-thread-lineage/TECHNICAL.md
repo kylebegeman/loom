@@ -88,7 +88,7 @@ export const THREAD_LINEAGE_WS_METHODS = {
   unlink: "loom.thread-lineage.unlink",
 } as const;
 
-export const ThreadLineageKind = Schema.Literals(["fork", "sidecar", "delegate"]);
+export const ThreadLineageKind = Schema.Literals(["fork", "sidecar", "delegate", "review"]);
 export const ThreadLineageContextMode = Schema.Literals(["none", "transcript", "native"]);
 export const ThreadLineageWorkspace = Schema.Literals(["source", "project-root", "new-worktree"]);
 
@@ -151,7 +151,8 @@ export const ThreadLineagePreview = Schema.Struct({
   /** True when a native fork would keep the whole turn containing the chosen message. */
   nativeRoundsToTurnEnd: Schema.Boolean,
   sourceRunning: Schema.Boolean,
-  sourceUsesWorktree: Schema.Boolean,
+  /** False when the project root is not a git repository; the dialog disables "New worktree". */
+  worktreeAvailable: Schema.Boolean,
 });
 
 export class ThreadLineageError extends Schema.TaggedError<ThreadLineageError>()(
@@ -233,7 +234,7 @@ CREATE TABLE IF NOT EXISTS fork_thread_lineage_links (
   child_thread_id        TEXT PRIMARY KEY,
   parent_thread_id       TEXT NOT NULL,
   project_id             TEXT NOT NULL,
-  kind                   TEXT NOT NULL CHECK (kind IN ('fork', 'sidecar', 'delegate')),
+  kind                   TEXT NOT NULL CHECK (kind IN ('fork', 'sidecar', 'delegate', 'review')),
   context_mode           TEXT NOT NULL CHECK (context_mode IN ('none', 'transcript', 'native')),
   through_message_id     TEXT,
   carried_message_count  INTEGER NOT NULL DEFAULT 0,
@@ -248,9 +249,9 @@ CREATE INDEX IF NOT EXISTS fork_thread_lineage_links_project
 
 - One parent per child (primary key on the child). Siblings are rows sharing
   `parent_thread_id`, excluding the thread itself.
-- The `delegate` kind exists so L08 can record agent-started children with
-  `INSERT OR IGNORE` when this table exists. Keep the column list stable; L08's TECHNICAL.md
-  documents the same columns.
+- The `delegate` kind exists so L08 can record agent-started children, and the `review` kind
+  so L15 can record reviewer threads, each with `INSERT OR IGNORE` when this table exists.
+  Keep the column list stable; L08's and L15's TECHNICAL.md document the same columns.
 - No foreign keys into upstream tables (EXTENSION-POINTS.md, Persistence).
 - Cleanup: the reactor deletes rows whose `child_thread_id` is deleted and all rows of a
   deleted project. Rows whose parent was deleted stay; the panel shows "Forked from a deleted
@@ -312,7 +313,9 @@ path: null })` (`packages/shared/src/git.ts:95-105`; schema `VcsCreateWorktreeIn
      branch after the first turn (`ProviderCommandReactor.maybeGenerateAndRenameWorktreeBranchForFirstTurn`,
      877-937), so the fork gets a real branch name for free. Failure: `workspace-failed`
      with git's message. Note in the dialog: a new worktree starts from the source branch's
-     last commit, not from the source's uncommitted changes.
+     last commit, not from the source's uncommitted changes. `new-worktree` is the dialog's
+     default for forks (PRODUCT.md decisions); the service itself has no default, the
+     client always sends `workspace`.
 6. Phase 2, `native` only: run the native strategy (below) to obtain a provider resume
    cursor, then `ProviderSessionDirectory.upsert({ threadId: child, provider,
 providerInstanceId, status: "stopped", runtimeMode, resumeCursor, runtimePayload: { cwd } },
@@ -359,7 +362,10 @@ export interface ForkTranscriptInput {
 }
 
 export interface ForkTranscriptOutput {
-  readonly text: string; // "[Forked conversation (1/2)](t3-context://v1/loom-fork-transcript/<id>) ...\n\n<first message>"
+  // "[Forked conversation (1/2)](t3-context://v1/loom-fork-transcript/<id>) ...\n\n<first message>";
+  // the first record's label becomes "Forked conversation (earlier messages trimmed)" when
+  // omittedFromTranscript > 0, so the child thread shows the notice on its first message.
+  readonly text: string;
   readonly records: ReadonlyArray<{
     readonly version: 1;
     readonly contextId: string;
@@ -386,7 +392,12 @@ Rules: walk messages newest to oldest, truncate any single message longer than
 adding while the encoded total stays under `FORK_TRANSCRIPT_TOTAL_MAX_CHARS -
 firstMessageText.length`, then split the kept messages (restored to oldest-first order) into
 records whose `JSON.stringify(payload).length` stays under
-`FORK_TRANSCRIPT_RECORD_MAX_CHARS`. Links are built with `formatComposerContextReference`
+`FORK_TRANSCRIPT_RECORD_MAX_CHARS`. When messages were omitted, the first record's
+`label` is `Forked conversation (earlier messages trimmed)` (with ` (1/N)` appended when
+split) and its `payload.note` adds "The oldest N messages of that conversation were
+trimmed and are not included." so the model knows the transcript is partial. The budget
+constants are fixed (decided, PRODUCT.md): there is no setting and no RPC field for them.
+Links are built with `formatComposerContextReference`
 (`packages/shared/src/composerContextReferences.ts:52`). The final text must decode through
 `ClientThreadTurnStartCommand`'s message schema and the context through
 `OrchestrationMessageContext`; the unit test asserts both, plus that
@@ -492,8 +503,9 @@ exact payload field names of `thread.deleted` and `project.deleted` in `orchestr
 
 Runs steps 1 to 3 of `fork` without side effects and returns the counts, the native
 availability with a reason ("Native forks are available for Claude and Codex threads",
-"The source thread is running", "This thread has no provider session yet") and whether the
-source uses a worktree. The dialog calls it when it opens and when the first message length
+"The source thread is running", "This thread has no provider session yet") and
+`worktreeAvailable` from `GitWorkflowService.isRepository(project.workspaceRoot)`
+(`apps/server/src/git/GitWorkflowService.ts:38`). The dialog calls it when it opens and when the first message length
 crosses a budget boundary (debounced 300 ms), never per keystroke.
 
 ### `listForThread`, `listForProject`, `unlink`
@@ -573,6 +585,7 @@ context references replaced by labels. The capability read must be cheap: one
 shared memoized selector hook in `state.ts`.
 
 `RelatedThreadsPanel` sections: Parent, Sidecars, Forks, Agent threads (`delegate`),
+Reviews (`review`, reviewer threads written by L15 when present),
 Siblings, Implemented plans (from the current thread detail's `proposedPlans[].implementationThreadId`,
 `orchestration.ts:525-535`). Each row joins the link with the thread shell
 (`useThreadShells()`, `apps/web/src/state/entities.ts:77`) for title, branch and status and

@@ -72,7 +72,27 @@ diagnostics|coverage|attachments|evaluations|metrics`, `merge`, `compare`. `get 
 --only-plists`, `dump --type swift-dump|json|yaml|parsed-json|parsed-yaml|summary --file`.
 - xcbeautify 3.2.1: `--quiet`, `--quieter`, `--preserve-unbeautified`, `--is-ci`,
   `--disable-colored-output`, `--disable-logging`, `--renderer`, `--report junit`.
-- Swift 6.4: `swift test --parallel --xunit-output <path> --filter <regex>`.
+- Swift 6.4: `swift test --parallel --xunit-output <path> --filter <regex>`. Checked on a scratch
+  package on 2026-09-24: the XCTest file is written only with `--parallel` and its failure
+  message is the word "failure"; Swift Testing results go to `<name>-swift-testing.xml` next to
+  it, with the expectation text and `<skipped>` reasons; nothing is written when the output
+  directory is missing; `swift test list` prints `<Module>.<Class>/<test>` and
+  `<Module>.<func>()`; `--filter` with an escaped identifier runs one test; compiler
+  diagnostics are `<path>:<line>:<col>: error: <message>`, XCTest failures
+  `<path>:<line>: error: -[<Module>.<Class> <test>] : <message>`, Swift Testing issues
+  `Test <func>() recorded an issue at <File>.swift:<line>:<col>: <message>`.
+- `xcodebuild -help`: `-allowProvisioningUpdates` "Allow xcodebuild to communicate with the
+  Apple Developer website", creating and updating profiles, app IDs and certificates for
+  automatically signed targets; `-allowProvisioningDeviceRegistration` registers the device.
+  Loom passes neither.
+- `xcrun devicectl device install app --help` and `device process launch --help`:
+  `--device <uuid|ecid|serial_number|udid|name|dns_name>`, `--json-output <path>`,
+  `--terminate-existing`. `devicectl list devices --json-output -` (JSON version 5) lists
+  simulators as well as physical devices; each entry has a `properties` dictionary
+  (`hardware.reality`, `hardware.platform`, `connection.pairingState`, `connection.state`,
+  `state.name`, `state.developerModeStatus`, `software.osVersionNumber`) and deprecated
+  `hardwareProperties`, `deviceProperties`, `connectionProperties` named in
+  `_deprecationNotice`.
 
 ## External
 

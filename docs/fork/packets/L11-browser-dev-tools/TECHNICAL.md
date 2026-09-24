@@ -106,7 +106,9 @@ export const DevServer = Schema.Struct({
   likelyDevServer: Schema.Boolean, // dev/start/serve/preview/storybook or a known dev tool in the command
   useVarlock: Schema.Boolean,
   state: DevServerState,
-  threadId: Schema.NullOr(ThreadId), // where it runs
+  threadId: Schema.NullOr(ThreadId), // the owning thread: where it runs
+  /** The owning thread's worktree when started; null = the project root. The client shows the folder name. */
+  worktreePath: Schema.NullOr(Schema.String),
   terminalId: Schema.NullOr(Schema.String), // "loom-dev-<hash of key>"
   urls: Schema.Array(Schema.String), // from PortDiscovery, matched by terminal
   exitCode: Schema.NullOr(Schema.Int),
@@ -185,7 +187,8 @@ export const DevToolsSettings = Schema.Struct({
   obscuraAllowPrivateNetwork: Schema.Boolean, // default false; loopback is always allowed
   agentFetchEnabled: Schema.Boolean, // default true when obscura is installed
   postgresImage: Schema.String, // default "postgres:17-alpine"
-  redisImage: Schema.String, // default "redis:7-alpine"
+  /** The "Redis (Valkey)" option's image; any Redis-protocol image with the docker-library entrypoint works. */
+  redisImage: Schema.String, // default "valkey/valkey:8-alpine"
   httpHistorySize: Schema.Int, // default 50
 });
 
@@ -273,7 +276,8 @@ Candidates for the thread's project:
 Starting (`startServer`):
 
 - If a row for this project and key is `starting` or `running` in any thread, fail with
-  `already-running` naming the thread.
+  `already-running` naming the thread (the client offers "Open thread" and "Stop", the latter
+  with the other-thread confirmation below).
 - Terminal id `loom-dev-<first 10 hex of sha256(key)>`. `TerminalManager.open({ threadId,
 terminalId, cwd, worktreePath, env })`, subscribe to the terminal's events first, then
   `write({ data: command + "\r" })`, following `ProjectSetupScriptRunner.ts:282-420`.
@@ -293,6 +297,26 @@ terminalId, cwd, worktreePath, env })`, subscribe to the terminal's events first
 
 Stopping: `TerminalManager.close({ threadId, terminalId })`, which ends the PTY and its process
 tree the way closing a terminal tab does. Restart is stop, wait for the `closed` event, start.
+
+Any thread of the project can stop or restart a server:
+
+- `stopServer` and `restartServer` take `{ threadId, key }`, where `threadId` is the calling
+  thread and only identifies the project (through `resolveWorkspace`). The service acts on the
+  owning thread and terminal stored for that key, never on the caller's terminal. Restart
+  starts again in the owning thread, with its cwd and worktree, so a server keeps its home.
+  A caller in another project gets `server-not-found`.
+- Both need `terminal:operate`, the same scope in every thread; there is no per-thread
+  authorization, because threads of one environment share one operator.
+- The confirmation for another thread's server is a client-side guard: the row compares
+  `server.threadId` with the panel's thread, and when they differ Stop and Restart open
+  "Stop the dev server running in <thread title>? Its terminal in that thread closes."
+  ("Restart" wording for restart). The thread title comes from the client's thread shells
+  (`useThreadShells`, `apps/web/src/state/entities.ts:77-79`); the link opens
+  `/$environmentId/$threadId`. "Stop all dev servers" in the palette shows one confirmation
+  listing the servers of other threads, if any.
+- Deleting the owning thread stops its servers: upstream's thread deletion closes all of the
+  thread's terminals (`apps/server/src/orchestration/Layers/ThreadDeletionReactor.ts:53-65`),
+  and the terminal's `closed` event sets the row to `stopped`.
 
 Persistence: `fork_browser_dev_tools_servers` remembers per project and key the last thread,
 terminal id, `use_varlock` and last exit code, so the panel can show "Last run exited with 1"
@@ -325,10 +349,18 @@ not survive a server restart, so rows reset to `stopped`).
     -p 127.0.0.1:<port>:<5432|6379>
     -v loom-<proj8>-<engine>-<id6>:<data dir>
     postgres: -e POSTGRES_USER=loom -e POSTGRES_PASSWORD=<pw> -e POSTGRES_DB=<name> <postgresImage>
-    redis:    <redisImage> redis-server --requirepass <pw> --appendonly yes
+    redis:    <redisImage> --requirepass <pw> --appendonly yes
   ```
 
-  Data dirs: `/var/lib/postgresql/data` (Postgres), `/data` (Redis). The image pull streams as
+  The Redis option passes only flags after the image, so the image's own entrypoint picks the
+  server binary: the docker-library entrypoint prepends `valkey-server` (Valkey) or
+  `redis-server` (Redis) when the first argument starts with `-` (checked in
+  valkey-io/valkey-container `docker-entrypoint.sh` and docker-library/redis
+  `docker-entrypoint.sh` on 2026-09-24). A custom image without that entrypoint must accept the
+  same flags; the settings help says so. The engine id stays `redis` (it names the protocol).
+
+  Data dirs: `/var/lib/postgresql/data` (Postgres), `/data` (both the Valkey and the Redis
+  images use `WORKDIR /data`). The image pull streams as
   output events. The password goes to `ServerSecretStore` under
   `loom-browser-dev-tools-db-<id>`; the row stores no secret.
 

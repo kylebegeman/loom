@@ -44,6 +44,7 @@ same data through `server.refreshProviders` with `cwd` (`packages/contracts/src/
 ```ts
 export const SKILL_REGISTRY_WS_METHODS = {
   inventory: "loom.skill-registry.inventory",
+  targets: "loom.skill-registry.targets",
   setEnabled: "loom.skill-registry.setEnabled",
   fetchSource: "loom.skill-registry.fetchSource", // stream (progress, then result)
   install: "loom.skill-registry.install",
@@ -125,6 +126,9 @@ export const SetEnabledInput = Schema.Struct({
 });
 
 export const InstallTarget = Schema.Union([
+  /** ~/.claude/skills on the environment; the default Claude target. */
+  Schema.Struct({ kind: Schema.Literal("claudeShared") }),
+  /** One account's own <config dir>/skills. */
   Schema.Struct({ kind: Schema.Literal("claudeAccount"), instanceId: ProviderInstanceId }),
   Schema.Struct({ kind: Schema.Literal("claudeProject"), projectId: ProjectId }),
   Schema.Struct({ kind: Schema.Literal("codexHome"), instanceId: ProviderInstanceId }),
@@ -170,6 +174,30 @@ export const SkillFile = Schema.Struct({
   content: Schema.String.check(Schema.isMaxLength(200_000)),
   hash: Schema.String, // sha256 of content, for compare-and-swap
 });
+/** A target as the picker shows it, resolved on the server. */
+export const ResolvedInstallTarget = Schema.Struct({
+  target: InstallTarget,
+  label: Schema.String, // "Shared Claude folder", "Only Claude 2", "All agents", ...
+  dir: Schema.String, // absolute skills folder
+  realDir: Schema.NullOr(Schema.String), // null when the folder does not exist yet
+  /** Provider instances that read this folder (after resolving symlinks). */
+  seenBy: Schema.Array(ProviderInstanceId),
+  isDefault: Schema.Boolean,
+});
+
+export const SuggestedSkillSource = Schema.Struct({
+  id: Schema.String,
+  label: Schema.String,
+  url: Schema.String,
+  license: Schema.String,
+  description: Schema.String,
+  /** Subpaths preselected after a fetch, per target family; absent subpaths are ignored. */
+  preselect: Schema.Struct({
+    claude: Schema.Array(Schema.String),
+    agents: Schema.Array(Schema.String),
+  }),
+});
+
 export const ValidationIssue = Schema.Struct({
   severity: Schema.Literals(["error", "warning"]),
   message: Schema.String,
@@ -179,20 +207,21 @@ export const ValidationIssue = Schema.Struct({
 
 Method table (payload -> success; scope):
 
-| Tag            | Payload -> success                                                               | Scope                |
-| -------------- | -------------------------------------------------------------------------------- | -------------------- |
-| `inventory`    | `{ projectId?, refresh?: boolean }` -> `SkillInventory`                          | `orchestration:read` |
-| `setEnabled`   | `SetEnabledInput` -> `SkillInventory`                                            | `terminal:operate`   |
-| `fetchSource`  | `FetchSourceInput` -> stream of `FetchSourceEvent` (`ForkStreamCommandRpcTag`)   | `terminal:operate`   |
-| `install`      | `{ sourceId, subpaths[], target }` -> `{ installed: InstallRecord[] }`           | `terminal:operate`   |
-| `sources`      | `{}` -> `{ sources: SourceRecord[], installs: InstallRecord[] }`                 | `orchestration:read` |
-| `checkUpdates` | `{ sourceId? }` -> `{ updates: { sourceId, latestCommit }[] }`                   | `terminal:operate`   |
-| `update`       | `{ installId }` -> `{ install: InstallRecord, changedFiles: string[] }`          | `terminal:operate`   |
-| `remove`       | `{ key }` (Loom install or lab-created skill) -> `{ trashPath }`                 | `terminal:operate`   |
-| `scaffold`     | `ScaffoldInput` -> `SkillFile`                                                   | `terminal:operate`   |
-| `readSkill`    | `{ path }` -> `SkillFile`                                                        | `orchestration:read` |
-| `writeSkill`   | `{ path, content, expectedHash }` -> `SkillFile & { issues: ValidationIssue[] }` | `terminal:operate`   |
-| `validate`     | `{ content, folderName }` -> `{ issues: ValidationIssue[] }`                     | `orchestration:read` |
+| Tag            | Payload -> success                                                                                  | Scope                |
+| -------------- | --------------------------------------------------------------------------------------------------- | -------------------- |
+| `inventory`    | `{ projectId?, refresh?: boolean }` -> `SkillInventory`                                             | `orchestration:read` |
+| `setEnabled`   | `SetEnabledInput` -> `SkillInventory`                                                               | `terminal:operate`   |
+| `fetchSource`  | `FetchSourceInput` -> stream of `FetchSourceEvent` (`ForkStreamCommandRpcTag`)                      | `terminal:operate`   |
+| `install`      | `{ sourceId, subpaths[], target }` -> `{ installed: InstallRecord[] }`                              | `terminal:operate`   |
+| `sources`      | `{}` -> `{ sources: SourceRecord[], installs: InstallRecord[], suggested: SuggestedSkillSource[] }` | `orchestration:read` |
+| `targets`      | `{ projectId? }` -> `{ targets: ResolvedInstallTarget[] }`                                          | `orchestration:read` |
+| `checkUpdates` | `{ sourceId? }` -> `{ updates: { sourceId, latestCommit }[] }`                                      | `terminal:operate`   |
+| `update`       | `{ installId }` -> `{ install: InstallRecord, changedFiles: string[] }`                             | `terminal:operate`   |
+| `remove`       | `{ key }` (Loom install or lab-created skill) -> `{ trashPath }`                                    | `terminal:operate`   |
+| `scaffold`     | `ScaffoldInput` -> `SkillFile`                                                                      | `terminal:operate`   |
+| `readSkill`    | `{ path }` -> `SkillFile`                                                                           | `orchestration:read` |
+| `writeSkill`   | `{ path, content, expectedHash }` -> `SkillFile & { issues: ValidationIssue[] }`                    | `terminal:operate`   |
+| `validate`     | `{ content, folderName }` -> `{ issues: ValidationIssue[] }`                                        | `orchestration:read` |
 
 Writing into agent skill folders changes what agents do on this machine, which is the power
 of a terminal; hence `terminal:operate` for every write. Errors:
@@ -209,6 +238,8 @@ workspace root) returns labeled roots:
   the same rule as `ClaudeHome.ts:12-18`); plus `<project>/.claude/skills`.
 - For each Codex instance: `<effective CODEX_HOME>/skills` (`resolveCodexHomeLayout`,
   `CodexHomeLayout.ts:44`; in a shadow home `skills` is a symlink to the shared home's).
+- `~/.claude/skills` (the shared Claude folder), whether or not a Claude instance uses the
+  default config dir.
 - `~/.agents/skills` and `<project>/.agents/skills`.
 - Cursor's four project and home roots (`CursorSkills.ts:224-229`), for display only.
 
@@ -263,6 +294,45 @@ the root list.
   (`ProviderRegistry.refresh` for the instance, and the cwd probe when a project was
   involved) and return a fresh inventory.
 
+### Install targets (`targets.ts`)
+
+`resolveTargets({ instances, project })` lists every target the pickers offer, each with the
+instances that read it:
+
+- `claudeShared`: `path.join(homedir, ".claude", "skills")`. `seenBy` is every Claude
+  instance whose `<config dir>/skills` realpath equals this folder's realpath (on Kyle's Mac
+  `~/.claude_1/skills`, `~/.claude_2/skills`, `~/.claude_3/skills` and
+  `~/.claude_api/skills` are symlinks to it, checked 2026-09-24).
+- `claudeAccount` for each Claude instance whose skills folder does not resolve to the
+  shared folder ("Only <account>"). An account whose folder is a symlink to the shared one
+  has no separate folder to install into, so it is not listed twice.
+- `claudeProject` and `agentsProject` when a project is given; `codexHome` per Codex
+  instance (effective home); `agentsUser` for `~/.agents/skills`, with `seenBy` the Codex and
+  Cursor instances.
+- `isDefault`: `claudeShared` when its `seenBy` is not empty; otherwise the first
+  `claudeAccount`; with no Claude instance at all, `agentsUser`.
+
+A target folder that does not exist yet (for example `~/.agents/skills` on Kyle's Mac today)
+is created with `makeDirectory(..., { recursive: true })` on the first install or scaffold
+into it, never earlier.
+
+### Suggested sources (`suggestedSources.ts`)
+
+A constant list served by `sources`; nothing is fetched until the user clicks Fetch.
+
+| id            | URL                                          | License    | Preselect (Claude targets)                                        | Preselect (agents, Codex targets) |
+| ------------- | -------------------------------------------- | ---------- | ----------------------------------------------------------------- | --------------------------------- |
+| `impeccable`  | `https://github.com/pbakaus/impeccable`      | Apache-2.0 | `.claude/skills/impeccable`                                       | `.agents/skills/impeccable`       |
+| `ponytail`    | `https://github.com/DietrichGebert/ponytail` | MIT        | `skills/ponytail`, `-audit`, `-debt`, `-gain`, `-help`, `-review` | same                              |
+| `typesafe-ai` | `https://github.com/typesafe-ai/skills`      | MIT        | `skills/typesafe-ai`                                              | same                              |
+
+Licenses and paths checked with `gh api` on 2026-09-24. impeccable ships one copy of its
+skill per tool (`.claude/`, `.agents/`, `.cursor/`, `plugin/` and more), so the fetched list
+groups entries with the same name and shows each subpath; the preselection picks the copy
+for the chosen target family. A preselected subpath missing after a fetch (the repository
+changed) is simply not preselected. The TypeSafe skill is listed, never installed without a
+click (L29 decision).
+
 ### Sources and installs (`sources.ts`, `installs.ts`)
 
 - URL rules: `https:` only, no username or password, no query or fragment, host not a loopback
@@ -274,7 +344,7 @@ the root list.
   (renamed into place after `git rev-parse HEAD`). Spawn with upstream's `ChildProcessSpawner`
   and `resolveSpawnCommand`. Stream `progress` events, then scan for `SKILL.md` up to depth 4
   (skip `.git`, `node_modules`), then `fetched`. Keep the last two commits per source.
-- Install: for each chosen subpath, copy the folder (no symlinks followed out of the repo; a
+- Install: create the target folder if missing (above); for each chosen subpath, copy the folder (no symlinks followed out of the repo; a
   symlink inside the skill that points outside the source is skipped and reported) into
   `<target root>/<folder name>/`. Refuse when the destination exists, unless it is a Loom
   install from the same source (then it is an update). Write `.loom-skill.json`
@@ -353,9 +423,10 @@ Clones of sources with no remaining installs are pruned at server start (fork la
 
 ## Clients
 
-- `packages/client-runtime/src/fork/skill-registry.ts`: query family for `inventory` keyed by
-  `{ environmentId, projectId }`, `sources`; commands for the writes; a stream command for
-  `fetchSource`.
+- `packages/client-runtime/src/fork/skill-registry.ts`: query families for `inventory` and
+  `targets` keyed by `{ environmentId, projectId }`, and `sources`; commands for the writes;
+  a stream command for `fetchSource`. Target pickers (Sources and Lab) read `targets` and
+  preselect the entry with `isDefault`.
 - `apps/web/src/fork/skill-registry/`:
   - `panel.tsx`: `ForkPanelDefinition` `{ id: "skill-registry", title: "Skills", icon:
 SparklesIcon, shortcut: "K", unavailableHint: "Needs a Loom server", isAvailable: threadRef

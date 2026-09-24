@@ -34,12 +34,19 @@ a tscircuit "Hardware Studio" area:
   `/events?topic=preview:<hash>`, `/embed/pcb/<ref>`. This packet does not use that
   contract; it only links to the app when a URL is configured. A future packet could render
   through the app when it is reachable.
+- `SPEC.md` section 5, "Open by path", and `ARCHITECTURE.md`, "Loom preview contract":
+  `/designs/by-path?path=<abs>`, added on 2026-09-24 for this packet's "Open in
+  Electronics" link (redirects to a linked library design, otherwise shows the path source
+  read-only).
 - `REFERENCES.md`: verified tool facts (KiCad 10.0.6 current, `kicad-cli` path on macOS,
   `tsci build`/`export` formats, licenses), reused here.
 
 ## Upstream T3 Code
 
 - `apps/server/src/processRunner.ts:20-36,140-145`: `ProcessRunInput` and `ProcessRunner`.
+- `apps/web/src/composerDraftStore.ts:571` (`setPrompt` in the store interface) and `:4073`
+  (`useComposerDraftStore`): how "Send summary to chat" fills the composer; the same path
+  L06 uses.
 - `apps/server/src/workspace/WorkspacePaths.ts:92-118`: `resolveRelativePathWithinRoot`.
 - `apps/server/src/workspace/WorkspaceEntries.ts:90-107`: `search`.
 - `packages/contracts/src/project.ts:9,17-25`: `ProjectSearchEntriesInput`, limit 200.
