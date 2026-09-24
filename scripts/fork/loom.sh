@@ -20,7 +20,6 @@ set -euo pipefail
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$REPO_ROOT"
 
-APP_ID="com.t3tools.t3code"
 APP_PATH="/Applications/Loom.app"
 BUILDS_DIR="$HOME/Library/Application Support/Loom Builds"
 T3_USERDATA="$HOME/.t3/userdata"
@@ -160,17 +159,27 @@ prune_builds() {
   done
 }
 
+# Loom and upstream's T3 Code share an app id and a data folder, so both are
+# found and quit by their exact paths: a bundle id is ambiguous between them,
+# and two running at once would put two servers on one database.
+VANILLA_APP_PATH="/Applications/T3 Code (Alpha).app"
+app_running() {
+  ps -axo command= | grep -F -e "$APP_PATH/Contents/MacOS/" -e "$VANILLA_APP_PATH/Contents/MacOS/" >/dev/null
+}
+
 quit_app() {
-  if pgrep -f "/Applications/Loom.app/Contents/MacOS/" >/dev/null || pgrep -f "T3 Code (Alpha).app/Contents/MacOS/" >/dev/null; then
-    say "Quitting the running app"
-    osascript -e "quit app id \"$APP_ID\"" || true
-    local _
-    for _ in $(seq 1 30); do
-      pgrep -f "/Applications/Loom.app/Contents/MacOS/" >/dev/null || pgrep -f "T3 Code (Alpha).app/Contents/MacOS/" >/dev/null || return 0
-      sleep 1
-    done
-    die "the app did not quit; quit it yourself and rerun"
-  fi
+  app_running || return 0
+  say "Quitting the running app"
+  local app
+  for app in "$APP_PATH" "$VANILLA_APP_PATH"; do
+    [ -d "$app" ] && osascript -e "tell application \"$app\" to quit" >/dev/null 2>&1
+  done
+  local _
+  for _ in $(seq 1 30); do
+    app_running || return 0
+    sleep 1
+  done
+  die "the app did not quit; quit it yourself and rerun"
 }
 
 # Snapshot the T3 database and settings into the record of the build that is
@@ -197,6 +206,10 @@ install_record() {
     snapshot_state "$current"
   else
     snapshot_state "$BUILDS_DIR/before-loom"
+  fi
+  if [ -d "$VANILLA_APP_PATH" ]; then
+    echo "Warning: $VANILLA_APP_PATH is still installed. It shares Loom's app id and data;"
+    echo "never run both. Remove it with: brew uninstall --cask t3-code"
   fi
   say "Installing $(basename "$record")"
   rm -rf "$APP_PATH"
