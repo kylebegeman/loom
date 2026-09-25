@@ -44,6 +44,10 @@ jobs:
           cache: true
           run-install: false
 
+      # loom.sh uses pnpm; install the exact version package.json pins.
+      - name: Install pnpm
+        run: npm install -g "$(node -p "require('./package.json').packageManager")"
+
       - name: Prepare git
         run: |
           git remote add upstream https://github.com/pingdotgg/t3code.git
