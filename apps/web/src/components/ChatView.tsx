@@ -216,6 +216,8 @@ import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
+import { ForkPanelHost } from "../fork/panels/ForkPanelHost"; // fork: ext-panels
+import { useForkPanelActions } from "../fork/panels/useForkPanelActions"; // fork: ext-panels
 import { AgentsPanel } from "./AgentsPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
@@ -4607,6 +4609,7 @@ export default function ChatView(props: ChatViewProps) {
     }
     useRightPanelStore.getState().open(activeThreadRef, "device");
   }, [activeThreadRef, deviceState.onboardingCompleted, deviceState.hostStatus]);
+  const forkPanelActions = useForkPanelActions(activeThreadRef); // fork: ext-panels
   // A device the agent opens floats over chat like an agent-driven browser,
   // or becomes a panel tab when floating previews are off. Sessions opened by
   // another client arrive the same way; sheet layouts get neither. The first
@@ -9620,7 +9623,14 @@ export default function ChatView(props: ChatViewProps) {
     </div>
   );
   const rightPanelContent = activeThreadRef ? (
-    renderedRightPanelSurface?.kind === "preview" ? (
+    // fork: ext-panels
+    renderedRightPanelSurface?.kind === "fork" ? (
+      <ForkPanelHost
+        surface={renderedRightPanelSurface}
+        threadRef={activeThreadRef}
+        visible={rightPanelOpen}
+      />
+    ) : renderedRightPanelSurface?.kind === "preview" ? (
       <Suspense fallback={null}>
         <PreviewPanel
           mode="embedded"
@@ -10348,6 +10358,7 @@ export default function ChatView(props: ChatViewProps) {
 
       {rightPanelPresent && !shouldUseRightPanelSheet && activeThreadRef ? (
         <RightPanelTabs
+          forkActions={forkPanelActions} // fork: ext-panels
           mode="inline"
           widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
           open={rightPanelOpen}
@@ -10399,6 +10410,7 @@ export default function ChatView(props: ChatViewProps) {
           onClose={closePreviewPanel}
         >
           <RightPanelTabs
+            forkActions={forkPanelActions} // fork: ext-panels
             mode="sheet"
             // Same effective inset as the closed-state titlebar controls
             // (pr-3 in the tab bar plus this pixel equals the absolute

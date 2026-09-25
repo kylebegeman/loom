@@ -18,8 +18,10 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import { resolveStorage } from "./lib/storage";
+import type { ForkRightPanelSurface } from "./fork/panels/types"; // fork: ext-panels
 
 const RIGHT_PANEL_KINDS = [
+  "fork", // fork: ext-panels
   "diff",
   "files",
   "file",
@@ -40,6 +42,7 @@ export interface DeviceTabTarget {
 }
 
 export type RightPanelSurface =
+  | ForkRightPanelSurface // fork: ext-panels
   | { id: `browser:${string}`; kind: "preview"; resourceId: string }
   | { id: "browser:new"; kind: "preview"; resourceId: null }
   | { id: "device" | `device:${string}`; kind: "device"; target?: DeviceTabTarget; title?: string }
@@ -118,6 +121,7 @@ interface RightPanelStoreState {
   /** Session-only count of user panel choices per thread. Automatic updates do not advance it. */
   userActionRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
+  openSurface: (ref: ScopedThreadRef, surface: RightPanelSurface) => void; // fork: ext-panels
   /**
    * Open a surface on behalf of the app, not the user. Refused when the user
    * made a panel choice after `expectedUserActionRevision` was read.
@@ -129,7 +133,7 @@ interface RightPanelStoreState {
   ) => boolean;
   open: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "fork">, // fork: ext-panels
   ) => void;
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
@@ -168,7 +172,7 @@ interface RightPanelStoreState {
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (
     ref: ScopedThreadRef,
-    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "fork">, // fork: ext-panels
   ) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
@@ -180,7 +184,7 @@ const EMPTY_THREAD_STATE: ThreadRightPanelState = {
 };
 
 const singletonSurface = (
-  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,
+  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "fork">, // fork: ext-panels
 ): RightPanelSurface => {
   switch (kind) {
     case "diff":
@@ -483,6 +487,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       userActionRevisionByThreadKey: {},
       getUserActionRevision: (ref) =>
         get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
+      // fork: ext-panels
+      openSurface: (ref, surface) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) => upsertSurface(current, surface)),
+        ),
       openProactive: (ref, surface, expectedUserActionRevision) => {
         let opened = false;
         set((state) => {

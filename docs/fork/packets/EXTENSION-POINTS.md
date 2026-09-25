@@ -947,9 +947,11 @@ Title and icon, as the first case of each switch:
      case "preview": {
 ```
 
-**`apps/web/src/components/ChatView.tsx`** (6 marked lines):
+**`apps/web/src/components/ChatView.tsx`** (6 marked lines), the imports after the
+`RightPanelTabs` import:
 
 ```diff
+ import { RightPanelTabs } from "./RightPanelTabs";
 +import { ForkPanelHost } from "../fork/panels/ForkPanelHost"; // fork: ext-panels
 +import { useForkPanelActions } from "../fork/panels/useForkPanelActions"; // fork: ext-panels
 ```

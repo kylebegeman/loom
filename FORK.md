@@ -63,6 +63,9 @@ The shared plumbing packets register into, specified in
 | `packages/client-runtime/src/rpc/client.ts`        | `ext-core`     | Fork streaming tags join the client's stream unions.                            |
 | `packages/contracts/package.json` (no marker)      | `ext-core`     | `./fork` subpath export, first after `.`.                                       |
 | `apps/web/src/routes/__root.tsx`                   | `ext-web-root` | Mounts `ForkRoot` in the authenticated app shell.                               |
+| `apps/web/src/rightPanelStore.ts`                  | `ext-panels`   | The generic `"fork"` surface kind and the `openSurface` action.                 |
+| `apps/web/src/components/RightPanelTabs.tsx`       | `ext-panels`   | Fork panels in the launcher and "+" menu; their tab titles and icons.           |
+| `apps/web/src/components/ChatView.tsx`             | `ext-panels`   | Renders fork panel content and passes fork panel actions to both tab bars.      |
 | `packages/client-runtime/package.json` (no marker) | `ext-core`     | `./fork` subpath export, after `./errors`.                                      |
 
 ## Identifiers kept on purpose
