@@ -42,12 +42,12 @@ Two surfaces read one model, so a value can never differ between them:
 
 ## Entry points
 
-| Action         | Where                                                                                                                                                                                                            |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open the panel | Right panel launcher and "+" menu ("Inspector", letter I); palette "Show thread inspector"; keybinding command `loom.thread-inspector.toggle` (unbound; toggles); the card's footer "Open inspector panel".      |
-| Show the card  | Header eye button (first header action); palette "Show thread inspector card"; keybinding command `loom.thread-inspector.card` (unbound; toggles).                                                               |
-| Close          | Close the panel tab. The card closes on the eye button, Escape, a press outside it, or after one of its lines or its footer; it stays open while a reply streams and follows the button when the header reflows. |
-| See the state  | The header button shows a small dot when the thread needs attention (approval or question), so the card is not needed to notice it.                                                                              |
+| Action         | Where                                                                                                                                                                                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open the panel | Right panel launcher and "+" menu ("Inspector", letter I); palette "Show thread inspector" (opens); keybinding command `loom.thread-inspector.toggle` (unbound; toggles); the card's footer "Open inspector panel". |
+| Show the card  | Header eye button (first header action); palette "Show thread inspector card" (opens); keybinding command `loom.thread-inspector.card` (unbound; toggles).                                                          |
+| Close          | Close the panel tab. The card closes on the eye button, Escape, a press outside it, or after one of its lines or its footer; it stays open while a reply streams and follows the button when the header reflows.    |
+| See the state  | The header button shows a small dot when the thread needs attention (approval or question), so the card is not needed to notice it.                                                                                 |
 
 No settings.
 

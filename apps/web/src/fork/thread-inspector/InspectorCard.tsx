@@ -216,7 +216,7 @@ function GlanceRows({
         <InspectorRow
           icon={<GaugeIcon />}
           label="Context"
-          tone={context.tone === "default" ? "default" : context.tone}
+          tone={context.tone}
           value={
             context.percentage !== null && context.maxTokens !== null
               ? `${Math.round(context.percentage)}% · ${formatContextWindowTokens(context.usedTokens)} of ${formatContextWindowTokens(context.maxTokens)}`

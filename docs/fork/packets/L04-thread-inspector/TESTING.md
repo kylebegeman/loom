@@ -43,9 +43,11 @@ With Kyle's permission for a dev server and browser, on seeded data:
    the timeline, Escape, a line's jump, "Open inspector panel". It does not close while a
    reply streams. The eye button toggles it without flicker; the tooltip does not show while
    it is open.
-5. Keybindings (bind them in Settings > Keybindings first): toggle panel, toggle card. The
-   two palette items, "Show thread inspector" and "Show thread inspector card", do the
-   same. The card's footer shows the toggle shortcut once bound.
+5. Keybindings (bind them in Settings > Keybindings first): toggle panel, toggle card, also
+   with the terminal focused. On a draft thread both keys do nothing and reach the app
+   underneath. The palette items "Show thread inspector" and "Show thread inspector card"
+   open (never close) the panel and the card. The card's footer shows the toggle shortcut
+   once bound.
 6. Upstream T3 server: everything works (client-only).
 7. Performance: with the card open during a long streaming reply, the profiler shows no
    continuous re-render and the 1 Hz ticker stops when the tab is hidden.

@@ -40,6 +40,7 @@ theme's accent color for a question. You do not need to open the card to see it.
 
 - Changes only appear for git repositories. The panel lists the largest changes first and
   points to the diff panel for the rest.
-- A new thread shows its status and workspace until you send the first message.
+- A new thread gets its eye button once you send the first message. Until then the panel
+  shows only its status and workspace.
 - The inspector reads what the app already knows, so it also works when connected to a
   standard T3 Code server.

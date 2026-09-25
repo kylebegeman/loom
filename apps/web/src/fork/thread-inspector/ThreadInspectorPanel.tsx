@@ -1,4 +1,3 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   CircleCheckIcon,
   CircleDotIcon,
@@ -64,15 +63,11 @@ const AGENT_TONE: Record<InspectorAgentStatus, InspectorTone> = {
 
 /**
  * The workbench: the hero, then every area as a section with its tools (copy, open the
- * diff, the agents panel, a terminal, the implementing thread). Mounted only while its tab
- * is visible, so a hidden tab derives nothing.
+ * diff, the agents panel, a terminal, the implementing thread). ChatView mounts it only
+ * while it is the active tab of a present right panel, so a hidden tab derives nothing.
+ * It keeps rendering through the close animation, like upstream's panels.
  */
-export function ThreadInspectorPanel({ threadRef, visible }: ForkPanelProps) {
-  if (!visible) return null;
-  return <PanelBody threadRef={threadRef} />;
-}
-
-function PanelBody({ threadRef }: { threadRef: ScopedThreadRef }) {
+export function ThreadInspectorPanel({ threadRef }: ForkPanelProps) {
   const inputs = useInspectorInputs(threadRef);
   const model = useMemo(() => deriveInspectorModel(inputs), [inputs]);
   const runAction = useInspectorActions(threadRef);

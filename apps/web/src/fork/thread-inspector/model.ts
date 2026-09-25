@@ -112,7 +112,7 @@ export interface InspectorStatus {
 export interface InspectorFact {
   readonly id: "model" | "runtime" | "interaction";
   readonly label: string;
-  /** Spoken and shown on hover when the label alone does not say it. */
+  /** The tooltip, when the label alone does not say it; equal to the label otherwise. */
   readonly title: string;
   readonly driverKind?: ProviderDriverKind;
 }
@@ -276,7 +276,7 @@ function deriveStatus(inputs: InspectorInputs): InspectorStatus {
       ...base,
       label: "Needs approval",
       tone: "warning",
-      detail: first ? APPROVAL_LABELS[first.requestKind] : null,
+      detail: first ? (APPROVAL_LABELS[first.requestKind] ?? "Approval") : null,
       respond: true,
     };
   }

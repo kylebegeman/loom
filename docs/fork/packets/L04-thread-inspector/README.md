@@ -1,6 +1,6 @@
 # L04: Thread Inspector
 
-Status: Built; manual check pending.
+Status: Done.
 
 One status view for the current thread: what it is doing, where it works (project, branch,
 worktree, pull request), what it changed (uncommitted files, last turn's files), its plan,

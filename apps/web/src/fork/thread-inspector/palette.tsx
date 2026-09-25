@@ -2,8 +2,10 @@ import { EyeIcon, PanelTopIcon } from "lucide-react";
 
 import { ITEM_ICON_CLASS } from "~/components/CommandPalette.logic";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
-import { dispatchForkCommand } from "../keybindings/forkCommandBus";
+import { useInspectorCardStore } from "./cardStore";
+import { openThreadInspectorPanel } from "./commands";
 
+/** "Show" always opens; the keybindings are the toggles. */
 export const threadInspectorPaletteSource: ForkCommandPaletteSource = {
   id: "thread-inspector",
   items: ({ activeThreadRef }) =>
@@ -18,7 +20,7 @@ export const threadInspectorPaletteSource: ForkCommandPaletteSource = {
             icon: <PanelTopIcon className={ITEM_ICON_CLASS} />,
             shortcutCommand: "loom.thread-inspector.toggle",
             run: async () => {
-              dispatchForkCommand("loom.thread-inspector.toggle");
+              openThreadInspectorPanel(activeThreadRef);
             },
           },
           {
@@ -29,7 +31,7 @@ export const threadInspectorPaletteSource: ForkCommandPaletteSource = {
             icon: <EyeIcon className={ITEM_ICON_CLASS} />,
             shortcutCommand: "loom.thread-inspector.card",
             run: async () => {
-              dispatchForkCommand("loom.thread-inspector.card");
+              useInspectorCardStore.getState().setOpen(true);
             },
           },
         ],

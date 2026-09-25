@@ -19,7 +19,7 @@ export function useInspectorActions(
     const panels = useRightPanelStore.getState();
     switch (action.kind) {
       case "open-diff":
-        // Uncommitted changes, whatever scope the diff panel showed last.
+        // The diff panel's working tree scope, even if it last showed the branch or a turn.
         useDiffPanelStore.getState().selectGitScope(threadRef, "unstaged");
         panels.open(threadRef, "diff");
         break;

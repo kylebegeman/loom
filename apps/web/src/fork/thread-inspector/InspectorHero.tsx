@@ -1,5 +1,6 @@
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { PROVIDER_ICON_BY_PROVIDER } from "~/components/chat/providerIconUtils";
 import { cn } from "~/lib/utils";
 import type { InspectorAction, InspectorFact, InspectorModel } from "./model";
@@ -88,10 +89,22 @@ export function InspectorHero({
 
 function FactChip({ fact }: { fact: InspectorFact }) {
   const Icon = fact.driverKind ? (PROVIDER_ICON_BY_PROVIDER[fact.driverKind] ?? null) : null;
-  return (
-    <Badge variant="outline" size="sm" title={fact.title}>
+  const chip = (
+    <>
       {Icon ? <Icon aria-hidden /> : null}
       {fact.label}
-    </Badge>
+    </>
+  );
+  if (fact.title === fact.label)
+    return (
+      <Badge variant="outline" size="sm">
+        {chip}
+      </Badge>
+    );
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<Badge variant="outline" size="sm" />}>{chip}</TooltipTrigger>
+      <TooltipPopup side="bottom">{fact.title}</TooltipPopup>
+    </Tooltip>
   );
 }
