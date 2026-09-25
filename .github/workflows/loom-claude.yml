@@ -30,6 +30,9 @@ jobs:
     timeout-minutes: 120
     env:
       GH_TOKEN: ${{ secrets.LOOM_BOT_TOKEN }}
+      # gh treats a remote named "upstream" as the default repository; pin it
+      # to the fork so pull requests and comments never land on pingdotgg/t3code.
+      GH_REPO: ${{ github.repository }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6

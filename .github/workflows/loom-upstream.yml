@@ -42,6 +42,9 @@ jobs:
       # Pushes and pull requests use the fork's own token: the built-in token
       # cannot push the upstream workflow changes that most merges carry.
       GH_TOKEN: ${{ secrets.LOOM_BOT_TOKEN }}
+      # gh treats a remote named "upstream" as the default repository; pin it
+      # to the fork so pull requests and comments never land on pingdotgg/t3code.
+      GH_REPO: ${{ github.repository }}
       TARGET: ${{ inputs.target || 'stable' }}
       DRY_RUN: ${{ inputs.dry_run || false }}
     steps:

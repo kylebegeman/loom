@@ -58,6 +58,11 @@ export PATH="$REPO_ROOT/node_modules/.bin:/opt/homebrew/opt/rustup/bin:$PATH"
 # from the desktop app. It turns every Electron the build starts into plain
 # Node, and upstream tests that copy the environment into mock commands fail.
 unset ELECTRON_RUN_AS_NODE
+# gh picks a remote named "upstream" as its default repository, which would
+# send the fork's pull requests to pingdotgg/t3code. Every gh call here is
+# about the fork, so pin gh to origin.
+GH_REPO=$(git remote get-url origin | sed -E 's#^(git@github\.com:|https://([^@/]+@)?github\.com/)##; s#\.git$##')
+export GH_REPO
 
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
