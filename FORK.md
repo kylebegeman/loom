@@ -66,6 +66,7 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/rightPanelStore.ts`                  | `ext-panels`   | The generic `"fork"` surface kind and the `openSurface` action.                 |
 | `apps/web/src/components/RightPanelTabs.tsx`       | `ext-panels`   | Fork panels in the launcher and "+" menu; their tab titles and icons.           |
 | `apps/web/src/components/ChatView.tsx`             | `ext-panels`   | Renders fork panel content and passes fork panel actions to both tab bars.      |
+| `apps/web/src/components/CommandPalette.tsx`       | `ext-palette`  | Adds fork palette items to the root action list.                                |
 | `packages/client-runtime/package.json` (no marker) | `ext-core`     | `./fork` subpath export, after `./errors`.                                      |
 
 ## Identifiers kept on purpose

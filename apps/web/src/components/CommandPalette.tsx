@@ -129,6 +129,7 @@ import {
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
+import { useForkCommandPaletteItems } from "../fork/commandPalette/registry"; // fork: ext-palette
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -715,6 +716,7 @@ function OpenCommandPaletteDialog(props: {
   const desktopLocalBootstraps = useDesktopLocalBootstraps();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
+  const forkPaletteItems = useForkCommandPaletteItems(); // fork: ext-palette
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const projects = useProjects();
@@ -2077,6 +2079,7 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  actionItems.push(...forkPaletteItems); // fork: ext-palette
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
