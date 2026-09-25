@@ -32,7 +32,7 @@ No server code, no contracts, no RPCs, no persisted state.
 | Terminals                  | `useThreadRunningTerminalIds({ environmentId, threadId })` (`apps/web/src/state/terminalSessions.ts:178`).                                                                                                                                                                                                                                                                                                                                                  |
 | Context window             | `deriveLatestContextWindowSnapshot(activities)` (`apps/web/src/lib/contextWindow.ts:28`): used and max tokens, percentages.                                                                                                                                                                                                                                                                                                                                 |
 | Provider label             | `deriveProviderInstanceEntries(serverConfig.providers)` (`apps/web/src/providerInstances.ts:94`) matched by `session.providerInstanceId ?? modelSelection.instanceId`.                                                                                                                                                                                                                                                                                      |
-| Status pill                | `resolveThreadStatusPill({ thread })` (`apps/web/src/components/Sidebar.logic.ts:985`) for consistent wording and colors with the sidebar.                                                                                                                                                                                                                                                                                                                  |
+| Working since              | `resolveWorkingStartedAt(thread)` and `formatWorkingDurationLabel` (`apps/web/src/components/Sidebar.logic.ts`), so the elapsed time matches the sidebar's.                                                                                                                                                                                                                                                                                                 |
 
 Derivations over `activities` (up to 500 rows, `projector.ts:63-66`) are memoized on the
 activities array identity, exactly as `ChatView` memoizes them. They run only while the panel
@@ -40,79 +40,28 @@ or the card is open.
 
 ## Model (`apps/web/src/fork/thread-inspector/model.ts`, pure)
 
-```ts
-export interface InspectorInputs {
-  readonly now: string; // ISO, from a 1 s ticker only while working and visible
-  readonly thread: {
-    readonly isDraft: boolean;
-    readonly title: string;
-    readonly session: OrchestrationSession | null;
-    readonly latestTurn: OrchestrationLatestTurn | null;
-    readonly runtimeMode: RuntimeMode;
-    readonly interactionMode: ProviderInteractionMode;
-    readonly branch: string | null;
-    readonly worktreePath: string | null;
-    readonly planProgress: { step: string; completedSteps: number; totalSteps: number } | null;
-    readonly lastError: string | null;
-  };
-  readonly projectName: string | null;
-  readonly providerLabel: string | null; // "Codex, gpt-5.x"
-  readonly git: {
-    readonly state: "loading" | "error" | "ready";
-    readonly status: VcsStatusResult | null;
-    readonly error: string | null;
-  };
-  readonly lastCheckpoint: OrchestrationCheckpointSummary | null;
-  readonly activePlan: ActivePlanState | null;
-  readonly proposedPlan: LatestProposedPlanState | null;
-  readonly approvals: ReadonlyArray<PendingApproval>;
-  readonly userInputs: ReadonlyArray<PendingUserInput>;
-  readonly agents: AgentPanelModel;
-  readonly runningTerminalIds: ReadonlyArray<string>;
-  readonly contextWindow: ContextWindowSnapshot | null;
-}
+The source is the spec; in outline:
 
-export type InspectorAction =
-  | { readonly kind: "open-diff" }
-  | { readonly kind: "open-turn-diff"; readonly turnId: TurnId }
-  | { readonly kind: "open-agents" }
-  | { readonly kind: "open-pull-requests" }
-  | { readonly kind: "open-terminal"; readonly terminalId: string }
-  | { readonly kind: "focus-composer" }
-  | { readonly kind: "open-thread"; readonly threadId: ThreadId }
-  | { readonly kind: "copy"; readonly text: string; readonly label: string };
-
-export interface InspectorRow {
-  readonly id: string;
-  readonly icon: InspectorIconName; // mapped to lucide icons in the view
-  readonly label: string;
-  readonly value?: string;
-  readonly tone?: "default" | "muted" | "warning" | "danger" | "success";
-  readonly action?: { readonly label: string; readonly action: InspectorAction };
-}
-
-export interface InspectorSectionModel {
-  readonly id:
-    "status" | "workspace" | "changes" | "plan" | "attention" | "agents" | "terminals" | "context";
-  readonly title: string;
-  readonly rows: ReadonlyArray<InspectorRow>;
-  /** Shown in the compact (card on a narrow window) density. */
-  readonly essential: boolean;
-}
-
-export interface InspectorModel {
-  readonly sections: ReadonlyArray<InspectorSectionModel>;
-  readonly needsAttention: boolean; // drives the header button dot
-}
-
-export function deriveInspectorModel(inputs: InspectorInputs): InspectorModel;
-```
+- `InspectorInputs`: the thread's session, latest turn, modes, branch, worktree, shell
+  `planProgress` and `backgroundLiveness`, linked pull request; project name; provider label;
+  `supportsPullRequests`; git as `none | loading | error | ready`; last checkpoint; active and
+  proposed plan; approvals; questions; the agent panel model; running terminal ids; context
+  window. No clock: a running row carries `since` and the view ticks it (below).
+- `InspectorRow`: `icon`, `label` (primary text, colored by `tone`), optional muted `value`,
+  `name` (the row's subject for screen readers and the tooltip when the label alone does not
+  say it), `detail` (tooltip), `diff`, `since` and one `action`.
+- `InspectorTone`: `default | muted | info | warning | input | danger | success`, rendered with
+  theme tokens only (`info`, `warning`, `primary`, `destructive`, `success`).
+- `InspectorSectionModel`: `id`, `title`, `rows`, a one-line `summary` with its tone for the
+  compact density, and `essential`.
+- `InspectorAction`: `open-diff`, `open-turn-diff`, `open-agents`, `open-pull-request` (the
+  thread's linked pull request), `open-terminal`, `focus-composer`, `open-thread`, `copy`.
 
 Rules worth testing:
 
 - Status precedence matches upstream's pill: pending approval, pending input, error,
-  working (with plan step `planProgress.step` and `completedSteps/totalSteps`), interrupted,
-  ready.
+  working (with plan step `planProgress.step` and `completedSteps/totalSteps`), background
+  work, interrupted, ready.
 - Elapsed time uses `latestTurn.startedAt` while running.
 - Changes: when `git.status.isRepo` is false, the section is omitted and Workspace says
   "Not a git repository". Top five files by `insertions + deletions`.
@@ -125,23 +74,26 @@ Rules worth testing:
 
 ## Hook (`useInspectorInputs.ts`)
 
-Gathers the inputs above for a `ScopedThreadRef | null`, memoizing each derivation on its
-source identity. The 1 s ticker runs only when the thread is running and the component is
-mounted and `document.visibilityState === "visible"`; it is a `setInterval`, not an
-animation frame loop.
+Gathers the inputs above for a `ScopedThreadRef`, memoizing each derivation on its source
+identity and the result on its parts. A draft (no shell yet) reads its project, modes, branch
+and worktree from the composer draft store and skips the git query.
+
+Elapsed time is `InspectorElapsed` in `parts.tsx`: a 1 s `setInterval` that writes the text
+node directly (as `AgentsPanel` does) and stops while `document.visibilityState` is not
+`"visible"`. Ticks never re-render React.
 
 ## Actions (`actions.ts`)
 
-| Action               | Implementation                                                                                                                                                                                                                                                                                                                                                                     |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `open-diff`          | `useRightPanelStore.getState().open(ref, "diff")` (`apps/web/src/rightPanelStore.ts:130-133`).                                                                                                                                                                                                                                                                                     |
-| `open-turn-diff`     | `useDiffPanelStore.getState().selectTurn(ref, turnId)` (`apps/web/src/diffPanelStore.ts`, as `ChatView.tsx:9032` does), then `open(ref, "diff")`.                                                                                                                                                                                                                                  |
-| `open-agents`        | `open(ref, "agents")` (as `ChatView.tsx:4511`).                                                                                                                                                                                                                                                                                                                                    |
-| `open-pull-requests` | `open(ref, "pull-requests")`.                                                                                                                                                                                                                                                                                                                                                      |
-| `open-terminal`      | `useRightPanelStore.getState().openTerminal(ref, terminalId)` (`rightPanelStore.ts:150`).                                                                                                                                                                                                                                                                                          |
-| `focus-composer`     | `useComposerHandleContext()?.current?.focusAtEnd()` (`apps/web/src/composerHandleContext.ts`; the context is provided by `CommandPalette` around the whole app shell, `apps/web/src/components/CommandPalette.tsx:542` and `apps/web/src/routes/__root.tsx:195-201`, so both the panel and the header button can reach it). The approval and question panels live in the composer. |
-| `open-thread`        | `navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) })` (`apps/web/src/threadRoutes.ts:42`).                                                                                                                                                                                                                                                          |
-| `copy`               | Upstream's `useCopyToClipboard` (`apps/web/src/hooks/useCopyToClipboard.ts`), with a success toast.                                                                                                                                                                                                                                                                                |
+| Action              | Implementation                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open-diff`         | `useRightPanelStore.getState().open(ref, "diff")` (`apps/web/src/rightPanelStore.ts:130-133`).                                                                                                                                                                                                                                                                                     |
+| `open-turn-diff`    | `useDiffPanelStore.getState().selectTurn(ref, turnId)` (`apps/web/src/diffPanelStore.ts`, as `ChatView.tsx:9032` does), then `open(ref, "diff")`.                                                                                                                                                                                                                                  |
+| `open-agents`       | `open(ref, "agents")` (as `ChatView.tsx:4511`).                                                                                                                                                                                                                                                                                                                                    |
+| `open-pull-request` | `openPullRequest(ref, linkedPullRequest)`, as `ChatView`'s pull request surface does.                                                                                                                                                                                                                                                                                              |
+| `open-terminal`     | `useRightPanelStore.getState().openTerminal(ref, terminalId)` (`rightPanelStore.ts:150`).                                                                                                                                                                                                                                                                                          |
+| `focus-composer`    | `useComposerHandleContext()?.current?.focusAtEnd()` (`apps/web/src/composerHandleContext.ts`; the context is provided by `CommandPalette` around the whole app shell, `apps/web/src/components/CommandPalette.tsx:542` and `apps/web/src/routes/__root.tsx:195-201`, so both the panel and the header button can reach it). The approval and question panels live in the composer. |
+| `open-thread`       | `navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) })` (`apps/web/src/threadRoutes.ts:42`).                                                                                                                                                                                                                                                          |
+| `copy`              | Upstream's `useCopyToClipboard` (`apps/web/src/hooks/useCopyToClipboard.ts`), with a success toast.                                                                                                                                                                                                                                                                                |
 
 ## Components (`apps/web/src/fork/thread-inspector/`)
 
@@ -151,6 +103,8 @@ animation frame loop.
 | `useInspectorInputs.ts`           | Hook above.                                                                                                                                                                                                                  |
 | `actions.ts`                      | `useInspectorActions(ref)` returning `run(action)`.                                                                                                                                                                          |
 | `ThreadInspector.tsx`             | Renders sections with `density: "full"                                                                                                                                                                                       | "compact"`; section and row primitives local to the folder (small, like old Loom's `threadInspectorParts`). |
+| `parts.tsx`                       | Section, collapsed section, row, status dot and elapsed-time primitives; reused by registered sections.                                                                                                                      |
+| `commands.ts`                     | `toggleThreadInspectorPanel(ref)`.                                                                                                                                                                                           |
 | `sections.ts`                     | `FORK_INSPECTOR_SECTIONS` registry for other packets (below).                                                                                                                                                                |
 | `panel.tsx`                       | `ForkPanelDefinition` `{ id: "thread-inspector", title: "Inspector", icon: PanelTopIcon, shortcut: "I", isAvailable: ({ threadRef }) => threadRef !== null }`.                                                               |
 | `cardStore.ts`                    | Zustand store `{ open: boolean, toggle, close }` (in memory; the keybinding host and the button share it).                                                                                                                   |
@@ -160,15 +114,15 @@ animation frame loop.
 | `palette.tsx`                     | Palette source.                                                                                                                                                                                                              |
 
 Positioning and dismissal of the card, modeled on old Loom's `ThreadInspectorPinned`
-(ledger 1359): on open, read the `[data-chat-header]` element's rect (set by
-`ChatView.tsx:9356`) and place the card `position: fixed` just below it, right-aligned with
+(ledger 1359): on open, read the rect of the `[data-chat-header]` element that contains the
+button and place the card `position: fixed` just below it, right-aligned with
 the header's right edge minus the header's own padding. It closes on a capture-phase
 `pointerdown` outside the card that is not on the trigger (`[data-loom-inspector-trigger]`),
 on Escape, on `window` `resize`, when a `ResizeObserver` on the header element reports a
 width change (opening a panel, dragging a splitter, collapsing the sidebar), and after any
 row action. Height changes are ignored so streaming replies do not close it. No scroll
 listeners, no animation frames. `z-index` stays below dialogs and toasts; the surface uses
-upstream's popover classes.
+upstream's `dropdown-glass` surface with `shadow-lg`.
 
 Toggle panel command: if the active surface for the thread is the inspector, `close(ref)`;
 else `openSurface(ref, forkPanelSurface("thread-inspector"))` (EXTENSION-POINTS.md, Right

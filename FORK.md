@@ -70,6 +70,15 @@ The shared plumbing packets register into, specified in
 | `packages/contracts/src/keybindings.ts`            | `ext-keybindings` | Fork `loom.*` commands join the static keybinding command list.                 |
 | `packages/client-runtime/package.json` (no marker) | `ext-core`        | `./fork` subpath export, after `./errors`.                                      |
 
+### Packet seams
+
+Upstream edits a single packet needs that no extension point covers. Each packet's `SEAMS.md`
+explains why. Find them with `git grep -n "fork: <slug>"`.
+
+| File                                          | Packet             | Why                                                                                     |
+| --------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------- |
+| `apps/web/src/components/chat/ChatHeader.tsx` | `thread-inspector` | Eye button for the thread inspector card. See `docs/fork/packets/L04-thread-inspector`. |
+
 ## Identifiers kept on purpose
 
 These locate the owner's existing T3 Code data or are invisible, so they keep T3 names:

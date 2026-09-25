@@ -8,6 +8,7 @@ import type {
 } from "~/components/CommandPalette.logic";
 import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { useServerConfigs } from "~/state/entities";
+import { threadInspectorPaletteSource } from "../thread-inspector/palette";
 
 export interface ForkCommandPaletteContext {
   readonly activeThreadRef: ScopedThreadRef | null;
@@ -24,6 +25,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  threadInspectorPaletteSource,
   // snippetsPaletteSource,
 ];
 

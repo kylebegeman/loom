@@ -1,7 +1,9 @@
+import { threadInspectorPanel } from "../thread-inspector/panel";
 import type { ForkPanelDefinition, ForkRightPanelSurface } from "./types";
 
 /** One line per packet panel. Order is launcher order. */
 export const FORK_PANELS: ReadonlyArray<ForkPanelDefinition> = [
+  threadInspectorPanel,
   // snippetsPanel,
 ];
 

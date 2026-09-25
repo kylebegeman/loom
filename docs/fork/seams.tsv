@@ -27,3 +27,4 @@ apps/web/src/components/RightPanelTabs.tsx	ext-panels	8
 apps/web/src/rightPanelStore.ts	ext-panels	8
 apps/web/src/components/CommandPalette.tsx	ext-palette	3
 packages/contracts/src/keybindings.ts	ext-keybindings	2
+apps/web/src/components/chat/ChatHeader.tsx	thread-inspector	2

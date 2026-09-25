@@ -10,6 +10,10 @@ Used: `ext-core` (prerequisite only), `ext-panels`, `ext-web-root`, `ext-keybind
 exactly as specified, one commit each, before packet code, and record them here with their
 commits.
 
+All five were missing and were created from EXTENSION-POINTS.md, one commit each:
+`554e49172f` (`ext-core`), `ddb0951b01` (`ext-web-root`), `aea043fa50` (`ext-panels`),
+`0527fd7bc1` (`ext-palette`), `9665b017c7` (`ext-keybindings`).
+
 Registrations (fork-owned files only):
 
 | Registry                                       | Entry                                                                   |
@@ -38,7 +42,7 @@ consumer (EXTENSION-POINTS.md, "Shared points considered and declined").
 
 ### Diffs (`apps/web/src/components/chat/ChatHeader.tsx`)
 
-Import, after `import { OpenInPicker } from "./OpenInPicker";` (line 34):
+Import, after `import { OpenInPicker } from "./OpenInPicker";`:
 
 ```diff
  import { OpenInPicker } from "./OpenInPicker";
@@ -46,15 +50,15 @@ Import, after `import { OpenInPicker } from "./OpenInPicker";` (line 34):
 +import { ThreadInspectorHeaderButton } from "~/fork/thread-inspector/ThreadInspectorHeaderButton";
 ```
 
-First child of the header actions container (`data-chat-header-actions`, line 405; the
-children start at line 412). `activeThreadRef` is declared at line 172 and `isServerThread`
-is a prop (line 126):
+First child of the header actions container (`data-chat-header-actions`), before its
+overflow `<Menu>`, so the button stays inline when the other header actions fold into the
+menu. `activeThreadRef` and the `isServerThread` prop are already in scope:
 
 ```diff
        >
 +        {/* fork: thread-inspector */}
 +        <ThreadInspectorHeaderButton threadRef={isServerThread ? activeThreadRef : null} />
-         {activeProjectScripts && (
+         <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
 ```
 
 The button renders `null` for drafts (`threadRef === null`). The container already manages
@@ -72,6 +76,8 @@ git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
 Record the tag and result here. Conflicts are acceptable only on the marked lines.
+
+2026-09-25, `v0.0.43-nightly.20260925.2251`: clean, no conflicts.
 
 ## FORK.md rows
 
