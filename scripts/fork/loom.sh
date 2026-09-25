@@ -62,15 +62,15 @@ unset ELECTRON_RUN_AS_NODE
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
 
-latest_stable() { git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1; }
-latest_nightly() { git tag -l 'v*-nightly.*' --sort=-creatordate | head -1; }
+latest_stable() { git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 1p; }
+latest_nightly() { git tag -l 'v*-nightly.*' --sort=-creatordate | sed -n 1p; }
 # The upstream tag main was last built from: the newest loom-<tag> on main,
 # or the newest upstream stable tag main contains.
 current_upstream() {
   local t
-  t=$(git tag -l 'loom-v*' --merged main --sort=-creatordate | head -1)
+  t=$(git tag -l 'loom-v*' --merged main --sort=-creatordate | sed -n 1p)
   if [ -n "$t" ]; then echo "${t#loom-}"; return; fi
-  git tag -l 'v[0-9]*' --merged main --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1
+  git tag -l 'v[0-9]*' --merged main --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 1p
 }
 installed_version() {
   [ -d "$APP_PATH" ] && /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "not installed"
@@ -166,7 +166,7 @@ build_app() {
   git checkout -q -- "${stamped[@]}"
   restore_lockfile
   local zip
-  zip=$(ls release/*-arm64.zip 2>/dev/null | head -1)
+  zip=$(ls release/*-arm64.zip 2>/dev/null | sed -n 1p)
   [ -n "$zip" ] || die "the build produced no zip in release/"
   local record
   record="$BUILDS_DIR/$version-$(git rev-parse --short HEAD)"
@@ -175,7 +175,7 @@ build_app() {
   local name
   name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$record"/*.app/Contents/Info.plist)
   case "$name" in Loom | "Loom ("*) ;; *) die "the built app is named '$name', not Loom; check the brand seams" ;; esac
-  [ "$(ls -d "$record"/*.app | head -1)" = "$record/Loom.app" ] || mv "$record"/*.app "$record/Loom.app"
+  [ "$(ls -d "$record"/*.app | sed -n 1p)" = "$record/Loom.app" ] || mv "$record"/*.app "$record/Loom.app"
   sign_app "$record/Loom.app"
   printf 'upstream=%s\ncommit=%s\nbuilt=%s\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
   echo "Built $name $version into $record"
@@ -335,7 +335,7 @@ cmd_build() {
 
 cmd_install() {
   local record
-  record=$(records | head -1)
+  record=$(records | sed -n 1p)
   [ -n "$record" ] || die "no build to install; run build or integrate first"
   install_record "$record"
 }
@@ -344,7 +344,7 @@ cmd_rollback() {
   local current previous
   current=$(installed_record)
   [ -n "$current" ] || die "the installed app has no build record, so there is nothing to roll back to"
-  previous=$(records | grep -v -x -F "$current" | head -1)
+  previous=$(records | grep -v -x -F "$current" | sed -n 1p)
   [ -n "$previous" ] || die "no earlier build is kept"
   [ -f "$previous/state/state.sqlite" ] || die "$(basename "$previous") has no saved data to restore"
   quit_app
@@ -465,7 +465,7 @@ $added}"
 }
 
 # The newest upstream tag main contains, stable or nightly.
-merged_upstream() { git tag -l 'v[0-9]*' --merged main --sort=-creatordate | head -1; }
+merged_upstream() { git tag -l 'v[0-9]*' --merged main --sort=-creatordate | sed -n 1p; }
 
 # Finish an integration pull request on this Mac. With an open one, merge it
 # (always a merge commit); with none, land whatever upstream tag main already
