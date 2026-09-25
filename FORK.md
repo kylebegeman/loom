@@ -53,16 +53,17 @@ The shared plumbing packets register into, specified in
 [docs/fork/packets/EXTENSION-POINTS.md](docs/fork/packets/EXTENSION-POINTS.md). Find them with
 `git grep -n "fork: ext-"`.
 
-| File                                               | Marker     | Why                                                                             |
-| -------------------------------------------------- | ---------- | ------------------------------------------------------------------------------- |
-| `apps/server/src/ws.ts`                            | `ext-core` | Serves `LoomWsRpcGroup` and merges the fork RPC handler layer.                  |
-| `apps/server/src/server.ts`                        | `ext-core` | `ForkLayer` at the head of the core runtime; `ForkRoutesLayer` with the routes. |
-| `apps/server/src/environment/ServerEnvironment.ts` | `ext-core` | Advertises `capabilities.loomFeatures`.                                         |
-| `packages/contracts/src/environment.ts`            | `ext-core` | Optional `loomFeatures` capability key.                                         |
-| `packages/client-runtime/src/rpc/protocol.ts`      | `ext-core` | Clients speak `LoomWsRpcGroup`.                                                 |
-| `packages/client-runtime/src/rpc/client.ts`        | `ext-core` | Fork streaming tags join the client's stream unions.                            |
-| `packages/contracts/package.json` (no marker)      | `ext-core` | `./fork` subpath export, first after `.`.                                       |
-| `packages/client-runtime/package.json` (no marker) | `ext-core` | `./fork` subpath export, after `./errors`.                                      |
+| File                                               | Marker         | Why                                                                             |
+| -------------------------------------------------- | -------------- | ------------------------------------------------------------------------------- |
+| `apps/server/src/ws.ts`                            | `ext-core`     | Serves `LoomWsRpcGroup` and merges the fork RPC handler layer.                  |
+| `apps/server/src/server.ts`                        | `ext-core`     | `ForkLayer` at the head of the core runtime; `ForkRoutesLayer` with the routes. |
+| `apps/server/src/environment/ServerEnvironment.ts` | `ext-core`     | Advertises `capabilities.loomFeatures`.                                         |
+| `packages/contracts/src/environment.ts`            | `ext-core`     | Optional `loomFeatures` capability key.                                         |
+| `packages/client-runtime/src/rpc/protocol.ts`      | `ext-core`     | Clients speak `LoomWsRpcGroup`.                                                 |
+| `packages/client-runtime/src/rpc/client.ts`        | `ext-core`     | Fork streaming tags join the client's stream unions.                            |
+| `packages/contracts/package.json` (no marker)      | `ext-core`     | `./fork` subpath export, first after `.`.                                       |
+| `apps/web/src/routes/__root.tsx`                   | `ext-web-root` | Mounts `ForkRoot` in the authenticated app shell.                               |
+| `packages/client-runtime/package.json` (no marker) | `ext-core`     | `./fork` subpath export, after `./errors`.                                      |
 
 ## Identifiers kept on purpose
 

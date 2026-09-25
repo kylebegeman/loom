@@ -21,3 +21,4 @@ packages/client-runtime/src/rpc/protocol.ts	ext-core	2
 packages/contracts/src/environment.ts	ext-core	2
 packages/client-runtime/package.json	-	"./fork"
 packages/contracts/package.json	-	"./fork"
+apps/web/src/routes/__root.tsx	ext-web-root	2
