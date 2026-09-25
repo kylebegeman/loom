@@ -108,6 +108,12 @@ same commit as the seams:
 
 Keep each "Why" to one line and point at the packet folder for detail.
 
+In the same commit, add one row per upstream file and marker to `docs/fork/seams.tsv`:
+`path<TAB>marker<TAB>minimum marked lines`, for example
+`apps/server/src/server.ts	ext-core	3`. JSON seams use the marker `-` and, as the third
+column, text the file must still contain. `scripts/fork/loom.sh check` fails when a listed
+file loses marked lines and when a marker appears in a file the manifest does not list.
+
 ## Commits
 
 Commit style is conventional commits in plain language. The trailer from the session's
@@ -170,7 +176,9 @@ Mobile changes also run `vp run lint:mobile`.
 
 A packet is only done if the next upstream merge still applies cleanly.
 
-1. While working on a branch, preview the merge without touching the worktree:
+1. While working on a branch, run `scripts/fork/loom.sh check`: the seam manifest, every
+   fork test (`*/fork/*.test.ts(x)` plus the branding tests) and the typechecks the upstream
+   merge runs. Then preview the merge without touching the worktree:
 
    ```sh
    git fetch -q upstream --tags
@@ -192,33 +200,12 @@ A packet is only done if the next upstream merge still applies cleanly.
    tests and typechecks, builds the app, then discards everything. It needs a clean tree
    and `main` equal to `origin/main`, so an agent on a packet branch cannot run it.
 
-### Known gap in `loom.sh` (follow-up, not part of any packet)
+### What `loom.sh` does not do yet
 
-`run_checks` only knows the branding seams: `SEAM_FILES` lists files that must still contain
-`fork: brand`, `FORK_TESTS` lists four branding tests, and `TYPECHECK_DIRS` covers
-`packages/shared apps/desktop apps/web scripts`, which leaves out `apps/server`,
-`packages/contracts` and `packages/client-runtime`. Proposed generalization, to do as a
-separate `fix(fork)` change once the first extension point lands:
-
-- Add `docs/fork/seams.tsv` with one row per seam file: `path<TAB>marker<TAB>minimum count`
-  (for example `apps/server/src/server.ts	ext-core	3`). Rows for JSON seams use the
-  marker `-` and are checked by a content grep instead.
-- Replace the `SEAM_FILES` loop with: for each row, count
-  `grep -cE "(//|/\*|<!--|#) fork: <marker>([^a-z0-9-]|$)" <path>` and fail below the
-  minimum. The comment prefix matters: `git grep "fork: "` alone also matches upstream code
-  such as the `fork: (workerPath: string) => ...` key in
-  `apps/desktop/src/snapShot/RegionSnapShot.ts:64`.
-- Add a reverse check: every marker found by
-  `git grep -nE '(//|/\*|<!--|#) fork: [a-z0-9-]+([^a-z0-9-]|$)' -- . ':(exclude)docs/'`
-  must belong to a file listed in the manifest, so an undocumented seam fails the
-  integration. The pathspec excludes `docs/`, because packet documents quote seam diffs
-  with real markers, and the regex is the same strict form as the forward check (comment
-  prefix, then a complete slug).
-- Derive `FORK_TESTS` from `git ls-files '*/fork/*.test.ts' '*/fork/**/*.test.ts'` plus the
-  branding tests, and add `apps/server packages/contracts packages/client-runtime` (and
-  `apps/mobile` once it has fork code) to `TYPECHECK_DIRS`.
-- If any `apps/web/src/routes/*loom*` file exists, regenerate the route tree before the web
-  typecheck (see EXTENSION-POINTS.md, Settings).
+- It does not regenerate `apps/web/src/routeTree.gen.ts`. The first packet that adds a fork
+  route (`settings.loom*.tsx` or `loom.*.tsx`) makes `run_checks` regenerate it before the
+  web typecheck (EXTENSION-POINTS.md, Settings).
+- `TYPECHECK_DIRS` leaves out `apps/mobile`. The first packet with mobile fork code adds it.
 
 ## Documentation
 

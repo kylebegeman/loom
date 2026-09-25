@@ -22,8 +22,9 @@ For every extension point a packet needs:
    produce the same commit so the second can drop its copy.
 3. If the skeleton does not compile or a cited line has moved, fix it minimally, and update
    this file in the same commit so every later packet copies the corrected version.
-4. Add the extension point's seams to FORK.md ("Extension point seams" table) in the same
-   commit (see [CONVENTIONS.md](./CONVENTIONS.md#updating-forkmd)).
+4. Add the extension point's seams to FORK.md ("Extension point seams" table) and to
+   `docs/fork/seams.tsv` in the same commit (see
+   [CONVENTIONS.md](./CONVENTIONS.md#updating-forkmd)).
 
 A partially present extension point (some files or markers missing) is a bug: stop and
 report it rather than guessing.
@@ -3895,6 +3896,6 @@ read `useServerConfigs().get(environmentId)?.environment.capabilities` and pass 
   empty registries are fine but exported helpers with no consumer yet (for example
   `supportsLoomFeature` before any packet uses it) may be reported. Use them in the first
   packet or accept the finding until then.
-- **`loom.sh` coverage.** Until the follow-up in CONVENTIONS.md lands, `integrate` does not
-  check fork seams other than branding and does not typecheck `apps/server`,
-  `packages/contracts` or `packages/client-runtime`.
+- **`loom.sh` coverage.** `loom.sh check` verifies seams against `docs/fork/seams.tsv` but
+  does not yet regenerate the route tree or typecheck `apps/mobile` (CONVENTIONS.md, "What
+  `loom.sh` does not do yet").

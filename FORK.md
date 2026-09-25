@@ -28,8 +28,8 @@ Fork-owned files, never edited upstream:
 
 ## Seams in upstream files
 
-Find them with `git grep -n "fork: brand"`. JSON and binary files cannot carry the
-marker and are listed separately.
+Find them with `git grep -n "fork: brand"`; `docs/fork/seams.tsv` is the checked list.
+JSON and binary files cannot carry the marker and are listed separately.
 
 | File                                                          | Why                                                                                                                                                        |
 | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -61,6 +61,8 @@ These locate the owner's existing T3 Code data or are invisible, so they keep T3
   after it (see below).
 - Linux executable name and WM class `t3code`; `apps/desktop/package.json` `productName`,
   which only names the unpackaged development Electron process.
+- The default branch `main`, as upstream's. Upstream's scripts, docs and workflow
+  triggers assume it.
 - The CLI update source in `packages/shared/src/cliRelease.ts`.
 - Upstream's `T3Wordmark` component, still used by the work-log "T3 Code" icon and the
   first-run welcome wizard, and the scattered help and error messages that say
@@ -109,20 +111,64 @@ Windows `.ico` and web exports) and for the mobile iOS build.
 
 ## Updating from upstream
 
-`scripts/fork/loom.sh` is the whole process. Stable releases are the default; a nightly
-is something you choose.
+Stable releases arrive on their own; a nightly or any other tag is something you ask for.
+The `Loom upstream` workflow (`.github/workflows/loom-upstream.yml`) runs every morning.
+When upstream has a stable release that `main` lacks, it merges it on
+`integrate/<tag>`, runs the fork's checks and opens a pull request. If the merge conflicts
+or a check fails, Claude (Opus 5.5, high effort) repairs it on the same branch within the
+seam rules and says what it changed on the pull request, or opens a draft marked "needs
+Kyle" when it cannot. Nothing merges by itself. Review the pull request, then land it:
+
+```sh
+scripts/fork/loom.sh land
+```
+
+`land` merges the open integration pull request with a merge commit, tags `loom-<tag>`,
+builds, signs and installs. Never squash or rebase an integration pull request: the next
+merge needs upstream's history, and `land` stops if it finds the tag missing from
+`main`. To take a nightly, run the workflow by hand (Actions, Loom upstream, Run
+workflow, target `nightly` or a tag) or `gh workflow run loom-upstream.yml -f target=nightly`;
+`dry_run` merges and checks without pushing. Mention `@claude` in any pull request comment
+to have Claude work on that branch (`.github/workflows/loom-claude.yml`, owner only).
+
+The same steps run locally with `scripts/fork/loom.sh`:
 
 | Command                                          | What it does                                                                                                                         |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `scripts/fork/loom.sh status`                    | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                              |
+| `scripts/fork/loom.sh check`                     | The fork's checks on the current checkout: seams, fork tests, typechecks.                                                            |
 | `scripts/fork/loom.sh integrate`                 | Merge the newest stable tag on a test branch, run the fork's checks, build, then fast-forward main, tag `loom-<tag>`, push, install. |
 | `scripts/fork/loom.sh integrate nightly`         | The same for the newest nightly tag, or pass any upstream tag.                                                                       |
 | `scripts/fork/loom.sh integrate <tag> --dry-run` | Merge, check and build, then discard it. main and the installed app are unchanged.                                                   |
+| `scripts/fork/loom.sh integrate <tag> --pr`      | Merge and check, then push the test branch and open its pull request (what the workflow runs).                                       |
+| `scripts/fork/loom.sh land [<pr>]`               | Merge an integration pull request, tag, build and install. With none open, land what main already contains.                          |
 | `scripts/fork/loom.sh build` / `install`         | Rebuild main (stamped with its upstream version) / install the newest build.                                                         |
 | `scripts/fork/loom.sh rollback`                  | Reinstall the previous build and restore the T3 data it last ran with.                                                               |
 
 A merge conflict stops on the `integrate/<tag>` branch and lists the files. Resolve them,
-`git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`.
+`git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`
+(add `--pr` to finish as a pull request).
+
+### GitHub Actions on the fork
+
+Actions were off when the fork was created, GitHub's default for forks, and upstream's
+workflows must stay off here: they try to publish a release every half hour, deploy the
+relay and build mobile apps with upstream's accounts, and they run on paid Blacksmith
+runners the fork does not have. Only `loom-*.yml` workflows run. The
+first step of every `Loom upstream` run disables any other active workflow, including ones
+a merge adds, and the default workflow token is read-only.
+
+The workflows need two repository secrets:
+
+- `CLAUDE_CODE_OAUTH_TOKEN`: from `claude setup-token`, so Claude runs on Kyle's Claude
+  subscription.
+- `LOOM_BOT_TOKEN`: a fine-grained personal access token for `kylebegeman/loom` only, with
+  read and write access to Contents, Pull requests and Workflows. The built-in token cannot
+  push the upstream workflow changes most merges carry. It expires; renew it when runs fail
+  to push.
+
+Setting the repository variable `LOOM_AUTO_MERGE` to `true` merges a green integration pull
+request automatically. It is off; landing still builds and installs from the Mac.
 
 Builds live in `~/Library/Application Support/Loom Builds` (the newest three, plus the
 installed one). Each install first saves `~/.t3/userdata/state.sqlite` and the settings
@@ -142,6 +188,7 @@ choose Always Allow for both.
 
 ## Merging upstream
 
-Conflicts should only appear on the seam lines above. After a merge, check that
-`git grep -n "fork: brand"` still lists every seam in the table, then run the focused
-checks for the touched packages.
+Conflicts should only appear on seam lines. `docs/fork/seams.tsv` lists every seam file,
+its marker and how many marked lines it keeps; `scripts/fork/loom.sh check` fails when a
+merge drops one, or when a marker appears that the manifest does not list. A change that
+adds or moves a seam updates the manifest in the same commit.

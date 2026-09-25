@@ -1,0 +1,160 @@
+# Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
+#
+# Once a day, merge the newest upstream stable release on integrate/<tag>, run
+# the fork's checks and open a pull request into main. When the merge
+# conflicts or a check fails, Claude repairs it on the same branch. Run it by
+# hand from the Actions tab to integrate a nightly or any upstream tag. Nothing
+# merges on its own: land the pull request with `scripts/fork/loom.sh land`.
+# See FORK.md, "Updating from upstream".
+name: Loom upstream
+
+on:
+  schedule:
+    # 11:17 UTC is early morning in New York. Minute zero is GitHub's busiest.
+    - cron: "17 11 * * *"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "stable, nightly, or an upstream tag such as v0.0.43"
+        required: true
+        default: stable
+        type: string
+      dry_run:
+        description: "Merge and check only: push nothing, open no pull request"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: loom-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # Pushes and pull requests use the fork's own token: the built-in token
+      # cannot push the upstream workflow changes that most merges carry.
+      GH_TOKEN: ${{ secrets.LOOM_BOT_TOKEN }}
+      TARGET: ${{ inputs.target || 'stable' }}
+      DRY_RUN: ${{ inputs.dry_run || false }}
+    steps:
+      # Upstream's workflows release, deploy and run on paid runners; none of
+      # them belongs to the fork. Merges can add new ones, so every run turns
+      # off any workflow that is not a loom-*.yml.
+      - name: Keep upstream workflows disabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow list --repo "$GITHUB_REPOSITORY" --all --json id,path,state \
+            --jq '.[] | select(.state == "active" and (.path | startswith(".github/workflows/")) and (.path | startswith(".github/workflows/loom-") | not)) | "\(.id) \(.path)"' |
+            while read -r id path; do
+              echo "Disabling $path"
+              gh workflow disable "$id" --repo "$GITHUB_REPOSITORY"
+            done
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.LOOM_BOT_TOKEN }}
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Prepare git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/pingdotgg/t3code.git
+
+      - name: Merge and check
+        id: integrate
+        run: |
+          set +e
+          args=("$TARGET" --pr)
+          [ "$DRY_RUN" = true ] && args+=(--dry-run)
+          scripts/fork/loom.sh integrate "${args[@]}" 2>&1 | tee "$RUNNER_TEMP/integrate.log"
+          echo "code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          echo "branch=$(git rev-parse --abbrev-ref HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Repair with Claude
+        if: steps.integrate.outputs.code != '0' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.LOOM_BOT_TOKEN }}
+          claude_args: >-
+            --model claude-opus-5-5 --effort high --max-turns 200
+            --allowedTools Bash,Read,Edit,Write,Glob,Grep
+          prompt: |
+            You are repairing an automated upstream merge in Loom, Kyle's additive fork of
+            T3 Code (pingdotgg/t3code). Read AGENTS.md, FORK.md and
+            docs/fork/packets/CONVENTIONS.md before changing anything.
+
+            `scripts/fork/loom.sh integrate ${{ env.TARGET }} --pr` stopped on branch
+            `${{ steps.integrate.outputs.branch }}` with exit code ${{ steps.integrate.outputs.code }}.
+            Its output is in $RUNNER_TEMP/integrate.log. Exit code 2 means the merge of the
+            upstream tag stopped on conflicts and is still in progress. Any other code means
+            the merge committed but a check failed (the seams in docs/fork/seams.tsv, the
+            fork's tests, or a typecheck), or the runner itself failed.
+
+            Rules:
+            - Upstream's code wins everywhere except fork seams: the lines marked
+              `fork: <name>` and the rows of docs/fork/seams.tsv. Reapply each seam onto
+              upstream's new code and keep its marker.
+            - Change only seam lines and fork-owned files (any */fork/* path, scripts/fork/,
+              docs/fork/, FORK.md, .github/workflows/loom-*). When a seam moves, update
+              docs/fork/seams.tsv and FORK.md with it. Never rewrite, reformat or delete
+              upstream code to make a check pass.
+            - If the failure comes from upstream itself or from the runner (network,
+              install, memory), do not work around it; report it.
+            - Never commit pnpm-lock.yaml (run `git checkout -- pnpm-lock.yaml` before each
+              commit) and never touch main.
+
+            When you are done:
+            - Conflicts resolved: `git add -A && git commit --no-edit`. Check fixed: commit
+              with a message like `fix(fork): reapply the brand seam in SidebarChrome`.
+            - Run `scripts/fork/loom.sh integrate --continue --pr`. It reruns every check,
+              pushes the branch and opens the pull request. Then add a comment to that pull
+              request with `gh pr comment` saying what you changed and why.
+            - If the merge is committed but you cannot make the checks pass within these
+              rules, push the branch and open a draft pull request into main titled
+              "chore(fork): integrate upstream <tag> (needs Kyle)" that explains what fails,
+              what you tried and what you recommend.
+            - If you cannot resolve the merge within these rules, run `git merge --abort`,
+              push nothing, and write the explanation to the file named by
+              $GITHUB_STEP_SUMMARY.
+
+      # Off unless the repository variable LOOM_AUTO_MERGE is "true". Landing
+      # still builds and installs from your Mac with `scripts/fork/loom.sh land`.
+      - name: Merge automatically
+        if: vars.LOOM_AUTO_MERGE == 'true' && steps.integrate.outputs.code == '0' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true'
+        env:
+          BRANCH: ${{ steps.integrate.outputs.branch }}
+        run: gh pr merge "$BRANCH" --merge --delete-branch
+
+      - name: Result
+        if: always()
+        env:
+          CODE: ${{ steps.integrate.outputs.code }}
+          BRANCH: ${{ steps.integrate.outputs.branch }}
+        run: |
+          [ "$CODE" = 0 ] && exit 0
+          if [ "$DRY_RUN" != true ] && [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
+            echo "Claude repaired the integration; its pull request is open."
+            exit 0
+          fi
+          echo "::error::The upstream integration failed. See the Merge and check log and the run summary."
+          exit 1

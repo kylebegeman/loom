@@ -79,10 +79,9 @@ With Kyle's permission, one integrated pass with `test-t3-app` against a worktre
 ## Merge safety
 
 Record the merge preview (SEAMS.md) against the newest nightly. After merge to `main`, run
-`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`. Until the
-`loom.sh` follow-up lands, check by hand that `apps/server`, `packages/contracts` and
-`packages/client-runtime` typecheck on the rehearsal branch and that
-`git grep -c 'fork: ext-diff-header' -- apps/web/src/components/DiffPanel.tsx` prints 2.
+`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`. It
+typechecks every package this packet changes, and the `ext-diff-header` row in
+`docs/fork/seams.tsv` catches a lost `DiffPanel.tsx` seam.
 
 ## Acceptance criteria
 

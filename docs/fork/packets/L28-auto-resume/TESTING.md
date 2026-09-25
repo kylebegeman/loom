@@ -69,5 +69,4 @@ Upstream server case: connect to an upstream T3 server; no chip, the settings se
   `upstreamWording.test.ts` on the merged tree (a throwaway branch) because wording changes
   do not conflict textually.
 - After Kyle merges to main: `scripts/fork/loom.sh integrate nightly --dry-run` from a clean,
-  synced `main`. Until `loom.sh` runs fork tests generally (CONVENTIONS.md, "Known gap"),
-  run the wording test by hand after each upstream integration.
+  synced `main`. It runs the wording test with every other fork test.

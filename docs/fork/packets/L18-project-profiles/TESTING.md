@@ -70,9 +70,7 @@ worktree-seeded `.t3` and a sample project containing `.env.schema`, `.env` and 
 ## Merge safety
 
 No packet seams. Record the merge preview (SEAMS.md) and, after Kyle merges, run
-`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`. Until the
-`loom.sh` follow-up lands, typecheck `apps/server`, `packages/contracts` and
-`packages/client-runtime` by hand on the rehearsal branch.
+`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`.
 
 ## Acceptance criteria
 

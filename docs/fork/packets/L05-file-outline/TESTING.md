@@ -69,9 +69,8 @@ with `test-t3-app` on web, then the desktop dev build:
 
 Record the result of the merge preview (SEAMS.md, "Merge check") against the newest nightly
 tag. After Kyle merges to `main`, `scripts/fork/loom.sh integrate nightly --dry-run` from a
-clean, synced `main` must pass. Until the `loom.sh` follow-up in CONVENTIONS.md lands, confirm
-by hand that `git grep -c 'fork: file-outline'` still prints 3 for `FilePreviewPanel.tsx`
-after the rehearsal merge.
+clean, synced `main` must pass. The packet's `docs/fork/seams.tsv` row for
+`FilePreviewPanel.tsx` (marker `file-outline`, 3 lines) makes it fail if a merge drops a seam.
 
 ## Acceptance criteria
 

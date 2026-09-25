@@ -186,9 +186,7 @@ stores it.
 
 On the packet branch: the `git merge-tree` preview from SEAMS.md, result recorded there.
 After Kyle merges to `main`: `scripts/fork/loom.sh integrate nightly --dry-run` from a clean,
-synced `main`. Until the `loom.sh` follow-up lands (CONVENTIONS.md, "Known gap"), typecheck
-`apps/server`, `packages/contracts` and `packages/client-runtime` by hand on the rehearsal
-branch.
+synced `main`.
 
 ## Acceptance criteria
 

@@ -43,7 +43,9 @@ packet should degrade gracefully when the other feature is absent.
    CONVENTIONS and EXTENSION-POINTS first."
 3. Review the result: the packet's `SEAMS.md` must match
    `git grep -nE '(//|/\*|<!--|#) fork: <slug>([^a-z0-9-]|$)' -- . ':(exclude)docs/'`, and
-   the extension point commits must match EXTENSION-POINTS.md.
+   the extension point commits must match EXTENSION-POINTS.md, and
+   `scripts/fork/loom.sh check` must pass on the branch (it holds every marker to
+   `docs/fork/seams.tsv`).
 4. Merge, then run `scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced
    `main` to prove the next upstream merge still works. Update the Status column.
 
