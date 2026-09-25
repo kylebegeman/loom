@@ -183,6 +183,26 @@ A merge conflict stops on the `integrate/<tag>` branch and lists the files. Reso
 `git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`
 (add `--pr` to finish as a pull request).
 
+Fork features that land on `main` between upstream releases ship with
+`scripts/fork/loom.sh build` then `install`, run from Terminal.
+
+### Versions and updates
+
+Loom keeps upstream's version numbers. Every build is stamped with the upstream tag it
+was built from (the newest `loom-<tag>` on `main`), and the build record's commit tells
+two Loom builds of one tag apart. Don't give Loom a version of its own:
+
+- A remote SSH environment installs upstream's `t3` release of exactly the desktop's
+  version (`packages/shared/src/cliRelease.ts`). Only upstream versions exist there.
+- Clients compare their version with the server's (`apps/web/src/versionSkew.ts`), so the
+  mobile app and app.t3.codes would report a mismatch against every Loom server.
+- The `-nightly.<date>.<run>` suffix is what makes a build "Loom (Nightly)" with the
+  nightly icon; a stable tag builds plain "Loom".
+
+Loom has no update feed. Local builds ship without `app-update.yml`, so the app never
+offers a T3 Code release, which would replace Loom since both share an app id. Its update
+settings say no update feed is configured. `build` stops if a build ever has a feed.
+
 ### GitHub Actions on the fork
 
 Actions were off when the fork was created, GitHub's default for forks, and upstream's

@@ -181,6 +181,12 @@ build_app() {
   name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$record"/*.app/Contents/Info.plist)
   case "$name" in Loom | "Loom ("*) ;; *) die "the built app is named '$name', not Loom; check the brand seams" ;; esac
   [ "$(ls -d "$record"/*.app | sed -n 1p)" = "$record/Loom.app" ] || mv "$record"/*.app "$record/Loom.app"
+  # Loom updates only through this script. With an update feed the app would offer
+  # upstream's T3 Code releases, and installing one replaces Loom (they share an app id).
+  if [ -e "$record/Loom.app/Contents/Resources/app-update.yml" ]; then
+    rm -rf "$record"
+    die "the built app has an update feed (app-update.yml). Unset T3CODE_DESKTOP_UPDATE_REPOSITORY, GITHUB_REPOSITORY and T3CODE_DESKTOP_MOCK_UPDATES, or reapply the fork's no-feed default"
+  fi
   sign_app "$record/Loom.app"
   printf 'upstream=%s\ncommit=%s\nbuilt=%s\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
   echo "Built $name $version into $record"
