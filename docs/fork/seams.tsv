@@ -1,0 +1,15 @@
+# Fork seams in upstream files, checked by scripts/fork/loom.sh after every merge.
+# path<TAB>marker<TAB>minimum marked lines. Rows with marker "-" are files that
+# cannot carry a comment; the third column is text the file must still contain.
+apps/desktop/resources/dmg/dmg-background-latest.svg	brand	2
+apps/desktop/resources/dmg/dmg-background-nightly.svg	brand	2
+apps/desktop/src/app/DesktopAppIdentity.test.ts	brand	2
+apps/desktop/src/app/DesktopEnvironment.ts	brand	3
+apps/web/index.html	brand	2
+apps/web/src/branding.logic.ts	brand	2
+apps/web/src/branding.test.ts	brand	2
+apps/web/src/branding.ts	brand	2
+apps/web/src/components/sidebar/SidebarChrome.tsx	brand	2
+scripts/build-desktop-artifact.test.ts	brand	5
+scripts/build-desktop-artifact.ts	brand	7
+packages/shared/package.json	-	"./brand"

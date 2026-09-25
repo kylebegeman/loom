@@ -3,7 +3,9 @@
 # install it, and roll back. Fork-owned; upstream never edits this file.
 #
 #   scripts/fork/loom.sh status
-#   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue]
+#   scripts/fork/loom.sh check
+#   scripts/fork/loom.sh integrate [stable|nightly|<tag>] [--no-install] [--dry-run] [--continue] [--pr]
+#   scripts/fork/loom.sh land [<pr number>] [--no-install]
 #   scripts/fork/loom.sh build
 #   scripts/fork/loom.sh install
 #   scripts/fork/loom.sh rollback
@@ -14,7 +16,11 @@
 # fast-forward main, tag the result loom-<tag>, push, and install. A merge
 # conflict stops on the test branch; resolve it, commit, and rerun with
 # --continue. --dry-run merges, checks and builds, then throws the result
-# away without touching main or the installed app. Every install first
+# away without touching main or the installed app. --pr is the unattended
+# path the loom-upstream workflow uses: merge and check, then push the test
+# branch and open a pull request instead of building. land finishes that pull
+# request here: merge it with a merge commit, tag, build and install. check
+# runs the fork's checks on the current checkout. Every install first
 # snapshots the T3 database so rollback can restore the build and the data it
 # ran with. signing-setup creates a local code-signing certificate once, so
 # every build is the same app to macOS and keeps its permissions and Keychain
@@ -30,28 +36,28 @@ T3_USERDATA="$HOME/.t3/userdata"
 KEEP_BUILDS=3
 SIGNING_IDENTITY="${LOOM_SIGNING_IDENTITY:-Loom Local Code Signing}"
 LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
-# Upstream files that must still carry a `fork: brand` marker after a merge.
-SEAM_FILES=(
-  apps/desktop/src/app/DesktopEnvironment.ts
-  apps/web/src/branding.ts
-  apps/web/src/branding.logic.ts
-  apps/web/src/components/sidebar/SidebarChrome.tsx
-  apps/web/index.html
-  scripts/build-desktop-artifact.ts
-  apps/desktop/resources/dmg/dmg-background-latest.svg
-  apps/desktop/resources/dmg/dmg-background-nightly.svg
-)
-FORK_TESTS=(
+# Every upstream file the fork touches, with its marker and how many marked
+# lines it must keep (docs/fork/seams.tsv). run_checks fails when a merge drops
+# a seam, and when a marker appears that the manifest does not list.
+SEAMS_MANIFEST=docs/fork/seams.tsv
+# The branding tests live next to upstream code; every other fork test lives
+# in a fork/ directory and is found by fork_tests.
+BRAND_TESTS=(
   packages/shared/src/brand.test.ts
   apps/web/src/branding.test.ts
   apps/desktop/src/app/DesktopAppIdentity.test.ts
   scripts/build-desktop-artifact.test.ts
 )
-TYPECHECK_DIRS=(packages/shared apps/desktop apps/web scripts)
+TYPECHECK_DIRS=(packages/shared packages/contracts packages/client-runtime apps/server apps/desktop apps/web scripts)
+UPSTREAM_RELEASES=https://github.com/pingdotgg/t3code/releases/tag
 
 # The repo's own tools (vp) and Rust, which the desktop build needs for a
 # native helper. pnpm adds node_modules/.bin itself; plain node does not.
 export PATH="$REPO_ROOT/node_modules/.bin:/opt/homebrew/opt/rustup/bin:$PATH"
+# Shells inside Loom (its terminal, its agents) inherit ELECTRON_RUN_AS_NODE=1
+# from the desktop app. It turns every Electron the build starts into plain
+# Node, and upstream tests that copy the environment into mock commands fail.
+unset ELECTRON_RUN_AS_NODE
 
 say() { printf '\n==> %s\n' "$*"; }
 die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
@@ -77,7 +83,7 @@ require_clean() {
 cmd_status() {
   git fetch -q upstream --tags
   git fetch -q origin
-  printf 'main is built from:   %s\n' "$(current_upstream)"
+  printf 'main is built from: %s\n' "$(current_upstream)"
   printf 'installed Loom:       %s\n' "$(installed_version)"
   printf 'newest stable:        %s\n' "$(latest_stable)"
   printf 'newest nightly:       %s\n' "$(latest_nightly)"
@@ -90,17 +96,46 @@ restore_lockfile() {
   git diff --quiet -- pnpm-lock.yaml || git checkout -q -- pnpm-lock.yaml
 }
 
-run_checks() {
+# A marker is `fork: <name>` right after a comment opener, so upstream code that
+# merely contains "fork: " (an object key, say) never counts.
+marker_re() { printf '(//|/\\*|<!--|#) fork: %s([^a-z0-9-]|$)' "$1"; }
+
+check_seams() {
   say "Checking that every fork seam survived"
-  local missing=0 f
-  for f in "${SEAM_FILES[@]}"; do
-    if ! grep -q 'fork: brand' "$f" 2>/dev/null; then echo "  missing seam: $f"; missing=1; fi
-  done
+  local missing=0 path marker want have
+  while IFS=$'\t' read -r path marker want; do
+    case "$path" in '' | '#'*) continue ;; esac
+    if [ "$marker" = - ]; then
+      # Files that cannot carry a comment (JSON): the seam's own text is the check.
+      grep -qF -- "$want" "$path" 2>/dev/null || { echo "  $path no longer contains $want"; missing=1; }
+    else
+      have=$(grep -cE "$(marker_re "$marker")" "$path" 2>/dev/null) || have=0
+      [ "$have" -ge "$want" ] || { echo "  $path has $have of $want 'fork: $marker' lines"; missing=1; }
+    fi
+  done < "$SEAMS_MANIFEST"
   [ "$missing" -eq 0 ] || die "a fork seam is gone; reapply it (see FORK.md), commit, and rerun with --continue"
+  local unlisted
+  unlisted=$(comm -23 \
+    <(git grep -nE "$(marker_re '[a-z0-9-]+')" -- . ':(exclude)docs/' \
+      | sed -E 's/^([^:]+):[0-9]+:.*(\/\/|\/\*|<!--|#) fork: ([a-z0-9-]+).*/\1	\3/' | sort -u) \
+    <(grep -v '^#' "$SEAMS_MANIFEST" | cut -f1,2 | sort -u))
+  [ -z "$unlisted" ] || die "fork markers missing from $SEAMS_MANIFEST (add a row per file and marker):
+$unlisted"
+}
+
+fork_tests() {
+  printf '%s\n' "${BRAND_TESTS[@]}"
+  git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx'
+}
+
+run_checks() {
+  check_seams
   say "Installing dependencies"
   pnpm install --frozen-lockfile
   say "Running the fork's tests"
-  pnpm exec vp test run "${FORK_TESTS[@]}"
+  local tests=()
+  while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
+  pnpm exec vp test run "${tests[@]}"
   local d
   for d in "${TYPECHECK_DIRS[@]}"; do
     say "Typechecking $d"
@@ -327,12 +362,13 @@ cmd_rollback() {
 }
 
 cmd_integrate() {
-  local target=stable install=1 cont=0 dry=0 arg
+  local target=stable install=1 cont=0 dry=0 pr=0 arg
   for arg in "$@"; do
     case "$arg" in
       --no-install) install=0 ;;
       --continue) cont=1 ;;
       --dry-run) dry=1 ;;
+      --pr) pr=1 ;;
       *) target=$arg ;;
     esac
   done
@@ -359,6 +395,10 @@ cmd_integrate() {
       return 0
     fi
     branch="integrate/$tag"
+    if [ "$pr" -eq 1 ] && [ "$dry" -eq 0 ] && git ls-remote --exit-code -q --heads origin "$branch" >/dev/null; then
+      echo "$branch is already on origin, so its pull request is open or was abandoned. Nothing to do."
+      return 0
+    fi
     git switch -q -c "$branch"
     say "Merging upstream $tag"
     if ! git merge --no-ff --no-edit -m "chore(fork): integrate upstream $tag" "$tag"; then
@@ -366,13 +406,24 @@ cmd_integrate() {
       echo "The merge stopped on conflicts in:"
       git diff --name-only --diff-filter=U | sed 's/^/  /'
       echo
-      echo "They are almost always fork seams (git grep -n 'fork: brand'; see FORK.md)."
+      echo "They are almost always fork seams (docs/fork/seams.tsv; see FORK.md)."
       echo "Resolve them, then: git add -A && git commit --no-edit && scripts/fork/loom.sh integrate --continue"
       echo "To give up: git merge --abort && git switch main && git branch -D $branch"
       exit 2
     fi
   fi
   run_checks
+  if [ "$pr" -eq 1 ]; then
+    if [ "$dry" -eq 1 ]; then
+      say "Dry run passed; discarding it"
+      git switch -q main
+      git branch -q -D "$branch"
+      echo "$tag merges and passes the fork's checks. Nothing was pushed."
+    else
+      open_pr "$tag" "$branch"
+    fi
+    return 0
+  fi
   build_app "${tag#v}"
   if [ "$dry" -eq 1 ]; then
     say "Dry run passed; discarding it"
@@ -397,12 +448,85 @@ cmd_integrate() {
   fi
 }
 
+# Push a checked integrate/<tag> branch and open its pull request into main.
+open_pr() {
+  local tag=$1 branch=$2 added
+  added=$(git diff --name-only --diff-filter=A main...HEAD -- .github/workflows | sed 's/^/- `/; s/$/`/')
+  say "Pushing $branch and opening its pull request"
+  git push -q -u origin "$branch"
+  gh pr create --base main --head "$branch" \
+    --title "chore(fork): integrate upstream $tag" \
+    --body "Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests pass, and $(printf '%s, ' "${TYPECHECK_DIRS[@]}" | sed 's/, $//') typecheck.
+
+Land it from your Mac with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, builds and installs. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
+
+Upstream added these workflows. The loom-upstream workflow disables every non-fork workflow on its next run:
+$added}"
+}
+
+# The newest upstream tag main contains, stable or nightly.
+merged_upstream() { git tag -l 'v[0-9]*' --merged main --sort=-creatordate | head -1; }
+
+# Finish an integration pull request on this Mac. With an open one, merge it
+# (always a merge commit); with none, land whatever upstream tag main already
+# contains but has no loom-<tag> for, which covers a PR merged on GitHub.
+cmd_land() {
+  local number="" install=1 arg
+  for arg in "$@"; do
+    case "$arg" in
+      --no-install) install=0 ;;
+      *) number=$arg ;;
+    esac
+  done
+  [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || die "run land from main"
+  require_clean
+  if [ -z "$number" ]; then
+    local open
+    open=$(gh pr list --base main --state open --json number,headRefName \
+      --jq '.[] | select(.headRefName | startswith("integrate/")) | .number')
+    [ "$(printf '%s' "$open" | grep -c .)" -le 1 ] || die "several integration pull requests are open ($(echo $open)); pass the one to land"
+    number=$open
+  fi
+  if [ -n "$number" ] && [ "$(gh pr view "$number" --json state --jq .state)" = OPEN ]; then
+    say "Merging pull request #$number"
+    gh pr merge "$number" --merge --delete-branch
+  fi
+  git fetch -q upstream --tags
+  git fetch -q origin
+  git merge -q --ff-only origin/main
+  local tag
+  tag=$(merged_upstream)
+  if [ -n "$number" ]; then
+    local head
+    head=$(gh pr view "$number" --json headRefName --jq .headRefName)
+    tag=${head#integrate/}
+    git merge-base --is-ancestor "$tag" main \
+      || die "main does not contain $tag, so #$number was squashed or rebased. Revert that commit and merge the pull request with a merge commit."
+  fi
+  [ -n "$tag" ] || die "main contains no upstream tag"
+  if git rev-parse -q --verify "refs/tags/loom-$tag" >/dev/null; then
+    echo "loom-$tag already exists. Nothing to land; rebuild with: scripts/fork/loom.sh build"
+    return 0
+  fi
+  git tag -a "loom-$tag" -m "Loom built from upstream $tag"
+  git push -q origin "loom-$tag"
+  build_app "${tag#v}"
+  prune_builds
+  if [ "$install" -eq 1 ]; then
+    cmd_install
+  else
+    echo "Built. Install it with: scripts/fork/loom.sh install"
+  fi
+}
+
 case "${1:-}" in
   status) cmd_status ;;
+  check) run_checks ;;
   integrate) shift; cmd_integrate "$@" ;;
+  land) shift; cmd_land "$@" ;;
   build) cmd_build ;;
   install) cmd_install ;;
   rollback) cmd_rollback ;;
   signing-setup) cmd_signing_setup ;;
-  *) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac
