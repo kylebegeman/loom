@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { ForwardCompatibleArray, TrimmedString } from "./baseSchemas.ts";
+import { FORK_KEYBINDING_COMMANDS } from "./fork/keybindings.ts"; // fork: ext-keybindings
 
 export const MAX_KEYBINDING_VALUE_LENGTH = 64;
 const MAX_KEYBINDING_WHEN_LENGTH = 256;
@@ -56,6 +57,7 @@ const MODEL_PICKER_KEYBINDING_COMMANDS = [
 export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
 
 export const STATIC_KEYBINDING_COMMANDS = [
+  ...FORK_KEYBINDING_COMMANDS, // fork: ext-keybindings
   "sidebar.toggle",
   "navigation.back",
   "navigation.forward",
