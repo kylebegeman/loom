@@ -212,7 +212,7 @@ served group (line 3717), and the fork handler layer as the first entry of the p
 `makeWsRpcLayer(...)` (line 3730):
 
 ```diff
- import { requiredScopeForRpcMethod } from "./auth/RpcAuthorization.ts";
+ import { requiredScopeForRpcMethod, requiredScopeForDeviceList } from "./auth/RpcAuthorization.ts";
 +import { LoomWsRpcGroup } from "@t3tools/contracts/fork"; // fork: ext-core
 +import { makeForkRpcLayer } from "./fork/rpc.ts"; // fork: ext-core
 ```
@@ -385,22 +385,26 @@ import * as Effect from "effect/Effect";
 export type ForkServices = never;
 
 /**
- * The fork services' context, published by ForkLayer. A Reference has a default, so
- * reading it adds no requirement to the upstream layers that host fork transport code.
+ * The context ForkLayer was built with, which holds the fork services. A Reference has a
+ * default, so reading it adds no requirement to the upstream layers that host fork
+ * transport code.
  */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(
   "loom/ForkRuntime",
   { defaultValue: () => undefined },
 ) {}
 
-/** Runs fork logic with the fork services. Dies if ForkLayer is not installed. */
+/**
+ * Runs fork logic with the fork services. The caller's context wins, so a request keeps its
+ * own Scope rather than ForkLayer's server-lifetime one. Dies if ForkLayer is not installed.
+ */
 export const withForkRuntime = <A, E, R>(
   effect: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, Exclude<R, ForkServices>> =>
   Effect.flatMap(ForkRuntime, (context) =>
     context === undefined
       ? Effect.die(new Error("The Loom server runtime is not installed."))
-      : Effect.provideContext(effect, context),
+      : Effect.updateContext(effect, (current) => Context.merge(context, current)),
   );
 ```
 
@@ -570,6 +574,8 @@ second instance (see the comment at `server.ts:197-198`).
   equal `ForkRpcGroup.requests.keys()`; no fork tag is also in `WsRpcGroup.requests`
   (`merge` would silently replace an upstream method); every fork tag starts with `loom.`.
 - `apps/server/src/fork/features.test.ts`: slugs are unique and match `^[a-z0-9-]+$`.
+- `apps/server/src/fork/ForkRuntime.test.ts`: `withForkRuntime` keeps the caller's `Scope`,
+  so resources a request acquires close with the request, not with the server.
 - Typecheck `t3`, `@t3tools/contracts`, `@t3tools/client-runtime`, `@t3tools/web`,
   `@t3tools/mobile`.
 
@@ -800,8 +806,10 @@ export function ForkRoot() {
 ### Registering, existence check, tests
 
 Append `{ id, Component }`. Components must render nothing when idle and must not subscribe
-to large streams. Check: `git grep -q 'fork: ext-web-root' -- apps/web/src/routes/__root.tsx`.
-No test for the root itself.
+to large streams: for the thread on screen, use `useRouteThread()` (Keybindings, below), not
+`useHandleNewThread`, which subscribes to the thread's detail. Check:
+`git grep -q 'fork: ext-web-root' -- apps/web/src/routes/__root.tsx`. No test for the root
+itself.
 
 ---
 
@@ -1558,6 +1566,51 @@ export function dispatchForkCommand(command: ForkKeybindingCommand): boolean {
 }
 ```
 
+**`apps/web/src/fork/routeThread.ts`**, the thread the chat route shows, for `ForkRoot`
+components:
+
+```ts
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { ScopedThreadRef } from "@t3tools/contracts";
+import { useParams } from "@tanstack/react-router";
+import { useMemo } from "react";
+
+import { useComposerDraftStore } from "~/composerDraftStore";
+import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "~/threadRoutes";
+
+export interface RouteThread {
+  readonly threadRef: ScopedThreadRef;
+  /** Not sent yet: the chat view shows it, but the server has no such thread. */
+  readonly isDraft: boolean;
+}
+
+/**
+ * The thread the chat route shows, drafts included, read from the route and the draft store
+ * only. ForkRoot components use it rather than useHandleNewThread, which subscribes to the
+ * thread's detail and re-renders on every streamed event.
+ */
+export function useRouteThread(): RouteThread | null {
+  const target = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
+  const draft = useComposerDraftStore((store) =>
+    target?.kind === "draft" ? store.getDraftSession(target.draftId) : null,
+  );
+  const serverRef = resolveActiveThreadRouteRef(target, draft);
+  const environmentId = serverRef?.environmentId ?? draft?.environmentId ?? null;
+  const threadId = serverRef?.threadId ?? draft?.threadId ?? null;
+  const isDraft = serverRef === null;
+  return useMemo(
+    () =>
+      environmentId !== null && threadId !== null
+        ? { threadRef: scopeThreadRef(environmentId, threadId), isDraft }
+        : null,
+    [environmentId, isDraft, threadId],
+  );
+}
+```
+
 **`apps/web/src/fork/keybindings/ForkGlobalShortcuts.tsx`**, registered in `ForkRoot` as
 `{ id: "shortcuts", Component: ForkGlobalShortcuts }`:
 
@@ -1568,18 +1621,44 @@ import { useEffect } from "react";
 
 import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { resolveShortcutCommand } from "~/keybindings";
+import { isEditableFocused } from "~/lib/editableFocus";
 import { isPreviewFocused } from "~/lib/previewFocus";
 import { isTerminalFocused } from "~/lib/terminalFocus";
+import { isModelPickerOpen } from "~/modelPickerVisibility";
+import { selectActiveRightPanel, useRightPanelStore } from "~/rightPanelStore";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "~/terminalUiStateStore";
+import { useRouteThread } from "../routeThread";
 import { dispatchForkCommand } from "./forkCommandBus";
 
+/**
+ * Resolves fork commands with the same `when` context as upstream's chat shortcuts
+ * (routes/_chat.tsx). Listens in the capture phase, like ChatView's shortcuts, because the
+ * terminal stops every key it turns into input.
+ */
 export function ForkGlobalShortcuts() {
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const threadRef = useRouteThread()?.threadRef ?? null;
+  const terminalOpen = useTerminalUiStateStore((state) =>
+    threadRef
+      ? selectThreadTerminalUiState(state.terminalUiStateByThreadKey, threadRef).terminalOpen
+      : false,
+  );
+  const previewOpen = useRightPanelStore((state) =>
+    threadRef ? selectActiveRightPanel(state.byThreadKey, threadRef) === "preview" : false,
+  );
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;
       const command = resolveShortcutCommand(event, keybindings, {
-        context: { terminalFocus: isTerminalFocused(), previewFocus: isPreviewFocused() },
+        context: {
+          terminalFocus: isTerminalFocused(),
+          terminalOpen,
+          previewFocus: isPreviewFocused(),
+          previewOpen,
+          editableFocus: isEditableFocused(event.target),
+          modelPickerOpen: isModelPickerOpen(),
+        },
       });
       if (!command || !isForkKeybindingCommand(command)) return;
       if (dispatchForkCommand(command)) {
@@ -1587,9 +1666,9 @@ export function ForkGlobalShortcuts() {
         event.stopPropagation();
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings]);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [keybindings, previewOpen, terminalOpen]);
   return null;
 }
 ```
@@ -1598,7 +1677,8 @@ export function ForkGlobalShortcuts() {
 
 Append `"loom.<slug>.<action>"` to `FORK_KEYBINDING_COMMANDS`; subscribe with
 `onForkCommand` where the action lives (a panel, a dialog host in `ForkRoot`). Palette items
-can call `dispatchForkCommand` too. Check:
+can call `dispatchForkCommand` too, or the action itself where "toggle" is wrong for an item
+named "Show". Check:
 `test -f packages/contracts/src/fork/keybindings.ts && git grep -q 'fork: ext-keybindings' -- packages/contracts/src/keybindings.ts`.
 Test (`packages/contracts/src/fork/keybindings.test.ts`): every fork command starts with
 `loom.`, decodes with `KeybindingCommand`, and is not an upstream static command.
