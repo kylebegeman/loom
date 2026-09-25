@@ -280,8 +280,21 @@ app_running() {
   return 1
 }
 
+# True when the app is an ancestor of this script (its terminal or an agent it
+# runs). Quitting the app would then kill the script before it installs.
+inside_app() {
+  local pid=$$ cmd
+  while [ "$pid" -gt 1 ]; do
+    cmd=$(ps -o command= -p "$pid")
+    case "$cmd" in "$APP_PATH/Contents/"* | "$VANILLA_APP_PATH/Contents/"*) return 0 ;; esac
+    pid=$(ps -o ppid= -p "$pid" | tr -d ' ')
+  done
+  return 1
+}
+
 quit_app() {
   app_running || return 0
+  inside_app && die "this runs inside the app it has to quit. Run it again from Terminal: scripts/fork/loom.sh $1"
   say "Quitting the running app"
   local app
   for app in "$APP_PATH" "$VANILLA_APP_PATH"; do
@@ -312,7 +325,7 @@ snapshot_state() {
 
 install_record() {
   local record=$1
-  quit_app
+  quit_app install
   local current
   current=$(installed_record)
   if [ -n "$current" ]; then
@@ -352,7 +365,7 @@ cmd_rollback() {
   previous=$(records | grep -v -x -F "$current" | sed -n 1p)
   [ -n "$previous" ] || die "no earlier build is kept"
   [ -f "$previous/state/state.sqlite" ] || die "$(basename "$previous") has no saved data to restore"
-  quit_app
+  quit_app rollback
   snapshot_state "$current"
   say "Restoring the data $(basename "$previous") last ran with"
   rm -f "$T3_USERDATA/state.sqlite" "$T3_USERDATA/state.sqlite-wal" "$T3_USERDATA/state.sqlite-shm"
