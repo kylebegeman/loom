@@ -75,6 +75,10 @@
       "types": "./src/errors/index.ts",
       "default": "./src/errors/index.ts"
     },
+    "./fork": {
+      "types": "./src/fork/index.ts",
+      "default": "./src/fork/index.ts"
+    },
     "./rpc": {
       "types": "./src/rpc/index.ts",
       "default": "./src/rpc/index.ts"

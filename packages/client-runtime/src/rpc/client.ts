@@ -1,4 +1,5 @@
 import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
+import type { ForkStreamCommandRpcTag, ForkSubscriptionRpcTag } from "@t3tools/contracts/fork"; // fork: ext-core
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import type * as Duration from "effect/Duration";
@@ -41,6 +42,7 @@ export type EnvironmentRpcTag = keyof WsRpcProtocolClient & string;
 type RpcMethod<TTag extends EnvironmentRpcTag> = WsRpcProtocolClient[TTag];
 
 export type EnvironmentSubscriptionRpcTag =
+  | ForkSubscriptionRpcTag // fork: ext-core
   | typeof WS_METHODS.providerAuthSubscribe
   | typeof WS_METHODS.providerInstallSubscribe
   | typeof ORCHESTRATION_WS_METHODS.subscribeShell
@@ -62,6 +64,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.terminalAttach;
 
 export type EnvironmentStreamCommandRpcTag =
+  | ForkStreamCommandRpcTag // fork: ext-core
   | typeof WS_METHODS.cloudInstallRelayClient
   | typeof WS_METHODS.serverUpdateServerWithProgress
   | typeof WS_METHODS.gitRunStackedAction;

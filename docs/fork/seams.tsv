@@ -13,3 +13,11 @@ apps/web/src/components/sidebar/SidebarChrome.tsx	brand	2
 scripts/build-desktop-artifact.test.ts	brand	5
 scripts/build-desktop-artifact.ts	brand	7
 packages/shared/package.json	-	"./brand"
+apps/server/src/environment/ServerEnvironment.ts	ext-core	2
+apps/server/src/server.ts	ext-core	3
+apps/server/src/ws.ts	ext-core	4
+packages/client-runtime/src/rpc/client.ts	ext-core	3
+packages/client-runtime/src/rpc/protocol.ts	ext-core	2
+packages/contracts/src/environment.ts	ext-core	2
+packages/client-runtime/package.json	-	"./fork"
+packages/contracts/package.json	-	"./fork"

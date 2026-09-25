@@ -219,7 +219,8 @@ served group (line 3717), and the fork handler layer as the first entry of the p
 
 ```diff
 -          yield* RpcServer.make(WsRpcGroup, { disableTracing: true }).pipe(
-+          yield* RpcServer.make(LoomWsRpcGroup, { disableTracing: true }).pipe( // fork: ext-core
++          // fork: ext-core
++          yield* RpcServer.make(LoomWsRpcGroup, { disableTracing: true }).pipe(
 ```
 
 ```diff
@@ -465,14 +466,14 @@ const denied = (scope: AuthEnvironmentScope) =>
 export const makeForkRpcAuth = (session: AuthenticatedSession) => ({
   effect: <A, E, R>(method: ForkRpcMethod, effect: Effect.Effect<A, E, R>) => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
-    return observeRpcEffect(
+    return observeRpcEffect<A, E | EnvironmentAuthorizationError, R>(
       method,
       session.scopes.includes(scope) ? effect : Effect.fail(denied(scope)),
     );
   },
   stream: <A, E, R>(method: ForkRpcMethod, stream: Stream.Stream<A, E, R>) => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
-    return observeRpcStream(
+    return observeRpcStream<A, E | EnvironmentAuthorizationError, R>(
       method,
       session.scopes.includes(scope) ? stream : Stream.fail(denied(scope)),
     );
@@ -628,8 +629,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/unstable/sql/Migrator";
 import type * as SqlClient from "effect/unstable/sql/SqlClient";
+import type { SqlError } from "effect/unstable/sql/SqlError";
 
-type ForkMigration = Effect.Effect<void, unknown, SqlClient.SqlClient>;
+type ForkMigration = Effect.Effect<void, SqlError, SqlClient.SqlClient>;
 
 /** One packet's migrations. Ids start at 1, only grow, and applied ones are never edited. */
 export interface ForkMigrationSet {
