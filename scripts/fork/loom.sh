@@ -19,7 +19,9 @@
 # away without touching main or the installed app. --pr is the unattended
 # path the loom-upstream workflow uses: merge and check, then push the test
 # branch and open a pull request instead of building. land finishes that pull
-# request here: merge it with a merge commit, tag, build and install. check
+# request here: merge it with a merge commit, tag, build and install. With
+# none open it brings this Mac up to main, which is how merges the workflow
+# made itself and fork changes on main get installed. check
 # runs the fork's checks on the current checkout. Every install first
 # snapshots the T3 database so rollback can restore the build and the data it
 # ran with. signing-setup creates a local code-signing certificate once, so
@@ -492,8 +494,9 @@ $added}"
 merged_upstream() { git tag -l 'v[0-9]*' --merged main --sort=-creatordate | sed -n 1p; }
 
 # Finish an integration pull request on this Mac. With an open one, merge it
-# (always a merge commit); with none, land whatever upstream tag main already
-# contains but has no loom-<tag> for, which covers a PR merged on GitHub.
+# (always a merge commit); with none, land what main already contains, which
+# covers a pull request merged on GitHub. Tags loom-<tag> if nobody has, then
+# builds and installs unless the installed build is already main.
 cmd_land() {
   local number="" install=1 arg
   for arg in "$@"; do
@@ -528,12 +531,16 @@ cmd_land() {
       || die "main does not contain $tag, so #$number was squashed or rebased. Revert that commit and merge the pull request with a merge commit."
   fi
   [ -n "$tag" ] || die "main contains no upstream tag"
-  if git rev-parse -q --verify "refs/tags/loom-$tag" >/dev/null; then
-    echo "loom-$tag already exists. Nothing to land; rebuild with: scripts/fork/loom.sh build"
+  if ! git rev-parse -q --verify "refs/tags/loom-$tag" >/dev/null; then
+    git tag -a "loom-$tag" -m "Loom built from upstream $tag"
+    git push -q origin "loom-$tag"
+  fi
+  local installed
+  installed=$(installed_record)
+  if [ -n "$installed" ] && grep -q -x "commit=$(git rev-parse HEAD)" "$installed/build.env"; then
+    echo "The installed Loom is already built from main ($tag). Nothing to land."
     return 0
   fi
-  git tag -a "loom-$tag" -m "Loom built from upstream $tag"
-  git push -q origin "loom-$tag"
   build_app "${tag#v}"
   prune_builds
   if [ "$install" -eq 1 ]; then
@@ -552,5 +559,5 @@ case "${1:-}" in
   install) cmd_install ;;
   rollback) cmd_rollback ;;
   signing-setup) cmd_signing_setup ;;
-  *) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  *) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

@@ -1,10 +1,12 @@
 # Fork-owned (Loom); upstream T3 Code never creates loom-*.yml workflows.
 #
-# Once a day, merge the newest upstream stable release on integrate/<tag>, run
-# the fork's checks and open a pull request into main. When the merge
-# conflicts or a check fails, Claude repairs it on the same branch. Run it by
-# hand from the Actions tab to integrate a nightly or any upstream tag. Nothing
-# merges on its own: land the pull request with `scripts/fork/loom.sh land`.
+# Once a day, merge the newest upstream nightly on integrate/<tag>, run the
+# fork's checks and open a pull request into main. With the repository
+# variable LOOM_AUTO_MERGE set to "true", a pull request that passed on the
+# first try merges and main is tagged loom-<tag>. When the merge conflicts or
+# a check fails, Claude repairs it on the same branch and the pull request
+# waits for review. Run it by hand from the Actions tab for a stable release or
+# any upstream tag. The Mac updates with `scripts/fork/loom.sh land`.
 # See FORK.md, "Updating from upstream".
 name: Loom upstream
 
@@ -15,9 +17,9 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: "stable, nightly, or an upstream tag such as v0.0.43"
+        description: "nightly, stable, or an upstream tag such as v0.0.43"
         required: true
-        default: stable
+        default: nightly
         type: string
       dry_run:
         description: "Merge and check only: push nothing, open no pull request"
@@ -45,7 +47,7 @@ jobs:
       # gh treats a remote named "upstream" as the default repository; pin it
       # to the fork so pull requests and comments never land on pingdotgg/t3code.
       GH_REPO: ${{ github.repository }}
-      TARGET: ${{ inputs.target || 'stable' }}
+      TARGET: ${{ inputs.target || 'nightly' }}
       DRY_RUN: ${{ inputs.dry_run || false }}
     steps:
       # Upstream's workflows release, deploy and run on paid runners; none of
@@ -144,13 +146,24 @@ jobs:
               push nothing, and write the explanation to the file named by
               $GITHUB_STEP_SUMMARY.
 
-      # Off unless the repository variable LOOM_AUTO_MERGE is "true". Landing
-      # still builds and installs from Terminal on your Mac with `scripts/fork/loom.sh land`.
+      # On when the repository variable LOOM_AUTO_MERGE is "true", and only for
+      # pull requests that passed without Claude's repair. It tags the merge
+      # loom-<tag> as land would, so builds of main carry the upstream version
+      # it now contains. The Mac still builds and installs with land.
       - name: Merge automatically
         if: vars.LOOM_AUTO_MERGE == 'true' && steps.integrate.outputs.code == '0' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true'
         env:
           BRANCH: ${{ steps.integrate.outputs.branch }}
-        run: gh pr merge "$BRANCH" --merge --delete-branch
+        run: |
+          tag=${BRANCH#integrate/}
+          number=$(gh pr view "$BRANCH" --json number --jq .number)
+          # Off the branch first, so gh deletes it locally without switching and pulling.
+          git switch -q main
+          gh pr merge "$number" --merge --delete-branch
+          merged=$(gh pr view "$number" --json mergeCommit --jq .mergeCommit.oid)
+          git fetch -q origin main
+          git tag -a "loom-$tag" -m "Loom built from upstream $tag" "$merged"
+          git push -q origin "loom-$tag"
 
       - name: Result
         if: always()

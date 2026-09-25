@@ -143,27 +143,33 @@ Windows `.ico` and web exports) and for the mobile iOS build.
 
 ## Updating from upstream
 
-Stable releases arrive on their own; a nightly or any other tag is something you ask for.
-The `Loom upstream` workflow (`.github/workflows/loom-upstream.yml`) runs every morning.
-When upstream has a stable release that `main` lacks, it merges it on
-`integrate/<tag>`, runs the fork's checks and opens a pull request. If the merge conflicts
-or a check fails, Claude (Opus 5.5, high effort) repairs it on the same branch within the
+Loom follows upstream's nightlies, so `main` takes small upstream steps every day instead
+of a large one per stable release. The `Loom upstream` workflow
+(`.github/workflows/loom-upstream.yml`) runs every morning. When upstream has a nightly
+that `main` lacks, it merges it on `integrate/<tag>`, runs the fork's checks and opens a
+pull request. A pull request that passes on the first try merges by itself and `main` is
+tagged `loom-<tag>` (the repository variable `LOOM_AUTO_MERGE`). If the merge conflicts or
+a check fails, Claude (Opus 5.5, high effort) repairs it on the same branch within the
 seam rules and says what it changed on the pull request, or opens a draft marked "needs
-Kyle" when it cannot. Nothing merges or installs by itself. Review the pull request, then
-land it from Terminal, not from inside Loom: installing quits Loom, and `land` refuses to
-run where that would kill it midway.
+Kyle" when it cannot. Those pull requests wait for review.
+
+Nothing installs by itself. Update the app from Terminal, not from inside Loom: installing
+quits Loom, and `land` refuses to run where that would kill it midway.
 
 ```sh
 scripts/fork/loom.sh land
 ```
 
-`land` merges the open integration pull request with a merge commit, tags `loom-<tag>`,
-builds, signs and installs. Never squash or rebase an integration pull request: the next
-merge needs upstream's history, and `land` stops if it finds the tag missing from
-`main`. To take a nightly, run the workflow by hand (Actions, Loom upstream, Run
-workflow, target `nightly` or a tag) or `gh workflow run loom-upstream.yml -f target=nightly`;
-`dry_run` merges and checks without pushing. Mention `@claude` in any pull request comment
-to have Claude work on that branch (`.github/workflows/loom-claude.yml`, owner only).
+`land` merges an open integration pull request with a merge commit, tags `loom-<tag>` if
+the workflow has not, then builds, signs and installs `main`. With nothing open it installs
+`main` as it is, which covers the workflow's own merges and fork changes; it stops early
+when the installed build is already `main`. Never squash or rebase an integration pull
+request: the next merge needs upstream's history, and `land` stops if it finds the tag
+missing from `main`. To take a stable release or a specific tag, run the workflow by hand
+(Actions, Loom upstream, Run workflow, target `stable` or a tag) or
+`gh workflow run loom-upstream.yml -f target=stable`; `dry_run` merges and checks without
+pushing. Mention `@claude` in any pull request comment to have Claude work on that branch
+(`.github/workflows/loom-claude.yml`, owner only).
 
 The same steps run locally with `scripts/fork/loom.sh`:
 
@@ -175,7 +181,7 @@ The same steps run locally with `scripts/fork/loom.sh`:
 | `scripts/fork/loom.sh integrate nightly`         | The same for the newest nightly tag, or pass any upstream tag.                                                                       |
 | `scripts/fork/loom.sh integrate <tag> --dry-run` | Merge, check and build, then discard it. main and the installed app are unchanged.                                                   |
 | `scripts/fork/loom.sh integrate <tag> --pr`      | Merge and check, then push the test branch and open its pull request (what the workflow runs).                                       |
-| `scripts/fork/loom.sh land [<pr>]`               | Merge an integration pull request, tag, build and install. With none open, land what main already contains.                          |
+| `scripts/fork/loom.sh land [<pr>]`               | Merge an integration pull request, tag, build and install. With none open, install what main already contains.                       |
 | `scripts/fork/loom.sh build` / `install`         | Rebuild main (stamped with its upstream version) / install the newest build.                                                         |
 | `scripts/fork/loom.sh rollback`                  | Reinstall the previous build and restore the T3 data it last ran with.                                                               |
 
@@ -183,8 +189,8 @@ A merge conflict stops on the `integrate/<tag>` branch and lists the files. Reso
 `git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`
 (add `--pr` to finish as a pull request).
 
-Fork features that land on `main` between upstream releases ship with
-`scripts/fork/loom.sh build` then `install`, run from Terminal.
+Fork features that reach `main` ship the same way, with `scripts/fork/loom.sh land` from
+Terminal.
 
 ### Versions and updates
 
@@ -197,7 +203,9 @@ two Loom builds of one tag apart. Don't give Loom a version of its own:
 - Clients compare their version with the server's (`apps/web/src/versionSkew.ts`), so the
   mobile app and app.t3.codes would report a mismatch against every Loom server.
 - The `-nightly.<date>.<run>` suffix is what makes a build "Loom (Nightly)" with the
-  nightly icon; a stable tag builds plain "Loom".
+  nightly icon; a stable tag builds plain "Loom". Following nightlies, Loom is nearly
+  always a nightly build: upstream cuts each stable from its latest nightly, which `main`
+  usually has already.
 
 Loom has no update feed. Local builds ship without `app-update.yml`, so the app never
 offers a T3 Code release, which would replace Loom since both share an app id. Its update
@@ -221,8 +229,9 @@ The workflows need two repository secrets:
   push the upstream workflow changes most merges carry. It expires; renew it when runs fail
   to push.
 
-Setting the repository variable `LOOM_AUTO_MERGE` to `true` merges a green integration pull
-request automatically. It is off; landing still builds and installs from the Mac.
+The repository variable `LOOM_AUTO_MERGE` is `true`, which lets the workflow merge an
+integration pull request that passed without repairs. Set it to anything else and every
+pull request waits for `land`.
 
 Builds live in `~/Library/Application Support/Loom Builds` (the newest three, plus the
 installed one). Each install first saves `~/.t3/userdata/state.sqlite` and the settings
