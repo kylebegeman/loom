@@ -4,12 +4,12 @@ Follow AGENTS.md: focused tests, no repo-wide checks, no markup tests.
 
 ## Automated tests
 
-| File                                               | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/fork/thread-inspector/model.test.ts` | Status precedence (approval over input over error over working over interrupted over ready); working row uses the plan step and step counts; non-repo hides Changes; top-five file ordering; last-turn row only for a ready checkpoint with files; plan step cap with "and N more"; implemented proposed plan yields an `open-thread` action; `needsAttention`; essential sections in compact density; draft threads show only Status and Workspace. |
-| `apps/web/src/fork/panels/registry.test.ts`        | Created with `ext-panels` if missing: unique ids and letters (I must not collide with another fork panel).                                                                                                                                                                                                                                                                                                                                           |
-| `packages/contracts/src/fork/keybindings.test.ts`  | Created with `ext-keybindings` if missing: the two commands decode and start with `loom.`.                                                                                                                                                                                                                                                                                                                                                           |
-| Palette values test                                | Created with `ext-palette` if missing.                                                                                                                                                                                                                                                                                                                                                                                                               |
+| File                                               | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/fork/thread-inspector/model.test.ts` | Status precedence (approval over input over error over working over interrupted over ready) with the detail, tone and Respond flag of each; the working status carries the plan step, step counts and the turn start; a ready plan in plan mode outranks background work; fact chips; non-repo drops Changes; workspace entries with copy text and the short worktree name; linked and known pull requests (state, tone, glyph, action); file ordering by churn; last turn only for a ready checkpoint with files; loading; plan counts and the current step; proposed plan link; attention items; agent summary, order and cap; context tones at 75 and 90 percent; draft threads. |
+| `apps/web/src/fork/panels/registry.test.ts`        | Unique ids and letters (I must not collide with another fork panel).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `packages/contracts/src/fork/keybindings.test.ts`  | The two commands decode and start with `loom.`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Palette values test                                | Created with `ext-palette`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 
 ## Commands
 
@@ -27,19 +27,25 @@ vp run --filter @t3tools/client-runtime typecheck
 
 With Kyle's permission for a dev server and browser, on seeded data:
 
-1. Open a Codex thread mid-run with a plan: Inspector panel shows Working with the step and
-   elapsed time; Plan lists steps; Agents counts match the Agents panel.
-2. Claude thread waiting on approval: the header button shows the dot; Attention lists the
-   approval; "Respond" focuses the composer with the approval panel visible.
-3. Thread with uncommitted changes in a worktree: Workspace shows branch, worktree path
-   (copy works), ahead and behind; Changes shows totals and top files; "Review" opens the
-   diff panel; "Last turn" opens it on the last turn.
-4. Open the card with the eye button. It closes on: a click in the timeline, Escape, a
-   window resize, opening the right panel, a jump action. It does not close while a reply
-   streams. The eye button toggles it without flicker. At 800 px: compact density.
+1. Open a Codex thread mid-run with a plan: the hero shows Working with the step, the
+   elapsed time and the step progress; the panel's Plan lists the steps; Agents rows and
+   counts match the Agents panel.
+2. Claude thread waiting on approval: the header button shows the dot; the hero says Needs
+   approval with the approval kind; Needs you lists the command; "Respond" focuses the
+   composer with the approval panel visible, and the card closes without pulling focus back
+   to the eye button.
+3. Thread with uncommitted changes in a worktree: Workspace shows the branch, ahead and
+   behind, and the worktree path, and the copy buttons copy them; Changes lists the largest
+   files with their stats and "Open diff" opens the diff panel on uncommitted changes; "Show"
+   on Last turn opens it on the last turn.
+4. The card opens under the eye button with its right edge on the button's right edge, and
+   stays inside the viewport with the right panel open and closed. It closes on: a click in
+   the timeline, Escape, a line's jump, "Open inspector panel". It does not close while a
+   reply streams. The eye button toggles it without flicker; the tooltip does not show while
+   it is open.
 5. Keybindings (bind them in Settings > Keybindings first): toggle panel, toggle card. The
    two palette items, "Show thread inspector" and "Show thread inspector card", do the
-   same.
+   same. The card's footer shows the toggle shortcut once bound.
 6. Upstream T3 server: everything works (client-only).
 7. Performance: with the card open during a long streaming reply, the profiler shows no
    continuous re-render and the 1 Hz ticker stops when the tab is hidden.

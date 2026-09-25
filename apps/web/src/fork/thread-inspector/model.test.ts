@@ -1,8 +1,14 @@
-import { emptyAgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+import {
+  emptyAgentPanelModel,
+  type AgentPanelModel,
+  type RuntimeSubagent,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   ApprovalRequestId,
   CheckpointRef,
   OrchestrationProposedPlanId,
+  ProjectId,
+  ProviderDriverKind,
   ThreadId,
   TurnId,
   type OrchestrationSession,
@@ -10,12 +16,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  deriveInspectorModel,
-  type InspectorInputs,
-  type InspectorModel,
-  type InspectorSectionId,
-} from "./model";
+import { deriveInspectorModel, INSPECTOR_AGENT_ROW_LIMIT, type InspectorInputs } from "./model";
 
 const TURN = TurnId.make("turn-1");
 
@@ -59,7 +60,11 @@ function inputs(overrides: Partial<InspectorInputs> = {}): InspectorInputs {
       linkedPullRequest: null,
     },
     projectName: "loom",
-    providerLabel: "Codex · GPT-5.5",
+    provider: {
+      displayName: "Codex",
+      model: "GPT-5.5",
+      driverKind: ProviderDriverKind.make("codex"),
+    },
     supportsPullRequests: true,
     git: { state: "ready", status: gitStatus() },
     lastCheckpoint: null,
@@ -68,7 +73,7 @@ function inputs(overrides: Partial<InspectorInputs> = {}): InspectorInputs {
     approvals: [],
     userInputs: [],
     agents: emptyAgentPanelModel(),
-    runningTerminalIds: [],
+    runningTerminals: [],
     contextWindow: null,
     ...overrides,
   };
@@ -77,11 +82,6 @@ function inputs(overrides: Partial<InspectorInputs> = {}): InspectorInputs {
 const withThread = (thread: Partial<InspectorInputs["thread"]>) => ({
   thread: { ...inputs().thread, ...thread },
 });
-
-const section = (model: InspectorModel, id: InspectorSectionId) =>
-  model.sections.find((candidate) => candidate.id === id);
-
-const statusOf = (model: InspectorModel) => section(model, "status")?.rows[0];
 
 const approval = {
   requestId: ApprovalRequestId.make("approval-1"),
@@ -97,30 +97,86 @@ const question = {
   questions: [{ id: "q", header: "Scope", question: "Which package?", options: [] }],
 };
 
+const proposedPlan = (implementedAt: string | null, implementationThreadId: ThreadId | null) => ({
+  id: OrchestrationProposedPlanId.make("plan-1"),
+  createdAt: "2026-09-25T10:00:00.000Z",
+  updatedAt: "2026-09-25T10:00:00.000Z",
+  turnId: TURN,
+  planMarkdown: "# Plan",
+  implementedAt,
+  implementationThreadId,
+});
+
+const agent = (id: string, status: RuntimeSubagent["status"]): RuntimeSubagent => ({
+  id,
+  kind: "subagent",
+  title: `Agent ${id}`,
+  role: null,
+  model: null,
+  effort: null,
+  status,
+  activationCount: 1,
+  usage: null,
+  progress: status === "running" ? "Reading files" : null,
+  lastToolName: null,
+  result: status === "completed" ? "Done" : null,
+  error: null,
+  outputFile: null,
+  parentAgentId: null,
+  agentIndex: null,
+  phaseIndex: null,
+  phaseTitle: null,
+  attempt: null,
+  workflowName: null,
+  phases: [],
+  runHandles: null,
+  recentActivity: [],
+  firstSeenAt: "2026-09-25T10:00:00.000Z",
+  startedAt: "2026-09-25T10:00:00.000Z",
+  completedAt: status === "completed" ? "2026-09-25T10:01:00.000Z" : null,
+  updatedAt: "2026-09-25T10:00:00.000Z",
+});
+
+const agentsModel = (directAgents: ReadonlyArray<RuntimeSubagent>): AgentPanelModel => {
+  const live = directAgents.filter((candidate) => candidate.status === "running").length;
+  const settled = directAgents.filter((candidate) => candidate.status === "completed").length;
+  return {
+    ...emptyAgentPanelModel(),
+    directAgents,
+    hasAgents: directAgents.length > 0,
+    runningCount: live,
+    settledCount: settled,
+    liveCount: live,
+  };
+};
+
 describe("deriveInspectorModel status", () => {
   it("ranks approval over input over error over working over interrupted over ready", () => {
     const running = withThread({ session: session("running") });
     const errored = withThread({ session: session("error", "Provider crashed") });
+    const status = (overrides: Partial<InspectorInputs>) =>
+      deriveInspectorModel(inputs(overrides)).status;
 
-    expect(
-      statusOf(
-        deriveInspectorModel(inputs({ ...errored, approvals: [approval], userInputs: [question] })),
-      )?.label,
-    ).toBe("Needs approval");
-    expect(
-      statusOf(deriveInspectorModel(inputs({ ...errored, userInputs: [question] })))?.label,
-    ).toBe("Needs input");
-    expect(statusOf(deriveInspectorModel(inputs(errored)))).toMatchObject({
+    expect(status({ ...errored, approvals: [approval], userInputs: [question] })).toMatchObject({
+      label: "Needs approval",
+      tone: "warning",
+      detail: "Command approval",
+      respond: true,
+    });
+    expect(status({ ...errored, userInputs: [question] })).toMatchObject({
+      label: "Needs input",
+      tone: "accent",
+      detail: "Which package?",
+      respond: true,
+    });
+    expect(status(errored)).toMatchObject({
       label: "Error",
-      value: "Provider crashed",
+      detail: "Provider crashed",
       tone: "danger",
     });
-    expect(statusOf(deriveInspectorModel(inputs(running)))?.label).toBe("Working");
-    expect(
-      statusOf(deriveInspectorModel(inputs(withThread({ session: session("interrupted") }))))
-        ?.label,
-    ).toBe("Interrupted");
-    expect(statusOf(deriveInspectorModel(inputs()))?.label).toBe("Ready");
+    expect(status(running).label).toBe("Working");
+    expect(status(withThread({ session: session("interrupted") })).label).toBe("Interrupted");
+    expect(status({})).toMatchObject({ label: "Ready", tone: "success", respond: false });
   });
 
   it("shows the plan step, its counts and the turn start while working", () => {
@@ -140,27 +196,117 @@ describe("deriveInspectorModel status", () => {
         }),
       ),
     );
-    expect(statusOf(model)).toMatchObject({
+    expect(model.status).toEqual({
       label: "Working",
-      value: "Write tests (2/5)",
-      since: "2026-09-25T10:00:00.000Z",
       tone: "info",
+      detail: "Write tests",
+      since: "2026-09-25T10:00:00.000Z",
+      progress: { completed: 2, total: 5 },
+      respond: false,
+    });
+  });
+
+  it("reports a ready plan in plan mode ahead of background work", () => {
+    const model = deriveInspectorModel(
+      inputs({
+        ...withThread({ interactionMode: "plan", backgroundLiveness: "working" }),
+        proposedPlan: proposedPlan(null, null),
+      }),
+    );
+    expect(model.status).toMatchObject({ label: "Plan ready", tone: "accent" });
+    expect(model.facts.map((fact) => fact.label)).toEqual(["GPT-5.5", "Full access", "Plan mode"]);
+    expect(model.facts[0]).toMatchObject({
+      id: "model",
+      title: "Codex · GPT-5.5",
+      driverKind: "codex",
+    });
+  });
+});
+
+describe("deriveInspectorModel workspace and pull request", () => {
+  it("drops Changes and explains why outside a git repository", () => {
+    const model = deriveInspectorModel(
+      inputs({ git: { state: "ready", status: gitStatus({ isRepo: false, refName: null }) } }),
+    );
+    expect(model.changes).toBeNull();
+    expect(model.workspace.map((entry) => [entry.id, entry.value])).toEqual([
+      ["project", "loom"],
+      ["git", "Not a git repository"],
+    ]);
+  });
+
+  it("offers the branch and worktree path to copy, with a short worktree name", () => {
+    const model = deriveInspectorModel(
+      inputs({
+        ...withThread({ worktreePath: "/Users/kyle/Developer/active/loom-l04/" }),
+        git: { state: "ready", status: gitStatus({ aheadCount: 2, behindCount: 1 }) },
+      }),
+    );
+    expect(model.workspace).toEqual([
+      { id: "project", name: "Project", value: "loom" },
+      {
+        id: "branch",
+        name: "Branch",
+        value: "feature/inspector",
+        mono: true,
+        copy: "feature/inspector",
+      },
+      { id: "remote", name: "Remote", value: "2 ahead · 1 behind" },
+      {
+        id: "worktree",
+        name: "Worktree",
+        value: "/Users/kyle/Developer/active/loom-l04/",
+        short: "loom-l04",
+        mono: true,
+        copy: "/Users/kyle/Developer/active/loom-l04/",
+      },
+    ]);
+  });
+
+  it("opens a linked pull request and only describes one known from git", () => {
+    const pr = {
+      number: 12,
+      title: "Add the inspector",
+      url: "https://example.test/pr/12",
+      baseRef: "main",
+      headRef: "feature/inspector",
+      state: "open",
+      isDraft: true,
+    } as const;
+    const linked = {
+      projectId: ProjectId.make("project-1"),
+      repository: "kylebegeman/loom",
+      number: 12,
+      url: pr.url,
+    } as const;
+    const linkedModel = deriveInspectorModel(
+      inputs({
+        ...withThread({ linkedPullRequest: linked }),
+        git: { state: "ready", status: gitStatus({ pr }) },
+      }),
+    );
+    expect(linkedModel.pullRequest).toEqual({
+      number: 12,
+      state: "Draft",
+      tone: "muted",
+      glyph: "draft",
+      title: "Add the inspector",
+      action: { kind: "open-pull-request", pullRequest: linked },
+    });
+    const knownModel = deriveInspectorModel(
+      inputs({ git: { state: "ready", status: gitStatus({ pr: { ...pr, state: "merged" } }) } }),
+    );
+    expect(knownModel.pullRequest).toMatchObject({
+      state: "Merged",
+      tone: "accent",
+      glyph: "merged",
+      action: null,
     });
   });
 });
 
 describe("deriveInspectorModel changes", () => {
-  it("hides Changes and says so in Workspace outside a git repository", () => {
-    const model = deriveInspectorModel(
-      inputs({ git: { state: "ready", status: gitStatus({ isRepo: false, refName: null }) } }),
-    );
-    expect(section(model, "changes")).toBeUndefined();
-    expect(section(model, "workspace")?.rows.map((row) => row.label)).toContain(
-      "Not a git repository",
-    );
-  });
-
-  it("lists the five largest files after the totals", () => {
+  it("lists every file, largest change first, with the totals", () => {
     const sizes = [1, 40, 3, 25, 9, 12, 2];
     const files = sizes.map((size, index) => ({
       path: `src/file-${index}.ts`,
@@ -173,27 +319,24 @@ describe("deriveInspectorModel changes", () => {
           state: "ready",
           status: gitStatus({
             hasWorkingTreeChanges: true,
-            workingTree: { files, insertions: 92, deletions: 0 },
+            workingTree: { files, insertions: 92, deletions: 4 },
           }),
         },
       }),
     );
-    const rows = section(model, "changes")?.rows ?? [];
-    expect(rows[0]).toMatchObject({
-      label: "7 files",
-      diff: { additions: 92, deletions: 0 },
-      action: { action: { kind: "open-diff" } },
-    });
-    expect(rows.slice(1).map((row) => row.label)).toEqual([
+    expect(model.changes).toMatchObject({ state: "ready", additions: 92, deletions: 4 });
+    expect(model.changes?.files.map((file) => file.path)).toEqual([
       "src/file-1.ts",
       "src/file-3.ts",
       "src/file-5.ts",
       "src/file-4.ts",
       "src/file-2.ts",
+      "src/file-6.ts",
+      "src/file-0.ts",
     ]);
   });
 
-  it("adds a last turn row only for a ready checkpoint with files", () => {
+  it("keeps the last turn only for a ready checkpoint with files", () => {
     const checkpoint = {
       turnId: TURN,
       checkpointTurnCount: 1,
@@ -203,95 +346,157 @@ describe("deriveInspectorModel changes", () => {
       assistantMessageId: null,
       completedAt: "2026-09-25T10:00:00.000Z",
     } as const;
-    const lastTurn = (model: InspectorModel) =>
-      section(model, "changes")?.rows.find((row) => row.id === "last-turn");
+    const lastTurn = (lastCheckpoint: InspectorInputs["lastCheckpoint"]) =>
+      deriveInspectorModel(inputs({ lastCheckpoint })).changes?.lastTurn;
 
-    expect(lastTurn(deriveInspectorModel(inputs({ lastCheckpoint: checkpoint })))).toMatchObject({
-      value: "1 file",
-      diff: { additions: 3, deletions: 1 },
-      action: { action: { kind: "open-turn-diff", turnId: TURN } },
+    expect(lastTurn(checkpoint)).toEqual({
+      turnId: TURN,
+      fileCount: 1,
+      additions: 3,
+      deletions: 1,
     });
-    expect(
-      lastTurn(
-        deriveInspectorModel(inputs({ lastCheckpoint: { ...checkpoint, status: "missing" } })),
-      ),
-    ).toBeUndefined();
-    expect(
-      lastTurn(deriveInspectorModel(inputs({ lastCheckpoint: { ...checkpoint, files: [] } }))),
-    ).toBeUndefined();
+    expect(lastTurn({ ...checkpoint, status: "missing" })).toBeNull();
+    expect(lastTurn({ ...checkpoint, files: [] })).toBeNull();
+  });
+
+  it("reports loading until the first git status", () => {
+    expect(deriveInspectorModel(inputs({ git: { state: "loading" } })).changes).toMatchObject({
+      state: "loading",
+      files: [],
+    });
   });
 });
 
 describe("deriveInspectorModel plan", () => {
-  it("caps the steps and counts the rest", () => {
-    const steps = Array.from({ length: 11 }, (_, index) => ({
-      step: `Step ${index + 1}`,
-      status: index < 3 ? ("completed" as const) : ("pending" as const),
-    }));
+  it("counts finished steps and names the one in progress", () => {
+    const steps = [
+      { step: "Read the code", status: "completed" as const },
+      { step: "Write tests", status: "inProgress" as const },
+      { step: "Ship", status: "pending" as const },
+    ];
     const model = deriveInspectorModel(
       inputs({ activePlan: { createdAt: "2026-09-25T10:00:00.000Z", turnId: TURN, steps } }),
     );
-    const plan = section(model, "plan");
-    expect(plan?.rows).toHaveLength(9);
-    expect(plan?.rows.at(-1)?.label).toBe("and 3 more");
-    expect(plan?.summary).toBe("3/11 steps");
+    expect(model.plan).toEqual({ steps, completed: 1, current: "Write tests", proposed: null });
   });
 
   it("links a proposed plan to the thread that implemented it", () => {
     const implementationThreadId = ThreadId.make("thread-2");
     const model = deriveInspectorModel(
-      inputs({
-        proposedPlan: {
-          id: OrchestrationProposedPlanId.make("plan-1"),
-          createdAt: "2026-09-25T10:00:00.000Z",
-          updatedAt: "2026-09-25T10:00:00.000Z",
-          turnId: TURN,
-          planMarkdown: "# Plan",
-          implementedAt: "2026-09-25T11:00:00.000Z",
-          implementationThreadId,
-        },
-      }),
+      inputs({ proposedPlan: proposedPlan("2026-09-25T11:00:00.000Z", implementationThreadId) }),
     );
-    expect(section(model, "plan")?.rows).toEqual([
-      expect.objectContaining({
-        value: "Implemented",
-        action: {
-          label: "Open",
-          action: { kind: "open-thread", threadId: implementationThreadId },
-        },
-      }),
-    ]);
+    expect(model.plan.proposed).toEqual({ implemented: true, threadId: implementationThreadId });
   });
 });
 
-describe("deriveInspectorModel attention and densities", () => {
-  it("needs attention exactly when an approval or a question waits", () => {
+describe("deriveInspectorModel attention, agents and context", () => {
+  it("lists approvals as code and questions as prose, and flags attention", () => {
     expect(deriveInspectorModel(inputs()).needsAttention).toBe(false);
-    expect(deriveInspectorModel(inputs({ approvals: [approval] })).needsAttention).toBe(true);
-    expect(deriveInspectorModel(inputs({ userInputs: [question] })).needsAttention).toBe(true);
-    const attention = section(
-      deriveInspectorModel(inputs({ approvals: [approval], userInputs: [question] })),
-      "attention",
-    );
-    expect(attention?.rows.map((row) => [row.value, row.action?.action.kind])).toEqual([
-      ["rm -rf dist", "focus-composer"],
-      ["Which package?", "focus-composer"],
+    const model = deriveInspectorModel(inputs({ approvals: [approval], userInputs: [question] }));
+    expect(model.needsAttention).toBe(true);
+    expect(model.attention).toEqual([
+      {
+        id: "approval:approval-1",
+        kind: "approval",
+        label: "Command approval",
+        detail: "rm -rf dist",
+        mono: true,
+      },
+      {
+        id: "input:input-1",
+        kind: "question",
+        label: "Question",
+        detail: "Which package?",
+        mono: false,
+      },
     ]);
   });
 
-  it("marks only Status and Attention essential", () => {
-    const essential = deriveInspectorModel(inputs())
-      .sections.filter((candidate) => candidate.essential)
-      .map((candidate) => candidate.id);
-    expect(essential).toEqual(["status", "attention"]);
+  it("summarizes agents and lists working ones first, capped", () => {
+    const agents = [
+      agent("a", "completed"),
+      agent("b", "running"),
+      agent("c", "completed"),
+      agent("d", "running"),
+      agent("e", "completed"),
+      agent("f", "completed"),
+      agent("g", "completed"),
+    ];
+    const model = deriveInspectorModel(inputs({ agents: agentsModel(agents) }));
+    expect(model.agents).toMatchObject({
+      hasAgents: true,
+      total: 7,
+      working: 2,
+      finished: 5,
+      summary: "2 working · 5 finished",
+    });
+    expect(model.agents.rows).toHaveLength(INSPECTOR_AGENT_ROW_LIMIT);
+    expect(model.agents.rows.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        id: "b",
+        status: "working",
+        activity: "Reading files",
+        since: "2026-09-25T10:00:00.000Z",
+      }),
+      expect.objectContaining({ id: "d", status: "working" }),
+    ]);
+    expect(model.agents.rows[2]).toMatchObject({ id: "a", status: "completed", since: null });
   });
 
-  it("shows only Status and Workspace for a draft", () => {
+  it("tones the context window at 75 and 90 percent", () => {
+    const snapshot = (usedPercentage: number) => ({
+      usedTokens: usedPercentage * 1000,
+      maxTokens: 100_000,
+      usedPercentage,
+      remainingTokens: null,
+      remainingPercentage: null,
+      totalProcessedTokens: null,
+      inputTokens: null,
+      cachedInputTokens: null,
+      outputTokens: null,
+      reasoningOutputTokens: null,
+      lastUsedTokens: null,
+      lastInputTokens: null,
+      lastCachedInputTokens: null,
+      lastOutputTokens: null,
+      lastReasoningOutputTokens: null,
+      toolUses: null,
+      durationMs: null,
+      compactsAutomatically: true,
+      autoCompactThreshold: 95_000,
+      updatedAt: "2026-09-25T10:00:00.000Z",
+    });
+    const tone = (usedPercentage: number) =>
+      deriveInspectorModel(inputs({ contextWindow: snapshot(usedPercentage) })).context?.tone;
+    expect(tone(40)).toBe("default");
+    expect(tone(75)).toBe("warning");
+    expect(tone(90)).toBe("danger");
+    expect(deriveInspectorModel(inputs({ contextWindow: snapshot(40) })).context).toMatchObject({
+      usedTokens: 40_000,
+      maxTokens: 100_000,
+      compactsAutomatically: true,
+      autoCompactThreshold: 95_000,
+    });
+    expect(deriveInspectorModel(inputs()).context).toBeNull();
+  });
+
+  it("shows only the status and workspace for a draft", () => {
+    // A draft has no thread yet, so nothing asks git about a directory.
     const model = deriveInspectorModel(
-      inputs({ ...withThread({ isDraft: true, session: null }), approvals: [approval] }),
+      inputs({
+        ...withThread({ isDraft: true, session: null }),
+        git: { state: "none" },
+        approvals: [approval],
+      }),
     );
-    expect(model.sections.map((candidate) => candidate.id)).toEqual(["status", "workspace"]);
-    expect(statusOf(model)?.value).toBe("Send a message to start this thread.");
-    expect(model.needsAttention).toBe(false);
+    expect(model).toMatchObject({
+      isDraft: true,
+      status: { label: "Draft", detail: "Send a message to start this thread." },
+      facts: [],
+      attention: [],
+      changes: null,
+      needsAttention: false,
+    });
+    expect(model.workspace.map((entry) => entry.id)).toEqual(["project", "branch"]);
   });
 });

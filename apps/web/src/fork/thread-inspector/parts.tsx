@@ -1,97 +1,73 @@
 /**
- * Inspector section and row primitives, shared by the built-in sections and by packets that
- * register in FORK_INSPECTOR_SECTIONS so every section reads the same.
+ * Inspector primitives shared by the card, the panel and the packet sections registered in
+ * FORK_INSPECTOR_SECTIONS, so every section reads the same on both surfaces.
  *
- * Rows are one line: icon, primary label (toned), muted value, then a trailing elapsed time,
- * diff stat or action. Static dots only; the elapsed time is a 1 Hz DOM write that stops while
- * the document is hidden.
+ * Tones map to theme tokens only, so app themes recolor the inspector with everything else.
+ * Static dots; the elapsed time is a 1 Hz DOM write that stops while the document is hidden;
+ * a progress bar moves only when its value changes.
  */
 import {
-  ArrowUpDownIcon,
-  BotIcon,
+  CheckIcon,
   ChevronRightIcon,
-  CircleCheckIcon,
-  CircleDotIcon,
-  CircleIcon,
-  CpuIcon,
-  FileDiffIcon,
-  FileIcon,
-  FolderIcon,
-  FolderTreeIcon,
-  GaugeIcon,
-  GitBranchIcon,
-  HistoryIcon,
-  ListChecksIcon,
+  CopyIcon,
   MessageCircleQuestionIcon,
   ShieldAlertIcon,
-  SlidersHorizontalIcon,
-  SquareTerminalIcon,
 } from "lucide-react";
-import { type ComponentType, type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
-import { DiffStatLabel } from "~/components/chat/DiffStatLabel";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { formatWorkingDurationLabel } from "~/components/Sidebar.logic";
+import {
+  ANCHORED_COPY_TOAST_TIMEOUT_MS,
+  showAnchoredCopyErrorToast,
+  showAnchoredCopySuccessToast,
+} from "~/components/ui/anchoredCopyToast";
 import { Button } from "~/components/ui/button";
 import { MiddleTruncate } from "~/components/ui/middle-truncate";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
-import type { InspectorAction, InspectorIconName, InspectorRow, InspectorTone } from "./model";
+import type { InspectorAttentionItem, InspectorPullRequest, InspectorTone } from "./model";
 
-const ICONS: Record<
-  Exclude<InspectorIconName, "status" | "empty">,
-  ComponentType<{ className?: string; "aria-hidden"?: boolean }>
-> = {
-  provider: CpuIcon,
-  mode: SlidersHorizontalIcon,
-  project: FolderIcon,
-  branch: GitBranchIcon,
-  sync: ArrowUpDownIcon,
-  worktree: FolderTreeIcon,
-  "pull-request": PullRequestGlyph.pullRequest,
-  git: GitBranchIcon,
-  changes: FileDiffIcon,
-  file: FileIcon,
-  turn: HistoryIcon,
-  "step-pending": CircleIcon,
-  "step-active": CircleDotIcon,
-  "step-done": CircleCheckIcon,
-  plan: ListChecksIcon,
-  approval: ShieldAlertIcon,
-  question: MessageCircleQuestionIcon,
-  agents: BotIcon,
-  terminal: SquareTerminalIcon,
-  context: GaugeIcon,
-};
-
-/** Labels that keep both ends visible when cut: paths and branch names. */
-const MIDDLE_TRUNCATED_ICONS = new Set<InspectorIconName>(["branch", "worktree", "file"]);
-
-/** Theme tokens only, so app themes recolor the inspector with everything else. */
 const TONE_TEXT: Record<InspectorTone, string> = {
   default: "text-foreground",
   muted: "text-muted-foreground",
   info: "text-info-foreground",
   warning: "text-warning-foreground",
-  input: "text-primary",
+  accent: "text-primary",
   danger: "text-destructive-foreground",
   success: "text-success-foreground",
 };
 
-const TONE_DOT: Record<InspectorTone, string> = {
+const TONE_FILL: Record<InspectorTone, string> = {
   default: "bg-muted-foreground/60",
   muted: "bg-muted-foreground/40",
   info: "bg-info",
   warning: "bg-warning",
-  input: "bg-primary",
+  accent: "bg-primary",
   danger: "bg-destructive",
   success: "bg-success",
 };
 
 export const inspectorToneText = (tone: InspectorTone = "default") => TONE_TEXT[tone];
 
-export function InspectorStatusDot({ tone = "default" }: { tone?: InspectorTone | undefined }) {
-  return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[tone])} />;
+export function InspectorStatusDot({
+  tone = "default",
+  size = "sm",
+}: {
+  tone?: InspectorTone | undefined;
+  size?: "sm" | "md";
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "shrink-0 rounded-full",
+        size === "md" ? "size-2" : "size-1.5",
+        TONE_FILL[tone],
+      )}
+    />
+  );
 }
 
 /** Elapsed time since `since`, written straight to the DOM once a second while visible. */
@@ -129,141 +105,296 @@ export function InspectorElapsed({ since }: { since: string }) {
   );
 }
 
-function RowIcon({ row }: { row: InspectorRow }) {
-  if (row.icon === "status") {
-    return (
-      <span className="flex size-3.5 shrink-0 items-center justify-center">
-        <InspectorStatusDot tone={row.tone} />
-      </span>
-    );
-  }
-  if (row.icon === "empty") return <span aria-hidden className="size-3.5 shrink-0" />;
-  const Icon = ICONS[row.icon];
+/** A thin bar; `value` is 0 to 100. Width is layout, so the parent may size it. */
+export function InspectorProgressBar({
+  value,
+  tone = "default",
+  label,
+  className,
+}: {
+  value: number;
+  tone?: InspectorTone;
+  label: string;
+  className?: string;
+}) {
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
   return (
-    <Icon
-      aria-hidden
-      className={cn(
-        "size-3.5 shrink-0",
-        row.icon === "step-active" ? TONE_TEXT.info : "text-muted-foreground",
-      )}
-    />
+    <div
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(clamped)}
+      aria-label={label}
+      className={cn("h-1 w-full shrink-0 overflow-hidden rounded-full bg-muted/60", className)}
+    >
+      <div
+        className={cn(
+          "h-full rounded-full transition-[width] duration-500 ease-out motion-reduce:transition-none",
+          TONE_FILL[tone],
+        )}
+        style={{ width: `${clamped}%` }}
+      />
+    </div>
   );
 }
 
-export function InspectorRowView({
-  row,
-  onAction,
+/** Inline text that truncates at the end, or in the middle for paths and branch names. */
+export function InspectorText({
+  value,
+  mono = false,
+  middle = false,
+  wrap = false,
+  tone = "default",
+  showTitle = true,
+  className,
 }: {
-  row: InspectorRow;
-  onAction: (action: InspectorAction) => void;
+  value: string;
+  mono?: boolean;
+  middle?: boolean;
+  /** Up to two lines instead of one; plan steps and questions need the room. */
+  wrap?: boolean;
+  tone?: InspectorTone | undefined;
+  /** The full value on hover for a middle-truncated path. Off where a tooltip carries it. */
+  showTitle?: boolean;
+  className?: string;
 }) {
-  const toneClass = TONE_TEXT[row.tone ?? "default"];
+  const shared = cn("min-w-0", mono && "font-mono text-2xs", TONE_TEXT[tone], className);
+  if (middle) {
+    return (
+      <span className={cn("flex", shared)}>
+        <MiddleTruncate value={value} showTitle={showTitle} />
+      </span>
+    );
+  }
+  return <span className={cn(wrap ? "line-clamp-2" : "truncate", shared)}>{value}</span>;
+}
+
+/**
+ * One line: an icon slot, a label, a muted value, then trailing content. With `onClick` the
+ * row is a button that ends in a chevron; trailing content must then be static.
+ */
+export function InspectorRow({
+  icon,
+  label,
+  value,
+  tone,
+  mono = false,
+  middle = false,
+  wrap = false,
+  trailing,
+  onClick,
+  tooltip,
+  tooltipVariant = "default",
+}: {
+  icon?: ReactNode;
+  label: string;
+  value?: ReactNode;
+  tone?: InspectorTone | undefined;
+  mono?: boolean;
+  middle?: boolean;
+  wrap?: boolean;
+  trailing?: ReactNode;
+  onClick?: (() => void) | undefined;
+  /** Hover text when the label alone does not say it. */
+  tooltip?: string | undefined;
+  tooltipVariant?: "default" | "code";
+}) {
   const text = (
-    <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-      {row.name ? <span className="sr-only">{row.name}: </span> : null}
-      {MIDDLE_TRUNCATED_ICONS.has(row.icon) ? (
-        <span className={cn("flex min-w-0 shrink-[0.25]", toneClass)}>
-          <MiddleTruncate value={row.label} showTitle={false} />
-        </span>
-      ) : (
-        <span className={cn("min-w-0 shrink-[0.25] truncate", toneClass)}>{row.label}</span>
-      )}
-      {row.value ? (
-        <span className="min-w-0 flex-1 truncate text-muted-foreground">{row.value}</span>
+    <span className={cn("flex min-w-0 flex-1 gap-1.5", wrap ? "items-start" : "items-baseline")}>
+      <InspectorText
+        value={label}
+        mono={mono}
+        middle={middle}
+        wrap={wrap}
+        tone={tone}
+        showTitle={!tooltip}
+        className="shrink-[0.25]"
+      />
+      {value ? (
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">{value}</span>
       ) : null}
     </span>
   );
-  return (
-    <div className="flex min-h-6 items-center gap-2 rounded-md px-1.5 py-0.5 text-xs">
-      <RowIcon row={row} />
-      {row.detail || row.name ? (
+  const content = (
+    <>
+      {icon ? (
+        <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground *:size-3.5">
+          {icon}
+        </span>
+      ) : null}
+      {tooltip ? (
         <Tooltip>
           <TooltipTrigger render={<span className="flex min-w-0 flex-1" />}>{text}</TooltipTrigger>
-          <TooltipPopup
-            side="top"
-            variant={MIDDLE_TRUNCATED_ICONS.has(row.icon) ? "code" : "default"}
-          >
-            {row.detail ?? row.name}
+          <TooltipPopup side="top" variant={tooltipVariant}>
+            {tooltip}
           </TooltipPopup>
         </Tooltip>
       ) : (
         text
       )}
-      {row.since ? <InspectorElapsed since={row.since} /> : null}
-      {row.diff ? (
-        <DiffStatLabel
-          additions={row.diff.additions}
-          deletions={row.diff.deletions}
-          layout="inline"
-          className="shrink-0 text-2xs"
-        />
+      {trailing}
+      {onClick ? (
+        <ChevronRightIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground/60" />
       ) : null}
-      {row.action ? (
-        <Button
-          size="micro"
-          variant="ghost"
-          className="shrink-0"
-          onClick={() => row.action && onAction(row.action.action)}
-        >
-          {row.action.label}
-        </Button>
-      ) : null}
+    </>
+  );
+  const className = cn(
+    "flex min-h-6 w-full items-center gap-2 rounded-md px-1.5 text-left text-xs",
+    wrap ? "py-1" : "py-0.5",
+  );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          className,
+          "hover:bg-accent/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+      >
+        {content}
+      </button>
+    );
+  }
+  return <div className={className}>{content}</div>;
+}
+
+/** A name and value pair for the panel's Workspace block. Trailing holds a tool. */
+export function InspectorField({
+  name,
+  children,
+  trailing,
+}: {
+  name: string;
+  children: ReactNode;
+  trailing?: ReactNode;
+}) {
+  return (
+    <div className="flex min-h-6 items-center gap-2 px-1.5 text-xs">
+      <span className="w-14 shrink-0 text-2xs text-muted-foreground">{name}</span>
+      <span className="flex min-w-0 flex-1 items-center">{children}</span>
+      {trailing}
     </div>
   );
 }
 
-export function InspectorSectionTitle({ children }: { children: ReactNode }) {
-  return (
-    <h3 className="px-1.5 pb-0.5 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
-      {children}
-    </h3>
-  );
+export function InspectorNote({ children }: { children: ReactNode }) {
+  return <p className="px-1.5 py-0.5 text-2xs text-muted-foreground">{children}</p>;
 }
 
-/** A titled group of rows. Packet sections use it so they match the built-in ones. */
-export function InspectorSection({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="flex flex-col">
-      <InspectorSectionTitle>{title}</InspectorSectionTitle>
-      {children}
-    </section>
-  );
-}
-
-/** A section folded to one line in the compact density; a click shows its rows. */
-export function InspectorCollapsedSection({
+/** A titled group. Packet sections use it so they match the built-in ones. */
+export function InspectorSection({
   title,
   summary,
-  tone,
-  open,
-  onToggle,
+  action,
   children,
 }: {
   title: string;
-  summary: string;
-  tone: InspectorTone;
-  open: boolean;
-  onToggle: () => void;
+  /** Right-aligned digest, such as a count or a percentage. */
+  summary?: ReactNode;
+  /** One tool for the whole section, such as opening the panel that owns the data. */
+  action?: { readonly label: string; readonly onClick: () => void } | undefined;
   children: ReactNode;
 }) {
   return (
     <section className="flex flex-col">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={onToggle}
-        className="flex min-h-6 w-full items-center gap-2 rounded-md px-1.5 py-0.5 text-left text-xs hover:bg-accent/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={cn("size-3.5 shrink-0 text-muted-foreground", open && "rotate-90")}
-        />
-        <span className="shrink-0 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
+      <div className="flex min-h-6 items-center gap-2 px-1.5">
+        <h3 className="shrink-0 text-3xs font-medium uppercase tracking-wider text-muted-foreground">
           {title}
-        </span>
-        <span className={cn("ml-auto min-w-0 truncate", TONE_TEXT[tone])}>{summary}</span>
-      </button>
-      {open ? children : null}
+        </h3>
+        <span className="flex-1" />
+        {summary ? (
+          <span className="min-w-0 truncate text-2xs tabular-nums text-muted-foreground/80">
+            {summary}
+          </span>
+        ) : null}
+        {action ? (
+          <Button size="micro" variant="ghost" onClick={action.onClick}>
+            {action.label}
+          </Button>
+        ) : null}
+      </div>
+      {children}
     </section>
   );
+}
+
+export function InspectorCopyButton({ value, label }: { value: string; label: string }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
+    onCopy: () => showAnchoredCopySuccessToast(ref),
+    onError: (error) => showAnchoredCopyErrorToast(ref, error),
+    timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
+  });
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            ref={ref}
+            size="icon-micro"
+            variant="ghost-muted"
+            aria-label={label}
+            onClick={() => copyToClipboard(value, undefined)}
+          />
+        }
+      >
+        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
+      </TooltipTrigger>
+      <TooltipPopup>{isCopied ? "Copied" : label}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+/** An approval or a question waiting on the user, tinted by kind. */
+export function InspectorAttentionRow({ item }: { item: InspectorAttentionItem }) {
+  const approval = item.kind === "approval";
+  const Icon = approval ? ShieldAlertIcon : MessageCircleQuestionIcon;
+  return (
+    <div
+      className={cn(
+        "flex items-start gap-2 rounded-md px-2 py-1.5 text-xs",
+        approval ? "bg-warning/8 dark:bg-warning/16" : "bg-primary/8 dark:bg-primary/16",
+      )}
+    >
+      <Icon
+        aria-hidden
+        className={cn(
+          "mt-px size-3.5 shrink-0",
+          approval ? "text-warning-foreground" : "text-primary",
+        )}
+      />
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="font-medium">{item.label}</span>
+        {item.detail ? (
+          <span
+            className={cn(
+              "line-clamp-2 text-muted-foreground",
+              item.mono && "font-mono text-2xs wrap-anywhere",
+            )}
+          >
+            {item.detail}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
+const PULL_REQUEST_GLYPHS: Record<
+  InspectorPullRequest["glyph"],
+  typeof PullRequestGlyph.pullRequest
+> = {
+  open: PullRequestGlyph.pullRequest,
+  draft: PullRequestGlyph.draft,
+  closed: PullRequestGlyph.closed,
+  merged: PullRequestGlyph.merged,
+};
+
+export function PullRequestStateIcon({
+  glyph,
+  tone,
+}: Pick<InspectorPullRequest, "glyph" | "tone">) {
+  const Icon = PULL_REQUEST_GLYPHS[glyph];
+  return <Icon aria-hidden className={TONE_TEXT[tone]} />;
 }

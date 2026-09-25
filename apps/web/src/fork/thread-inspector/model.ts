@@ -1,9 +1,19 @@
+/**
+ * The inspector's read model: one pure derivation over state the web app already holds,
+ * rendered two ways. The card shows a glance (status, what needs you, where, one line per
+ * area); the panel shows everything with tools. Both read this model, so a value can never
+ * differ between them.
+ */
 import type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
-import type { AgentPanelModel } from "@t3tools/client-runtime/state/subagentRuntime";
+import type {
+  AgentPanelModel,
+  RuntimeSubagent,
+} from "@t3tools/client-runtime/state/subagentRuntime";
 import type {
   OrchestrationCheckpointSummary,
   OrchestrationLatestTurn,
   OrchestrationSession,
+  ProviderDriverKind,
   ProviderInteractionMode,
   ProviderRequestKind,
   RuntimeMode,
@@ -16,7 +26,7 @@ import type {
 import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
 import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import { resolveWorkingStartedAt } from "~/components/Sidebar.logic";
-import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
+import type { ContextWindowSnapshot } from "~/lib/contextWindow";
 import type { ActivePlanState, LatestProposedPlanState } from "~/session-logic";
 
 export type InspectorGitState =
@@ -25,6 +35,12 @@ export type InspectorGitState =
   | { readonly state: "loading" }
   | { readonly state: "error"; readonly message: string }
   | { readonly state: "ready"; readonly status: VcsStatusResult };
+
+export interface InspectorProvider {
+  readonly displayName: string;
+  readonly model: string;
+  readonly driverKind: ProviderDriverKind | null;
+}
 
 export interface InspectorInputs {
   readonly thread: {
@@ -44,8 +60,7 @@ export interface InspectorInputs {
     readonly linkedPullRequest: ThreadLinkedPullRequest | null;
   };
   readonly projectName: string | null;
-  /** "Codex · GPT-5.5" */
-  readonly providerLabel: string | null;
+  readonly provider: InspectorProvider | null;
   readonly supportsPullRequests: boolean;
   readonly git: InspectorGitState;
   readonly lastCheckpoint: OrchestrationCheckpointSummary | null;
@@ -54,7 +69,7 @@ export interface InspectorInputs {
   readonly approvals: ReadonlyArray<PendingApproval>;
   readonly userInputs: ReadonlyArray<PendingUserInput>;
   readonly agents: AgentPanelModel;
-  readonly runningTerminalIds: ReadonlyArray<string>;
+  readonly runningTerminals: ReadonlyArray<InspectorTerminal>;
   readonly contextWindow: ContextWindowSnapshot | null;
 }
 
@@ -65,151 +80,236 @@ export type InspectorAction =
   | { readonly kind: "open-pull-request"; readonly pullRequest: ThreadLinkedPullRequest }
   | { readonly kind: "open-terminal"; readonly terminalId: string }
   | { readonly kind: "focus-composer" }
-  | { readonly kind: "open-thread"; readonly threadId: ThreadId }
-  | { readonly kind: "copy"; readonly text: string; readonly label: string };
+  | { readonly kind: "open-thread"; readonly threadId: ThreadId };
 
-/** Mapped to lucide icons in the view. */
-export type InspectorIconName =
-  | "status"
-  | "provider"
-  | "mode"
-  | "project"
-  | "branch"
-  | "sync"
-  | "worktree"
-  | "pull-request"
-  | "git"
-  | "changes"
-  | "file"
-  | "turn"
-  | "step-pending"
-  | "step-active"
-  | "step-done"
-  | "plan"
-  | "approval"
-  | "question"
-  | "agents"
-  | "terminal"
-  | "context"
-  | "empty";
-
-/** Status tones: info is Working, warning an approval or a filling context window, input a question. */
+/**
+ * Tones map to theme tokens: info is work in progress, warning an approval or a filling
+ * context window, accent a decision waiting on the user (a question, a ready plan).
+ */
 export type InspectorTone =
   | "default"
   | "muted"
   | "info"
   | "warning"
-  | "input"
+  | "accent"
   | "danger"
   | "success";
 
-export interface InspectorRow {
-  readonly id: string;
-  readonly icon: InspectorIconName;
-  /** What the row is about, when the label alone does not say (read by screen readers). */
-  readonly name?: string;
-  /** Primary text; the tone colors it. */
+export interface InspectorStatus {
   readonly label: string;
-  /** Secondary, muted text. */
-  readonly value?: string;
-  /** Longer text for a tooltip (an error, a full path). */
-  readonly detail?: string;
-  readonly tone?: InspectorTone;
-  readonly diff?: { readonly additions: number; readonly deletions: number };
-  /** ISO start of a running interval; the view shows the elapsed time. */
-  readonly since?: string;
-  readonly action?: { readonly label: string; readonly action: InspectorAction };
+  readonly tone: InspectorTone;
+  /** The current plan step, the error message, or the draft hint. */
+  readonly detail: string | null;
+  /** ISO start of the running turn; the view shows the elapsed time. */
+  readonly since: string | null;
+  /** Plan steps done so far while working. */
+  readonly progress: { readonly completed: number; readonly total: number } | null;
+  /** Something waits on the user; both surfaces offer Respond. */
+  readonly respond: boolean;
 }
 
-export type InspectorSectionId =
-  | "status"
-  | "workspace"
-  | "changes"
-  | "plan"
-  | "attention"
-  | "agents"
-  | "terminals"
-  | "context";
-
-export interface InspectorSectionModel {
-  readonly id: InspectorSectionId;
+/** A hero chip: the model (with its provider glyph), the runtime mode, plan mode. */
+export interface InspectorFact {
+  readonly id: "model" | "runtime" | "interaction";
+  readonly label: string;
+  /** Spoken and shown on hover when the label alone does not say it. */
   readonly title: string;
-  readonly rows: ReadonlyArray<InspectorRow>;
-  /** One line for a collapsed section in the compact density. */
-  readonly summary: string;
-  readonly summaryTone: InspectorTone;
-  /** Always expanded in the compact density. */
-  readonly essential: boolean;
+  readonly driverKind?: ProviderDriverKind;
+}
+
+export interface InspectorAttentionItem {
+  readonly id: string;
+  readonly kind: "approval" | "question";
+  readonly label: string;
+  readonly detail: string | null;
+  /** Commands and paths read as code; questions and app prompts as prose. */
+  readonly mono: boolean;
+}
+
+export interface InspectorWorkspaceEntry {
+  readonly id: "project" | "git" | "branch" | "remote" | "worktree";
+  readonly name: string;
+  readonly value: string;
+  /** A shorter form for the card (a worktree's folder name). */
+  readonly short?: string;
+  readonly tone?: InspectorTone;
+  readonly mono?: boolean;
+  /** Text the panel offers to copy. */
+  readonly copy?: string;
+}
+
+export type InspectorPullRequestGlyph = keyof typeof PULL_REQUEST_STATE_PRESENTATION;
+
+export interface InspectorPullRequest {
+  readonly number: number;
+  readonly state: string;
+  readonly tone: InspectorTone;
+  readonly glyph: InspectorPullRequestGlyph;
+  readonly title: string | null;
+  readonly action: InspectorAction | null;
+}
+
+export interface InspectorChangedFile {
+  readonly path: string;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+export interface InspectorChanges {
+  readonly state: "loading" | "ready";
+  /** Every uncommitted file, largest change first. */
+  readonly files: ReadonlyArray<InspectorChangedFile>;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly lastTurn: {
+    readonly turnId: TurnId;
+    readonly fileCount: number;
+    readonly additions: number;
+    readonly deletions: number;
+  } | null;
+}
+
+export interface InspectorPlanStep {
+  readonly step: string;
+  readonly status: "pending" | "inProgress" | "completed";
+}
+
+export interface InspectorPlan {
+  readonly steps: ReadonlyArray<InspectorPlanStep>;
+  readonly completed: number;
+  /** The step in progress. */
+  readonly current: string | null;
+  readonly proposed: { readonly implemented: boolean; readonly threadId: ThreadId | null } | null;
+}
+
+export type InspectorAgentStatus = "working" | "idle" | "completed" | "failed" | "stopped";
+
+export interface InspectorAgent {
+  readonly id: string;
+  readonly title: string;
+  readonly status: InspectorAgentStatus;
+  readonly activity: string | null;
+  /** ISO start of the current activation while working. */
+  readonly since: string | null;
+}
+
+export interface InspectorAgents {
+  readonly hasAgents: boolean;
+  /** Every listed agent, so the views can say how many rows they left out. */
+  readonly total: number;
+  readonly working: number;
+  readonly idle: number;
+  readonly finished: number;
+  /** "2 working · 1 finished", or null without agents. */
+  readonly summary: string | null;
+  /** Working agents first, at most INSPECTOR_AGENT_ROW_LIMIT. */
+  readonly rows: ReadonlyArray<InspectorAgent>;
+}
+
+export interface InspectorTerminal {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface InspectorContext {
+  readonly usedTokens: number;
+  readonly maxTokens: number | null;
+  readonly percentage: number | null;
+  readonly tone: InspectorTone;
+  readonly totalProcessedTokens: number | null;
+  readonly compactsAutomatically: boolean;
+  readonly autoCompactThreshold: number | null;
 }
 
 export interface InspectorModel {
-  readonly sections: ReadonlyArray<InspectorSectionModel>;
+  readonly isDraft: boolean;
+  readonly status: InspectorStatus;
+  readonly facts: ReadonlyArray<InspectorFact>;
+  readonly attention: ReadonlyArray<InspectorAttentionItem>;
+  readonly workspace: ReadonlyArray<InspectorWorkspaceEntry>;
+  readonly pullRequest: InspectorPullRequest | null;
+  /** Null outside a git repository. */
+  readonly changes: InspectorChanges | null;
+  readonly plan: InspectorPlan;
+  readonly agents: InspectorAgents;
+  readonly terminals: ReadonlyArray<InspectorTerminal>;
+  readonly context: InspectorContext | null;
   /** Drives the header button dot. */
   readonly needsAttention: boolean;
 }
 
-export const INSPECTOR_TOP_FILE_COUNT = 5;
-export const INSPECTOR_PLAN_STEP_LIMIT = 8;
+export const INSPECTOR_AGENT_ROW_LIMIT = 5;
+export const CONTEXT_WARNING_PERCENTAGE = 75;
+export const CONTEXT_DANGER_PERCENTAGE = 90;
 
-const REQUEST_KIND_LABELS: Record<ProviderRequestKind, string> = {
-  command: "Run a command",
-  "file-read": "Read a file",
-  "file-change": "Change files",
-  "mcp-elicitation": "Tool request",
-  permission: "Permission",
+const APPROVAL_LABELS: Record<ProviderRequestKind, string> = {
+  command: "Command approval",
+  "file-read": "File read approval",
+  "file-change": "File change approval",
+  "mcp-elicitation": "App access approval",
+  permission: "App permission approval",
 };
 
-const RESPOND = {
-  label: "Respond",
-  action: { kind: "focus-composer" },
-} as const satisfies InspectorRow["action"];
+const PULL_REQUEST_TONES: Record<keyof typeof PULL_REQUEST_STATE_PRESENTATION, InspectorTone> = {
+  open: "success",
+  draft: "muted",
+  closed: "danger",
+  merged: "accent",
+};
 
-const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 
-function statusRow(inputs: InspectorInputs): InspectorRow {
+function deriveStatus(inputs: InspectorInputs): InspectorStatus {
   const { thread } = inputs;
-  const base = { id: "state", icon: "status" } as const;
+  const base = { detail: null, since: null, progress: null, respond: false };
   if (thread.isDraft) {
     return {
       ...base,
       label: "Draft",
-      value: "Send a message to start this thread.",
       tone: "muted",
+      detail: "Send a message to start this thread.",
     };
   }
   if (inputs.approvals.length > 0) {
-    return { ...base, label: "Needs approval", tone: "warning", action: RESPOND };
+    const [first] = inputs.approvals;
+    return {
+      ...base,
+      label: "Needs approval",
+      tone: "warning",
+      detail: first ? APPROVAL_LABELS[first.requestKind] : null,
+      respond: true,
+    };
   }
   if (inputs.userInputs.length > 0) {
-    return { ...base, label: "Needs input", tone: "input", action: RESPOND };
+    const question = inputs.userInputs[0]?.questions[0]?.question ?? null;
+    return { ...base, label: "Needs input", tone: "accent", detail: question, respond: true };
   }
   const session = thread.session;
   if (session?.status === "error" || thread.latestTurn?.state === "error") {
-    return {
-      ...base,
-      label: "Error",
-      tone: "danger",
-      ...(session?.lastError ? { value: session.lastError, detail: session.lastError } : {}),
-    };
+    return { ...base, label: "Error", tone: "danger", detail: session?.lastError ?? null };
   }
   if (session?.status === "running" || session?.status === "starting") {
-    const since = resolveWorkingStartedAt({ latestTurn: thread.latestTurn, session });
     const progress = thread.planProgress;
     return {
       ...base,
       label: session.status === "starting" ? "Connecting" : "Working",
       tone: "info",
-      ...(progress
-        ? {
-            value: `${progress.step} (${progress.completedSteps}/${progress.totalSteps})`,
-            detail: progress.step,
-          }
-        : {}),
-      ...(since ? { since } : {}),
+      detail: progress?.step ?? null,
+      since: resolveWorkingStartedAt({ latestTurn: thread.latestTurn, session }),
+      progress: progress
+        ? { completed: progress.completedSteps, total: progress.totalSteps }
+        : null,
     };
   }
+  if (
+    thread.interactionMode === "plan" &&
+    inputs.proposedPlan !== null &&
+    inputs.proposedPlan.implementedAt === null
+  ) {
+    return { ...base, label: "Plan ready", tone: "accent", detail: "Review it in the chat." };
+  }
   if (thread.backgroundLiveness === "working") {
-    return { ...base, label: "Working", value: "Background agents", tone: "info" };
+    return { ...base, label: "Working", tone: "info", detail: "Background agents" };
   }
   if (thread.backgroundLiveness === "monitoring") {
     return { ...base, label: "Monitoring", tone: "info" };
@@ -217,29 +317,53 @@ function statusRow(inputs: InspectorInputs): InspectorRow {
   if (session?.status === "interrupted" || thread.latestTurn?.state === "interrupted") {
     return { ...base, label: "Interrupted", tone: "muted" };
   }
-  return { ...base, label: "Ready" };
+  return { ...base, label: "Ready", tone: "success" };
 }
 
-function statusSection(inputs: InspectorInputs): InspectorSectionModel {
-  const row = statusRow(inputs);
-  const rows: InspectorRow[] = [row];
-  if (!inputs.thread.isDraft) {
-    if (inputs.providerLabel) {
-      rows.push({ id: "provider", icon: "provider", name: "Model", label: inputs.providerLabel });
-    }
-    const runtime =
-      runtimeModeConfig[inputs.thread.runtimeMode]?.label ?? inputs.thread.runtimeMode;
-    const interaction = inputs.thread.interactionMode === "plan" ? "Plan mode" : "Default mode";
-    rows.push({ id: "mode", icon: "mode", name: "Mode", label: `${runtime} · ${interaction}` });
+function deriveFacts(inputs: InspectorInputs): ReadonlyArray<InspectorFact> {
+  if (inputs.thread.isDraft) return [];
+  const facts: InspectorFact[] = [];
+  const provider = inputs.provider;
+  if (provider) {
+    facts.push({
+      id: "model",
+      label: provider.model,
+      title: `${provider.displayName} · ${provider.model}`,
+      ...(provider.driverKind ? { driverKind: provider.driverKind } : {}),
+    });
   }
-  return {
-    id: "status",
-    title: "Status",
-    rows,
-    summary: row.value ? `${row.label} · ${row.value}` : row.label,
-    summaryTone: row.tone ?? "default",
-    essential: true,
-  };
+  const runtime = runtimeModeConfig[inputs.thread.runtimeMode];
+  facts.push({
+    id: "runtime",
+    label: runtime?.label ?? inputs.thread.runtimeMode,
+    title: runtime ? `${runtime.label}: ${runtime.description}` : inputs.thread.runtimeMode,
+  });
+  if (inputs.thread.interactionMode === "plan") {
+    facts.push({ id: "interaction", label: "Plan mode", title: "Plan mode" });
+  }
+  return facts;
+}
+
+function deriveAttention(inputs: InspectorInputs): ReadonlyArray<InspectorAttentionItem> {
+  return [
+    ...inputs.approvals.map((approval): InspectorAttentionItem => ({
+      id: `approval:${approval.requestId}`,
+      kind: "approval",
+      label: APPROVAL_LABELS[approval.requestKind] ?? "Approval",
+      detail: approval.detail ?? approval.appName ?? null,
+      mono: approval.requestKind !== "mcp-elicitation",
+    })),
+    ...inputs.userInputs.map((input): InspectorAttentionItem => {
+      const count = input.questions.length;
+      return {
+        id: `input:${input.requestId}`,
+        kind: "question",
+        label: count > 1 ? plural(count, "question") : "Question",
+        detail: input.questions[0]?.question ?? null,
+        mono: false,
+      };
+    }),
+  ];
 }
 
 function syncValue(status: VcsStatusResult): string {
@@ -251,367 +375,253 @@ function syncValue(status: VcsStatusResult): string {
   return parts.length === 0 ? "Up to date" : parts.join(" · ");
 }
 
-function workspaceSection(inputs: InspectorInputs): InspectorSectionModel {
+const lastPathSegment = (path: string) =>
+  path.replace(/\\/g, "/").replace(/\/+$/, "").split("/").at(-1) || path;
+
+function deriveWorkspace(inputs: InspectorInputs): ReadonlyArray<InspectorWorkspaceEntry> {
   const { thread, git } = inputs;
-  const rows: InspectorRow[] = [];
+  const entries: InspectorWorkspaceEntry[] = [];
   if (inputs.projectName) {
-    rows.push({ id: "project", icon: "project", name: "Project", label: inputs.projectName });
+    entries.push({ id: "project", name: "Project", value: inputs.projectName });
   }
-  const branch = git.state === "ready" ? (git.status.refName ?? thread.branch) : thread.branch;
   if (git.state === "loading") {
-    rows.push({ id: "git", icon: "git", name: "Git", label: "Checking...", tone: "muted" });
+    entries.push({ id: "git", name: "Git", value: "Checking...", tone: "muted" });
   } else if (git.state === "error") {
-    rows.push({
-      id: "git",
-      icon: "git",
-      name: "Git",
-      label: "Git status unavailable",
-      detail: git.message,
-      tone: "danger",
-    });
+    entries.push({ id: "git", name: "Git", value: "Git status unavailable", tone: "danger" });
   } else if (git.state === "ready" && !git.status.isRepo) {
-    rows.push({
-      id: "git",
-      icon: "git",
-      name: "Git",
-      label: "Not a git repository",
-      tone: "muted",
-    });
+    entries.push({ id: "git", name: "Git", value: "Not a git repository", tone: "muted" });
   }
   const isRepo = git.state !== "ready" || git.status.isRepo;
+  const branch = git.state === "ready" ? (git.status.refName ?? thread.branch) : thread.branch;
   if (isRepo && branch) {
-    rows.push({ id: "branch", icon: "branch", name: "Branch", label: branch });
+    entries.push({ id: "branch", name: "Branch", value: branch, mono: true, copy: branch });
   }
   if (git.state === "ready" && git.status.isRepo) {
-    rows.push({ id: "sync", icon: "sync", name: "Remote", label: syncValue(git.status) });
+    entries.push({ id: "remote", name: "Remote", value: syncValue(git.status) });
   }
   if (thread.worktreePath) {
-    rows.push({
+    entries.push({
       id: "worktree",
-      icon: "worktree",
       name: "Worktree",
-      label: thread.worktreePath,
-      detail: thread.worktreePath,
-      action: {
-        label: "Copy path",
-        action: { kind: "copy", text: thread.worktreePath, label: "Worktree path" },
-      },
+      value: thread.worktreePath,
+      short: lastPathSegment(thread.worktreePath),
+      mono: true,
+      copy: thread.worktreePath,
     });
   }
-  const pullRequest = inputs.supportsPullRequests ? thread.linkedPullRequest : null;
-  const statusPr = git.state === "ready" ? git.status.pr : null;
-  if (pullRequest) {
-    const known = statusPr?.number === pullRequest.number ? statusPr : null;
-    rows.push({
-      id: "pull-request",
-      icon: "pull-request",
-      name: "Pull request",
-      label: known
-        ? `#${pullRequest.number} · ${pullRequestStateLabel(known)}`
-        : `#${pullRequest.number}`,
-      ...(known ? { value: known.title, detail: known.title } : {}),
-      action: { label: "Open", action: { kind: "open-pull-request", pullRequest } },
-    });
-  } else if (statusPr) {
-    rows.push({
-      id: "pull-request",
-      icon: "pull-request",
-      name: "Pull request",
-      label: `#${statusPr.number} · ${pullRequestStateLabel(statusPr)}`,
-      value: statusPr.title,
-      detail: statusPr.title,
-    });
+  return entries;
+}
+
+function derivePullRequest(inputs: InspectorInputs): InspectorPullRequest | null {
+  const linked = inputs.supportsPullRequests ? inputs.thread.linkedPullRequest : null;
+  const known = inputs.git.state === "ready" ? inputs.git.status.pr : null;
+  if (linked) {
+    const status = known?.number === linked.number ? known : null;
+    return {
+      number: linked.number,
+      state: status ? pullRequestStateLabel(status) : "Linked",
+      tone: status ? pullRequestTone(status) : "default",
+      glyph: status ? pullRequestStateKey(status) : "open",
+      title: status?.title ?? null,
+      action: { kind: "open-pull-request", pullRequest: linked },
+    };
   }
-  return {
-    id: "workspace",
-    title: "Workspace",
-    rows,
-    summary: branch ?? inputs.projectName ?? "No workspace",
-    summaryTone: "default",
-    essential: false,
-  };
+  if (known) {
+    return {
+      number: known.number,
+      state: pullRequestStateLabel(known),
+      tone: pullRequestTone(known),
+      glyph: pullRequestStateKey(known),
+      title: known.title,
+      action: null,
+    };
+  }
+  return null;
 }
 
-function pullRequestStateLabel(pr: NonNullable<VcsStatusResult["pr"]>): string {
-  const state = pr.isDraft && pr.state === "open" ? "draft" : pr.state;
-  return PULL_REQUEST_STATE_PRESENTATION[state].label;
-}
+type KnownPullRequest = NonNullable<VcsStatusResult["pr"]>;
 
-function changesSection(inputs: InspectorInputs): InspectorSectionModel | null {
+const pullRequestStateKey = (pr: KnownPullRequest): InspectorPullRequestGlyph =>
+  pr.isDraft && pr.state === "open" ? "draft" : pr.state;
+const pullRequestStateLabel = (pr: KnownPullRequest) =>
+  PULL_REQUEST_STATE_PRESENTATION[pullRequestStateKey(pr)].label;
+const pullRequestTone = (pr: KnownPullRequest) => PULL_REQUEST_TONES[pullRequestStateKey(pr)];
+
+function deriveChanges(inputs: InspectorInputs): InspectorChanges | null {
   const { git, lastCheckpoint } = inputs;
   if (git.state === "none" || git.state === "error") return null;
   if (git.state === "ready" && !git.status.isRepo) return null;
-  const rows: InspectorRow[] = [];
-  let summary = "Checking...";
-  let summaryTone: InspectorTone = "muted";
+  const lastTurn =
+    lastCheckpoint?.status === "ready" && lastCheckpoint.files.length > 0
+      ? {
+          turnId: lastCheckpoint.turnId,
+          fileCount: lastCheckpoint.files.length,
+          ...lastCheckpoint.files.reduce(
+            (total, file) => ({
+              additions: total.additions + file.additions,
+              deletions: total.deletions + file.deletions,
+            }),
+            { additions: 0, deletions: 0 },
+          ),
+        }
+      : null;
   if (git.state === "loading") {
-    rows.push({ id: "checking", icon: "changes", label: "Checking...", tone: "muted" });
-  } else {
-    const tree = git.status.workingTree;
-    if (tree.files.length === 0) {
-      rows.push({ id: "none", icon: "empty", label: "No changes", tone: "muted" });
-      summary = "No changes";
-    } else {
-      const diff = { additions: tree.insertions, deletions: tree.deletions };
-      rows.push({
-        id: "working-tree",
-        icon: "changes",
-        label: plural(tree.files.length, "file"),
-        diff,
-        action: { label: "Review", action: { kind: "open-diff" } },
-      });
-      summary = `${plural(tree.files.length, "file")} +${tree.insertions} -${tree.deletions}`;
-      summaryTone = "default";
-      const top = tree.files
-        .toSorted(
-          (left, right) =>
-            right.insertions + right.deletions - (left.insertions + left.deletions) ||
-            left.path.localeCompare(right.path),
-        )
-        .slice(0, INSPECTOR_TOP_FILE_COUNT);
-      for (const file of top) {
-        rows.push({
-          id: `file:${file.path}`,
-          icon: "file",
-          label: file.path,
-          detail: file.path,
-          diff: { additions: file.insertions, deletions: file.deletions },
-        });
-      }
-    }
+    return { state: "loading", files: [], additions: 0, deletions: 0, lastTurn };
   }
-  if (lastCheckpoint?.status === "ready" && lastCheckpoint.files.length > 0) {
-    rows.push({
-      id: "last-turn",
-      icon: "turn",
-      label: "Last turn",
-      value: plural(lastCheckpoint.files.length, "file"),
-      diff: lastCheckpoint.files.reduce(
-        (total, file) => ({
-          additions: total.additions + file.additions,
-          deletions: total.deletions + file.deletions,
-        }),
-        { additions: 0, deletions: 0 },
-      ),
-      action: {
-        label: "Last turn",
-        action: { kind: "open-turn-diff", turnId: lastCheckpoint.turnId },
-      },
-    });
-  }
-  return { id: "changes", title: "Changes", rows, summary, summaryTone, essential: false };
-}
-
-function planSection(inputs: InspectorInputs): InspectorSectionModel {
-  const { activePlan, proposedPlan } = inputs;
-  const rows: InspectorRow[] = [];
-  let summary = "No plan";
-  if (activePlan && activePlan.steps.length > 0) {
-    const done = activePlan.steps.filter((step) => step.status === "completed").length;
-    summary = `${done}/${activePlan.steps.length} steps`;
-    activePlan.steps.slice(0, INSPECTOR_PLAN_STEP_LIMIT).forEach((step, index) => {
-      rows.push({
-        id: `step:${index}`,
-        icon:
-          step.status === "completed"
-            ? "step-done"
-            : step.status === "inProgress"
-              ? "step-active"
-              : "step-pending",
-        label: step.step,
-        detail: step.step,
-        tone:
-          step.status === "completed" ? "muted" : step.status === "inProgress" ? "info" : "default",
-      });
-    });
-    const hidden = activePlan.steps.length - INSPECTOR_PLAN_STEP_LIMIT;
-    if (hidden > 0) {
-      rows.push({ id: "more", icon: "empty", label: `and ${hidden} more`, tone: "muted" });
-    }
-  }
-  if (proposedPlan) {
-    const implemented = proposedPlan.implementedAt !== null;
-    if (rows.length === 0) summary = implemented ? "Plan implemented" : "Plan ready";
-    rows.push({
-      id: "proposed",
-      icon: "plan",
-      label: "Proposed plan",
-      value: implemented ? "Implemented" : "Ready",
-      tone: implemented ? "muted" : "default",
-      ...(proposedPlan.implementationThreadId
-        ? {
-            action: {
-              label: "Open",
-              action: { kind: "open-thread", threadId: proposedPlan.implementationThreadId },
-            },
-          }
-        : {}),
-    });
-  }
-  if (rows.length === 0) rows.push({ id: "none", icon: "empty", label: "No plan", tone: "muted" });
+  const tree = git.status.workingTree;
   return {
-    id: "plan",
-    title: "Plan",
-    rows,
-    summary,
-    summaryTone: summary === "No plan" ? "muted" : "default",
-    essential: false,
+    state: "ready",
+    files: tree.files
+      .toSorted(
+        (left, right) =>
+          right.insertions + right.deletions - (left.insertions + left.deletions) ||
+          left.path.localeCompare(right.path),
+      )
+      .map((file) => ({ path: file.path, additions: file.insertions, deletions: file.deletions })),
+    additions: tree.insertions,
+    deletions: tree.deletions,
+    lastTurn,
   };
 }
 
-function attentionSection(inputs: InspectorInputs): InspectorSectionModel {
-  const rows: InspectorRow[] = [
-    ...inputs.approvals.map((approval): InspectorRow => ({
-      id: `approval:${approval.requestId}`,
-      icon: "approval",
-      label: REQUEST_KIND_LABELS[approval.requestKind] ?? "Approval",
-      ...(approval.detail ? { value: approval.detail, detail: approval.detail } : {}),
-      tone: "warning",
-      action: RESPOND,
-    })),
-    ...inputs.userInputs.map((input): InspectorRow => {
-      const question = input.questions[0]?.question;
-      return {
-        id: `input:${input.requestId}`,
-        icon: "question",
-        label: input.questions.length > 1 ? plural(input.questions.length, "question") : "Question",
-        ...(question ? { value: question, detail: question } : {}),
-        tone: "input",
-        action: RESPOND,
-      };
-    }),
-  ];
-  const count = rows.length;
-  if (count === 0) {
-    rows.push({ id: "none", icon: "empty", label: "Nothing waiting on you", tone: "muted" });
-  }
+function derivePlan(inputs: InspectorInputs): InspectorPlan {
+  const steps = inputs.activePlan?.steps ?? [];
+  const proposed = inputs.proposedPlan;
   return {
-    id: "attention",
-    title: "Attention",
-    rows,
-    summary: count === 0 ? "Nothing waiting on you" : `${count} waiting on you`,
-    summaryTone: count === 0 ? "muted" : inputs.approvals.length > 0 ? "warning" : "input",
-    essential: true,
+    steps: steps.map((step) => ({ step: step.step, status: step.status })),
+    completed: steps.filter((step) => step.status === "completed").length,
+    current: steps.find((step) => step.status === "inProgress")?.step ?? null,
+    proposed: proposed
+      ? { implemented: proposed.implementedAt !== null, threadId: proposed.implementationThreadId }
+      : null,
   };
 }
 
-function agentsSection(inputs: InspectorInputs): InspectorSectionModel {
+const AGENT_STATUS: Record<RuntimeSubagent["status"], InspectorAgentStatus> = {
+  pending: "working",
+  running: "working",
+  waiting: "working",
+  idle: "idle",
+  completed: "completed",
+  failed: "failed",
+  cancelled: "stopped",
+  interrupted: "stopped",
+};
+
+/** Live rows lead with what is happening now; settled rows lead with the outcome. */
+function agentActivity(agent: RuntimeSubagent): string | null {
+  const tool = agent.lastToolName ? `▸ ${agent.lastToolName}` : null;
+  return AGENT_STATUS[agent.status] === "working"
+    ? (agent.progress ?? tool ?? agent.result ?? agent.error)
+    : (agent.error ?? agent.result ?? agent.progress ?? tool);
+}
+
+function deriveAgents(inputs: InspectorInputs): InspectorAgents {
   const { agents } = inputs;
   if (!agents.hasAgents) {
-    return {
-      id: "agents",
-      title: "Agents",
-      rows: [{ id: "none", icon: "empty", label: "No subagents", tone: "muted" }],
-      summary: "No subagents",
-      summaryTone: "muted",
-      essential: false,
-    };
+    return NO_AGENTS;
   }
   const working = agents.runningCount + agents.waitingCount;
-  const value = [
+  const summary = [
     working > 0 ? `${working} working` : null,
     agents.idleCount > 0 ? `${agents.idleCount} idle` : null,
     agents.settledCount > 0 ? `${agents.settledCount} finished` : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");
+  const members = [
+    ...agents.directAgents,
+    ...agents.workflows.flatMap((group) => {
+      const listed = [...group.phases.flatMap((phase) => phase.members), ...group.unphasedMembers];
+      return listed.length > 0 ? listed : [group.workflow];
+    }),
+  ];
+  const rank = (agent: RuntimeSubagent) => (AGENT_STATUS[agent.status] === "working" ? 0 : 1);
+  const rows = members
+    .toSorted((left, right) => rank(left) - rank(right))
+    .slice(0, INSPECTOR_AGENT_ROW_LIMIT)
+    .map((agent): InspectorAgent => ({
+      id: agent.id,
+      title: agent.title,
+      status: AGENT_STATUS[agent.status],
+      activity: agentActivity(agent),
+      since: AGENT_STATUS[agent.status] === "working" ? agent.startedAt : null,
+    }));
   return {
-    id: "agents",
-    title: "Agents",
-    rows: [
-      {
-        id: "summary",
-        icon: "agents",
-        label: "Subagents",
-        value,
-        tone: working > 0 ? "info" : "default",
-        action: { label: "Open", action: { kind: "open-agents" } },
-      },
-    ],
-    summary: value,
-    summaryTone: working > 0 ? "info" : "default",
-    essential: false,
+    hasAgents: true,
+    total: members.length,
+    working,
+    idle: agents.idleCount,
+    finished: agents.settledCount,
+    summary,
+    rows,
   };
 }
 
-function terminalsSection(inputs: InspectorInputs): InspectorSectionModel {
-  const [first] = inputs.runningTerminalIds;
-  const count = inputs.runningTerminalIds.length;
-  const label = count === 0 ? "No running terminals" : `${count} running`;
-  return {
-    id: "terminals",
-    title: "Terminals",
-    rows: [
-      first === undefined
-        ? { id: "none", icon: "empty", label, tone: "muted" }
-        : {
-            id: "running",
-            icon: "terminal",
-            label,
-            action: { label: "Open", action: { kind: "open-terminal", terminalId: first } },
-          },
-    ],
-    summary: label,
-    summaryTone: count === 0 ? "muted" : "default",
-    essential: false,
-  };
+export function contextTone(percentage: number | null): InspectorTone {
+  if (percentage === null) return "default";
+  if (percentage >= CONTEXT_DANGER_PERCENTAGE) return "danger";
+  if (percentage >= CONTEXT_WARNING_PERCENTAGE) return "warning";
+  return "default";
 }
 
-function contextSection(inputs: InspectorInputs): InspectorSectionModel {
+function deriveContext(inputs: InspectorInputs): InspectorContext | null {
   const snapshot = inputs.contextWindow;
-  const percentage = snapshot?.usedPercentage ?? null;
-  const maxTokens = snapshot?.maxTokens ?? null;
-  if (!snapshot || (percentage === null && maxTokens === null)) {
-    const label = "No context data from this provider";
-    return {
-      id: "context",
-      title: "Context",
-      rows: [{ id: "none", icon: "empty", label, tone: "muted" }],
-      summary: label,
-      summaryTone: "muted",
-      essential: false,
-    };
-  }
-  const tokens =
-    maxTokens === null
-      ? `${formatContextWindowTokens(snapshot.usedTokens)} tokens`
-      : `${formatContextWindowTokens(snapshot.usedTokens)} / ${formatContextWindowTokens(maxTokens)} tokens`;
-  const tone: InspectorTone =
-    percentage === null
-      ? "default"
-      : percentage >= 90
-        ? "danger"
-        : percentage >= 75
-          ? "warning"
-          : "default";
-  const label = percentage === null ? "Used" : `${Math.round(percentage)}% used`;
+  if (!snapshot) return null;
+  const maxTokens = snapshot.maxTokens ?? null;
+  const percentage = snapshot.usedPercentage ?? null;
+  if (maxTokens === null && percentage === null && snapshot.usedTokens === 0) return null;
   return {
-    id: "context",
-    title: "Context",
-    rows: [{ id: "usage", icon: "context", label, value: tokens, tone }],
-    summary: percentage === null ? tokens : label,
-    summaryTone: tone,
-    essential: false,
+    usedTokens: snapshot.usedTokens,
+    maxTokens,
+    percentage,
+    tone: contextTone(percentage),
+    totalProcessedTokens: snapshot.totalProcessedTokens ?? null,
+    compactsAutomatically: snapshot.compactsAutomatically === true,
+    autoCompactThreshold: snapshot.autoCompactThreshold ?? null,
   };
 }
+
+const EMPTY_PLAN: InspectorPlan = { steps: [], completed: 0, current: null, proposed: null };
+const NO_AGENTS: InspectorAgents = {
+  hasAgents: false,
+  total: 0,
+  working: 0,
+  idle: 0,
+  finished: 0,
+  summary: null,
+  rows: [],
+};
 
 export function deriveInspectorModel(inputs: InspectorInputs): InspectorModel {
-  const needsAttention = inputs.approvals.length + inputs.userInputs.length > 0;
   if (inputs.thread.isDraft) {
-    return { sections: [statusSection(inputs), workspaceSection(inputs)], needsAttention: false };
+    return {
+      isDraft: true,
+      status: deriveStatus(inputs),
+      facts: [],
+      attention: [],
+      workspace: deriveWorkspace(inputs),
+      pullRequest: null,
+      changes: null,
+      plan: EMPTY_PLAN,
+      agents: NO_AGENTS,
+      terminals: [],
+      context: null,
+      needsAttention: false,
+    };
   }
-  const changes = changesSection(inputs);
   return {
-    sections: [
-      statusSection(inputs),
-      workspaceSection(inputs),
-      ...(changes ? [changes] : []),
-      planSection(inputs),
-      attentionSection(inputs),
-      agentsSection(inputs),
-      terminalsSection(inputs),
-      contextSection(inputs),
-    ],
-    needsAttention,
+    isDraft: false,
+    status: deriveStatus(inputs),
+    facts: deriveFacts(inputs),
+    attention: deriveAttention(inputs),
+    workspace: deriveWorkspace(inputs),
+    pullRequest: derivePullRequest(inputs),
+    changes: deriveChanges(inputs),
+    plan: derivePlan(inputs),
+    agents: deriveAgents(inputs),
+    terminals: inputs.runningTerminals,
+    context: deriveContext(inputs),
+    needsAttention: inputs.approvals.length + inputs.userInputs.length > 0,
   };
 }

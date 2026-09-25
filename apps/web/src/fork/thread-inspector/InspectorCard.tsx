@@ -1,84 +1,239 @@
+import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import {
+  BotIcon,
+  FileDiffIcon,
+  FolderTreeIcon,
+  GaugeIcon,
+  GitBranchIcon,
+  HistoryIcon,
+  ListChecksIcon,
+  PanelTopIcon,
+  SquareTerminalIcon,
+} from "lucide-react";
+import { useMemo } from "react";
 
-import { useMediaQuery } from "~/hooks/useMediaQuery";
-import { ThreadInspector } from "./ThreadInspector";
+import { DiffStatLabel } from "~/components/chat/DiffStatLabel";
+import { Button } from "~/components/ui/button";
+import { Kbd } from "~/components/ui/kbd";
+import { Skeleton } from "~/components/ui/skeleton";
+import { shortcutLabelForCommand } from "~/keybindings";
+import { formatContextWindowTokens } from "~/lib/contextWindow";
+import { cn } from "~/lib/utils";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useInspectorActions } from "./actions";
+import { InspectorHero } from "./InspectorHero";
+import { deriveInspectorModel, plural, type InspectorAction, type InspectorModel } from "./model";
+import {
+  InspectorAttentionRow,
+  InspectorNote,
+  InspectorProgressBar,
+  InspectorRow,
+  inspectorToneText,
+  PullRequestStateIcon,
+} from "./parts";
+import { FORK_INSPECTOR_SECTIONS } from "./sections";
+import { useInspectorInputs } from "./useInspectorInputs";
 
-export const INSPECTOR_TRIGGER_ATTRIBUTE = "data-loom-inspector-trigger";
-const COMPACT_QUERY = "(max-width: 899px)";
-const HEADER_GAP_PX = 4;
+const CARD_ATTENTION_LIMIT = 3;
+const CARD_TERMINAL_LIMIT = 3;
 
 /**
- * The glance card, docked under the chat header at its right edge. Light dismissal: it closes
- * on a press outside it (the eye button excepted, so the button can toggle it), Escape, a
- * window resize, a header width change and after a row action. Height changes are ignored so
- * a streaming reply never closes it. Not a modal: no focus trap, no backdrop.
+ * The glance: the hero, what needs you, then one line per area. A line that has somewhere
+ * to go (the diff, the agents panel, a terminal) is a button; the card closes after it.
+ * Mounted only while the popover is open, so a closed card subscribes to nothing.
  */
 export function InspectorCard({
   threadRef,
-  header,
-  onClose,
+  onActionDone,
+  onOpenPanel,
 }: {
   threadRef: ScopedThreadRef;
-  header: HTMLElement;
-  onClose: () => void;
+  onActionDone: (action: InspectorAction) => void;
+  onOpenPanel: () => void;
 }) {
-  const cardRef = useRef<HTMLDivElement>(null);
-  // Placed once: anything that would move the header closes the card instead.
-  const [position] = useState(() => dockUnder(header));
-  const compact = useMediaQuery(COMPACT_QUERY);
-
-  useEffect(() => {
-    const onPointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node) || cardRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest(`[${INSPECTOR_TRIGGER_ATTRIBUTE}]`)) return;
-      onClose();
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented) onClose();
-    };
-    let width = header.getBoundingClientRect().width;
-    const observer = new ResizeObserver(() => {
-      const next = header.getBoundingClientRect().width;
-      if (next !== width) onClose();
-      width = next;
-    });
-    observer.observe(header);
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", onClose);
-    return () => {
-      observer.disconnect();
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", onClose);
-    };
-  }, [header, onClose]);
-
-  return createPortal(
-    <div
-      ref={cardRef}
-      role="region"
-      aria-label="Thread inspector"
-      style={{ top: position.top, right: position.right }}
-      className="dropdown-glass fixed z-40 flex w-[340px] max-w-[calc(100vw-1rem)] flex-col rounded-lg text-popover-foreground shadow-lg"
-    >
-      <div className="max-h-[60vh] overflow-y-auto overscroll-contain p-2">
-        <ThreadInspector
-          threadRef={threadRef}
-          density={compact ? "compact" : "full"}
-          onActionDone={onClose}
-        />
+  const inputs = useInspectorInputs(threadRef);
+  const model = useMemo(() => deriveInspectorModel(inputs), [inputs]);
+  const runAction = useInspectorActions(threadRef, onActionDone);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const panelShortcut = shortcutLabelForCommand(keybindings, "loom.thread-inspector.toggle");
+  const hiddenAttention = model.attention.length - CARD_ATTENTION_LIMIT;
+  return (
+    <div className="flex flex-col">
+      <div className="px-3 pt-3 pb-2">
+        <InspectorHero model={model} size="card" onAction={runAction} />
       </div>
-    </div>,
-    document.body,
+      {model.attention.length > 0 ? (
+        <div className="flex flex-col gap-1 px-1.5 pb-1.5">
+          {model.attention.slice(0, CARD_ATTENTION_LIMIT).map((item) => (
+            <InspectorAttentionRow key={item.id} item={item} />
+          ))}
+          {hiddenAttention > 0 ? (
+            <InspectorNote>{hiddenAttention} more in the chat</InspectorNote>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="flex flex-col px-1.5 pb-1.5">
+        <GlanceRows model={model} onAction={runAction} />
+        {FORK_INSPECTOR_SECTIONS.map(({ id, Component }) => (
+          <Component key={id} threadRef={threadRef} surface="card" />
+        ))}
+      </div>
+      <div className="border-t border-border/60 p-1">
+        <Button size="xs" variant="ghost" className="w-full justify-between" onClick={onOpenPanel}>
+          <span className="flex items-center gap-1.5">
+            <PanelTopIcon aria-hidden />
+            Open inspector panel
+          </span>
+          {panelShortcut ? <Kbd>{panelShortcut}</Kbd> : null}
+        </Button>
+      </div>
+    </div>
   );
 }
 
-function dockUnder(header: HTMLElement): { top: number; right: number } {
-  const rect = header.getBoundingClientRect();
-  const paddingRight = Number.parseFloat(getComputedStyle(header).paddingRight) || 0;
-  return { top: rect.bottom + HEADER_GAP_PX, right: window.innerWidth - rect.right + paddingRight };
+function GlanceRows({
+  model,
+  onAction,
+}: {
+  model: InspectorModel;
+  onAction: (action: InspectorAction) => void;
+}) {
+  const remote = model.workspace.find((entry) => entry.id === "remote");
+  const { pullRequest, changes, plan, agents, context } = model;
+  const pullRequestAction = pullRequest?.action ?? null;
+  const lastTurn = changes?.lastTurn ?? null;
+  const proposedThreadId = plan.proposed?.threadId ?? null;
+  return (
+    <>
+      {model.workspace.map((entry) =>
+        entry.id === "project" || entry.id === "remote" ? null : (
+          <InspectorRow
+            key={entry.id}
+            icon={entry.id === "worktree" ? <FolderTreeIcon /> : <GitBranchIcon />}
+            label={entry.short ?? entry.value}
+            mono={entry.mono ?? false}
+            middle={entry.mono ?? false}
+            tone={entry.tone}
+            value={entry.id === "branch" ? remote?.value : undefined}
+            tooltip={`${entry.name}: ${entry.value}`}
+            tooltipVariant={entry.mono ? "code" : "default"}
+          />
+        ),
+      )}
+      {pullRequest ? (
+        <InspectorRow
+          icon={<PullRequestStateIcon glyph={pullRequest.glyph} tone={pullRequest.tone} />}
+          label={`#${pullRequest.number}`}
+          mono
+          value={pullRequest.title ?? undefined}
+          trailing={
+            <span className={cn("shrink-0 text-2xs", inspectorToneText(pullRequest.tone))}>
+              {pullRequest.state}
+            </span>
+          }
+          onClick={pullRequestAction ? () => onAction(pullRequestAction) : undefined}
+        />
+      ) : null}
+      {changes?.state === "loading" ? (
+        <InspectorRow
+          icon={<FileDiffIcon />}
+          label="Changes"
+          value={<Skeleton className="h-2.5 w-16" />}
+        />
+      ) : changes && changes.files.length > 0 ? (
+        <InspectorRow
+          icon={<FileDiffIcon />}
+          label="Changes"
+          value={plural(changes.files.length, "file")}
+          trailing={
+            <DiffStatLabel
+              additions={changes.additions}
+              deletions={changes.deletions}
+              layout="inline"
+              className="shrink-0 text-2xs"
+            />
+          }
+          onClick={() => onAction({ kind: "open-diff" })}
+        />
+      ) : lastTurn ? (
+        <InspectorRow
+          icon={<HistoryIcon />}
+          label="Last turn"
+          value={plural(lastTurn.fileCount, "file")}
+          trailing={
+            <DiffStatLabel
+              additions={lastTurn.additions}
+              deletions={lastTurn.deletions}
+              layout="inline"
+              className="shrink-0 text-2xs"
+            />
+          }
+          onClick={() => onAction({ kind: "open-turn-diff", turnId: lastTurn.turnId })}
+        />
+      ) : changes ? (
+        <InspectorRow icon={<FileDiffIcon />} label="Changes" value="No uncommitted changes" />
+      ) : null}
+      {plan.steps.length > 0 ? (
+        <InspectorRow
+          icon={<ListChecksIcon />}
+          label="Plan"
+          value={[`${plan.completed} of ${plan.steps.length}`, plan.current]
+            .filter((part) => part !== null)
+            .join(" · ")}
+        />
+      ) : plan.proposed ? (
+        <InspectorRow
+          icon={<ListChecksIcon />}
+          label="Plan"
+          tone={plan.proposed.implemented ? "default" : "accent"}
+          value={plan.proposed.implemented ? "Implemented" : "Ready to review"}
+          onClick={
+            proposedThreadId
+              ? () => onAction({ kind: "open-thread", threadId: proposedThreadId })
+              : undefined
+          }
+        />
+      ) : null}
+      {agents.hasAgents ? (
+        <InspectorRow
+          icon={<BotIcon />}
+          label="Agents"
+          value={agents.summary ?? undefined}
+          onClick={() => onAction({ kind: "open-agents" })}
+        />
+      ) : null}
+      {model.terminals.slice(0, CARD_TERMINAL_LIMIT).map((terminal) => (
+        <InspectorRow
+          key={terminal.id}
+          icon={<SquareTerminalIcon />}
+          label={terminal.label}
+          value="running"
+          onClick={() => onAction({ kind: "open-terminal", terminalId: terminal.id })}
+        />
+      ))}
+      {context ? (
+        <InspectorRow
+          icon={<GaugeIcon />}
+          label="Context"
+          tone={context.tone === "default" ? "default" : context.tone}
+          value={
+            context.percentage !== null && context.maxTokens !== null
+              ? `${Math.round(context.percentage)}% · ${formatContextWindowTokens(context.usedTokens)} of ${formatContextWindowTokens(context.maxTokens)}`
+              : `${formatContextWindowTokens(context.usedTokens)} tokens`
+          }
+          trailing={
+            context.percentage !== null ? (
+              <InspectorProgressBar
+                value={context.percentage}
+                tone={context.tone}
+                label="Context window usage"
+                className="w-10"
+              />
+            ) : null
+          }
+        />
+      ) : null}
+    </>
+  );
 }

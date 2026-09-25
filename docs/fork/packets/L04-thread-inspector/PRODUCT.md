@@ -10,60 +10,73 @@ changed, and does it need me?", with a way to jump straight to whatever needs at
 
 ## What the user can do
 
-- Open the Inspector tab in the right panel for a full status card of the current thread.
-- Show the card from the eye button in the chat header: it docks under the header at the
-  chat's top-right corner and closes on the next interaction elsewhere, so a glance costs
-  one click and no cleanup.
+Two surfaces read one model, so a value can never differ between them:
+
+- **The card** is the glance. It opens from the eye button in the chat header, anchored
+  under the button with its right edge on the button's right edge, and closes on the next
+  interaction elsewhere. It shows the hero, what needs you, then one line per area; a line
+  with somewhere to go is a button. Its footer opens the panel.
+- **The panel** is the workbench: the Inspector tab in the right panel. It shows the hero,
+  then every area as a section with its tools.
+- The **hero** on both: the status (Working with elapsed time, the current plan step and
+  step progress; Needs approval or Needs input with a **Respond** button; Plan ready; Ready;
+  Interrupted; Error with the message; Draft) and fact chips: the model with its provider
+  glyph, the runtime mode, plan mode.
 - Read, at a glance:
-  - **Status:** Working (with elapsed time and the current plan step), Needs approval,
-    Needs input, Ready, Interrupted, Error (with the message), provider and model, runtime
-    mode, plan or default mode.
-  - **Workspace:** project, branch, worktree path (copy), ahead and behind counts, linked
-    pull request with its state.
-  - **Changes:** uncommitted files and lines added and removed, the top five files, and the
-    files changed in the last turn.
-  - **Plan:** the active plan's steps with their state, and whether a proposed plan is
-    ready or was implemented in another thread.
-  - **Attention:** pending approvals (kind and detail) and pending questions.
-  - **Agents:** running, waiting, idle and finished subagents.
-  - **Terminals:** running terminal count.
-  - **Context:** context window use as a percentage and tokens, when the provider reports it.
-- Jump: "Review changes" opens the diff panel; "Last turn" opens it on the last turn;
-  "Open agents", "Open pull request", "Open terminal"; "Respond" focuses the composer where
-  the approval or question waits; a proposed plan's implementation thread opens that
-  thread.
+  - **Needs you:** each pending approval (kind and command or path) and question.
+  - **Workspace:** project, branch, ahead and behind, worktree path, pull request with its
+    state and title. The panel adds copy buttons for the branch and the path.
+  - **Changes:** file count and lines added and removed; the panel lists the largest files
+    with per-file stats and points to the diff panel for the rest, plus the last turn's
+    files.
+  - **Plan:** progress and the current step; the panel lists every step with its state. A
+    proposed plan shows as ready to review or implemented in another thread.
+  - **Agents:** working, idle and finished counts; the panel lists the agents, working ones
+    first, with what each is doing and for how long.
+  - **Terminals:** each running terminal by its label.
+  - **Context:** percentage and tokens with a bar, when the provider reports it; the panel
+    adds the total processed and the automatic compaction note.
+- Jump: a card line or a panel tool opens the diff panel (all changes, or the last turn's),
+  the agents panel, the pull request, a terminal, or the thread that implemented a plan.
+  **Respond** focuses the composer where the approval or question waits.
 
 ## Entry points
 
-| Action         | Where                                                                                                                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Open the panel | Right panel launcher and "+" menu ("Inspector", letter I); palette "Show thread inspector"; keybinding command `loom.thread-inspector.toggle` (unbound; toggles).                                       |
-| Show the card  | Header eye button (left of the project scripts control); palette "Show thread inspector card"; keybinding command `loom.thread-inspector.card` (unbound; toggles).                                      |
-| Close          | Close the panel tab. The card closes on the eye button, Escape, a press outside it, a window resize, a chat pane width change (opening a panel, dragging a splitter), or after one of its jump actions. |
-| See the state  | The header button shows a small dot when the thread needs attention (approval or question), so the card is not needed to notice it.                                                                     |
+| Action         | Where                                                                                                                                                                                                            |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Open the panel | Right panel launcher and "+" menu ("Inspector", letter I); palette "Show thread inspector"; keybinding command `loom.thread-inspector.toggle` (unbound; toggles); the card's footer "Open inspector panel".      |
+| Show the card  | Header eye button (first header action); palette "Show thread inspector card"; keybinding command `loom.thread-inspector.card` (unbound; toggles).                                                               |
+| Close          | Close the panel tab. The card closes on the eye button, Escape, a press outside it, or after one of its lines or its footer; it stays open while a reply streams and follows the button when the header reflows. |
+| See the state  | The header button shows a small dot when the thread needs attention (approval or question), so the card is not needed to notice it.                                                                              |
 
 No settings.
 
 ## Copy
 
 - Header button tooltip: "Thread inspector" (icon: eye).
-- Section titles: "Status", "Workspace", "Changes", "Plan", "Attention", "Agents",
-  "Terminals", "Context".
-- Empty rows: "No changes", "No plan", "Nothing waiting on you", "No subagents", "No
-  running terminals", "No context data from this provider".
-- Actions: "Review", "Last turn", "Open", "Respond", "Copy path".
+- Hero statuses: "Draft", "Needs approval", "Needs input", "Error", "Connecting", "Working",
+  "Plan ready", "Monitoring", "Interrupted", "Ready". Fact chips: the model name, the runtime
+  mode label, "Plan mode".
+- Panel section titles: "Needs you", "Workspace", "Changes", "Plan", "Agents", "Terminals",
+  "Context". Card lines: "Changes", "Last turn", "Plan", "Agents", "Context", plus the branch,
+  worktree, pull request and terminal lines named by their values.
+- Actions: "Respond", "Open diff", "Show" (last turn), "Open" (pull request, terminal),
+  "Open thread", "Agents panel", "Copy branch", "Copy worktree", "Open inspector panel".
+- Empty and overflow copy: "No uncommitted changes", "N more in the diff panel", "N more in
+  the agents panel", "N more in the chat".
 - Not a git repository: "Not a git repository" in Workspace; Changes hidden.
 - Draft thread: "Send a message to start this thread."
 
 ## States
 
-- Loading: rows that depend on the git status query show a muted "Checking..." until the
-  first result; everything else is synchronous from thread state.
-- Empty: per-row empty copy above.
-- Error: a failed git status shows "Git status unavailable" with the error in a tooltip.
-- Disabled: draft threads show only Status and Workspace.
-- The card never animates continuously; a working status uses upstream's static indicator
-  and an elapsed time that updates at most once per second only while visible.
+- Loading: Workspace shows a muted "Checking..." and Changes shows placeholder lines until
+  the first git status; everything else is synchronous from thread state.
+- Empty: sections with nothing to show are omitted; Changes says "No uncommitted changes".
+- Error: a failed git status shows "Git status unavailable"; a session error shows the
+  message under the status.
+- Disabled: draft threads show only the hero and Workspace.
+- Nothing animates continuously: static dots, an elapsed time that updates once per second
+  only while visible, and bars that move only when their value changes.
 
 ## Surfaces and connection modes
 
@@ -73,12 +86,14 @@ unrelated). Remote and upstream servers: supported (client-only).
 ## Decisions
 
 - Client-only, like old Loom's inspector: no RPCs, no persisted state.
-- The card is opened by its header button, docked under the header at the chat's top-right
-  corner and rendered in a portal, so it needs one header seam and nothing in the chat
-  layout.
+- The card is the app's popover (base-ui) anchored to the eye button, so it uses the same
+  glass surface, placement, viewport collision handling and dismissal as every other menu,
+  and needs one header seam and nothing in the chat layout.
 - Light dismissal only, confirmed by Kyle (and his last recorded direction for old Loom's
   card, ledger 1359): the card opens from the eye button, the palette or its keybinding,
   and the first interaction elsewhere closes it. There is no pin on the card; the panel tab
   is the keep-open view for long watching.
-- Compact density (Status and Attention first, other sections collapsed to one line each)
-  when the window is narrower than 900 px.
+- One typed model for both surfaces. The card is already the compact form, so there is no
+  separate compact density.
+- Lists are capped where the owning panel does the real work: eight files in the panel's
+  Changes, five agents, three approvals and terminals on the card.

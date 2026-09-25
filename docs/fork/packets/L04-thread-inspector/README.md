@@ -1,24 +1,23 @@
 # L04: Thread Inspector
 
-Status: Ready to build.
+Status: Built; manual check pending.
 
-One status card for the current thread: what it is doing, where it works (project, branch,
+One status view for the current thread: what it is doing, where it works (project, branch,
 worktree, pull request), what it changed (uncommitted files, last turn's files), its plan,
 what it is waiting for (approvals, questions), its subagents, terminals and context window
-use, each with a jump button to the place that handles it. The card is available as a right
-panel tab and as a small card shown from an eye button in the chat header, docked at the
-chat's top-right corner. It is entirely client-side: every value comes from state the web app already
-holds, so it works against any T3 server.
+use, each with a jump to the place that handles it. It comes as a glance card anchored under
+an eye button in the chat header and as a right panel tab that shows everything with tools.
+Both read one model. It is entirely client-side: every value comes from state the web app
+already holds, so it works against any T3 server.
 
 ## Scope
 
 - In:
   - Right panel `thread-inspector` ("Inspector", launcher letter I).
-  - An eye toggle in the chat header that shows the card docked under the header at the
-    chat's top-right corner. Like old Loom's final design (ledger 1359) it light-dismisses:
-    a press outside it, Escape, a window resize, a width change of the chat pane, or a jump
-    from one of its rows closes it.
-  - Sections: Status, Workspace, Changes, Plan, Attention, Agents, Terminals, Context.
+  - An eye toggle in the chat header that shows the card anchored under the button. Like
+    old Loom's final design (ledger 1359) it light-dismisses: a press outside it, Escape, or
+    a jump from one of its lines closes it.
+  - Areas: the status hero, Needs you, Workspace, Changes, Plan, Agents, Terminals, Context.
   - Jump actions: open the diff panel (all changes, or the last turn's changes), the
     subagents panel, the pull requests panel, a running terminal, and focus the composer
     for pending approvals and questions.
@@ -66,8 +65,8 @@ It creates any that are missing, exactly as EXTENSION-POINTS.md specifies.
 
 ## Size
 
-About 900 to 1,200 lines including tests, all in `apps/web/src/fork/thread-inspector/`, plus
-the extension points if missing.
+About 1,800 lines including tests, all in `apps/web/src/fork/thread-inspector/`, plus the
+extension points if missing.
 
 ## How an agent starts
 

@@ -2,30 +2,25 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 
-import { toastManager } from "~/components/ui/toast";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { useDiffPanelStore } from "~/diffPanelStore";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import type { InspectorAction } from "./model";
 
-/** Runs an inspector row action; `onDone` lets the card close after a jump. */
+/** Runs an inspector jump; `onDone` lets the card close after it. */
 export function useInspectorActions(
   threadRef: ScopedThreadRef,
-  onDone?: () => void,
+  onDone?: (action: InspectorAction) => void,
 ): (action: InspectorAction) => void {
   const navigate = useNavigate();
   const composerHandle = useComposerHandleContext();
-  const { copyToClipboard } = useCopyToClipboard<string>({
-    onCopy: (label) => toastManager.add({ type: "success", title: `${label} copied` }),
-    onError: (error) =>
-      toastManager.add({ type: "error", title: "Failed to copy", description: error.message }),
-  });
   return (action: InspectorAction) => {
     const panels = useRightPanelStore.getState();
     switch (action.kind) {
       case "open-diff":
+        // Uncommitted changes, whatever scope the diff panel showed last.
+        useDiffPanelStore.getState().selectGitScope(threadRef, "unstaged");
         panels.open(threadRef, "diff");
         break;
       case "open-turn-diff":
@@ -50,10 +45,7 @@ export function useInspectorActions(
           params: buildThreadRouteParams(scopeThreadRef(threadRef.environmentId, action.threadId)),
         });
         break;
-      case "copy":
-        copyToClipboard(action.text, action.label);
-        break;
     }
-    onDone?.();
+    onDone?.(action);
   };
 }

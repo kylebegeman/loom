@@ -4,6 +4,10 @@ import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelS
 import { forkPanelSurface } from "../panels/registry";
 import { THREAD_INSPECTOR_PANEL_ID } from "./panel";
 
+export function openThreadInspectorPanel(threadRef: ScopedThreadRef): void {
+  useRightPanelStore.getState().openSurface(threadRef, forkPanelSurface(THREAD_INSPECTOR_PANEL_ID));
+}
+
 /** Closes the right panel when the inspector is its active tab, otherwise opens the inspector. */
 export function toggleThreadInspectorPanel(threadRef: ScopedThreadRef): void {
   const panels = useRightPanelStore.getState();
@@ -11,6 +15,6 @@ export function toggleThreadInspectorPanel(threadRef: ScopedThreadRef): void {
   if (active?.kind === "fork" && active.panelId === THREAD_INSPECTOR_PANEL_ID) {
     panels.close(threadRef);
   } else {
-    panels.openSurface(threadRef, forkPanelSurface(THREAD_INSPECTOR_PANEL_ID));
+    openThreadInspectorPanel(threadRef);
   }
 }

@@ -10,6 +10,7 @@ import {
   type OrchestrationThreadActivity,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
+import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useMemo } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
@@ -23,9 +24,9 @@ import {
 } from "~/session-logic";
 import { useProject, useServerConfigs, useThread, useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
-import { useThreadRunningTerminalIds } from "~/state/terminalSessions";
+import { useKnownTerminalSessions } from "~/state/terminalSessions";
 import { vcsEnvironment } from "~/state/vcs";
-import type { InspectorGitState, InspectorInputs } from "./model";
+import type { InspectorGitState, InspectorInputs, InspectorProvider } from "./model";
 
 const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
 
@@ -82,15 +83,25 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
         : null,
     [latestTurnId, latestTurnSettled, proposedPlans],
   );
-  const runningTerminalIds = useThreadRunningTerminalIds({
+  const terminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
     threadId: thread === null ? null : threadRef.threadId,
   });
+  const runningTerminals = useMemo(
+    () =>
+      terminalSessions
+        .filter((candidate) => candidate.state.hasRunningSubprocess)
+        .map((candidate) => ({
+          id: candidate.target.terminalId,
+          label: resolveTerminalSessionLabel(candidate.target.terminalId, candidate.state.summary),
+        })),
+    [terminalSessions],
+  );
 
   const providers = serverConfig?.providers;
   const modelSelection = thread?.modelSelection ?? null;
   const providerInstanceId = session?.providerInstanceId ?? modelSelection?.instanceId ?? null;
-  const providerLabel = useMemo(() => {
+  const provider = useMemo((): InspectorProvider | null => {
     if (!providers || !modelSelection || providerInstanceId === null) return null;
     const entry = deriveProviderInstanceEntries(providers).find(
       (candidate) => candidate.instanceId === providerInstanceId,
@@ -98,7 +109,11 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
     const model =
       entry?.models.find((candidate) => candidate.slug === modelSelection.model)?.name ??
       modelSelection.model;
-    return entry ? `${entry.displayName} · ${model}` : model;
+    return {
+      displayName: entry?.displayName ?? modelSelection.instanceId,
+      model,
+      driverKind: entry?.driverKind ?? null,
+    };
   }, [modelSelection, providerInstanceId, providers]);
 
   const isDraft = thread === null;
@@ -127,7 +142,7 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
         linkedPullRequest,
       },
       projectName,
-      providerLabel,
+      provider,
       supportsPullRequests,
       git,
       lastCheckpoint,
@@ -136,7 +151,7 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
       approvals: pending.approvals,
       userInputs: pending.userInputs,
       agents,
-      runningTerminalIds,
+      runningTerminals,
       contextWindow,
     }),
     [
@@ -155,8 +170,8 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
       planProgress,
       projectName,
       proposedPlan,
-      providerLabel,
-      runningTerminalIds,
+      provider,
+      runningTerminals,
       runtimeMode,
       session,
       supportsPullRequests,
