@@ -145,7 +145,7 @@ jobs:
               $GITHUB_STEP_SUMMARY.
 
       # Off unless the repository variable LOOM_AUTO_MERGE is "true". Landing
-      # still builds and installs from your Mac with `scripts/fork/loom.sh land`.
+      # still builds and installs from Terminal on your Mac with `scripts/fork/loom.sh land`.
       - name: Merge automatically
         if: vars.LOOM_AUTO_MERGE == 'true' && steps.integrate.outputs.code == '0' && startsWith(steps.integrate.outputs.branch, 'integrate/') && env.DRY_RUN != 'true'
         env:

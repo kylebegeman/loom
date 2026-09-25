@@ -476,7 +476,7 @@ open_pr() {
     --title "chore(fork): integrate upstream $tag" \
     --body "Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests pass, and $(printf '%s, ' "${TYPECHECK_DIRS[@]}" | sed 's/, $//') typecheck.
 
-Land it from your Mac with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, builds and installs. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
+Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, builds and installs. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
 
 Upstream added these workflows. The loom-upstream workflow disables every non-fork workflow on its next run:
 $added}"

@@ -117,7 +117,9 @@ When upstream has a stable release that `main` lacks, it merges it on
 `integrate/<tag>`, runs the fork's checks and opens a pull request. If the merge conflicts
 or a check fails, Claude (Opus 5.5, high effort) repairs it on the same branch within the
 seam rules and says what it changed on the pull request, or opens a draft marked "needs
-Kyle" when it cannot. Nothing merges by itself. Review the pull request, then land it:
+Kyle" when it cannot. Nothing merges or installs by itself. Review the pull request, then
+land it from Terminal, not from inside Loom: installing quits Loom, and `land` refuses to
+run where that would kill it midway.
 
 ```sh
 scripts/fork/loom.sh land
