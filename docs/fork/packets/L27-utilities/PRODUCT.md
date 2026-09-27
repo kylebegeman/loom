@@ -92,7 +92,50 @@ Right panel as the home, palette as the fast path, dialog as the fallback.
 
 ## Decisions
 
+- **Encode/decode collection confirmed (Kyle, 2026-09-27):** keep all six tools:
+  Base64, URL encoding, HTML entities, JSON string escaping, Basic Auth headers and JWT
+  decoding. Keep the text-focused scope; file-to-Base64 conversion and a binary/hex
+  inspector are not additions to this packet. JWT remains decode-only, without signature
+  verification. Preserve valid Unicode and meaningful whitespace through the selected
+  transformation, explain invalid input, clear stale results, and provide examples and
+  copy controls. Inputs remain local and unsaved as specified above.
+- **Hashes collection confirmed (Kyle, 2026-09-27):** keep both the hash and HMAC
+  calculators. Default to SHA-256, UTF-8 text input and hexadecimal output; retain the
+  listed algorithm and encoding alternatives. Preserve the exact input, including
+  whitespace and line endings, without silent trimming. HMAC keys remain local and
+  unsaved. Uploaded-file hashing is outside this packet. Occasional use is sufficient
+  value for these tools; frequent use is not a requirement for inclusion.
+- **Generators collection confirmed (Kyle, 2026-09-27):** keep UUID, ULID, password,
+  random token and Lorem ipsum. Use explicit Generate/Regenerate actions and copy controls,
+  with bulk output where specified. Opening a tool or changing options does not generate
+  or replace values automatically. Keep the last generated result with the options that
+  produced it; indicate when edited options await regeneration. Generated values remain
+  local and unsaved. UUID validation and ULID timestamp inspection can still update live.
+- **Conversions collection confirmed (Kyle, 2026-09-27):** keep number bases, timestamps,
+  colors, case conversion, cron explanations and chmod. Kyle expects to use all six often.
+  Timestamps show UTC and local time together, clearly label seconds versus milliseconds,
+  and expose an input-unit selector. Cron supports standard five-field syntax and the
+  documented macros, names the local time zone used for its next five runs, and rejects
+  unsupported dialects explicitly. It only explains schedules, never installs or runs one.
+  chmod calculates permissions and a copyable command, never changes files. Keep live
+  results and copy controls for these transformations.
+- **Text collection confirmed (Kyle, 2026-09-27):** keep JSON formatting, list-to-JSON/CSV,
+  text diff, slugify, text statistics and the regex tester. JSON key sorting, list trimming
+  and dropping empty lines are explicit opt-in options. Diff compares exactly by default,
+  with optional whitespace ignoring. Statistics distinguish character counts from bytes.
+  Regex uses JavaScript syntax, highlights matches and capture groups, and stops matching
+  after one second in its worker. Replacement previews remain outside scope.
 - Client-only. No server, MCP or CLI. Agents do these things in a shell.
+- **Web/network collection confirmed (Kyle, 2026-09-27):** keep the URL parser/editor,
+  query string-to-JSON converter, user-agent parser and CIDR calculator. URL editing
+  rebuilds a preview without navigating or sending requests. Query conversion preserves
+  repeated parameters as arrays. User-agent results identify common browsers, operating
+  systems and likely device categories, reporting unknown information rather than
+  implying precise device identification. CIDR supports IPv4 and IPv6 ranges and address
+  containment. All four run locally, without network scans or configuration changes.
+- **Collection review complete (Kyle, 2026-09-27):** all six collections and all 29 tools
+  are retained as one implement-now packet, with panel, palette and no-thread dialog
+  access. The decisions above settle the collection review; implementation has not started.
 - No new dependencies: the web app already ships `@noble/hashes` (hashes, HMAC, MD5 and
   SHA-1 through `@noble/hashes/legacy`), `jose` (`decodeJwt`, `decodeProtectedHeader`),
   `culori` (color spaces) and `@pierre/diffs` (diff rendering).

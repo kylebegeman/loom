@@ -1,5 +1,9 @@
 # L28 testing
 
+> Superseded V1 reference. L28 now retains account failover and is deferred until V2
+> ships. Do not execute this design or treat its schemas, defaults and provider restrictions
+> as final. [PRODUCT.md](./PRODUCT.md) records the current scope and deferred questions.
+
 Follow AGENTS.md: focused tests, no repo-wide checks, no real sleeps. Timers run on
 Effect's `TestClock`; asynchronous steps are awaited through `Deferred`s or the service's
 snapshot `PubSub`, never by waiting.

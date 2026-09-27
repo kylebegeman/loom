@@ -1,6 +1,16 @@
 # L21: Skill registry and creation lab
 
-Status: Ready to build.
+Status: Deferred until Orchestrator V2 ships. Kyle confirmed on 2026-09-27.
+
+Retain the complete skill inventory, management and creation-lab proposal below. Revisit
+released provider/account discovery, skill enablement and test-thread behavior before
+finalizing implementation contracts. There is no deadline and this does not block other
+work. Do not build a partial replacement or a speculative V2 adapter while waiting.
+
+The existing composer `$` picker covers invoking skills, not the management UI proposed
+here. Deferral preserves that distinction. The technical, seam, implementation and testing
+files are historical V1 designs, not instructions to begin work. See the
+[current queue](../IMPLEMENT-NOW.md#additional-proposals-to-keep-parked).
 
 One place to see every agent skill on an environment: which providers and accounts can use
 it, where it lives on disk, whether it is shared through a symlink, whether it is on or off,

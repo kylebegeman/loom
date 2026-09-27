@@ -1,5 +1,9 @@
 # L29 technical design
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L29 until V2 ships.
+> Reassess released contracts and the Jev client choice before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 All upstream citations are to this fork at upstream v0.0.42 (`a931bd85f3`). Line numbers
 drift; search for the quoted code. Jev facts are from <https://docs.typesafe.ai> as cached on
 2026-09-24 (`/api`, `/models`, `/confidence`, `/concepts/state`, `/primitives`,

@@ -8,10 +8,13 @@ Ordered steps for one agent. Each step leaves the tree compiling.
   folder. Work in a worktree.
 - `three` and `@types/three` are approved (PRODUCT.md, Decisions). No other dependency is
   added; STEP is out of scope (no `occt-import-js`).
-- OpenSCAD is not installed on Kyle's Mac (checked 2026-09-24). For the manual check, ask Kyle
-  to install a development snapshot (openscad.org downloads, snapshots section), then record
-  `openscad --version`, `openscad --help` and `openscad --help-export` into the packet's
-  REFERENCES.md and adjust flags if they differ from TECHNICAL.md.
+- Recheck OpenSCAD availability on the environment host; the 2026-09-24 note that it was
+  absent is historical. Verify an available build with `--version`, `--help` and, when
+  supported, `--help-export`. Record the tested version and relevant capabilities in
+  REFERENCES.md. Use actual capability evidence, not a guessed snapshot date. If a tool
+  installation is needed, prepare the exact setup step and follow current session
+  authorization. A missing-tool screen or fake spawner test does not complete OpenSCAD
+  verification.
 - Fixtures: a tiny binary STL (a cube, 12 triangles), a 3MF produced by any slicer or exporter,
   an OBJ cube, a glTF with an external `.bin`, several `.scad` files covering customizer syntax,
   a sample summary JSON (hand-written from OpenSCAD's `RenderStatistic.cc` field names; mark it
@@ -21,8 +24,11 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 
 ## Phase 0: extension points
 
-Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-settings`,
-`ext-palette`, `ext-web-root`, `ext-keybindings`, `ext-mcp`.
+Recheck `ext-core`, `ext-panels`, `ext-settings`, `ext-palette`, `ext-web-root`,
+`ext-keybindings` and `ext-mcp`. At the 2026-09-27 review, only settings and MCP are missing.
+Reuse the existing implementations. Create the missing extension points for this feature,
+using current source and the documented registration shapes; do not add unrelated future
+extension work. Keep commit boundaries as documented when commits are authorized.
 
 ## Phase 1: server core
 
@@ -92,8 +98,8 @@ now)`, `resolveTokenPath(claims, requestPath)` (containment after normalization;
 
 13. `docs/fork/user/model-preview-3d.md`: supported formats, how reload works, OpenSCAD
     (install a snapshot; why not 2021.01), parameters and sets, captures, the agent tool,
-    **Blender MCP setup and Kyle's broken Codex entry with the three fix options** (TECHNICAL.md,
-    "Blender MCP"), the build plate presets, that STEP files belong to the Fabrication app, and
+    Blender MCP setup guidance (TECHNICAL.md, "Blender MCP"); keep any
+    historical machine-specific configuration repair in operational notes rather than user docs, the build plate presets, that STEP files belong to the Fabrication app, and
     the optional Fabrication link.
 14. Packet index Status and README Status.
 15. Merge check and definition of done.

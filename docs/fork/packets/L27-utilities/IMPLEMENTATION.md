@@ -42,17 +42,9 @@ docs/fork/user/utilities.md
 
 2. **Types and limits.** `types.ts` from TECHNICAL.md; `limits.ts`:
 
-   ```ts
-   export const MAX_INPUT_BYTES = 1024 * 1024;
-   export const MAX_OUTPUT_CHARS = 2 * 1024 * 1024;
-   const encoder = new TextEncoder();
-   export const inputTooLarge = (text: string) =>
-     text.length > MAX_INPUT_BYTES / 4 && encoder.encode(text).byteLength > MAX_INPUT_BYTES;
-   export const capOutput = (value: string) =>
-     value.length <= MAX_OUTPUT_CHARS
-       ? value
-       : `${value.slice(0, MAX_OUTPUT_CHARS)}\n... Output truncated`;
-   ```
+   Reject inputs above 1 MiB measured in UTF-8 bytes. Cap generated output at 2 MiB
+   in UTF-8 bytes, including its truncation marker, without splitting a Unicode code point.
+   Check limits before expensive work and cap generator counts before allocation.
 
 3. **Tools, test first, one category at a time.** Each tool is a pure `run`. Sketches of
    the ones that are easy to get wrong:
@@ -64,7 +56,13 @@ docs/fork/user/utilities.md
      const bad = cleaned.search(/[^A-Za-z0-9+/=]/);
      if (bad !== -1) return error(`Not valid base64: unexpected character at position ${bad + 1}.`);
      const padded = cleaned.padEnd(Math.ceil(cleaned.length / 4) * 4, "=");
-     const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+     // Validate padding/length and catch atob failures as invalid input.
+     let bytes: Uint8Array;
+     try {
+       bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+     } catch {
+       return error("Not valid base64: invalid padding or length.");
+     }
      try {
        return ok([
          { label: "Text", value: new TextDecoder("utf-8", { fatal: true }).decode(bytes) },
@@ -117,42 +115,21 @@ docs/fork/user/utilities.md
 
    Regex: `tools/regexMatch.ts` validates flags (only `dgimsuvy`, each at most once, not
    both `u` and `v`) and compiles the pattern for `run`; `matchAll` there does the matching
-   for the worker. `regexRunner.ts`:
+   for the worker. Implement `createRegexRunner(makeWorker, timeoutMs)` with one active
+   request. A newer request terminates a busy worker, clears its timeout and settles the
+   old request as cancelled before starting a fresh worker. Use one typed response envelope
+   shared by worker and runner (`{ requestId, result }`), with success/error results inside
+   `result`; timeout and cancellation are runner outcomes.
 
-   ```ts
-   export function createRegexRunner(makeWorker: () => Worker, timeoutMs = 1000) {
-     let worker: Worker | null = null;
-     let nextId = 0;
-     return {
-       run(request: RegexRequest): Promise<RegexResponse> {
-         worker ??= makeWorker();
-         const id = ++nextId;
-         const current = worker;
-         return new Promise((resolve) => {
-           const timer = setTimeout(() => {
-             current.terminate();
-             if (worker === current) worker = null;
-             resolve({ kind: "timeout" });
-           }, timeoutMs);
-           current.onmessage = (event) => {
-             if (event.data.requestId !== id) return; // a stale answer
-             clearTimeout(timer);
-             resolve(event.data.response);
-           };
-           current.postMessage({ requestId: id, ...request });
-         });
-       },
-       dispose() {
-         worker?.terminate();
-         worker = null;
-       },
-     };
-   }
-   ```
+   Every path settles its promise and clears its timer: reply, timeout, worker error,
+   message decoding error, supersession and disposal. Handle worker construction and
+   `postMessage` failures too. A timeout must never terminate a newer request's worker.
+   Ignore stale replies by both worker identity and request id. Successful workers may be
+   reused; failed or cancelled workers are terminated and replaced on the next run.
 
-   `RegexView` creates it with `() => new RegexWorker()` from
-   `import RegexWorker from "./regexWorker.ts?worker"`, debounces 150 ms, ignores results
-   for superseded requests, and disposes on unmount.
+   `RegexView` debounces by 150 ms, creates the worker with Vite's `?worker` import, suppresses
+   cancelled/stale outcomes and disposes on unmount. Do not implement concurrency by
+   overwriting `onmessage` while leaving older timers and promises pending.
 
    CIDR: parse to `{ version: 4 | 6, address: bigint, prefix: number }`; mask =
    `((1n << bits) - 1n) ^ ((1n << (bits - prefix)) - 1n)`; network = address AND mask;
@@ -210,10 +187,10 @@ docs/fork/user/utilities.md
 ## Pitfalls
 
 - Do not use `crypto.subtle` or `crypto.randomUUID` (see TECHNICAL.md, Secure-context
-  constraint). A lint-free way to enforce it: a test that greps the `tools/` sources.
+  constraint). Test with those APIs unavailable; hashes and generators must still work.
 - `atob` works on Latin-1; always go through bytes and `TextDecoder` for UTF-8.
-- `BigInt` parsing of `0x`-prefixed input: strip the prefix and parse digit by digit for
-  bases other than 10; `BigInt("0x...")` alone rejects uppercase `0X` in some engines.
+- Parse arbitrary bases digit by digit with explicit digit validation; do not lose
+  precision by routing large integers through `Number`.
 - `JSON.parse` error positions differ between engines; compute line and column from the
   message's position when present, otherwise show the message as is.
 - Keep `palette.tsx` free of implementation imports so the palette stays light.

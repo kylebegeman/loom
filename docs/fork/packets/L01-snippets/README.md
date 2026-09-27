@@ -1,6 +1,18 @@
 # L01: Snippets library and panel
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Parked: existing skill invocation covers the current need (2026-09-27).
+
+Kyle wants to select a named, detailed work instruction from the composer and send it.
+He directed us to park this packet if an equally ergonomic existing mechanism does that;
+otherwise build it regardless of maintenance cost. Current T3 supports searchable `$` skill
+selection directly in the composer, with native invocation verified for Codex and Claude.
+A skill holds the predefined work, formatting rules and do/don't guidance; extra task text
+can accompany the invocation. See the [decision record](../IMPLEMENT-NOW.md#l01-decision-use-existing-skills).
+
+Skills need one-time authoring and must be available to the selected provider/environment.
+They do not expand editable text into the composer or provide fill-in fields, revisions,
+imports and a provider-independent library. Reopen this full packet if those differences
+matter. Its original design below is retained, not an instruction to implement it now.
 
 A saved library of reusable prompt text that lives on the environment, so it follows the
 machine to every client. Search it as you type from anywhere (a palette-style dialog with

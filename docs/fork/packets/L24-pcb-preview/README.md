@@ -1,6 +1,19 @@
 # L24: PCB preview
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Implement now. Kyle included the full packet on 2026-09-27. It follows L23 in the
+[selected queue](../IMPLEMENT-NOW.md#selected-queue), but does not depend on it.
+
+Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Reuse existing core,
+panels, palette, root and keybinding extension points. Settings is missing at this review;
+create it only if L23 or another selected packet has not already added it. Current workspace
+lookup and composer draft APIs support this design. Provide ProcessRunner locally to the
+service, and use the existing clipboard helper for remote HTTP clients.
+
+The whole scope below is included: both KiCad and tscircuit rendering, live reload, KiCad
+ERC/DRC and summaries. No new production package dependency or database migration is planned.
+Verify actual installed CLI versions and render/report fixtures during implementation;
+mocked processes alone do not establish completion. Electronics remains an optional link,
+not a prerequisite. Follow the [agent handoff](../IMPLEMENT-NOW.md#agent-handoff).
 
 A right panel that shows the circuit boards in the thread's project. It finds KiCad projects
 and tscircuit circuits in the workspace, renders their schematic and board views to SVG on

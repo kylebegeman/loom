@@ -1,5 +1,9 @@
 # L21 testing
 
+> Historical V1 reference. Kyle deferred L21 until V2 ships on 2026-09-27.
+> Preserve the product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Focused tests, no repo-wide checks, no sleeps, no network. Filesystem tests use a temp
 directory; git tests use a local bare repository through an injected URL policy.
 

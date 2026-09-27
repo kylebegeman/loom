@@ -1,5 +1,9 @@
 # L29 testing
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L29 until V2 ships.
+> Reassess released contracts and the Jev client choice before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Focused tests only (AGENTS.md). No repo-wide checks, no sleeps, no calls to TypeSafe: every
 server test uses `ext-decide` with a scripted `fetch` (or a test `LoomDecide` layer) and
 `TestClock` for time.

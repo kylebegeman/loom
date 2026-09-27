@@ -1,5 +1,9 @@
 # L29 seams
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L29 until V2 ships.
+> Reassess released contracts and the Jev client choice before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 ## Extension points created by this packet
 
 Each one only if its existence check fails when implementation starts, created exactly as

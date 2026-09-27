@@ -6,6 +6,10 @@ A packet describes one feature, the fork-owned code it adds, and the few marked 
 needs in upstream files. The fork stays additive, so `scripts/fork/loom.sh` can keep merging
 upstream T3 Code releases (see [FORK.md](../../../FORK.md)).
 
+Start with [IMPLEMENT-NOW.md](./IMPLEMENT-NOW.md) for the current selected queue and
+pending decisions. Older readiness labels and build waves do not authorize starting a
+packet outside that queue.
+
 Read these before touching a packet:
 
 - [CONVENTIONS.md](./CONVENTIONS.md): where fork code lives, naming, seam markers, commits,
@@ -17,6 +21,58 @@ Read these before touching a packet:
   extension point is specified exactly, so the first packet that needs one creates it and
   every later packet only registers into it.
 - [\_template/](./_template/): the files every packet folder contains.
+
+## Planning policy after the upstream review
+
+Kyle confirmed on 2026-09-27 that Loom is an additive extension of T3 Code. These
+features are optional improvements, not prerequisites for doing other work. Prioritize
+new functionality that is useful on the released upstream version and does not depend on
+predicting an unmerged design.
+
+Keep upstream overlap, desired residual behavior and unresolved questions documented.
+Defer affected implementation and contract design until Orchestrator V2 ships, then review
+the released behavior and contracts. Deferral has no deadline and does not imply that a
+feature must eventually be built. Do not build temporary V1 replacements, speculative V2
+adapters or partial features merely to keep the old build waves moving.
+
+The 2026-09-27 review identified these items to revisit:
+
+- **L28:** retain automatic switching between eligible subscription accounts. Adopt
+  upstream reset-time recovery; reassess the residual scope after release. See its
+  [product decision](./L28-auto-resume/PRODUCT.md).
+- **L02, L08, L25:** upstream V2 has forks/lineage, delegation/thread tools and recurring
+  schedules. Preserve the additional product ideas; do not implement competing lifecycles.
+- **L21:** unified skill management and creation retained, deferred by Kyle on 2026-09-27.
+  Revisit released provider/account discovery, enablement and test-thread contracts after V2.
+- **L26:** full code graph retained, deferred by Kyle on 2026-09-27. Revisit released
+  turn-completion, project-deletion, diff and MCP integration after V2; no manual-only substitute.
+- **L16, L17:** reassess shared authentication, ACP Registry and provider backports before
+  designing extra account/provider infrastructure.
+- **L03, L22, L20:** their shared turn-input plan and some packet seams reference V1 code
+  removed by V2. Choose new integration points only from released source.
+- **L04:** keep the shipped inspector. Reassess overlap with Thread Details and port its
+  data/navigation when V2 lands. No speculative redesign is needed now.
+- **L06, L07, L11, L12, L13, L14, L15, L18, L19:** preserve the proposals pending review
+  of changed UI, run, request, checkpoint and provider behavior. Review individual parts
+  separately when a packet is picked up.
+- **L29:** full Jev hub retained, deferred by Kyle on 2026-09-27. Reassess released context
+  contracts and SDK choices; jevgrep is a separate retrieval candidate, not a hub replacement.
+- **Shared surfaces and App Kit:** the extension SDK/server/dock stack is a separate draft
+  proposal. Record the overlap without assuming acceptance, APIs or a delivery date.
+- **V2 cutover:** recheck the database-generation-aware backup/rollback path, protocol
+  compatibility across clients and legacy-history limitations before installing V2.
+
+Evidence snapshot: [V2 #2829](https://github.com/pingdotgg/t3code/pull/2829), inspected at
+`0dcb029dafc93401bd115f62a0c934b20e6bf850`;
+[provider backport #13784](https://github.com/pingdotgg/t3code/pull/13784);
+[draft extension stack #13819](https://github.com/pingdotgg/t3code/pull/13819).
+These establish planning concerns, not a promised merge date.
+
+The index marks affected proposals as deferred. Individual packet files retain earlier
+designs for reference; any "Ready to build" labels inside those files predate this review
+and do not override these deferrals. Resolve affected packets one at a time when their
+upstream behavior is available; leave their contracts open until then. Unaffected feature candidates still need a focused source check before
+implementation, not a speculative rewrite of the shared framework.
 
 ## Packets are independent
 
@@ -75,35 +131,35 @@ means the packet registers nothing in server core and needs it only as the prere
 
 | ID  | Packet                                                    | Summary                                                                                                                    | Selection                    | Extension points                                                                | Status         |
 | --- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------- | -------------- |
-| L01 | [`snippets`](./L01-snippets/)                             | Save reusable prompt snippets with fill-in fields, search them, and insert them with `;alias`.                             | P1, F1                       | core, root, panels, palette, keys, composer, composer-menu                      | Ready to build |
-| L02 | [`thread-lineage`](./L02-thread-lineage/)                 | Fork a thread from any message, open sidecars, see related threads and two threads side by side.                           | P5, F2 (fork), F16 parts 1-2 | core, root, panels, palette, keys                                               | Ready to build |
-| L03 | [`compaction-and-goals`](./L03-compaction-and-goals/)     | Compact a conversation on demand and pin a standing goal that is sent with every turn.                                     | F2 (compaction, goals)       | core, root, palette, keys, composer, turn-input                                 | Ready to build |
+| L01 | [`snippets`](./L01-snippets/)                             | Save reusable prompt snippets with fill-in fields, search them, and insert them with `;alias`.                             | P1, F1                       | core, root, panels, palette, keys, composer, composer-menu                      | Parked: skills |
+| L02 | [`thread-lineage`](./L02-thread-lineage/)                 | Fork a thread from any message, open sidecars, see related threads and two threads side by side.                           | P5, F2 (fork), F16 parts 1-2 | core, root, panels, palette, keys                                               | Deferred: V2   |
+| L03 | [`compaction-and-goals`](./L03-compaction-and-goals/)     | Compact a conversation on demand and pin a standing goal that is sent with every turn.                                     | F2 (compaction, goals)       | core, root, palette, keys, composer, turn-input                                 | Deferred: V2   |
 | L04 | [`thread-inspector`](./L04-thread-inspector/)             | A glance card from the chat header and a panel for the thread's status, changes, plan, approvals, agents and context.      | P6                           | core\*, root, panels, palette, keys                                             | Done           |
-| L05 | [`file-outline`](./L05-file-outline/)                     | Browse and jump to the symbols of the open file from an outline column or the palette.                                     | P8, F8 (outline)             | core\*, root, palette, keys                                                     | Ready to build |
-| L06 | [`source-control-cockpit`](./L06-source-control-cockpit/) | The thread's branch, PR and CI status, commit graph, check logs, conflicts and safe switching.                             | P7 (F13 deferred)            | core, root, panels, palette, keys                                               | Ready to build |
-| L07 | [`bottom-dock`](./L07-bottom-dock/)                       | Turn the terminal drawer into a tabbed dock with Tasks, Activity and Approvals tabs, with optional Jev risk badges.        | P10                          | core, root, settings, palette, keys, decide                                     | Ready to build |
-| L08 | [`multi-thread-runs`](./L08-multi-thread-runs/)           | Send one prompt to several models, let agents delegate to other threads, and track runs.                                   | P11, F9 (tiny version)       | core, root, panels, settings, palette, keys, mcp, decide                        | Ready to build |
-| L09 | [`device-qa`](./L09-device-qa/)                           | Run UI flows on simulators and collect screenshots and recordings as thread evidence.                                      | P12                          | core, root, panels, settings, palette, keys, mcp                                | Ready to build |
-| L10 | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                          | core, root, panels, settings, palette, keys, mcp                                | Ready to build |
-| L11 | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                          | core, root, panels, settings, palette, keys, mcp, desktop                       | Ready to build |
-| L12 | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                          | core\*, root, panels, settings, palette, keys                                   | Ready to build |
-| L13 | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard history)  | core, root, settings, palette, keys, composer                                   | Ready to build |
-| L14 | [`chat-conveniences`](./L14-chat-conveniences/)           | Find in thread, Mermaid diagrams, model presets with an optional Jev Auto preset, and questions that do not stop the turn. | F8 (the rest)                | core, root, settings, palette, keys, mcp, composer, decide                      | Ready to build |
-| L15 | [`ai-code-review`](./L15-ai-code-review/)                 | A second model reviews changes and chosen findings go back to be fixed.                                                    | F3                           | core, root, panels, settings, palette, keys, mcp, composer, diff-header, decide | Ready to build |
-| L16 | [`provider-sign-in`](./L16-provider-sign-in/)             | Sign Codex and Claude accounts in and out inside Loom, add accounts, manage Codex tools.                                   | F5                           | core, settings, palette, providers                                              | Ready to build |
-| L17 | [`more-providers`](./L17-more-providers/)                 | DeepSeek, Ollama and LM Studio endpoints, custom ACP agents (Gemini CLI among them), and Copilot.                          | F6                           | core, settings, palette, providers                                              | Ready to build |
-| L18 | [`project-profiles`](./L18-project-profiles/)             | Private per-project agent notes, command mappings, token budgets, and `.env.schema` status.                                | F11                          | core, root, panels, settings, palette, mcp, composer, composer-menu             | Ready to build |
-| L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | A Repositories page to clone, adopt, park safely and reopen GitHub checkouts.                                              | F12                          | core, root, settings, palette, keys                                             | Ready to build |
-| L20 | [`small-extras`](./L20-small-extras/)                     | A worktree branch prefix, a per-project No AI identification mode, a containers panel, and CLI tool versions.              | F23                          | core, root, panels, settings, palette, turn-input, decide                       | Ready to build |
-| L21 | [`skill-registry`](./L21-skill-registry/)                 | See, toggle, install and create agent skills across providers and accounts in one panel.                                   | Skill registry               | core, root, panels, palette, keys                                               | Ready to build |
-| L22 | [`instruction-modes`](./L22-instruction-modes/)           | Reusable rule packs such as "Minimal code" applied to every turn of a thread, for any provider.                            | Repository review            | core, root, settings, palette, keys, composer, turn-input                       | Ready to build |
-| L23 | [`model-preview-3d`](./L23-model-preview-3d/)             | Preview STL, 3MF, OBJ, glTF and OpenSCAD models beside the chat, with live reload.                                         | 3D preview                   | core, root, panels, settings, palette, keys, mcp                                | Ready to build |
-| L24 | [`pcb-preview`](./L24-pcb-preview/)                       | View KiCad and tscircuit schematics and boards beside the chat and run ERC and DRC.                                        | PCB preview                  | core, root, panels, settings, palette, keys                                     | Ready to build |
-| L25 | [`inbound-triggers`](./L25-inbound-triggers/)             | Start threads from assigned or labeled GitHub issues, mentions and review requests; send CI failures to the owning thread. | Repository review            | core, root, settings, palette, keys                                             | Ready to build |
-| L26 | [`code-graph`](./L26-code-graph/)                         | A local code graph to browse symbols, see the blast radius of changes, and let agents query it.                            | Repository review            | core, root, panels, settings, palette, mcp, diff-header                         | Ready to build |
-| L27 | [`utilities`](./L27-utilities/)                           | Twenty-nine offline developer tools (encoders, JWT decode, hashes, regex, subnet and chmod calculators) in a panel.        | F4                           | core\*, root, panels, palette, keys                                             | Ready to build |
-| L28 | [`auto-resume`](./L28-auto-resume/)                       | Continue a thread automatically after a provider usage limit resets, or on another account.                                | F7                           | core, settings, palette, composer                                               | Ready to build |
-| L29 | [`jev-hub`](./L29-jev-hub/)                               | Trial and tune Jev decisions: a decision log with ratings, a playground, question templates, test sets and replay.         | Jev hub                      | core, root, panels, settings, palette, keys, mcp, decide                        | Ready to build |
+| L05 | [`file-outline`](./L05-file-outline/)                     | Browse and jump to the symbols of the open file from an outline column or the palette.                                     | P8, F8 (outline)             | core\*, root, palette, keys                                                     | Implement now  |
+| L06 | [`source-control-cockpit`](./L06-source-control-cockpit/) | The thread's branch, PR and CI status, commit graph, check logs, conflicts and safe switching.                             | P7 (F13 deferred)            | core, root, panels, palette, keys                                               | Deferred: V2   |
+| L07 | [`bottom-dock`](./L07-bottom-dock/)                       | Turn the terminal drawer into a tabbed dock with Tasks, Activity and Approvals tabs, with optional Jev risk badges.        | P10                          | core, root, settings, palette, keys, decide                                     | Deferred: V2   |
+| L08 | [`multi-thread-runs`](./L08-multi-thread-runs/)           | Send one prompt to several models, let agents delegate to other threads, and track runs.                                   | P11, F9 (tiny version)       | core, root, panels, settings, palette, keys, mcp, decide                        | Deferred: V2   |
+| L09 | [`device-qa`](./L09-device-qa/)                           | Run UI flows on simulators and collect screenshots and recordings as thread evidence.                                      | P12                          | core, root, panels, settings, palette, keys, mcp                                | Implement now  |
+| L10 | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                          | core, root, panels, settings, palette, keys, mcp                                | Implement now  |
+| L11 | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                          | core, root, panels, settings, palette, keys, mcp, desktop                       | Deferred: V2   |
+| L12 | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                          | core\*, root, panels, settings, palette, keys                                   | Deferred: V2   |
+| L13 | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard history)  | core, root, settings, palette, keys, composer                                   | Deferred: V2   |
+| L14 | [`chat-conveniences`](./L14-chat-conveniences/)           | Find in thread, Mermaid diagrams, model presets with an optional Jev Auto preset, and questions that do not stop the turn. | F8 (the rest)                | core, root, settings, palette, keys, mcp, composer, decide                      | Deferred: V2   |
+| L15 | [`ai-code-review`](./L15-ai-code-review/)                 | A second model reviews changes and chosen findings go back to be fixed.                                                    | F3                           | core, root, panels, settings, palette, keys, mcp, composer, diff-header, decide | Deferred: V2   |
+| L16 | [`provider-sign-in`](./L16-provider-sign-in/)             | Sign Codex and Claude accounts in and out inside Loom, add accounts, manage Codex tools.                                   | F5                           | core, settings, palette, providers                                              | Deferred: V2   |
+| L17 | [`more-providers`](./L17-more-providers/)                 | DeepSeek, Ollama and LM Studio endpoints, custom ACP agents (Gemini CLI among them), and Copilot.                          | F6                           | core, settings, palette, providers                                              | Deferred: V2   |
+| L18 | [`project-profiles`](./L18-project-profiles/)             | Private per-project agent notes, command mappings, token budgets, and `.env.schema` status.                                | F11                          | core, root, panels, settings, palette, mcp, composer, composer-menu             | Deferred: V2   |
+| L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | A Repositories page to clone, adopt, park safely and reopen GitHub checkouts.                                              | F12                          | core, root, settings, palette, keys                                             | Deferred: V2   |
+| L20 | [`small-extras`](./L20-small-extras/)                     | A worktree branch prefix, a per-project No AI identification mode, a containers panel, and CLI tool versions.              | F23                          | core, root, panels, settings, palette, turn-input, decide                       | Deferred: V2   |
+| L21 | [`skill-registry`](./L21-skill-registry/)                 | See, toggle, install and create agent skills across providers and accounts in one panel.                                   | Skill registry               | core, root, panels, palette, keys                                               | Deferred: V2   |
+| L22 | [`instruction-modes`](./L22-instruction-modes/)           | Reusable rule packs such as "Minimal code" applied to every turn of a thread, for any provider.                            | Repository review            | core, root, settings, palette, keys, composer, turn-input                       | Deferred: V2   |
+| L23 | [`model-preview-3d`](./L23-model-preview-3d/)             | Preview STL, 3MF, OBJ, glTF and OpenSCAD models beside the chat, with live reload.                                         | 3D preview                   | core, root, panels, settings, palette, keys, mcp                                | Implement now  |
+| L24 | [`pcb-preview`](./L24-pcb-preview/)                       | View KiCad and tscircuit schematics and boards beside the chat and run ERC and DRC.                                        | PCB preview                  | core, root, panels, settings, palette, keys                                     | Implement now  |
+| L25 | [`inbound-triggers`](./L25-inbound-triggers/)             | Start threads from assigned or labeled GitHub issues, mentions and review requests; send CI failures to the owning thread. | Repository review            | core, root, settings, palette, keys                                             | Deferred: V2   |
+| L26 | [`code-graph`](./L26-code-graph/)                         | A local code graph to browse symbols, see the blast radius of changes, and let agents query it.                            | Repository review            | core, root, panels, settings, palette, mcp, diff-header                         | Deferred: V2   |
+| L27 | [`utilities`](./L27-utilities/)                           | Twenty-nine offline developer tools (encoders, JWT decode, hashes, regex, subnet and chmod calculators) in a panel.        | F4                           | core\*, root, panels, palette, keys                                             | Implement now  |
+| L28 | [`auto-resume`](./L28-auto-resume/)                       | Retain automatic switching between eligible subscription accounts; reuse upstream reset-time recovery after V2 ships.      | F7                           | Reassess after V2                                                               | Deferred: V2   |
+| L29 | [`jev-hub`](./L29-jev-hub/)                               | Trial and tune Jev decisions: a decision log with ratings, a playground, question templates, test sets and replay.         | Jev hub                      | core, root, panels, settings, palette, keys, mcp, decide                        | Deferred: V2   |
 
 L22, L25 and L26 came from the review of the reference repositories, and L29 from settling
 the packet questions; Kyle confirmed all four on 2026-09-24.

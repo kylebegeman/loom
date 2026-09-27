@@ -1,6 +1,15 @@
 # L26: Code graph
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Deferred until Orchestrator V2 ships. Kyle confirmed on 2026-09-27.
+
+Retain the complete code-map, change-impact, agent-query and automatic-update proposal.
+Revisit released turn-completion, project-deletion, checkpoint/diff and MCP contracts before
+finalizing implementation. There is no deadline and this does not block other work.
+Do not build a temporary manual-only version or speculate about V2 integration.
+
+The technical, seam, implementation and testing files preserve the earlier V1 design as
+reference, not instructions to begin work. See the
+[current queue](../IMPLEMENT-NOW.md#additional-proposals-to-keep-parked).
 
 Not in the original selection; added from the repository review
 ([selections.md](../../selections.md), "From selection to packet") and confirmed by Kyle on

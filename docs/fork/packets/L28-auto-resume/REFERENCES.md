@@ -1,5 +1,9 @@
 # L28 references
 
+> Superseded V1 reference. L28 now retains account failover and is deferred until V2
+> ships. Do not execute this design or treat its schemas, defaults and provider restrictions
+> as final. [PRODUCT.md](./PRODUCT.md) records the current scope and deferred questions.
+
 Treat external repositories as references, not code to copy.
 
 ## Old Loom

@@ -1,6 +1,20 @@
 # L10: Apple build tooling
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Implement now. Kyle confirmed the full packet on 2026-09-27. See the
+[selected queue](../IMPLEMENT-NOW.md#selected-queue).
+
+Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Current projection
+queries support workspace lookup and DeviceService exposes the optional simulator-panel
+integration. Reuse the existing core, panels, palette, root and keybinding extension points.
+Settings and MCP are missing at this review; create them only if an earlier selected packet
+has not already added them. Provide ProcessRunner locally as TECHNICAL.md specifies.
+
+The full scope below includes Xcode projects and Swift packages, simulator/physical-device/
+Mac runs, structured results, history, XcodeGen and agent tools. Fork migrations own run
+history and settings. Signing management and distribution remain outside scope. L09 is an
+optional integration, not a prerequisite. Actual toolchain outputs, cancellation and device
+runs need verification during implementation; synthetic fixtures are not evidence of those
+flows working. Follow the [agent handoff](../IMPLEMENT-NOW.md#agent-handoff).
 
 An "Apple build" right panel for projects that contain an Xcode project, an Xcode
 workspace, an XcodeGen spec or a Swift package. The user picks a scheme and a destination

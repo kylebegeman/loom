@@ -1,5 +1,9 @@
 # L26 references
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
+> Preserve the full product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 ## Old Loom
 
 No direct predecessor. Old Loom's P7 "branch graph" is a git graph (L06), not a code graph.

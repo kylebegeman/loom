@@ -1,6 +1,14 @@
 # L05: File outline
 
-Status: Ready to build.
+Status: Implement now. Kyle selected this packet on 2026-09-27.
+
+Readiness reviewed against Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.
+The full selected language coverage, file-panel outline, palette navigation and configurable
+shortcut are included. Current editor changes update the file query immediately, and
+`useRightPanelStore.openFile(ref, path, line)` provides line navigation. Reuse the existing
+root, palette and keybinding extension points; no new server service, database migration or
+production dependency is needed for v1. The conditional tree-sitter follow-up remains
+outside this build. Follow the [current queue and handoff](../IMPLEMENT-NOW.md#agent-handoff).
 
 A symbol list for the file open in the Files panel. A toggle in the file header opens an
 outline column beside the source (functions, classes, types, methods, Markdown headings);

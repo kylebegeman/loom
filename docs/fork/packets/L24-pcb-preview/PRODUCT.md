@@ -89,6 +89,9 @@ see the rule violations, while the agent works.
 
 ## Decisions
 
+- **Implement now (Kyle, 2026-09-27).** Include the full KiCad and tscircuit preview scope,
+  with KiCad ERC/DRC and summary insertion. The Electronics app is not a prerequisite.
+
 - SVG, not PNG or an embedded viewer. KiCad and tscircuit both export SVG, it scales without
   a GPU, and it keeps the payload text. The drawing is shown through an `<img>` element
   from a Blob URL, so scripts in a hostile SVG never run.

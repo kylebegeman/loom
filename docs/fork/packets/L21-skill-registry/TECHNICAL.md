@@ -1,5 +1,9 @@
 # L21 technical design
 
+> Historical V1 reference. Kyle deferred L21 until V2 ships on 2026-09-27.
+> Preserve the product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Citations are to this fork at upstream v0.0.42, checked against
 `v0.0.43-nightly.20260923.2173`.
 

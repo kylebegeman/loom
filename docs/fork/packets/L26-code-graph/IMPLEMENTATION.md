@@ -1,5 +1,9 @@
 # L26 implementation plan
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
+> Preserve the full product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Ordered steps for one agent. Each step leaves the tree compiling.
 
 ## Before starting

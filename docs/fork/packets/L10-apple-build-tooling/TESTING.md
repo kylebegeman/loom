@@ -4,6 +4,20 @@ Focused tests only (AGENTS.md, "Verifying"). No repo-wide checks, no sleeps: tes
 run to finish wait on the run's completion `Deferred` or on the `watchRuns` stream reaching a
 terminal status.
 
+## Completion evidence
+
+Record the actual Xcode, Swift and XcodeGen versions and supported command/output shapes.
+Verify a real build success, compiler failure, XCTest and Swift Testing results, cancellation,
+XcodeGen validation/generation, durable history and remote log access. Test simulator and
+Mac destinations where applicable. The selected paired physical-device path retains the
+manual check below; if no suitable device is available, report it as unverified rather than
+silently removing it or claiming full verification.
+
+Mark synthetic device fixtures as synthetic. Mocked processes and parser fixtures do not
+prove installation, launch, signing behavior or process cancellation. Use isolated projects
+and the current host's authorized device tooling for verification. Optional L09 integration
+is checked only when both packets exist; L10 must work independently.
+
 ## Automated tests
 
 Server (`apps/server/src/fork/apple-build-tooling/`):
@@ -62,7 +76,8 @@ With Kyle's permission (AGENTS.md: ask before dev servers and browsers), on a Ma
    `vp run dev` in the background; note the ports from the `[dev-runner]` line.
 2. Create or pick a small SwiftUI app with an XcodeGen spec and a unit test target in a
    scratch directory, add it as a project, open a thread.
-3. Panel: toolchain card shows Xcode 27.0, runtimes, xcodegen and xcbeautify versions.
+3. Panel: toolchain card shows the actual installed Xcode version, runtimes, XcodeGen and
+   xcbeautify versions, with clear states for missing optional tools.
 4. Build for a simulator: live log streams, summary shows success. Introduce a compile error:
    the summary lists it with file and line; "Add to composer" inserts the compact text.
 5. Test with one failing test: the failure shows its identifier; "Test only this" runs just

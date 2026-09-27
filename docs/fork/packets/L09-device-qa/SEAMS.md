@@ -13,47 +13,30 @@ packet created here.
 
 ## Packet seams
 
-| File                                             | Marker            | Lines | Why                                                                                                                   |
-| ------------------------------------------------ | ----------------- | ----- | --------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/components/device/DevicePanel.tsx` | `fork: device-qa` | 4     | "Capture screenshot" and "Open Device QA" buttons in the upstream Device panel toolbar, for the device being watched. |
+Reviewed against `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff` on 2026-09-27. The older
+DeviceToolsPanel import and inline Tools toggle are gone from DevicePanel. Do not apply the
+previous line-numbered patch.
 
-### `apps/web/src/components/device/DevicePanel.tsx`
+| File                                             | Marker            | Insertion                              | Why                                                         |
+| ------------------------------------------------ | ----------------- | -------------------------------------- | ----------------------------------------------------------- |
+| `apps/web/src/components/device/DevicePanel.tsx` | `fork: device-qa` | Import and active-device render branch | Put thread-evidence actions beside the device being viewed. |
 
-Import, after the `DeviceToolsPanel` import (line 36):
+Import the fork-owned `DeviceQaToolbarActions` component. In the existing
+`activeDevice && activeSession` branch, render a small action row immediately before
+DeviceWorkspace, within a layout wrapper as required by the current flex container. Pass
+`threadRef={props.threadRef}` and `device={activeDevice}`. Keep DeviceWorkspace's existing
+props and its environment/device key intact. Mark each insertion, including any wrapper,
+and record the actual formatted marker count in the seam manifest during implementation.
 
-```diff
- import { DeviceToolsPanel } from "./DeviceToolsPanel";
-+// fork: device-qa
-+import { DeviceQaToolbarActions } from "~/fork/device-qa/DeviceToolbarActions";
-```
+The fork component owns layout and the two actions: "Capture evidence" and "Open Device QA".
+It renders nothing when the server lacks `device-qa`; ensure its wrapper also leaves no
+empty row or changed device layout in that case. Capture saves to the thread's evidence
+list. DeviceWorkspace's existing screenshot download remains available and unchanged.
 
-The marker sits on its own line because the import is near the formatter's wrap width
-(CONVENTIONS.md, "Seams"). `DevicePanel.tsx` already imports through the `~/` alias.
-
-Toolbar, directly before the Tools toggle (line 227), inside the `activeDevice ? (<>...</>)`
-fragment, so the buttons only exist while a device is shown:
-
-```diff
-               </DeviceButton>
-             )}
-+            {/* fork: device-qa */}
-+            <DeviceQaToolbarActions threadRef={props.threadRef} device={activeDevice} />
-             <Toggle
-               aria-label="Tools"
-```
-
-`activeDevice` is a `DeviceSummary` (`DevicePanel.tsx:85-89`); `props.threadRef` is the panel's
-`ScopedThreadRef` (`:46-50`). `DeviceQaToolbarActions` renders `null` when the environment lacks
-`device-qa` in `loomFeatures`, so an upstream server shows the toolbar unchanged.
-
-Why no extension point covers it: `ext-panels` adds new right-panel surfaces but reaches no
-upstream panel's internals, and the Device panel toolbar has no slot or `trailingActions` prop
-(the preview's chrome row has one; the device toolbar is inline JSX,
-`DevicePanel.tsx:186-247`). Without the seam, capture works from the Device QA panel, the
-palette and a keybinding; the seam only puts it next to the device.
-
-Merge risk: low to medium. The seam is two inserted lines in a toolbar that upstream changes
-occasionally, plus a two-line import next to a stable import; all are insertions.
+This stays a single-file packet integration. Do not add a generic device-toolbar extension
+point for one consumer or reach into DeviceControlsRail. Capture remains reachable from the
+Device QA panel, palette and keybinding as specified. Verify normal and floating panel
+layouts using the same DevicePanel path.
 
 ## Merge check
 

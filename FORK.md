@@ -10,7 +10,9 @@ icon; behavior, data locations and identifiers are upstream's.
 Loom features beyond the branding are built as implementation packets, one folder per
 feature, each additive and limited to marked seams. Start at
 [docs/fork/packets/README.md](docs/fork/packets/README.md) for the packet index, the
-conventions and the shared extension points; [docs/fork/selections.md](docs/fork/selections.md)
+conventions and the shared extension points. The
+[implement-now queue](docs/fork/packets/IMPLEMENT-NOW.md) records current selections and
+takes precedence over older packet readiness labels; [docs/fork/selections.md](docs/fork/selections.md)
 records which old Loom features were chosen.
 
 ## Brand source

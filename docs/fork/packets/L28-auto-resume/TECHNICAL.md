@@ -1,5 +1,9 @@
 # L28 technical design
 
+> Superseded V1 reference. L28 now retains account failover and is deferred until V2
+> ships. Do not execute this design or treat its schemas, defaults and provider restrictions
+> as final. [PRODUCT.md](./PRODUCT.md) records the current scope and deferred questions.
+
 All citations are to this fork at upstream v0.0.42 (commit `a931bd85f3`). Search for the
 quoted code when line numbers drift.
 

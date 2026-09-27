@@ -1,5 +1,13 @@
 # L26 product
 
+## Current decision
+
+Kyle confirmed on 2026-09-27: defer the complete packet until Orchestrator V2 ships.
+Preserve the full product intent below, including automatic graph updates and diff context.
+Review released behavior and contracts before finalizing the implementation; earlier event
+names, service APIs and integration designs are not settled V2 requirements. No deadline
+or partial substitute is needed.
+
 ## Problem
 
 Agents and Kyle both waste time answering structural questions by grepping: what calls this

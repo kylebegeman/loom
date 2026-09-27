@@ -34,11 +34,11 @@ vp test run \
   packages/contracts/src/fork/keybindings.test.ts
 vp lint apps/web/src/fork/file-outline apps/web/src/components/files/FilePreviewPanel.tsx
 vp run --filter @t3tools/web typecheck
-vp run --filter @t3tools/contracts typecheck   # only if this packet created ext-keybindings
+vp run --filter @t3tools/contracts typecheck   # the command list changes here
 ```
 
-If this packet created `ext-keybindings`, also typecheck `t3`, `@t3tools/client-runtime` and
-`@t3tools/mobile` (the contracts change reaches them).
+Typecheck affected consumers of the keybinding union, including server, client-runtime and
+mobile, even when the extension point already existed.
 
 ## Manual check
 

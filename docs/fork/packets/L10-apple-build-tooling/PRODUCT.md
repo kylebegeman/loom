@@ -93,6 +93,10 @@ the feature is hidden or disabled as described above.
 
 ## Decisions
 
+- **Implement now (Kyle, 2026-09-27).** The full packet is included. Keep Swift packages,
+  paired physical-device runs and structured test results in scope alongside Xcode builds.
+  L09 and upstream V2 are not prerequisites; use current released integrations.
+
 - Runs are child processes on the server, not terminal sessions. Reason: the panel needs
   structured results and a result bundle per run; the terminal drawer stays for interactive
   work.

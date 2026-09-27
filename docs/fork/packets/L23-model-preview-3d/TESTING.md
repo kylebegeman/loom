@@ -3,6 +3,19 @@
 Focused tests only; no repo-wide checks; no sleeps. Watch and render tests wait on the emitted
 event or the render result, with `TestClock` for debounce windows.
 
+## Completion evidence
+
+Real OpenSCAD renders and the integrated client pass are required to claim the full packet
+complete. Synthetic summaries and fake process tests verify handling, not CLI compatibility.
+Record the exact tested tool version and capabilities. Cover every supported viewer format,
+including glTF with an external buffer and GLB, and each advertised agent-tool format
+(SCAD, STL, 3MF, OBJ). The agent tool does not claim glTF/GLB support.
+
+If a test runtime lacks DOMParser, run the 3MF loader case in a suitable client test
+runtime or the authorized integrated pass. Record a skip honestly and do not treat a skipped
+format as verified. Missing tools or client-verification authorization remain explicit
+outstanding checks; they do not justify silently reducing the selected feature.
+
 ## Automated tests
 
 Server (`apps/server/src/fork/model-preview-3d/`):

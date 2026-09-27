@@ -3,6 +3,14 @@
 Selection: skill registry, selected as L21 in [selections.md](../../selections.md) (Outcomes).
 Scoped by Kyle in the 2026-09-24 brief, questions answered the same day.
 
+## Current decision
+
+Kyle confirmed on 2026-09-27: park L21 and revisit after Orchestrator V2 ships. Preserve the
+full product scope, with no deadline. Review actual released provider/account contracts and
+any upstream skill-management functionality before deciding the remaining implementation.
+Earlier provider APIs, settings paths and test-thread mechanics below are reference designs,
+not settled V2 contracts. The composer skill picker remains available for invocation.
+
 ## Problem
 
 Skills now come from many places: each Claude config directory's `skills` folder, project

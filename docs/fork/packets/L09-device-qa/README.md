@@ -1,6 +1,20 @@
 # L09: Device QA and flows
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Implement now. Kyle confirmed the full packet on 2026-09-27. See the
+[selected queue](../IMPLEMENT-NOW.md#selected-queue).
+
+Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Reuse existing core,
+panels, palette, root and keybinding extension points; create settings and MCP only if an
+earlier packet has not added them. Current `requireMcpCapability("device")`, DeviceService
+and the `thread.deleted` event support the access and evidence lifecycle. Use those released
+contracts; reassess their integration when V2 ships, without predicting its APIs now.
+
+The current Device panel renders DeviceWorkspace, which already downloads screenshots.
+SEAMS.md places the separate thread-evidence actions beside that workspace and supersedes
+the obsolete Tools-toggle insertion. The full scope below is retained, including flows,
+snapshot comparisons, screenshots, recordings, installs and evidence cleanup. L10 remains
+optional. Actual argent/device verification is required during implementation; synthetic
+fixtures alone do not prove it works. Follow the [agent handoff](../IMPLEMENT-NOW.md#agent-handoff).
 
 Adds quality checks on top of upstream's Device panel. A "Device QA" right panel lists the
 project's recorded UI flows (Software Mansion's argent flows in `.argent/flows/`), runs one or

@@ -1,6 +1,21 @@
 # L23: 3D model preview
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Implement now. Kyle included the full packet on 2026-09-27 and identified it as a
+primary workflow. It is first in the [selected queue](../IMPLEMENT-NOW.md#selected-queue).
+
+Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Reuse existing core,
+panels, palette, root and keybinding extension points. Settings and MCP extension points
+are not present at this review and must be created for this packet against current released
+source. Workspace lookup remains available through the existing projection query service;
+do not design against provisional V2 contracts.
+
+The whole product scope below is included, including OpenSCAD parameters, live reload,
+captures and the agent render tool. Existing approval for `three` and `@types/three` stands.
+The feature owns its settings/parameter tables through fork migrations. Detect and verify
+the actual OpenSCAD build during implementation; previous version/flag notes and synthetic
+summary fixtures are not proof of a working render. Full completion requires real render
+and client verification, with missing tools or unavailable verification recorded explicitly.
+Follow the [agent handoff](../IMPLEMENT-NOW.md#agent-handoff).
 
 A **3D model** right panel that shows the thread's 3D files next to the chat: STL, 3MF, OBJ
 and glTF/GLB meshes, and OpenSCAD `.scad` sources, which the environment server renders with the

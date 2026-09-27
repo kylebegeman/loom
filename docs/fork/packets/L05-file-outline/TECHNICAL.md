@@ -1,7 +1,9 @@
 # L05 technical design
 
 Citations are to this fork at upstream v0.0.42 (`a931bd85f3`). Search for the quoted code if
-lines have drifted.
+lines have drifted. The file-text and navigation paths below were rechecked at
+`e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff` on 2026-09-27: editor `onChange` updates the
+query before saving, and `openFile` increments the reveal request.
 
 ## Overview
 

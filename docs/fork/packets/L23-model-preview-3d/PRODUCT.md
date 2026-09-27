@@ -74,6 +74,10 @@ setup. Kyle's current Codex entry is broken; see TECHNICAL.md, "Blender MCP" for
 
 ## Decisions
 
+- **Implement now, first priority (Kyle, 2026-09-27).** This is a primary workflow. Build
+  the full selected feature against current released T3 contracts; ordinary integration
+  maintenance is acceptable. Fabrication remains optional and is not a prerequisite.
+
 - three.js as the renderer, loaded only when the panel opens, rendering on demand.
 - OpenSCAD renders run on the server with a timeout and one render in flight per file; newer
   edits cancel older renders.
