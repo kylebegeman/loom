@@ -43,6 +43,7 @@ type RpcMethod<TTag extends EnvironmentRpcTag> = WsRpcProtocolClient[TTag];
 
 export type EnvironmentSubscriptionRpcTag =
   | ForkSubscriptionRpcTag // fork: ext-core
+  | typeof WS_METHODS.codexAuthCallbackSubscribe
   | typeof WS_METHODS.providerAuthSubscribe
   | typeof WS_METHODS.providerInstallSubscribe
   | typeof ORCHESTRATION_WS_METHODS.subscribeShell
@@ -65,6 +66,7 @@ export type EnvironmentSubscriptionRpcTag =
 
 export type EnvironmentStreamCommandRpcTag =
   | ForkStreamCommandRpcTag // fork: ext-core
+  | typeof WS_METHODS.chatGptHandoffSubscribe
   | typeof WS_METHODS.cloudInstallRelayClient
   | typeof WS_METHODS.serverUpdateServerWithProgress
   | typeof WS_METHODS.gitRunStackedAction;
