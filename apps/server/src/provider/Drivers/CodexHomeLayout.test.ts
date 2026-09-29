@@ -220,6 +220,52 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
         }),
     );
 
+    // fork: codex-shadow-images
+    for (const existingSymlink of [false, true]) {
+      it.effect.skipIf(!symlinksSupported)(
+        `preserves generated images in a shadow ${existingSymlink ? "symlink" : "directory"} across restarts`,
+        () =>
+          Effect.gen(function* () {
+            const fileSystem = yield* FileSystem.FileSystem;
+            const path = yield* Path.Path;
+            const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+            const shadowHome = yield* makeTempDir("t3code-codex-shadow-");
+            const sharedImages = path.join(sharedHome, "generated_images");
+            const shadowImages = path.join(shadowHome, "generated_images");
+            yield* writeTextFile(path.join(sharedImages, "shared.png"), "shared image");
+            if (existingSymlink) {
+              yield* fileSystem.symlink(sharedImages, shadowImages);
+            } else {
+              yield* writeTextFile(path.join(shadowImages, "local.png"), "local image");
+            }
+            const layout = yield* resolveCodexHomeLayout(
+              decodeCodexSettings({ homePath: sharedHome, shadowHomePath: shadowHome }),
+            );
+
+            yield* materializeCodexShadowHome(layout);
+            yield* materializeCodexShadowHome(layout);
+
+            expect(yield* fileSystem.readFileString(path.join(sharedImages, "shared.png"))).toBe(
+              "shared image",
+            );
+            if (existingSymlink) {
+              expect(yield* fileSystem.readLink(shadowImages)).toBe(sharedImages);
+              expect(yield* fileSystem.readFileString(path.join(shadowImages, "shared.png"))).toBe(
+                "shared image",
+              );
+            } else {
+              expect(yield* fileSystem.readFileString(path.join(shadowImages, "local.png"))).toBe(
+                "local image",
+              );
+              expect(yield* fileSystem.exists(path.join(sharedImages, "local.png"))).toBe(false);
+            }
+            expect(yield* fileSystem.readLink(path.join(shadowHome, "sessions"))).toBe(
+              path.join(sharedHome, "sessions"),
+            );
+          }),
+      );
+    }
+
     it.effect("rejects shadow homes that point at the shared home", () =>
       Effect.gen(function* () {
         const sharedHome = yield* makeTempDir("t3code-codex-shared-");

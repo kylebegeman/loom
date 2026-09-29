@@ -79,6 +79,11 @@ explains why. Find them with `git grep -n "fork: <slug>"`.
 | --------------------------------------------- | ------------------ | --------------------------------------------------------------------------------------- |
 | `apps/web/src/components/chat/ChatHeader.tsx` | `thread-inspector` | Eye button for the thread inspector card. See `docs/fork/packets/L04-thread-inspector`. |
 
+The `codex-shadow-images` seam in `CodexHomeLayout.ts` and its regression tests
+preserves Codex-created `generated_images` directories in account shadow homes.
+Keep it during upstream merges until upstream accepts these directories without
+preventing provider startup. The Pro Max account schema fix comes from upstream.
+
 ## Identifiers kept on purpose
 
 These locate the owner's existing T3 Code data or are invisible, so they keep T3 names:

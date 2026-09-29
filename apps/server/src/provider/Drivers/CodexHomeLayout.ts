@@ -30,7 +30,10 @@ const KNOWN_SHARED_DIRECTORIES = [
 ] as const;
 
 const PRIVATE_ENTRY_NAMES = new Set(["auth.json", "models_cache.json"]);
-const SHADOW_LOCAL_ENTRY_NAMES = new Set(["log", "memories", "tmp"]);
+// Codex can create these in an active shadow home before they exist in the shared home.
+// Keep their contents (and any existing links) when preparing the overlay again.
+// fork: codex-shadow-images
+const SHADOW_LOCAL_ENTRY_NAMES = new Set(["generated_images", "log", "memories", "tmp"]);
 const REPLACEABLE_SHARED_RUNTIME_DIRECTORIES = new Set(["mcp-oauth-locks"]);
 
 function resolveHomePath(path: Path.Path, value: string | undefined): string {
