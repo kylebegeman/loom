@@ -3,14 +3,16 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
-import { memo, useMemo, type ComponentType } from "react";
+import { memo, useCallback, useMemo, type ComponentType } from "react";
 
+import { getDisplayModelName, type ModelEsque } from "~/components/chat/providerIconUtils";
 import { usePrimarySettings } from "~/hooks/useSettings";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   type ProviderInstanceEntry,
 } from "~/providerInstances";
+import { switchboardModelBlock, useSwitchboardLimits } from "./switchboardLimits";
 
 /** Drivers whose accounts Switchboard pools. Other providers keep every instance. */
 const POOLED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set([
@@ -51,20 +53,53 @@ export function collapseForSwitchboard(
   });
 }
 
+type ModelDisabledReason = (instanceId: ProviderInstanceId, model: string) => string | null;
+
 interface PickerProps {
   readonly instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
   readonly activeInstanceId: ProviderInstanceId;
+  readonly modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
+  readonly getModelDisabledReason?: ModelDisabledReason | undefined;
 }
 
-/** Wraps a model picker so it shows the collapsed entries while Switchboard is on. */
+/**
+ * Wraps a model picker so it shows the collapsed entries while Switchboard is on, and
+ * disables, with the reason, models the hub cannot serve right now: everything but the
+ * credit models while every Codex account is on credits, or a whole provider with no
+ * allowance left. The caller's own reasons come first.
+ */
 export function withSwitchboardEntries<P extends PickerProps>(Picker: ComponentType<P>) {
   return memo(function SwitchboardModelPicker(props: P) {
     const enabled = usePrimarySettings((settings) => settings.switchboardEnabled);
-    const { instanceEntries, activeInstanceId } = props;
+    const limits = useSwitchboardLimits(enabled);
+    const { instanceEntries, activeInstanceId, modelOptionsByInstance, getModelDisabledReason } =
+      props;
     const collapsed = useMemo(
       () => (enabled ? collapseForSwitchboard(instanceEntries, activeInstanceId) : instanceEntries),
       [enabled, instanceEntries, activeInstanceId],
     );
-    return <Picker {...props} instanceEntries={collapsed} />;
+    const switchboardReason = useCallback<ModelDisabledReason>(
+      (instanceId, model) => {
+        const own = getModelDisabledReason?.(instanceId, model) ?? null;
+        if (own !== null) return own;
+        const driverKind = instanceEntries.find(
+          (entry) => entry.instanceId === instanceId,
+        )?.driverKind;
+        if (!driverKind) return null;
+        const options = modelOptionsByInstance.get(instanceId) ?? [];
+        return switchboardModelBlock(limits, driverKind, model, (slug) => {
+          const option = options.find((candidate) => candidate.slug === slug);
+          return option ? getDisplayModelName(option, { preferShortName: true }) : slug;
+        });
+      },
+      [getModelDisabledReason, instanceEntries, modelOptionsByInstance, limits],
+    );
+    return (
+      <Picker
+        {...props}
+        instanceEntries={collapsed}
+        {...(limits.length > 0 ? { getModelDisabledReason: switchboardReason } : {})}
+      />
+    );
   });
 }

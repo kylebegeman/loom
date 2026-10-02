@@ -93,7 +93,10 @@ The `switchboard` seams add Switchboard mode (`apps/server/src/fork/switchboard`
 the usage hubs in Settings. While it is on, every Claude and Codex launch is pointed at
 the local CLIProxyAPI hub (`codexLaunchArgs.ts`, `ClaudeAdapter.ts`,
 `ClaudeTextGeneration.ts`) and the model picker shows one Claude and one Codex
-(`ProviderModelPicker.tsx`). Off, launches and the picker are upstream's.
+(`ProviderModelPicker.tsx`). The picker also disables, with the reason, models the hub
+cannot serve right now: the `loom.switchboard.limits` RPC reads the Switchboard
+controller's status on `127.0.0.1:8318`, so while every Codex account is on credits only
+the credit models stay selectable. Off, launches and the picker are upstream's.
 
 ## Identifiers kept on purpose
 

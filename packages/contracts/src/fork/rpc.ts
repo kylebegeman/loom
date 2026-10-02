@@ -4,10 +4,12 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import { WsRpcGroup } from "../rpc.ts";
+import { SWITCHBOARD_WS_METHODS, SwitchboardRpcGroup } from "./switchboard.ts";
 
 /** Fork RPC tags. Every tag is `loom.<slug>.<verb>`; packets append theirs. */
 export const FORK_WS_METHODS = {
   coreInfo: "loom.core.info",
+  ...SWITCHBOARD_WS_METHODS,
 } as const;
 
 export const LoomCoreInfo = Schema.Struct({
@@ -24,6 +26,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  SwitchboardRpcGroup,
   // SnippetsRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];

@@ -5,6 +5,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 import { LOOM_SERVER_FEATURES } from "./features.ts";
 import { makeForkRpcAuth } from "./rpcAuthorization.ts";
+import { readSwitchboardLimits } from "./switchboard/limits.ts";
 
 /** Fork RPC handlers for one connection, merged next to makeWsRpcLayer (ws.ts, fork: ext-core). */
 export const makeForkRpcLayer = (session: AuthenticatedSession) =>
@@ -17,6 +18,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
             FORK_WS_METHODS.coreInfo,
             Effect.succeed({ features: LOOM_SERVER_FEATURES, serverVersion: packageJson.version }),
           ),
+        [FORK_WS_METHODS.limits]: () => auth.effect(FORK_WS_METHODS.limits, readSwitchboardLimits),
         // ...(yield* makeSnippetsRpcHandlers(auth)),
       });
     }),

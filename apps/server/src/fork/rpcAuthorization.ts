@@ -13,6 +13,7 @@ import { observeRpcEffect, observeRpcStream } from "../observability/RpcInstrume
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
   [FORK_WS_METHODS.coreInfo]: AuthOrchestrationReadScope,
+  [FORK_WS_METHODS.limits]: AuthOrchestrationReadScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>
