@@ -25,8 +25,10 @@ import {
 } from "./ComposerControl";
 import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
+import { withSwitchboardEntries } from "../../fork/switchboard/switchboardPicker"; // fork: switchboard
 
-export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
+// fork: switchboard - exported below, wrapped to collapse accounts while Switchboard is on.
+const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
   /**
    * The instance currently selected in the composer. Drives the trigger
    * icon, label and the default-highlighted combobox row.
@@ -316,3 +318,5 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     </Popover>
   );
 });
+
+export const ProviderModelPicker = withSwitchboardEntries(UpstreamProviderModelPicker); // fork: switchboard

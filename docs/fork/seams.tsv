@@ -31,3 +31,9 @@ apps/web/src/components/chat/ChatHeader.tsx	thread-inspector	2
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/Layers/CodexProvider.ts	codex-login-email	2
+packages/contracts/src/settings.ts	switchboard	2
+apps/server/src/provider/Layers/codexLaunchArgs.ts	switchboard	2
+apps/server/src/provider/Layers/ClaudeAdapter.ts	switchboard	2
+apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
+apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	3
+apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2

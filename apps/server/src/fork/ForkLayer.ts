@@ -3,10 +3,12 @@ import * as Layer from "effect/Layer";
 
 import { ForkRuntime, type ForkServices } from "./ForkRuntime.ts";
 import { ForkMigrationsLive } from "./persistence/migrations.ts";
+import { SwitchboardLive } from "./switchboard/switchboard.ts";
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  SwitchboardLive,
   // SnippetStore.layer,
 );
 

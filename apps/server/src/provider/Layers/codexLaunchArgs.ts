@@ -1,5 +1,7 @@
 import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 
+import { switchboardCodexArgs } from "../../fork/switchboard/switchboard.ts"; // fork: switchboard
+
 const T3CODE_CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";
 
 export const resolveCodexLaunchArgs = (
@@ -7,7 +9,10 @@ export const resolveCodexLaunchArgs = (
   environment: NodeJS.ProcessEnv = process.env,
 ) => environment[T3CODE_CODEX_LAUNCH_ARGS_ENV]?.trim() || launchArgs?.trim() || "";
 
-const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => tokenizeCliArgs(launchArgs);
+const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => [
+  ...tokenizeCliArgs(launchArgs),
+  ...switchboardCodexArgs(), // fork: switchboard
+];
 
 export const codexAppServerArgs = (launchArgs?: string) => [
   "app-server",

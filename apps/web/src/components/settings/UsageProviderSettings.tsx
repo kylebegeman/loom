@@ -20,6 +20,7 @@ import { Switch } from "../ui/switch";
 import { AddUsageLimitSourceDialog } from "./AddUsageLimitSourceDialog";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import { SwitchboardSettingsRow } from "../../fork/switchboard/SwitchboardSettingsRow"; // fork: switchboard
 
 /** Hub management follows the selected device and access rules of provider settings. */
 export function UsageProviderSettings({
@@ -76,6 +77,8 @@ export function UsageProviderSettings({
           ) : null
         }
       >
+        {/* fork: switchboard */}
+        <SwitchboardSettingsRow environmentId={environmentId} readOnly={readOnly} />
         {platform?.os === "darwin" ? (
           <SettingsRow
             id="cursor-keychain-usage"

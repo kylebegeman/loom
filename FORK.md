@@ -84,6 +84,17 @@ preserves Codex-created `generated_images` directories in account shadow homes.
 Keep it during upstream merges until upstream accepts these directories without
 preventing provider startup. The Pro Max account schema fix comes from upstream.
 
+The `codex-login-email` seam in `CodexProvider.ts` names a Codex account from its
+home's `auth.json` when a custom `model_provider` makes Codex report no account, so
+usage views do not count a hub-routed subscription twice.
+
+The `switchboard` seams add Switchboard mode (`apps/server/src/fork/switchboard`,
+`apps/web/src/fork/switchboard`): one `switchboardEnabled` server setting, shown with
+the usage hubs in Settings. While it is on, every Claude and Codex launch is pointed at
+the local CLIProxyAPI hub (`codexLaunchArgs.ts`, `ClaudeAdapter.ts`,
+`ClaudeTextGeneration.ts`) and the model picker shows one Claude and one Codex
+(`ProviderModelPicker.tsx`). Off, launches and the picker are upstream's.
+
 ## Identifiers kept on purpose
 
 These locate the owner's existing T3 Code data or are invisible, so they keep T3 names:
