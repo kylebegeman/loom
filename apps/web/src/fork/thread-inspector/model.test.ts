@@ -1,35 +1,33 @@
+import type { ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
+import type { ThreadPendingUserInput } from "@t3tools/client-runtime/state/thread-requests";
 import {
-  emptyAgentPanelModel,
-  type AgentPanelModel,
-  type RuntimeSubagent,
-} from "@t3tools/client-runtime/state/subagentRuntime";
-import {
-  ApprovalRequestId,
   CheckpointRef,
-  OrchestrationProposedPlanId,
+  PlanId,
   ProjectId,
   ProviderDriverKind,
-  ThreadId,
-  TurnId,
-  type OrchestrationSession,
+  ProviderInstanceId,
+  RunId,
+  RuntimeRequestId,
   type VcsStatusResult,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { deriveInspectorModel, INSPECTOR_AGENT_ROW_LIMIT, type InspectorInputs } from "./model";
 
-const TURN = TurnId.make("turn-1");
+const RUN = RunId.make("run-1");
 
-const session = (status: OrchestrationSession["status"], lastError: string | null = null) =>
-  ({
-    threadId: ThreadId.make("thread-1"),
-    status,
-    providerName: "codex",
-    runtimeMode: "full-access",
-    activeTurnId: status === "running" ? TURN : null,
-    lastError,
-    updatedAt: "2026-09-25T10:00:00.000Z",
-  }) satisfies OrchestrationSession;
+const runtime = (
+  status: ThreadRuntimeSummary["status"],
+  lastError: string | null = null,
+): ThreadRuntimeSummary => ({
+  status,
+  activeRunId: status === "running" ? RUN : null,
+  providerInstanceId: ProviderInstanceId.make("codex"),
+  providerName: "codex",
+  lastError,
+  updatedAt: "2026-09-25T10:00:00.000Z",
+});
 
 const gitStatus = (overrides: Partial<VcsStatusResult> = {}): VcsStatusResult => ({
   isRepo: true,
@@ -49,8 +47,8 @@ function inputs(overrides: Partial<InspectorInputs> = {}): InspectorInputs {
   return {
     thread: {
       isDraft: false,
-      session: session("ready"),
-      latestTurn: null,
+      runtime: runtime("idle"),
+      latestRun: null,
       runtimeMode: "full-access",
       interactionMode: "default",
       branch: "feature/inspector",
@@ -72,7 +70,7 @@ function inputs(overrides: Partial<InspectorInputs> = {}): InspectorInputs {
     proposedPlan: null,
     approvals: [],
     userInputs: [],
-    agents: emptyAgentPanelModel(),
+    agents: [],
     runningTerminals: [],
     contextWindow: null,
     ...overrides,
@@ -84,27 +82,30 @@ const withThread = (thread: Partial<InspectorInputs["thread"]>) => ({
 });
 
 const approval = {
-  requestId: ApprovalRequestId.make("approval-1"),
+  requestId: RuntimeRequestId.make("approval-1"),
   requestKind: "command",
   createdAt: "2026-09-25T10:00:00.000Z",
   detail: "rm -rf dist",
+  responseCapability: "live",
 } as const;
 
-const question = {
-  requestId: ApprovalRequestId.make("input-1"),
+const question: ThreadPendingUserInput = {
+  requestId: RuntimeRequestId.make("input-1"),
   createdAt: "2026-09-25T10:00:00.000Z",
+  responseCapability: "live",
   dismissible: false,
-  questions: [{ id: "q", header: "Scope", question: "Which package?", options: [] }],
+  questions: [
+    { id: "q", header: "Scope", question: "Which package?", options: [], multiSelect: false },
+  ],
 };
 
-const proposedPlan = (implementedAt: string | null, implementationThreadId: ThreadId | null) => ({
-  id: OrchestrationProposedPlanId.make("plan-1"),
+const proposedPlan = (status: "active" | "completed") => ({
+  id: PlanId.make("plan-1"),
   createdAt: "2026-09-25T10:00:00.000Z",
   updatedAt: "2026-09-25T10:00:00.000Z",
-  turnId: TURN,
+  runId: RUN,
   planMarkdown: "# Plan",
-  implementedAt,
-  implementationThreadId,
+  status,
 });
 
 const agent = (id: string, status: RuntimeSubagent["status"]): RuntimeSubagent => ({
@@ -137,23 +138,10 @@ const agent = (id: string, status: RuntimeSubagent["status"]): RuntimeSubagent =
   updatedAt: "2026-09-25T10:00:00.000Z",
 });
 
-const agentsModel = (directAgents: ReadonlyArray<RuntimeSubagent>): AgentPanelModel => {
-  const live = directAgents.filter((candidate) => candidate.status === "running").length;
-  const settled = directAgents.filter((candidate) => candidate.status === "completed").length;
-  return {
-    ...emptyAgentPanelModel(),
-    directAgents,
-    hasAgents: directAgents.length > 0,
-    runningCount: live,
-    settledCount: settled,
-    liveCount: live,
-  };
-};
-
 describe("deriveInspectorModel status", () => {
   it("ranks approval over input over error over working over interrupted over ready", () => {
-    const running = withThread({ session: session("running") });
-    const errored = withThread({ session: session("error", "Provider crashed") });
+    const running = withThread({ runtime: runtime("running") });
+    const errored = withThread({ runtime: runtime("failed", "Provider crashed") });
     const status = (overrides: Partial<InspectorInputs>) =>
       deriveInspectorModel(inputs(overrides)).status;
 
@@ -175,7 +163,7 @@ describe("deriveInspectorModel status", () => {
       tone: "danger",
     });
     expect(status(running).label).toBe("Working");
-    expect(status(withThread({ session: session("interrupted") })).label).toBe("Interrupted");
+    expect(status(withThread({ runtime: runtime("interrupted") })).label).toBe("Interrupted");
     expect(status({})).toMatchObject({ label: "Ready", tone: "success", respond: false });
   });
 
@@ -183,10 +171,10 @@ describe("deriveInspectorModel status", () => {
     const model = deriveInspectorModel(
       inputs(
         withThread({
-          session: session("running"),
-          latestTurn: {
-            turnId: TURN,
-            state: "running",
+          runtime: runtime("running"),
+          latestRun: {
+            runId: RUN,
+            status: "running",
             requestedAt: "2026-09-25T09:59:58.000Z",
             startedAt: "2026-09-25T10:00:00.000Z",
             completedAt: null,
@@ -210,7 +198,7 @@ describe("deriveInspectorModel status", () => {
     const model = deriveInspectorModel(
       inputs({
         ...withThread({ interactionMode: "plan", backgroundLiveness: "working" }),
-        proposedPlan: proposedPlan(null, null),
+        proposedPlan: proposedPlan("active"),
       }),
     );
     expect(model.status).toMatchObject({ label: "Plan ready", tone: "accent" });
@@ -338,7 +326,7 @@ describe("deriveInspectorModel changes", () => {
 
   it("keeps the last turn only for a ready checkpoint with files", () => {
     const checkpoint = {
-      turnId: TURN,
+      runId: RUN,
       checkpointTurnCount: 1,
       checkpointRef: CheckpointRef.make("refs/t3/checkpoint-1"),
       status: "ready",
@@ -350,7 +338,7 @@ describe("deriveInspectorModel changes", () => {
       deriveInspectorModel(inputs({ lastCheckpoint })).changes?.lastTurn;
 
     expect(lastTurn(checkpoint)).toEqual({
-      turnId: TURN,
+      runId: RUN,
       fileCount: 1,
       additions: 3,
       deletions: 1,
@@ -375,17 +363,14 @@ describe("deriveInspectorModel plan", () => {
       { step: "Ship", status: "pending" as const },
     ];
     const model = deriveInspectorModel(
-      inputs({ activePlan: { createdAt: "2026-09-25T10:00:00.000Z", turnId: TURN, steps } }),
+      inputs({ activePlan: { createdAt: "2026-09-25T10:00:00.000Z", runId: RUN, steps } }),
     );
     expect(model.plan).toEqual({ steps, completed: 1, current: "Write tests", proposed: null });
   });
 
-  it("links a proposed plan to the thread that implemented it", () => {
-    const implementationThreadId = ThreadId.make("thread-2");
-    const model = deriveInspectorModel(
-      inputs({ proposedPlan: proposedPlan("2026-09-25T11:00:00.000Z", implementationThreadId) }),
-    );
-    expect(model.plan.proposed).toEqual({ implemented: true, threadId: implementationThreadId });
+  it("marks a completed proposed plan as implemented", () => {
+    const model = deriveInspectorModel(inputs({ proposedPlan: proposedPlan("completed") }));
+    expect(model.plan.proposed).toEqual({ implemented: true });
   });
 });
 
@@ -422,7 +407,7 @@ describe("deriveInspectorModel attention, agents and context", () => {
       agent("f", "completed"),
       agent("g", "completed"),
     ];
-    const model = deriveInspectorModel(inputs({ agents: agentsModel(agents) }));
+    const model = deriveInspectorModel(inputs({ agents }));
     expect(model.agents).toMatchObject({
       hasAgents: true,
       total: 7,
@@ -484,7 +469,7 @@ describe("deriveInspectorModel attention, agents and context", () => {
     // A draft has no thread yet, so nothing asks git about a directory.
     const model = deriveInspectorModel(
       inputs({
-        ...withThread({ isDraft: true, session: null }),
+        ...withThread({ isDraft: true, runtime: null }),
         git: { state: "none" },
         approvals: [approval],
       }),

@@ -1,13 +1,16 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
+import { deriveThreadCheckpointSummaries } from "@t3tools/client-runtime/state/thread-checkpoints";
 import {
-  deriveAgentPanelModel,
-  foldSubagentActivities,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+  deriveLatestThreadRun,
+  deriveThreadActivityRun,
+  deriveThreadRuntime,
+  presentPendingBackgroundWork,
+} from "@t3tools/client-runtime/state/thread-execution";
+import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import {
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
-  type OrchestrationThreadActivity,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
@@ -17,18 +20,24 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
 import { deriveProviderInstanceEntries } from "~/providerInstances";
 import {
-  derivePhase,
   deriveActivePlanState,
+  derivePendingApprovals,
+  derivePendingUserInputs,
   findLatestProposedPlan,
-  isLatestTurnSettled,
+  isLatestRunSettled,
 } from "~/session-logic";
-import { useProject, useServerConfigs, useThread, useThreadShell } from "~/state/entities";
+import {
+  resolveThreadDetailRef,
+  useProject,
+  useServerConfigs,
+  useThreadProjection,
+  useThreadShell,
+  useThreadVisibleTurnItems,
+} from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { useKnownTerminalSessions } from "~/state/terminalSessions";
 import { vcsEnvironment } from "~/state/vcs";
 import type { InspectorGitState, InspectorInputs, InspectorProvider } from "./model";
-
-const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
 
 /**
  * Gathers the inspector inputs from the same atoms and derivations ChatView uses, so the
@@ -36,9 +45,13 @@ const EMPTY_ACTIVITIES: ReadonlyArray<OrchestrationThreadActivity> = [];
  */
 export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs {
   const draft = useComposerDraftStore((store) => store.getDraftSessionByRef(threadRef));
-  const thread = useThread(threadRef, { waitForShell: draft !== null });
-  // Live-turn flags ride on the shell only; the same atom useThread already reads.
-  const shell = useThreadShell(threadRef);
+  const thread = useThreadShell(threadRef);
+  const detailRef = resolveThreadDetailRef(threadRef, {
+    shellExists: thread !== null,
+    waitForShell: draft !== null,
+  });
+  const projection = useThreadProjection(detailRef)?.projection ?? null;
+  const visibleTurnItems = useThreadVisibleTurnItems(detailRef);
   const projectId = thread?.projectId ?? draft?.projectId ?? null;
   const project = useProject(
     projectId === null ? null : scopeProjectRef(threadRef.environmentId, projectId),
@@ -59,29 +72,66 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
     return { state: "loading" };
   }, [gitCwd, gitQuery.data, gitQuery.error]);
 
-  const activities = thread?.activities ?? EMPTY_ACTIVITIES;
-  const session = thread?.session ?? null;
-  const latestTurn = thread?.latestTurn ?? null;
-  const latestTurnId = latestTurn?.turnId;
-  const sessionLive = derivePhase(session) !== "disconnected";
-  const pending = useMemo(() => derivePendingRequests(activities), [activities]);
-  const agents = useMemo(
-    () => deriveAgentPanelModel({ agents: foldSubagentActivities(activities, { sessionLive }) }),
-    [activities, sessionLive],
-  );
+  const derived = useMemo(() => {
+    if (projection === null) {
+      return {
+        runtime: thread?.runtime ?? null,
+        latestRun: thread?.latestRun ?? null,
+        activityRun: thread?.latestRun ?? null,
+        approvals: [],
+        userInputs: [],
+        agents: [],
+        lastCheckpoint: null,
+      };
+    }
+    const pending = derivePendingThreadRequests(projection);
+    return {
+      runtime: deriveThreadRuntime(projection),
+      latestRun: deriveLatestThreadRun(projection),
+      activityRun: deriveThreadActivityRun(projection),
+      approvals: derivePendingApprovals(pending.approvals),
+      userInputs: derivePendingUserInputs(pending.userInputs),
+      agents: projectedSubagentsToRuntime(projection.subagents),
+      lastCheckpoint: deriveThreadCheckpointSummaries(projection).at(-1) ?? null,
+    };
+  }, [projection, thread?.latestRun, thread?.runtime]);
+  const { runtime, latestRun, activityRun } = derived;
+  const activityRunSettled = isLatestRunSettled(activityRun, runtime);
   const activePlan = useMemo(
-    () => deriveActivePlanState(activities, latestTurnId),
-    [activities, latestTurnId],
+    () => deriveActivePlanState(projection, activityRun?.runId),
+    [activityRun?.runId, projection],
   );
-  const contextWindow = useMemo(() => deriveLatestContextWindowSnapshot(activities), [activities]);
-  const latestTurnSettled = isLatestTurnSettled(latestTurn, session);
-  const proposedPlans = thread?.proposedPlans;
+  // Step progress for the running turn's own plan only, as ChatView's composer shows it.
+  const planProgress = useMemo(() => {
+    if (activityRunSettled || !activePlan || activePlan.runId !== (activityRun?.runId ?? null)) {
+      return null;
+    }
+    const totalSteps = activePlan.steps.length;
+    if (totalSteps === 0) return null;
+    const step =
+      activePlan.steps.find((candidate) => candidate.status === "inProgress")?.step ??
+      activePlan.steps.find((candidate) => candidate.status === "pending")?.step ??
+      activePlan.steps.at(-1)!.step;
+    const completedSteps = activePlan.steps.filter((c) => c.status === "completed").length;
+    return { step, completedSteps, totalSteps };
+  }, [activityRun?.runId, activityRunSettled, activePlan]);
+  const contextWindow = useMemo(() => {
+    const liveUsage = projection?.providerTurns.findLast(
+      (turn) => turn.tokenUsage !== undefined,
+    )?.tokenUsage;
+    return deriveLatestContextWindowSnapshot(
+      visibleTurnItems,
+      liveUsage ?? null,
+      projection?.providerThreads.find(
+        (candidate) => candidate.id === projection.thread.activeProviderThreadId,
+      ),
+    );
+  }, [projection, visibleTurnItems]);
+  const latestRunSettled = isLatestRunSettled(latestRun, runtime);
+  const latestRunId = latestRun?.runId ?? null;
   const proposedPlan = useMemo(
-    () =>
-      latestTurnSettled && proposedPlans
-        ? findLatestProposedPlan(proposedPlans, latestTurnId ?? null)
-        : null,
-    [latestTurnId, latestTurnSettled, proposedPlans],
+    () => (latestRunSettled ? findLatestProposedPlan(projection, latestRunId) : null),
+    [latestRunId, latestRunSettled, projection],
   );
   const terminalSessions = useKnownTerminalSessions({
     environmentId: threadRef.environmentId,
@@ -100,7 +150,7 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
 
   const providers = serverConfig?.providers;
   const modelSelection = thread?.modelSelection ?? null;
-  const providerInstanceId = session?.providerInstanceId ?? modelSelection?.instanceId ?? null;
+  const providerInstanceId = runtime?.providerInstanceId ?? modelSelection?.instanceId ?? null;
   const provider = useMemo((): InspectorProvider | null => {
     if (!providers || !modelSelection || providerInstanceId === null) return null;
     const entry = deriveProviderInstanceEntries(providers).find(
@@ -121,18 +171,20 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
   const interactionMode =
     thread?.interactionMode ?? draft?.interactionMode ?? DEFAULT_PROVIDER_INTERACTION_MODE;
   const branch = thread?.branch ?? draft?.branch ?? null;
-  const planProgress = shell?.planProgress ?? null;
-  const backgroundLiveness = shell?.backgroundLiveness ?? null;
+  const pendingBackgroundTasks = thread?.pendingBackgroundTasks;
+  const backgroundLiveness = useMemo(() => {
+    const work = presentPendingBackgroundWork(pendingBackgroundTasks ?? []);
+    return work === null ? null : work.waiting ? ("working" as const) : ("monitoring" as const);
+  }, [pendingBackgroundTasks]);
   const linkedPullRequest = thread?.linkedPullRequest ?? thread?.branchPullRequest ?? null;
   const projectName = project?.title ?? null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
-  const lastCheckpoint = thread?.checkpoints.at(-1) ?? null;
   return useMemo(
     () => ({
       thread: {
         isDraft,
-        session,
-        latestTurn,
+        runtime,
+        latestRun,
         runtimeMode,
         interactionMode,
         branch,
@@ -145,35 +197,33 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
       provider,
       supportsPullRequests,
       git,
-      lastCheckpoint,
+      lastCheckpoint: derived.lastCheckpoint,
       activePlan,
       proposedPlan,
-      approvals: pending.approvals,
-      userInputs: pending.userInputs,
-      agents,
+      approvals: derived.approvals,
+      userInputs: derived.userInputs,
+      agents: derived.agents,
       runningTerminals,
       contextWindow,
     }),
     [
       activePlan,
-      agents,
       backgroundLiveness,
       branch,
       contextWindow,
+      derived,
       git,
       interactionMode,
       isDraft,
-      lastCheckpoint,
-      latestTurn,
+      latestRun,
       linkedPullRequest,
-      pending,
       planProgress,
       projectName,
       proposedPlan,
       provider,
       runningTerminals,
+      runtime,
       runtimeMode,
-      session,
       supportsPullRequests,
       worktreePath,
     ],

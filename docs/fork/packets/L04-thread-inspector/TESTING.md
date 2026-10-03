@@ -29,7 +29,7 @@ With Kyle's permission for a dev server and browser, on seeded data:
 
 1. Open a Codex thread mid-run with a plan: the hero shows Working with the step, the
    elapsed time and the step progress; the panel's Plan lists the steps; Agents rows and
-   counts match the Agents panel.
+   counts match the subagents shown in the chat.
 2. Claude thread waiting on approval: the header button shows the dot; the hero says Needs
    approval with the approval kind; Needs you lists the command; "Respond" focuses the
    composer with the approval panel visible, and the card closes without pulling focus back

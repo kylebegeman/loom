@@ -1,7 +1,17 @@
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { PROVIDER_ICON_BY_PROVIDER } from "~/components/chat/providerIconUtils";
+import { ProviderDriverKind } from "@t3tools/contracts";
+import {
+  AntigravityIcon,
+  ClaudeAI,
+  CursorIcon,
+  GrokIcon,
+  type Icon,
+  OpenAI,
+  OpenCodeIcon,
+  PiAgentIcon,
+} from "~/components/Icons";
 import { cn } from "~/lib/utils";
 import type { InspectorAction, InspectorFact, InspectorModel } from "./model";
 import {
@@ -86,6 +96,17 @@ export function InspectorHero({
     </div>
   );
 }
+
+// Upstream keeps its copy private to ProviderInstanceIcon, which brings a badge the chip has no room for.
+const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
+  [ProviderDriverKind.make("codex")]: OpenAI,
+  [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
+  [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
+  [ProviderDriverKind.make("cursor")]: CursorIcon,
+  [ProviderDriverKind.make("grok")]: GrokIcon,
+  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
+  [ProviderDriverKind.make("pi")]: PiAgentIcon,
+};
 
 function FactChip({ fact }: { fact: InspectorFact }) {
   const Icon = fact.driverKind ? (PROVIDER_ICON_BY_PROVIDER[fact.driverKind] ?? null) : null;

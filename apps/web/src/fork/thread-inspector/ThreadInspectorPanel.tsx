@@ -97,11 +97,9 @@ export function ThreadInspectorPanel({ threadRef }: ForkPanelProps) {
             <ChangesSection changes={model.changes} theme={resolvedTheme} onAction={runAction} />
           ) : null}
           {model.plan.steps.length > 0 || model.plan.proposed ? (
-            <PlanSection plan={model.plan} onAction={runAction} />
+            <PlanSection plan={model.plan} />
           ) : null}
-          {model.agents.hasAgents ? (
-            <AgentsSection agents={model.agents} onAction={runAction} />
-          ) : null}
+          {model.agents.hasAgents ? <AgentsSection agents={model.agents} /> : null}
           {model.terminals.length > 0 ? (
             <TerminalsSection terminals={model.terminals} onAction={runAction} />
           ) : null}
@@ -262,7 +260,7 @@ function ChangesSection({
                 <Button
                   size="micro"
                   variant="ghost"
-                  onClick={() => onAction({ kind: "open-turn-diff", turnId: lastTurn.turnId })}
+                  onClick={() => onAction({ kind: "open-turn-diff", runId: lastTurn.runId })}
                 >
                   Show
                 </Button>
@@ -275,16 +273,9 @@ function ChangesSection({
   );
 }
 
-function PlanSection({
-  plan,
-  onAction,
-}: {
-  plan: InspectorPlan;
-  onAction: (action: InspectorAction) => void;
-}) {
+function PlanSection({ plan }: { plan: InspectorPlan }) {
   const total = plan.steps.length;
   const proposed = plan.proposed;
-  const proposedThreadId = proposed?.threadId ?? null;
   return (
     <InspectorSection
       title="Plan"
@@ -328,24 +319,7 @@ function PlanSection({
           icon={<ListChecksIcon />}
           label={proposed.implemented ? "Implemented" : "Plan ready"}
           tone={proposed.implemented ? "muted" : "accent"}
-          value={
-            proposed.implemented
-              ? proposedThreadId
-                ? "in another thread"
-                : undefined
-              : "Review it in the chat"
-          }
-          trailing={
-            proposedThreadId ? (
-              <Button
-                size="micro"
-                variant="ghost"
-                onClick={() => onAction({ kind: "open-thread", threadId: proposedThreadId })}
-              >
-                Open thread
-              </Button>
-            ) : null
-          }
+          value={proposed.implemented ? undefined : "Review it in the chat"}
         />
       ) : null}
     </InspectorSection>
@@ -364,20 +338,10 @@ function stepKeys(
   });
 }
 
-function AgentsSection({
-  agents,
-  onAction,
-}: {
-  agents: InspectorAgents;
-  onAction: (action: InspectorAction) => void;
-}) {
+function AgentsSection({ agents }: { agents: InspectorAgents }) {
   const hidden = agents.total - agents.rows.length;
   return (
-    <InspectorSection
-      title="Agents"
-      summary={agents.summary}
-      action={{ label: "Agents panel", onClick: () => onAction({ kind: "open-agents" }) }}
-    >
+    <InspectorSection title="Agents" summary={agents.summary}>
       {agents.rows.map((agent) => (
         <InspectorRow
           key={agent.id}
@@ -391,7 +355,7 @@ function AgentsSection({
           trailing={agent.since ? <InspectorElapsed since={agent.since} /> : null}
         />
       ))}
-      {hidden > 0 ? <InspectorNote>{hidden} more in the agents panel</InspectorNote> : null}
+      {hidden > 0 ? <InspectorNote>{hidden} more</InspectorNote> : null}
     </InspectorSection>
   );
 }

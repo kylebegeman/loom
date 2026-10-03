@@ -37,7 +37,8 @@ Two surfaces read one model, so a value can never differ between them:
   - **Context:** percentage and tokens with a bar, when the provider reports it; the panel
     adds the total processed and the automatic compaction note.
 - Jump: a card line or a panel tool opens the diff panel (all changes, or the last turn's),
-  the agents panel, the pull request, a terminal, or the thread that implemented a plan.
+  the pull request, or a terminal. Upstream removed the agents panel and no longer links a
+  plan to the thread that implemented it, so agents and plans have no jump.
   **Respond** focuses the composer where the approval or question waits.
 
 ## Entry points
@@ -61,9 +62,9 @@ No settings.
   "Context". Card lines: "Changes", "Last turn", "Plan", "Agents", "Context", plus the branch,
   worktree, pull request and terminal lines named by their values.
 - Actions: "Respond", "Open diff", "Show" (last turn), "Open" (pull request, terminal),
-  "Open thread", "Agents panel", "Copy branch", "Copy worktree", "Open inspector panel".
-- Empty and overflow copy: "No uncommitted changes", "N more in the diff panel", "N more in
-  the agents panel", "N more in the chat".
+  "Copy branch", "Copy worktree", "Open inspector panel".
+- Empty and overflow copy: "No uncommitted changes", "N more in the diff panel", "N more"
+  (agents), "N more in the chat".
 - Not a git repository: "Not a git repository" in Workspace; Changes hidden.
 - Draft thread: "Send a message to start this thread."
 

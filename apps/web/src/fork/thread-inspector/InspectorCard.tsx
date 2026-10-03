@@ -103,7 +103,6 @@ function GlanceRows({
   const { pullRequest, changes, plan, agents, context } = model;
   const pullRequestAction = pullRequest?.action ?? null;
   const lastTurn = changes?.lastTurn ?? null;
-  const proposedThreadId = plan.proposed?.threadId ?? null;
   return (
     <>
       {model.workspace.map((entry) =>
@@ -169,7 +168,7 @@ function GlanceRows({
               className="shrink-0 text-2xs"
             />
           }
-          onClick={() => onAction({ kind: "open-turn-diff", turnId: lastTurn.turnId })}
+          onClick={() => onAction({ kind: "open-turn-diff", runId: lastTurn.runId })}
         />
       ) : changes ? (
         <InspectorRow icon={<FileDiffIcon />} label="Changes" value="No uncommitted changes" />
@@ -188,20 +187,10 @@ function GlanceRows({
           label="Plan"
           tone={plan.proposed.implemented ? "default" : "accent"}
           value={plan.proposed.implemented ? "Implemented" : "Ready to review"}
-          onClick={
-            proposedThreadId
-              ? () => onAction({ kind: "open-thread", threadId: proposedThreadId })
-              : undefined
-          }
         />
       ) : null}
       {agents.hasAgents ? (
-        <InspectorRow
-          icon={<BotIcon />}
-          label="Agents"
-          value={agents.summary ?? undefined}
-          onClick={() => onAction({ kind: "open-agents" })}
-        />
+        <InspectorRow icon={<BotIcon />} label="Agents" value={agents.summary ?? undefined} />
       ) : null}
       {model.terminals.slice(0, CARD_TERMINAL_LIMIT).map((terminal) => (
         <InspectorRow
