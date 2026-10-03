@@ -60,6 +60,11 @@ export const switchboardCodexArgs = (): ReadonlyArray<string> =>
 export const switchboardClaudeSettings = (): Partial<typeof SWITCHBOARD_CLAUDE_SETTINGS> =>
   enabled ? SWITCHBOARD_CLAUDE_SETTINGS : {};
 
+/** `makeClaudeQueryOptions` input that adds the hub settings to a session; empty when off. */
+export const switchboardClaudeQueryOptions = (): {
+  sdkSettings?: typeof SWITCHBOARD_CLAUDE_SETTINGS;
+} => (enabled ? { sdkSettings: SWITCHBOARD_CLAUDE_SETTINGS } : {});
+
 /** Test hook; the server sets this only from settings. */
 export const setSwitchboardEnabled = (value: boolean) => {
   enabled = value;

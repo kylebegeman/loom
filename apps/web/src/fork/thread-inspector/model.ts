@@ -4,22 +4,20 @@
  * area); the panel shows everything with tools. Both read this model, so a value can never
  * differ between them.
  */
-import type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
+import type { RuntimeSubagent } from "@t3tools/client-runtime/state/subagentRuntime";
+import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
 import type {
-  AgentPanelModel,
-  RuntimeSubagent,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+  ThreadPendingApproval,
+  ThreadPendingUserInput,
+} from "@t3tools/client-runtime/state/thread-requests";
 import type {
-  OrchestrationCheckpointSummary,
-  OrchestrationLatestTurn,
-  OrchestrationSession,
   ProviderDriverKind,
   ProviderInteractionMode,
   ProviderRequestKind,
+  RunId,
   RuntimeMode,
-  ThreadId,
   ThreadLinkedPullRequest,
-  TurnId,
   VcsStatusResult,
 } from "@t3tools/contracts";
 
@@ -27,7 +25,12 @@ import { runtimeModeConfig } from "~/components/chat/runtimeModeConfig";
 import { PULL_REQUEST_STATE_PRESENTATION } from "~/components/pullRequest/pullRequestIcons";
 import { resolveWorkingStartedAt } from "~/components/Sidebar.logic";
 import type { ContextWindowSnapshot } from "~/lib/contextWindow";
-import type { ActivePlanState, LatestProposedPlanState } from "~/session-logic";
+import {
+  derivePhase,
+  hasActionableProposedPlan,
+  type ActivePlanState,
+  type LatestProposedPlanState,
+} from "~/session-logic";
 
 export type InspectorGitState =
   /** No workspace to ask about (no project yet). */
@@ -45,8 +48,8 @@ export interface InspectorProvider {
 export interface InspectorInputs {
   readonly thread: {
     readonly isDraft: boolean;
-    readonly session: OrchestrationSession | null;
-    readonly latestTurn: OrchestrationLatestTurn | null;
+    readonly runtime: ThreadRuntimeSummary | null;
+    readonly latestRun: ThreadRunSummary | null;
     readonly runtimeMode: RuntimeMode;
     readonly interactionMode: ProviderInteractionMode;
     readonly branch: string | null;
@@ -63,24 +66,22 @@ export interface InspectorInputs {
   readonly provider: InspectorProvider | null;
   readonly supportsPullRequests: boolean;
   readonly git: InspectorGitState;
-  readonly lastCheckpoint: OrchestrationCheckpointSummary | null;
+  readonly lastCheckpoint: ThreadCheckpointSummary | null;
   readonly activePlan: ActivePlanState | null;
   readonly proposedPlan: LatestProposedPlanState | null;
-  readonly approvals: ReadonlyArray<PendingApproval>;
-  readonly userInputs: ReadonlyArray<PendingUserInput>;
-  readonly agents: AgentPanelModel;
+  readonly approvals: ReadonlyArray<ThreadPendingApproval>;
+  readonly userInputs: ReadonlyArray<ThreadPendingUserInput>;
+  readonly agents: ReadonlyArray<RuntimeSubagent>;
   readonly runningTerminals: ReadonlyArray<InspectorTerminal>;
   readonly contextWindow: ContextWindowSnapshot | null;
 }
 
 export type InspectorAction =
   | { readonly kind: "open-diff" }
-  | { readonly kind: "open-turn-diff"; readonly turnId: TurnId }
-  | { readonly kind: "open-agents" }
+  | { readonly kind: "open-turn-diff"; readonly runId: RunId }
   | { readonly kind: "open-pull-request"; readonly pullRequest: ThreadLinkedPullRequest }
   | { readonly kind: "open-terminal"; readonly terminalId: string }
-  | { readonly kind: "focus-composer" }
-  | { readonly kind: "open-thread"; readonly threadId: ThreadId };
+  | { readonly kind: "focus-composer" };
 
 /**
  * Tones map to theme tokens: info is work in progress, warning an approval or a filling
@@ -162,7 +163,7 @@ export interface InspectorChanges {
   readonly additions: number;
   readonly deletions: number;
   readonly lastTurn: {
-    readonly turnId: TurnId;
+    readonly runId: RunId;
     readonly fileCount: number;
     readonly additions: number;
     readonly deletions: number;
@@ -179,7 +180,7 @@ export interface InspectorPlan {
   readonly completed: number;
   /** The step in progress. */
   readonly current: string | null;
-  readonly proposed: { readonly implemented: boolean; readonly threadId: ThreadId | null } | null;
+  readonly proposed: { readonly implemented: boolean } | null;
 }
 
 export type InspectorAgentStatus = "working" | "idle" | "completed" | "failed" | "stopped";
@@ -284,28 +285,25 @@ function deriveStatus(inputs: InspectorInputs): InspectorStatus {
     const question = inputs.userInputs[0]?.questions[0]?.question ?? null;
     return { ...base, label: "Needs input", tone: "accent", detail: question, respond: true };
   }
-  const session = thread.session;
-  if (session?.status === "error" || thread.latestTurn?.state === "error") {
-    return { ...base, label: "Error", tone: "danger", detail: session?.lastError ?? null };
+  const runtime = thread.runtime;
+  if (runtime?.status === "failed" || thread.latestRun?.status === "failed") {
+    return { ...base, label: "Error", tone: "danger", detail: runtime?.lastError ?? null };
   }
-  if (session?.status === "running" || session?.status === "starting") {
+  const phase = derivePhase(runtime);
+  if (phase === "running" || phase === "connecting") {
     const progress = thread.planProgress;
     return {
       ...base,
-      label: session.status === "starting" ? "Connecting" : "Working",
+      label: phase === "connecting" ? "Connecting" : "Working",
       tone: "info",
       detail: progress?.step ?? null,
-      since: resolveWorkingStartedAt({ latestTurn: thread.latestTurn, session }),
+      since: resolveWorkingStartedAt({ latestRun: thread.latestRun, runtime }),
       progress: progress
         ? { completed: progress.completedSteps, total: progress.totalSteps }
         : null,
     };
   }
-  if (
-    thread.interactionMode === "plan" &&
-    inputs.proposedPlan !== null &&
-    inputs.proposedPlan.implementedAt === null
-  ) {
+  if (thread.interactionMode === "plan" && hasActionableProposedPlan(inputs.proposedPlan)) {
     return { ...base, label: "Plan ready", tone: "accent", detail: "Review it in the chat." };
   }
   if (thread.backgroundLiveness === "working") {
@@ -314,7 +312,12 @@ function deriveStatus(inputs: InspectorInputs): InspectorStatus {
   if (thread.backgroundLiveness === "monitoring") {
     return { ...base, label: "Monitoring", tone: "info" };
   }
-  if (session?.status === "interrupted" || thread.latestTurn?.state === "interrupted") {
+  if (
+    runtime?.status === "interrupted" ||
+    runtime?.status === "cancelled" ||
+    thread.latestRun?.status === "interrupted" ||
+    thread.latestRun?.status === "cancelled"
+  ) {
     return { ...base, label: "Interrupted", tone: "muted" };
   }
   return { ...base, label: "Ready", tone: "success" };
@@ -454,7 +457,7 @@ function deriveChanges(inputs: InspectorInputs): InspectorChanges | null {
   const lastTurn =
     lastCheckpoint?.status === "ready" && lastCheckpoint.files.length > 0
       ? {
-          turnId: lastCheckpoint.turnId,
+          runId: lastCheckpoint.runId,
           fileCount: lastCheckpoint.files.length,
           ...lastCheckpoint.files.reduce(
             (total, file) => ({
@@ -491,9 +494,7 @@ function derivePlan(inputs: InspectorInputs): InspectorPlan {
     steps: steps.map((step) => ({ step: step.step, status: step.status })),
     completed: steps.filter((step) => step.status === "completed").length,
     current: steps.find((step) => step.status === "inProgress")?.step ?? null,
-    proposed: proposed
-      ? { implemented: proposed.implementedAt !== null, threadId: proposed.implementationThreadId }
-      : null,
+    proposed: proposed ? { implemented: proposed.status === "completed" } : null,
   };
 }
 
@@ -518,26 +519,28 @@ function agentActivity(agent: RuntimeSubagent): string | null {
 
 function deriveAgents(inputs: InspectorInputs): InspectorAgents {
   const { agents } = inputs;
-  if (!agents.hasAgents) {
+  if (agents.length === 0) {
     return NO_AGENTS;
   }
-  const working = agents.runningCount + agents.waitingCount;
+  const count = (status: InspectorAgentStatus | "finished") =>
+    agents.filter((agent) => {
+      const mapped = AGENT_STATUS[agent.status];
+      return status === "finished"
+        ? mapped === "completed" || mapped === "failed" || mapped === "stopped"
+        : mapped === status;
+    }).length;
+  const working = count("working");
+  const idle = count("idle");
+  const finished = count("finished");
   const summary = [
     working > 0 ? `${working} working` : null,
-    agents.idleCount > 0 ? `${agents.idleCount} idle` : null,
-    agents.settledCount > 0 ? `${agents.settledCount} finished` : null,
+    idle > 0 ? `${idle} idle` : null,
+    finished > 0 ? `${finished} finished` : null,
   ]
     .filter((part) => part !== null)
     .join(" · ");
-  const members = [
-    ...agents.directAgents,
-    ...agents.workflows.flatMap((group) => {
-      const listed = [...group.phases.flatMap((phase) => phase.members), ...group.unphasedMembers];
-      return listed.length > 0 ? listed : [group.workflow];
-    }),
-  ];
   const rank = (agent: RuntimeSubagent) => (AGENT_STATUS[agent.status] === "working" ? 0 : 1);
-  const rows = members
+  const rows = agents
     .toSorted((left, right) => rank(left) - rank(right))
     .slice(0, INSPECTOR_AGENT_ROW_LIMIT)
     .map((agent): InspectorAgent => ({
@@ -549,10 +552,10 @@ function deriveAgents(inputs: InspectorInputs): InspectorAgents {
     }));
   return {
     hasAgents: true,
-    total: members.length,
+    total: agents.length,
     working,
-    idle: agents.idleCount,
-    finished: agents.settledCount,
+    idle,
+    finished,
     summary,
     rows,
   };

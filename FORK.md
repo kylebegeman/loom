@@ -91,7 +91,7 @@ usage views do not count a hub-routed subscription twice.
 The `switchboard` seams add Switchboard mode (`apps/server/src/fork/switchboard`,
 `apps/web/src/fork/switchboard`): one `switchboardEnabled` server setting, shown with
 the usage hubs in Settings. While it is on, every Claude and Codex launch is pointed at
-the local CLIProxyAPI hub (`codexLaunchArgs.ts`, `ClaudeAdapter.ts`,
+the local CLIProxyAPI hub (`codexLaunchArgs.ts`, `ClaudeAdapterV2.ts`,
 `ClaudeTextGeneration.ts`) and the model picker shows one Claude and one Codex
 (`ProviderModelPicker.tsx`). The picker also disables, with the reason, models the hub
 cannot serve right now: the `loom.switchboard.limits` RPC reads the Switchboard
