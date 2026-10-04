@@ -172,8 +172,12 @@ a check fails, Claude (Opus 5.5, high effort) repairs it on the same branch with
 seam rules and says what it changed on the pull request, or opens a draft marked "needs
 Kyle" when it cannot. Those pull requests wait for review.
 
-Nothing installs by itself. Update the app from Terminal, not from inside Loom: installing
-quits Loom, and `land` refuses to run where that would kill it midway.
+Nothing installs by itself. Feed-enabled builds use the existing update button: download
+the update, then restart and install when ready. The local publisher described below builds
+and publishes each checked daily integration automatically.
+
+For a manual build, run this from Terminal, not from inside Loom: installing quits Loom,
+and `land` refuses to run where that would kill it midway.
 
 ```sh
 scripts/fork/loom.sh land
@@ -208,8 +212,43 @@ A merge conflict stops on the `integrate/<tag>` branch and lists the files. Reso
 `git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`
 (add `--pr` to finish as a pull request).
 
-Fork features that reach `main` ship the same way, with `scripts/fork/loom.sh land` from
-Terminal.
+Fork features that reach `main` join the next daily integration build. To install them
+before then, use `scripts/fork/loom.sh land` from Terminal.
+
+### Automatic builds and the update button
+
+On Kyle's Apple Silicon Mac, the local publisher checks GitHub every 30 minutes while
+logged in. It builds the newest `loom-v*` integration tag contained in `origin/main`, in
+an isolated checkout under `~/Library/Application Support/Loom Updates`. It does not
+pull, stash or reset the working checkout. A failed or unmerged integration is not a
+release candidate.
+
+```sh
+node scripts/fork/updates.ts publish
+node scripts/fork/updates.ts enable
+```
+
+The first command builds, signs and publishes the current integration. `enable` installs
+the publisher and its launch agent outside the checkout, so switching branches does not
+break the schedule. Run `enable` again after changing the publisher. `check` reports the
+candidate without building or publishing; `prepare` builds without publishing; `status`
+shows the service and log locations; `disable` removes the schedule.
+
+The signing key stays in the Mac's login keychain. The publisher verifies that the built
+app uses `kylebegeman/loom` as its feed and satisfies the installed app's signing
+requirement. It signs before creating the final ZIP and checksum, uploads to a draft
+GitHub Release, then publishes only after the ZIP, block map and manifest have uploaded.
+Re-running a published integration does nothing. Sleeping or offline Macs catch up on
+the next successful check. Logs are in `~/Library/Logs/Loom Updates.log`.
+
+Older Loom builds have no feed. After the first `publish`, run
+`scripts/fork/loom.sh install` once from Terminal to install the prepared build. Subsequent
+releases appear in the app's normal update controls; downloading and restarting remain
+manual. GitHub releases are for this Mac, not notarized public macOS distribution.
+
+The publisher retains three completed builds plus the installed build. Scripted installs
+make the database snapshots used by `loom.sh rollback`; the standard in-app updater does
+not make those legacy snapshots. Do not assume every in-app update has a rollback snapshot.
 
 ### Versions and updates
 
@@ -226,9 +265,14 @@ two Loom builds of one tag apart. Don't give Loom a version of its own:
   always a nightly build: upstream cuts each stable from its latest nightly, which `main`
   usually has already.
 
-Loom has no update feed. Local builds ship without `app-update.yml`, so the app never
-offers a T3 Code release, which would replace Loom since both share an app id. Its update
-settings say no update feed is configured. `build` stops if a build ever has a feed.
+Loom's feed is `kylebegeman/loom`, never `pingdotgg/t3code`: both apps share an app id,
+so an upstream feed would replace Loom. Both the local build script and publisher reject
+an app with the wrong feed. The app and server keep the exact upstream version. Published
+release tags use the plain upstream version without a leading `v`: unlike `loom-v*`,
+these are valid semantic versions that the GitHub updater can discover, and they stay
+out of the sync scripts' upstream tag selection. Do not add `+` build metadata to those
+tags: GitHub encodes it in the Atom feed, and the updater rejects the encoded version.
+Upstream's tags are never moved.
 
 ### GitHub Actions on the fork
 
@@ -253,7 +297,7 @@ integration pull request that passed without repairs. Set it to anything else an
 pull request waits for `land`.
 
 Builds live in `~/Library/Application Support/Loom Builds` (the newest three, plus the
-installed one). Each install first saves the V1 `state.sqlite`, the V2 `statev2.sqlite`
+installed one). Each scripted install first saves the V1 `state.sqlite`, the V2 `statev2.sqlite`
 (when present), and the settings files from `~/.t3/userdata` into the record of the build
 being replaced. Rollback restores the saved databases and removes a V2 database when
 returning to a V1-only snapshot. Nightly builds share stable's data

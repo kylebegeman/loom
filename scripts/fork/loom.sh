@@ -167,7 +167,7 @@ build_app() {
   # is for the build only; the package files are restored afterwards.
   local stamped=(apps/server/package.json apps/desktop/package.json apps/web/package.json packages/contracts/package.json)
   node scripts/update-release-package-versions.ts "$version"
-  if ! node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --build-version "$version"; then
+  if ! T3CODE_DESKTOP_UPDATE_REPOSITORY="$GH_REPO" node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64 --build-version "$version"; then
     git checkout -q -- "${stamped[@]}"
     die "the desktop build failed"
   fi
@@ -184,14 +184,18 @@ build_app() {
   name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$record"/*.app/Contents/Info.plist)
   case "$name" in Loom | "Loom ("*) ;; *) die "the built app is named '$name', not Loom; check the brand seams" ;; esac
   [ "$(ls -d "$record"/*.app | sed -n 1p)" = "$record/Loom.app" ] || mv "$record"/*.app "$record/Loom.app"
-  # Loom updates only through this script. With an update feed the app would offer
-  # upstream's T3 Code releases, and installing one replaces Loom (they share an app id).
-  if [ -e "$record/Loom.app/Contents/Resources/app-update.yml" ]; then
+  # Both apps share an id, so only the fork's feed may be embedded in Loom.
+  if ! node --input-type=module -e '
+    import { readFile } from "node:fs/promises";
+    import { validateFeedConfig } from "./scripts/fork/updates.ts";
+    validateFeedConfig(await readFile(process.argv[1], "utf8"));
+  ' "$record/Loom.app/Contents/Resources/app-update.yml"; then
     rm -rf "$record"
-    die "the built app has an update feed (app-update.yml). Unset T3CODE_DESKTOP_UPDATE_REPOSITORY, GITHUB_REPOSITORY and T3CODE_DESKTOP_MOCK_UPDATES, or reapply the fork's no-feed default"
+    die "the built app does not use the Loom update feed"
   fi
-  sign_app "$record/Loom.app"
   printf 'upstream=%s\ncommit=%s\nbuilt=%s\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
+  cp "$record/build.env" "$record/Loom.app/Contents/Resources/loom-build.env"
+  sign_app "$record/Loom.app"
   echo "Built $name $version into $record"
 }
 
@@ -256,9 +260,17 @@ records() {
   done | sort -r | cut -f2-
 }
 
-# The record of the installed build, from the marker install_record writes.
+# In-app updates carry their build record; older scripted installs use the marker.
 installed_record() {
-  local name
+  local name version commit
+  local embedded="$APP_PATH/Contents/Resources/loom-build.env"
+  if [ -f "$embedded" ]; then
+    version=$(sed -n 's/^upstream=//p' "$embedded")
+    commit=$(sed -n 's/^commit=//p' "$embedded")
+    name="$version-${commit:0:10}"
+    [ -d "$BUILDS_DIR/$name" ] && echo "$BUILDS_DIR/$name"
+    return 0
+  fi
   [ -f "$BUILDS_DIR/installed" ] || return 0
   name=$(cat "$BUILDS_DIR/installed")
   [ -d "$BUILDS_DIR/$name" ] && echo "$BUILDS_DIR/$name"
