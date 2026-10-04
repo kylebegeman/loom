@@ -374,7 +374,14 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
   const notes = NodePath.join(prepared.record, "updates/release-notes.md");
   await NodeFSP.writeFile(
     notes,
-    `Loom built from the checked integration [${release.tag}](https://github.com/${REPOSITORY}/tree/${release.tag}).\n\nIncludes upstream T3 Code [v${release.version}](https://github.com/pingdotgg/t3code/releases/tag/v${release.version}).\n\nUse Loom's update button to download, then restart and install when ready.\n\nSource commit: ${release.commit}. macOS Apple Silicon; signed with Kyle's local Loom certificate.\n`,
+    `Loom built from the checked integration [${release.tag}](https://github.com/${REPOSITORY}/tree/${release.tag}).
+
+Includes upstream T3 Code [v${release.version}](https://github.com/pingdotgg/t3code/releases/tag/v${release.version}).
+
+Use Loom's update button to download, then restart and install when ready.
+
+Source commit: ${release.commit}. macOS Apple Silicon; signed with Kyle's local Loom certificate.
+`,
   );
   if (state === "missing") {
     run(
