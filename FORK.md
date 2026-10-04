@@ -253,8 +253,10 @@ integration pull request that passed without repairs. Set it to anything else an
 pull request waits for `land`.
 
 Builds live in `~/Library/Application Support/Loom Builds` (the newest three, plus the
-installed one). Each install first saves `~/.t3/userdata/state.sqlite` and the settings
-files into the record of the build being replaced. Nightly builds share stable's data
+installed one). Each install first saves the V1 `state.sqlite`, the V2 `statev2.sqlite`
+(when present), and the settings files from `~/.t3/userdata` into the record of the build
+being replaced. Rollback restores the saved databases and removes a V2 database when
+returning to a V1-only snapshot. Nightly builds share stable's data
 folder and may upgrade the database in ways an older build cannot read, which is why a
 rollback restores the data along with the app. Threads created on the newer build are
 lost by a rollback.

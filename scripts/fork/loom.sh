@@ -36,6 +36,7 @@ APP_PATH="/Applications/Loom.app"
 BUILDS_DIR="$HOME/Library/Application Support/Loom Builds"
 T3_USERDATA="$HOME/.t3/userdata"
 KEEP_BUILDS=3
+STATE_DATABASES=(state.sqlite statev2.sqlite)
 SIGNING_IDENTITY="${LOOM_SIGNING_IDENTITY:-Loom Local Code Signing}"
 LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
 # Every upstream file the fork touches, with its marker and how many marked
@@ -320,10 +321,14 @@ quit_app() {
 # installed now, so rolling back to it restores the data it last ran with.
 snapshot_state() {
   local into=$1
-  [ -f "$T3_USERDATA/state.sqlite" ] || return 0
   mkdir -p "$into/state"
-  rm -f "$into/state/state.sqlite"
-  sqlite3 "$T3_USERDATA/state.sqlite" "VACUUM INTO '$into/state/state.sqlite'"
+  local database
+  for database in "${STATE_DATABASES[@]}"; do
+    rm -f "$into/state/$database"
+    if [ -f "$T3_USERDATA/$database" ]; then
+      sqlite3 -readonly "$T3_USERDATA/$database" "VACUUM INTO '$into/state/$database'"
+    fi
+  done
   local f
   for f in settings.json client-settings.json; do
     [ -f "$T3_USERDATA/$f" ] && cp "$T3_USERDATA/$f" "$into/state/"
@@ -372,12 +377,18 @@ cmd_rollback() {
   [ -n "$current" ] || die "the installed app has no build record, so there is nothing to roll back to"
   previous=$(records | grep -v -x -F "$current" | sed -n 1p)
   [ -n "$previous" ] || die "no earlier build is kept"
-  [ -f "$previous/state/state.sqlite" ] || die "$(basename "$previous") has no saved data to restore"
+  [ -f "$previous/state/state.sqlite" ] || [ -f "$previous/state/statev2.sqlite" ] \
+    || die "$(basename "$previous") has no saved data to restore"
   quit_app rollback
   snapshot_state "$current"
   say "Restoring the data $(basename "$previous") last ran with"
-  rm -f "$T3_USERDATA/state.sqlite" "$T3_USERDATA/state.sqlite-wal" "$T3_USERDATA/state.sqlite-shm"
-  cp "$previous/state/state.sqlite" "$T3_USERDATA/state.sqlite"
+  local database
+  for database in "${STATE_DATABASES[@]}"; do
+    rm -f "$T3_USERDATA/$database" "$T3_USERDATA/$database-wal" "$T3_USERDATA/$database-shm"
+    if [ -f "$previous/state/$database" ]; then
+      cp "$previous/state/$database" "$T3_USERDATA/$database"
+    fi
+  done
   local f
   for f in settings.json client-settings.json; do
     [ -f "$previous/state/$f" ] && cp "$previous/state/$f" "$T3_USERDATA/$f"
@@ -550,14 +561,16 @@ cmd_land() {
   fi
 }
 
-case "${1:-}" in
-  status) cmd_status ;;
-  check) run_checks ;;
-  integrate) shift; cmd_integrate "$@" ;;
-  land) shift; cmd_land "$@" ;;
-  build) cmd_build ;;
-  install) cmd_install ;;
-  rollback) cmd_rollback ;;
-  signing-setup) cmd_signing_setup ;;
-  *) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
-esac
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  case "${1:-}" in
+    status) cmd_status ;;
+    check) run_checks ;;
+    integrate) shift; cmd_integrate "$@" ;;
+    land) shift; cmd_land "$@" ;;
+    build) cmd_build ;;
+    install) cmd_install ;;
+    rollback) cmd_rollback ;;
+    signing-setup) cmd_signing_setup ;;
+    *) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+  esac
+fi
