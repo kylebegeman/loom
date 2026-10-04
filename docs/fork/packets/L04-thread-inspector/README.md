@@ -19,7 +19,7 @@ already holds, so it works against any T3 server.
     a jump from one of its lines closes it.
   - Areas: the status hero, Needs you, Workspace, Changes, Plan, Agents, Terminals, Context.
   - Jump actions: open the diff panel (all changes, or the last turn's changes), the
-    subagents panel, the pull requests panel, a running terminal, and focus the composer
+    pull requests panel, a running terminal, and focus the composer
     for pending approvals and questions.
   - Palette items "Show thread inspector" and "Show thread inspector card"; unbound keybinding
     commands `loom.thread-inspector.toggle` and `loom.thread-inspector.card`.

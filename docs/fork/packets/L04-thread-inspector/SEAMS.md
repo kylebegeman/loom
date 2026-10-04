@@ -27,9 +27,9 @@ No `ext-core` registration: the packet has no server part and no `loomFeatures` 
 
 ## Packet seams
 
-| File                                          | Marker                   | Lines | Why                                                  |
-| --------------------------------------------- | ------------------------ | ----- | ---------------------------------------------------- |
-| `apps/web/src/components/chat/ChatHeader.tsx` | `fork: thread-inspector` | 4     | The inspector eye button in the chat header actions. |
+| File                                          | Marker                   | Lines | Why                                              |
+| --------------------------------------------- | ------------------------ | ----- | ------------------------------------------------ |
+| `apps/web/src/components/chat/ChatHeader.tsx` | `fork: thread-inspector` | 4     | The inspector eye button in the chat header row. |
 
 ### Why no extension point covers it
 
@@ -42,27 +42,27 @@ consumer (EXTENSION-POINTS.md, "Shared points considered and declined").
 
 ### Diffs (`apps/web/src/components/chat/ChatHeader.tsx`)
 
-Import, after `import { OpenInPicker } from "./OpenInPicker";`:
+Import, after `import { toastManager } from "../ui/toast";`:
 
 ```diff
- import { OpenInPicker } from "./OpenInPicker";
+ import { toastManager } from "../ui/toast";
 +// fork: thread-inspector
 +import { ThreadInspectorHeaderButton } from "~/fork/thread-inspector/ThreadInspectorHeaderButton";
 ```
 
-First child of the header actions container (`data-chat-header-actions`), before its
-overflow `<Menu>`, so the button stays inline when the other header actions fold into the
-menu. `activeThreadRef` and the `isServerThread` prop are already in scope:
+Last child of the header row, after `</WorkspaceBreadcrumb>`. Upstream moved the other header
+actions into the thread details panel in `v0.0.46-nightly.20261003.2632`, so the button now
+sits alone at the right of the title, inside the padding the row keeps for the panel toggles.
+`activeThreadRef` and the `isServerThread` prop are already in scope:
 
 ```diff
-       >
-+        {/* fork: thread-inspector */}
-+        <ThreadInspectorHeaderButton threadRef={isServerThread ? activeThreadRef : null} />
-         <Menu open={actionsCollapsed && actionsOpen} onOpenChange={setActionsOpen}>
+       </WorkspaceBreadcrumb>
++      {/* fork: thread-inspector */}
++      <ThreadInspectorHeaderButton threadRef={isServerThread ? activeThreadRef : null} />
+     </div>
 ```
 
-The button renders `null` for drafts (`threadRef === null`). The container already manages
-its own gap and right padding, so no class changes are needed.
+The button renders `null` for drafts (`threadRef === null`).
 
 Check after `vp fmt`:
 `git grep -c 'fork: thread-inspector' -- apps/web/src/components/chat/ChatHeader.tsx` prints 2.

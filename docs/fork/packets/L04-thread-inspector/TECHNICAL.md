@@ -64,8 +64,8 @@ The source is the spec; in outline:
   `needsAttention`.
 - `InspectorTone`: `default | muted | info | warning | accent | danger | success`, rendered
   with theme tokens only (`info`, `warning`, `primary`, `destructive`, `success`).
-- `InspectorAction`: `open-diff`, `open-turn-diff`, `open-agents`, `open-pull-request` (the
-  thread's linked pull request), `open-terminal`, `focus-composer`, `open-thread`.
+- `InspectorAction`: `open-diff`, `open-turn-diff`, `open-pull-request` (the thread's linked
+  pull request), `open-terminal`, `focus-composer`.
 
 Rules worth testing:
 
@@ -99,12 +99,10 @@ close after a jump.
 | Action              | Implementation                                                                                                                                                                                                                                                                                                                                                                     |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `open-diff`         | `useDiffPanelStore.getState().selectGitScope(ref, "unstaged")` so the panel shows the uncommitted changes the inspector counted, then `useRightPanelStore.getState().open(ref, "diff")` (`apps/web/src/rightPanelStore.ts:130-133`).                                                                                                                                               |
-| `open-turn-diff`    | `useDiffPanelStore.getState().selectTurn(ref, turnId)` (`apps/web/src/diffPanelStore.ts`, as `ChatView.tsx:9032` does), then `open(ref, "diff")`.                                                                                                                                                                                                                                  |
-| `open-agents`       | `open(ref, "agents")` (as `ChatView.tsx:4511`).                                                                                                                                                                                                                                                                                                                                    |
+| `open-turn-diff`    | `useDiffPanelStore.getState().selectTurn(ref, runId)` (`apps/web/src/diffPanelStore.ts`, as `ChatView.tsx:9032` does), then `open(ref, "diff")`.                                                                                                                                                                                                                                   |
 | `open-pull-request` | `openPullRequest(ref, linkedPullRequest)`, as `ChatView`'s pull request surface does.                                                                                                                                                                                                                                                                                              |
 | `open-terminal`     | `useRightPanelStore.getState().openTerminal(ref, terminalId)` (`rightPanelStore.ts:150`).                                                                                                                                                                                                                                                                                          |
 | `focus-composer`    | `useComposerHandleContext()?.current?.focusAtEnd()` (`apps/web/src/composerHandleContext.ts`; the context is provided by `CommandPalette` around the whole app shell, `apps/web/src/components/CommandPalette.tsx:542` and `apps/web/src/routes/__root.tsx:195-201`, so both the panel and the header button can reach it). The approval and question panels live in the composer. |
-| `open-thread`       | `navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(ref) })` (`apps/web/src/threadRoutes.ts:42`).                                                                                                                                                                                                                                                          |
 
 Copy is not an action: `InspectorCopyButton` in `parts.tsx` uses upstream's
 `useCopyToClipboard` with the anchored copy toasts, like `DiffFilePathCopyButton`.
@@ -184,7 +182,7 @@ None.
   messages, not activities, so most streaming updates do not recompute them. Changes to
   `activities` recompute a few linear passes over at most 500 rows.
 - Lists are capped (eight files, five agents, three approvals and terminals on the card);
-  the diff and agents panels list everything.
+  the diff panel lists every file.
 - No continuous animation. The elapsed-time ticker runs at 1 Hz only while working and
   visible; bars transition only when their value changes.
 

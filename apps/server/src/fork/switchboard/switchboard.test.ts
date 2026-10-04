@@ -1,11 +1,28 @@
 import { afterEach, describe, expect, it } from "@effect/vitest";
+import { ProviderInstanceId } from "@t3tools/contracts";
 
+import { makeClaudeQueryOptions } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { codexAppServerArgs, codexExecLaunchArgs } from "../../provider/Layers/codexLaunchArgs.ts";
 import {
+  SWITCHBOARD_CLAUDE_SETTINGS,
   SWITCHBOARD_CODEX_ARGS,
   setSwitchboardEnabled,
+  switchboardClaudeQueryOptions,
   switchboardClaudeSettings,
 } from "./switchboard.ts";
+
+// As the Claude session launch passes it (ClaudeAdapterV2.ts, fork: switchboard).
+const claudeSessionOptions = () =>
+  makeClaudeQueryOptions({
+    modelSelection: {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    },
+    nativeThreadId: "switchboard-thread",
+    resume: false,
+    cwd: "/workspace",
+    ...switchboardClaudeQueryOptions(),
+  });
 
 afterEach(() => setSwitchboardEnabled(false));
 
@@ -13,6 +30,7 @@ describe("Switchboard routing", () => {
   it("leaves launches alone while off", () => {
     expect(codexAppServerArgs("--enable foo")).toEqual(["app-server", "--enable", "foo"]);
     expect(switchboardClaudeSettings()).toEqual({});
+    expect(claudeSessionOptions().settings).toEqual({ showThinkingSummaries: true });
   });
 
   it("selects the hub after the instance's own Codex arguments, so it wins", () => {
@@ -45,6 +63,14 @@ describe("Switchboard routing", () => {
         ANTHROPIC_API_KEY: "",
         ANTHROPIC_AUTH_TOKEN: "",
       },
+    });
+  });
+
+  it("routes Claude sessions through the hub alongside the model's own settings", () => {
+    setSwitchboardEnabled(true);
+    expect(claudeSessionOptions().settings).toEqual({
+      ...SWITCHBOARD_CLAUDE_SETTINGS,
+      showThinkingSummaries: true,
     });
   });
 });
