@@ -98,6 +98,8 @@ cannot serve right now: the `loom.switchboard.limits` RPC reads the Switchboard
 controller's status on `127.0.0.1:8318`, so while every Codex account is on credits only
 the credit models stay selectable. Off, launches and the picker are upstream's.
 
+| `apps/web/src/components/files/FilePreviewPanel.tsx` | `file-outline` | Outline toggle and column inside the file viewer. See `docs/fork/packets/L05-file-outline`. |
+
 ## Identifiers kept on purpose
 
 These locate the owner's existing T3 Code data or are invisible, so they keep T3 names:

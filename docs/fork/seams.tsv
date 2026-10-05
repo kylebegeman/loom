@@ -37,3 +37,4 @@ apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	2
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
 apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	3
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
+apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3

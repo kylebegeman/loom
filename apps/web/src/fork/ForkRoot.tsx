@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 
+import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
 import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
 import { InspectorCommandsHost } from "./thread-inspector/InspectorCommandsHost";
 
@@ -8,6 +9,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   readonly id: string;
   readonly Component: ComponentType;
 }> = [
+  { id: "file-outline-shortcuts", Component: FileOutlineShortcuts },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   { id: "thread-inspector-commands", Component: InspectorCommandsHost },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },

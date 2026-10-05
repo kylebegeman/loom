@@ -1,87 +1,71 @@
-# L05 testing
+# L05 verification
 
-Focused tests, no repo-wide checks, no sleeps. All tests are pure logic except one store test;
-no component is rendered to static markup.
+Verification uses the smallest affected scope. No repo-wide suite or live database mutation.
 
-## Automated tests
-
-| File                                                                                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/fork/file-outline/scanner.test.ts`                                     | Masking keeps length and newlines; comments and strings are blanked for every language config, including template literals with `${}`, Python triple-quoted strings and prefixes, Rust raw strings and lifetimes, Swift raw and multi-line strings, Kotlin raw strings with `${}` templates, nested block comments (Swift, Rust, Kotlin).                                                                      |
-| `apps/web/src/fork/file-outline/languages/typescript.test.ts`                        | Fixture with classes, abstract classes, interfaces, type aliases, enums, namespaces, overloads, decorators, generics, exported arrow functions split over lines, class members (getters, setters, static, `#private`), object-literal exports, and negative cases: callbacks passed as arguments, JSX attribute arrows, locals inside functions, declarations inside comments and strings. Also a TSX fixture. |
-| `apps/web/src/fork/file-outline/languages/swift.test.ts`                             | Types, extensions, protocols, actors, `init`/`deinit`/`subscript`, enum cases, attributes and modifiers, `// MARK:` headings, locals inside functions skipped.                                                                                                                                                                                                                                                 |
-| `apps/web/src/fork/file-outline/languages/python.test.ts`                            | Classes, methods, nested functions skipped, decorators, async defs, module constants, docstrings containing `def`.                                                                                                                                                                                                                                                                                             |
-| `apps/web/src/fork/file-outline/languages/go.test.ts`                                | Funcs, methods with pointer and value receivers grouped under their type, grouped `type (...)` blocks, receivers on types from another file.                                                                                                                                                                                                                                                                   |
-| `apps/web/src/fork/file-outline/languages/rust.test.ts`                              | Structs, enums, traits, `impl` and `impl Trait for`, nested `mod`, `pub(crate)`, attributes, `macro_rules!`, lifetimes not treated as chars.                                                                                                                                                                                                                                                                   |
-| `apps/web/src/fork/file-outline/languages/kotlin.test.ts`                            | Classes (data, sealed, enum with entries, value, annotation), interfaces and `fun interface`, `object` and `companion object`, extension and generic functions, `suspend` and other modifiers, annotations on previous lines, `const val` and top-level properties, `typealias`, backticked names, locals inside functions skipped, declarations inside raw strings skipped.                                   |
-| `apps/web/src/fork/file-outline/languages/markdown.test.ts`                          | ATX and setext headings, fenced code blocks ignored (both fence styles), front matter ignored, depth normalized to the smallest level.                                                                                                                                                                                                                                                                         |
-| `apps/web/src/fork/file-outline/outline.test.ts`                                     | Extension map (every listed extension resolves, unknown ones return null), symbol cap sets `capped`, an extractor that throws yields an empty result, CRLF line numbers, and a 1 MB synthetic TS file extracts under a generous time guard (for example 1,000 ms) to catch quadratic behavior.                                                                                                                 |
-| `apps/web/src/fork/file-outline/filter.test.ts`                                      | Subsequence matching, case folding, ancestors kept for matching children.                                                                                                                                                                                                                                                                                                                                      |
-| `apps/web/src/fork/file-outline/store.test.ts`                                       | `toggle` flips `open` and bumps `focusRequestId` only when opening; `publish`/`unpublish` by thread key and path; only `open` is persisted (partialize).                                                                                                                                                                                                                                                       |
-| `apps/web/src/fork/commandPalette/registry.test.ts` (extension point test, extended) | Item values stay unique and start with `action:loom:`.                                                                                                                                                                                                                                                                                                                                                         |
-| `packages/contracts/src/fork/keybindings.test.ts` (extension point test)             | `loom.file-outline.toggle` decodes as a `KeybindingCommand` and is not an upstream command.                                                                                                                                                                                                                                                                                                                    |
-
-## Commands
+## Automated checks
 
 ```sh
-vp test run \
-  apps/web/src/fork/file-outline/scanner.test.ts \
-  apps/web/src/fork/file-outline/languages/*.test.ts \
-  apps/web/src/fork/file-outline/outline.test.ts \
-  apps/web/src/fork/file-outline/filter.test.ts \
-  apps/web/src/fork/file-outline/store.test.ts \
+vp test run apps/web/src/fork/file-outline \
   apps/web/src/fork/commandPalette/registry.test.ts \
   packages/contracts/src/fork/keybindings.test.ts
-vp lint apps/web/src/fork/file-outline apps/web/src/components/files/FilePreviewPanel.tsx
+vp lint apps/web/src/fork/file-outline apps/web/src/fork/ForkRoot.tsx \
+  apps/web/src/fork/commandPalette/registry.ts \
+  apps/web/src/components/files/FilePreviewPanel.tsx \
+  packages/contracts/src/fork/keybindings.ts
 vp run --filter @t3tools/web typecheck
-vp run --filter @t3tools/contracts typecheck   # only if this packet created ext-keybindings
+vp run --filter @t3tools/contracts --filter @t3tools/client-runtime typecheck
+vp run --filter t3 --filter @t3tools/desktop --filter @t3tools/mobile typecheck
 ```
 
-If this packet created `ext-keybindings`, also typecheck `t3`, `@t3tools/client-runtime` and
-`@t3tools/mobile` (the contracts change reaches them).
+The fixtures cover all eight language IDs and supported extensions, comments and literals,
+real nesting, skipped locals/callbacks/JSX arrows, Go receiver grouping, inherent and trait
+Rust implementations, Kotlin interpolation, Markdown fences, CRLF, same-line ID collisions,
+empty declarations and TS object return types. A 1 MB sample guards against quadratic scans.
+Cache, persistence, storage failures, filtering, context gating, full-title palette search,
+repeat line reveals and existing registry/keybinding invariants are covered.
 
-## Manual check
+Result: 65 tests across eight files pass. All six affected package typechecks pass. Focused
+lint reports no errors. One existing warning in `FilePreviewPanel.tsx` flags the unchanged
+breadcrumb effect's dependency; the same effect exists at the implementation base.
+`pnpm-lock.yaml` is untouched. Formatting, whitespace and seam checks pass.
 
-With Kyle's permission (AGENTS.md: ask before browsers or dev servers), in one integrated pass
-with `test-t3-app` on web, then the desktop dev build:
+Manual extraction against the repository's FilePreviewPanel, CommandPalette and ChatView
+sources returned their declaration lists in roughly 7, 8 and 38 ms respectively. The largest
+sample was approximately 462 KB; these are local observations, not performance guarantees.
 
-1. Open a thread in a project, open the Files panel, open a large TS file. The outline button
-   appears in the header; toggle it on. Symbols appear, nested.
-2. Click a method near the bottom: the file scrolls and highlights that line. Repeat with the
-   same symbol (a second reveal must still scroll).
-3. Type in the filter; use Up, Down, Enter; Escape clears then returns focus.
-4. Edit the file in the editable surface: add a function; the outline updates without lag in
-   typing.
-5. Open a Swift, Python, Go, Rust, Kotlin and Markdown file in turn; the column stays open and follows.
-   In rendered Markdown, click a heading: the view switches to source at the heading.
-6. Open an image, a PDF and a CSV: no button, no column.
-7. Open a host file outside the workspace (absolute path from a chat link): outline works and
-   jumps.
-8. Command palette: "Toggle file outline" and "Go to symbol in file" appear only while a file
-   is active; choosing a symbol jumps.
-9. Assign a key to "Loom: File Outline: Toggle" in Settings, Keybindings; it toggles and
-   focuses the filter.
-10. Reload the app: the open state is remembered.
-11. Connect the Loom client to an upstream T3 server (or a remote environment): the outline
-    still works, since it is client-only.
+## Integrated client pass
+
+Kyle approved `test-t3-app`. The isolated worktree server uses `.t3/userdata/statev2.sqlite`,
+web port 8308 and server port 16348. A small `/tmp/loom-file-outline-qa` project and stopped
+thread were created through normal application commands. No provider turn was started.
+The live V1 database was not copied or modified.
+
+Verified in Loom's Browser panel:
+
+- TypeScript, JavaScript, Swift, Python, Go, Rust, Kotlin and Markdown symbol lists.
+- Header opening and persistent open state across browser reloads.
+- Click and keyboard jumps, ancestor-preserving subsequence filtering and Escape returning
+  focus into the source editor's shadow root.
+- Unsaved editable-source changes update the outline through the existing query cache.
+- Palette commands found by displayed title; symbol submenu navigation uses real reveals.
+- A Markdown heading opens source view at its line.
+- Empty file state and a 2,100-declaration sample capped at 2,000 symbols, with approximately
+  31 initially mounted outline rows.
+- Outline and explorer coexist within their percentage width caps.
+
+The Browser automation host disconnected twice. Assigning a shortcut in Settings, explicit
+narrow-viewport layout, absolute host-file jumps, repeated scrolling in the virtualized list,
+media/table suppression and a separate remote/upstream-server client pass remain unverified
+in the live client. Contract, source, parser and contextual palette tests cover those relevant
+boundaries; they do not substitute for claiming these manual checks passed.
+
+The isolated test server and state remain available for continuation. Desktop consumes the
+same bundle; no separate packaged desktop launch or mobile UI pass was performed.
 
 ## Merge safety
 
-Record the result of the merge preview (SEAMS.md, "Merge check") against the newest nightly
-tag. After Kyle merges to `main`, `scripts/fork/loom.sh integrate nightly --dry-run` from a
-clean, synced `main` must pass. The packet's `docs/fork/seams.tsv` row for
-`FilePreviewPanel.tsx` (marker `file-outline`, 3 lines) makes it fail if a merge drops a seam.
-
-## Acceptance criteria
-
-- All tests above pass; web typecheck and lint on changed files are clean;
-  `pnpm-lock.yaml` untouched.
-- Outline accurate on the fixtures for all eight language ids.
-- No new dependency in v1 (`web-tree-sitter` only arrives with the conditional phase 2).
-- Jump lands on the declaration line for every symbol kind.
-- No network requests added (check the devtools network panel during the manual pass).
-- No continuous repaint while the outline is open and idle.
-
-Phase 2, if triggered: the same fixture tests pass against the tree-sitter provider, the
-recorded failing files produce correct outlines, a grammar load failure falls back to the
-scanner, and the web and desktop builds both load the WASM.
+`FilePreviewPanel.tsx` has exactly three registered markers. The manifest check passes.
+The complete committed change passes `git merge-tree --write-tree --name-only --no-messages`
+against `v0.0.46-nightly.20261004.2657` with exit status 0 and no conflicts.
+The result is recorded in [SEAMS.md](./SEAMS.md). A release build and the clean-main integration rehearsal are outside
+this task's focused checks.

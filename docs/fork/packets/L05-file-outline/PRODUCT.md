@@ -42,8 +42,7 @@ The open or closed state is visible from the pressed state of the header button.
   button is hidden and the column is not rendered, even if the preference is "open".
 - **Supported type, loading**: the column shows a small spinner while the file loads (the
   panel itself also shows one).
-- **Empty**: "No symbols found in this file." with the language name, for example a JSON-like
-  TS file with only imports.
+- **Empty**: "No symbols found in this file.", for example a TS file with only imports.
 - **Filter with no match**: "No symbols match "<query>"."
 - **Truncated file** (over upstream's 1 MB preview limit): the outline covers the loaded part
   and shows "Outline covers the first 1 MB." at the top.
@@ -69,8 +68,7 @@ The open or closed state is visible from the pressed state of the header button.
 - Header button tooltip: "Show outline" / "Hide outline".
 - Column heading: "Outline", with the symbol count.
 - Filter placeholder: "Filter symbols".
-- Palette: "Toggle file outline", "Go to symbol in file" (submenu placeholder "Search symbols
-  in <file name>").
+- Palette: "Toggle file outline", "Go to symbol in file" (the submenu is labeled "Symbols in <file name>").
 - Empty: "No symbols found in this file."
 - Truncated: "Outline covers the first 1 MB."
 

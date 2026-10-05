@@ -93,6 +93,11 @@ import {
   setProjectFileQueryData,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
+// fork: file-outline
+import {
+  LoomFileOutlineColumn,
+  LoomFileOutlineToggle,
+} from "../../fork/file-outline/FileOutlineSlots";
 
 interface FilePreviewPanelProps {
   environmentId: EnvironmentId;
@@ -1162,6 +1167,13 @@ export default function FilePreviewPanel({
               <Globe2 className="size-3.5" />
             </FileSurfaceAction>
           ) : null}
+          {/* fork: file-outline */}
+          <LoomFileOutlineToggle
+            threadRef={threadRef}
+            relativePath={isDirectory ? null : requestedPath}
+            contents={!isMedia && !isPdf ? (file.data?.contents ?? null) : null}
+            truncated={file.data?.truncated ?? false}
+          />
           {!isHostFile && previewPath !== null ? (
             <FileSurfaceAction
               label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
@@ -1289,6 +1301,18 @@ export default function FilePreviewPanel({
             )
           ) : null}
         </div>
+        {/* fork: file-outline */}
+        <LoomFileOutlineColumn
+          threadRef={threadRef}
+          relativePath={attachment === undefined && !isDirectory ? requestedPath : null}
+          contents={
+            attachment === undefined && !isMedia && !isPdf ? (file.data?.contents ?? null) : null
+          }
+          truncated={file.data?.truncated ?? false}
+          revealLine={revealLine}
+          revealRequestId={revealRequestId}
+          error={file.error}
+        />
         {showExplorer ? (
           <aside
             className={cn(

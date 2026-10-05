@@ -1,5 +1,6 @@
 /** Loom keybinding commands (`loom.<slug>.<action>`). Spread into STATIC_KEYBINDING_COMMANDS. */
 export const FORK_KEYBINDING_COMMANDS = [
+  "loom.file-outline.toggle",
   "loom.thread-inspector.toggle",
   "loom.thread-inspector.card",
   // "loom.snippets.open",

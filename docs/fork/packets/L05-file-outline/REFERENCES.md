@@ -17,21 +17,16 @@ Selections: P8 (File Outline panel) and the file-outline part of F8 in
 
 ## Upstream T3 Code
 
-- `apps/web/src/components/files/FilePreviewPanel.tsx`: file query (944-949), reveal hook
-  `useFileLineReveal` (379-542), reveal-forces-source logic (984-989), header actions
-  (1112-1155), explorer aside (1278-1300). Seams at 92, 1148, 1278.
-- `apps/web/src/components/files/fileSurfaceChrome.tsx`: `FileSurfaceAction` (67),
-  `FILE_LINK_REVEAL_ATTRIBUTE` (19), `FILE_SURFACE_SUBHEADER_CLASS` (16).
-- `apps/web/src/components/files/fileLineReveal.ts`: `resolveCenteredFileLineScrollTop`.
-- `apps/web/src/components/files/projectFilesQueryState.ts`: `useProjectFileQuery`,
-  `setProjectFileQueryData`.
-- `apps/web/src/rightPanelStore.ts`: `openFile` (137, 577-600), file surface shape (57-66),
-  persistence pattern (860-874).
-- `apps/web/src/components/ChatView.tsx:9268-9311`: how `FilePreviewPanel` is mounted and
-  receives `revealLine` / `revealRequestId`.
-- `apps/web/src/components/CommandPalette.logic.ts:127-161`: palette item and submenu types.
-- `apps/web/src/commandPaletteBus.ts`: `openCommandPalette({ query })`, if a later version
-  wants a "Go to symbol" key that opens the palette pre-filtered.
+Rechecked against released V2 integration `8781ba48a2`:
+
+- `FilePreviewPanel.tsx`: file query, editor updates, source reveal, header and explorer.
+- `fileSurfaceChrome.tsx`: shared file actions and reveal attribute.
+- `fileLineReveal.ts`: centering calculation.
+- `projectFilesQueryState.ts`: file query and editable text updates.
+- `rightPanelStore.ts`: file surface identity and repeat reveal requests.
+- `CommandPalette.logic.ts`: palette item types, filtering and virtualized row structure.
+
+The exact insertion blocks are in [SEAMS.md](./SEAMS.md).
 
 ## External
 

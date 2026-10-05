@@ -1,0 +1,13 @@
+[data-loom-file-outline] {
+  width: min(16rem, 40%);
+}
+
+/* When both navigation columns are open, reserve half the panel for source. */
+[data-loom-file-outline]:has(+ aside) {
+  width: min(16rem, 25%);
+}
+
+[data-loom-file-outline] + aside {
+  min-width: 0;
+  width: min(22rem, 25%);
+}

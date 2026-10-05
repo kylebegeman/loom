@@ -1,5 +1,5 @@
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 
 import type {
@@ -8,6 +8,9 @@ import type {
 } from "~/components/CommandPalette.logic";
 import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { useServerConfigs } from "~/state/entities";
+import { fileOutlinePaletteSource } from "../file-outline/palette";
+import { useFileOutlineStore } from "../file-outline/store";
+import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 import { threadInspectorPaletteSource } from "../thread-inspector/palette";
 
 export interface ForkCommandPaletteContext {
@@ -25,6 +28,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  fileOutlinePaletteSource,
   threadInspectorPaletteSource,
   // snippetsPaletteSource,
 ];
@@ -37,6 +41,10 @@ export function useForkCommandPaletteItems(): ReadonlyArray<
   const activeThreadRef = activeThread
     ? scopeThreadRef(activeThread.environmentId, activeThread.id)
     : null;
+  useFileOutlineStore((state) =>
+    activeThreadRef ? state.sources[scopedThreadKey(activeThreadRef)] : undefined,
+  );
+  useRightPanelStore((state) => selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef));
   const serverConfig = useServerConfigs().get(
     activeThreadRef?.environmentId ?? ("" as EnvironmentId),
   );

@@ -1,6 +1,11 @@
 # L05: File outline
 
-Status: Ready to build.
+Status: Implemented locally on `feat/fork-file-outline`; not merged or published.
+
+Kyle requested the full packet on 2026-10-04. Implementation uses the released V2
+integration at `8781ba48a2`, in `/Users/kyle/Developer/worktrees/loom-file-outline`.
+Focused automated checks and the integrated Browser pass are recorded in
+[TESTING.md](./TESTING.md), including verification limits.
 
 A symbol list for the file open in the Files panel. A toggle in the file header opens an
 outline column beside the source (functions, classes, types, methods, Markdown headings);
@@ -24,7 +29,7 @@ the panel already loaded, so it needs no server support and works against any T3
     `@pierre/diffs` surface gives no cheap scroll-to-line mapping; revisit later.
   - Tree-sitter parsing in v1. Kyle approved `web-tree-sitter` plus grammar WASM files as a
     conditional phase 2 behind the same interface, built only if the v1 scanners prove
-    unreliable in real use (trigger and steps in [IMPLEMENTATION.md](./IMPLEMENTATION.md#phase-2-conditional-tree-sitter)).
+    unreliable in real use (trigger and steps in [IMPLEMENTATION.md](./IMPLEMENTATION.md#conditional-tree-sitter-follow-up)).
   - Follow-up: Java, C# and Ruby outlines, added later on demand (each is about 40 lines
     with the same scanner; no one needs them yet).
   - Project-wide symbol search and cross-file references. That is the code graph (L26).
@@ -41,12 +46,11 @@ and is not gated on `loomFeatures`.
 
 ## Extension points used
 
-- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette) (palette items). Create it if missing.
+- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette) (palette items).
 - [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (the `loom.file-outline.toggle` command), which requires [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root).
-  Create both if missing.
+  Both already exist.
 
-[`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core) must exist as the prerequisite of `ext-palette` (its client helper); create it
-if missing. The packet registers nothing in it: no RPC, table or capability entry.
+[`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core) already exists as the prerequisite of `ext-palette` (its client helper). The packet registers nothing in it: no RPC, table or capability entry.
 
 ## Packet seams
 
@@ -56,9 +60,8 @@ if missing. The packet registers nothing in it: no RPC, table or capability entr
 
 ## Size
 
-Small to medium: about 950 to 1,300 lines including tests (Kotlin adds about 100). Most of
-it is the extractors. The conditional phase 2 would add about 300 to 500 lines plus the
-dependency and WASM assets.
+The scanner, declaration rules and their fixtures make up most of the implementation.
+The upstream file viewer has only the three marked insertion seams.
 
 ## Dependencies
 
@@ -68,17 +71,15 @@ dependency and WASM assets.
   Added only when the phase 2 trigger is met; the lockfile change is then intended and
   committed.
 
-## How an agent starts
+## User help
 
-Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md and EXTENSION-POINTS.md, then
-this folder in order: PRODUCT, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING. Start with the
-extractors and their tests (pure code, no UI), then the store, then the UI and the seams.
+[File outline](../../user/file-outline.md) explains navigation, filtering and shortcuts.
 
 ## Documents
 
 - [PRODUCT.md](./PRODUCT.md): what and why.
 - [TECHNICAL.md](./TECHNICAL.md): the design.
 - [SEAMS.md](./SEAMS.md): every upstream touch.
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): ordered steps.
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md): completion and conditional follow-up.
 - [TESTING.md](./TESTING.md): how it is proven.
 - [REFERENCES.md](./REFERENCES.md): prior art and sources.
