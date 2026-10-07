@@ -143,6 +143,9 @@ export async function reopenClosedView(
     case "pull-request":
       panels.openPullRequest(ref, surface);
       break;
+    case "fork": // fork: ext-panels
+      panels.openSurface(ref, surface); // fork: ext-panels
+      break; // fork: ext-panels
     default:
       panels.open(ref, surface.kind);
   }

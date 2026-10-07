@@ -955,6 +955,20 @@ Title and icon, as the first case of each switch:
      case "preview": {
 ```
 
+**`apps/web/src/reopenClosedView.ts`** (3 marked lines): reopening a closed fork tab restores
+the stored surface through `openSurface`, since the default case only takes upstream's
+singleton kinds:
+
+```diff
+     case "pull-request":
+       panels.openPullRequest(ref, surface);
+       break;
++    case "fork": // fork: ext-panels
++      panels.openSurface(ref, surface); // fork: ext-panels
++      break; // fork: ext-panels
+     default:
+```
+
 **`apps/web/src/components/ChatView.tsx`** (6 marked lines), the imports after the
 `RightPanelTabs` import:
 

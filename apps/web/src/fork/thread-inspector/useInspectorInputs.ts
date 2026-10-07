@@ -139,7 +139,7 @@ export function useInspectorInputs(threadRef: ScopedThreadRef): InspectorInputs 
   });
   const runningTerminals = useMemo(
     () =>
-      terminalSessions
+      (terminalSessions ?? [])
         .filter((candidate) => candidate.state.hasRunningSubprocess)
         .map((candidate) => ({
           id: candidate.target.terminalId,

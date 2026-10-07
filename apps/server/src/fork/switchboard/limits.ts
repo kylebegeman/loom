@@ -2,7 +2,7 @@ import type { SwitchboardLimit, SwitchboardLimits } from "@t3tools/contracts/for
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import { HttpClient } from "effect/unstable/http";
+import { HttpClient } from "effect/http";
 
 /**
  * Which pooled providers Switchboard cannot serve on plan allowance, read from the

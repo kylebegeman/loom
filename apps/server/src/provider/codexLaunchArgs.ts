@@ -1,6 +1,6 @@
 import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 
-import { switchboardCodexArgs } from "../../fork/switchboard/switchboard.ts"; // fork: switchboard
+import { switchboardCodexArgs } from "../fork/switchboard/switchboard.ts"; // fork: switchboard
 
 const T3CODE_CODEX_LAUNCH_ARGS_ENV = "T3CODE_CODEX_LAUNCH_ARGS";
 
