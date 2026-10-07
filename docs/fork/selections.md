@@ -25,39 +25,39 @@ Code has 10 areas and a different engine.
 
 ## Features
 
-| ID  | Feature                               | Notes                                                                                                                                               |
-| --- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1  | Snippets library                      | Search as you type with live results. Old Loom had `;alias` + Tab expansion, fill-in fields, revision history, import and export, and terminal use. |
-| F2  | Thread fork, manual compaction, goals | Fork from any message, compact on demand for every provider, pinned goal passed to the agent.                                                       |
-| F3  | AI code review                        | Selected, with a separate brainstorm on how it should work before any design.                                                                       |
-| F4  | Utilities catalog                     | Offline developer tools in a panel. First listed as not selected; now L27.                                                                          |
-| F5  | In-app provider sign-in and setup     | Old Loom's final in-app sign-in and setup flow for providers, including the Codex tools page and config import.                                     |
-| F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, DeepSeek, Ollama, LM Studio. L17: DeepSeek via its Anthropic-compatible API, Gemini CLI as a custom ACP agent.  |
-| F7  | Auto-resume after usage limits        | Continue a thread when a provider limit resets. First listed as not selected; now L28.                                                              |
-| F8  | Chat conveniences                     | Find in thread, clipboard history, Mermaid diagrams, file outline, model picker presets, answering a provider's question without stopping it.       |
-| F11 | Project profiles                      | Per-project commands, tools, budgets and defaults beyond what T3's project settings cover.                                                          |
-| F12 | Repository Estate                     | Reshaped around the ephemeral workspace: clone into `~/Developer/active`, adopt as a project, park safely when done, reopen later.                  |
-| F13 | Lanes board and Git cockpit           | Deferred; P7 covers the per-thread view (L06).                                                                                                      |
-| F21 | Apple tooling                         | XcodeGen, XCResult summaries, release readiness; pairs with P12.                                                                                    |
-| F23 | Small extras                          | Configurable worktree branch prefix, container logs, and a CLI tool registry.                                                                       |
+| ID  | Feature                               | Notes                                                                                                                                                               |
+| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | Snippets library                      | Search as you type with live results. Old Loom had `;alias` + Tab expansion, fill-in fields, revision history, import and export, and terminal use.                 |
+| F2  | Thread fork, manual compaction, goals | Fork from any message, compact on demand for every provider, pinned goal passed to the agent.                                                                       |
+| F3  | AI code review                        | Selected, with a separate brainstorm on how it should work before any design.                                                                                       |
+| F4  | Utilities catalog                     | Offline developer tools in a panel. First listed as not selected; now L27.                                                                                          |
+| F5  | In-app provider sign-in and setup     | Old Loom's final in-app sign-in and setup flow for providers, including the Codex tools page and config import.                                                     |
+| F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, DeepSeek, Ollama, LM Studio. L17: DeepSeek via its Anthropic-compatible API, Gemini CLI as a custom ACP agent.                  |
+| F7  | Auto-resume after usage limits        | L28 retains automatic account failover, deferred until V2 ships; reuse upstream reset-time recovery. See the [current scope](./packets/L28-auto-resume/PRODUCT.md). |
+| F8  | Chat conveniences                     | Find in thread, clipboard history, Mermaid diagrams, file outline, model picker presets, answering a provider's question without stopping it.                       |
+| F11 | Project profiles                      | Per-project commands, tools, budgets and defaults beyond what T3's project settings cover.                                                                          |
+| F12 | Repository Estate                     | Reshaped around the ephemeral workspace: clone into `~/Developer/active`, adopt as a project, park safely when done, reopen later.                                  |
+| F13 | Lanes board and Git cockpit           | Deferred; P7 covers the per-thread view (L06).                                                                                                                      |
+| F21 | Apple tooling                         | XcodeGen, XCResult summaries, release readiness; pairs with P12.                                                                                                    |
+| F23 | Small extras                          | Configurable worktree branch prefix, container logs, and a CLI tool registry.                                                                                       |
 
 ## Outcomes of the open items
 
 Items that were under consideration or still being discussed when this page was first
 written, and where each ended up:
 
-| Item                                         | Outcome                                                                    |
-| -------------------------------------------- | -------------------------------------------------------------------------- |
-| Skill registry, manager and creation lab     | Selected as packet L21.                                                    |
-| 3D modeling (Blender, OpenSCAD) for printing | Split: an in-Loom 3D preview (L23), the workbench as the Fabrication app.  |
-| KiCad circuit board design and management    | Split: an in-Loom PCB preview (L24), the workbench as the Electronics app. |
-| Image generation and photo lab               | Standalone app (Image Lab).                                                |
-| Headless web scraper (Obscura)               | Standalone app (Web Scraper); L11 can use Obscura if installed.            |
-| Research workspace (notebooklm-py)           | Standalone app (Research Desk).                                            |
-| F9 orchestration tools for agents            | A tiny version (delegate to other threads) is part of L08.                 |
-| F10 context engine                           | Skipped.                                                                   |
-| F13 lanes board and Git cockpit              | Deferred. P7 (lanes, graph, CI for one thread) is L06.                     |
-| F16 pair mode                                | Parts 1 and 2 (related threads, side by side) are part of L02.             |
+| Item                                         | Outcome                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Skill registry, manager and creation lab     | Selected as packet L21.                                                                                             |
+| 3D modeling (Blender, OpenSCAD) for printing | L23 preview/editing workspace complete locally; print readiness and slicing deferred. Fabrication remains separate. |
+| KiCad circuit board design and management    | Split: an in-Loom PCB preview (L24), the workbench as the Electronics app.                                          |
+| Image generation and photo lab               | Standalone app (Image Lab).                                                                                         |
+| Headless web scraper (Obscura)               | Standalone app (Web Scraper); L11 can use Obscura if installed.                                                     |
+| Research workspace (notebooklm-py)           | Standalone app (Research Desk).                                                                                     |
+| F9 orchestration tools for agents            | A tiny version (delegate to other threads) is part of L08.                                                          |
+| F10 context engine                           | Skipped.                                                                                                            |
+| F13 lanes board and Git cockpit              | Deferred. P7 (lanes, graph, CI for one thread) is L06.                                                              |
+| F16 pair mode                                | Parts 1 and 2 (related threads, side by side) are part of L02.                                                      |
 
 ## From selection to packet
 

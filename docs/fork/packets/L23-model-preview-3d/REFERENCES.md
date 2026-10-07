@@ -5,7 +5,7 @@ Sources for this packet. Treat external repositories as references, not code to 
 ## Old Loom
 
 "3D modeling with Blender and OpenSCAD, for 3D printing": 3D preview (L23), split out in
-[selections.md](../../selections.md) (Outcomes); the workbench is the Fabrication app. Old
+[selections.md](../../selections.md) (Outcomes); printing and slicing remain with the Fabrication app. L23 now includes the selected parameter/editing workspace. Old
 Loom has no 3D code: no three.js, OpenSCAD, Blender, manifold or OCCT dependencies, no model
 parser or viewer. Related remains, all dropped:
 
@@ -31,31 +31,30 @@ QUESTIONS, SAFETY; status "Not started"). Optional for this panel, never require
   fields, `-d` dependency files, exit code caveat, headless PNG notes; three.js 0.186.0 loaders;
   Blender MCP servers and the broken Codex entry.
 
-## Upstream T3 Code
+## Current integration references
 
-| Path                                                                                                                                                    | Why                                                                             |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `apps/server/src/assets/AssetAccess.ts:58,71-81,341`                                                                                                    | Asset token lifetime and the preview-type allowlist that rules out model files. |
-| `packages/contracts/src/assets.ts:14-50`                                                                                                                | `AssetResource` kinds.                                                          |
-| `apps/server/src/http.ts:196-215,230-250,371-375`                                                                                                       | File streaming in the asset route, global CORS, route registration.             |
-| `apps/server/src/server.ts:411-421,527,590`                                                                                                             | Workspace layers in the runtime, CORS layer.                                    |
-| `apps/server/src/workspace/WorkspaceEntries.ts:90-104`                                                                                                  | Workspace listing.                                                              |
-| `packages/contracts/src/project.ts:74-84`                                                                                                               | `ProjectListEntriesInput`, result.                                              |
-| `apps/server/src/auth/ServerSecretStore.ts:138-150`                                                                                                     | Signing key storage.                                                            |
-| `apps/server/src/keybindings.ts:566-582`                                                                                                                | Debounced `FileSystem.watch`.                                                   |
-| `apps/server/src/atomicWrite.ts:5`                                                                                                                      | Atomic writes for the sidecar.                                                  |
-| `packages/client-runtime/src/state/assets.ts:57`                                                                                                        | `resolveAssetUrl`.                                                              |
-| `apps/web/src/components/ChatView.tsx:600-606`                                                                                                          | Lazy-loaded panels.                                                             |
-| `apps/web/src/components/desktop/SnapShotCoordinator.tsx:139-184`, `apps/web/src/lib/imageCompression.ts:450`, `apps/web/src/composerDraftStore.ts:614` | Adding a captured image to the composer.                                        |
-| `apps/server/src/mcp/McpHttpServer.ts:499-577`                                                                                                          | Upstream's private image tool helper.                                           |
-| `packages/shared/src/devProxy.ts:11`                                                                                                                    | `/api` proxied in dev.                                                          |
+Checked against the implementation based on Loom `841d91c11d`; source paths are authoritative
+rather than the original packet's v0.0.42 line numbers.
+
+- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts` and
+  `apps/server/src/checkpointing/Utils.ts`: thread/workspace resolution.
+- `apps/server/src/workspace/WorkspaceEntries.ts`: file discovery.
+- `apps/server/src/assets/AssetAccess.ts`: the upstream allowlist that model files do not widen.
+- `apps/server/src/auth/ServerSecretStore.ts`: the signed-route key.
+- `apps/server/src/atomicWrite.ts`: preserving sidecar contents through atomic writes.
+- `apps/server/src/mcp/McpHttpServer.ts` and `apps/server/src/fork/ForkRuntime.ts`: shared toolkit
+  registration and retained service context.
+- `packages/shared/src/devProxy.ts`: same-origin development HTTP transport.
+- `apps/web/src/composerDraftStore.ts`, `apps/web/src/lib/imageCompression.ts` and
+  `apps/web/src/components/desktop/SnapShotCoordinator.tsx`: composer capture persistence.
+- `docs/fork/packets/EXTENSION-POINTS.md`: registries and marked upstream integration points.
 
 ## External
 
 - three.js (MIT) 0.186.0, `exports["./addons/*"] = "./examples/jsm/*"`; loaders
   `examples/jsm/loaders/STLLoader.js`, `3MFLoader.js` (imports `unzipSync` from its bundled
   `../libs/fflate.module.js`, parses XML with `DOMParser`, reads the model `unit`, default
-  millimeter), `OBJLoader.js`, `GLTFLoader.js`; `OrbitControls`. https://github.com/mrdoob/three.js,
+  millimeter but does not apply scaling; Loom normalizes model coordinates and transforms to mm), `OBJLoader.js`, `GLTFLoader.js`; `OrbitControls`. https://github.com/mrdoob/three.js,
   https://threejs.org/docs/ (package metadata checked with `npm view three` and unpkg on
   2026-09-24).
 - occt-import-js (LGPL-2.1) 0.0.23, STEP/IGES/BREP import in WebAssembly, about 11.6 MB
@@ -69,8 +68,8 @@ QUESTIONS, SAFETY; status "Not started"). Optional for this panel, never require
   Customizer syntax https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Customizer, Manifold
   backend flag in `src/openscad.cc` (https://github.com/openscad/openscad/blob/master/src/openscad.cc),
   summary statistics in `src/RenderStatistic.cc`. Not installed on Kyle's Mac on 2026-09-24
-  (`which openscad` empty, no OpenSCAD app in `/Applications`); flags to be rechecked against the
-  installed snapshot.
+  (`which openscad` empty, no OpenSCAD app in `/Applications`). Verification used the official
+  temporary snapshot recorded below, rather than a permanent application installation.
 - manifold (Apache-2.0), the geometry kernel behind OpenSCAD's Manifold backend:
   https://github.com/elalish/manifold
 - Blender MCP servers:
@@ -102,3 +101,23 @@ Checked on 2026-09-24.
   Unverified against bambulab.com; recheck in a browser.
 - Anycubic Kobra S1: 250 x 250 x 250 mm,
   https://store.anycubic.com/products/kobra-s1-ace-2-pro-combo-3d-printer (fetched).
+
+## Implementation verification, 2026-10-07
+
+Installed `three` and `@types/three` 0.186.0 were inspected directly. `ThreeMFLoader`
+records model units without scaling geometry; the viewer normalizes vertices, translations
+and beam radii to mm before parsing the archive. glTF is converted from metres/Y-up to mm/Z-up.
+
+With Kyle's authorization, the official macOS universal snapshot
+[2026.10.05](https://files.openscad.org/snapshots/OpenSCAD-2026.10.05.dmg) was downloaded
+and run from a temporary directory, without installing into `/Applications`.
+`--version`, `--help` and `--help-export` confirm Manifold, summary JSON, binary STL,
+colored 3MF and OBJ import. Real CLI/service tests rendered STL, colored 3MF and PNGs,
+checked parameter sets, overrides, cache reuse, parser errors and signed HTTP bytes.
+The shared MCP handler rendered SCAD, STL, OBJ and 3MF with valid PNG dimensions and
+geometry summaries. Imported meshes can omit `simple`; manifold then remains unknown.
+
+This build imports inch-unit 3MF as raw coordinates. The agent-tool wrapper reads the
+archive's model unit and scales imported coordinates to mm; an authored inch cube is
+25.4 mm in both the client and the real CLI tool tests. Capability detection uses help
+output rather than snapshot dates.

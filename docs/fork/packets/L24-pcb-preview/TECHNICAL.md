@@ -314,8 +314,10 @@ Scopes (`FORK_RPC_REQUIRED_SCOPES`):
 | `cache.ts`             | Cache directory layout, key computation, pruning.                                                                          |
 | `rpc.ts`               | `makePcbPreviewRpcHandlers(auth)`, thin.                                                                                   |
 
-Dependencies, all available to `ForkLayer` (EXTENSION-POINTS.md, "What ForkLayer can use"):
-`ProcessRunner`, `FileSystem`, `Path`, `ServerConfig` (for `stateDir`),
+Dependencies: provide `ProcessRunner.layer` locally to `PcbPreviewService`; upstream's
+other consumers also provide it locally, not as a shared ForkLayer service (rechecked at
+`e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`). The runtime supplies
+`FileSystem`, `Path`, `ServerConfig` (for `stateDir`),
 `ProjectionSnapshotQuery` (`apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:279`),
 `WorkspaceEntries`, `WorkspacePaths`.
 
@@ -439,7 +441,8 @@ and item positions, capped at 100 violations with "and N more"), written with
 prompt plus a blank line plus the summary when the draft is not empty; then focus the
 composer. It never sends. This is the same path L06 uses for "Ask the agent"; no
 `ext-composer` seam is needed. "Copy summary" writes the same text with
-`navigator.clipboard.writeText` and shows "Copied".
+the existing `useCopyToClipboard` helper, which supports the plain-HTTP remote fallback.
+Show "Copied" only after success and expose a copy error on failure.
 
 ## Agent-facing tools
 

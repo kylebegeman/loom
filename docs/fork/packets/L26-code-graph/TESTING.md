@@ -1,5 +1,9 @@
 # L26 testing
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
+> Preserve the full product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Focused tests; no repo-wide checks; no sleeps. Server tests wait on deferreds, receipts or the
 service's own status stream. Tests never need Graphify installed: the runner is tested with a
 fake executable script, the index with a fixture.

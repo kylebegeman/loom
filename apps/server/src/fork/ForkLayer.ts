@@ -1,3 +1,5 @@
+import { layer as ModelPreviewLayer } from "./model-preview-3d/ModelPreviewService.ts";
+import { ModelPreviewHttpRoutes } from "./model-preview-3d/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -6,11 +8,7 @@ import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
-const ForkServicesLive = Layer.mergeAll(
-  Layer.empty,
-  SwitchboardLive,
-  // SnippetStore.layer,
-);
+const ForkServicesLive = Layer.mergeAll(Layer.empty, SwitchboardLive, ModelPreviewLayer);
 
 /**
  * Merged at the head of RuntimeCoreDependenciesLive (apps/server/src/server.ts,
@@ -23,7 +21,4 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 );
 
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
-export const ForkRoutesLayer = Layer.mergeAll(
-  Layer.empty,
-  // SnippetsHttpRoutes,
-);
+export const ForkRoutesLayer = Layer.mergeAll(Layer.empty, ModelPreviewHttpRoutes);

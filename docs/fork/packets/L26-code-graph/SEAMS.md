@@ -1,5 +1,9 @@
 # L26 seams
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
+> Preserve the full product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 ## Extension points created by this packet
 
 None specific. It uses `ext-core` (with persistence, reactors), `ext-panels`, `ext-mcp`,

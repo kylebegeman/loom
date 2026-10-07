@@ -4,6 +4,15 @@ Follow AGENTS.md: focused tests, no repo-wide checks, no sleeps. The automated t
 need KiCad or tscircuit installed; process runs are replaced with a fake `ProcessRunner`
 layer.
 
+## Completion evidence
+
+Verify both KiCad and tscircuit with real fixtures and record their tested versions. KiCad
+schematic sheets, PCB layer presets, ERC and DRC must all work; tscircuit must render both
+schematic and board and expose build errors. Fixture provenance must be real or explicitly
+marked synthetic until replaced. Unit tests with fake processes do not prove CLI compatibility.
+Include a nested-file edit in live-reload verification and copy a summary from a remote
+plain-HTTP client. Record unavailable tools or client verification as outstanding checks.
+
 ## Automated tests
 
 | File                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -56,8 +65,8 @@ Ask Kyle before starting a dev server or a browser (AGENTS.md). With permission,
    appended after a blank line. "Copy summary" copies the same text.
 6. tscircuit design: the trust prompt appears once; after Render the schematic and PCB show.
    Break the circuit code: the failure state shows the build log and keeps the last render.
-7. Rename `kicad-cli` out of reach (or run on a machine without KiCad): the missing-tool
-   state appears and the design list still loads.
+7. Use an isolated tool-discovery fixture or a host without KiCad to verify the missing-tool
+   state while the design list still loads. Do not rename or modify the user's installed CLI.
 8. Connect this client to an upstream T3 server: the launcher entry is disabled with
    "Needs a Loom server with PCB preview".
 9. Remote: pair a second browser over the tailnet and repeat step 3 from it.

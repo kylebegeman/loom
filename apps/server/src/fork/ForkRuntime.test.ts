@@ -3,7 +3,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Scope from "effect/Scope";
 
-import { ForkRuntime, withForkRuntime } from "./ForkRuntime.ts";
+import { ForkRuntime, withForkRuntime, type ForkServices } from "./ForkRuntime.ts";
 
 describe("withForkRuntime", () => {
   it.effect("keeps the caller's scope, so request resources close with the request", () =>
@@ -12,7 +12,10 @@ describe("withForkRuntime", () => {
       const serverScope = yield* Scope.make();
       const requestScope = yield* Scope.make();
       const seen = yield* withForkRuntime(Effect.scope).pipe(
-        Effect.provideService(ForkRuntime, Context.make(Scope.Scope, serverScope)),
+        Effect.provideService(
+          ForkRuntime,
+          Context.make(Scope.Scope, serverScope) as unknown as Context.Context<ForkServices>,
+        ),
         Scope.provide(requestScope),
       );
       expect(seen).toBe(requestScope);

@@ -1,5 +1,16 @@
 # L29 product
 
+## Current decision
+
+Kyle confirmed on 2026-09-27: defer the complete hub until Orchestrator V2 ships. Preserve
+its full product intent, with no deadline. Reassess actual context contracts and remaining
+upstream gaps before finalizing implementation. Earlier APIs and model-specific assumptions
+below are reference designs, not settled V2 requirements.
+
+The [jevgrep review](./REFERENCES.md#jevgrep-review-2026-09-27) distinguishes repository
+retrieval from this hub's decision management. Evaluate its SDK approach when revisiting
+ext-decide; do not treat the earlier hand-written HTTP client as a mandatory final choice.
+
 ## Problem
 
 Kyle decided to use Jev, TypeSafe's fast decision model, in several Loom features for a

@@ -32,6 +32,7 @@ import { ThreadToolkit } from "./toolkits/thread/tools.ts";
 import { ThreadToolkitHandlersLive } from "./toolkits/thread/handlers.ts";
 import * as ThreadMetadataMcpService from "./ThreadMetadataMcpService.ts";
 import * as McpSessionRegistry from "./McpSessionRegistry.ts";
+import { ForkMcpToolkitsLive } from "../fork/mcp/index.ts"; // fork: ext-mcp
 import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
 import { OrchestratorToolkitHandlersLive } from "./toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "./toolkits/orchestrator/tools.ts";
@@ -716,6 +717,7 @@ const McpTransportLive = McpServer.layerHttp({
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
 export const layer = Layer.mergeAll(
+  ForkMcpToolkitsLive, // fork: ext-mcp
   PreviewToolkitRegistrationLive,
   OrchestratorToolkitRegistrationLive,
   ThreadToolkitRegistrationLive,

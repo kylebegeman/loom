@@ -1,11 +1,8 @@
-import { threadInspectorPanel } from "../thread-inspector/panel";
+import { modelPreview3dPanel } from "../model-preview-3d/panel";
 import type { ForkPanelDefinition, ForkRightPanelSurface } from "./types";
 
 /** One line per packet panel. Order is launcher order. */
-export const FORK_PANELS: ReadonlyArray<ForkPanelDefinition> = [
-  threadInspectorPanel,
-  // snippetsPanel,
-];
+export const FORK_PANELS: ReadonlyArray<ForkPanelDefinition> = [modelPreview3dPanel];
 
 export const findForkPanel = (panelId: string): ForkPanelDefinition | null =>
   FORK_PANELS.find((panel) => panel.id === panelId) ?? null;

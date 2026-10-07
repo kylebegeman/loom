@@ -202,9 +202,8 @@ A packet is only done if the next upstream merge still applies cleanly.
 
 ### What `loom.sh` does not do yet
 
-- It does not regenerate `apps/web/src/routeTree.gen.ts`. The first packet that adds a fork
-  route (`settings.loom*.tsx` or `loom.*.tsx`) makes `run_checks` regenerate it before the
-  web typecheck (EXTENSION-POINTS.md, Settings).
+- L23 adds a web build in `run_checks`, regenerating `apps/web/src/routeTree.gen.ts`
+  before the web typecheck (EXTENSION-POINTS.md, Settings).
 - `TYPECHECK_DIRS` leaves out `apps/mobile`. The first packet with mobile fork code adds it.
 
 ## Documentation
@@ -251,7 +250,8 @@ A packet is done when all of these hold:
 3. All new code is in fork-owned paths; every upstream touch is a marked seam listed in the
    packet's `SEAMS.md` and in FORK.md.
 4. Focused tests for the new behavior pass; the changed packages typecheck; lint is clean on
-   changed files; `pnpm-lock.yaml` is untouched.
+   changed files; `pnpm-lock.yaml` changes are limited to explicitly approved dependencies
+   and their required transitives.
 5. The merge preview against the newest nightly is clean or conflicts only on marked seams.
 6. The UI degrades gracefully when the server lacks the feature (no `loomFeatures` entry).
 7. Performance: no continuously repainting animation, no unbounded subscription payloads, no

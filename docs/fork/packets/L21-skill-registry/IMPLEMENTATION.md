@@ -1,5 +1,9 @@
 # L21 implementation plan
 
+> Historical V1 reference. Kyle deferred L21 until V2 ships on 2026-09-27.
+> Preserve the product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Ordered steps; each leaves the tree compiling. Commits `feat(fork-skill-registry): ...`;
 extension points in their own `feat(fork): ...` commits.
 

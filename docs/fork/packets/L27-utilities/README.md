@@ -1,6 +1,13 @@
 # L27: Utilities catalog
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Implement now. Kyle selected the full packet on 2026-09-27.
+
+Readiness reviewed against Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.
+All 29 tools and the existing product scope are included. Required dependencies, panel,
+palette, root and keybinding extension points already exist; register into them rather than
+recreate them. No new production dependencies, server services or database migrations are
+needed. Recheck the relevant source on pickup and follow the
+[current queue and handoff](../IMPLEMENT-NOW.md#agent-handoff).
 
 Twenty-nine small developer tools that run entirely in the client, offline: encoders and
 decoders, JWT decode, hashes and HMAC, color, case, number and timestamp conversion, a cron

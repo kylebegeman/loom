@@ -1,5 +1,12 @@
 # L01 product
 
+Current disposition: parked on 2026-09-27 under Kyle's conditional instruction to reuse an
+existing composer workflow when it meets his need. Named skills selected with `$` provide
+predefined work instructions, formatting rules and do/don't guidance without retyping them.
+See the [decision record](../IMPLEMENT-NOW.md#l01-decision-use-existing-skills). The full
+snippet scope below remains a proposal if inline text expansion, fill-in fields or library
+management proves necessary. Maintenance cost is not itself a reason to exclude it.
+
 ## Problem
 
 Kyle types the same instructions to agents many times a day: review checklists, "fix the

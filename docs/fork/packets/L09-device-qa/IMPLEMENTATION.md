@@ -6,6 +6,10 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 
 - Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
   folder. Work in a worktree.
+- Recheck the installed argent version and supported flags/output shapes. Keep the recorded
+  install pin unless deliberately updated and verified; do not assume it is still latest.
+  Follow current host instructions for product-native device tools during verification.
+  Backend command examples below do not override those instructions for this coding agent.
 - Fixtures: record once, on a Mac, outside the repo:
   - `xcrun simctl list devices booted -j` with one booted simulator;
   - `adb devices -l` with one emulator, if Android is available;
@@ -20,8 +24,12 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 
 ## Phase 0: extension points
 
-Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-settings`,
-`ext-palette`, `ext-web-root`, `ext-keybindings`, `ext-mcp`.
+Recheck `ext-core`, `ext-panels`, `ext-settings`, `ext-palette`, `ext-web-root`,
+`ext-keybindings` and `ext-mcp`. Only settings and MCP are missing at this review; reuse them
+if another selected packet has since added them. Create only the missing integration needed
+by this feature against current released source. Keep extension changes separate when
+commits are authorized. Use the refreshed DevicePanel placement in SEAMS.md; the old
+DeviceToolsPanel import and inline Tools toggle no longer exist there.
 
 ## Phase 1: contracts and pure parsing
 

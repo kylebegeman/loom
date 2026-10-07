@@ -1,3 +1,14 @@
+import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
+import { models } from "../model-preview-3d/state";
+import { useAtomValue } from "@effect/atom-react";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
+const emptyModels = Atom.make(
+  AsyncResult.initial<{
+    models: readonly import("@t3tools/contracts/fork").ModelEntry[];
+    truncated: boolean;
+  }>(),
+);
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
@@ -11,10 +22,10 @@ import { useServerConfigs } from "~/state/entities";
 import { fileOutlinePaletteSource } from "../file-outline/palette";
 import { useFileOutlineStore } from "../file-outline/store";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
-import { threadInspectorPaletteSource } from "../thread-inspector/palette";
 
 export interface ForkCommandPaletteContext {
   readonly activeThreadRef: ScopedThreadRef | null;
+  readonly modelFiles?: ReadonlyArray<string>;
   readonly loomFeatures: ReadonlyArray<string>;
 }
 
@@ -29,8 +40,8 @@ export interface ForkCommandPaletteSource {
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
   fileOutlinePaletteSource,
-  threadInspectorPaletteSource,
   // snippetsPaletteSource,
+  modelPreview3dPaletteSource,
 ];
 
 /** Rebuilt on every render, like the palette's own action items. */
@@ -49,7 +60,17 @@ export function useForkCommandPaletteItems(): ReadonlyArray<
     activeThreadRef?.environmentId ?? ("" as EnvironmentId),
   );
   const loomFeatures = loomFeaturesOf(serverConfig?.environment.capabilities);
+  const listing = useAtomValue(
+    activeThreadRef && loomFeatures.includes("model-preview-3d")
+      ? models.models({
+          environmentId: activeThreadRef.environmentId,
+          input: { threadId: activeThreadRef.threadId },
+        })
+      : emptyModels,
+  );
+  const modelFiles =
+    Option.getOrNull(AsyncResult.value(listing))?.models.map((model) => model.path) ?? [];
   return FORK_COMMAND_PALETTE_SOURCES.flatMap((source) =>
-    source.items({ activeThreadRef, loomFeatures }),
+    source.items({ activeThreadRef, loomFeatures, modelFiles }),
   );
 }

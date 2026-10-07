@@ -249,6 +249,10 @@ describe("searchSettings", () => {
     });
   });
 
+  it("does not offer archived inspector shortcuts in settings search", () => {
+    expect(searchSettings("loom.thread-inspector")).toEqual([]);
+  });
+
   it("ranks keybinding commands after other settings", () => {
     const ids = searchSettings("model").map((item) => item.id);
     expect(ids[0]).toBe("default-model");

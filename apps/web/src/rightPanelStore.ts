@@ -94,8 +94,8 @@ const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 // v10 keys pull-request surfaces by reference instead of a singleton tab.
 // v11 stops persisting the pull-request list's shared panel, so a restart opens the page fresh.
 // v12 adds the device surface.
-// v14 removes the agents surface; lineage lives in the thread title bar.
-const RIGHT_PANEL_STORAGE_VERSION = 14;
+// v15 also removes archived thread inspector tabs.
+const RIGHT_PANEL_STORAGE_VERSION = 15;
 
 /** A fixed workspace-level ref: each PR surface carries its own real environment. */
 export const PULL_REQUESTS_PANEL_REF = scopeThreadRef(
@@ -443,6 +443,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                     // Removed surfaces: plans render inline, agents in thread lineage.
                     const kind = (surface as { kind?: string }).kind;
                     if (kind === "plan" || kind === "agents") return [];
+                    if (surface.kind === "fork" && surface.panelId === "thread-inspector") return [];
                     if (surface.kind === "file") {
                       const revealLine =
                         typeof surface.revealLine === "number" &&

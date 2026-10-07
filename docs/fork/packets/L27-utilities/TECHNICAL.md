@@ -167,8 +167,10 @@ exception: its `run` only compiles the pattern (`new RegExp(pattern, flags)`, wh
 hang) and reports a syntax error or an invalid flag; its `View` does the matching in the
 worker. Output recomputes on input
 change, debounced 120 ms for inputs over 64 KiB and immediate otherwise, inside
-`useDeferredValue` so typing never blocks. Generators run on mount and on "Generate again",
-not on every render.
+`useDeferredValue`. Generators run only on explicit Generate/Regenerate actions, never on
+mount, option changes or React renders. Store the result and generating options in memory;
+option edits mark it as awaiting regeneration without replacing the previous value. UUID
+validation and ULID timestamp inspection are live transformations, not generation actions.
 
 Search (`registry.ts`): case-insensitive match over label, id and keywords, ranked by
 prefix match, then substring, then recent use. No fuzzy library.
@@ -184,7 +186,7 @@ never runs on the main thread:
 string | undefined>, indices? }], truncated }`. Without the `g` flag it returns the first
   match only, as `exec` would (`matchAll` requires `g`); zero-length matches advance like `matchAll`.
 - `regexWorker.ts` wraps it: `onmessage` receives `{ requestId, pattern, flags, text }`, posts
-  back `{ requestId, result }` or `{ requestId, error }`. Loaded with a Vite `?worker` import,
+  back `{ requestId, result }`, with a typed success/error result shared with the runner. Loaded with a Vite `?worker` import,
   the same mechanism upstream uses for the diff worker
   (`apps/web/src/components/DiffWorkerPoolProvider.tsx:3`). Workers need no secure context,
   so this also works on plain-`http` remote origins.
@@ -195,6 +197,9 @@ string | undefined>, indices? }], truncated }`. Without the `g` flag it returns 
   groups by number and name) capped at 200 rows with "Show all" up to 1,000, and the test text
   with matches highlighted (plain spans, no HTML from the input). The worker is terminated on
   unmount.
+- Superseding input cancels and settles any active request, clears its timer and terminates
+  its worker before a new request starts. Error, timeout and disposal also settle pending
+  work. Stale replies cannot affect newer results. See IMPLEMENTATION.md for the lifecycle.
 - The worker creation goes through a small factory (`createRegexRunner(makeWorker, timeoutMs)`)
   so the timeout path is tested with a fake worker.
 
@@ -300,7 +305,8 @@ None.
 - The diff tool reuses upstream's diff worker pool when present
   (`apps/web/src/components/DiffWorkerPoolProvider.tsx`), otherwise passes
   `disableWorkerPool`.
-- No timers, no animations beyond upstream's standard hover and the "Copied" label.
+- No background polling or idle animation. Timers are limited to input debounce, regex
+  deadlines and transient UI feedback.
 - Nothing touches the WebSocket.
 
 ## Alternatives considered

@@ -5,10 +5,11 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 ## Before starting
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
-folder. Work in your own worktree. For the manual check you need a KiCad project and
-(optionally) a tscircuit project inside a worktree `.t3` seeded per AGENTS.md "Test data";
-KiCad's own demo projects (`/Applications/KiCad/demos/` after installing KiCad 10) are good
-fixtures.
+folder. Work in your own worktree. Seed isolated runtime state per AGENTS.md "Test data".
+For full verification, use both a KiCad project and a tscircuit project in a test workspace.
+Record actual CLI versions and verify the planned flags and output shapes. KiCad demo
+projects can provide fixtures; missing-tool states and mocked runs alone do not verify
+rendering or checks.
 
 ## File layout
 
@@ -30,7 +31,9 @@ docs/fork/user/pcb-preview.md
 
 1. **Extension points.** Run the existence checks for `ext-core`, `ext-panels`,
    `ext-settings`, `ext-palette`, `ext-web-root`, `ext-keybindings`. Create each missing one
-   in its own commit, exactly as specified, with its FORK.md rows.
+   against current released source, with its FORK.md rows. At this review only settings is
+   missing; reuse it if L23 has since added it. Keep extension work separate when committing
+   is authorized.
 
 2. **Contracts.** Write `packages/contracts/src/fork/pcb-preview.ts` from TECHNICAL.md.
    Register it in `fork/index.ts` and `fork/rpc.ts`, add the `watch` tag to
@@ -98,7 +101,9 @@ docs/fork/user/pcb-preview.md
    ```
 
    Build it with `Layer.effect` from `ProcessRunner`, `FileSystem`, `Path`, `ServerConfig`,
-   `ProjectionSnapshotQuery`, `WorkspaceEntries`, `WorkspacePaths`. Key internals:
+   `ProjectionSnapshotQuery`, `WorkspaceEntries`, `WorkspacePaths`. Provide
+   `ProcessRunner.layer` locally to this service: existing server consumers provide it
+   locally, so it is not automatically available in ForkLayer. Key internals:
 
    ```ts
    const resolveDesign = Effect.fn("PcbPreview.resolveDesign")(function* (threadId, designId) {
@@ -224,9 +229,10 @@ view, preset, sheetId }` decide `render | readSheet | idle`.
   when the client is remote, show workspace-relative ones. `PcbDesign.absolutePath` exists
   only to build the Electronics URL; never render it as text.
 - `kicad-cli` may print warnings on stderr and still exit 0. Only the exit code decides.
-- The effect `FileSystem.watch` recursive option depends on the platform backend; on Linux
-  older Node versions lack recursive `fs.watch`. If it fails, fall back to watching the
-  design directory non-recursively and say so in a log line.
+- Recursive watch support depends on the host backend. Preserve nested dependency coverage
+  with bounded directory subscriptions when a recursive watch is unavailable. Do not silently
+  reduce live reload to top-level files; surface an explicit watch failure when coverage
+  cannot be established and retain manual refresh.
 - Do not render on mount if the panel is not `visible`, and do not keep the watch stream
   subscribed when hidden: unmounting the atom subscription is the off switch.
 - Never pass user input as a shell string: `ProcessRunner` takes `command` and `args`.

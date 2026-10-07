@@ -1,5 +1,9 @@
 # L26 technical design
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
+> Preserve the full product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Citations are to this fork at upstream v0.0.42 (`a931bd85f3`) and to Graphify at
 `Graphify-Labs/graphify@4c73561` (PyPI `graphifyy` 0.9.67). Verify Graphify flags against the
 installed version before relying on them; its CLI parses arguments by hand and changes often.

@@ -144,6 +144,8 @@ run_checks() {
   local tests=()
   while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
   pnpm exec vp test run "${tests[@]}"
+  say "Regenerating web routes and building the web client"
+  (cd apps/web && pnpm exec vp build)
   local d
   for d in "${TYPECHECK_DIRS[@]}"; do
     say "Typechecking $d"

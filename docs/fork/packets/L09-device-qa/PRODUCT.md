@@ -81,12 +81,16 @@ nothing. An upstream server hides everything.
 
 ## Decisions
 
+- **Implement now (Kyle, 2026-09-27).** Include the full flow and evidence feature on current
+  released integrations. Keep simulator/emulator scope and SSH screenshot support as
+  specified; L10 integration is optional and neither packet blocks the other.
+
 - Flows are argent YAML in the project (`.argent/flows/`), committed with the code. Loom adds no
   second format. Reason: argent records flows through agents and replays them without an LLM.
 - argent is installed by the user, never bundled, and its telemetry is disabled for every run
   Loom starts (`DO_NOT_TRACK=1`, which argent documents as always winning). Reason: argent's
   platform binaries are proprietary and telemetry is on by default.
-- The install command pins argent 0.25.2 (the current npm release), held in the single
+- The install command pins argent 0.25.2 (the version selected in the original review), held in the single
   `ARGENT_PINNED_VERSION` constant. Reason (Kyle): a known version for the command Loom types;
   other installed versions still run.
 - Evidence belongs to the thread and lives under Loom's state directory, not in the workspace,

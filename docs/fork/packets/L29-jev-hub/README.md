@@ -1,6 +1,16 @@
 # L29: Jev hub
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Deferred until Orchestrator V2 ships. Kyle confirmed on 2026-09-27.
+
+Retain the full log, playground, question templates, ratings and replay/tuning proposal.
+Review released thread, turn, diff and approval contracts and the feature consumers before
+finalizing implementation. There is no deadline or need for a partial substitute.
+The earlier technical documents are historical V1 designs, not instructions to begin work.
+
+Kyle also requested a [jevgrep comparison](./REFERENCES.md#jevgrep-review-2026-09-27).
+It is an independent code-retrieval CLI, with a useful SDK integration reference. It does
+not replace the hub or change this deferral. An optional trial and SDK selection remain
+unapproved proposals; no installation or paid evaluation was performed.
 
 The place to see, trial and tune Loom's use of Jev, TypeSafe's decision model. Several Loom
 features can ask Jev a small typed question (L15 picks a reviewer model, L07 labels an

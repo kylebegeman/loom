@@ -8,8 +8,11 @@ checks from [TESTING.md](./TESTING.md).
 - Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
   folder.
 - Work in a worktree (`vp i` if module resolution looks broken).
-- Record real tool output once, for fixtures, on a Mac with Xcode (read-only commands, safe to
-  run): `xcrun xcresulttool get build-results --schema`, `get test-results summary --schema`,
+- Recheck the installed Xcode/Swift versions and supported flags rather than assuming the
+  historical Xcode 27 examples apply. Observe the current host's tool restrictions when
+  gathering fixtures or driving devices; command examples here describe the product backend
+  and are not authorization to bypass product-native device tools.
+- Record real tool output once, for fixtures, on a Mac with Xcode: `xcrun xcresulttool get build-results --schema`, `get test-results summary --schema`,
   and one real `--compact` output of each from any small sample project you create under the
   scratch directory (not in the repo). Store trimmed copies under
   `apps/server/src/fork/apple-build-tooling/__fixtures__/`. Scrub absolute home paths to
@@ -30,9 +33,10 @@ checks from [TESTING.md](./TESTING.md).
 ## Phase 0: extension points
 
 Run the existence checks for `ext-core`, `ext-panels`, `ext-settings`, `ext-palette`,
-`ext-web-root`, `ext-keybindings` and `ext-mcp`. Create each missing one exactly as
-EXTENSION-POINTS.md specifies, one commit each (`feat(fork): add the <name> extension point`),
-with its FORK.md rows. Do not mix packet code into those commits.
+`ext-web-root`, `ext-keybindings` and `ext-mcp`. At the 2026-09-27 review, settings and MCP
+are missing; reuse them if another selected packet has since added them. Create only missing
+integration required by this packet against current released source, with its FORK.md rows.
+Keep extension changes separate from packet code when commits are authorized.
 
 ## Phase 1: contracts and pure logic
 

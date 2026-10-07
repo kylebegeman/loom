@@ -1,5 +1,9 @@
 # L29 implementation plan
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L29 until V2 ships.
+> Reassess released contracts and the Jev client choice before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Ordered steps for one agent. Each step leaves the tree compiling. Four phases; each ends in a
 usable state and can be reviewed on its own. Kyle's data-tool phases map as: context
 builders and question builder in phase 2 (phase 1's playground takes pasted text only), test

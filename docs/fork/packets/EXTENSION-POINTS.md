@@ -12,6 +12,11 @@ search for the quoted code when they do.
 
 ## How to use this file
 
+These are V1 integration designs. The [packet planning policy](./README.md#planning-policy-after-the-upstream-review)
+defers upstream-dependent work until V2 ships. Do not port these skeletons to provisional
+V2 APIs or create them for deferred packets. Reassess the relevant extension points against
+released source when a feature is selected; existing extension points remain in use.
+
 For every extension point a packet needs:
 
 1. Run its **existence check**. If it passes, skip to **Registering a packet**.
@@ -146,6 +151,10 @@ error, stream? })`, e.g. `WsServerProbeRpc` (`rpc.ts:451-455`); every error unio
   requirement to the upstream layers hosting it. Upstream's `server.test.ts`, which builds
   `makeRoutesLayer` with mocks, keeps compiling. The rule that follows: **transport code is
   thin; all fork logic lives in fork services built in `ForkLayer`.**
+  HTTP and MCP registration capture only required dependencies. Bind the `ForkRuntime`
+  reference during registration-layer construction and explicitly provide that value to the
+  later handler; reading the reference only inside a request silently sees its default.
+  L23 transport tests exercise this boundary.
 - One capability key, `loomFeatures: string[]`, lists the packet slugs the server supports,
   plus the extension point names `core` and `decide`.
 
@@ -844,6 +853,9 @@ further upstream edits.
 - Panels are not URL driven for threads.
 
 ### Fork design
+
+Focusable canvases own their input: ChatView excludes `canvas[tabindex]` from its
+type-to-focus-composer redirect so panel keyboard controls can receive ordinary keys.
 
 One generic surface kind, `"fork"`, carrying a `panelId`. A fork registry maps panel ids to
 title, icon, launcher letter, availability and component. The store gains one generic
@@ -2888,6 +2900,12 @@ test -f apps/web/src/fork/diffHeader/registry.ts \
 
 ## 18. Decisions with Jev (`ext-decide`)
 
+Current disposition (2026-09-27): L29 and all planned ext-decide consumers are deferred.
+Do not implement this V1 skeleton now. The later client decision must compare the AI SDK
+TypeSafe adapter and TypeSafe's SDK with this direct-HTTP design; see the
+[jevgrep review](./L29-jev-hub/REFERENCES.md#jevgrep-review-2026-09-27).
+Jevgrep itself is a retrieval CLI, not a replacement for this shared decision policy.
+
 Prerequisites: [Server core](#1-server-core-ext-core) (RPC group, `ForkLayer`, persistence,
 capability) and [Settings](#7-settings-ext-settings) (the "Jev" section). Used by:
 
@@ -3975,7 +3993,8 @@ read `useServerConfigs().get(environmentId)?.environment.capabilities` and pass 
 - **Keybinding defaults.** Fork default shortcuts are `keydown` listeners with an off switch,
   never `keybindings.json` entries, which upstream T3 Code would flag (section 9).
 - **MCP tools** are visible to every session and cost tokens every turn.
-- **Settings search** does not include fork sections (the search list is upstream-owned).
+- **Settings search** includes the Loom page through `ext-settings`. Individual packet
+  controls are not automatically indexed by the upstream-owned search list.
 - **Knip.** `knip:check` checks unused exports in apps and packages. If CI runs on the fork,
   empty registries are fine but exported helpers with no consumer yet (for example
   `supportsLoomFeature` before any packet uses it) may be reported. Use them in the first

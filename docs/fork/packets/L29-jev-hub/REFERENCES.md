@@ -1,5 +1,9 @@
 # L29 references
 
+> Historical V1 reference. On 2026-09-27 Kyle deferred L29 until V2 ships.
+> Reassess released contracts and the Jev client choice before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 Treat external repositories as references, not code to copy.
 
 ## Old Loom
@@ -77,3 +81,51 @@ to packet"). Closest old patterns, for shape only:
   (MIT per L21's answers; linked, never copied or installed by this packet).
 - Reliability diagrams (confidence bins against observed accuracy) are the standard way to
   read calibration; the chart follows that form with ten equal bins.
+
+## Jevgrep review, 2026-09-27
+
+Kyle's link redirects to [dzhng/jevgrep](https://github.com/dzhng/jevgrep).
+Inspected source: `8e8f2bc15cc773107fe8ac18a06b57e02bf955b9`; CLI package declares 0.3.2.
+This was a source/documentation review, not an installation or runtime benchmark.
+
+### What it changes
+
+Jevgrep answers repository-search questions with relevant file locations and source excerpts.
+Its CLI and agent skill can be evaluated independently of Loom's orchestration, with no V2
+adapter or Loom panel required. This is a candidate for a separate experiment, not selected
+work. The published small evaluation reports lower coding-agent spend but reduced solves;
+it does not establish that our workflows become faster or better. See the
+[project's results and limits](https://github.com/dzhng/jevgrep#what-we-measured).
+
+It does not supply L29's decision log UI, ratings, templates, calibration or feature policy.
+It also does not replace L26's deterministic graph and relationship/impact views. Its
+probabilistic retrieval may help agents find code while those packets stay deferred.
+
+### SDK lesson for ext-decide
+
+The [evaluator](https://github.com/dzhng/jevgrep/blob/8e8f2bc15cc773107fe8ac18a06b57e02bf955b9/packages/core/src/evaluator.ts)
+uses `experimental_evaluate` from `ai` and `createTypeSafeAi` from `@ai-sdk/typesafe-ai`.
+Its own wrapper accepts boolean questions and reduces answers to probabilities, so it is
+not a drop-in client for Loom's Choice/Score/Noul decision API. Its core package is private.
+Borrow the approach; do not import its retrieval engine into Loom merely for transport.
+
+The official [AI SDK adapter](https://github.com/vercel/ai/blob/main/packages/typesafe-ai/README.md)
+supports Choice, Score and Boolean (mapped to Noul), preserves distributions, and exposes
+TypeSafe confidence separately in provider metadata. Evaluation is experimental. Compare
+that adapter and the [TypeSafe JavaScript SDK](https://docs.typesafe.ai/sdk/javascript)
+with the old direct-HTTP plan when work resumes. Retain Loom's server-owned keys, switches,
+redaction, bounded requests, fallbacks and log/tuning policy whichever transport is chosen.
+Do not conflate probability with confidence or stack independent retry policies.
+
+### Trial boundaries
+
+The [CLI guide](https://github.com/dzhng/jevgrep/blob/8e8f2bc15cc773107fe8ac18a06b57e02bf955b9/apps/cli/README.md)
+describes source content sent to the configured Jev provider, separate saved credentials
+and local caching. A standalone trial would not automatically use Loom's planned key store,
+redaction rules or decision log. Its skill installer changes agent configuration; no such
+changes were made in this review.
+
+Before making it a default, compare representative Loom/TypeScript, Swift and hardware
+repository tasks with and without it. Count final task correctness, wall time, coding-agent
+cost and Jev cost, not retrieval cost alone. Keep exact symbol/path reads and rg available.
+This comparison is recommended future work, not a claim of measured benefit here.

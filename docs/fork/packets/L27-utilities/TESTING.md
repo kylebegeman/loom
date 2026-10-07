@@ -16,16 +16,29 @@ markup; test the tools' behavior and the registry's invariants.
 | `apps/web/src/fork/utilities/tools/text.test.ts`       | JSON pretty, minify, sort keys, error with line and column; list to JSON and CSV with quoting of commas and quotes; slugify accents and separators; text stats on emoji (code points vs UTF-16 length) and bytes.                                                                                                                                                                                                                                                                                                                           |
 | `apps/web/src/fork/utilities/tools/web.test.ts`        | URL parse and rebuild with edited parameters; query string with repeated keys to arrays and back; user agent table for current Chrome, Edge, Firefox, Safari on macOS and iOS, Samsung Internet on Android, and Googlebot; unknown string returns "Unknown".                                                                                                                                                                                                                                                                                |
 | `apps/web/src/fork/utilities/tools/regexMatch.test.ts` | Flags validation (unknown flag, duplicate, `u` with `v`); syntax error message from `run`; matches with index and end; numbered and named groups, including unmatched optional groups as undefined; `d` flag indices; without `g` only the first match; zero-length matches advance (`a*` on `bbb`); the 1,000 match cap sets `truncated`.                                                                                                                                                                                                  |
-| `apps/web/src/fork/utilities/regexRunner.test.ts`      | With a fake worker (an object with `postMessage`, `terminate` and `onmessage`): a reply resolves the request; no reply within the timeout (controlled with Vitest fake timers, not real waiting) terminates that worker, resolves `timeout`, and the next run creates a new worker; a stale reply for an older request id is ignored; `dispose` terminates.                                                                                                                                                                                 |
+| `apps/web/src/fork/utilities/regexRunner.test.ts`      | With a fake worker (an object with `postMessage`, `terminate` and `onmessage`): a reply resolves the request; no reply within the timeout (controlled with Vitest fake timers, not real waiting) terminates that worker, resolves `timeout`, and the next run creates a new worker; supersession and disposal settle pending promises and clear timers; an old timeout cannot terminate a new worker; stale replies are ignored; worker construction, postMessage, worker-error and message-error failures recover on the next request.     |
 | `apps/web/src/fork/utilities/tools/cidr.test.ts`       | `10.0.0.0/8`, `192.168.1.10/24` (host bits reported, network 192.168.1.0), `192.168.1.0 255.255.255.0`, non-contiguous netmask error, `/31` and `/32` usable counts, `/0`; IPv6 `2001:db8::/32` range and compressed output, `::1/128`, embedded IPv4 `::ffff:192.0.2.1`; contains yes and no at both ends of the block; invalid octets (`256`, `01`) and prefixes (`/33`, `/129`) rejected.                                                                                                                                                |
 | `apps/web/src/fork/utilities/tools/chmod.test.ts`      | `755`, `0644`, `4755`, `1777`, `2750` to symbolic and back; `rwxr-xr-x` and `-rwsr-xr-x` to octal; `S` and `T` for special bits without execute; per-class sentence; invalid input (`8`, `rwxrwxrw`, 5 digits) errors.                                                                                                                                                                                                                                                                                                                      |
-| `apps/web/src/fork/utilities/tools/limits.test.ts`     | Input over 1 MiB (multibyte) refused; output truncation marker.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `apps/web/src/fork/utilities/registry.test.ts`         | 29 tools; ids unique and kebab-case; every metadata entry has an implementation and vice versa; every tool with an `example` produces an `ok` result from it; every two-way tool round-trips its example through `swap`; search ranks prefix matches first; no source file under `tools/` references `crypto.subtle` or `randomUUID`; no tool file other than `regexMatch.ts` constructs a `RegExp` from user input.                                                                                                                        |
+| `apps/web/src/fork/utilities/tools/limits.test.ts`     | UTF-8 input limit at and above 1 MiB; output at most 2 MiB including the truncation marker; multibyte boundaries remain valid.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `apps/web/src/fork/utilities/registry.test.ts`         | 29 tools; ids unique and kebab-case; every metadata entry has an implementation and vice versa; every tool with an `example` produces an `ok` result from it; every two-way tool round-trips its example through `swap`; search ranks prefix matches first.                                                                                                                                                                                                                                                                                 |
 
 Also run the extension point tests this packet adds entries to:
 `apps/web/src/fork/panels/registry.test.ts` (letter U unique and not an upstream letter),
 `packages/contracts/src/fork/keybindings.test.ts`, and the palette registry test
 (values unique and prefixed `action:loom:`).
+
+Test hashes, HMAC and generators with `crypto.subtle` and `crypto.randomUUID` unavailable.
+The browser pass verifies actual worker isolation and responsiveness.
+
+Verify conversion controls: timestamps have an explicit seconds/milliseconds selector and
+show both labeled UTC and local results. Cron displays the local time-zone name used for
+the next runs and rejects unsupported field counts or dialect syntax. Include daylight-saving
+transitions in next-run fixtures so displayed results agree with the documented local-time
+semantics. The cron and chmod tools never execute the schedules or commands they display.
+
+Verify generator interaction: opening or remounting a tool does not generate values;
+Generate creates output; editing options preserves that output and marks it as awaiting
+regeneration; Regenerate applies the new options. Copy always copies the displayed value.
 
 ## Commands
 
@@ -37,8 +50,8 @@ vp run --filter @t3tools/contracts typecheck
 vp run --filter @t3tools/web typecheck
 ```
 
-The keybinding list lives in `packages/contracts`, so also typecheck `t3` and
-`@t3tools/client-runtime` if this packet created `ext-keybindings` or `ext-core`.
+The keybinding list changes in `packages/contracts`; typecheck its affected consumers,
+including server, client-runtime and mobile, even though the extension point already exists.
 
 ## Manual check
 

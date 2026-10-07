@@ -22,12 +22,11 @@ packages/contracts/src/environment.ts	ext-core	2
 packages/client-runtime/package.json	-	"./fork"
 packages/contracts/package.json	-	"./fork"
 apps/web/src/routes/__root.tsx	ext-web-root	2
-apps/web/src/components/ChatView.tsx	ext-panels	6
+apps/web/src/components/ChatView.tsx	ext-panels	7
 apps/web/src/components/RightPanelTabs.tsx	ext-panels	8
 apps/web/src/rightPanelStore.ts	ext-panels	8
 apps/web/src/components/CommandPalette.tsx	ext-palette	3
 packages/contracts/src/keybindings.ts	ext-keybindings	2
-apps/web/src/components/chat/ChatHeader.tsx	thread-inspector	2
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/Layers/CodexProvider.ts	codex-login-email	2
@@ -38,3 +37,8 @@ apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
 apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	3
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
+apps/web/src/components/settings/settingsSearch.ts	ext-settings	3
+apps/web/src/components/settings/SettingsSidebarNav.tsx	ext-settings	2
+apps/web/src/routes/settings.loom.tsx	-	/settings/loom
+apps/web/src/routeTree.gen.ts	-	/settings/loom
+apps/server/src/mcp/McpHttpServer.ts	ext-mcp	2

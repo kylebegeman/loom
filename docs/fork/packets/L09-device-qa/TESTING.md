@@ -3,6 +3,20 @@
 Focused tests; no repo-wide checks; no sleeps. Async server tests wait on the run's completion
 `Deferred`, on a `runEvents` stream reaching `runFinished`, or on a `watchEvidence` emission.
 
+## Completion evidence
+
+Record the actual argent version and device/toolchain used. Verify passing flows, failed
+snapshot comparisons, confirmed baseline updates, cancellation and busy-device behavior.
+Exercise screenshot capture, recording finalization, artifact installation, attachment to
+chat and evidence deletion on the supported local iOS/Android targets. Check SSH screenshots
+through DeviceService when that connection mode is available. Report unavailable targets
+explicitly; synthetic fixtures and fake processes are not evidence of a working device flow.
+
+Verify the refreshed DevicePanel actions in normal and floating layouts. Keep the existing
+screenshot-download action working, and show no empty action row against an upstream server.
+Verify agent access denial and thread deletion against the actual released lifecycle. Test
+optional L10 hooks when both packets are present; L09 must work without L10.
+
 ## Automated tests
 
 Server (`apps/server/src/fork/device-qa/`):

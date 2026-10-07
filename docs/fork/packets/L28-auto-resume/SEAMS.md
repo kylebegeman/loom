@@ -1,5 +1,9 @@
 # L28 seams
 
+> Superseded V1 reference. L28 now retains account failover and is deferred until V2
+> ships. Do not execute this design or treat its schemas, defaults and provider restrictions
+> as final. [PRODUCT.md](./PRODUCT.md) records the current scope and deferred questions.
+
 This packet touches upstream files only through extension points. It reads upstream
 events and dispatches upstream commands; it adds no event types and no commands.
 

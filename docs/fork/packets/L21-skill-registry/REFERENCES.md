@@ -1,5 +1,9 @@
 # L21 references
 
+> Historical V1 reference. Kyle deferred L21 until V2 ships on 2026-09-27.
+> Preserve the product intent; reassess released contracts before using this design.
+> See [PRODUCT.md](./PRODUCT.md#current-decision).
+
 ## Old Loom
 
 "Skill registry, manager and creation lab" was selected as packet L21 in
