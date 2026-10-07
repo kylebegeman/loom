@@ -1,3 +1,4 @@
+import { ModelPreviewMigrations } from "../model-preview-3d/migrations.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/unstable/sql/Migrator";
@@ -14,7 +15,7 @@ export interface ForkMigrationSet {
 
 /** One entry per packet that owns tables. */
 export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
-  // SnippetsMigrations,
+  ModelPreviewMigrations,
 ];
 
 export const forkMigrationsTable = (slug: string) => `fork_migrations_${slug.replaceAll("-", "_")}`;

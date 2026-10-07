@@ -1,29 +1,20 @@
 # L23: 3D model preview
 
-Status: Implement now. Kyle included the full packet on 2026-09-27 and identified it as a
-primary workflow. It is first in the [selected queue](../IMPLEMENT-NOW.md#selected-queue).
+Status: Implemented and verified locally on `feat/loom-model-preview-3d`; not merged.
+The original L23 scope, UI redesign and selected editing expansion are complete: parameter
+history, measurements/sections, named views/capture presets, variant exploration and model
+review. Print-readiness remains deferred. See TESTING.md for evidence and verification limits.
 
-Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Reuse existing core,
-panels, palette, root and keybinding extension points. Settings and MCP extension points
-are not present at this review and must be created for this packet against current released
-source. Workspace lookup remains available through the existing projection query service;
-do not design against provisional V2 contracts.
-
-The whole product scope below is included, including OpenSCAD parameters, live reload,
-captures and the agent render tool. Existing approval for `three` and `@types/three` stands.
-The feature owns its settings/parameter tables through fork migrations. Detect and verify
-the actual OpenSCAD build during implementation; previous version/flag notes and synthetic
-summary fixtures are not proof of a working render. Full completion requires real render
-and client verification, with missing tools or unavailable verification recorded explicitly.
-Follow the [agent handoff](../IMPLEMENT-NOW.md#agent-handoff).
+Final audit and documentation closeout: 2026-10-07. Working implementation is based on Loom
+`841d91c11d`. Core, panels, palette, root and keybindings were reused; L23 added the missing
+settings and MCP registrations against current released source. The queue records local
+completion, with merge and release still separate. See [IMPLEMENTATION.md](./IMPLEMENTATION.md).
 
 A **3D model** right panel that shows the thread's 3D files next to the chat: STL, 3MF, OBJ
 and glTF/GLB meshes, and OpenSCAD `.scad` sources, which the environment server renders with the
 `openscad` CLI into a mesh on every save, with the model's customizer parameters as a form. The
-view updates when an agent (or Kyle) edits the file, renders only on interaction (no idle GPU
-use), shows dimensions and triangle counts, and captures a view or a four-view sheet into the
-composer so the agent can see what it built. Agents also get one small MCP tool that renders a
-`.scad` or mesh file to PNG views with a geometry summary.
+view updates when an agent (or Kyle) edits the file, renders on interaction and changes (no idle draw loop), shows dimensions and triangle counts, and captures a view or a four-view sheet into the
+composer so the agent can see what it built. Agents can render views and propose parameter variants through shared MCP tools. The render tool converts SCAD, STL, 3MF and OBJ to PNG views with a geometry summary.
 
 Blender stays outside Loom: agents use a Blender MCP server configured in their provider, and
 this panel previews what they export. The standalone Fabrication app
@@ -48,14 +39,16 @@ panel can link to it when a URL is configured, and never depends on it.
     customizer JSON sidecar, last-used values remembered per file, render log (`ECHO`,
     `WARNING`, `ERROR`) and the geometry summary (manifold or not).
   - Capture the current view, or a 2x2 sheet of standard views, into the composer.
-  - Agent tool `loom_model_preview_3d_render`.
+  - Agent tools `loom_model_preview_3d_render` and `loom_model_preview_3d_propose_variants`.
+  - Parameter history, surface measurements and sections, named views/capture presets, a SCAD
+    variant workbench and annotations with prepared agent requests and review.
   - Loom settings section: OpenSCAD path and version, backend, render timeout, colors, max file
-    size, build plate preset (or custom size), optional Fabrication app URL, "Let agents render
-    models" (the agent tool, on by default).
+    size, build plate preset (or custom size), optional Fabrication app URL, "Let agents render models and propose variants" (the agent tool, on by default).
   - Palette entries and unbound keybinding commands.
 - Out:
-  - Editing geometry, measuring between points, section planes, slicing, printer control, print
-    queues, a model library: the Fabrication app's job.
+  - Direct geometry editing, print-readiness analysis, slicing, printer control, print queues
+    and a printing model library. Measurements, section planes and parameter exploration are
+    included in the selected editing expansion.
   - Running Blender from Loom (headless scripts, `.blend` previews). Blender MCP from agents is
     documented, not integrated.
   - Draco-compressed glTF (needs decoder assets), textures beyond what GLTFLoader loads from the
@@ -95,24 +88,20 @@ None.
 
 - L24 (pcb-preview): none required. Both panels watch files the same way; they share no code.
 - Fabrication app: a URL setting adds "Open in Fabrication" (opens the app in a browser); no API
-  calls are made in v1. See TECHNICAL.md, "Fabrication app".
+  calls are made in v1. See TECHNICAL.md, "Agent tools and optional integrations".
 
-## Size estimate
+## Maintenance
 
-Medium to large: about 2,800 lines including tests (viewer 900, OpenSCAD service and
-parameters parser 900, panel UI 600, route and contracts 400).
-
-## How an agent starts
-
-Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md, then this
-folder. `three` is approved; commit only the intended lockfile change (CONVENTIONS.md, "The
-lockfile rule"). OpenSCAD is not installed on Kyle's Mac as of 2026-09-24; the automated tests fake it.
+Read the packet and current source before extending it. The approved dependency changes are
+limited to `three`, `@types/three` and their required transitives. OpenSCAD verification used
+an official temporary 2026.10.05 snapshot; it is an environment prerequisite, not a bundled
+application. Use the focused commands in TESTING.md and preserve unrelated worktree edits.
 
 ## Documents
 
 - [PRODUCT.md](./PRODUCT.md): what and why, for Kyle.
-- [TECHNICAL.md](./TECHNICAL.md): the design.
+- [TECHNICAL.md](./TECHNICAL.md): the implemented constraints.
 - [SEAMS.md](./SEAMS.md): every upstream touch (none beyond extension points).
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): ordered steps for the implementing agent.
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md): completion and integration status.
 - [TESTING.md](./TESTING.md): how it is proven.
 - [REFERENCES.md](./REFERENCES.md): prior art, library and tool facts, Blender MCP notes.

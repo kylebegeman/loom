@@ -1,5 +1,7 @@
+import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
   EnvironmentAuthorizationError,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
@@ -13,6 +15,19 @@ import { observeRpcEffect, observeRpcStream } from "../observability/RpcInstrume
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
   [FORK_WS_METHODS.coreInfo]: AuthOrchestrationReadScope,
+  [M.workspace]: AuthOrchestrationReadScope,
+  [M.updateWorkspace]: AuthOrchestrationOperateScope,
+  [M.cancelVariant]: AuthOrchestrationOperateScope,
+  [M.status]: AuthOrchestrationReadScope,
+  [M.listModels]: AuthOrchestrationReadScope,
+  [M.fileUrl]: AuthOrchestrationReadScope,
+  [M.watch]: AuthOrchestrationReadScope,
+  [M.parameters]: AuthOrchestrationReadScope,
+  [M.renderScad]: AuthOrchestrationOperateScope,
+  [M.saveParameterSet]: AuthOrchestrationOperateScope,
+  [M.getSettings]: AuthOrchestrationReadScope,
+  [M.updateSettings]: AuthOrchestrationOperateScope,
+  [M.clearCache]: AuthOrchestrationOperateScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

@@ -170,6 +170,10 @@ export function keybindingConflictLabels(
   return [...new Set(conflicts)].toSorted();
 }
 
+// Keep archived commands valid in saved configurations, but hide them from the UI.
+const isVisibleKeybindingCommand = (command: KeybindingCommand): boolean =>
+  command !== "loom.thread-inspector.toggle" && command !== "loom.thread-inspector.card";
+
 export function buildKeybindingRows(
   keybindings: ResolvedKeybindingsConfig,
   query: string,
@@ -192,8 +196,9 @@ export function buildKeybindingRows(
     } satisfies KeybindingRow;
   });
 
-  const rowsWithConflicts = rows.map((row) => {
-    const conflicts = keybindingConflictLabels(rows, {
+  const visibleRows = rows.filter((row) => isVisibleKeybindingCommand(row.command));
+  const rowsWithConflicts = visibleRows.map((row) => {
+    const conflicts = keybindingConflictLabels(visibleRows, {
       rowId: row.id,
       key: row.key,
       when: row.when,
@@ -277,9 +282,9 @@ export function buildKeybindingCommandOptions(
   for (const binding of keybindings) {
     commands.add(binding.command);
   }
-  return [...commands].toSorted((left, right) =>
-    commandLabel(left).localeCompare(commandLabel(right)),
-  );
+  return [...commands]
+    .filter(isVisibleKeybindingCommand)
+    .toSorted((left, right) => commandLabel(left).localeCompare(commandLabel(right)));
 }
 
 export function commandLabel(command: KeybindingCommand): string {

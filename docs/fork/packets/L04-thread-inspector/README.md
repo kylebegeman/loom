@@ -1,6 +1,8 @@
 # L04: Thread Inspector
 
-Status: Done.
+Status: Archived. The implementation remains in `apps/web/src/fork/thread-inspector/`,
+but its header button, panel, palette actions and shortcut handlers are no longer
+registered. The documents below describe the archived implementation.
 
 One status view for the current thread: what it is doing, where it works (project, branch,
 worktree, pull request), what it changed (uncommitted files, last turn's files), its plan,

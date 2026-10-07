@@ -6,35 +6,35 @@ are designated for implementation; retained proposals remain parked.
 
 ## Selected queue
 
-| Order | Packet                                                | Status        | Decision                                                                             |
-| ----- | ----------------------------------------------------- | ------------- | ------------------------------------------------------------------------------------ |
-| 1     | [L23 3D preview](./L23-model-preview-3d/)             | Implement now | Kyle included the full packet on 2026-09-27 and identified it as a primary workflow. |
-| 2     | [L24 PCB preview](./L24-pcb-preview/)                 | Implement now | Kyle included the full KiCad/tscircuit packet on 2026-09-27.                         |
-| 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Implement now | Kyle confirmed the full packet on 2026-09-27.                                        |
-| 4     | [L09 Device QA](./L09-device-qa/)                     | Implement now | Kyle confirmed the full flow/evidence packet on 2026-09-27.                          |
-| 5     | [L27 Utilities](./L27-utilities/)                     | Implement now | Kyle included the complete 29-tool packet on 2026-09-27.                             |
-| 6     | [L05 File outline](./L05-file-outline/)               | Implement now | Kyle included the complete selected language coverage on 2026-09-27.                 |
+| Order | Packet                                                | Status                                                       | Decision                                                                                        |
+| ----- | ----------------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| 1     | [L23 3D preview](./L23-model-preview-3d/)             | Complete locally on `feat/loom-model-preview-3d`; not merged | Full L23, redesign and five selected editing additions verified; final audit closed 2026-10-07. |
+| 2     | [L24 PCB preview](./L24-pcb-preview/)                 | Implement now                                                | Kyle included the full KiCad/tscircuit packet on 2026-09-27.                                    |
+| 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Implement now                                                | Kyle confirmed the full packet on 2026-09-27.                                                   |
+| 4     | [L09 Device QA](./L09-device-qa/)                     | Implement now                                                | Kyle confirmed the full flow/evidence packet on 2026-09-27.                                     |
+| 5     | [L27 Utilities](./L27-utilities/)                     | Implement now                                                | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
+| 6     | [L05 File outline](./L05-file-outline/)               | Implement now                                                | Kyle included the complete selected language coverage on 2026-09-27.                            |
 
 Order reflects product priority, not dependencies. An agent asked to choose the next item
-starts with the first unclaimed packet. Each packet can still be implemented independently.
+starts with the first incomplete, unclaimed packet. Closing L23 does not start another project. Each packet can still be implemented independently.
 
 All candidate dispositions are settled for this review. The comparison below retains the
-reasons for selection or deferral; only the selected queue is available for implementation. No feature implementation is in progress from this planning session.
+reasons for selection or deferral; only the selected queue is available for implementation. L23 is complete locally; the other selections remain queued. Merge and release are separate from local completion.
 
 ## Candidates for the queue
 
 Source review: 2026-09-27, Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.
 This is a suitability review, not a claim that every implementation sketch has been validated.
 
-| Packet                                                | Complete outcome                                                                        | Why consider it now                                                                | Readiness work before selection is final                                                                                                                                      |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [L27 Utilities](./L27-utilities/)                     | All 29 offline tools, panel, palette, no-thread dialog and configurable shortcut        | Client-only; required dependencies and shared UI extension points already exist    | Selected; worker lifecycle requirements and focused test cases clarified in the packet                                                                                        |
-| [L05 File outline](./L05-file-outline/)               | Search and navigate symbols in the open file across all selected languages              | Client-only; current file surface exposes loaded text and existing line navigation | Selected; current editor updates the file query on each edit, and existing openFile supports line navigation; language fixtures are required during implementation            |
-| [L01 Snippets](./L01-snippets/)                       | Saved library, fill-in fields, aliases, revisions, import/export and terminal insertion | Owns prompt preparation, not agent execution                                       | Parked by Kyle's conditional decision: existing composer skill invocation covers named predefined workflows; see the packet README                                            |
-| [L23 3D preview](./L23-model-preview-3d/)             | Mesh/OpenSCAD previews, live reload, parameters, captures and agent render tool         | Owns file rendering; does not replace orchestration or depend on Fabrication       | Selected as first priority; current workspace services exist, settings/MCP extension points must be added, and real CLI/render verification is required during implementation |
-| [L24 PCB preview](./L24-pcb-preview/)                 | KiCad/tscircuit views, live reload, ERC/DRC and summaries                               | Owns design-file rendering; does not depend on Electronics                         | Selected; workspace/composer integration checked, ProcessRunner provisioning and remote copy clarified; real KiCad and tscircuit verification required during implementation  |
-| [L10 Apple build tooling](./L10-apple-build-tooling/) | Build/test/run, result summaries, history, XcodeGen and readiness checks                | Owns a build pipeline separate from agent turns                                    | Selected; current workspace/Device services checked; real build, test, cancellation and destination verification required during implementation                               |
-| [L09 Device QA](./L09-device-qa/)                     | Recorded flow runs, snapshot diffs, evidence capture/history and agent tools            | Adds repeatable QA to the existing Device surface                                  | Selected; current access gating and deletion event checked; outdated Device toolbar seam refreshed; real flow/capture verification required during implementation             |
+| Packet                                                | Complete outcome                                                                        | Why consider it now                                                                | Readiness work before selection is final                                                                                                                                     |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [L27 Utilities](./L27-utilities/)                     | All 29 offline tools, panel, palette, no-thread dialog and configurable shortcut        | Client-only; required dependencies and shared UI extension points already exist    | Selected; worker lifecycle requirements and focused test cases clarified in the packet                                                                                       |
+| [L05 File outline](./L05-file-outline/)               | Search and navigate symbols in the open file across all selected languages              | Client-only; current file surface exposes loaded text and existing line navigation | Selected; current editor updates the file query on each edit, and existing openFile supports line navigation; language fixtures are required during implementation           |
+| [L01 Snippets](./L01-snippets/)                       | Saved library, fill-in fields, aliases, revisions, import/export and terminal insertion | Owns prompt preparation, not agent execution                                       | Parked by Kyle's conditional decision: existing composer skill invocation covers named predefined workflows; see the packet README                                           |
+| [L23 3D preview](./L23-model-preview-3d/)             | Mesh/OpenSCAD previews, live reload, parameters, captures and agent render tool         | Owns file rendering; does not replace orchestration or depend on Fabrication       | Completed locally, including settings/MCP integrations and real CLI/client verification; see L23 TESTING.md for limits                                                       |
+| [L24 PCB preview](./L24-pcb-preview/)                 | KiCad/tscircuit views, live reload, ERC/DRC and summaries                               | Owns design-file rendering; does not depend on Electronics                         | Selected; workspace/composer integration checked, ProcessRunner provisioning and remote copy clarified; real KiCad and tscircuit verification required during implementation |
+| [L10 Apple build tooling](./L10-apple-build-tooling/) | Build/test/run, result summaries, history, XcodeGen and readiness checks                | Owns a build pipeline separate from agent turns                                    | Selected; current workspace/Device services checked; real build, test, cancellation and destination verification required during implementation                              |
+| [L09 Device QA](./L09-device-qa/)                     | Recorded flow runs, snapshot diffs, evidence capture/history and agent tools            | Adds repeatable QA to the existing Device surface                                  | Selected; current access gating and deletion event checked; outdated Device toolbar seam refreshed; real flow/capture verification required during implementation            |
 
 These are whole packets with their existing product scope. Do not quietly drop formats,
 tools, platforms or entry points to make a candidate appear ready. Web and desktop are the
@@ -86,7 +86,8 @@ implementation readiness. Confirmed deferrals:
   selected for installation or implementation by this review.
 
 All packets already marked `Deferred: V2` in the [index](./README.md#packet-index) stay
-deferred. L04 is already shipped and stays in use.
+deferred. L04 is archived following Kyle’s 2026-10-07 decision to hide its UI and
+retain the implementation for reference.
 
 ## What qualifies as implement now
 

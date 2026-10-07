@@ -372,6 +372,42 @@ describe("rightPanelStore", () => {
     ).toEqual({ byThreadKey: { "env-1:thread-A": panelState } });
   });
 
+  it("removes archived inspector tabs and selects a surviving panel", () => {
+    const inspector = {
+      id: "fork:thread-inspector",
+      kind: "fork",
+      panelId: "thread-inspector",
+    };
+    const diff = { id: "diff", kind: "diff" };
+    expect(
+      migratePersistedRightPanelState({
+        byThreadKey: {
+          "env-1:thread-A": {
+            isOpen: true,
+            activeSurfaceId: inspector.id,
+            surfaces: [inspector],
+          },
+          "env-1:thread-B": {
+            isOpen: true,
+            activeSurfaceId: inspector.id,
+            surfaces: [inspector, diff],
+          },
+          "env-1:thread-C": {
+            isOpen: false,
+            activeSurfaceId: diff.id,
+            surfaces: [inspector, diff],
+          },
+        },
+      }),
+    ).toEqual({
+      byThreadKey: {
+        "env-1:thread-A": { isOpen: false, activeSurfaceId: null, surfaces: [] },
+        "env-1:thread-B": { isOpen: true, activeSurfaceId: diff.id, surfaces: [diff] },
+        "env-1:thread-C": { isOpen: false, activeSurfaceId: diff.id, surfaces: [diff] },
+      },
+    });
+  });
+
   it("drops persisted plan surfaces and does not reopen an empty panel", () => {
     expect(
       migratePersistedRightPanelState({

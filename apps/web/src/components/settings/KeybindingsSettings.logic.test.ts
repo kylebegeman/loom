@@ -252,6 +252,31 @@ describe("KeybindingsSettings.logic", () => {
     );
   });
 
+  it("hides archived inspector commands and ignores their shortcut conflicts", () => {
+    const shortcut = {
+      key: "j",
+      modKey: true,
+      metaKey: false,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+    };
+    const keybindings: ResolvedKeybindingsConfig = [
+      { command: "loom.thread-inspector.toggle", shortcut },
+      { command: "loom.thread-inspector.card", shortcut },
+      { command: "terminal.toggle", shortcut },
+    ];
+
+    expect(buildKeybindingRows(keybindings, "")).toEqual([
+      expect.objectContaining({ command: "terminal.toggle", conflicts: [] }),
+    ]);
+    expect(buildKeybindingRows(keybindings, "inspector")).toEqual([]);
+    const options = buildKeybindingCommandOptions(keybindings);
+    expect(options).not.toContain("loom.thread-inspector.toggle");
+    expect(options).not.toContain("loom.thread-inspector.card");
+    expect(options).toContain("terminal.toggle");
+  });
+
   it("reports unknown when variables without rejecting parseable expressions", () => {
     const parsed = parseWhenExpressionDraft("!terminalFocus && terminalFoc");
 

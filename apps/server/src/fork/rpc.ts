@@ -1,3 +1,5 @@
+import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
+import { withForkRuntime } from "./ForkRuntime.ts";
 import { FORK_WS_METHODS, ForkRpcGroup } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 
@@ -17,7 +19,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
             FORK_WS_METHODS.coreInfo,
             Effect.succeed({ features: LOOM_SERVER_FEATURES, serverVersion: packageJson.version }),
           ),
-        // ...(yield* makeSnippetsRpcHandlers(auth)),
+        ...(yield* withForkRuntime(makeModelPreviewRpcHandlers(auth))),
       });
     }),
   );

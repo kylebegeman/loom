@@ -1,85 +1,109 @@
-# L23 testing
+# L23 verification
 
-Focused tests only; no repo-wide checks; no sleeps. Watch and render tests wait on the emitted
-event or the render result, with `TestClock` for debounce windows.
+Local completion and final audit: 2026-10-07, branch `feat/loom-model-preview-3d`, based on
+`841d91c11d`. The full original scope, workspace redesign and five selected editing additions
+are implemented. This record describes local checks, not a merged or released build.
 
-## Completion evidence
+## Automated evidence
 
-Real OpenSCAD renders and the integrated client pass are required to claim the full packet
-complete. Synthetic summaries and fake process tests verify handling, not CLI compatibility.
-Record the exact tested tool version and capabilities. Cover every supported viewer format,
-including glTF with an external buffer and GLB, and each advertised agent-tool format
-(SCAD, STL, 3MF, OBJ). The agent tool does not claim glTF/GLB support.
+The final closeout ran **46 server tests in 11 files**, including both real OpenSCAD integration
+cases against the official macOS **2026.10.05** snapshot. Three new regressions prove coherent
+parameter/source snapshots and rejection of outputs when the source, saved sets or known
+included files change during rendering. The rejected jobs neither publish cache artifacts nor
+replace remembered parameters. These cases failed before the fixes and passed afterward.
 
-If a test runtime lacks DOMParser, run the 3MF loader case in a suitable client test
-runtime or the authorized integrated pass. Record a skip honestly and do not treat a skipped
-format as verified. Missing tools or client-verification authorization remain explicit
-outstanding checks; they do not justify silently reducing the selected feature.
+The preceding integrated audit passed **189 focused web/integration tests**, with **one Node
+DOMParser-dependent 3MF loader skip**. No frontend or contract code changed during closeout;
+that coverage remains applicable. The real client loaded the skipped inch-unit fixture at
+**25.40 × 25.40 × 25.40 mm**. The earlier audit also passed web, server, contracts and
+client-runtime typechecks, feature lint/formatting and the web production build. The viewer
+remains lazy-loaded. Existing upstream chunk-size warnings remain.
 
-## Automated tests
+Closeout reruns the changed server package's typecheck, focused feature lint/format checks,
+document links, seam-manifest validation and `git diff --check`. It does not run repository-wide
+checks, reinstall dependencies, change schema migrations or perform a merge.
 
-Server (`apps/server/src/fork/model-preview-3d/`):
+Focused regression coverage includes:
 
-| Test file                     | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `signedFiles.test.ts`         | Round trip; tampered payload or signature rejected; expired rejected; `..`, absolute and encoded traversal paths rejected; a subfolder of `base` allowed; a symlink pointing outside `root` rejected (temp directory); `large` flag required for files over the limit.                                                                                                                                                                                                                                                                                                                                                           |
-| `customizer.test.ts`          | Numbers, strings, booleans, vectors; `// [min:max]`, `// [min:step:max]`, `// [a, b, c]`, `// [10:Small, 20:Large]`; description from the previous line; `/* [Group] */` and `/* [Hidden] */`; assignments after the first `module` ignored; expression values skipped; `validateLiteral` refuses `1; cube(9)` and unbalanced quotes, accepts escaped quotes.                                                                                                                                                                                                                                                                    |
-| `openscad.test.ts`            | Version parsing (snapshot dates, `2021.01`); capability table; render argv (binstl always, backend per setting and version, `-P` before `-D`, summary flags only when supported, `-d` deps file); PNG argv per view; log parsing into levels; `ERROR:` with exit 0 counts as error; summary parsing with missing fields.                                                                                                                                                                                                                                                                                                         |
-| `renderCache.test.ts`         | Key changes with source, overrides, set, sidecar, version, backend, format and dependency mtimes; prune by count and by size, oldest first.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `ModelPreviewService.test.ts` | With a fake spawner and temp workspace: `listModels` filters and caps and includes `.step` entries; `fileUrl` for a `.step` file fails `unsupported-format`; `fileUrl` for a missing file fails `not-found`; a second `renderScad` for the same file cancels the first (`cancelled`) and returns the second; a cache hit returns `cached: true` without spawning; a timeout returns `error`; `saveParameterSet` merges into an existing sidecar and preserves other sets; `watch` emits on a write to the file (wait for the event) and on a change to a recorded dependency, and stops watching when the stream is interrupted. |
-| `http.test.ts`                | The route serves bytes with the right `Content-Type` for a valid token, 404 for an invalid one, and 404 for traversal; uses the route layer with a test `ForkRuntime` context.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `store.test.ts`               | Params upsert and read; settings defaults (build plate preset `bambu-h2d`); orphan sweep.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `mcp.test.ts`                 | Tool name prefix; disabled tool error; missing OpenSCAD error; PNG argv per view (fake spawner).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+- Signed-token expiry, tampering, traversal, symlink containment and large-file overrides;
+  HTTP file delivery and remote origin resolution.
+- Customizer literals/ranges/options, sidecar preservation, obsolete overrides/sets and
+  worktree isolation with main-checkout-only legacy fallback.
+- OpenSCAD argv/capability detection, actual STL/colored 3MF/PNG rendering, summaries, errors,
+  cache reuse, dependency reload, interruption and removal of partial output.
+- Cache protection under concurrent readers/pruning; bounded per-workspace subscriptions;
+  atomic proposal batches and retaining shared review images until their final reference is removed.
+- STL/OBJ/glTF/GLB parsing, 3MF units, rejected external glTF resources, abort propagation,
+  mesh/line/point/texture/ImageBitmap disposal and unavailable WebGL.
+- StrictMode initial fit, saved camera restoration, immediate capture restoration, frame
+  coalescing, pointer-tool changes, parameter history/manual Apply and successful-render provenance.
+- Literal/sweep validation, stale candidate rebasing, capture exclusion, source refresh ordering
+  and settings/panel/palette/keybinding capability integrations.
 
-Web (`apps/web/src/fork/model-preview-3d/`):
+## Integrated client evidence
 
-| Test file              | Covers                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `viewer/load.test.ts`  | Loading the STL, OBJ and 3MF fixtures into geometry (triangle counts, bounding boxes in mm, 3MF unit scaling) in the test environment; if the web test environment lacks `DOMParser` for 3MF, run that case where it exists or mark it skipped with a reason. No WebGL needed: the loaders and bounding box math run without a renderer. |
-| `viewer/views.test.ts` | Camera positions for iso, front, top, right; fit distance for a known box.                                                                                                                                                                                                                                                               |
-| `params.test.ts`       | Form state to overrides (only changed values), reset, set selection.                                                                                                                                                                                                                                                                     |
-| `buildPlate.test.ts`   | `resolveBuildVolume` returns 350 x 320 x 325 for the default setting, each preset's volume, and `customMm` only for "custom"; `fitsBuildVolume` is true at exactly the limit and false when any single axis exceeds it.                                                                                                                  |
+The T3 desktop Browser panel exercised the isolated web client with real workspace fixtures.
+All five mesh formats and SCAD loaded. Included-file edits refreshed automatically, syntax
+errors retained a stale last-good mesh, and parameters/sets persisted without losing other sets.
+The initial pass sent a captured image and verified the agent could inspect it; subsequent
+audit checks prepared drafts without sending another provider turn.
 
-No markup snapshot tests.
+Current/four/named-view captures, draft persistence, shared MCP render images, build-volume
+warnings, file-size overrides, STEP handling, settings, palette and scoped canvas keys worked.
+Normal and maximized layouts, dark/light themes and a 480 px expanded inspector were checked;
+the narrow inspector had no horizontal overflow.
 
-## Commands
+Selected editing workflows covered undo/redo/manual Apply, a surface measurement and section,
+named views/presets, persisted annotations and applied parameters, prepared requests,
+reference/current review, reselect, accept and reopen. Variant batches rendered thumbnails,
+cancelled immediately, compared linked views with a **30 mm width delta**, promoted candidates,
+saved named sets and identified replacements. Invalid drafts stayed editable and valid
+multi-field candidate edits persisted together.
+
+Loading checks deliberately delayed encoding and downloads to expose elapsed status, stages,
+completed counts, duplicate-action exclusion, comparison loading and progress while switching
+inspector tabs. Test delays and prototype overrides were removed, fixtures restored and test
+attachments removed.
+
+With page and canvas visibility confirmed, canvas-specific instrumentation recorded **zero
+draws over 57.08 idle seconds**. Positive controls produced one zoom draw and two capture draws.
+Closing model tabs released their canvases and WebGL context; server tests cover watcher cleanup.
+All instrumentation was restored.
+
+## Verification limits and integration status
+
+The final closeout could not repeat browser automation: T3 reported no connected automation
+host after reopening the preview. Earlier integrated evidence above remains the UI verification;
+closeout changes are confined to server behavior and documentation. The isolated worktree dev
+server was restored and retained for inspection.
+
+No physical second-device Tailscale/relay/tunnel session or OS-wide GPU measurement was performed.
+Remote URL/HTTP behavior and idle canvas work are tested; these results do not imply those
+additional measurements. Linux/Windows OpenSCAD execution was not exercised. Mobile has no 3D UI.
+
+The earlier merge preview is recorded in [SEAMS.md](./SEAMS.md). A clean-main integration
+rehearsal is pending a separately authorized merge. No commit, PR, push, merge or release was
+performed. Print readiness and slicing remain deferred product exploration, not incomplete L23 work.
+
+## Focused commands
+
+Run tests from their owning package to avoid nested worktree discovery:
 
 ```sh
-vp test run apps/server/src/fork/model-preview-3d packages/contracts/src/fork apps/web/src/fork/model-preview-3d
-vp test run apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts apps/web/src/fork/panels/registry.test.ts apps/web/src/fork/settings/registry.test.ts packages/contracts/src/fork/keybindings.test.ts
-vp lint apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d packages/contracts/src/fork packages/client-runtime/src/fork
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web typecheck
+# apps/server; use an existing executable, tests never download one.
+LOOM_TEST_OPENSCAD=/path/to/OpenSCAD pnpm exec vp test run src/fork/model-preview-3d src/fork/ForkRuntime.test.ts
+pnpm exec tsc --noEmit
+
+# apps/web; run when changing the frontend.
+pnpm exec vp test run src/fork/model-preview-3d src/fork/panels/registry.test.ts src/fork/commandPalette/registry.test.ts
+pnpm exec tsc --noEmit
+
+# Repository root; keep lint and formatting scoped to the feature.
+pnpm exec vp lint apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d packages/contracts/src/fork/model-preview-3d.ts packages/contracts/src/fork/model-workspace.ts packages/client-runtime/src/fork/model-preview-3d.ts
+pnpm exec vp fmt --check apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d docs/fork/packets/L23-model-preview-3d docs/fork/user/model-preview-3d.md
+git diff --check
 ```
 
-## Manual check
-
-With Kyle's permission (dev server, browser, OpenSCAD install):
-
-1. Seed the worktree `.t3`, start `vp run dev` in the background.
-2. In a thread whose workspace has `part.stl`, `part.3mf`, `model.glb` and `bracket.scad`: open
-   the panel, pick each file. Orbit, views, wireframe, grid, dimensions look right; the STL is Z
-   up on a 350 by 320 mm grid (H2D default). Switch the preset to Kobra S1: the grid shrinks to
-   250 by 250 and a part wider than 250 mm shows "Larger than the Anycubic Kobra S1 build
-   volume". A `.step` file in the list shows the Fabrication pointer.
-3. Leave the browser idle for a minute on the panel: the browser's performance monitor shows no
-   repaint activity.
-4. Ask the agent to change `bracket.scad`: the view re-renders by itself; the log shows ECHO
-   lines; a syntax error shows the error and keeps the last mesh marked stale.
-5. Change a parameter slider: a render within a second or two; save a parameter set; the
-   `bracket.json` sidecar contains it (and other sets are intact).
-6. Capture four views: one image in the composer; send it; the agent describes the part.
-7. Ask the agent to "render bracket.scad with the Loom 3D tool": it calls
-   `loom_model_preview_3d_render` and reads the PNGs.
-8. Remote: open over `vp run dev --share` from another machine; meshes load through the signed
-   route; a copied URL stops working after it expires.
-9. Upstream server: launcher disabled with its hint.
-10. Close all 3D tabs: no fork file watchers remain (server log or a debug counter).
-
-## Merge safety
-
-Record the merge preview (SEAMS.md) and, after merge,
-`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`. With no packet
-seams, conflicts can only be on extension point seams and the dependency lines.
+For future user-visible changes, reuse the task's isolated server and `test-t3-app` Browser
+workflow. Verify affected loading/error/recovery states and responsive interactions. Do not
+redirect a server at live user data or treat a fake process test as CLI compatibility proof.

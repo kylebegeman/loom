@@ -1,0 +1,12 @@
+{
+  "fileFormatVersion": "1",
+  "parameterSets": {
+    "wide": {
+      "width": "80",
+      "wall": "4",
+      "holes": "true",
+      "position": "[0,0,0]",
+      "color_name": "blue"
+    }
+  }
+}

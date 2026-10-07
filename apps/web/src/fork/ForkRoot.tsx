@@ -1,15 +1,15 @@
+import { ModelPreview3dShortcuts } from "./model-preview-3d/Shortcuts";
 import type { ComponentType } from "react";
 
 import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
-import { InspectorCommandsHost } from "./thread-inspector/InspectorCommandsHost";
 
 /** Components mounted once in the authenticated app shell. One line per packet. */
 const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   readonly id: string;
   readonly Component: ComponentType;
 }> = [
+  { id: "model-preview-3d-shortcuts", Component: ModelPreview3dShortcuts },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
-  { id: "thread-inspector-commands", Component: InspectorCommandsHost },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];
 

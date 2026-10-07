@@ -48,6 +48,7 @@ import {
   type SettingsSearchItem,
 } from "./settingsSearch";
 import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";
+import { LoomSettingsIcon } from "../../fork/settings/LoomSettingsIcon"; // fork: ext-settings
 import { validateSettingsScopeSearch } from "./settingsScope";
 
 const SnapShotIcon = createLucideIcon("snap-shot", [
@@ -87,6 +88,7 @@ const SETTINGS_SECTION_ICONS: Readonly<
   "/settings/storage": HardDriveIcon,
   "/settings/connections": Link2Icon,
   "/settings/archived": ArchiveIcon,
+  "/settings/loom": LoomSettingsIcon, // fork: ext-settings
 };
 
 const SETTINGS_NAV_ITEMS: ReadonlyArray<{

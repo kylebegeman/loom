@@ -25,37 +25,56 @@ web pages, and leaves slicing and printers to the separate Fabrication app.
   message shows the agent the part.
 - Configure OpenSCAD (path, backend, timeout, colors), the build plate (Bambu Lab H2D, Bambu Lab
   H2C, Anycubic Kobra S1, or a custom size), the maximum file size, an optional Fabrication app
-  link, and "Let agents render models" in Loom settings.
+  link, and "Let agents render models and propose variants" in Loom settings.
 - Let agents render a model to PNG views with `loom_model_preview_3d_render` (on by default;
-  "Let agents render models" turns it off).
+  "Let agents render models and propose variants" turns it off).
+
+## Selected editing expansion
+
+Kyle authorized all three minor features and the first two major features: session-local
+parameter history; surface measurements and section planes; named views and repeatable capture
+presets; a SCAD variant workbench; and model annotations with point-and-discuss requests.
+Print-readiness is deferred until experience using the panel informs a focused proposal.
+
+The workbench supports saved candidates, set import, one- or two-parameter sweeps, cancellable
+thumbnail batches, linked two-candidate comparison, promotion and saving named sets. Agent
+proposals enter the same workbench through a gated shared MCP tool. Review captures retain
+applied parameters and geometry coordinates, append to existing composer drafts, and require
+the user to send. Review supports reference/current comparison, reselect, accept and reopen.
+Measurements and annotations become stale when geometry changes. Saved entities live on the
+environment, scoped to project, canonical workspace root and model path. Web and desktop share
+this UI; mobile continues to have no 3D panel. Remote access uses existing RPC and signed HTTP.
 
 ## Entry points
 
-| Entry                                                                                                                                               | What it does                                                                                                                   | Way out / state                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------ |
-| Right panel launcher and "+" menu: "3D model" (letter `O`)                                                                                          | Opens the panel's file picker; choosing a file opens a tab for it.                                                             | Close the tab; the file watch stops. |
-| Command palette: "3D model: Open file..." (submenu of model files), "3D model: Capture view", "3D model: Capture four views", "3D model: Re-render" | As named; hidden when the feature is absent.                                                                                   | n/a                                  |
-| Keybinding commands `loom.model-preview-3d.open`, `loom.model-preview-3d.capture`                                                                   | Unbound by default.                                                                                                            | Same as the palette.                 |
-| Settings, Loom page, "3D model" section                                                                                                             | OpenSCAD detection and options, limits, build plate preset, Fabrication URL, "Let agents render models", "Clear render cache". | Toggle back.                         |
-| Composer                                                                                                                                            | Captures are attached as images.                                                                                               | Remove the attachment.               |
-| Agent tool                                                                                                                                          | `loom_model_preview_3d_render`.                                                                                                | n/a (read-only tool).                |
+| Entry                                                                                                                                               | What it does                                                                                                                                        | Way out / state                                                      |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Right panel launcher and "+" menu: "3D model" (letter `O`)                                                                                          | Opens the panel's file picker; choosing a file opens a tab for it.                                                                                  | Close the tab; the file watch stops.                                 |
+| Command palette: "3D model: Open file..." (submenu of model files), "3D model: Capture view", "3D model: Capture four views", "3D model: Re-render" | As named; hidden when the feature is absent.                                                                                                        | n/a                                                                  |
+| Keybinding commands `loom.model-preview-3d.open`, `loom.model-preview-3d.capture`                                                                   | Unbound by default.                                                                                                                                 | Same as the palette.                                                 |
+| Settings, Loom page, "3D model" section                                                                                                             | OpenSCAD detection and options, limits, build plate preset, Fabrication URL, "Let agents render models and propose variants", "Clear render cache". | Toggle back.                                                         |
+| Composer                                                                                                                                            | Captures are attached as images.                                                                                                                    | Remove the attachment.                                               |
+| Agent tools                                                                                                                                         | `loom_model_preview_3d_render` and `loom_model_preview_3d_propose_variants`.                                                                        | Rendering is read-only; proposals can be removed from the workbench. |
 
 ## States
 
-- **Loading**: download progress for large files, then "Preparing mesh...".
-- **Empty**: "No 3D files in this workspace." with the supported extensions.
+- **Loading**: download progress for large files, then "Preparing mesh...". Long operations
+  show their stage and elapsed time; variant batches show completed counts and cancellation.
+- **Empty**: explain the supported file types and how to add a part to the workspace.
+  Filtered lists offer a way to clear the search and file-type filter.
 - **OpenSCAD missing**: `.scad` files show "Install an OpenSCAD development snapshot to preview
   .scad files" with a link; meshes still work.
 - **Rendering**: "Rendering with OpenSCAD..." with elapsed seconds; the previous mesh stays
-  visible, dimmed, until the new one arrives.
-- **Render failed**: the first `ERROR:` line and the full log; the last good mesh stays with a
-  "stale" badge.
+  visible until the new one arrives.
+- **Render failed**: the first error, a link to the full log and a retry action; the last
+  good mesh stays visible and the status bar marks it stale.
 - **Too large**: "This file is 212 MB; the limit is 150 MB." with "Load anyway".
 - **Unsupported**: Draco-compressed glTF, WebGL unavailable.
 - **STEP file**: "STEP files are not previewed here; open them in the Fabrication app (STEP
   import is planned there)." with "Open in Fabrication" when its URL is set.
-- **Larger than the build volume**: the status bar shows "Larger than the Bambu Lab H2D build
-  volume (350 x 320 x 325 mm)" next to the dimensions. Informational only.
+- **Larger than the build volume**: the status bar warns that the model exceeds the build
+  volume and opens the Model inspector, which names the printer and its dimensions.
+  Informational only.
 - **File gone**: "The file was deleted or moved." with the picker.
 - **Disabled**: server lacks `model-preview-3d`: launcher disabled, palette entries hidden.
 
@@ -69,8 +88,8 @@ upstream server hides the feature.
 ## Blender
 
 Loom does not run Blender. Agents that need Blender use a Blender MCP server in their provider
-configuration, and the panel previews the STL, OBJ or glTF files they export. The user doc covers
-setup. Kyle's current Codex entry is broken; see TECHNICAL.md, "Blender MCP" for the fix options.
+configuration, and the panel previews the STL, OBJ or glTF files they export. The user doc links
+to provider and add-on setup guidance; Loom does not repair external provider configuration.
 
 ## Decisions
 
@@ -79,10 +98,10 @@ setup. Kyle's current Codex entry is broken; see TECHNICAL.md, "Blender MCP" for
   maintenance is acceptable. Fabrication remains optional and is not a prerequisite.
 
 - three.js as the renderer, loaded only when the panel opens, rendering on demand.
-- OpenSCAD renders run on the server with a timeout and one render in flight per file; newer
-  edits cancel older renders.
+- OpenSCAD renders run on the server with a timeout and one active preview in flight per file; newer
+  edits cancel older previews. Variant jobs have separate cancellation identities.
 - Units are millimetres for STL and OBJ (unitless formats); 3MF units are read from the file.
-- The panel never writes into the workspace except "Save as parameter set", which updates the
+- The panel writes into the source workspace only when saving a parameter set, which updates the
   `.scad` file's customizer JSON sidecar after a confirmation.
 - No dependency on the Fabrication app; only a link.
 - `three` and `@types/three` are approved as `apps/web` dependencies, loaded as a lazy chunk
