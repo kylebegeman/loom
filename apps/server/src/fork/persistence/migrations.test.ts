@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import {
   FORK_MIGRATION_SETS,
   type ForkMigrationSet,
@@ -48,6 +48,6 @@ describe("fork migrations", () => {
       expect(second).toEqual([]);
       expect(created).toContain(forkMigrationsTable("sample-packet"));
       expect(created.filter((name) => !name.startsWith("fork_"))).toEqual([]);
-    }).pipe(Effect.provide(SqlitePersistenceMemory)),
+    }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
   );
 });

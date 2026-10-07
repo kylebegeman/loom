@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "@effect/vitest";
 import { ProviderInstanceId } from "@t3tools/contracts";
 
 import { makeClaudeQueryOptions } from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
-import { codexAppServerArgs, codexExecLaunchArgs } from "../../provider/Layers/codexLaunchArgs.ts";
+import { codexAppServerArgs, codexExecLaunchArgs } from "../../provider/codexLaunchArgs.ts";
 import {
   SWITCHBOARD_CLAUDE_SETTINGS,
   SWITCHBOARD_CODEX_ARGS,

@@ -3,7 +3,7 @@ import { createEnvironmentRpcQueryAtomFamily } from "@t3tools/client-runtime/sta
 import type { ProviderDriverKind } from "@t3tools/contracts";
 import { FORK_WS_METHODS, type SwitchboardLimit } from "@t3tools/contracts/fork";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "~/connection/runtime";

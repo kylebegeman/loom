@@ -8,7 +8,6 @@ import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 
 import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
-import { observeRpcEffect, observeRpcStream } from "../observability/RpcInstrumentation.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
@@ -22,21 +21,18 @@ const denied = (scope: AuthEnvironmentScope) =>
     requiredScope: scope,
   });
 
-/** Authorization and instrumentation for fork handlers, bound to one connection. */
+/**
+ * Authorization for fork handlers, bound to one connection. Spans and metrics come from the
+ * `RpcInstrumentation` middleware that ws.ts adds to `LoomWsRpcGroup`.
+ */
 export const makeForkRpcAuth = (session: AuthenticatedSession) => ({
   effect: <A, E, R>(method: ForkRpcMethod, effect: Effect.Effect<A, E, R>) => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
-    return observeRpcEffect<A, E | EnvironmentAuthorizationError, R>(
-      method,
-      session.scopes.includes(scope) ? effect : Effect.fail(denied(scope)),
-    );
+    return session.scopes.includes(scope) ? effect : Effect.fail(denied(scope));
   },
   stream: <A, E, R>(method: ForkRpcMethod, stream: Stream.Stream<A, E, R>) => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
-    return observeRpcStream<A, E | EnvironmentAuthorizationError, R>(
-      method,
-      session.scopes.includes(scope) ? stream : Stream.fail(denied(scope)),
-    );
+    return session.scopes.includes(scope) ? stream : Stream.fail(denied(scope));
   },
 });
 export type ForkRpcAuth = ReturnType<typeof makeForkRpcAuth>;
