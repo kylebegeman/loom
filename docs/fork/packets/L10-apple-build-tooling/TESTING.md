@@ -107,8 +107,52 @@ With Kyle's permission (AGENTS.md: ask before dev servers and browsers), on a Ma
 Physical device install is covered by manual step 9c only (PRODUCT.md, Decisions); no
 automated test talks to a device.
 
+## Results
+
+Recorded 2026-10-08 on `feat/loom-apple-build-tooling`, Xcode 27.0 (27A266a), Swift 6.4,
+xcresulttool 25115 (schema 0.4.0), XcodeGen 2.46.0, xcbeautify 3.2.1.
+
+Automated, all passing: both test command lines above (15 files, 93 tests) plus the L19
+suite (`apps/server/src/fork/project-lifecycle`, 37 tests), lint over the four fork
+directories, and `tsc --noEmit` in server, web, contracts and client runtime.
+
+Real toolchain, through `AppleBuildService` with in-memory stores and no client, on a scratch
+SwiftUI app (XcodeGen spec, XCTest and Swift Testing tests) and a scratch package:
+
+- Detection lists the spec (with its generated project) and the package; the toolchain
+  reports Xcode, runtimes, XcodeGen, xcbeautify, `mcpbridge` and the headless server state.
+- `swift build` succeeds. `swift test` reports 6 tests, 3 failed (XCTest, top-level Swift
+  Testing and a Swift Testing suite) with messages, workspace-relative files and lines.
+  "Test only this" for each runs exactly that one test.
+- Simulator build succeeds; a compile error is listed with `App/Sources/App.swift` and its
+  line. Test reports 3 tests, 2 failed; "Test only this" works for both the XCTest
+  (`SampleAppTests/DoubleTests/testDoubleFails()`) and Swift Testing identifier forms.
+- Build and run installs and launches on a booted simulator, and asks the Device panel to
+  open it; a failing Device panel does not fail the run.
+- Cancelling a cold release build ends `cancelled` with no process left whose arguments name
+  the run's directory. `tailLog` on a finished run replays the log and ends with `done`.
+- XcodeGen: in sync, then out of date with a pbxproj diff after adding a source folder,
+  `invalid` with XcodeGen's message for a broken spec, and in sync again after Generate.
+- History lists every run newest first.
+
+These checks found and fixed: swift test reporting a failed build when only tests failed,
+Swift Testing failures without a workspace path, a Device panel defect failing a launched
+run, and compiler paths below `/private` staying absolute.
+
+Not yet verified:
+
+- The manual checks above in a running client (panel, palette, settings, "Add to composer",
+  remote access and an upstream server), which need Kyle's permission for a dev server and
+  browser.
+- Physical device runs (9c), the Mac destination with a real app (covered by stubs only),
+  readiness on a real project (8), agent tool calls from a real thread (9) and retention in
+  practice (9d, covered by `AppleRunStore.test.ts`).
+- Lane builds with a real L19 lane (covered by stubs in `AppleBuildService.test.ts`).
+- The merged tree with the newest nightly was not typechecked; the depended-on APIs did not
+  change.
+
 ## Merge safety
 
-Record here the merge preview result against the newest nightly (SEAMS.md, "Merge check") and,
-after Kyle merges, the result of `scripts/fork/loom.sh integrate nightly --dry-run` from a
-clean, synced `main`.
+`git merge-tree` against `v0.0.46-nightly.20261008.2833` (`a6ec88f7a7`) and against
+`origin/main` at `62f05fc04b` (2026-10-08): no conflicts. After Kyle merges, record the result
+of `scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`.
