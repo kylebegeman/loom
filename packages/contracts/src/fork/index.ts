@@ -12,3 +12,5 @@ export * from "./pcb-workspace.ts";
 export * from "./model-editor.ts";
 
 export * from "./project-lifecycle.ts";
+
+export * from "./apple-build-tooling.ts";

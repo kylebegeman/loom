@@ -1,6 +1,7 @@
 import { pcbPreviewPaletteSource } from "../pcb-preview/palette";
 import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
 import { projectLifecyclePaletteSource } from "../project-lifecycle/palette";
+import { appleBuildToolingPaletteSource } from "../apple-build-tooling/palette";
 import { models } from "../model-preview-3d/state";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
@@ -46,6 +47,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   modelPreview3dPaletteSource,
   pcbPreviewPaletteSource,
   projectLifecyclePaletteSource,
+  appleBuildToolingPaletteSource,
 ];
 
 /** Rebuilt on every render, like the palette's own action items. */

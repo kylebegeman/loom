@@ -788,6 +788,36 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       );
     });
 
+    const buildEnvironmentOf = (lane: LaneRow, settings: ProjectLifecycleSettings) => {
+      const shims = shimsDir(rootOf(settings));
+      const { spacePath } = lanePaths(lane);
+      return {
+        name: lane.name,
+        spacePath,
+        tmpPath: `${spacePath}/tmp`,
+        buildPath: `${spacePath}/build`,
+        /** Adds the lane's DerivedData and SourcePackages and takes a build slot for heavy actions. */
+        xcodebuild: `${shims}/xcodebuild`,
+        slot: `${shims}/lane-slot`,
+      };
+    };
+
+    /** What another packet needs to run a build inside a thread's lane, creating the lane. */
+    const buildEnvironment = Effect.fn("ProjectLifecycle.buildEnvironment")(function* (
+      threadId: ThreadId,
+    ) {
+      const lane = yield* ensureForThread(threadId);
+      return buildEnvironmentOf(lane, yield* getSettings);
+    });
+
+    /** The checkout's lane when one exists; never creates or mounts one. */
+    const currentBuildEnvironment = Effect.fn("ProjectLifecycle.currentBuildEnvironment")(
+      function* (checkout: string) {
+        const lane = laneForCheckout(checkout);
+        return lane === undefined ? null : buildEnvironmentOf(lane, yield* getSettings);
+      },
+    );
+
     const detach = (lane: LaneRow) =>
       opsFor(lane)
         .detach(lanePaths(lane), lane.device)
@@ -1269,6 +1299,8 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       updateSettings,
       changes: SubscriptionRef.changes(status),
       ensureForThread,
+      buildEnvironment,
+      currentBuildEnvironment,
       free,
       grow: growLane,
       mount,

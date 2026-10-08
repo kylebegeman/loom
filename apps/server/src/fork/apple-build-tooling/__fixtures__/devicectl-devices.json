@@ -1,0 +1,86 @@
+{
+  "_comment": "Synthetic: written by hand from devicectl 27 field names. No real device values.",
+  "info": {
+    "arguments": ["devicectl", "list", "devices", "--json-output", "-"],
+    "commandType": "devicectl.list.devices",
+    "environment": { "TERM": "xterm-256color" },
+    "jsonVersion": 5,
+    "outcome": "success",
+    "version": "500.0"
+  },
+  "result": {
+    "devices": [
+      {
+        "_deprecationNotice": {
+          "deprecatedFields": ["hardwareProperties", "deviceProperties", "connectionProperties"],
+          "message": "These fields are deprecated; use properties instead.",
+          "replacement": "properties"
+        },
+        "identifier": "00000000-AAAA-4000-8000-000000000001",
+        "properties": {
+          "connection": {
+            "pairingState": "paired",
+            "state": "connected",
+            "transportType": "wired"
+          },
+          "hardware": {
+            "marketingName": "iPhone 17 Pro",
+            "platform": "iOS",
+            "reality": "physical",
+            "udid": "00000000-0000000000000001"
+          },
+          "software": { "osVersionNumber": { "stringValue": "27.0" } },
+          "state": { "developerModeStatus": { "enabled": { "mode": 1 } }, "name": "Test Phone" }
+        },
+        "hardwareProperties": {
+          "marketingName": "iPhone 17 Pro",
+          "platform": "iOS",
+          "reality": "physical",
+          "udid": "00000000-0000000000000001"
+        },
+        "deviceProperties": {
+          "developerModeStatus": "enabled",
+          "name": "Test Phone",
+          "osVersionNumber": "27.0"
+        },
+        "connectionProperties": {
+          "pairingState": "paired",
+          "transportType": "wired",
+          "tunnelState": "connected"
+        }
+      },
+      {
+        "identifier": "00000000-AAAA-4000-8000-000000000002",
+        "hardwareProperties": {
+          "marketingName": "iPad Air",
+          "platform": "iOS",
+          "reality": "physical",
+          "udid": "00000000-0000000000000002"
+        },
+        "deviceProperties": {
+          "developerModeStatus": "disabled",
+          "name": "Test Tablet",
+          "osVersionNumber": "26.5"
+        },
+        "connectionProperties": {
+          "pairingState": "unpaired",
+          "transportType": "localNetwork"
+        }
+      },
+      {
+        "identifier": "00000000-AAAA-4000-8000-000000000003",
+        "properties": {
+          "connection": { "pairingState": "paired", "state": "connected" },
+          "hardware": {
+            "marketingName": "iPhone 17",
+            "platform": "iOS",
+            "reality": "simulated",
+            "udid": "00000000-AAAA-4000-8000-000000000003"
+          },
+          "software": { "osVersionNumber": { "stringValue": "27.0" } },
+          "state": { "name": "Simulator Phone" }
+        }
+      }
+    ]
+  }
+}

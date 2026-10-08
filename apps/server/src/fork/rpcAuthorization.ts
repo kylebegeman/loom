@@ -1,6 +1,7 @@
 import { PCB_PREVIEW_WS_METHODS as P } from "@t3tools/contracts/fork";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
 import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
+import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
@@ -71,6 +72,21 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   // Edits the server user's ~/.zshenv, which shapes every shell agents run.
   [L.installShell]: AuthTerminalOperateScope,
   [L.removeShell]: AuthTerminalOperateScope,
+  [A.status]: AuthOrchestrationReadScope,
+  [A.inspect]: AuthOrchestrationReadScope,
+  [A.destinations]: AuthOrchestrationReadScope,
+  [A.xcodegen]: AuthOrchestrationReadScope,
+  [A.readiness]: AuthOrchestrationReadScope,
+  [A.getRun]: AuthOrchestrationReadScope,
+  [A.watchRuns]: AuthOrchestrationReadScope,
+  [A.tailLog]: AuthOrchestrationReadScope,
+  [A.getSettings]: AuthOrchestrationReadScope,
+  // Builds run arbitrary build phases and scripts.
+  [A.start]: AuthTerminalOperateScope,
+  [A.cancel]: AuthTerminalOperateScope,
+  [A.clearHistory]: AuthTerminalOperateScope,
+  [A.openResultBundle]: AuthTerminalOperateScope,
+  [A.updateSettings]: AuthOrchestrationOperateScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

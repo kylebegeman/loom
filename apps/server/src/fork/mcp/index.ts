@@ -2,6 +2,7 @@ import type { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
 import { ModelPreview3dToolkit, modelPreview3dHandlers } from "../model-preview-3d/mcp.ts";
 import { PcbToolkit, pcbHandlers } from "../pcb-preview/mcp.ts";
 import { ProjectLifecycleToolkit, projectLifecycleHandlers } from "../project-lifecycle/mcp.ts";
+import { AppleBuildToolingToolkit, appleBuildToolingHandlers } from "../apple-build-tooling/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
   {
@@ -20,5 +21,11 @@ export const FORK_MCP_TOOLKITS = [
     handlers: projectLifecycleHandlers,
     register: (register: typeof toolkitRegistration) =>
       register(ProjectLifecycleToolkit, projectLifecycleHandlers),
+  },
+  {
+    toolkit: AppleBuildToolingToolkit,
+    handlers: appleBuildToolingHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(AppleBuildToolingToolkit, appleBuildToolingHandlers),
   },
 ] as const;

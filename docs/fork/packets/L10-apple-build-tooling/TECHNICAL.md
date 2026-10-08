@@ -13,18 +13,18 @@ xcbeautify 3.2.1 on 2026-09-24; see [REFERENCES.md](./REFERENCES.md#verified-com
 |  toolchain, containers,   |        |  detect  (fs walk, depth 4)                   |
 |  scheme / destination,    |        |  inspect (xcodebuild -list -json, cached)     |
 |  run history, summary,    | <----- |  destinations (simctl -j, devicectl -j)       |
-|  live log                 | watch  |  runs    (ChildProcessSpawner, one per cwd)   |
+|  live log                 | watch  |  runs    (node child_process, one per cwd)    |
 +---------------------------+  tail  |    -> log.txt, Result.xcresult, summary row  |
           ^                          |  xcresult (xcresulttool get ... --compact)    |
-          | MCP (agents)             |  xcodegen (dump json, generate to tmp, diff)  |
+          | MCP (agents)             |  xcodegen (dump json, generate in a mirror)   |
  loom_apple_build_tooling_run/status |  readiness (showBuildSettings -json + files)  |
                                      |  AppleRunStore (fork_apple_build_tooling_*)   |
                                      +-----------------------------------------------+
                                         | optional: DeviceService.open (upstream)
 ```
 
-Every command runs on the environment host with `ChildProcessSpawner` (streaming) or
-`ProcessRunner` (short, buffered). Only JSON summaries and bounded log chunks cross the
+Every command runs on the environment host with Node's `child_process` (streaming runs,
+`process.ts`) or `ProcessRunner` (short, buffered). Only JSON summaries and bounded log chunks cross the
 WebSocket. Nothing is written into the user's workspace except by an explicit "Generate"
 (XcodeGen) run.
 
@@ -436,33 +436,34 @@ Scopes, added to `FORK_RPC_REQUIRED_SCOPES`:
 
 Directory: `apps/server/src/fork/apple-build-tooling/`.
 
-| File                   | Contents                                                                                                                                                                          |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AppleBuildService.ts` | `Context.Service` `loom/AppleBuildService`: `status`, `inspect`, `destinations`, `xcodegen`, `readiness`, `start`, `cancel`, `getRun`, `watchRuns`, `tailLog`, settings. `layer`. |
-| `AppleRunStore.ts`     | Repository over the fork tables (upstream pattern: `SqlClient`, `SqlSchema`, `Layer.effect`, as in `apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts:16-90`).   |
-| `migrations.ts`        | `AppleBuildToolingMigrations: ForkMigrationSet` (slug `apple-build-tooling`).                                                                                                     |
-| `commands.ts`          | Pure argv builders: `xcodebuildArgs(request, paths, settings)`, `destinationSpecifier(dest)`, `simctlInstallArgs`, `devicectlInstallArgs`, and so on. No I/O.                     |
-| `detect.ts`            | Workspace walk (depth 4, skip `node_modules`, `.git`, `DerivedData`, `build`, `Pods`, `.build`, `.swiftpm`, dot-directories; at most 5,000 entries).                              |
-| `xcresult.ts`          | Decoders for `xcresulttool` JSON and mappers to `AppleRunSummary`.                                                                                                                |
-| `xcodegen.ts`          | Validate, diff and generate.                                                                                                                                                      |
-| `readiness.ts`         | Checks from build settings JSON and files.                                                                                                                                        |
-| `simulators.ts`        | `simctl list -j`, `devicectl --json-output -` parsing.                                                                                                                            |
-| `diagnostics.ts`       | Pure: compiler diagnostics and test-failure lines from a raw log (swift build, swift test, and xcodebuild runs without a result bundle); `classifySigningIssue`.                  |
-| `xunit.ts`             | Pure: the small xUnit XML reader for `swift test --xunit-output` files.                                                                                                           |
-| `rpc.ts`               | `makeAppleBuildToolingRpcHandlers(auth)`.                                                                                                                                         |
-| `mcp.ts`               | Toolkit and handlers.                                                                                                                                                             |
+| File                   | Contents                                                                                                                                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AppleBuildService.ts` | `Context.Service` `t3/fork/apple-build-tooling/AppleBuildService`: `status`, `inspect`, `destinations`, `xcodegen`, `readiness`, `start`, `cancel`, `getRun`, `watchRuns`, `tailLog`, settings. `layer`. |
+| `AppleRunStore.ts`     | Repository over the fork tables (upstream pattern: `SqlClient`, `SqlSchema`, `Layer.effect`, as in `apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts:16-90`).                          |
+| `migrations.ts`        | `AppleBuildToolingMigrations: ForkMigrationSet` (slug `apple-build-tooling`).                                                                                                                            |
+| `commands.ts`          | Pure argv builders: `xcodebuildArgs(request, paths, settings)`, `destinationSpecifier(dest)`, `simctlInstallArgs`, `devicectlInstallArgs`, and so on. No I/O.                                            |
+| `detect.ts`            | Workspace walk (depth 4, skip `node_modules`, `.git`, `DerivedData`, `build`, `Pods`, `.build`, `.swiftpm`, dot-directories; at most 5,000 entries).                                                     |
+| `xcresult.ts`          | Decoders for `xcresulttool` JSON and mappers to `AppleRunSummary`.                                                                                                                                       |
+| `xcodegen.ts`          | Validate, diff and generate.                                                                                                                                                                             |
+| `readiness.ts`         | Checks from build settings JSON and files.                                                                                                                                                               |
+| `simulators.ts`        | `simctl list -j`, `devicectl --json-output -` parsing.                                                                                                                                                   |
+| `diagnostics.ts`       | Pure: compiler diagnostics and test-failure lines from a raw log (swift build, swift test, and xcodebuild runs without a result bundle); `classifySigningIssue`.                                         |
+| `xunit.ts`             | Pure: the small xUnit XML reader for `swift test --xunit-output` files.                                                                                                                                  |
+| `process.ts`           | Buffered `exec` over `ProcessRunner`, `spawnRun` for streaming runs, and `terminateTree` (cancel by the captured pid and its descendants).                                                               |
+| `rpc.ts`               | `makeAppleBuildToolingRpcHandlers(auth)`.                                                                                                                                                                |
+| `mcp.ts`               | Toolkit and handlers.                                                                                                                                                                                    |
 
 ### Dependencies from upstream
 
 Reached from `ForkLayer` (it sits at the head of `RuntimeCoreDependenciesLive`,
 `apps/server/src/server.ts:482-483`):
 
-- `SqlClient`, `ServerConfig` (`stateDir`), `FileSystem`, `Path`,
-  `ChildProcessSpawner` (platform services).
-- `ProjectionSnapshotQuery` to map a thread to its workspace: `getThreadShellById`
-  (`apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:217`) plus
-  `getProjectShellById` (`:174`), then `resolveThreadWorkspaceCwd`
-  (`apps/server/src/checkpointing/Utils.ts:12`), the same rule the provider reactor uses.
+- `SqlClient`, `ServerConfig` (`stateDir`).
+- The V2 stores to map a thread to its workspace: `ProjectionStoreV2.getThread` and
+  `ProjectStoreV2.get`; the workspace is the thread's `worktreePath`, else the project's
+  `workspaceRoot`. Retention lists projects with `ProjectStoreV2.listShells`.
+- `ProjectLifecycleService` (L19): `buildEnvironment(threadId)` before a run and
+  `currentBuildEnvironment(cwd)` for `status` (see "Lanes" below).
 - `DeviceService` (`apps/server/src/device/DeviceService.ts:109-154`), optional use: after a
   successful simulator launch, when the setting is on and the device hub is enabled,
   `open({ threadId, hostId: "local", deviceId: udid, platform: "ios", boot: false })`
@@ -479,33 +480,45 @@ Short commands (`--version`, `-list -json`, `simctl list -j`, `xcresulttool get`
 `ProcessRunner.run` with explicit timeouts: 10 s for version probes, 120 s for `-list`, 60 s
 for `xcresulttool`, `maxOutputBytes` 32 MiB for xcresult JSON.
 
-Runs use `ChildProcessSpawner.spawn(ChildProcess.make(cmd, args, { cwd, env, stdout: "pipe",
-stderr: "pipe", shell: false, detached: false }))` inside a per-run `Scope`, like the device
-hub (`apps/server/src/device/LocalDeviceHost.ts:322-357`). `child.all` is decoded to text and
-fanned out to:
+Runs use `spawnRun` (`process.ts`): Node's `child_process.spawn` with `shell: false` and
+`detached: false`. `ChildProcessSpawner` was not used because cancel must reach the whole
+process tree by pid. Output is decoded to text and fanned out to:
 
 1. an append-only `log.txt` in the run directory,
-2. an in-memory ring of the last 256 KB for fast `tailLog` catch-up,
-3. a per-run `PubSub<string>` that `tailLog` subscribers read.
+2. an in-memory tail of the last 256 KB for fast `tailLog` catch-up,
+3. the run's listeners, which `tailLog` subscribers register.
 
 With `useXcbeautify` on and `xcbeautify` installed, a second child
 (`xcbeautify --disable-colored-output --disable-logging --preserve-unbeautified`) receives the
 raw stream on stdin and its stdout is what the ring and PubSub carry; `log.txt` always keeps the
-raw output. Exit status comes from `child.exitCode` (as in `LocalDeviceHost.ts:395`).
+raw output. Exit status comes from the child's exit event.
 
-Cancel closes the run scope, which terminates the child; the run ends as `cancelled`.
-`xcodebuild` handles SIGTERM by stopping its build service; if it has not exited 15 s later,
-send SIGKILL to the captured pid. Never kill by name.
+Cancel sends SIGTERM to the captured pid and its descendants (from a `ps` table, never the
+server or its ancestors); anything still alive 15 s later gets SIGKILL. The run ends as
+`cancelled`. Never kill by name.
 
 Environment: inherit the server's environment, plus `NSUnbufferedIO=YES` (line-buffered
 xcodebuild output). No secrets are added.
 
 ### One run per workspace
 
-A `SynchronizedRef<Map<cwd, runId>>` rejects a second `start` for the same `cwd` with
-`AppleBuildError { reason: "busy" }`, whose message names the running run. Different
-workspaces (worktrees) run in parallel. Detection, `inspect` and `readiness` do not take the
-lock.
+A `Map<cwd, runId>`, checked and set in one synchronous step, rejects a second `start` for the
+same `cwd` with `AppleBuildError { reason: "busy" }`, whose message names the running run.
+Different workspaces (worktrees) run in parallel. Detection, `inspect` and `readiness` do not
+take the lock.
+
+### Lanes
+
+Runs for a thread go through its L19 lane: `ProjectLifecycleService.buildEnvironment(threadId)`
+creates or mounts the lane and returns its paths and shims. The run's environment gains
+`LOOM_LANE_BUILD`, `LOOM_LANE_SPACE`, `LOOM_LANE_TMP` and `TMPDIR` in the lane. With the
+`loom` derived data setting, `xcodebuild` runs through the lane's `xcodebuild` shim, which
+adds the lane's DerivedData and takes a machine build slot for heavy actions, and Loom omits
+its own `-derivedDataPath`. With `xcode-default`, `xcodebuild` is wrapped in `lane-slot` only.
+`swift build` and `swift test` are wrapped in `lane-slot`. Read-only `-showBuildSettings`
+never takes a slot. When L19 is unavailable or fails, runs use Loom's own derived data folder
+as before. `status` reports the lane from `currentBuildEnvironment(cwd)`, which never creates
+one.
 
 ### Run pipeline per kind
 
@@ -604,8 +617,8 @@ Facts checked with Swift 6.4 (Xcode 27.0) on a scratch package on 2026-09-24:
   `<testsuite>` carries `tests`, `failures`, `skipped` attributes.
 - `swift test list` prints identifiers `<Module>.<Class>/<test>` (XCTest) and
   `<Module>.<func>()` (Swift Testing); `--filter <regex>` with the escaped identifier runs one
-  test. Identifiers of Swift Testing tests inside a `@Suite` type were not checked; derive
-  them the same way and verify when a fixture with a suite exists.
+  test. A Swift Testing test inside a suite type has xUnit classname `<Module>.<Suite>` and
+  the identifier `<Module>.<Suite>/<func>()`, the XCTest form.
 
 `diagnostics.ts`:
 
@@ -628,11 +641,13 @@ Facts checked with Swift 6.4 (Xcode 27.0) on a scratch package on 2026-09-24:
   `{ total, failed, skipped, cases: { classname, name, status, message? }[] }`.
 - The summary for `swiftTest` merges both files when they exist: counts add up, `result` is
   `Failed` if any failed, else `Passed` (`Skipped` when every case skipped); each failure's
-  identifier is `<classname>/<name>` for XCTest cases (classname contains a dot) and
-  `<classname>.<name>` for Swift Testing cases, its message is the xUnit message, replaced by
+  identifier is `<classname>/<name>` when the classname contains a dot (XCTest, and Swift
+  Testing inside a suite) and `<classname>.<name>` for top-level Swift Testing functions, its message is the xUnit message, replaced by
   the log line's message when the xUnit message is the bare word "failure", and file and line
-  come from the log. Missing files (build failed first) leave `tests` unset and the build
-  issues from `parseCompilerDiagnostics` explain why.
+  come from the log. Swift Testing logs only the file name, so the summary uses the package's
+  file of that name when exactly one exists. Missing files (build failed first) leave `tests`
+  unset and the build issues from `parseCompilerDiagnostics` explain why. When the xUnit files
+  exist the build succeeded, so failing tests alone leave the build status `succeeded`.
 - "Test only this" on a package failure starts `swiftTest` with `onlyTesting: [identifier]`,
   which becomes `--filter` with the identifier regex-escaped.
 
@@ -662,7 +677,9 @@ field optional except the counts, so a future schema bump degrades to "unknown" 
 failing. Pin nothing with `--schema-version`; log the schema version once per server start.
 
 `sourceURL` looks like `file:///abs/path/File.swift#...StartingLineNumber=12...`. Parse the
-path and `StartingLineNumber` defensively; unknown shapes keep only the message. Make the path
+path and `StartingLineNumber` defensively; unknown shapes keep only the message.
+`StartingLineNumber` is 0-based; add 1. A test failure's identifier for `-only-testing:` is
+`<targetName>/<testIdentifierString>`. Make the path
 workspace-relative when it is inside `cwd`.
 
 Do not call `xcresulttool get object` or `export object`; xcresulttool 25115 marks both as
@@ -670,16 +687,18 @@ deprecated. Attachments (`xcresulttool export attachments`) are out of scope for
 
 ### XcodeGen
 
-- **Validate:** `xcodegen dump --spec <spec> --type json --quiet`. Exit 0 means the spec
+- **Validate:** `xcodegen dump --spec <spec> --project-root <dir of spec> --type json`
+  (`--quiet` would suppress the JSON itself). Exit 0 means the spec
   parses and resolves; stderr is the error. The resolved JSON gives `name`, which names the
   generated `<name>.xcodeproj`.
-- **Diff:** `xcodegen generate --spec <spec> --project <tmpDir> --quiet` (the `--project` flag
-  sets the output directory), then compare `<tmpDir>/<name>.xcodeproj/project.pbxproj` with the
-  workspace copy. Equal bytes: `in-sync`. Missing workspace project: `not-generated`.
+- **Diff:** generated output depends on the project's location, so build a mirror of the
+  spec's folder (links to its entries, without the generated project) in a scratch directory
+  and run `xcodegen generate --spec <mirror>/<spec> --project <mirror> --project-root <mirror>
+--quiet` there. Compare `<mirror>/<name>.xcodeproj/project.pbxproj` with the workspace copy. Equal bytes: `in-sync`. Missing workspace project: `not-generated`.
   Otherwise produce a unified diff with a small in-repo diff helper; cap it at 200 KB. Also
   compare `xcshareddata/xcschemes/*.xcscheme`; list changed scheme files by name only. Remove
-  `tmpDir` in a finalizer. Relative paths inside the spec resolve from `--project-root`, so pass
-  `--project-root <dir of spec>` to both commands.
+  the scratch directory in a finalizer. A spec folder too large to mirror reports
+  `out-of-date` with the reason.
 - **Generate:** a run of kind `xcodegenGenerate` (so it has a log and history). After success,
   invalidate the `inspect` cache for the workspace.
 
@@ -746,7 +765,9 @@ xtool code.
 - On start, mark runs still `queued` or `running` as `interrupted` (the process died with the
   server). Use `forkParked` if the sweep touches projections; the SQL update alone does not.
 - After each run, delete runs beyond `keepRunsPerProject` (default 20, 5 to 200) for that
-  project (oldest first), including their run directories. History is count-based only; there
+  project (oldest first), including their run directories. Pruning finishes before the
+  workspace lock is released and waiters wake, so an agent waiting on the run sees the history
+  as it stays. Releasing the lock checks that it still belongs to the finishing run. History is count-based only; there
   is no age rule.
 - Derived data folders are not deleted automatically; the settings section shows their total
   size (`getSettings().storage`) and deletes them through `clearHistory({ includeDerivedData:
@@ -812,13 +833,18 @@ xcodegen-cache/<hash>           XcodeGen cache file
   factories (`createEnvironmentRpcQueryAtomFamily`, `createEnvironmentRpcSubscriptionAtomFamily`,
   `createEnvironmentRpcCommand`, `packages/client-runtime/src/state/runtime.ts:612,646,678`):
   `status`, `inspect`, `destinations`, `xcodegen`, `readiness`, `runs` (subscription on
-  `watchRuns`), `run` (getRun), `settings` (getSettings), `tailLog` (stream command), commands
-  `start`, `cancel`, `updateSettings`, `clearHistory`, `openResultBundle`.
+  `watchRuns`), `run` (getRun), `settings` (getSettings), commands `start`, `cancel`,
+  `updateSettings`, `clearHistory`, `openResultBundle`. `tailLog` is a stream command
+  (`ForkStreamCommandRpcTag`), so `log` is its own `Atom.family` over `runStream` and
+  `runStreamInEnvironment`, folding chunks into the last 2,000 lines (`appendAppleLog`).
 - `apps/web/src/fork/apple-build-tooling/`:
   - `state.ts`: instantiates the atoms with `connectionAtomRuntime` (as
-    `apps/web/src/state/device.ts:18`); selection store (container, scheme, configuration,
-    destination, test plan) persisted per `environmentId + projectId` in localStorage key
-    `loom:apple-build-tooling:selection:v1`, wrapped in try/catch.
+    `apps/web/src/state/device.ts:18`) and holds the runs the panel last saw per thread, which
+    the palette's Cancel entry reads (it appears once the panel has been opened).
+  - `selection.ts`: the selection (container, scheme, configuration, destination, test plan)
+    persisted per `environmentId + projectId` in localStorage key
+    `loom:apple-build-tooling:selection:v1`, wrapped in try/catch, and the request planning
+    shared by the panel, palette and shortcuts.
   - `panel.tsx`: `ForkPanelDefinition` `{ id: "apple-build-tooling", title: "Apple build",
 icon: HammerIcon, shortcut: "X", unavailableHint: "Needs a Loom server with Apple build
 tooling", isAvailable: ({ threadRef, loomFeatures }) => threadRef !== null &&
@@ -826,11 +852,11 @@ loomFeatures.includes("apple-build-tooling") }`.
   - `AppleBuildPanel.tsx` (lazy-loaded body), `ToolchainCard.tsx`, `RunControls.tsx`,
     `RunHistory.tsx`, `RunSummary.tsx`, `LogView.tsx`, `XcodegenCard.tsx`,
     `ReadinessCard.tsx`.
-  - `palette.tsx`, `shortcuts.tsx` (ForkRoot component subscribing to the fork commands),
+  - `palette.tsx`, `Shortcuts.tsx` (ForkRoot component subscribing to the fork commands),
     `settings.tsx`.
-- `LogView` renders the last 2,000 lines in a virtualized list (reuse the list primitive the
-  terminal or work log uses; check `apps/web/src/components/ui/` first), appends chunks as
-  they arrive, and stops the `tailLog` stream when the panel is hidden or the run ends.
+- `LogView` renders the last 2,000 lines in a height-capped `<pre>` that follows the end
+  while scrolled there. At this cap a plain text node stays cheap, so no virtualized list. The
+  `tailLog` stream stops when the panel is hidden or the run ends.
 - "Add to composer" builds text with `formatRunSummaryForAgent(run, summary)` (shared with the MCP
   tool, exported from the contracts file as a small derived helper so both server and web use
   it) and inserts it through `useComposerDraftStore.getState().setPrompt` appending to the
@@ -912,8 +938,8 @@ const StatusTool = Tool.make("loom_apple_build_tooling_status", {
   client is subscribed. The panel subscribes only while visible.
 - The workspace walk is bounded (depth 4, 5,000 entries) and runs on panel open and on an
   explicit refresh, not on a timer.
-- `inspect` results are cached per `(cwd, container)` until a refresh, an XcodeGen generate, or
-  a change of the container file's mtime.
+- `inspect` results are cached per `(cwd, container, scheme)` until a refresh ("Reload
+  schemes") or an XcodeGen generate. Editing a project outside Loom needs the refresh.
 - No animation beyond the upstream spinner while a run is active.
 
 ## Alternatives considered

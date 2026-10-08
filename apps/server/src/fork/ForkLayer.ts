@@ -5,6 +5,7 @@ import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ModelPreview from "./model-preview-3d/ModelPreviewService.ts";
 import { ModelPreviewHttpRoutes } from "./model-preview-3d/http.ts";
 import * as ProjectLifecycle from "./project-lifecycle/ProjectLifecycleService.ts";
+import * as AppleBuild from "./apple-build-tooling/AppleBuildService.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -18,7 +19,11 @@ const ForkServicesLive = Layer.mergeAll(
   SwitchboardLive,
   PcbPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
   ModelPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
-  ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer)),
+  // Apple builds run in L19 lanes, so both share the one ProjectLifecycle instance.
+  AppleBuild.layer.pipe(
+    Layer.provideMerge(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
+    Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
+  ),
 );
 
 /**

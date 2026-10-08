@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<testsuites>
+<testsuite name="TestResults" errors="0" tests="2" failures="1" time="0.23602437399999998">
+<testcase classname="PkgTests.MathTests" name="testAddFails" time="0.118012333">
+<failure message="failure"></failure>
+</testcase>
+<testcase classname="PkgTests.MathTests" name="testAddPasses" time="0.118012041">
+</testcase>
+</testsuite>
+</testsuites>
