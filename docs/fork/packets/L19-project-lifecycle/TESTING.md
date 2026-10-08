@@ -1,96 +1,65 @@
 # L19 testing
 
-Focused tests, no repo-wide checks, no sleeps (AGENTS.md, "Verifying").
-
 ## Automated tests
 
-| File                                                              | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `apps/server/src/fork/project-lifecycle/ignoredFiles.test.ts`     | Table of paths to `safe` / `keep` / `review`: `node_modules/`, `apps/web/dist/`, `target/`, `.DS_Store`, `x.tsbuildinfo`, `.env`, `.env.local`, `.env.example` (review), `data/app.sqlite`, `recordings/demo.mov`, `.t3/`, `notes.txt` (review); extra patterns win; `\` separators.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `apps/server/src/fork/project-lifecycle/assessPark.test.ts`       | `parseStatusZ` on recorded output (renames, unmerged, ignored dirs); `decideParkBlockers` for each blocker code; `fixableByPush` only on commits and tags; empty facts give no blockers; an incomplete step always blocks; token changes when any safety fact changes and not when order changes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `apps/server/src/fork/project-lifecycle/ProjectLifecycle.test.ts` | Real git in a temp dir (no network): a bare repo as origin, a clone, then: clean clone parks (trash stubbed to a rename inside the temp dir); dirty file blocks; local-only branch blocks with `unpushed-commits`, `pushAll` clears it; stash blocks; stale token refuses; protected paths (`cwd`, `baseDir`, home) refuse; `park` inserts a record and dispatches `thread.archive` for the project's threads (engine stubbed, assert on a Deferred of received commands); an ignored `.env` gives a Keep entry and no blocker, `park` without `acknowledgeKeep` is refused and with it succeeds, Review files need `acknowledgeReview`; clone root resolution: `addProjectBaseDirectory` set gives `add-project-setting`, empty gives `~/Developer/active` and `default` (settings service stubbed); `reopen` (clone tracker stubbed): an existing project keeps its id, a missing project gives `not-found`, a non-empty destination gives `destination-not-empty`, and `onCloned` dispatches `thread.unarchive` only for threads that are still archived. |
-| `apps/server/src/fork/project-lifecycle/trash.test.ts`            | Destination naming; `EXDEV` refused; availability per platform (platform injected).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `apps/server/src/fork/project-lifecycle/localCheckouts.test.ts`   | Temp directory scan: depth 2 (a nested product's repositories found, nothing inside a checkout); skipped names (dot-names, `node_modules`, `target`, `dist`, `build`, `Library`, `vendor`); a symlink whose realpath leaves the clone root is refused; a `.git` file is followed through its `gitdir:` line; the 500 cap (limit injected small).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `apps/server/src/fork/project-lifecycle/noDelete.test.ts`         | Reads every non-test `.ts` file in the packet folder and fails on `.remove(`, `rmSync`, `rm -rf`, `fs.rm(` or `"rm"` in argv. Guards the old Loom bug.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `apps/server/src/fork/project-lifecycle/store.test.ts`            | Migrations apply twice cleanly on `SqlitePersistenceMemory`; parked insert, list, mark reopened, forget; settings default on invalid JSON.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `apps/server/src/fork/project-lifecycle/githubInventory.test.ts`  | Decoding a recorded `--slurp` output; ENOENT maps to `Missing`; "not logged in" stderr maps to `Unauthenticated`; cache hit within TTL; `refreshGitHub` bypasses.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `apps/web/src/fork/project-lifecycle/repositoriesModel.test.ts`   | Join by `remoteKey` (ssh vs https forms of one repo match); Local only rows; parked row hidden when a live checkout exists; filters and search.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `apps/web/src/fork/project-lifecycle/repositoriesSearch.test.ts`  | Search param validation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-
-Plus the extension point invariant tests if this packet created any extension point.
-
-The server test drives real `git` through `VcsProcess` (upstream tests do the same with
-`VcsProcess.layer` and `NodeServices.layer`, `apps/server/src/vcs/VcsProcess.test.ts:28`) and
-injects a fake trash implementation so no test touches the real Trash.
+- `policy.test.ts`: caps (Apple detection, project override), lane and folder names with
+  collisions, every pressure transition (steer once per crossing, reset below 60%, clear,
+  grow limited by the reserve, remount threshold, machine episode and recovery), holder
+  rules for settled, unsettled and archived threads.
+- `shell.test.ts`: install and remove leave the rest of `~/.zshenv` untouched and are
+  idempotent, including through a symlink; the generated hook, run by `zsh`, sets and
+  restores `TMPDIR` and `LOOM_LANE_*` for nested, symlinked and unmounted lanes; the
+  `xcodebuild` shim adds paths only to build actions, keeps explicit paths and redirects a
+  missing `/tmp` path; the hook exports the lane id, ports and lease file; `lane-run`
+  records its process and still runs outside a lane; `lane-run --detach` outlives the
+  caller in its own process group, logs to `space/tmp` and is still recorded; `lane-slot` with one slot serializes two
+  jobs and passes exit status 75 through; `xcodebuild` runs compiling actions in a slot; the
+  `xcrun` shim records `simctl create` only inside a lane.
+- `leases.test.ts`: ledger parsing and liveness by start time, process trees, Docker, `lsof`
+  and slot holder output.
+- `space.test.ts`: attach output and `diskutil info` parsing; on macOS with `diskutil image`,
+  create, attach, write, grow, detach and remove a 1 GB image in a temporary directory.
+- `ProjectLifecycleService.test.ts`: with mocked thread management and a folder backend,
+  `run.created` creates one lane per checkout, concurrent runs share it, settling the last
+  holder reclaims it, a running thread at 75% is steered once with a deterministic id, startup
+  reconcile reclaims lanes whose threads settled while the server was down. Phase 2, with
+  stub `xcrun`, `docker` and `lsof` and a fake `DeviceService`: lanes get distinct port
+  blocks; adopting and releasing a real process; settling stops a real `lane-run` process
+  and its child, removes the labelled container before its volume, deletes the adopted
+  simulator and closes device panels, shutting down only the device no active thread shares.
+- `mcp/registration.test.ts` covers the new toolkit.
 
 ## Commands
 
-```sh
-vp test run apps/server/src/fork/project-lifecycle apps/web/src/fork/project-lifecycle
-vp lint apps/server/src/fork/project-lifecycle apps/web/src/fork/project-lifecycle \
-  packages/contracts/src/fork/project-lifecycle.ts packages/client-runtime/src/fork/project-lifecycle.ts \
-  apps/web/src/routes/loom.repositories.tsx
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web build   # regenerates routeTree.gen.ts
-vp run --filter @t3tools/web typecheck
-vp run --filter @t3tools/mobile typecheck   # contracts changed; mobile imports them
+```bash
+vp test run apps/server/src/fork/project-lifecycle
+vp test run apps/server/src/fork/mcp/registration.test.ts
+scripts/fork/loom.sh check
 ```
 
 ## Manual check
 
-Needs Kyle's permission for a dev server and a browser (AGENTS.md). Use a seeded worktree
-`.t3` and a fixture directory, never real checkouts:
+On the nightly, after installing shell integration from Settings, Loom, Storage:
 
-```sh
-fixture=$(mktemp -d)/loom-park-fixture
-mkdir -p "$fixture/origin" "$fixture/active"
-git init -q --bare "$fixture/origin/demo.git"
-git clone -q "$fixture/origin/demo.git" "$fixture/active/demo"
-(cd "$fixture/active/demo" && git commit -q --allow-empty -m init && git push -q -u origin HEAD \
-  && git switch -q -c backup/local-only && git commit -q --allow-empty -m local \
-  && printf 'SECRET=1\n' > .env && printf '.env\nnode_modules/\n' > .gitignore \
-  && git add .gitignore && git commit -q -m ignore \
-  && mkdir -p node_modules/pkg && printf x > node_modules/pkg/index.js)
-echo "$fixture/active"
-```
+1. Start a thread in a worktree; a lane appears under `~/Developer/lanes/<project>/`.
+2. Ask the agent to run `echo $TMPDIR` and an `xcodebuild build`; both point into the lane.
+3. Ask the agent to fill `tmp` past 75% of a small project cap; it receives one steer and can
+   free the lane with the tool.
+4. Settle the thread; the lane is detached and removed.
+5. Restart Loom with a lane active; it is mounted again.
+6. In a lane, ask the agent to start a server with `lane-run` on `$LOOM_LANE_PORT`, create a
+   simulator with `xcrun simctl create`, and run a container labelled
+   `loom.lane=$LOOM_LANE_ID`. All three show under the lane in Storage; settling the thread
+   stops, deletes and removes them.
+7. Start two `xcodebuild build` runs in different lanes with build slots set to 1; the second
+   waits, and Storage shows the holder.
 
-1. In the dev server, set Settings, General, "Add project starts in" to the printed `active`
-   path. Settings, Loom, Repositories shows it as the clone location "(from Add project
-   starts in)". Clear it: the section shows `~/Developer/active` "(default)". Set it again.
-2. The sidebar footer shows the Repositories icon next to Pull Requests; click it. Then open
-   Repositories from the palette too. `demo` shows as Local only (its origin is a file
-   path, not GitHub). GitHub rows show if `gh` is signed in, else the banner.
-3. Adopt `demo` as a project. The project appears in the sidebar.
-4. Park `demo`: "Commits not on GitHub" blocks. Click "Push all branches and tags"; the
-   report refreshes and the blocker is gone. `.env` is listed under "Files to keep",
-   `node_modules/` under Safe. "Move to Trash" stays disabled until "I have these elsewhere"
-   is ticked. Tick it, keep "Archive threads", "Move to Trash". The folder is in the
-   Trash (check `~/.Trash` or Finder), the project's threads are in Settings, Archive.
-5. Parked filter shows the record. Reopen: the upstream clone toast shows progress, the
-   folder is back, the project id is unchanged, threads are unarchived when chosen.
-6. Forget a parked record; it disappears; nothing on disk changes.
-7. Upstream-server case: connect the client to an environment running upstream T3 Code (or
-   remove `project-lifecycle` from `LOOM_SERVER_FEATURES` in a scratch build). Palette items
-   and the sidebar icon are gone; `/loom/repositories` explains "Repositories needs a Loom
-   server".
-8. Remote case, if available: pick a remote environment in the page's select; confirm every
-   dialog names that environment, and the fixture paths are resolved on that machine.
-
-## Acceptance criteria
-
-- Park never runs with a blocker present, and every blocker in `dev-park` has an equivalent.
-- The folder goes to the Trash (or `~/.Trash` rename) and can be restored; nothing is deleted.
-- A stale report cannot be used to park.
-- The environment is named in every confirmation.
-- Park with Keep files present is refused without `acknowledgeKeep`, and no Keep file's
-  content is read or copied.
-- GitHub inventory failures never hide local clones.
+Steps 1, 2 and 4 to 7 passed on a dev server on 2026-10-08 with a Codex agent, along with
+Release from Storage and removing shell integration. Step 3 and closing device panels on
+settle were covered only by tests. That run is why `lane-run` has `--detach` and why the lane
+status tool scans fresh.
 
 ## Merge safety
 
-Run the preview in CONVENTIONS.md ("Merge safety") and record the tag and result in
-SEAMS.md. Only `apps/web/src/routeTree.gen.ts` and the marked lines in `SidebarChrome.tsx`
-may conflict. After Kyle merges to `main`, run
-`scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`.
+No upstream files are touched. `scripts/fork/loom.sh check` after each integration covers
+the fork registries.

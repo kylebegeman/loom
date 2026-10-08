@@ -52,7 +52,7 @@ Upstream pieces reused:
   `BackgroundPolicy.snapshot` (`apps/server/src/background/BackgroundPolicy.ts:29-56`,
   snapshot shape `packages/contracts/src/background.ts:102-110`).
 - `VcsProcess.run` for `gh` (`apps/server/src/vcs/VcsProcess.ts:47-58`, GitHub concurrency 4),
-  as in L06 and L19: `GitHubCli` is not reachable from ForkLayer
+  as in L06: `GitHubCli` is not reachable from ForkLayer
   (`apps/server/src/server.ts:278-290`).
 
 ## Contracts
@@ -496,7 +496,7 @@ CREATE TABLE IF NOT EXISTS fork_inbound_triggers_settings (
   `subscribeInbox` via `createEnvironmentRpcSubscriptionAtomFamily`
   (`packages/client-runtime/src/state/runtime.ts:646`).
 - `apps/web/src/fork/inbound-triggers/`:
-  - `TriggersPage.tsx` (tabs, environment picker like L19's), `InboxList.tsx`,
+  - `TriggersPage.tsx` (tabs, environment picker), `InboxList.tsx`,
     `TriggerEditor.tsx` (dialog with the sections in PRODUCT.md; model picker reuses
     upstream's model selection component if it is reusable outside the composer, otherwise a
     plain provider and model select from the server config's providers), `DryRunResults.tsx`.

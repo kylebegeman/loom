@@ -1,6 +1,7 @@
 import { PCB_PREVIEW_WS_METHODS as P } from "./pcb-preview.ts";
 import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "../auth.ts";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "./model-preview-3d.ts";
+import { PROJECT_LIFECYCLE_WS_METHODS as L } from "./project-lifecycle.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -25,4 +26,12 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [M.saveParameterSet]: AuthOrchestrationOperateScope,
   [M.updateSettings]: AuthOrchestrationOperateScope,
   [M.clearCache]: AuthOrchestrationOperateScope,
+  [L.updateSettings]: AuthOrchestrationOperateScope,
+  [L.free]: AuthOrchestrationOperateScope,
+  [L.grow]: AuthOrchestrationOperateScope,
+  [L.mount]: AuthOrchestrationOperateScope,
+  [L.discard]: AuthOrchestrationOperateScope,
+  [L.releaseLease]: AuthOrchestrationOperateScope,
+  [L.installShell]: AuthTerminalOperateScope,
+  [L.removeShell]: AuthTerminalOperateScope,
 } as const;
