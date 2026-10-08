@@ -1147,6 +1147,8 @@ interface ActiveCodexTurnContext {
   // Item positions allocated in this turn. Later turns never look items up
   // here: late background items resolve their settled turn's context, and a
   // subagent's approvals allocate on the owning root turn.
+  // fork: compaction-recovery: close items when Codex omits item/completed.
+  readonly runningCompactionItems: Set<string>;
   readonly itemPositions: Map<
     string,
     { readonly ordinal: number; readonly startedAt: DateTime.Utc }
@@ -1992,6 +1994,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               subagent: null,
               startedAt: input.startedAt,
               itemPositions: new Map(),
+              runningCompactionItems: new Set(),
             };
             yield* Ref.update(limitedTurnItems, (current) => {
               const next = new Map(current);
@@ -2582,6 +2585,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               subagent,
               startedAt: turn.startedAt,
               itemPositions: new Map(),
+              runningCompactionItems: new Set(),
             };
             beginTurnTokenUsage(activeContext);
             yield* Ref.update(activeTurns, (current) => {
@@ -4492,15 +4496,18 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
         const emitCompactionItem = Effect.fn("CodexAdapterV2.emitCompactionItem")(function* (
           context: ActiveCodexTurnContext,
           nativeItemId: string,
-          status: "running" | "completed",
+          status: "running" | "completed" | "failed" | "interrupted" | "cancelled",
           nativeStartedAt?: DateTime.Utc,
+          terminalAt?: DateTime.Utc,
         ) {
-          const now = yield* DateTime.now;
+          const now = terminalAt ?? (yield* DateTime.now);
           const { ordinal, startedAt } = yield* resolveItemPosition(
             context,
             nativeItemId,
             nativeStartedAt,
           );
+          if (status === "running") context.runningCompactionItems.add(nativeItemId);
+          else context.runningCompactionItems.delete(nativeItemId);
           yield* emitProviderEvent({
             type: "turn_item.updated",
             driver: CODEX_PROVIDER,
@@ -4520,9 +4527,15 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
               type: "compaction",
               driver: CODEX_PROVIDER,
               status,
-              title: status === "completed" ? "Context compacted" : "Compacting context",
+              title: {
+                running: "Compacting context",
+                completed: "Context compacted",
+                failed: "Context compaction failed",
+                interrupted: "Context compaction interrupted",
+                cancelled: "Context compaction cancelled",
+              }[status],
               startedAt,
-              completedAt: status === "completed" ? now : null,
+              completedAt: status === "running" ? null : now,
               updatedAt: now,
             },
           });
@@ -5690,6 +5703,18 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                   return updated;
                 });
               }
+              // fork: compaction-recovery: unfinished work must settle before turn.terminal.
+              for (const nativeItemId of input.context.runningCompactionItems) {
+                yield* emitCompactionItem(
+                  input.context,
+                  nativeItemId,
+                  input.status === "failed" || input.status === "interrupted"
+                    ? input.status
+                    : "cancelled",
+                  undefined,
+                  input.completedAt,
+                );
+              }
               yield* agentMessageDeltas.flushTurn(input.nativeTurnId);
               yield* reasoningDeltas.flushTurn(input.nativeTurnId);
               for (const [key, part] of reasoningParts) {
@@ -5957,6 +5982,7 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
             subagent: null,
             startedAt: now,
             itemPositions: new Map(),
+            runningCompactionItems: new Set(),
           };
           const providerTurn = {
             id: context.providerTurnId,

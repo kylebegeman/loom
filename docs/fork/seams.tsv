@@ -53,3 +53,5 @@ apps/server/src/processRunner.ts	pcb-preview	2
 apps/server/src/processRunner.test.ts	pcb-preview	2
 packages/client-runtime/src/state/commandPermissions.test.ts	pcb-preview	3
 apps/server/src/binCli.ts	ext-cli	2
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	compaction-recovery	2
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	compaction-recovery	1

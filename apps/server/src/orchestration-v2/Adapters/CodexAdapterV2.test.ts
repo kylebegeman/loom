@@ -2850,6 +2850,94 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
+  // fork: compaction-recovery: Codex can end a turn without item/completed.
+  it.effect.each(["failed", "interrupted", "completed"] as const)(
+    "settles unfinished compaction before a %s turn terminal",
+    (status) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const nativeThreadId = `compact-${status}-thread`;
+          const nativeTurnId = `compact-${status}-turn`;
+          const transcript = makeCodexReplayTranscript({
+            scenario: `unfinished-compaction-${status}`,
+            entries: [
+              ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" }),
+              {
+                type: "emit_inbound",
+                label: "compaction/start",
+                frame: {
+                  method: "item/started",
+                  params: {
+                    threadId: nativeThreadId,
+                    turnId: nativeTurnId,
+                    item: { type: "contextCompaction", id: "unfinished-compaction" },
+                    startedAtMs: 1782622440500,
+                  },
+                },
+              },
+              {
+                type: "emit_inbound",
+                label: "turn/terminal",
+                frame: {
+                  method: "turn/completed",
+                  params: {
+                    threadId: nativeThreadId,
+                    turn: {
+                      ...makeCodexReplayTurn({ id: nativeTurnId, status }),
+                      ...(status === "failed"
+                        ? {
+                            error: {
+                              message: "stream closed during compaction",
+                              codexErrorInfo: null,
+                              additionalDetails: null,
+                            },
+                          }
+                        : {}),
+                    },
+                  },
+                },
+              },
+            ],
+          });
+          const harness = yield* makeCodexReplayHarness(transcript);
+          yield* harness.runtime.startTurn(
+            makeCodexTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(`compact-${status}-attempt`),
+              text: "work",
+            }),
+          );
+          yield* harness.firstTerminal;
+          const items = harness.events.flatMap((event) =>
+            event.type === "turn_item.updated" && event.turnItem.type === "compaction"
+              ? [event.turnItem]
+              : [],
+          );
+          const expectedStatus = status === "completed" ? "cancelled" : status;
+          assert.deepEqual(
+            items.map((item) => item.status),
+            ["running", expectedStatus],
+          );
+          assert.equal(items[0]?.id, items[1]?.id);
+          assert.deepEqual(items[0]?.startedAt, items[1]?.startedAt);
+          assert.isNotNull(items[1]?.completedAt);
+          assert.notEqual(items[1]?.title, "Context compacted");
+          const terminalIndex = harness.events.findIndex((event) => event.type === "turn.terminal");
+          const settledIndex = harness.events.findIndex(
+            (event) =>
+              event.type === "turn_item.updated" &&
+              event.turnItem.type === "compaction" &&
+              event.turnItem.status === expectedStatus,
+          );
+          assert.isAtLeast(settledIndex, 0);
+          assert.isAbove(terminalIndex, settledIndex);
+          assert.equal(harness.terminalEvents()[0]?.status, status);
+        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+      ),
+  );
+
   it.effect("resumes a provider thread without requesting or decoding its history", () =>
     Effect.scoped(
       Effect.gen(function* () {
