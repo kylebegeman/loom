@@ -40,6 +40,7 @@ import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thr
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
+  contextCompactionLabel,
   liveThoughtLine,
   resolveWorkEntryToolPresentation,
   resolveViewedImageAsset,
@@ -2865,7 +2866,8 @@ function v2EventPresentation(item: OrchestrationV2TurnItem): {
           ? null
           : `${item.beforeTokenCount ?? "?"} → ${item.afterTokenCount ?? "?"} tokens`;
       return {
-        label: "Context compacted",
+        // fork: compaction-recovery: use the same terminal labels as the live row and mobile.
+        label: contextCompactionLabel({ status: item.status }),
         detail: item.summary ?? tokenSummary,
         tone: item.status === "failed" ? "danger" : "muted",
         icon: MinusIcon,

@@ -6,6 +6,7 @@ import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 
 import {
   commandDetailRepeatsCommand,
+  contextCompactionLabel,
   extractCommandOutputText,
   liveThoughtLine,
   resolveViewedImageAsset,
@@ -996,5 +997,22 @@ describe("liveThoughtLine", () => {
       "This is really not fine in snake_case_names.",
     );
     expect(liveThoughtLine("   ")).toBe("");
+  });
+});
+
+// fork: compaction-recovery: terminal failures must never report successful compaction.
+describe("contextCompactionLabel", () => {
+  it.each([
+    ["failed", "Context compaction failed"],
+    ["interrupted", "Context compaction interrupted"],
+    ["cancelled", "Context compaction cancelled"],
+    ["pending", "Compacting context"],
+    ["waiting", "Compacting context"],
+    ["running", "Compacting context"],
+    ["completed", "Context compacted 899K → 19K tokens"],
+  ] as const)("reports %s compaction accurately even when token counts exist", (status, label) => {
+    expect(
+      contextCompactionLabel({ status, beforeTokenCount: 899_000, afterTokenCount: 19_000 }),
+    ).toBe(label);
   });
 });

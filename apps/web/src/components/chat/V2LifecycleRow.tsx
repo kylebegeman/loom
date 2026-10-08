@@ -1,3 +1,4 @@
+import { contextCompactionLabel } from "@t3tools/client-runtime/work-log/presentation";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
 import { projectedSubagentsToRuntime } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -108,16 +109,15 @@ export function V2LifecycleRow(props: {
       item.beforeTokenCount === undefined && item.afterTokenCount === undefined
         ? null
         : `${item.beforeTokenCount ?? "?"} → ${item.afterTokenCount ?? "?"} tokens`;
-    const label =
-      item.status === "failed"
-        ? "Context compaction failed"
-        : item.status === "cancelled" || item.status === "interrupted"
-          ? "Context compaction stopped"
-          : item.status === "pending" || item.status === "running" || item.status === "waiting"
-            ? "Compacting context"
-            : "Context compacted";
+    // fork: compaction-recovery: all clients describe failed and stopped compaction consistently.
+    const label = contextCompactionLabel({ status: item.status });
     return (
-      <TimelineSystemDivider label={label} detail={item.summary ?? tokenDetail} icon={MinusIcon} />
+      <TimelineSystemDivider
+        label={label}
+        detail={item.summary ?? tokenDetail}
+        icon={MinusIcon}
+        tone={item.status === "failed" ? "danger" : "neutral"}
+      />
     );
   }
   if (item.type === "handoff") {

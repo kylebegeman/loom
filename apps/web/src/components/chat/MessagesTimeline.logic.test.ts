@@ -1053,6 +1053,46 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  // fork: compaction-recovery: settled failures remain visible without a success label.
+  it.each([
+    ["failed", "Context compaction failed"],
+    ["interrupted", "Context compaction interrupted"],
+    ["cancelled", "Context compaction cancelled"],
+  ] as const)("shows %s compaction as inactive in the timeline", (status, label) => {
+    const fixture = makeStreamingTimelineFixture();
+    const last = fixture.visibleTurnItems.at(-1)!;
+    if (last.item.type !== "assistant_message") throw new Error("Expected assistant fixture");
+    const rows = deriveMessagesTimelineRows({
+      isWorking: false,
+      expandedRunIds: new Set([fixture.runId]),
+      runningRunId: null,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      timelineEntries: deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems: [
+          ...fixture.visibleTurnItems.slice(0, -1),
+          {
+            ...last,
+            item: {
+              ...last.item,
+              type: "compaction",
+              status,
+              driver: null,
+              beforeTokenCount: 899_000,
+              afterTokenCount: 19_000,
+            },
+          },
+        ],
+        optimisticMessages: [],
+      }),
+    });
+    expect(rows.find((row) => row.kind === "context-compaction")).toMatchObject({
+      active: false,
+      label,
+    });
+  });
+
   it("gives live compaction the activity slot and restores Thinking when it completes", () => {
     const fixture = makeStreamingTimelineFixture();
     const last = fixture.visibleTurnItems.at(-1)!;

@@ -1576,7 +1576,8 @@ describe("retained v2 feed presentation", () => {
     expect(afterPresentation[1]).toBe(beforePresentation[1]);
   });
 
-  it.each(["running", "completed", "interrupted"] as const)(
+  // fork: compaction-recovery: failed and stopped compactions settle without a success label.
+  it.each(["running", "completed", "interrupted", "failed", "cancelled"] as const)(
     "uses the compaction row as the live activity only while %s",
     (status) => {
       const compact = projected(
@@ -1612,7 +1613,11 @@ describe("retained v2 feed presentation", () => {
                 ? "Compacting context"
                 : status === "completed"
                   ? "Context compacted 899K → 19K tokens"
-                  : "Context compacted",
+                  : {
+                      interrupted: "Context compaction interrupted",
+                      failed: "Context compaction failed",
+                      cancelled: "Context compaction cancelled",
+                    }[status],
           },
         ],
       });
