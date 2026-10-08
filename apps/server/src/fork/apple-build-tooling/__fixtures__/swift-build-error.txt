@@ -1,0 +1,40 @@
+[84 / 125]
+[87 / 125]
+[89 / 125]
+[90 / 125]
+[101 / 125]
+[104 / 125]
+[106 / 125]
+[109 / 125]
+[110 / 125]
+[114 / 125] PkgTests-product
+[119 / 125] PkgTests-product
+error: SwiftCompile normal arm64 /Users/test/scratch/Pkg/Tests/PkgTests/XCTests.swift failed with a nonzero exit code. Command line:     cd /Users/test/scratch
+    builtin-SwiftPerFileCompile XCTests.swift
+/Users/test/scratch/Pkg/Tests/PkgTests/XCTests.swift:4:41: [1;31merror: [1;39muse of 'add' refers to instance method rather than global function 'add' in module 'Pkg'[0;0m
+[0;36m2 |[0;0m @testable import Pkg
+[0;36m3 |[0;0m final class MathTests: XCTestCase {
+[0;36m4 |[0;0m   func testAddPasses() { XCTAssertEqual(add(1, 2), 3) }
+  [0;36m|[0;0m                                         |- [1;31merror: [1;39muse of 'add' refers to instance method rather than global function 'add' in module 'Pkg'[0;0m
+  [0;36m|[0;0m                                         `- [1;39mnote: [1;39muse 'Pkg.' to reference the global function in module 'Pkg'[0;0m
+[0;36m5 |[0;0m   func testAddFails() { XCTAssertEqual(add(2, 2), 5, "two plus two") }
+[0;36m6 |[0;0m }
+
+Pkg.add:1:13: [1;39mnote: [1;39m'add' declared here[0;0m
+[0;36m1 |[0;0m public func add(_ a: Int, _ b: Int) -> Int
+  [0;36m|[0;0m             `- [1;39mnote: [1;39m'add' declared here[0;0m
+
+/Users/test/scratch/Pkg/Tests/PkgTests/XCTests.swift:5:40: [1;31merror: [1;39muse of 'add' refers to instance method rather than global function 'add' in module 'Pkg'[0;0m
+[0;36m3 |[0;0m final class MathTests: XCTestCase {
+[0;36m4 |[0;0m   func testAddPasses() { XCTAssertEqual(add(1, 2), 3) }
+[0;36m5 |[0;0m   func testAddFails() { XCTAssertEqual(add(2, 2), 5, "two plus two") }
+  [0;36m|[0;0m                                        |- [1;31merror: [1;39muse of 'add' refers to instance method rather than global function 'add' in module 'Pkg'[0;0m
+  [0;36m|[0;0m                                        `- [1;39mnote: [1;39muse 'Pkg.' to reference the global function in module 'Pkg'[0;0m
+[0;36m6 |[0;0m }
+[0;36m7 |[0;0m 
+
+Pkg.add:1:13: [1;39mnote: [1;39m'add' declared here[0;0m
+[0;36m1 |[0;0m public func add(_ a: Int, _ b: Int) -> Int
+  [0;36m|[0;0m             `- [1;39mnote: [1;39m'add' declared here[0;0m
+error: Build failed
+error: fatalError

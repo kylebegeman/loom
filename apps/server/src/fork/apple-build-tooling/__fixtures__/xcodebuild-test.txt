@@ -1,0 +1,20 @@
+Testing started
+Test Suite 'All tests' started at 2026-10-08 16:24:45.324.
+Test Suite 'SampleAppTests.xctest' started at 2026-10-08 16:24:45.324.
+Test Suite 'DoubleTests' started at 2026-10-08 16:24:45.324.
+Test Case '-[SampleAppTests.DoubleTests testDoubleFails]' started.
+/Users/test/scratch/App/Tests/Tests.swift:6: error: -[SampleAppTests.DoubleTests testDoubleFails] : XCTAssertEqual failed: ("4") is not equal to ("5") - two doubled
+Test Case '-[SampleAppTests.DoubleTests testDoubleFails]' failed (0.045 seconds).
+Test Case '-[SampleAppTests.DoubleTests testDoublePasses]' started.
+Test Case '-[SampleAppTests.DoubleTests testDoublePasses]' passed (0.001 seconds).
+Test Suite 'DoubleTests' failed at 2026-10-08 16:24:45.372.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.046 (0.048) seconds
+Test Suite 'SampleAppTests.xctest' failed at 2026-10-08 16:24:45.372.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.046 (0.048) seconds
+Test Suite 'All tests' failed at 2026-10-08 16:24:45.373.
+	 Executed 2 tests, with 1 failure (0 unexpected) in 0.046 (0.049) seconds
+◇ Test run started.
+↳ Testing Library Version: 2084
+↳ Target Platform: arm64-apple-ios17.0-simulator
+◇ Test swiftTestingFails() started.
+✘ Test swiftTestingFails() recorded an issue at Tests.swift:8:34: Expectation failed: double(1) == 3

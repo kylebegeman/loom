@@ -71,7 +71,7 @@ describe("xcresult", () => {
   it("takes failure locations from the xcodebuild log for XCTest and Swift Testing", () => {
     const tests = withLoggedLocations(
       testSummaryFromXcresult(fixture("xcresult-test-summary.json"))!,
-      parseTestFailureLines(fixture("xcodebuild-test.log"), APP),
+      parseTestFailureLines(fixture("xcodebuild-test.txt"), APP),
     );
     expect(
       tests.failures.map(({ identifier, file, line }) => ({ identifier, file, line })),
@@ -205,7 +205,7 @@ describe("simulators and devices", () => {
 
 describe("package diagnostics", () => {
   it("reads compiler errors once each, without excerpts or color codes", () => {
-    expect(parseCompilerDiagnostics(fixture("swift-build-error.log"), PKG)).toEqual([
+    expect(parseCompilerDiagnostics(fixture("swift-build-error.txt"), PKG)).toEqual([
       {
         severity: "error",
         message:
@@ -224,7 +224,7 @@ describe("package diagnostics", () => {
   });
 
   it("keys XCTest and Swift Testing failure lines", () => {
-    const lines = parseTestFailureLines(fixture("swift-test.log"), PKG);
+    const lines = parseTestFailureLines(fixture("swift-test.txt"), PKG);
     expect(lines.get("PkgTests.MathTests/testAddFails")).toEqual({
       message: 'XCTAssertEqual failed: ("4") is not equal to ("5") - two plus two',
       file: "Tests/PkgTests/XCTests.swift",
@@ -294,7 +294,7 @@ describe("xunit", () => {
     const tests = mergeSwiftTestSummary(
       readXunit(fixture("xunit.xml")),
       readXunit(fixture("xunit-swift-testing.xml")),
-      parseTestFailureLines(fixture("swift-test.log"), PKG),
+      parseTestFailureLines(fixture("swift-test.txt"), PKG),
     );
     expect(tests).toMatchObject({ result: "Failed", total: 6, passed: 2, failed: 3, skipped: 1 });
     expect(tests?.failures).toEqual([
