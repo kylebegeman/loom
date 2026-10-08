@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import {
   BoxIcon,
   CheckIcon,
@@ -336,7 +336,7 @@ function ModelFile({
         </div>
         <div className={styles["model-document-actions"]}>
           <CaptureMenu
-            disabled={!stats || busy || captureBusy}
+            disabled={!editing.canEdit || !stats || busy || captureBusy}
             capturing={captureBusy}
             onCapture={(four) => void capture(four)}
           />
@@ -420,7 +420,7 @@ function ModelFile({
           <div className={styles["model-edit-tools"]}>
             <ModelTool
               label="Measure surfaces"
-              disabled={!stats || busy || captureBusy}
+              disabled={!editing.canEdit || !stats || busy || captureBusy}
               aria-pressed={editing.picking === "measure"}
               onClick={() => {
                 editing.choose(editing.picking === "measure" ? null : "measure");
@@ -432,7 +432,7 @@ function ModelFile({
             </ModelTool>
             <ModelTool
               label="Annotate model region"
-              disabled={!stats || busy || captureBusy}
+              disabled={!editing.canEdit || !stats || busy || captureBusy}
               aria-pressed={editing.picking === "annotate"}
               onClick={() => {
                 editing.choose(editing.picking === "annotate" ? null : "annotate");
@@ -590,7 +590,11 @@ function ModelFile({
             onExpand={() => setInspectorExpanded((value) => !value)}
           />
           <div className={styles["model-inspector-content"]}>
-            <div className={styles["model-inspector-tab-panel"]} hidden={inspectorTab !== "tools"}>
+            <fieldset
+              disabled={!editing.canEdit}
+              className={styles["model-inspector-tab-panel"]}
+              hidden={inspectorTab !== "tools"}
+            >
               <ToolsInspector
                 data={editing.data}
                 mutate={editing.mutate}
@@ -601,7 +605,7 @@ function ModelFile({
                 onPicking={editing.choose}
                 pendingPoint={editing.pendingPoint}
               />
-            </div>
+            </fieldset>
             <div className={styles["model-inspector-tab-panel"]} hidden={inspectorTab !== "views"}>
               <ViewsInspector
                 data={editing.data}
@@ -610,11 +614,12 @@ function ModelFile({
                 camera={() => viewer.current?.snapshot() ?? null}
                 onRecall={recall}
                 onCapture={editing.captureViews}
-                disabled={!stats || busy || captureBusy}
+                disabled={!editing.canEdit || !stats || busy || captureBusy}
               />
             </div>
             {format === "scad" && (
-              <div
+              <fieldset
+                disabled={!editing.canEdit}
                 className={styles["model-inspector-tab-panel"]}
                 hidden={inspectorTab !== "variants"}
               >
@@ -627,22 +632,26 @@ function ModelFile({
                   volume={volume}
                   onActivity={setVariantActivity}
                 />
-              </div>
+              </fieldset>
             )}
-            <div className={styles["model-inspector-tab-panel"]} hidden={inspectorTab !== "review"}>
+            <fieldset
+              disabled={!editing.canEdit}
+              className={styles["model-inspector-tab-panel"]}
+              hidden={inspectorTab !== "review"}
+            >
               <ReviewInspector
                 data={editing.data}
                 mutate={editing.mutate}
                 sourceRevision={geometryRevision}
                 pending={editing.pendingRegion}
-                disabled={!stats || busy || captureBusy}
+                disabled={!editing.canEdit || !stats || busy || captureBusy}
                 onCancel={editing.cancel}
                 onAdd={editing.addAnnotation}
                 onRequest={editing.prepareRequest}
                 onRelink={editing.reselect}
                 onReview={editing.review}
               />
-            </div>
+            </fieldset>
             {format === "scad" && (
               <div
                 className={styles["model-inspector-tab-panel"]}

@@ -5,7 +5,7 @@ import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments"
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { BoxIcon, FileCode2Icon, FileBoxIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { Input } from "~/components/ui/input";

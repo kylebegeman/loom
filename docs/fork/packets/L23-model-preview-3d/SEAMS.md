@@ -7,7 +7,7 @@ creates or refines the extension point.
 
 `ext-core`, `ext-panels`, `ext-palette`, `ext-web-root` and `ext-keybindings`
 already existed. L23 creates the missing `ext-settings` and `ext-mcp` registrations
-on `feat/loom-model-preview-3d`; the feature is complete locally; no commit, PR or merge was performed.
+on `feat/loom-model-preview-3d`, integrated with the current upstream nightly on `main`.
 
 | File                                                      | Marker               | Marked lines | Why                                |
 | --------------------------------------------------------- | -------------------- | ------------ | ---------------------------------- |
@@ -62,7 +62,7 @@ lockfile change (CONVENTIONS.md, "The lockfile rule"), and mention them in FORK.
 | `apps/server/src/fork/ForkLayer.ts`                  | `ModelPreviewService.layer,` in `ForkServicesLive`; `ModelPreviewHttpRoutes,` in `ForkRoutesLayer` |
 | `apps/server/src/fork/persistence/migrations.ts`     | `ModelPreviewMigrations,`                                                                          |
 | `apps/server/src/fork/rpc.ts`, `rpcAuthorization.ts` | handlers and scopes                                                                                |
-| `apps/server/src/fork/mcp/index.ts`                  | `ModelPreview3dToolkitRegistrationLive,`                                                           |
+| `apps/server/src/fork/mcp/index.ts`                  | `FORK_MCP_TOOLKITS` metadata consumed by shared `toolkitRegistration`                              |
 | `apps/web/src/fork/panels/registry.ts`               | `modelPreview3dPanel,`                                                                             |
 | `apps/web/src/fork/settings/registry.ts`             | `modelPreview3dSettings,`                                                                          |
 | `apps/web/src/fork/commandPalette/registry.ts`       | `modelPreview3dPaletteSource,`                                                                     |
@@ -76,20 +76,25 @@ tag=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -1)
 git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
-The 2026-10-07 preview against `v0.0.46-nightly.20261007.2774` used a temporary
-index and `git write-tree` to include the working implementation without committing
-or changing the real index. `git merge-tree --write-tree --merge-base` used the actual
-common ancestor `6530de0339d2ca49957d0039133c49e3a08557f7`.
+The release integration preserved current Switchboard, File Outline, V2 workspace
+services and RPC middleware. OpenSCAD and MCP now resolve V2 projects and thread callers.
+Client model writes share the destination grant policy. The upstream scope map remains
+limited to upstream RPCs, while the fork scope map covers every Loom method.
 
-Compared with baseline HEAD `841d91c11d`, L23 adds conflicts only in the marked MCP
-registration and approved web dependency/lockfile lines. Copied inspector changes also
-conflict in KeybindingsSettings.logic.ts and rightPanelStore.test.ts. Existing conflicts
-remain in server.ts, ws.ts, ChatView.tsx, SidebarChrome.tsx, rightPanelStore.ts,
-__root.tsx, client-runtime/rpc/client.ts and shared/package.json. The copied ChatHeader
-change removes that baseline conflict. No upstream merge was performed.
+New generic seams in the release integration:
 
-Allowed conflicts: extension point seams this packet created, and
-`apps/web/package.json` / `pnpm-lock.yaml` if upstream changed nearby dependency lines.
+| File                                                  | Marker             | Marked lines | Why                                                                                   |
+| ----------------------------------------------------- | ------------------ | ------------ | ------------------------------------------------------------------------------------- |
+| `packages/contracts/src/clientRpcPermissions.ts`      | `fork: ext-core`   | 3            | Register client model grants without widening upstream's exhaustive server scope map. |
+| `packages/client-runtime/src/state/runtime.ts`        | `fork: ext-core`   | 1            | Cancellable document results share command permissions and execution.                 |
+| `packages/client-runtime/src/state/usage.test.ts`     | `fork: ext-core`   | 1            | Keep an upstream command fixture compatible with result atoms.                        |
+| `apps/server/src/auth/RpcAuthorization.ts`            | `fork: ext-core`   | 1            | Reuse the core part of the client grant map for upstream RPCs.                        |
+| `apps/server/src/observability/RpcInstrumentation.ts` | `fork: ext-core`   | 1            | Label fork RPC spans in the shared middleware.                                        |
+| `apps/web/src/reopenClosedView.ts`                    | `fork: ext-panels` | 1            | Reopen a fork tab with its resource and title.                                        |
+| `apps/web/src/closedViewStore.ts`                     | `fork: ext-panels` | 2            | Persist model tabs and migrate away archived inspector history.                       |
+
+Allowed conflicts are the documented extension seams and approved dependency additions.
+The lockfile keeps the upstream graph plus only the approved three.js/type additions.
 
 ## FORK.md rows
 

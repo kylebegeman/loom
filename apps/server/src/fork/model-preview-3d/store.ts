@@ -7,7 +7,7 @@ import {
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as DateTime from "effect/DateTime";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 const workspaceJson = Schema.fromJsonString(ModelWorkspace);
 const Overrides = Schema.Record(Schema.String, Schema.String);
 const settingsJson = Schema.fromJsonString(ModelPreviewSettings);

@@ -1701,92 +1701,41 @@ Test (`packages/contracts/src/fork/keybindings.test.ts`): every fork command sta
 
 Prerequisite: server core.
 
-### Current upstream mechanism
+### Registration and access
 
-- One MCP server, `McpServer.layerHttp({ name: "T3 Code", path: "/mcp", ... })`
-  (`apps/server/src/mcp/McpHttpServer.ts:624-629`). Toolkits register as layers, e.g.
-  `McpServer.toolkit(PullRequestsToolkit).pipe(Layer.provide(PullRequestsToolkitHandlersLive))`
-  (`McpHttpServer.ts:607-609`), merged in
-  `export const layer = Layer.mergeAll(PreviewToolkitRegistrationLive, PullRequestsToolkitRegistrationLive, DeviceToolkitRegistrationLive).pipe(Layer.provideMerge(McpTransportLive))`
-  (`McpHttpServer.ts:631-635`), mounted in `makeRoutesLayer` (`server.ts:582`).
-- A tool is `Tool.make("name", { description, parameters, success, failure, dependencies })`
-  with annotations; a toolkit is `Toolkit.make(...)`, handlers `Toolkit.toLayer(...)`
-  (`apps/server/src/mcp/toolkits/device/tools.ts:28-46,92`, `handlers.ts:256`).
-- Every provider adapter wires the same server name, `t3-code`, with a per-thread bearer
-  credential (Claude, Codex, Cursor, Grok, OpenCode, Antigravity adapters). New tools on this
-  server need no adapter change; a second server would need six.
-- `tools/list` is not filtered per credential. Access is checked per call with
-  `requireMcpCapability` against the closed union
-  `McpCapability = "preview" | "device" | "pull-requests"`
-  (`apps/server/src/mcp/McpInvocationContext.ts:11,47-55`), computed per thread in
-  `ProviderService.ts:869-914`.
+Every provider adapter uses the same authenticated `t3-code` MCP server. Fork tools
+register through [`McpHttpServer.ts`](../../../apps/server/src/mcp/McpHttpServer.ts),
+using its `toolkitRegistration` helper. Never register a fork toolkit directly with
+`McpServer.toolkit`: that bypasses the shared access declarations.
 
-### Seam (`apps/server/src/mcp/McpHttpServer.ts`, `fork: ext-mcp`)
+[`apps/server/src/fork/mcp/index.ts`](../../../apps/server/src/fork/mcp/index.ts)
+exports `FORK_MCP_TOOLKITS`, a readonly array of `{ toolkit, handlers }`. The two
+`fork: ext-mcp` lines import it and add its registrations to the shared layer.
 
-```diff
- import * as PreviewAutomationBroker from "./PreviewAutomationBroker.ts";
-+import { ForkMcpToolkitsLive } from "../fork/mcp/index.ts"; // fork: ext-mcp
-```
+A packet defines its toolkit with `Tool.make` and `Toolkit.make`, then builds
+handlers with `McpToolAccess.toLayer`. Each handler declares its access with the
+appropriate helper from [`McpToolAccess.ts`](../../../apps/server/src/mcp/McpToolAccess.ts):
+`readsAsCaller` for a read belonging to the current thread, or `actsAsCaller` for
+changing that thread's workspace. Caller checks run before the feature service.
+Other helpers cover environment writes and operations targeting other threads.
 
-```diff
- export const layer = Layer.mergeAll(
-+  ForkMcpToolkitsLive, // fork: ext-mcp
-   PreviewToolkitRegistrationLive,
-```
+Include `OrchestratorMcpFailure` in the tool's failure schema. Tools that write
+as a caller also declare `ThreadManagementService` in their dependencies. Retain
+`McpInvocationContext` for thread scoping. Bind `ForkRuntime` during layer
+construction, then call the packet service through `withForkRuntime`.
+[L23's toolkit](../../../apps/server/src/fork/model-preview-3d/mcp.ts) is a working example.
 
-### Fork-owned file: `apps/server/src/fork/mcp/index.ts`
+Do not extend `McpCapability` for a packet. Use shared caller access checks and
+the packet's own setting to gate its tools. All tools remain listed to agent
+sessions, so keep their descriptions short and avoid redundant tools. Tool
+parameters must be a non-empty struct for provider compatibility.
 
-```ts
-import * as Layer from "effect/Layer";
+### Verification
 
-/** Packet toolkit registrations, one line each. Keep `Layer.empty` first. */
-export const ForkMcpToolkitsLive = Layer.mergeAll(
-  Layer.empty,
-  // SnippetsToolkitRegistrationLive,
-);
-```
-
-### Registering a toolkit
-
-`apps/server/src/fork/<slug>/mcp.ts` follows the upstream toolkit pattern (the snippets tool
-is illustrative; L01 ships no MCP tools):
-
-```ts
-const SearchSnippetsTool = Tool.make("loom_snippets_search", {
-  description: "...",
-  parameters: SnippetSearchInput,
-  success: SnippetSearchResult,
-  failure: SnippetToolError,
-  dependencies: [McpInvocationContext.McpInvocationContext],
-})
-  .annotate(Tool.Title, "Search snippets")
-  .annotate(Tool.Readonly, true);
-
-export const SnippetsToolkit = Toolkit.make(SearchSnippetsTool);
-
-export const SnippetsToolkitRegistrationLive = McpServer.toolkit(SnippetsToolkit).pipe(
-  Layer.provide(
-    SnippetsToolkit.toLayer({
-      loom_snippets_search: (input) => withForkRuntime(/* call the packet service */),
-    }),
-  ),
-);
-```
-
-- Do not extend `McpCapability`. Gate inside the handler: read `McpInvocationContext`
-  (`threadId`, `providerInstanceId`) and check the packet's own setting, failing with the
-  packet's typed error.
-- Every tool is listed to every agent session and costs prompt tokens on every turn. Keep a
-  packet to a few tools with short descriptions, and prefer one tool with a `mode` parameter
-  over many near-duplicates.
-- Parameters must be a non-empty struct (see the comment at `device/tools.ts:31-33`: an
-  empty struct makes some providers drop every tool on the server).
-
-### Existence check, tests
-
-`test -f apps/server/src/fork/mcp/index.ts && git grep -q 'fork: ext-mcp' -- apps/server/src/mcp/McpHttpServer.ts`.
-Test: every fork tool name starts with `loom_` and is unique across fork toolkits; handler
-tests run the service through `withForkRuntime` with a test `ForkRuntime` context.
+Check that every fork tool name starts with `loom_` and is unique. Exercise the
+registered handlers with an authenticated thread caller, including access
+refusals and packet-disabled errors. Provide a test `ForkRuntime` context and
+any dependencies declared by the toolkit. Lint rejects raw MCP registration.
 
 ---
 

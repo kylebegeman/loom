@@ -4,3 +4,4 @@ export * from "./switchboard.ts";
 export * from "./model-preview-3d.ts";
 
 export * from "./model-workspace.ts";
+export * from "./clientRpcPermissions.ts";

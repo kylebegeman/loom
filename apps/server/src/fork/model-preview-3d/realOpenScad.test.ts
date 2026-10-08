@@ -1,3 +1,6 @@
+import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import { RunId, type OrchestrationV2ThreadShell } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -10,13 +13,15 @@ import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import * as Config from "../../config.ts";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
-import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import type { OrchestrationV2AppThread } from "@t3tools/contracts";
+import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { ForkRuntime } from "../ForkRuntime.ts";
@@ -54,16 +59,20 @@ const setup = Effect.gen(function* () {
   for (const name of ["cuboid.stl", "cuboid.obj", "inch-cube.3mf"])
     yield* fs.copyFile(path.join(meshes, name), path.join(root, name));
   yield* runForkMigrationSet(ModelPreviewMigrations);
-  const queries = partial<ProjectionSnapshotQuery["Service"]>({
-    getThreadCheckpointContext: () =>
-      Effect.succeedSome({
-        threadId,
-        projectId,
-        workspaceRoot: root,
-        worktreePath: null,
-        checkpoints: [],
-      }),
-    getProjectShells: () => Effect.succeed([]),
+  const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
+    getThread: () =>
+      Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: null })),
+  });
+  const project = partial<ProjectStore.ProjectRow>({ projectId, workspaceRoot: root });
+  const projectStore = partial<ProjectStore.ProjectStoreV2["Service"]>({
+    get: () => Effect.succeedSome(project),
+    listShells: () =>
+      Effect.succeed([
+        partial<import("@t3tools/contracts").OrchestrationProjectShell>({
+          id: projectId,
+          workspaceRoot: root,
+        }),
+      ]),
   });
   const entries = partial<WorkspaceEntries["Service"]>({
     list: () =>
@@ -82,13 +91,31 @@ const setup = Effect.gen(function* () {
   });
   const service = yield* make.pipe(
     Effect.provide(Config.layerTest(root, path.join(root, "state"))),
-    Effect.provideService(ProjectionSnapshotQuery, queries),
+    Effect.provideService(ProjectionStore.ProjectionStoreV2, queries),
+    Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
     Effect.provideService(WorkspaceEntries, entries),
     Effect.provideService(ServerSecretStore, secret),
   );
   yield* service.updateSettings({ ...(yield* service.getSettings()), openscadPath: executable! });
   return { fs, path, root, threadId, service, file: { threadId, path: "bracket.scad" } };
 });
+const callerLayer = Layer.succeed(
+  ThreadManagement.ThreadManagementService,
+  partial<ThreadManagement.ThreadManagementService["Service"]>({
+    getThreadShell: (threadId) =>
+      Effect.succeed(
+        partial<OrchestrationV2ThreadShell>({
+          id: threadId,
+          deletedAt: null,
+          archivedAt: null,
+          activeRunId: RunId.make("model-run"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        }),
+      ),
+  }),
+);
 const testLayer = Layer.mergeAll(NodeServices.layer, SqlitePersistenceMemory).pipe(
   Layer.provideMerge(ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer))),
 );
@@ -158,15 +185,22 @@ realTest(
   () =>
     Effect.gen(function* () {
       const t = yield* setup;
-      const layer = modelPreview3dHandlers.pipe(
+      const layer = McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
+        Layer.provide(callerLayer),
         Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, t.service))),
       );
       const toolkit = yield* ModelPreview3dToolkit.pipe(Effect.provide(layer));
       const invocation = {
         environmentId: EnvironmentId.make("real-scad-environment"),
-        threadId: t.threadId,
-        providerSessionId: "integration-session",
-        providerInstanceId: ProviderInstanceId.make("codex"),
+        thread: {
+          threadId: t.threadId,
+          providerSessionId: "integration-session",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+
+        client: undefined,
+
+        requestNamespace: "model-test",
         capabilities: new Set<never>(),
         issuedAt: 0,
       };
@@ -179,7 +213,7 @@ realTest(
           );
         const result = results[0];
         expect(result?.isFailure).toBe(false);
-        if (!result || result.isFailure || "reason" in result.result)
+        if (!result || result.isFailure || !("images" in result.result))
           throw new Error("MCP render failed");
         expect(result.result.images).toHaveLength(2);
         expect(result.result.summary?.facets).toBeGreaterThan(0);

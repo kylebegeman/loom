@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
-import { HttpRouter } from "effect/unstable/http";
+import { HttpRouter } from "effect/http";
 import { ForkRuntime } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
 import { ModelPreviewHttpRoutes } from "./http.ts";

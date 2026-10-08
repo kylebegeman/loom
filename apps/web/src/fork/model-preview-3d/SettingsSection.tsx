@@ -10,7 +10,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Input } from "~/components/ui/input";
@@ -33,6 +33,7 @@ function SettingsForm({
     [message, setMessage] = useState<string | null>(null),
     [failed, setFailed] = useState(false),
     [detection, setDetection] = useState<ModelPreviewStatus | null>(null);
+  const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
   const status = useAtomValue(models.status({ environmentId, input: {} }));
   const info = detection ?? Option.getOrNull(AsyncResult.value(status));
   const set = <K extends keyof ModelPreviewSettings>(key: K, value: ModelPreviewSettings[K]) =>
@@ -200,7 +201,13 @@ function SettingsForm({
         />
       </SettingsRow>
       <div className="flex flex-wrap gap-2">
-        <Button disabled={busy !== null} onClick={() => void save()}>
+        <Button
+          disabled={busy !== null || !canSave}
+          title={
+            canSave ? undefined : "This connection requires permission to edit model settings."
+          }
+          onClick={() => void save()}
+        >
           Save settings
         </Button>
         <Button
@@ -220,7 +227,7 @@ function SettingsForm({
         </Button>
         <Button
           variant="outline"
-          disabled={busy !== null}
+          disabled={busy !== null || !canSave}
           onClick={() =>
             void act(
               () => runModelCommand(models.clearCache, { environmentId, input: {} }),

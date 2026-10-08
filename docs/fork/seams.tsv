@@ -29,9 +29,9 @@ apps/web/src/components/CommandPalette.tsx	ext-palette	3
 packages/contracts/src/keybindings.ts	ext-keybindings	2
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
-apps/server/src/provider/Layers/CodexProvider.ts	codex-login-email	2
+apps/server/src/provider/CodexProvider.ts	codex-login-email	2
 packages/contracts/src/settings.ts	switchboard	2
-apps/server/src/provider/Layers/codexLaunchArgs.ts	switchboard	2
+apps/server/src/provider/codexLaunchArgs.ts	switchboard	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	2
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
 apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	3
@@ -42,3 +42,10 @@ apps/web/src/components/settings/SettingsSidebarNav.tsx	ext-settings	2
 apps/web/src/routes/settings.loom.tsx	-	/settings/loom
 apps/web/src/routeTree.gen.ts	-	/settings/loom
 apps/server/src/mcp/McpHttpServer.ts	ext-mcp	2
+apps/server/src/observability/RpcInstrumentation.ts	ext-core	1
+packages/contracts/src/clientRpcPermissions.ts	ext-core	3
+apps/web/src/reopenClosedView.ts	ext-panels	1
+apps/web/src/closedViewStore.ts	ext-panels	2
+apps/server/src/auth/RpcAuthorization.ts	ext-core	1
+packages/client-runtime/src/state/runtime.ts	ext-core	1
+packages/client-runtime/src/state/usage.test.ts	ext-core	1

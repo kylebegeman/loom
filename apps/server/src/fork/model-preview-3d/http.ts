@@ -1,7 +1,7 @@
 import * as Layer from "effect/Layer";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
 const PREFIX = "/api/loom/model-preview-3d/f/";

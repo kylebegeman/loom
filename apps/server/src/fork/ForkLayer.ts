@@ -1,4 +1,6 @@
-import { layer as ModelPreviewLayer } from "./model-preview-3d/ModelPreviewService.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
+import * as ModelPreview from "./model-preview-3d/ModelPreviewService.ts";
 import { ModelPreviewHttpRoutes } from "./model-preview-3d/http.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,7 +10,11 @@ import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
-const ForkServicesLive = Layer.mergeAll(Layer.empty, SwitchboardLive, ModelPreviewLayer);
+const ForkServicesLive = Layer.mergeAll(
+  Layer.empty,
+  SwitchboardLive,
+  ModelPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
+);
 
 /**
  * Merged at the head of RuntimeCoreDependenciesLive (apps/server/src/server.ts,

@@ -11,7 +11,11 @@ const mocks = vi.hoisted(() => ({
   parameters: null as unknown,
 }));
 vi.mock("./state", () => ({
-  models: { parameters: "parameters", renderResult: mocks.render },
+  models: {
+    parameters: "parameters",
+    renderResult: mocks.render,
+    render: { permissionAtom: () => true },
+  },
   runModelCommand: mocks.command,
   modelUrl: (_: string, url: string) => url,
 }));

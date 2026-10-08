@@ -45,6 +45,7 @@ export function ScadFile({
   onPending: (pending: boolean) => void;
   onError: (error: string) => void;
 }) {
+  const canRender = useAtomValue(models.render.permissionAtom(threadRef.environmentId));
   const [data, setData] = useState<ScadParameters | null>(null);
   const [finishedRevision, setFinishedRevision] = useState<number | null>(null);
   const refreshing = finishedRevision !== revision;
@@ -178,7 +179,10 @@ export function ScadFile({
     history.record({ setName: name, overrides: {} }, `Saved set: ${name}`);
   };
   return (
-    <div className={styles["model-customizer"]}>
+    <fieldset disabled={!canRender} className={styles["model-customizer"]}>
+      {!canRender && (
+        <p role="status">This connection requires permission to render and edit OpenSCAD models.</p>
+      )}
       {refreshing && (
         <OperationStatus
           label="Refreshing model parameters"
@@ -221,7 +225,7 @@ export function ScadFile({
           <p>Loading parameters...</p>
         </div>
       )}
-      {ready && (
+      {ready && canRender && (
         <ScadRender
           key={JSON.stringify([loadedRevision, preview.applied])}
           threadRef={threadRef}
@@ -237,7 +241,7 @@ export function ScadFile({
           onError={onError}
         />
       )}
-    </div>
+    </fieldset>
   );
 }
 function ScadRender({

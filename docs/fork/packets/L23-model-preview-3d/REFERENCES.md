@@ -33,11 +33,11 @@ QUESTIONS, SAFETY; status "Not started"). Optional for this panel, never require
 
 ## Current integration references
 
-Checked against the implementation based on Loom `841d91c11d`; source paths are authoritative
+Checked against Loom `0.0.46-nightly.20261007.2787`; source paths are authoritative
 rather than the original packet's v0.0.42 line numbers.
 
-- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts` and
-  `apps/server/src/checkpointing/Utils.ts`: thread/workspace resolution.
+- `apps/server/src/orchestration-v2/ProjectionStore.ts` and
+  `apps/server/src/orchestration-v2/ProjectStore.ts`: thread/workspace resolution.
 - `apps/server/src/workspace/WorkspaceEntries.ts`: file discovery.
 - `apps/server/src/assets/AssetAccess.ts`: the upstream allowlist that model files do not widen.
 - `apps/server/src/auth/ServerSecretStore.ts`: the signed-route key.

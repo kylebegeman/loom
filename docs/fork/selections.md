@@ -46,18 +46,18 @@ Code has 10 areas and a different engine.
 Items that were under consideration or still being discussed when this page was first
 written, and where each ended up:
 
-| Item                                         | Outcome                                                                                                             |
-| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Skill registry, manager and creation lab     | Selected as packet L21.                                                                                             |
-| 3D modeling (Blender, OpenSCAD) for printing | L23 preview/editing workspace complete locally; print readiness and slicing deferred. Fabrication remains separate. |
-| KiCad circuit board design and management    | Split: an in-Loom PCB preview (L24), the workbench as the Electronics app.                                          |
-| Image generation and photo lab               | Standalone app (Image Lab).                                                                                         |
-| Headless web scraper (Obscura)               | Standalone app (Web Scraper); L11 can use Obscura if installed.                                                     |
-| Research workspace (notebooklm-py)           | Standalone app (Research Desk).                                                                                     |
-| F9 orchestration tools for agents            | A tiny version (delegate to other threads) is part of L08.                                                          |
-| F10 context engine                           | Skipped.                                                                                                            |
-| F13 lanes board and Git cockpit              | Deferred. P7 (lanes, graph, CI for one thread) is L06.                                                              |
-| F16 pair mode                                | Parts 1 and 2 (related threads, side by side) are part of L02.                                                      |
+| Item                                         | Outcome                                                                                                    |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Skill registry, manager and creation lab     | Selected as packet L21.                                                                                    |
+| 3D modeling (Blender, OpenSCAD) for printing | L23 preview/editing workspace shipped; print readiness and slicing deferred. Fabrication remains separate. |
+| KiCad circuit board design and management    | Split: an in-Loom PCB preview (L24), the workbench as the Electronics app.                                 |
+| Image generation and photo lab               | Standalone app (Image Lab).                                                                                |
+| Headless web scraper (Obscura)               | Standalone app (Web Scraper); L11 can use Obscura if installed.                                            |
+| Research workspace (notebooklm-py)           | Standalone app (Research Desk).                                                                            |
+| F9 orchestration tools for agents            | A tiny version (delegate to other threads) is part of L08.                                                 |
+| F10 context engine                           | Skipped.                                                                                                   |
+| F13 lanes board and Git cockpit              | Deferred. P7 (lanes, graph, CI for one thread) is L06.                                                     |
+| F16 pair mode                                | Parts 1 and 2 (related threads, side by side) are part of L02.                                             |
 
 ## From selection to packet
 

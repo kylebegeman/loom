@@ -1,8 +1,9 @@
 # L23 verification
 
-Local completion and final audit: 2026-10-07, branch `feat/loom-model-preview-3d`, based on
-`841d91c11d`. The full original scope, workspace redesign and five selected editing additions
-are implemented. This record describes local checks, not a merged or released build.
+Completed for Loom `0.0.46-nightly.20261007.2787` on 2026-10-07. The original scope,
+workspace redesign and five selected editing additions are implemented. Release integration
+combines the feature branch with current Loom main and upstream nightly
+`v0.0.46-nightly.20261007.2787`.
 
 ## Automated evidence
 
@@ -19,9 +20,22 @@ that coverage remains applicable. The real client loaded the skipped inch-unit f
 client-runtime typechecks, feature lint/formatting and the web production build. The viewer
 remains lazy-loaded. Existing upstream chunk-size warnings remain.
 
-Closeout reruns the changed server package's typecheck, focused feature lint/format checks,
-document links, seam-manifest validation and `git diff --check`. It does not run repository-wide
-checks, reinstall dependencies, change schema migrations or perform a merge.
+Release integration passed **107 server/integration tests in 20 files**, including fork
+services, WebSocket registration, shared MCP and destination grants. The web integration
+passed **327 tests**, with one Node DOMParser-dependent 3MF skip. Closed model tabs retain
+their document identity on reopen; archived inspector history is migrated away.
+
+The final targeted reruns passed **51 client-runtime tests in three files** and
+**29 MCP/OpenSCAD tests in three files**. Shared-command tests cover document-scoped
+results, destination grants and interruption when the final reader closes. Web, server,
+client-runtime and desktop typechecks pass. Actual OpenSCAD rendering uses the permanent
+`/Applications/OpenSCAD.app` installation. Packaging checks run with
+`ELECTRON_RUN_AS_NODE` unset, matching a standalone desktop launch.
+
+Focused feature lint, seam validation and `git diff --check` pass. Two unchanged upstream
+`no-inline-schema-compile` warnings remain in RPC authorization. The lockfile differs from
+the integrated upstream version by 28 additions for the approved three.js packages and
+required transitives, with no removals. No repository-wide suite was run.
 
 Focused regression coverage includes:
 
@@ -72,18 +86,20 @@ All instrumentation was restored.
 
 ## Verification limits and integration status
 
-The final closeout could not repeat browser automation: T3 reported no connected automation
-host after reopening the preview. Earlier integrated evidence above remains the UI verification;
-closeout changes are confined to server behavior and documentation. The isolated worktree dev
-server was restored and retained for inspection.
+Release integration could not repeat browser automation: both native T3 preview status
+and open calls reported no automation-capable host. The earlier integrated evidence above
+remains the visual and idle-rendering verification. The current release integration adds
+V2 workspace resolution, shared MCP access, destination grants and closed-tab persistence;
+its final client visuals have not been independently rechecked.
 
-No physical second-device Tailscale/relay/tunnel session or OS-wide GPU measurement was performed.
-Remote URL/HTTP behavior and idle canvas work are tested; these results do not imply those
-additional measurements. Linux/Windows OpenSCAD execution was not exercised. Mobile has no 3D UI.
+No physical second-device Tailscale/relay/tunnel session or OS-wide GPU measurement was
+performed. Remote URL/HTTP behavior and idle canvas work are tested; these results do not
+imply those additional measurements. Linux/Windows OpenSCAD execution was not exercised.
+Mobile has no 3D UI.
 
-The earlier merge preview is recorded in [SEAMS.md](./SEAMS.md). A clean-main integration
-rehearsal is pending a separately authorized merge. No commit, PR, push, merge or release was
-performed. Print readiness and slicing remain deferred product exploration, not incomplete L23 work.
+The release integration preserves current Switchboard, File Outline and upstream RPC
+instrumentation. [SEAMS.md](./SEAMS.md) records the generic seams. Print readiness and
+slicing remain deferred product exploration, not incomplete L23 work.
 
 ## Focused commands
 
@@ -91,19 +107,19 @@ Run tests from their owning package to avoid nested worktree discovery:
 
 ```sh
 # apps/server; use an existing executable, tests never download one.
-LOOM_TEST_OPENSCAD=/path/to/OpenSCAD pnpm exec vp test run src/fork/model-preview-3d src/fork/ForkRuntime.test.ts
-pnpm exec tsc --noEmit
+LOOM_TEST_OPENSCAD=/path/to/OpenSCAD ../../node_modules/.bin/vp test run src/fork/model-preview-3d src/fork/ForkRuntime.test.ts
+../../node_modules/.bin/tsc --noEmit
 
 # apps/web; run when changing the frontend.
-pnpm exec vp test run src/fork/model-preview-3d src/fork/panels/registry.test.ts src/fork/commandPalette/registry.test.ts
-pnpm exec tsc --noEmit
+../../node_modules/.bin/vp test run src/fork/model-preview-3d src/fork/panels/registry.test.ts src/fork/commandPalette/registry.test.ts
+../../node_modules/.bin/tsc --noEmit
 
 # Repository root; keep lint and formatting scoped to the feature.
-pnpm exec vp lint apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d packages/contracts/src/fork/model-preview-3d.ts packages/contracts/src/fork/model-workspace.ts packages/client-runtime/src/fork/model-preview-3d.ts
-pnpm exec vp fmt --check apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d docs/fork/packets/L23-model-preview-3d docs/fork/user/model-preview-3d.md
+node_modules/.bin/vp lint apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d packages/contracts/src/fork/model-preview-3d.ts packages/contracts/src/fork/model-workspace.ts packages/client-runtime/src/fork/model-preview-3d.ts
+node_modules/.bin/vp fmt --check apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d docs/fork/packets/L23-model-preview-3d docs/fork/user/model-preview-3d.md
 git diff --check
 ```
 
-For future user-visible changes, reuse the task's isolated server and `test-t3-app` Browser
-workflow. Verify affected loading/error/recovery states and responsive interactions. Do not
+For future user-visible changes, start an isolated worktree server and use the `test-t3-app`
+Browser workflow. Verify affected loading/error/recovery states and responsive interactions. Do not
 redirect a server at live user data or treat a fake process test as CLI compatibility proof.

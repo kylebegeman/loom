@@ -1,14 +1,14 @@
 # L23: 3D model preview
 
-Status: Implemented and verified locally on `feat/loom-model-preview-3d`; not merged.
+Status: Complete. Included in Loom `0.0.46-nightly.20261007.2787` on `main`.
 The original L23 scope, UI redesign and selected editing expansion are complete: parameter
 history, measurements/sections, named views/capture presets, variant exploration and model
 review. Print-readiness remains deferred. See TESTING.md for evidence and verification limits.
 
-Final audit and documentation closeout: 2026-10-07. Working implementation is based on Loom
-`841d91c11d`. Core, panels, palette, root and keybindings were reused; L23 added the missing
-settings and MCP registrations against current released source. The queue records local
-completion, with merge and release still separate. See [IMPLEMENTATION.md](./IMPLEMENTATION.md).
+Final audit and release closeout: 2026-10-07. Implemented on
+`feat/loom-model-preview-3d` and integrated with current Loom and the upstream nightly.
+Core, panels, palette, root and keybindings were reused; L23 added settings and MCP
+registrations. See [IMPLEMENTATION.md](./IMPLEMENTATION.md) and [TESTING.md](./TESTING.md).
 
 A **3D model** right panel that shows the thread's 3D files next to the chat: STL, 3MF, OBJ
 and glTF/GLB meshes, and OpenSCAD `.scad` sources, which the environment server renders with the
@@ -94,7 +94,7 @@ None.
 
 Read the packet and current source before extending it. The approved dependency changes are
 limited to `three`, `@types/three` and their required transitives. OpenSCAD verification used
-an official temporary 2026.10.05 snapshot; it is an environment prerequisite, not a bundled
+the official OpenSCAD 2026.10.05 snapshot; it is an environment prerequisite, not a bundled
 application. Use the focused commands in TESTING.md and preserve unrelated worktree edits.
 
 ## Documents

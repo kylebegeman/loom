@@ -1,9 +1,9 @@
 import { ModelPreviewMigrations } from "../model-preview-3d/migrations.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Migrator from "effect/unstable/sql/Migrator";
-import type * as SqlClient from "effect/unstable/sql/SqlClient";
-import type { SqlError } from "effect/unstable/sql/SqlError";
+import * as Migrator from "effect/sql/Migrator";
+import type * as SqlClient from "effect/sql/SqlClient";
+import type { SqlError } from "effect/sql/SqlError";
 
 type ForkMigration = Effect.Effect<void, SqlError, SqlClient.SqlClient>;
 
@@ -14,9 +14,7 @@ export interface ForkMigrationSet {
 }
 
 /** One entry per packet that owns tables. */
-export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
-  ModelPreviewMigrations,
-];
+export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [ModelPreviewMigrations];
 
 export const forkMigrationsTable = (slug: string) => `fork_migrations_${slug.replaceAll("-", "_")}`;
 

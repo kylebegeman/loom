@@ -1,14 +1,14 @@
 # L23 technical design
 
-Implemented locally on `feat/loom-model-preview-3d`, based on Loom `841d91c11d`.
+Integrated on `main` with Loom `0.0.46-nightly.20261007.2787`.
 The contracts and current source define the API; this document records constraints that span
 components. See [TESTING.md](./TESTING.md) for verification and [SEAMS.md](./SEAMS.md) for
 upstream touches. The original packet's v0.0.42 sketches have been replaced by this implementation.
 
 ## Environment ownership and transport
 
-The server resolves each thread's workspace through `ProjectionSnapshotQuery` and
-`resolveThreadWorkspaceCwd`. Model paths are relative to the canonical workspace root.
+The server resolves each thread's workspace through V2 `ProjectionStoreV2` and `ProjectStoreV2`.
+Worktree paths take precedence over the project root. Model paths are relative to the canonical workspace root.
 Containment checks reject traversal and symlinks outside it. Discovery reuses `WorkspaceEntries`
 and returns at most 2,000 model entries. STEP entries are discoverable but never rendered.
 

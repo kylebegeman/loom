@@ -17,9 +17,11 @@ import { ProjectId, ThreadId } from "@t3tools/contracts";
 import { make } from "./ModelPreviewService.ts";
 import { ModelPreviewMigrations } from "./migrations.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
-import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import * as Config from "../../config.ts";
-import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
+import type { OrchestrationV2AppThread } from "@t3tools/contracts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { ProcessRunner, type ProcessRunOutput } from "../../processRunner.ts";
@@ -113,26 +115,19 @@ const setup = Effect.gen(function* () {
         return output('ECHO: "done"');
       }).pipe(Effect.orDie),
   });
-  const queries = partial<ProjectionSnapshotQuery["Service"]>({
-    getThreadCheckpointContext: () =>
-      Effect.succeedSome({
-        threadId,
-        projectId,
-        workspaceRoot: root,
-        worktreePath,
-        checkpoints: [],
-      }),
-    getProjectShells: () =>
+  const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
+    getThread: () =>
+      Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath })),
+  });
+  const project = partial<ProjectStore.ProjectRow>({ projectId, workspaceRoot: root });
+  const projectStore = partial<ProjectStore.ProjectStoreV2["Service"]>({
+    get: () => Effect.succeedSome(project),
+    listShells: () =>
       Effect.succeed([
-        {
+        partial<import("@t3tools/contracts").OrchestrationProjectShell>({
           id: projectId,
-          title: "Fixture",
           workspaceRoot: root,
-          defaultModelSelection: null,
-          scripts: [],
-          createdAt: "2026-10-07T00:00:00.000Z",
-          updatedAt: "2026-10-07T00:00:00.000Z",
-        },
+        }),
       ]),
   });
   const entries = partial<WorkspaceEntries["Service"]>({
@@ -151,7 +146,8 @@ const setup = Effect.gen(function* () {
   const create = (filesystem = fs) =>
     make.pipe(
       Effect.provide(context),
-      Effect.provideService(ProjectionSnapshotQuery, queries),
+      Effect.provideService(ProjectionStore.ProjectionStoreV2, queries),
+      Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
       Effect.provideService(WorkspaceEntries, entries),
       Effect.provideService(ServerSecretStore, secret),
       Effect.provideService(ProcessRunner, runner),

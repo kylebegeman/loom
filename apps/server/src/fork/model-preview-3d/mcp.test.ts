@@ -1,3 +1,6 @@
+import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import * as ThreadManagement from "../../orchestration-v2/ThreadManagementService.ts";
+import { RunId, type OrchestrationV2ThreadShell } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
@@ -9,7 +12,32 @@ import { ModelPreviewError, EMPTY_MODEL_WORKSPACE } from "@t3tools/contracts/for
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
-import { ModelPreview3dToolkit, modelPreview3dHandlers } from "./mcp.ts";
+import { ModelPreview3dToolkit, modelPreview3dHandlers, renderModelTool } from "./mcp.ts";
+function partial<A extends object>(methods: Partial<A>): A {
+  return new Proxy(methods as A, {
+    get(target, key) {
+      if (key in target) return Reflect.get(target, key);
+      throw new Error(`Unexpected service call: ${String(key)}`);
+    },
+  });
+}
+const callerLayer = Layer.succeed(
+  ThreadManagement.ThreadManagementService,
+  partial<ThreadManagement.ThreadManagementService["Service"]>({
+    getThreadShell: (threadId) =>
+      Effect.succeed(
+        partial<OrchestrationV2ThreadShell>({
+          id: threadId,
+          deletedAt: null,
+          archivedAt: null,
+          activeRunId: RunId.make("model-run"),
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        }),
+      ),
+  }),
+);
 it("uses a unique Loom-prefixed shared tool name", () => {
   expect(Object.keys(ModelPreview3dToolkit.tools).sort()).toEqual([
     "loom_model_preview_3d_propose_variants",
@@ -34,7 +62,8 @@ it.effect(
           );
         },
       } as unknown as ModelPreviewService["Service"];
-      const layer = modelPreview3dHandlers.pipe(
+      const layer = McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
+        Layer.provide(callerLayer),
         Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, service))),
       );
       const toolkit = yield* ModelPreview3dToolkit.pipe(Effect.provide(layer));
@@ -47,9 +76,15 @@ it.effect(
             Effect.flip,
             Effect.provideService(McpInvocationContext, {
               environmentId: EnvironmentId.make("test"),
-              threadId,
-              providerSessionId: "session",
-              providerInstanceId: ProviderInstanceId.make("codex"),
+              thread: {
+                threadId: threadId,
+                providerSessionId: "session",
+                providerInstanceId: ProviderInstanceId.make("codex"),
+              },
+
+              client: undefined,
+
+              requestNamespace: "model-test",
               capabilities: new Set<McpCapability>(),
               issuedAt: 0,
             }),
@@ -86,7 +121,8 @@ it.effect(
       } as unknown as ModelPreviewService["Service"];
       const toolkit = yield* ModelPreview3dToolkit.pipe(
         Effect.provide(
-          modelPreview3dHandlers.pipe(
+          McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
+            Layer.provide(callerLayer),
             Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, service))),
           ),
         ),
@@ -101,16 +137,42 @@ it.effect(
             Effect.flatMap(Stream.runCollect),
             Effect.provideService(McpInvocationContext, {
               environmentId: EnvironmentId.make("test"),
-              threadId,
-              providerSessionId: "session",
-              providerInstanceId: ProviderInstanceId.make("codex"),
+              thread: {
+                threadId: threadId,
+                providerSessionId: "session",
+                providerInstanceId: ProviderInstanceId.make("codex"),
+              },
+
+              client: undefined,
+
+              requestNamespace: "model-test",
               capabilities: new Set<McpCapability>(),
               issuedAt: 0,
             }),
           );
-      expect((yield* Effect.flip(invoke())).reason).toBe("command-failed");
+      expect(yield* Effect.flip(invoke()).pipe(Effect.provide(callerLayer))).toMatchObject({
+        reason: "command-failed",
+      });
       enabled = true;
-      expect((yield* invoke()).length).toBeGreaterThan(0);
+      expect((yield* invoke().pipe(Effect.provide(callerLayer))).length).toBeGreaterThan(0);
       expect(calls).toBe(2);
     }).pipe(Effect.scoped),
+);
+
+it.effect("rejects MCP clients without a calling project thread", () =>
+  Effect.gen(function* () {
+    const result = yield* renderModelTool({ path: "part.scad" }).pipe(
+      Effect.provideService(McpInvocationContext, {
+        environmentId: EnvironmentId.make("test"),
+        requestNamespace: "client:test",
+        thread: undefined,
+        client: { sessionId: "client", label: "External", access: "read-only" },
+        capabilities: new Set<McpCapability>(),
+        issuedAt: 0,
+      }),
+      Effect.flip,
+    );
+    expect(result).toMatchObject({ reason: "command-failed" });
+    expect(result.message).toContain("project thread");
+  }),
 );

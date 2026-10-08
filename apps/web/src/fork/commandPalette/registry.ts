@@ -2,7 +2,7 @@ import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
 import { models } from "../model-preview-3d/state";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 const emptyModels = Atom.make(
   AsyncResult.initial<{
     models: readonly import("@t3tools/contracts/fork").ModelEntry[];

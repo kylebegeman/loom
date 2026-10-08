@@ -1,19 +1,25 @@
-import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
+import { MODEL_PREVIEW_3D_WS_METHODS as M, type ScadRenderInput } from "@t3tools/contracts/fork";
 import {
-  createEnvironmentQueryAtomFamily,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   createEnvironmentRpcCommand,
 } from "../state/runtime.ts";
-import { request } from "../rpc/client.ts";
-import type { ScadRenderInput } from "@t3tools/contracts/fork";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import type { Atom } from "effect/unstable/reactivity";
+import type { Atom } from "effect/reactivity";
 
 /** All requests stay scoped to the model's environment, including remote captures and settings. */
 export function createModelPreviewAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  const render = createEnvironmentRpcCommand<
+    R,
+    E,
+    typeof M.renderScad,
+    ScadRenderInput & { revision?: number }
+  >(runtime, {
+    label: "loom:model-render",
+    tag: M.renderScad,
+  });
   return {
     workspace: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "loom:model-workspace",
@@ -50,13 +56,8 @@ export function createModelPreviewAtoms<R, E>(
       tag: M.parameters,
     }),
     fileUrl: createEnvironmentRpcCommand(runtime, { label: "loom:model-url", tag: M.fileUrl }),
-    renderResult: createEnvironmentQueryAtomFamily(runtime, {
-      label: "loom:model-render-result",
-      idleTtlMs: 0,
-      staleTimeMs: 0,
-      execute: (input: ScadRenderInput & { revision: number }) => request(M.renderScad, input),
-    }),
-    render: createEnvironmentRpcCommand(runtime, { label: "loom:model-render", tag: M.renderScad }),
+    renderResult: render.resultAtom,
+    render,
     saveSet: createEnvironmentRpcCommand(runtime, {
       label: "loom:model-save-set",
       tag: M.saveParameterSet,

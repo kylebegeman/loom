@@ -29,8 +29,8 @@ import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
 import { ServerConfig } from "../../config.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { ProjectionSnapshotQuery } from "../../orchestration/Services/ProjectionSnapshotQuery.ts";
-import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
+import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
+import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { writeFileStringAtomically } from "../../atomicWrite.ts";
@@ -97,7 +97,8 @@ export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path;
   const config = yield* ServerConfig,
-    queries = yield* ProjectionSnapshotQuery,
+    queries = yield* ProjectionStore.ProjectionStoreV2,
+    projectStore = yield* ProjectStore.ProjectStoreV2,
     entries = yield* WorkspaceEntries;
   const runner = yield* ProcessRunner.ProcessRunner,
     store = yield* makeStore;
@@ -111,7 +112,7 @@ export const make = Effect.gen(function* () {
   const dependencyDir = path.join(config.stateDir, "fork", "model-preview-3d", "dependencies");
   yield* fs.makeDirectory(dependencyDir, { recursive: true });
   let settings = yield* store.getSettings();
-  const projects = yield* queries.getProjectShells();
+  const projects = yield* projectStore.listShells();
   yield* store.sweep(projects.map((p) => p.id));
   const workspaceLock = yield* Semaphore.make(1);
   const workspaceSubscribers = new Map<string, Set<PubSub.PubSub<void>>>();
@@ -134,14 +135,11 @@ export const make = Effect.gen(function* () {
   const resolveWorkspace = Effect.fn("ModelPreview.resolveWorkspace")(function* (
     file: ModelFileRef,
   ) {
-    const context = yield* queries.getThreadCheckpointContext(file.threadId);
-    if (Option.isNone(context))
+    const thread = yield* queries.getThread(file.threadId);
+    const project = yield* projectStore.get(thread.projectId);
+    if (Option.isNone(project))
       return yield* error("workspace-not-found", "This thread has no workspace.");
-    const cwd = resolveThreadWorkspaceCwd({
-      thread: context.value,
-      projects: [{ id: context.value.projectId, workspaceRoot: context.value.workspaceRoot }],
-    });
-    if (!cwd) return yield* error("workspace-not-found", "This thread has no workspace.");
+    const cwd = thread.worktreePath ?? project.value.workspaceRoot;
     const root = yield* fs.realPath(cwd);
     if (
       path.isAbsolute(file.path) ||
@@ -156,8 +154,8 @@ export const make = Effect.gen(function* () {
     return {
       root,
       absolute,
-      projectId: context.value.projectId,
-      legacyParamsPath: context.value.worktreePath ? null : file.path,
+      projectId: thread.projectId,
+      legacyParamsPath: thread.worktreePath ? null : file.path,
     };
   });
   const resolveFile = Effect.fn("ModelPreview.resolveFile")(function* (file: ModelFileRef) {

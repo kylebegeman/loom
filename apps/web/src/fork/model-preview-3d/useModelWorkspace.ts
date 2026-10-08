@@ -1,12 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useRef, useState, useMemo } from "react";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
 import { EMPTY_MODEL_WORKSPACE, type ModelWorkspaceOperation } from "@t3tools/contracts/fork";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { models, runModelCommand, modelUrl } from "./state";
 export function useModelWorkspace(threadRef: ScopedThreadRef, path: string) {
+  const canEdit = useAtomValue(models.updateWorkspace.permissionAtom(threadRef.environmentId));
   const result = useAtomValue(
     models.workspace({
       environmentId: threadRef.environmentId,
@@ -54,6 +55,7 @@ export function useModelWorkspace(threadRef: ScopedThreadRef, path: string) {
   );
   return {
     data,
+    canEdit,
     ready: value !== null,
     pendingSaves,
     mutate,
