@@ -1,6 +1,6 @@
 # L19: Project lifecycle
 
-Status: In progress (`feat/loom-project-lifecycle`). Phases 1 and 2 implemented 2026-10-08.
+Status: Phases 1 and 2 on `main` 2026-10-08. Phase 3 deferred.
 
 Every thread gets a **lane**: a capped space for the disposable output its agent produces
 (scratch files, DerivedData, package caches, build products). Loom creates the lane when

@@ -55,8 +55,8 @@ The 2026-09-27 review identified these items to revisit:
 - **L06, L07, L11, L12, L13, L14, L15, L18:** preserve the proposals pending review
   of changed UI, run, request, checkpoint and provider behavior. Review individual parts
   separately when a packet is picked up.
-- **L19:** in progress as lanes: capped per-thread space for disposable output, pressure
-  handling and agent self-cleanup (phase 1), then leases (phase 2), then the agreed
+- **L19:** lanes are on `main`: capped per-thread space for disposable output, pressure
+  handling and agent self-cleanup (phase 1) and leases (phase 2). Deferred: the agreed
   persistent machine pool with on-demand checkouts, publication and safe parking
   ([phase 3](./L19-project-lifecycle/PRODUCT.md#phase-3-persistent-machine-pool)).
 - **L29:** full Jev hub retained, deferred by Kyle on 2026-09-27. Reassess released context
@@ -153,7 +153,7 @@ means the packet registers nothing in server core and needs it only as the prere
 | L16 | [`provider-sign-in`](./L16-provider-sign-in/)             | Sign Codex and Claude accounts in and out inside Loom, add accounts, manage Codex tools.                                   | F5                           | core, settings, palette, providers                                              | Deferred: V2                                  |
 | L17 | [`more-providers`](./L17-more-providers/)                 | DeepSeek, Ollama and LM Studio endpoints, custom ACP agents (Gemini CLI among them), and Copilot.                          | F6                           | core, settings, palette, providers                                              | Deferred: V2                                  |
 | L18 | [`project-profiles`](./L18-project-profiles/)             | Private per-project agent notes, command mappings, token budgets, and `.env.schema` status.                                | F11                          | core, root, panels, settings, palette, mcp, composer, composer-menu             | Deferred: V2                                  |
-| L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | Capped lanes for every thread's disposable output, storage pressure handling, then the machine pool and safe parking.      | F12                          | core, root, settings, palette, mcp                                              | In progress (`feat/loom-project-lifecycle`)   |
+| L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | Capped lanes for every thread's disposable output, storage pressure handling, then the machine pool and safe parking.      | F12                          | core, root, settings, palette, mcp                                              | Phases 1, 2 implemented; phase 3 deferred     |
 | L20 | [`small-extras`](./L20-small-extras/)                     | A worktree branch prefix, a per-project No AI identification mode, a containers panel, and CLI tool versions.              | F23                          | core, root, panels, settings, palette, turn-input, decide                       | Deferred: V2                                  |
 | L21 | [`skill-registry`](./L21-skill-registry/)                 | See, toggle, install and create agent skills across providers and accounts in one panel.                                   | Skill registry               | core, root, panels, palette, keys                                               | Deferred: V2                                  |
 | L22 | [`instruction-modes`](./L22-instruction-modes/)           | Reusable rule packs such as "Minimal code" applied to every turn of a thread, for any provider.                            | Repository review            | core, root, settings, palette, keys, composer, turn-input                       | Deferred: V2                                  |
