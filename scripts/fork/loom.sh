@@ -375,7 +375,11 @@ install_record() {
 
 cmd_build() {
   require_clean
-  build_app "$(current_upstream | sed 's/^v//')"
+  # A repair worktree may contain newer upstream code than the main checkout.
+  local tag
+  tag=$(git tag -l 'v[0-9]*' --merged HEAD --sort=-v:refname | sed -n 1p)
+  [ -n "$tag" ] || die "this checkout has no upstream version tag"
+  build_app "${tag#v}"
 }
 
 cmd_install() {
