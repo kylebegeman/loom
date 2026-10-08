@@ -57,6 +57,7 @@ import {
 } from "./commands.ts";
 import {
   SIGNING_FAILURE_REASON,
+  classifyMissingDestination,
   classifySigningIssue,
   parseCompilerDiagnostics,
   parseTestFailureLines,
@@ -77,7 +78,12 @@ import {
   type LatestRun,
 } from "./readiness.ts";
 import { parseDevicectlDevices, parseRuntimes, parseSimulators } from "./simulators.ts";
-import { buildSummaryFromXcresult, relativeTo, testSummaryFromXcresult } from "./xcresult.ts";
+import {
+  buildSummaryFromXcresult,
+  relativeTo,
+  testSummaryFromXcresult,
+  withLoggedLocations,
+} from "./xcresult.ts";
 import { mergeSwiftTestSummary, readXunit } from "./xunit.ts";
 import { xcodegenReport } from "./xcodegen.ts";
 
@@ -748,10 +754,10 @@ export const makeWith = (options: AppleBuildOptions) =>
       };
     };
 
-    /** Swift Testing logs name only the file; use the package's file of that name when unique. */
+    /** Swift Testing logs name only the file; use the file of that name under `root` when unique. */
     const locateTestFiles = (
       tests: NonNullable<AppleRunSummary["tests"]>,
-      packageDir: string,
+      root: string,
       cwd: string,
     ) =>
       Effect.gen(function* () {
@@ -762,7 +768,7 @@ export const makeWith = (options: AppleBuildOptions) =>
         );
         if (bare.size === 0) return tests;
         const found = yield* findEntries(
-          packageDir,
+          root,
           (name, isDirectory) => !isDirectory && bare.has(name),
         );
         const paths = new Map<string, Array<string>>();
@@ -982,21 +988,27 @@ export const makeWith = (options: AppleBuildOptions) =>
               { timeoutSeconds: 60, maxOutputBytes: JSON_OUTPUT_BYTES },
             );
             tests = succeeded(testJson) ? testSummaryFromXcresult(testJson.stdout) : undefined;
+            if (tests) {
+              const failureLines = parseTestFailureLines(yield* readLogForParsing(live), cwd);
+              tests = yield* locateTestFiles(withLoggedLocations(tests, failureLines), cwd, cwd);
+            }
           }
         }
         build ??= buildFromLog(yield* readLogForParsing(live), cwd, code === 0);
         const summary: AppleRunSummary = { build, ...(tests ? { tests } : {}) };
         if (code !== 0) {
-          const signing =
-            effective.destination?._tag === "device" && classifySigningIssue(build.issues);
+          const onDevice = effective.destination?._tag === "device";
           return {
             ok: false,
             exitCode: code,
-            summary: signing
-              ? { ...summary, hint: "signing", failureReason: SIGNING_FAILURE_REASON }
-              : code === null && !live.cancelled
-                ? { ...summary, failureReason: "xcodebuild could not run." }
-                : summary,
+            summary:
+              onDevice && classifySigningIssue(build.issues)
+                ? { ...summary, hint: "signing", failureReason: SIGNING_FAILURE_REASON }
+                : onDevice && classifyMissingDestination(build.issues)
+                  ? { ...summary, hint: "device-unavailable" }
+                  : code === null && !live.cancelled
+                    ? { ...summary, failureReason: "xcodebuild could not run." }
+                    : summary,
             resultBundlePath: bundle,
           } satisfies Outcome;
         }

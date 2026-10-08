@@ -50,7 +50,7 @@ const XCTEST_FAILURE = /^(\/.+?):(\d+): error: -\[(\S+) (\S+)\] : (.*)$/;
 const SWIFT_TESTING_ISSUE = /Test (\S+) recorded an issue at (.+?):(\d+):\d+: (.*)$/;
 
 /**
- * Test failure lines from `swift test` output, keyed by `<Module>.<Class>/<test>` for XCTest and
+ * Test failure lines from `swift test` and `xcodebuild test` output, keyed by `<Module>.<Class>/<test>` for XCTest and
  * by `<func>()` for Swift Testing, whose log names only the function. First issue wins.
  */
 export const parseTestFailureLines = (log: string, cwd: string) => {
@@ -94,6 +94,14 @@ export const classifySigningIssue = (issues: ReadonlyArray<AppleIssue>) =>
     (issue) =>
       issue.severity === "error" &&
       SIGNING_MARKERS.some((marker) => issue.message.toLowerCase().includes(marker)),
+  );
+
+/** xcodebuild cannot reach the requested destination, as with a locked or disconnected device. */
+export const classifyMissingDestination = (issues: ReadonlyArray<AppleIssue>) =>
+  issues.some(
+    (issue) =>
+      issue.severity === "error" &&
+      issue.message.includes("Unable to find a destination matching the provided destination"),
   );
 
 export const SIGNING_FAILURE_REASON =

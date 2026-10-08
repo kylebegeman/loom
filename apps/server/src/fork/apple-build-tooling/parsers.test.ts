@@ -3,6 +3,7 @@ import * as NodeFS from "node:fs";
 import { describe, expect, it } from "@effect/vitest";
 
 import {
+  classifyMissingDestination,
   classifySigningIssue,
   parseCompilerDiagnostics,
   parseTestFailureLines,
@@ -18,6 +19,7 @@ import {
   parseSourceUrl,
   SUMMARY_ITEM_CAP,
   testSummaryFromXcresult,
+  withLoggedLocations,
 } from "./xcresult.ts";
 import { mergeSwiftTestSummary, readXunit } from "./xunit.ts";
 
@@ -66,6 +68,24 @@ describe("xcresult", () => {
     expect(tests?.failures[1]?.message).toContain("XCTAssertEqual failed");
   });
 
+  it("takes failure locations from the xcodebuild log for XCTest and Swift Testing", () => {
+    const tests = withLoggedLocations(
+      testSummaryFromXcresult(fixture("xcresult-test-summary.json"))!,
+      parseTestFailureLines(fixture("xcodebuild-test.log"), APP),
+    );
+    expect(
+      tests.failures.map(({ identifier, file, line }) => ({ identifier, file, line })),
+    ).toEqual([
+      // Swift Testing names only the file; the service resolves it within the workspace.
+      { identifier: "SampleAppTests/swiftTestingFails()", file: "Tests.swift", line: 8 },
+      {
+        identifier: "SampleAppTests/DoubleTests/testDoubleFails()",
+        file: "Tests/Tests.swift",
+        line: 6,
+      },
+    ]);
+  });
+
   it("degrades instead of failing on unknown or missing fields", () => {
     expect(
       testSummaryFromXcresult(
@@ -98,6 +118,21 @@ describe("xcresult", () => {
     ).toEqual({ file: "A.swift", line: 5 });
     expect(parseSourceUrl("test://odd", APP)).toEqual({});
     expect(parseSourceUrl(undefined, APP)).toEqual({});
+  });
+
+  it("calls a build with errors failed even when xcresult says succeeded", () => {
+    // xcodebuild that cannot find its destination never builds, and the bundle says "succeeded".
+    expect(
+      buildSummaryFromXcresult(
+        JSON.stringify({
+          status: "succeeded",
+          errorCount: 1,
+          warningCount: 0,
+          errors: [{ message: "Unable to find a destination" }],
+        }),
+        APP,
+      )?.status,
+    ).toBe("failed");
   });
 
   it("caps issues", () => {
@@ -216,6 +251,22 @@ describe("package diagnostics", () => {
       ]),
     ).toBe(true);
     expect(classifySigningIssue([{ severity: "error", message: "Cannot find 'x' in scope" }])).toBe(
+      false,
+    );
+  });
+
+  it("recognizes a destination xcodebuild cannot reach", () => {
+    // Synthetic identifier; the wording is xcodebuild 27's.
+    expect(
+      classifyMissingDestination([
+        {
+          severity: "error",
+          message:
+            "Unable to find a destination matching the provided destination specifier:\n\t\t{ platform:iOS, id:00000000-0000000000000001 }",
+        },
+      ]),
+    ).toBe(true);
+    expect(classifyMissingDestination([{ severity: "error", message: "Build failed" }])).toBe(
       false,
     );
   });

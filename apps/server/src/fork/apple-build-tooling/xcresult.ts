@@ -2,6 +2,8 @@ import { AppleTestResult, type AppleIssue, type AppleRunSummary } from "@t3tools
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { FailureLine } from "./diagnostics.ts";
+
 /**
  * `xcresulttool get build-results` and `get test-results summary` JSON. Only the fields Loom
  * reads are decoded and most are optional, so a schema bump degrades instead of failing.
@@ -96,7 +98,8 @@ export const buildSummaryFromXcresult = (
 ): AppleRunSummary["build"] | undefined =>
   Option.getOrUndefined(
     Option.map(decodeBuildResults(json), (results) => ({
-      status: results.status ?? "unknown",
+      // A build xcodebuild never started, such as for a missing destination, reports "succeeded".
+      status: results.errorCount > 0 ? "failed" : (results.status ?? "unknown"),
       errorCount: results.errorCount,
       warningCount: results.warningCount + (results.analyzerWarningCount ?? 0),
       issues: [
@@ -134,3 +137,21 @@ export const testSummaryFromXcresult = (json: string): Tests | undefined =>
       }),
     })),
   );
+
+/**
+ * xcresult test failures carry no source location, so take it from the log's failure lines:
+ * XCTest's are keyed `<Target>.<Class>/<test>`, Swift Testing's by function name.
+ */
+export const withLoggedLocations = (
+  tests: Tests,
+  failureLines: ReadonlyMap<string, FailureLine>,
+): Tests => ({
+  ...tests,
+  failures: tests.failures.map((failure) => {
+    if (failure.file !== undefined) return failure;
+    const test = failure.identifier.slice(failure.target.length + 1).replace(/\(\)$/, "");
+    const logged =
+      failureLines.get(`${failure.target}.${test}`) ?? failureLines.get(failure.testName);
+    return logged ? { ...failure, file: logged.file, line: logged.line } : failure;
+  }),
+});

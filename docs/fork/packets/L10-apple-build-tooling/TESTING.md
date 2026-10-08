@@ -112,9 +112,10 @@ automated test talks to a device.
 Recorded 2026-10-08 on `feat/loom-apple-build-tooling`, Xcode 27.0 (27A266a), Swift 6.4,
 xcresulttool 25115 (schema 0.4.0), XcodeGen 2.46.0, xcbeautify 3.2.1.
 
-Automated, all passing: both test command lines above (15 files, 93 tests) plus the L19
+Automated, all passing: both test command lines above (15 files, 97 tests) plus the L19
 suite (`apps/server/src/fork/project-lifecycle`, 37 tests), lint over the four fork
-directories, and `tsc --noEmit` in server, web, contracts and client runtime.
+directories and `apps/web/src/fork/commandPalette`, and `tsc --noEmit` in server, web,
+contracts and client runtime.
 
 Real toolchain, through `AppleBuildService` with in-memory stores and no client, on a scratch
 SwiftUI app (XcodeGen spec, XCTest and Swift Testing tests) and a scratch package:
@@ -135,18 +136,39 @@ SwiftUI app (XcodeGen spec, XCTest and Swift Testing tests) and a scratch packag
   `invalid` with XcodeGen's message for a broken spec, and in sync again after Generate.
 - History lists every run newest first.
 
+In a running web client (worktree dev server with a copy of real state, Browser panel), on
+the same scratch app:
+
+- The panel shows the toolchain, controls, destinations grouped by runtime plus this Mac,
+  generic destinations and the paired phone, results with "started by an agent", history,
+  the command line, the log (shown and downloaded), the running line and the live log.
+- Simulator test failures show `Tests/Tests.swift` and their lines for both XCTest and Swift
+  Testing. "Test only this" runs one test; "Add to composer" inserts the failure report.
+- XcodeGen out of date with its diff, Generate, then in sync without a reload.
+- Palette: "Apple: Open build panel", "Apple: Build" with the remembered selection, and
+  "Apple: Cancel run" during a run. Cancel from the palette and from the panel both end
+  `cancelled` with no `xcodebuild` or build script process left.
+- From a real thread, the status tool lists destinations, the run tool rejects an unknown
+  scheme with the schemes that exist, and a test run reports 1 passed and 2 failed.
+- A build for the paired phone while it was unreachable shows the locked or disconnected
+  message.
+
 These checks found and fixed: swift test reporting a failed build when only tests failed,
 Swift Testing failures without a workspace path, a Device panel defect failing a launched
-run, and compiler paths below `/private` staying absolute.
+run, compiler paths below `/private` staying absolute, xcodebuild test failures without a
+file or line (taken from the log now), fork palette items not found by their own titles (any
+fork source, not only this one), the XcodeGen card staying out of date after Generate, an
+unreachable device getting raw xcodebuild text instead of the device message, and a build
+xcodebuild never started reporting `succeeded` with an error.
 
 Not yet verified:
 
-- The manual checks above in a running client (panel, palette, settings, "Add to composer",
-  remote access and an upstream server), which need Kyle's permission for a dev server and
-  browser.
-- Physical device runs (9c), the Mac destination with a real app (covered by stubs only),
-  readiness on a real project (8), agent tool calls from a real thread (9) and retention in
-  practice (9d, covered by `AppleRunStore.test.ts`).
+- The `X` launcher shortcut and the Settings section in a client (the Browser panel host
+  disconnected before these), remote access and an upstream server.
+- Build and run on a physical device: the paired phone was unreachable (devicectl tunnel
+  `unavailable`), so only the failure path ran. The Mac destination with a real app is
+  covered by stubs only. Readiness on a real project (8) and retention in practice (9d,
+  covered by `AppleRunStore.test.ts`) remain.
 - Lane builds with a real L19 lane (covered by stubs in `AppleBuildService.test.ts`).
 - The merged tree with the newest nightly was not typechecked; the depended-on APIs did not
   change.

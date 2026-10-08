@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { RefreshCwIcon } from "lucide-react";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
@@ -76,6 +76,21 @@ function Workspace({
     ? status.containers
     : status.containers.filter((container) => container.kind === "package");
   const activeRun = runs.find(isActiveRun) ?? null;
+  // A finished Generate changes the project on disk: look for projects and check the spec again.
+  const latestGenerate = runs.find(
+    (run) => run.kind === "xcodegenGenerate" && run.status === "succeeded",
+  );
+  const seenGenerate = useRef(latestGenerate?.id);
+  useEffect(() => {
+    if (latestGenerate === undefined || latestGenerate.id === seenGenerate.current) return;
+    seenGenerate.current = latestGenerate.id;
+    appAtomRegistry.refresh(apple.status({ environmentId, input: { threadId } }));
+    const spec = latestGenerate.request.container?.path;
+    if (spec !== undefined)
+      appAtomRegistry.refresh(
+        apple.xcodegen({ environmentId, input: { workspace: { threadId }, spec } }),
+      );
+  }, [latestGenerate, environmentId, threadId]);
   const selectedRun = runs.find((run) => run.id === selectedRunId) ?? runs[0] ?? null;
   const container = containers.find((candidate) => candidate.path === selection.container?.path);
 
