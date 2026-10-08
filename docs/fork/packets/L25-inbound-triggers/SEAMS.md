@@ -40,9 +40,8 @@ export const Route = createFileRoute("/loom/triggers")({
 Regenerate the tree with `vp run --filter @t3tools/web build` (or one run of the web dev
 server) and commit it. On a conflict, take upstream's file and regenerate.
 
-Why no extension point covers it: there is no full-page route registry (see L19's
-SEAMS.md for the same reasoning). If L19 is present, both packets add their own route file;
-they do not conflict.
+Why no extension point covers it: there is no full-page route registry. Each packet that
+adds a page adds its own route file; route files do not conflict.
 
 Considered and rejected:
 
