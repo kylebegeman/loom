@@ -48,3 +48,12 @@ export async function attachModelImage(blob: Blob, threadRef: ScopedThreadRef, n
   )
     throw new Error("The capture could not be saved to the draft.");
 }
+
+/** Encode a canvas capture for the authenticated editor acknowledgement. */
+export async function captureBase64(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 8192)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+  return btoa(binary);
+}

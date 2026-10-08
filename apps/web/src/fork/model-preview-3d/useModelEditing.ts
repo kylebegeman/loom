@@ -88,12 +88,12 @@ export function useModelEditing(
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry replacement invalidates unfinished surface picks.
   useEffect(() => cancel, [sourceRevision, cancel]);
   const onPick = useCallback(
-    (points: ModelPoint[]) => {
-      if (!sourceRevision) return;
+    async (points: ModelPoint[]) => {
+      if (!sourceRevision || !points.length) return false;
       if (picking === "measure") {
         if (!pendingPoint) setPendingPoint(points[0]!);
         else {
-          void mutate({
+          const saved = await mutate({
             kind: "measurement",
             item: {
               id: randomUUID(),
@@ -104,13 +104,17 @@ export function useModelEditing(
               visible: true,
             },
           });
+          if (!saved) return false;
           setPendingPoint(null);
         }
+        return true;
       } else if (picking === "annotate") {
         setPendingCamera(viewer.current?.snapshot() ?? null);
         setPendingRegion(points);
         setPicking(null);
+        return true;
       }
+      return false;
     },
     [sourceRevision, picking, pendingPoint, mutate, measurementCount, viewer],
   );
@@ -159,7 +163,7 @@ export function useModelEditing(
       return !!saved;
     }));
   const prepareRequest = async (annotation: ModelAnnotation) => {
-    await perform("Preparing agent request", async () => {
+    return await perform("Preparing agent request", async () => {
       await attachModelImage(
         await markedCapture(annotation),
         threadRef,
@@ -170,6 +174,7 @@ export function useModelEditing(
       const previous = store.getComposerDraft(threadRef)?.prompt ?? "";
       store.setPrompt(threadRef, previous ? `${previous}\n\n${context}` : context);
       await workspace.mutate({ kind: "annotation", item: { ...annotation, status: "review" } });
+      return true;
     });
   };
   const captureViews = async (
@@ -222,6 +227,8 @@ export function useModelEditing(
     prepareRequest,
     captureViews,
     review,
+    captureAnnotation: (annotation: ModelAnnotation) =>
+      perform("Capturing marked annotation", () => markedCapture(annotation)),
     reselect,
     error: error ?? workspace.error,
   };

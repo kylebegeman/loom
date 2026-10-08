@@ -24,7 +24,7 @@ import type { OrchestrationV2AppThread } from "@t3tools/contracts";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
-import { ForkRuntime } from "../ForkRuntime.ts";
+import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { make, ModelPreviewService } from "./ModelPreviewService.ts";
 import { ModelPreviewHttpRoutes } from "./http.ts";
@@ -149,7 +149,15 @@ realTest(
       expect(colored.status).toBe("ok");
       expect(colored.meshFormat).toBe("3mf");
       const app = ModelPreviewHttpRoutes.pipe(
-        Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, t.service))),
+        Layer.provide(
+          Layer.succeed(
+            ForkRuntime,
+            Context.make(
+              ModelPreviewService,
+              t.service,
+            ) as unknown as Context.Context<ForkServices>,
+          ),
+        ),
         HttpRouter.provideRequest(NodeHttpPlatform.layer),
         Layer.provide(NodeServices.layer),
       );
@@ -187,7 +195,15 @@ realTest(
       const t = yield* setup;
       const layer = McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
         Layer.provide(callerLayer),
-        Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, t.service))),
+        Layer.provide(
+          Layer.succeed(
+            ForkRuntime,
+            Context.make(
+              ModelPreviewService,
+              t.service,
+            ) as unknown as Context.Context<ForkServices>,
+          ),
+        ),
       );
       const toolkit = yield* ModelPreview3dToolkit.pipe(Effect.provide(layer));
       const invocation = {

@@ -9,13 +9,16 @@ import { FORK_PANELS, forkPanelSurface } from "./registry";
 const UPSTREAM_LETTERS = new Set(["A", "B", "D", "F", "L", "M", "P", "T"]);
 
 describe("fork right panels", () => {
-  it("requires a thread and the environment feature for the model launcher", () => {
-    const panel = FORK_PANELS.find((item) => item.id === "model-preview-3d")!;
-    const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"));
-    expect(panel.isAvailable({ threadRef, loomFeatures: [] })).toBe(false);
-    expect(panel.isAvailable({ threadRef: null, loomFeatures: ["model-preview-3d"] })).toBe(false);
-    expect(panel.isAvailable({ threadRef, loomFeatures: ["model-preview-3d"] })).toBe(true);
-  });
+  it.each(["model-preview-3d", "pcb-preview"])(
+    "requires a thread and the environment feature for %s",
+    (id) => {
+      const panel = FORK_PANELS.find((item) => item.id === id)!;
+      const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"));
+      expect(panel.isAvailable({ threadRef, loomFeatures: [] })).toBe(false);
+      expect(panel.isAvailable({ threadRef: null, loomFeatures: [id] })).toBe(false);
+      expect(panel.isAvailable({ threadRef, loomFeatures: [id] })).toBe(true);
+    },
+  );
 
   it("uses unique ids in the <slug> or <slug>:<name> form", () => {
     const ids = FORK_PANELS.map((panel) => panel.id);

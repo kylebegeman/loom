@@ -1,3 +1,4 @@
+import { pcbPreviewPaletteSource } from "../pcb-preview/palette";
 import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
 import { models } from "../model-preview-3d/state";
 import { useAtomValue } from "@effect/atom-react";
@@ -42,6 +43,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   fileOutlinePaletteSource,
   // snippetsPaletteSource,
   modelPreview3dPaletteSource,
+  pcbPreviewPaletteSource,
 ];
 
 /** Rebuilt on every render, like the palette's own action items. */

@@ -1,4 +1,11 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import { makeEditorBridge } from "../editorBridge.ts";
+import type {
+  ModelEditorAction,
+  ModelEditorInput,
+  ModelEditorResult,
+  ModelEditorComplete,
+} from "@t3tools/contracts/fork";
 import * as NodeCrypto from "node:crypto";
 import * as NodeOS from "node:os";
 import {
@@ -831,7 +838,69 @@ export const make = Effect.gen(function* () {
     );
   });
   yield* pruneWorkspaceImages().pipe(Effect.ignore);
+  const editorBridge = yield* makeEditorBridge<
+    ModelEditorAction,
+    typeof ModelEditorResult.Type,
+    ModelPreviewError
+  >({
+    resolve: (threadId, path) => checked(resolveFile({ threadId, path })),
+    failure: (message) => error("command-failed", message),
+    panelAction: (command) => ["open", "close", "maximize"].includes(command.action),
+  });
+  const completeEditor = (input: typeof ModelEditorComplete.Type) =>
+    editorBridge.completeWith(
+      { ...input, ...(input.error ? { error: input.message } : { error: undefined }) },
+      checked(
+        Effect.gen(function* () {
+          let imagePath: string | undefined;
+          if (input.png && !input.error) {
+            const bytes = Buffer.from(input.png, "base64");
+            if (
+              bytes.length > 8 * 1024 * 1024 ||
+              bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
+            )
+              return yield* error("command-failed", "Editor capture must be a PNG under 8 MiB.");
+            const directory = path.join(config.stateDir, "fork", "model-preview-3d", "captures");
+            yield* fs.makeDirectory(directory, { recursive: true });
+            imagePath = path.join(directory, NodeCrypto.randomUUID() + ".png");
+            yield* fs.writeFile(imagePath, bytes);
+            const files = yield* fs.readDirectory(directory);
+            const records = yield* Effect.forEach(
+              files.filter((f) => /^[a-f0-9-]{36}\.png$/.test(f)),
+              (f) =>
+                fs.stat(path.join(directory, f)).pipe(
+                  Effect.map((stat) => ({
+                    file: f,
+                    time: Option.getOrNull(stat.mtime)?.getTime() ?? 0,
+                    size: Number(stat.size),
+                  })),
+                ),
+            );
+            let total = records.reduce((n, r) => n + r.size, 0),
+              count = records.length;
+            for (const item of records.toSorted((a, b) => a.time - b.time))
+              if (count > 50 || total > 50 * 1024 * 1024) {
+                if (path.join(directory, item.file) === imagePath) continue;
+                yield* fs.remove(path.join(directory, item.file));
+                total -= item.size;
+                count--;
+              }
+          }
+          return {
+            message: input.message,
+            ...(imagePath ? { path: imagePath } : {}),
+            ...(input.camera ? { camera: input.camera } : {}),
+            ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}),
+            ...(input.state ? { state: input.state } : {}),
+          };
+        }),
+      ),
+    );
   return {
+    editorEvents: (file: ModelFileRef) => editorBridge.events(file.threadId, file.path),
+    panelEvents: (threadId: ModelFileRef["threadId"]) => editorBridge.events(threadId),
+    editorAction: (input: typeof ModelEditorInput.Type) => editorBridge.request(input),
+    completeEditorAction: completeEditor,
     getWorkspace: (file: ModelFileRef) => checked(getWorkspace(file)),
     updateWorkspace: (file: ModelFileRef, operation: ModelWorkspaceOperation) =>
       checked(updateWorkspaceMany(file, [operation])),

@@ -1,3 +1,5 @@
+import { PcbPreviewHttpRoutes } from "./pcb-preview/http.ts";
+import * as PcbPreview from "./pcb-preview/PcbPreviewService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ModelPreview from "./model-preview-3d/ModelPreviewService.ts";
@@ -13,6 +15,7 @@ import { SwitchboardLive } from "./switchboard/switchboard.ts";
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   SwitchboardLive,
+  PcbPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
   ModelPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
 );
 
@@ -27,4 +30,8 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 );
 
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
-export const ForkRoutesLayer = Layer.mergeAll(Layer.empty, ModelPreviewHttpRoutes);
+export const ForkRoutesLayer = Layer.mergeAll(
+  Layer.empty,
+  ModelPreviewHttpRoutes,
+  PcbPreviewHttpRoutes,
+);

@@ -9,6 +9,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope, // fork: pcb-preview
   AuthSourceControlWriteScope,
   ThreadId,
   EnvironmentId,
@@ -44,8 +45,9 @@ const grant = (allowed: boolean): AuthSessionState => ({
     sessionMethods: [],
     sessionCookieName: "test",
   },
-  scopes: allowed ? [AuthOrchestrationOperateScope] : [],
-  permissions: allowed ? [AuthOrchestrationOperateScope] : [],
+  // fork: pcb-preview
+  scopes: allowed ? [AuthOrchestrationOperateScope, AuthTerminalOperateScope] : [],
+  permissions: allowed ? [AuthOrchestrationOperateScope, AuthTerminalOperateScope] : [],
 });
 const runtime = Atom.runtime(
   Layer.succeed(EnvironmentRegistry, {
@@ -61,13 +63,14 @@ const setup = Effect.gen(function* () {
 });
 
 describe("command permissions", () => {
-  it.effect("guards every model write with the destination environment's grant", () =>
+  it.effect("guards every fork write with the destination environment's grant", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
-        for (const method of Object.keys(FORK_CLIENT_GUARDED_RPC_SCOPES)) {
+        // fork: pcb-preview
+        for (const [method, scope] of Object.entries(FORK_CLIENT_GUARDED_RPC_SCOPES)) {
           const policy = createCommandPermissions(runtime, method);
-          expect(policy.requiredScopes()).toEqual([AuthOrchestrationOperateScope]);
+          expect(policy.requiredScopes()).toEqual([scope]);
           registry.set(sessions(env), AsyncResult.success(grant(false)));
           expect(registry.get(policy.permissionAtom(env))).toBe(false);
           expect((yield* policy.authorize(registry, env).pipe(Effect.flip))._tag).toBe(

@@ -1,84 +1,131 @@
-# L24 testing
+# L24 verification
 
-Follow AGENTS.md: focused tests, no repo-wide checks, no sleeps. The automated tests do not
-need KiCad or tscircuit installed; process runs are replaced with a fake `ProcessRunner`
-layer.
+## Local evidence, 2026-10-08
 
-## Completion evidence
+The expanded implementation is checked locally on `feat/loom-pcb-preview`, based on
+`23b9bdc48dc8ca3356df5b686c11e02a7519cb76`. It has not been merged or released.
 
-Verify both KiCad and tscircuit with real fixtures and record their tested versions. KiCad
-schematic sheets, PCB layer presets, ERC and DRC must all work; tscircuit must render both
-schematic and board and expose build errors. Fixture provenance must be real or explicitly
-marked synthetic until replaced. Unit tests with fake processes do not prove CLI compatibility.
-Include a nested-file edit in live-reload verification and copy a summary from a remote
-plain-HTTP client. Record unavailable tools or client verification as outstanding checks.
+- 93 distinct focused backend tests across 17 files cover discovery, physical SVG frames,
+  semantic inspection, parameters, simulation parsing, report validation, persistence,
+  bounded caches, signed HTTP files, job leases, cancellation, permissions, editor receipts,
+  cross-thread reference authorization, hardware reuse, MCP registration and CLI transport.
+  The final service regression suite contains 26 of these tests; reruns are not added
+  to the total.
+- 38 distinct web tests across 12 files cover preview eligibility/lifetime, drawing navigation,
+  focus after image decode, summary preparation, loading timers, URL/listener cleanup,
+  clipboard fallback, registry entry points, customizer state, model picking/save failure,
+  operation exclusion, named-view capture restoration, paused hidden 2D work, 3D refresh/readiness,
+  stale sheet-read metadata and failed workspace save retries.
+- 14 contract/runtime tests verify fork keybindings and command permissions.
+- One opt-in real-tool integration test passed with official KiCad 10.0.6, tscircuit
+  0.0.2764/Bun and ngspice 47. It executes three schematic sheets, Front/Back/All copper,
+  custom inner-layer labels, ERC (40 findings), DRC (68 findings), linked semantic inspection,
+  both tscircuit drawings, actual GLB exports, a board above the 16 MiB inline limit, SPICE
+  operating point/transient/AC/sweeps, Git/checkpoint comparison and intentional build failure.
+  It verifies millimetre-to-metre GLB normalization and removal of scoped output directories.
 
-## Automated tests
+Total: 146 distinct passing tests after the active bug/integration audit. Fake process tests establish behavior, while the opt-in
+integration establishes compatibility with these installed tool versions. Audit regressions
+cover same-folder design cache isolation, nested Git roots, historical schematic connectivity,
+shared circuit builds and failures/timeouts, destination symlinks, missing hardware links,
+mounting holes and simulation startup isolation/cleanup. Confirmed regressions were reproduced
+before their fixes; the final focused and real-tool runs pass.
 
-| File                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/fork/pcb-preview/kicadReports.test.ts`      | ERC and DRC fixtures (checked in, produced by `kicad-cli` 10 on a demo project) parse into the expected violations; unconnected and parity groups; `excluded` defaulting; errors sorted first; cap at 500 with `truncated`; unknown severity maps to warning; a malformed report fails with a typed error, not a defect.                                                                                                                                                                             |
-| `apps/server/src/fork/pcb-preview/discovery.test.ts`         | Grouping: project with sch and pcb; lone `.kicad_pcb`; sub-sheets not listed separately; `*.circuit.tsx` and `tscircuit.config.json` entrypoint; fuzzy-search noise (e.g. `foo.kicad_pro.bak`) dropped; inner layer regex on a 4-layer header fixture.                                                                                                                                                                                                                                               |
-| `apps/server/src/fork/pcb-preview/tools.test.ts`             | Version parsing: `10.0.6`, `9.0.1`, `KiCad 8.0.4` (too old), garbage (version-failed).                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `apps/server/src/fork/pcb-preview/cache.test.ts`             | `isRenderKey` and `isSheetFileName` reject traversal (`../x.svg`, `a/b.svg`, `x.svg.exe`); render key changes with tool version and preset; prune picks oldest first until under both limits.                                                                                                                                                                                                                                                                                                        |
-| `apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts` | With test layers (no database needed): a fake `ProcessRunner`, fake `ProjectionSnapshotQuery` and a temp workspace: `render` writes `manifest.json` and reports sheets; a second call returns `cached: true` without running the process; exit code 5 on `check` is `violations`, 1 is `failed`, `timedOut` is `timed-out`; a design id with `..` fails `path-outside-workspace`; `readSheet` refuses a file over the cap; `tsci` runs get an environment without `T3CODE_*` or `*TOKEN*` variables. |
-| `apps/web/src/fork/pcb-preview/usePcbPreview.logic.test.ts`  | No render while hidden; render when visible and the watch hash differs from the last render; no render when equal; view or preset change requests a render; tscircuit untrusted project yields `needs-trust`.                                                                                                                                                                                                                                                                                        |
-| `apps/web/src/fork/pcb-preview/summary.test.ts`              | Plain-text summary: counts line, one line per violation with position and units, excluded omitted, clean message, cap at 100 with "and N more". `electronicsDesignUrl`: `http://mini:7450` and `http://mini:7450/` give the same URL; a path prefix (`https://host/electronics/`) is kept; spaces and `#` in the absolute path are encoded; an invalid base returns null.                                                                                                                            |
+Contracts, client-runtime, server and web typechecks passed. Effect informational suggestions
+are not errors. Targeted fork lint passed; linting the complete upstream ChatView file reports
+existing React/compiler warnings outside the three-line presentation seam. The seam manifest,
+local Markdown links and whitespace were checked separately, without repo-wide checks.
 
-Registry invariants are covered by the extension points' own tests
-(`apps/web/src/fork/panels/registry.test.ts`, `packages/contracts/src/fork/keybindings.test.ts`,
-`apps/server/src/fork/rpcAuthorization.test.ts`, `apps/server/src/fork/features.test.ts`);
-run them because this packet adds entries.
+Mobile was attempted using temporary dependency links to avoid another installation. That
+mixed installation is incompatible with this checkout's React Native/Uniwind versions and its
+typecheck failed. Those temporary links were removed. No native mobile implementation changed;
+shared contracts/runtime passed. This is not a mobile verification claim.
 
-## Commands
+## Integrated Browser evidence
+
+The native T3 Browser exercised a meaningful isolated workspace, with official KiCad demos
+and an explicitly synthetic resistor/capacitor tscircuit circuit. Local web and desktop share
+the tested web bundle; no Electron-specific CAD behavior was introduced.
+
+Verified interactions include launcher/panel layouts, sheet and layer selection, fit/zoom,
+linked component/pin/net focus, saved views, measurements and notes with removal, visible/full
+captures appended to an existing draft, trust and circuit rendering, live source reload,
+parameter review/apply and variant save/remove, transient simulation with waveform results and
+setup save/remove, hardware ownership/context and local asset import. Loading and elapsed
+states appeared during exports, inspection and checks. ERC/DRC counts matched actual CLI output.
+A failed rebuild retains the previous drawing. Light/dark canvas backgrounds were inspected.
+
+The board reference export produced a GLB and revision metadata. Opening it in the existing
+3D model editor reports 24.00 × 20.00 mm, matching the source and metadata. Live editor RPCs
+created a 5 mm measurement, picked/saved an annotation, captured a marked PNG and four views,
+selected the Views inspector and prepared a marked request in the draft. Captures were inspected.
+Host export operations and client editor acknowledgements crossed the actual RPC boundary.
+This is not a claim of invoking the new tools from a live provider session; MCP authorization,
+registration and the authenticated CLI protocol have separate focused coverage.
+
+Drawing tests verify no continuing frame loop after settled navigation and cleanup of frame
+requests on unmount. The 3D viewer renders on load/input/resize. Browser observations are not a
+measurement of physical GPU utilization. Native Browser metadata sometimes reports hidden while
+`document.visibilityState` reports visible; redundant test tabs were closed and one review tab
+is retained. The audit pass confirmed loaded 2D/3D drawings, forced 3D refresh with elapsed
+loading state and disabled capture controls, isometric navigation, named-view save/removal,
+disabled 2D view saving while in 3D, decoded KiCad layers and visible-area capture. The layer
+loading status was hidden after decode. The host again disconnected during the resize attempt,
+so that responsive check remains unverified. Snapshot capture became unavailable while
+native evaluation and interactions still worked, then all automation disconnected. No
+alternative browser automation was used.
+
+## Compatibility limits
+
+- KiCad 9 flags were not executed. The UI detects version requirements, and KiCad 10 is needed
+  for GLB export. Installed models determine component geometry; simulation needs valid SPICE
+  models/ground or a supplied self-contained netlist.
+- Local RPC and signed HTTP transport were exercised. A remote plain-HTTP host, relay/tunnel,
+  Windows host and every version-skew combination were not driven end-to-end.
+- The complete matrix of palette/assigned shortcuts, empty/missing/old-tool states, reconnects,
+  trust revocation, cancellation and failures was not driven in a native client. Focused tests
+  cover relevant eligibility, failure, cancellation, permission and lifetime behavior.
+- No mobile PCB surface exists. No KiCad GUI signoff, fabrication validation or print readiness
+  is claimed. Provider adapters and deployment infrastructure are unaffected.
+
+## Focused rerun
+
+Use Node 24 and the frozen-lockfile installation. Run from each package, not the repository
+root, and do not use `loom.sh check` as a substitute for these scoped checks.
+
+From `apps/server`:
 
 ```sh
-vp test run apps/server/src/fork/pcb-preview apps/web/src/fork/pcb-preview \
-  apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts \
-  apps/web/src/fork/panels/registry.test.ts packages/contracts/src/fork/keybindings.test.ts
-vp lint packages/contracts/src/fork apps/server/src/fork apps/web/src/fork packages/client-runtime/src/fork
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web typecheck
+pnpm exec vp test run src/fork/pcb-preview src/fork/cli/callTool.test.ts \
+  src/fork/editorBridge.test.ts src/fork/sharedJobs.test.ts \
+  src/fork/mcp/registration.test.ts src/fork/rpcAuthorization.test.ts \
+  src/fork/features.test.ts src/fork/model-preview-3d/mcp.test.ts \
+  src/fork/model-preview-3d/http.test.ts src/processRunner.test.ts
 ```
 
-`packages/contracts` changed, so also typecheck `@t3tools/mobile` (it imports the client
-runtime, which imports the fork contracts).
+From `apps/web`:
 
-## Manual check
+```sh
+pnpm exec vp test run src/fork/pcb-preview src/fork/panels/registry.test.ts \
+  src/fork/commandPalette/registry.test.ts src/fork/settings/registry.test.ts \
+  src/fork/model-preview-3d/ScadCustomizer.test.tsx \
+  src/fork/model-preview-3d/useModelEditing.test.tsx \
+  src/fork/model-preview-3d/viewer/captureSheet.test.ts
+```
 
-Ask Kyle before starting a dev server or a browser (AGENTS.md). With permission, on web
-(and once on desktop):
+Run `packages/contracts/src/fork/keybindings.test.ts` and
+`packages/client-runtime/src/state/commandPermissions.test.ts` from their respective packages.
+Typecheck the four affected packages and lint changed source paths.
 
-1. Seed a worktree `.t3` (AGENTS.md "Test data"). Put a KiCad 10 demo project (for example
-   a copy of a demo from the KiCad install) and a small tscircuit project in a test project.
-2. Open a thread in that project, open the launcher, choose "PCB preview". The design list
-   shows both designs.
-3. KiCad design: Schematic shows the root sheet; the sheet picker lists every sheet. PCB
-   Front, Back and All copper each render. Zoom with the wheel, pan by dragging, double
-   click fits.
-4. Edit the schematic in KiCad and save. The panel updates within about a second. Collapse
-   the right panel, save again, expand: exactly one render runs on expand.
-5. Run ERC and DRC. Counts match KiCad's own ERC/DRC dialogs. "Send summary to chat" puts
-   the summary in the composer without sending; with a draft already typed, the summary is
-   appended after a blank line. "Copy summary" copies the same text.
-6. tscircuit design: the trust prompt appears once; after Render the schematic and PCB show.
-   Break the circuit code: the failure state shows the build log and keeps the last render.
-7. Use an isolated tool-discovery fixture or a host without KiCad to verify the missing-tool
-   state while the design list still loads. Do not rename or modify the user's installed CLI.
-8. Connect this client to an upstream T3 server: the launcher entry is disabled with
-   "Needs a Loom server with PCB preview".
-9. Remote: pair a second browser over the tailnet and repeat step 3 from it.
-10. Set the Electronics URL in settings: "Open in Electronics" opens
-    `<url>/designs/by-path?path=<encoded absolute path of the .kicad_pro>`. Clear the URL: the
-    item disappears. (The Electronics app does not exist yet; check the opened URL only.)
-11. Bind `loom.pcb-preview.toggle` in Settings, Keybindings and check it opens and closes the
-    panel; the palette item does the same.
+`realTools.test.ts` skips unless `LOOM_TEST_PCB_FIXTURES` points at a task-owned fixture root
+containing complex_hierarchy, four-layer/One-Air-Max.kicad_pcb and a circuit entry. Supply
+real `kicad-cli`, `tsci`, Bun and ngspice on PATH. Never point it at a user's project: the test
+copies fixtures into scoped state and intentionally changes source in that copy.
 
-## Merge safety
+## Resource ownership
 
-- Before review: the `git merge-tree` preview in SEAMS.md against the newest nightly tag.
-  With no packet seams, it should be clean unless an extension point seam conflicts.
-- After Kyle merges to main: `scripts/fork/loom.sh integrate nightly --dry-run` from a clean,
-  synced `main`. Record the result here.
+Completed tests remove scoped files. Redundant fixture copies, temporary mobile dependency
+links, generated workspace caches and obsolete scratch are removed after verification. Keep
+only the active review preview's dependencies, isolated state, small demo and installed test
+tools/mount until review ends. End of turn is not preview teardown. Do not purge live Loom
+userdata, another task's installation, or other projects' resources.

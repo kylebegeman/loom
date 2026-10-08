@@ -10,7 +10,7 @@ import * as Layer from "effect/Layer";
 import { EnvironmentId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import { ModelPreviewError, EMPTY_MODEL_WORKSPACE } from "@t3tools/contracts/fork";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
-import { ForkRuntime } from "../ForkRuntime.ts";
+import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
 import { ModelPreview3dToolkit, modelPreview3dHandlers, renderModelTool } from "./mcp.ts";
 function partial<A extends object>(methods: Partial<A>): A {
@@ -39,10 +39,18 @@ const callerLayer = Layer.succeed(
   }),
 );
 it("uses a unique Loom-prefixed shared tool name", () => {
-  expect(Object.keys(ModelPreview3dToolkit.tools).sort()).toEqual([
-    "loom_model_preview_3d_propose_variants",
-    "loom_model_preview_3d_render",
-  ]);
+  const names = Object.keys(ModelPreview3dToolkit.tools);
+  expect(new Set(names).size).toBe(names.length);
+  expect(names.every((name) => name.startsWith("loom_model_preview_3d_"))).toBe(true);
+  expect(names).toEqual(
+    expect.arrayContaining([
+      "loom_model_preview_3d_render",
+      "loom_model_preview_3d_propose_variants",
+      "loom_model_preview_3d_save_workspace",
+      "loom_model_preview_3d_save_parameter_set",
+      "loom_model_preview_3d_render_mesh",
+    ]),
+  );
 });
 it.effect(
   "retains the fork service for invocations and returns its disabled/missing-tool errors",
@@ -64,7 +72,12 @@ it.effect(
       } as unknown as ModelPreviewService["Service"];
       const layer = McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
         Layer.provide(callerLayer),
-        Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, service))),
+        Layer.provide(
+          Layer.succeed(
+            ForkRuntime,
+            Context.make(ModelPreviewService, service) as unknown as Context.Context<ForkServices>,
+          ),
+        ),
       );
       const toolkit = yield* ModelPreview3dToolkit.pipe(Effect.provide(layer));
       for (const state of ["openscad-missing", "command-failed"] as const) {
@@ -123,7 +136,15 @@ it.effect(
         Effect.provide(
           McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
             Layer.provide(callerLayer),
-            Layer.provide(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, service))),
+            Layer.provide(
+              Layer.succeed(
+                ForkRuntime,
+                Context.make(
+                  ModelPreviewService,
+                  service,
+                ) as unknown as Context.Context<ForkServices>,
+              ),
+            ),
           ),
         ),
       );

@@ -1,0 +1,636 @@
+{
+  "$schema": "https://schemas.kicad.org/erc.v1.json",
+  "coordinate_units": "mm",
+  "date": "2026-10-07T20:39:41",
+  "ignored_checks": [
+    {
+      "description": "SPICE model issue",
+      "key": "simulation_model_issue"
+    },
+    {
+      "description": "Assigned footprint doesn't match footprint filters",
+      "key": "footprint_filter"
+    }
+  ],
+  "included_severities": ["error", "warning", "exclusion"],
+  "kicad_version": "10.0.6",
+  "sheets": [
+    {
+      "path": "/",
+      "uuid_path": "/5b9623a5-6d01-41fc-9865-e1bc779418c8",
+      "violations": [
+        {
+          "description": "The current configuration does not include the footprint library 'TerminalBlock_Altech'",
+          "items": [
+            {
+              "description": "Symbol P101 [CONN_2]",
+              "pos": {
+                "x": 0.4191,
+                "y": 0.3556
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a12f4"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'TerminalBlock_Altech'",
+          "items": [
+            {
+              "description": "Symbol P102 [CONN_2]",
+              "pos": {
+                "x": 0.4191,
+                "y": 0.6604
+              },
+              "uuid": "00000000-0000-0000-0000-00004ad71b06"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C101 [CP]",
+              "pos": {
+                "x": 0.635,
+                "y": 0.381
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1558"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Diode_THT'",
+          "items": [
+            {
+              "description": "Symbol D101 [D_Small]",
+              "pos": {
+                "x": 0.6858,
+                "y": 0.635
+              },
+              "uuid": "00000000-0000-0000-0000-00004ae172f4"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C104 [CP]",
+              "pos": {
+                "x": 0.8128,
+                "y": 0.6985
+              },
+              "uuid": "00000000-0000-0000-0000-00004ae173cf"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C105 [CP]",
+              "pos": {
+                "x": 1.6891,
+                "y": 0.6985
+              },
+              "uuid": "00000000-0000-0000-0000-00004b4b15e7"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_TO_SOT_THT'",
+          "items": [
+            {
+              "description": "Symbol U101 [7805]",
+              "pos": {
+                "x": 2.0066,
+                "y": 0.3429
+              },
+              "uuid": "00000000-0000-0000-0000-00004b4b1532"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_DIP'",
+          "items": [
+            {
+              "description": "Symbol U102 [ICL7660]",
+              "pos": {
+                "x": 2.0193,
+                "y": 0.7366
+              },
+              "uuid": "00000000-0000-0000-0000-00004b4b1230"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C102 [CP]",
+              "pos": {
+                "x": 2.3368,
+                "y": 0.4064
+              },
+              "uuid": "00000000-0000-0000-0000-00004b03cec2"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C103 [CP]",
+              "pos": {
+                "x": 2.3368,
+                "y": 0.635
+              },
+              "uuid": "00000000-0000-0000-0000-00004b4b15d9"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'TerminalBlock_Altech'",
+          "items": [
+            {
+              "description": "Symbol P301 [CONN_2]",
+              "pos": {
+                "x": 0.3429,
+                "y": 0.5334
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1367"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R301 [R]",
+              "pos": {
+                "x": 0.6223,
+                "y": 0.508
+              },
+              "uuid": "00000000-0000-0000-0000-00004b4f363e"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C302 [C]",
+              "pos": {
+                "x": 0.7239,
+                "y": 0.5715
+              },
+              "uuid": "00000000-0000-0000-0000-00004b4f3641"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R302 [R]",
+              "pos": {
+                "x": 0.8255,
+                "y": 0.508
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a136b"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R303 [R]",
+              "pos": {
+                "x": 1.0033,
+                "y": 0.508
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1359"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C303 [C]",
+              "pos": {
+                "x": 1.016,
+                "y": 0.6477
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1366"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C301 [C]",
+              "pos": {
+                "x": 1.1049,
+                "y": 0.4064
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1358"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_DIP'",
+          "items": [
+            {
+              "description": "Symbol U301 [LM358N]",
+              "pos": {
+                "x": 1.2319,
+                "y": 0.6096
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a135c"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R313 [R]",
+              "pos": {
+                "x": 1.3335,
+                "y": 1.6256
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1362"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Potentiometer_THT'",
+          "items": [
+            {
+              "description": "Symbol RV301 [POT]",
+              "pos": {
+                "x": 1.4859,
+                "y": 1.6256
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1357"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_DIP'",
+          "items": [
+            {
+              "description": "Symbol U301 [LM358N]",
+              "pos": {
+                "x": 1.6256,
+                "y": 1.3716
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1368"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R308 [R]",
+              "pos": {
+                "x": 1.8415,
+                "y": 1.2954
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1371"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Diode_THT'",
+          "items": [
+            {
+              "description": "Symbol D301 [D_Small]",
+              "pos": {
+                "x": 1.8542,
+                "y": 0.7112
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1375"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Diode_THT'",
+          "items": [
+            {
+              "description": "Symbol D302 [D_Small]",
+              "pos": {
+                "x": 1.8542,
+                "y": 0.7874
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1377"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R305 [R]",
+              "pos": {
+                "x": 1.8542,
+                "y": 0.9144
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1374"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R312 [R]",
+              "pos": {
+                "x": 1.8796,
+                "y": 1.3716
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a136d"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_TO_SOT_THT'",
+          "items": [
+            {
+              "description": "Symbol Q301 [MPSA92]",
+              "pos": {
+                "x": 1.9812,
+                "y": 0.8382
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1360"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_TO_SOT_THT'",
+          "items": [
+            {
+              "description": "Symbol Q304 [MPSA42]",
+              "pos": {
+                "x": 1.9812,
+                "y": 1.2954
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1379"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R304 [R]",
+              "pos": {
+                "x": 2.0066,
+                "y": 0.6985
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1376"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Diode_THT'",
+          "items": [
+            {
+              "description": "Symbol D303 [D_Small]",
+              "pos": {
+                "x": 2.0066,
+                "y": 1.016
+              },
+              "uuid": "00000000-0000-0000-0000-00004b616afa"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Diode_THT'",
+          "items": [
+            {
+              "description": "Symbol D304 [D_Small]",
+              "pos": {
+                "x": 2.0066,
+                "y": 1.143
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a137b"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R311 [R]",
+              "pos": {
+                "x": 2.0574,
+                "y": 1.3335
+              },
+              "uuid": "00000000-0000-0000-0000-00004b61688c"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Capacitor_THT'",
+          "items": [
+            {
+              "description": "Symbol C304 [C]",
+              "pos": {
+                "x": 2.0574,
+                "y": 1.4605
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1365"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_TO_SOT_THT'",
+          "items": [
+            {
+              "description": "Symbol Q302 [MPSA42]",
+              "pos": {
+                "x": 2.159,
+                "y": 0.9398
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a137d"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Package_TO_SOT_THT'",
+          "items": [
+            {
+              "description": "Symbol Q303 [MPSA92]",
+              "pos": {
+                "x": 2.159,
+                "y": 1.2192
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a137c"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R309 [R]",
+              "pos": {
+                "x": 2.2606,
+                "y": 1.2954
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1370"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R310 [R]",
+              "pos": {
+                "x": 2.3114,
+                "y": 1.2954
+              },
+              "uuid": "00000000-0000-0000-0000-00004b617b88"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R306 [R]",
+              "pos": {
+                "x": 2.4003,
+                "y": 1.0541
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a1364"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'Resistor_THT'",
+          "items": [
+            {
+              "description": "Symbol R307 [R]",
+              "pos": {
+                "x": 2.4003,
+                "y": 1.1303
+              },
+              "uuid": "00000000-0000-0000-0000-00004b616b96"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        },
+        {
+          "description": "The current configuration does not include the footprint library 'TerminalBlock_Altech'",
+          "items": [
+            {
+              "description": "Symbol P302 [CONN_2]",
+              "pos": {
+                "x": 2.7305,
+                "y": 1.1176
+              },
+              "uuid": "00000000-0000-0000-0000-00004b3a136c"
+            }
+          ],
+          "severity": "warning",
+          "type": "footprint_link_issues"
+        }
+      ]
+    },
+    {
+      "path": "/ampli_ht_vertical/",
+      "uuid_path": "/5b9623a5-6d01-41fc-9865-e1bc779418c8/00000000-0000-0000-0000-00004b3a1333",
+      "violations": []
+    },
+    {
+      "path": "/ampli_ht_horizontal/",
+      "uuid_path": "/5b9623a5-6d01-41fc-9865-e1bc779418c8/00000000-0000-0000-0000-00004b3a13a4",
+      "violations": []
+    }
+  ],
+  "source": "complex_hierarchy.kicad_sch"
+}

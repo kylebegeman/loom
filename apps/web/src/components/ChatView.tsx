@@ -285,6 +285,7 @@ import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
 import { RightPanelTabs } from "./RightPanelTabs";
 import { ForkPanelHost } from "../fork/panels/ForkPanelHost"; // fork: ext-panels
+import { useForkPanelPresentation } from "../fork/panels/presentation"; // fork: ext-panels
 import { useForkPanelActions } from "../fork/panels/useForkPanelActions"; // fork: ext-panels
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
@@ -716,7 +717,7 @@ const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   '[role="textbox"]',
 ].join(",");
 const TYPE_TO_FOCUS_INTERACTIVE_SELECTOR = [
-  "canvas[tabindex]", // fork: ext-panels - Interactive canvases own their keyboard input.
+  "canvas[tabindex], [data-loom-canvas][tabindex]", // fork: ext-panels - Interactive canvases own their keyboard input.
   "button",
   "a[href]",
   "summary",
@@ -6047,6 +6048,7 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().toggleThreadPanel(activeThreadRef, threadPanelPresentation);
   }, [activeThreadRef, threadPanelPresentation]);
+  useForkPanelPresentation(activeThreadRef, canMaximizeRightPanel, setMaximizedRightPanelThreadKey); // fork: ext-panels
   const toggleRightPanelMaximized = useCallback(() => {
     if (!canMaximizeRightPanel) return;
     setMaximizedRightPanelThreadKey((threadKey) =>

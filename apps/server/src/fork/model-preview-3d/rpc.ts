@@ -6,6 +6,14 @@ export const makeModelPreviewRpcHandlers = (auth: ForkRpcAuth) =>
   Effect.gen(function* () {
     const service = yield* ModelPreviewService;
     return {
+      [M.editorEvents]: (i: Parameters<typeof service.editorEvents>[0]) =>
+        auth.stream(M.editorEvents, service.editorEvents(i)),
+      [M.panelEvents]: (i: { threadId: Parameters<typeof service.panelEvents>[0] }) =>
+        auth.stream(M.panelEvents, service.panelEvents(i.threadId)),
+      [M.editorAction]: (i: Parameters<typeof service.editorAction>[0]) =>
+        auth.effect(M.editorAction, service.editorAction(i)),
+      [M.completeEditorAction]: (i: Parameters<typeof service.completeEditorAction>[0]) =>
+        auth.effect(M.completeEditorAction, service.completeEditorAction(i)),
       [M.workspace]: (input: Parameters<typeof service.watchWorkspace>[0]) =>
         auth.stream(M.workspace, service.watchWorkspace(input)),
       [M.updateWorkspace]: (input: {

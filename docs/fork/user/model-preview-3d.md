@@ -108,3 +108,15 @@ Model files and SCAD renders come from the selected environment, so the web and 
 panel works with remote hosts as well as local ones. OpenSCAD and Blender belong on the
 host that owns the workspace. Mobile has no 3D panel. Environments without Loom's 3D feature
 show the panel as unavailable.
+
+## Agent and terminal controls
+
+Agents can use `loom_model_preview_3d_*` tools to inspect files, render meshes, save settings,
+parameter sets and workspace tools, propose variants, and operate the visible editor. Camera,
+picking, marked captures, customizer history and draft preparation use the connected client.
+Host rendering and saved state remain available without opening the editor.
+
+`t3 model <action> '<json>'` calls the same tools using their MCP suffix. It needs
+`LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION`, or the credentials inherited by an ACP agent
+terminal. PCB board references are standard GLB files with a separate mechanical metadata
+file; open them here to build or review a case at the correct scale.

@@ -1,3 +1,4 @@
+import { PcbPreviewSettingsSection } from "../pcb-preview/settings";
 import type { ComponentType } from "react";
 import { ModelPreviewSettingsSection } from "../model-preview-3d/SettingsSection";
 export interface ForkSettingsSection {
@@ -6,5 +7,6 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "pcb-preview", title: "PCB preview", Component: PcbPreviewSettingsSection },
   { id: "model-preview-3d", title: "3D model", Component: ModelPreviewSettingsSection },
 ];

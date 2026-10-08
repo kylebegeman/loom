@@ -1,5 +1,16 @@
 import styles from "./workspace.module.css";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Atom } from "effect/reactivity";
+import type { ModelEditorEvent } from "@t3tools/contracts/fork";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
@@ -39,7 +50,8 @@ import type { ModelCamera } from "@t3tools/contracts/fork";
 import { ModelPicker } from "./ModelPicker";
 import { InspectorHeader, GeometryInspector, RenderLog, type InspectorTab } from "./ModelInspector";
 import { resolveBuildVolume, fitsBuildVolume } from "./buildPlate";
-import { captureToComposer } from "./capture";
+import { captureNamedViews } from "./viewer/captureSheet";
+import { attachModelImage, captureToComposer, captureBase64 } from "./capture";
 import { type ModelViewer, type NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
 import type { meshStats } from "./viewer/load";
@@ -47,6 +59,7 @@ import { onModelAction } from "./actions";
 import { ModelTool, ViewTools, DisplayTools, NavigationTools, CaptureMenu } from "./WorkspaceTools";
 
 export { ModelPicker } from "./ModelPicker";
+const idleEditor = Atom.make(AsyncResult.initial<typeof ModelEditorEvent.Type, never>());
 const ViewerCanvas = lazy(() => import("./viewer/ViewerCanvas"));
 const failureMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -125,6 +138,272 @@ function ModelFile({
     const timeout = setTimeout(() => setSuccess(null), 5000);
     return () => clearTimeout(timeout);
   }, [success]);
+  const resolving = format !== "scad" && resolvedKey !== JSON.stringify([revision, allowLarge]);
+  const loadingFile = pending || refreshing || resolving || progress !== null;
+  const editorEvents = useAtomValue(
+    visible
+      ? models.editorEvents({ environmentId: threadRef.environmentId, input: file })
+      : idleEditor,
+  );
+  const editorRequest = editorEvents._tag === "Success" ? editorEvents.value : null,
+    handledEditor = useRef<string | null>(null);
+  const handleEditorRequest = useEffectEvent(
+    (editorRequest: typeof ModelEditorEvent.Type | null) => {
+      if (!editorRequest || handledEditor.current === editorRequest.requestId) return;
+      handledEditor.current = editorRequest.requestId;
+      const execute = async () => {
+        const c = editorRequest.command;
+        const get = () => {
+          if (!viewer.current || !stats || loadingFile)
+            throw new Error("Wait for the 3D model to load.");
+          return viewer.current;
+        };
+        let png: string | undefined;
+        switch (c.action) {
+          case "fit":
+            get().fit();
+            break;
+          case "zoom":
+            get().zoom(c.factor ?? 1);
+            break;
+          case "view":
+            if (!["iso", "front", "top", "right"].includes(c.name ?? ""))
+              throw new Error("Choose iso, front, top or right.");
+            setView(c.name as View);
+            break;
+          case "camera":
+            if (!c.camera) throw new Error("Provide a camera.");
+            get();
+            recall(c.camera, false);
+            break;
+          case "display":
+            get();
+            setDisplay((d) => ({
+              ...d,
+              ...(c.wireframe === undefined ? {} : { wireframe: c.wireframe }),
+              ...(c.grid === undefined ? {} : { grid: c.grid }),
+              ...(c.axes === undefined ? {} : { axes: c.axes }),
+            }));
+            break;
+          case "navigation":
+            if (c.name !== "pan" && c.name !== "orbit") throw new Error("Choose pan or orbit.");
+            get();
+            setNavigationMode(c.name);
+            break;
+          case "section":
+            if (!c.section) throw new Error("Provide a section.");
+            get();
+            editing.setSection(c.section);
+            break;
+          case "tool":
+            if (!["select", "measure", "annotate"].includes(c.name ?? ""))
+              throw new Error("Choose select, measure or annotate.");
+            get();
+            editing.choose(c.name === "select" ? null : (c.name as "measure" | "annotate"));
+            break;
+          case "inspector":
+            if (c.enabled === false) {
+              setInspectorOpen(false);
+              break;
+            }
+            if (
+              !["parameters", "model", "log", "tools", "views", "review", "variants"].includes(
+                c.name ?? "",
+              )
+            )
+              throw new Error("Choose a valid inspector tab.");
+            setInspectorTab(c.name as InspectorTab);
+            setInspectorOpen(true);
+            break;
+          case "refresh":
+            setRevision((r) => r + 1);
+            break;
+          case "load-view": {
+            const saved = editing.data.views.find((v) => v.id === c.name || v.name === c.name);
+            if (!saved) throw new Error("Unknown saved view.");
+            get();
+            recall(saved.camera, false);
+            break;
+          }
+          case "parameters": {
+            if (!session || !c.values)
+              throw new Error("Open a SCAD model and provide customizer values.");
+            session.promote(c.values, c.name ?? "Agent preview");
+            break;
+          }
+          case "parameter-history": {
+            if (!session) throw new Error("Open a SCAD model first.");
+            const index =
+              c.index ??
+              session.historyCursor + (c.name === "undo" ? -1 : c.name === "redo" ? 1 : 0);
+            if (index < 0 || index >= session.historyLabels.length)
+              throw new Error("No parameter history at that position.");
+            session.moveHistory(index);
+            break;
+          }
+          case "parameter-set": {
+            if (!session) throw new Error("Open a SCAD model first.");
+            const name = c.name || null;
+            if (name && !session.data.sets.includes(name))
+              throw new Error("Unknown parameter set.");
+            session.chooseSet(name);
+            break;
+          }
+          case "parameter-preview":
+            if (!session) throw new Error("Open a SCAD model first.");
+            if (c.enabled !== undefined) session.setAutomatic(c.enabled);
+            else session.apply();
+            break;
+          case "cancel-tool":
+            editing.cancel();
+            break;
+          case "allow-large":
+            setAllowLarge(c.enabled ?? true);
+            break;
+          case "pick":
+            get();
+            if (!editing.canEdit || !editing.ready || !c.points)
+              throw new Error("Provide model points and wait for editable workspace data.");
+            if (!(await editing.onPick([...c.points])))
+              throw new Error("Choose a picking tool first, or check the workspace save error.");
+            break;
+          case "save-annotation":
+            get();
+            if (!editing.canEdit || !editing.ready || !c.request?.trim())
+              throw new Error(
+                "Provide an annotation request and wait for editable workspace data.",
+              );
+            if (
+              !(await editing.addAnnotation(c.name?.trim() || "Selected region", c.request.trim()))
+            )
+              throw new Error("Pick a region first, or check the annotation save error.");
+            break;
+          case "capture-annotation": {
+            const annotation = editing.data.annotations.find(
+              (a) => a.id === c.name || a.name === c.name,
+            );
+            if (!annotation) throw new Error("Unknown annotation.");
+            get();
+            const blob = await editing.captureAnnotation(annotation);
+            if (!blob)
+              throw new Error(
+                "The annotation capture could not be prepared. Check the editor error.",
+              );
+            if (c.attachToDraft)
+              await attachModelImage(blob, threadRef, `${annotation.name}-marked.png`);
+            png = await captureBase64(blob);
+            break;
+          }
+          case "prepare-request":
+          case "reselect-annotation": {
+            const annotation = editing.data.annotations.find(
+              (a) => a.id === c.name || a.name === c.name,
+            );
+            if (!annotation) throw new Error("Unknown annotation.");
+            get();
+            if (c.action === "reselect-annotation") editing.reselect(annotation);
+            else if (!(await editing.prepareRequest(annotation)))
+              throw new Error(
+                "The annotation request could not be prepared. Check the editor error.",
+              );
+            break;
+          }
+          case "capture": {
+            let capture: Promise<Blob>;
+            if (c.name) {
+              const preset = editing.data.presets.find((p) => p.id === c.name || p.name === c.name);
+              if (!preset) throw new Error("Unknown capture preset.");
+              const views = preset.viewIds.flatMap((id) =>
+                editing.data.views.filter((v) => v.id === id),
+              );
+              if (views.length !== preset.viewIds.length)
+                throw new Error("A capture preset references a missing view.");
+              const measurements = editing.data.measurements.filter(
+                (m) => m.sourceRevision === geometryRevision,
+              );
+              const annotations = editing.data.annotations.filter(
+                (a) => a.sourceRevision === geometryRevision,
+              );
+              get().setOverlays(preset.includeMeasurements ? measurements : [], annotations, null);
+              try {
+                capture = captureNamedViews(get(), views, path, geometryRevision);
+              } finally {
+                get().setOverlays(measurements, annotations, editing.pendingPoint);
+              }
+            } else capture = get().capture(c.four ?? false);
+            const blob = await capture;
+            if (c.attachToDraft)
+              await attachModelImage(blob, threadRef, `${path.split("/").at(-1)}-capture.png`);
+            png = await captureBase64(blob);
+            break;
+          }
+          case "snapshot":
+            break;
+          case "open":
+          case "close":
+          case "maximize":
+            throw new Error("Use the panel action host.");
+        }
+        return {
+          message: "3D editor action completed.",
+          ...(png ? { png } : {}),
+          ...(c.action === "snapshot"
+            ? {
+                ...(viewer.current && stats && !progress
+                  ? { camera: viewer.current.snapshot() }
+                  : {}),
+                sourceRevision: geometryRevision,
+                state: {
+                  inspector: inspectorOpen ? inspectorTab : null,
+                  tool: editing.picking,
+                  pendingPoint: editing.pendingPoint,
+                  pendingRegion: editing.pendingRegion,
+                  loading: loadingFile || (!stats && !error),
+                  parameters: session
+                    ? {
+                        values: session.values,
+                        applied: session.applied,
+                        setName: session.setName,
+                        automatic: session.automatic,
+                        hasUnapplied: session.hasUnapplied,
+                        historyCursor: session.historyCursor,
+                        history: session.historyLabels,
+                      }
+                    : null,
+                },
+              }
+            : {}),
+        };
+      };
+      void execute()
+        .then((result) =>
+          runModelCommand(models.completeEditorAction, {
+            environmentId: threadRef.environmentId,
+            input: {
+              threadId: threadRef.threadId,
+              path,
+              requestId: editorRequest.requestId,
+              ...result,
+            },
+          }),
+        )
+        .catch((error) =>
+          runModelCommand(models.completeEditorAction, {
+            environmentId: threadRef.environmentId,
+            input: {
+              threadId: threadRef.threadId,
+              path,
+              requestId: editorRequest.requestId,
+              message: error instanceof Error ? error.message : "Editor action failed.",
+              error: true,
+            },
+          }).catch(() => undefined),
+        );
+    },
+  );
+  useEffect(() => {
+    handleEditorRequest(editorRequest);
+  }, [editorRequest]);
   const volume = useMemo(() => resolveBuildVolume(settings.buildPlate), [settings.buildPlate]);
   const watched = useAtomValue(
     models.watch({ environmentId: threadRef.environmentId, input: file }),
@@ -210,9 +489,7 @@ function ModelFile({
       active = false;
     };
   }, [file, threadRef.environmentId, format, revision, allowLarge]);
-  const resolving = format !== "scad" && resolvedKey !== JSON.stringify([revision, allowLarge]);
-  const busy =
-    pending || refreshing || resolving || progress !== null || (!stats && !error && !watchError);
+  const busy = loadingFile || (!stats && !error && !watchError);
   const captureBusy = capturing || editing.operation !== null;
   const capture = useCallback(
     async (four: boolean) => {
@@ -647,7 +924,9 @@ function ModelFile({
                 disabled={!editing.canEdit || !stats || busy || captureBusy}
                 onCancel={editing.cancel}
                 onAdd={editing.addAnnotation}
-                onRequest={editing.prepareRequest}
+                onRequest={async (annotation) => {
+                  await editing.prepareRequest(annotation);
+                }}
                 onRelink={editing.reselect}
                 onReview={editing.review}
               />

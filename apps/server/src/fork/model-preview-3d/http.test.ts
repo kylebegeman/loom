@@ -7,7 +7,7 @@ import * as Path from "effect/Path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import { HttpRouter } from "effect/http";
-import { ForkRuntime } from "../ForkRuntime.ts";
+import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
 import { ModelPreviewHttpRoutes } from "./http.ts";
 import { ModelPreviewError } from "@t3tools/contracts/fork";
@@ -28,7 +28,12 @@ it.effect("serves mesh bytes and returns plain 404 for invalid credentials and t
     } as unknown as ModelPreviewService["Service"];
     const app = ModelPreviewHttpRoutes.pipe(
       Layer.provide(
-        Layer.mergeAll(Layer.succeed(ForkRuntime, Context.make(ModelPreviewService, service))),
+        Layer.mergeAll(
+          Layer.succeed(
+            ForkRuntime,
+            Context.make(ModelPreviewService, service) as unknown as Context.Context<ForkServices>,
+          ),
+        ),
       ),
       HttpRouter.provideRequest(NodeHttpPlatform.layer),
       Layer.provide(NodeServices.layer),

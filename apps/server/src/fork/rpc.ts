@@ -1,3 +1,4 @@
+import { makePcbPreviewRpcHandlers } from "./pcb-preview/rpc.ts";
 import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
 import { withForkRuntime } from "./ForkRuntime.ts";
 import { FORK_WS_METHODS, ForkRpcGroup } from "@t3tools/contracts/fork";
@@ -21,7 +22,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
             Effect.succeed({ features: LOOM_SERVER_FEATURES, serverVersion: packageJson.version }),
           ),
         [FORK_WS_METHODS.limits]: () => auth.effect(FORK_WS_METHODS.limits, readSwitchboardLimits),
-        // ...(yield* makeSnippetsRpcHandlers(auth)),
+        ...(yield* withForkRuntime(makePcbPreviewRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeModelPreviewRpcHandlers(auth))),
       });
     }),

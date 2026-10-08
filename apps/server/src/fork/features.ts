@@ -3,4 +3,5 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
   "switchboard",
   "model-preview-3d",
+  "pcb-preview",
 ];

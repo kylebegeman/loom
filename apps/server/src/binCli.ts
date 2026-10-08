@@ -1,3 +1,4 @@
+import { FORK_CLI_COMMANDS } from "./fork/cli/index.ts"; // fork: ext-cli
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -59,6 +60,7 @@ export const makeCli = ({ cloudEnabled = hasCloudPublicConfig } = {}) =>
     Command.withDescription("Run the T3 Code server."),
     Command.withHandler(runDefaultServerCommand),
     Command.withSubcommands([
+      ...FORK_CLI_COMMANDS, // fork: ext-cli
       Command.make("help").pipe(
         Command.withDescription("Show command help."),
         Command.withHandler(() =>

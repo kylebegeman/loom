@@ -1,114 +1,78 @@
 # L24 product
 
-## Problem
+Kyle wants to move from an idea to a physical product while working with agents in Loom.
+The PCB surface opens like an editor. Layers, inspection, comparison, simulation, parameters
+and the hardware library are optional tools, without a mandatory sequence or educational flow.
 
-Kyle designs small circuit boards with coding agents, in KiCad and in tscircuit (circuits
-as TypeScript). Today he has to leave Loom and open KiCad or `tsci dev` to see what the
-agent changed, and has to read raw `kicad-cli` output in the terminal to know whether the
-board passes its checks. He wants to see the schematic and board next to the thread, and
-see the rule violations, while the agent works.
+## Editing and inspection
 
-## What the user can do
+Open PCB preview from the panel launcher, command palette or an assigned
+`loom.pcb-preview.toggle` shortcut. Pick a KiCad or tscircuit design. The workspace follows
+the 3D design workspace: a document bar for the design, view and capture; a canvas with
+floating sheet or layer, drawing tool and navigation shelves; one inspector opened from a
+labelled rail; and a status bar. Wide panels dock the inspector to the right. Compact panels
+move the rail to the bottom and open the inspector as an expandable sheet. Light/dark backgrounds follow Loom's theme.
 
-- Open the PCB panel from the right panel launcher, the command palette, or a keybinding
-  they assign.
-- See every board design in the thread's workspace (KiCad projects and tscircuit circuits)
-  and pick one. The panel remembers the last picked design per project.
-- Switch between Schematic and PCB views. Schematics show one sheet at a time with a sheet
-  picker; the PCB view has layer presets: Front, Back, All copper.
-- Zoom and pan the drawing, fit it to the panel, and refresh it by hand.
-- Watch the drawing update after the agent (or the user in KiCad) saves the design files,
-  while the panel is visible.
-- Run ERC (schematic) or DRC (board) for a KiCad design and read the violations, grouped
-  into errors and warnings, each with its rule, description and the affected items with
-  positions. "Send summary to chat" puts a plain-text summary into the thread's composer for
-  the user to edit and send; "Copy summary" copies the same text.
-- See which tools the server found, in Settings, Loom, PCB preview, and follow a link to
-  install instructions when one is missing.
-- Open the current design in the standalone Electronics app, when its URL is set in
-  settings: "Open in Electronics" goes straight to that board's page.
+Schematic sheets and board drawings support keyboard and pointer navigation, recent view
+history and named views. KiCad layers have visibility, opacity, Solo/Restore and saved
+combinations; custom copper names retain their canonical identities. Component, pin and net
+selection highlights the current and linked drawings. Distance, angle and note tools create
+revision-aware marks. Captures attach to the existing draft with context and never send it.
 
-## Entry points
+KiCad ERC/DRC runs on request against saved zones, without modifying/refilling the board.
+Reports persist, show exclusions and staleness, and can be copied or added to a draft.
+Comparison accepts Git commits, agent checkpoints and the current saved working tree.
+It offers structural changes plus aligned overlays or side-by-side board drawings.
 
-| Entry                                                | Way in                                                                                                | Way out                                                   | Where the state shows                                                     |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Right panel launcher ("Open a surface") and "+" menu | "PCB preview"                                                                                         | Close the tab (x on the tab)                              | The panel tab, titled "PCB preview"; the design name shows in the toolbar |
-| Command palette                                      | "Open PCB preview" (`>pcb`)                                                                           | "Close PCB preview" appears when it is the active surface | Same                                                                      |
-| Keybinding                                           | `loom.pcb-preview.toggle`, unbound by default; the user binds it in Settings, Keybindings             | The same key closes it when it is the active surface      | Same                                                                      |
-| Settings                                             | Settings, Loom, PCB preview: detected `kicad-cli` and `tsci`, their versions, the Electronics app URL | Clear the URL field                                       | The section itself                                                        |
-| Chat                                                 | None in v1 (clicking a `.kicad_pcb` path in chat does not open the panel)                             |                                                           |                                                                           |
-| Checks view: "Send summary to chat"                  | Puts the check summary into the thread's composer (appended after a blank line if a draft exists)     | Edit or clear the composer; nothing is sent               | The composer                                                              |
-| Toolbar menu: "Open in Electronics"                  | Opens `<Electronics URL>/designs/by-path?path=<absolute entry path>` in the browser                   | Close that tab                                            | Only shown when the Electronics URL is set                                |
+## Design tools
 
-## States
+3D exports the saved board to a real GLB on the host and opens the L23 renderer. Rotate,
+zoom, Fit and standard views work with rendering only after input/load/resize. Available
+component geometry depends on installed CAD models; the export log explains missing models.
 
-- **Needs a Loom server:** the environment lacks `pcb-preview` in `loomFeatures`. The
-  launcher entry is disabled with "Needs a Loom server with PCB preview"; a stale tab shows
-  the same line.
-- **Loading designs:** a small spinner and "Looking for boards" while the workspace search
-  runs.
-- **No designs:** "No KiCad or tscircuit designs in this project." with a one-line hint:
-  "Add a `.kicad_pro` or a `*.circuit.tsx` file, or ask the agent to create one."
-- **Tool missing:** for a KiCad design without `kicad-cli`: "KiCad 9 or newer is needed to
-  render this design." with a link to https://www.kicad.org/download/. For a tscircuit
-  design without `tsci`: "The tscircuit CLI is needed. Add `tscircuit` to the project or
-  install it globally." with a link to https://docs.tscircuit.com/intro/installation.
-  The rest of the panel (design list) still works.
-- **Old KiCad:** `kicad-cli version` below 9: "This panel needs KiCad 9 or newer; found
-  <version>."
-- **Run project code (tscircuit only):** building a tscircuit design runs the project's
-  TypeScript. The first render per project asks: "Rendering runs this project's circuit code
-  with tsci on <environment name>. Render?" with Render and Cancel. The answer is remembered
-  per project on this device.
-- **Rendering:** the previous drawing stays visible, dimmed, with "Rendering" in the toolbar.
-  A first render shows a centered spinner.
-- **Render failed:** the tool's exit code and the last 40 lines of its output in a
-  monospaced block, a Retry button, and the previous drawing (if any) kept below with
-  "Showing the last good render".
-- **Too large:** a sheet over the size cap (4 MiB of SVG) shows "This sheet is too large
-  to preview here (N MiB). Open it in KiCad." instead of the drawing.
-- **Checks idle:** "Run ERC" / "Run DRC" buttons with "Not run yet".
-- **Checks running:** the button shows a spinner; other buttons stay usable.
-- **Checks passed:** "No violations. ERC ran <relative time> with KiCad <version>." "Send
-  summary to chat" still works (it says there are no violations).
-- **Checks found violations:** counts in the tab label ("Checks 3"), grouped list,
-  excluded violations hidden behind "Show excluded (n)".
-- **Checks failed to run:** the tool output, as for a render failure.
-- **Stale:** when files changed after the last check run, the check header says "Files
-  changed since this run" with a Run again button. Checks never re-run automatically; they
-  can be slow on large boards.
+Simulation uses installed ngspice, valid component models, ground and a usable exported or
+workspace netlist. Operating-point values, transient/frequency plots, AC magnitude/phase,
+probes and numeric sweeps are available. Save/remove setups and export CSV. A simulator is
+not an electronics signoff tool, and no learning curriculum is included.
 
-## Surfaces and connection modes
+tscircuit parameters come from a sidecar schema and unique `/* loom:param key */` literals.
+The editor shows current values, bounds and choices, reviews proposed source, checks its
+revision before writing, and saves/removes variants. Loom does not infer writable source
+from arbitrary TypeScript. Arbitrary circuit authoring remains an agent or external CAD task.
 
-- Web and desktop: full feature. Desktop uses the same web bundle.
-- Mobile: not supported and not shown. The upstream mobile app ignores fork data.
-- Remote environments (Tailscale, T3 Connect): supported. Rendering happens on the
-  environment's server, which is where the files and tools are; the client only receives
-  SVG text and check results over the WebSocket.
-- Upstream T3 server: disabled entry, as above.
+## Hardware and enclosure references
+
+The environment library starts with manufacturer references for Pico, Uno, ESP32 and Feather.
+Entries can record exact revisions, ownership, quantity, dimensions, provenance and local
+schematics, boards, pinouts, datasheets or models. Starter references do not claim inventory
+or redistribute external CAD assets. Link companion files before importing multi-file CAD.
+Imports preserve originals and use content-addressed project directories.
+
+Export board reference saves a GLB and revision-aware mechanical metadata to this thread or
+an explicitly selected destination thread workspace. Other agents can build cases around
+those files. The action prepares a draft in the invoking thread and never sends a message.
+
+## Agent parity and states
+
+MCP and CLI cover host rendering, checks, inspection, revisions, simulation, parameters,
+workspace/library persistence, asset reuse and reference export. Editor commands cover open,
+close/maximize, views, camera, layers, selection, tools, picks, captures, summary preparation,
+refresh/cancel and snapshots. Captures return host files. Saved state operations include removal.
+The CLI uses the same authenticated MCP boundary, not an unauthenticated local shortcut.
+
+Builds and other long tasks show elapsed progress, with cancellation where the underlying
+job is cancellable. Empty/tool-missing/trust/failure/retry states remain usable; the last good
+drawing survives a failed rebuild. tscircuit project execution requires the client's trust
+choice for UI tools. Agent access follows its existing thread/environment authority.
+
+Web and desktop are supported. Mobile has no PCB UI. A server without the capability shows
+an unavailable launcher. Files/tools always belong to the selected environment. Electronics
+is an optional URL configured in Settings, Loom, PCB preview; no workflow depends on it.
 
 ## Decisions
 
-- **Implement now (Kyle, 2026-09-27).** Include the full KiCad and tscircuit preview scope,
-  with KiCad ERC/DRC and summary insertion. The Electronics app is not a prerequisite.
-
-- SVG, not PNG or an embedded viewer. KiCad and tscircuit both export SVG, it scales without
-  a GPU, and it keeps the payload text. The drawing is shown through an `<img>` element
-  from a Blob URL, so scripts in a hostile SVG never run.
-- Rendering runs on the environment server with the user's own `kicad-cli` and `tsci`.
-  Loom downloads and installs nothing.
-- ERC and DRC run only when the user asks. Renders run automatically while visible.
-- tscircuit rendering asks once per project because it executes project code.
-- No dependency on the Electronics app. It owns fabrication, parts and ordering; this panel
-  owns "look at the board next to the chat".
-- Tool detection only in v1 (Kyle): `PATH`, `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`
-  and the project's `node_modules/.bin/tsci`, with no custom path settings. It covers the
-  standard installs and needs no settings storage; custom paths are a follow-up. KiCad is not
-  installed on Kyle's Mac yet, so the missing-tool state is the first one he will see.
-- "Open in Electronics" deep-links to `/designs/by-path?path=<abs>` (Kyle), which the
-  Electronics spec now defines. The path is the design's entry file on the environment host,
-  so the link lands on the right board when the Electronics app runs on that machine.
-- "Send summary to chat" is in v1 (Kyle): it fills the composer and never sends, so the user
-  stays in control of what the agent reads. "Copy summary" stays for other destinations.
-- Uses upstream's composer draft store instead of `ext-composer`: same behavior Kyle chose
-  (fills, never sends), no seam.
+Kyle selected the full original packet on 2026-09-27 and approved the expansion in this
+thread on 2026-10-07/08. Keep the editor simple and agent-accessible. Education is secondary
+and excluded. Slicing, print readiness, fabrication packages, costing and ordering are not
+part of this implementation. Tool detection remains PATH/standard-install/project-local;
+Loom does not manage CAD installations. No new dependency or database migration was needed.

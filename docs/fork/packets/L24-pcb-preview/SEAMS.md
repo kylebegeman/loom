@@ -1,63 +1,29 @@
 # L24 seams
 
-This packet touches upstream files only through extension points.
+Core, panels, settings, palette, root, keybindings and MCP existed at the integration
+baseline. L24 registers services/contracts/UI in fork-owned files. It adds a small CLI
+extension and extends the existing panel presentation integration.
 
-## Extension points created by this packet
+## Upstream changes
 
-Whichever of these do not exist yet when the packet starts, each in its own commit, byte for
-byte as [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) specifies:
+- `apps/server/src/processRunner.ts` and its regression test carry two `pcb-preview`
+  markers each for optional `extendEnv`. Circuit execution supplies a filtered environment
+  with inheritance disabled. Existing process callers retain their behavior.
+- `packages/client-runtime/src/state/commandPermissions.test.ts` carries three
+  `pcb-preview` markers for the protected PCB operations.
+- `apps/server/src/binCli.ts` carries two `ext-cli` markers: import fork commands and spread
+  them into the subcommand list. Implementation stays under `fork/cli` and packet folders.
+- `apps/server/src/mcp/McpHttpServer.ts` retains two `ext-mcp` markers. Registration delegates
+  to each typed fork entry so heterogeneous toolkits preserve their dependencies.
+- `apps/web/src/components/ChatView.tsx` carries nine `ext-panels` markers. It mounts the
+  fork presentation hook alongside existing panel actions and preserves the canvas keyboard
+  exception. This enables acknowledged maximize/restore from editor tools.
 
-| Extension point   | Existence check (EXTENSION-POINTS.md section) | Commit                                                |
-| ----------------- | --------------------------------------------- | ----------------------------------------------------- |
-| `ext-core`        | 1. Server core                                | `feat(fork): add the server core extension point`     |
-| `ext-panels`      | 6. Right panels                               | `feat(fork): add the right panel extension point`     |
-| `ext-settings`    | 7. Settings                                   | `feat(fork): add the settings extension point`        |
-| `ext-palette`     | 8. Command palette                            | `feat(fork): add the command palette extension point` |
-| `ext-web-root`    | 5. Web root                                   | `feat(fork): add the web root extension point`        |
-| `ext-keybindings` | 9. Keybindings (needs `ext-web-root`)         | `feat(fork): add the keybindings extension point`     |
+[FORK.md](../../../../FORK.md), [the manifest](../../seams.tsv) and
+[extension guidance](../EXTENSION-POINTS.md) record these integrations. Composer drafts,
+clipboard helpers and the existing signed-file transport require no extra upstream seams.
+There are no provider-adapter, native-mobile or deployment-infrastructure seams.
 
-Record here which ones this packet actually created, with commit hashes, when it lands.
-
-## Packet seams
-
-None. Registrations happen only inside fork-owned registry files:
-
-| Fork file                                      | Line added                                                                                                   |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `packages/contracts/src/fork/index.ts`         | `export * from "./pcb-preview.ts";`                                                                          |
-| `packages/contracts/src/fork/rpc.ts`           | `PcbPreviewRpcGroup,` in the `.merge(`; `\| typeof PCB_PREVIEW_WS_METHODS.watch` in `ForkSubscriptionRpcTag` |
-| `packages/contracts/src/fork/keybindings.ts`   | `"loom.pcb-preview.toggle",`                                                                                 |
-| `packages/client-runtime/src/fork/index.ts`    | `export * from "./pcb-preview.ts";`                                                                          |
-| `apps/server/src/fork/features.ts`             | `"pcb-preview"` in `LOOM_SERVER_FEATURES`                                                                    |
-| `apps/server/src/fork/ForkRuntime.ts`          | `\| PcbPreviewService` in `ForkServices`                                                                     |
-| `apps/server/src/fork/ForkLayer.ts`            | `PcbPreviewService.layer,` in `ForkServicesLive`                                                             |
-| `apps/server/src/fork/rpc.ts`                  | `...(yield* makePcbPreviewRpcHandlers(auth)),`                                                               |
-| `apps/server/src/fork/rpcAuthorization.ts`     | six scope entries                                                                                            |
-| `apps/web/src/fork/panels/registry.ts`         | `pcbPreviewPanel,`                                                                                           |
-| `apps/web/src/fork/settings/registry.ts`       | `pcbPreviewSettings,`                                                                                        |
-| `apps/web/src/fork/commandPalette/registry.ts` | `pcbPreviewPaletteSource,`                                                                                   |
-| `apps/web/src/fork/ForkRoot.tsx`               | `{ id: "pcb-preview-commands", Component: PcbPreviewCommandHost },`                                          |
-
-When `ForkSubscriptionRpcTag` is still `never`, replace `never` with the first tag.
-
-"Send summary to chat" calls upstream's exported `useComposerDraftStore.getState().setPrompt`
-(`apps/web/src/composerDraftStore.ts:571,4073`) from fork code, so it adds no seam and does
-not need `ext-composer`.
-
-## Merge check
-
-Run on the packet branch before asking for review:
-
-```sh
-git fetch -q upstream --tags
-tag=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -1)
-git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
-```
-
-Record the tag and result here. With no packet seams, any conflict can only be on
-extension point seams, which EXTENSION-POINTS.md owns.
-
-## FORK.md rows
-
-None for packet seams. If this packet created an extension point, add that extension
-point's rows to FORK.md's "Extension point seams" table in the same commit that created it.
+Focused manifest validation is separate from the repository-wide integration script. Merge
+rehearsal against a future upstream release belongs to the eventual landing/release step;
+this dirty feature worktree has not been merged or published.

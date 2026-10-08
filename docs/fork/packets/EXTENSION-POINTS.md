@@ -47,6 +47,7 @@ report it rather than guessing.
 | [7. Settings](#7-settings-ext-settings)                                    | `fork: ext-settings`        | 2, plus one route file and the generated route tree | none                   |
 | [8. Command palette](#8-command-palette-ext-palette)                       | `fork: ext-palette`         | 1                                                   | ext-core               |
 | [9. Keybindings](#9-keybindings-ext-keybindings)                           | `fork: ext-keybindings`     | 1                                                   | ext-core, ext-web-root |
+| [CLI commands](#cli-commands-ext-cli)                                      | `fork: ext-cli`             | 1                                                   | ext-core               |
 | [10. MCP tools](#10-agent-facing-mcp-tools-ext-mcp)                        | `fork: ext-mcp`             | 1                                                   | ext-core               |
 | [11. Composer](#11-composer-ext-composer)                                  | `fork: ext-composer`        | 1                                                   | none                   |
 | [11b. Composer menu trigger](#11b-composer-menu-trigger-ext-composer-menu) | `fork: ext-composer-menu`   | 3                                                   | ext-composer           |
@@ -854,8 +855,8 @@ further upstream edits.
 
 ### Fork design
 
-Focusable canvases own their input: ChatView excludes `canvas[tabindex]` from its
-type-to-focus-composer redirect so panel keyboard controls can receive ordinary keys.
+Focusable canvases own their input: ChatView excludes `canvas[tabindex]` and
+`[data-loom-canvas][tabindex]` from its type-to-focus-composer redirect so panel keyboard controls can receive ordinary keys.
 
 One generic surface kind, `"fork"`, carrying a `panelId`. A fork registry maps panel ids to
 title, icon, launcher letter, availability and component. The store gains one generic
@@ -1709,8 +1710,9 @@ using its `toolkitRegistration` helper. Never register a fork toolkit directly w
 `McpServer.toolkit`: that bypasses the shared access declarations.
 
 [`apps/server/src/fork/mcp/index.ts`](../../../apps/server/src/fork/mcp/index.ts)
-exports `FORK_MCP_TOOLKITS`, a readonly array of `{ toolkit, handlers }`. The two
-`fork: ext-mcp` lines import it and add its registrations to the shared layer.
+exports `FORK_MCP_TOOLKITS`, a readonly array of typed registration entries retaining each toolkit and its handlers. The two
+`fork: ext-mcp` lines import it and call each entry's `register(toolkitRegistration)` in the shared
+layer, preserving heterogeneous toolkit dependencies.
 
 A packet defines its toolkit with `Tool.make` and `Toolkit.make`, then builds
 handlers with `McpToolAccess.toLayer`. Each handler declares its access with the
@@ -1728,7 +1730,8 @@ construction, then call the packet service through `withForkRuntime`.
 Do not extend `McpCapability` for a packet. Use shared caller access checks and
 the packet's own setting to gate its tools. All tools remain listed to agent
 sessions, so keep their descriptions short and avoid redundant tools. Tool
-parameters must be a non-empty struct for provider compatibility.
+parameters use `Tool.EmptyParams` for tools without arguments. An empty `Schema.Struct({})`
+can block shared registration; exercise actual toolkit registration in a focused test.
 
 ### Verification
 
@@ -1738,6 +1741,21 @@ refusals and packet-disabled errors. Provide a test `ForkRuntime` context and
 any dependencies declared by the toolkit. Lint rejects raw MCP registration.
 
 ---
+
+## CLI commands (`ext-cli`)
+
+The fork-owned `apps/server/src/fork/cli/index.ts` exports `FORK_CLI_COMMANDS`. Two marked
+lines in `apps/server/src/binCli.ts` import it and spread commands into the upstream
+subcommand list. Packet commands stay in fork paths and invoke service-backed transports.
+L24's `t3 pcb` and `t3 model` use the existing authenticated MCP protocol helper, with
+explicit Loom credentials or inherited ACP credentials. They preserve tool failures as a
+nonzero command result. Do not add unauthenticated local mutations or duplicate CLI logic
+inside upstream handlers.
+
+The panel presentation hook is mounted by `ChatView` through `ext-panels`. It acknowledges
+maximize/restore for the matching scoped thread and reports unavailable narrow layouts.
+Editors must preserve `[data-loom-canvas][tabindex]` keyboard ownership and clean event
+listeners when the thread unmounts.
 
 ## 11. Composer (`ext-composer`)
 

@@ -1,5 +1,6 @@
 /** Loom keybinding commands (`loom.<slug>.<action>`). Spread into STATIC_KEYBINDING_COMMANDS. */
 export const FORK_KEYBINDING_COMMANDS = [
+  "loom.pcb-preview.toggle",
   "loom.file-outline.toggle",
   "loom.thread-inspector.toggle",
   "loom.thread-inspector.card",

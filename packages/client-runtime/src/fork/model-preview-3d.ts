@@ -21,6 +21,24 @@ export function createModelPreviewAtoms<R, E>(
     tag: M.renderScad,
   });
   return {
+    editorEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:model-editor",
+      tag: M.editorEvents,
+      idleTtlMs: 0,
+    }),
+    panelEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:model-panel",
+      tag: M.panelEvents,
+      idleTtlMs: 0,
+    }),
+    editorAction: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-editor-action",
+      tag: M.editorAction,
+    }),
+    completeEditorAction: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-editor-ack",
+      tag: M.completeEditorAction,
+    }),
     workspace: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "loom:model-workspace",
       tag: M.workspace,

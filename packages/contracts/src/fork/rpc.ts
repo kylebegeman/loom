@@ -1,3 +1,4 @@
+import { PcbPreviewRpcGroup, PCB_PREVIEW_WS_METHODS } from "./pcb-preview.ts";
 import { ModelPreview3dRpcGroup, MODEL_PREVIEW_3D_WS_METHODS } from "./model-preview-3d.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
@@ -29,6 +30,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   SwitchboardRpcGroup,
   ModelPreview3dRpcGroup,
+  PcbPreviewRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -41,6 +43,12 @@ export const LoomWsRpcGroup = WsRpcGroup.merge(ForkRpcGroup);
  * method missing here would be typed as unary. Replace `never` with the first tag.
  */
 export type ForkSubscriptionRpcTag =
+  | typeof PCB_PREVIEW_WS_METHODS.workspaceUpdates
+  | typeof PCB_PREVIEW_WS_METHODS.panelEvents
+  | typeof PCB_PREVIEW_WS_METHODS.editorEvents
+  | typeof PCB_PREVIEW_WS_METHODS.watch
+  | typeof MODEL_PREVIEW_3D_WS_METHODS.panelEvents
+  | typeof MODEL_PREVIEW_3D_WS_METHODS.editorEvents
   | typeof MODEL_PREVIEW_3D_WS_METHODS.watch
   | typeof MODEL_PREVIEW_3D_WS_METHODS.workspace;
 export type ForkStreamCommandRpcTag = never;

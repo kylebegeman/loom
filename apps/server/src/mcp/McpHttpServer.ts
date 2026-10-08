@@ -860,5 +860,5 @@ export const layer = Layer.mergeAll(
   layerPullRequestsToolkit,
   layerDeviceToolkit,
   layerHtmlToolkit,
-  ...FORK_MCP_TOOLKITS.map(({ toolkit, handlers }) => toolkitRegistration(toolkit, handlers)), // fork: ext-mcp
+  ...FORK_MCP_TOOLKITS.map((entry) => entry.register(toolkitRegistration)), // fork: ext-mcp
 ).pipe(Layer.provideMerge(layerMcpTransport));

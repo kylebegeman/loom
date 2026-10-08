@@ -1,112 +1,52 @@
-# L24: PCB preview
+# L24: PCB workspace
 
-Status: Implement now. Kyle included the full packet on 2026-09-27. It follows L23 in the
-[selected queue](../IMPLEMENT-NOW.md#selected-queue), but does not depend on it.
+Status: Complete. Included in Loom `0.0.46-nightly.20261008.2801` on `main` (2026-10-08).
+See [TESTING.md](./TESTING.md) for evidence and compatibility limits.
+Integration baseline: `23b9bdc48dc8ca3356df5b686c11e02a7519cb76`.
 
-Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Reuse existing core,
-panels, palette, root and keybinding extension points. Settings is missing at this review;
-create it only if L23 or another selected packet has not already added it. Current workspace
-lookup and composer draft APIs support this design. Provide ProcessRunner locally to the
-service, and use the existing clipboard helper for remote HTTP clients.
-
-The whole scope below is included: both KiCad and tscircuit rendering, live reload, KiCad
-ERC/DRC and summaries. No new production package dependency or database migration is planned.
-Verify actual installed CLI versions and render/report fixtures during implementation;
-mocked processes alone do not establish completion. Electronics remains an optional link,
-not a prerequisite. Follow the [agent handoff](../IMPLEMENT-NOW.md#agent-handoff).
-
-A right panel that shows the circuit boards in the thread's project. It finds KiCad projects
-and tscircuit circuits in the workspace, renders their schematic and board views to SVG on
-the environment server (with `kicad-cli` and `tsci`), re-renders when the files change, and
-runs KiCad's electrical rules check (ERC) and design rules check (DRC) with the violations
-listed in the panel. The user and the agent can look at the same board while the agent
-edits it.
+Kyle authorized the original KiCad/tscircuit preview packet, all eight editor additions,
+theme-aware drawings, rotatable 3D boards, a reusable hardware library, cross-thread board
+references, and PCB/3D MCP and CLI parity. This is an editor with optional tools. Educational
+content, slicing, fabrication and ordering remain outside this work.
 
 ## Scope
 
-- In:
-  - Design discovery in the thread's workspace: KiCad projects (`*.kicad_pro`, or a lone
-    `*.kicad_sch` / `*.kicad_pcb`) and tscircuit circuits (`*.circuit.tsx`, or the entrypoint
-    of a `tscircuit.config.json` project).
-  - Schematic view (one page per sheet) and PCB view (front, back, or all copper layer
-    presets) as SVG, with fit, zoom and pan.
-  - Automatic re-render while the panel is visible and the design's files change on disk.
-  - KiCad ERC and DRC on demand, violations grouped by severity with their location text,
-    and a plain-text summary: "Send summary to chat" puts it in the thread's composer (never
-    sends), "Copy summary" copies it.
-  - Tool detection with clear setup states when KiCad or the tscircuit CLI is missing.
-    Detection only: `PATH`, `/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli`, and the
-    project's `node_modules/.bin/tsci`.
-  - A Loom settings section showing the detected tools, and an optional link to the
-    standalone Electronics app. "Open in Electronics" deep-links to the design with
-    `<url>/designs/by-path?path=<abs>`, a page Kyle's Electronics spec now defines.
-  - Command palette entry and an unbound keybinding command to toggle the panel.
-- Out:
-  - Editing boards or schematics, part search, BOM, costing, Gerbers, order packages, 3D
-    renders. Those belong to the standalone Electronics app
-    (`~/Developer/docs/apps/electronics/`), which this panel only links to.
-  - tscircuit checks beyond the build log (tscircuit DRC findings are shown as raw log
-    text, not parsed), and ERC/DRC for tscircuit designs (that needs a KiCad export; the
-    Electronics app owns it).
-  - Agent-facing MCP tools. Agents can already run `kicad-cli` in the terminal, and the
-    Electronics app has its own MCP server.
-  - Follow-up: custom tool paths per environment in settings. Kyle chose detection only for
-    v1; add overrides only if a real install is missed.
-  - Mobile UI.
+- Discover saved KiCad projects, standalone schematics/boards, `*.circuit.tsx`, and
+  tscircuit configuration entrypoints in the current thread workspace.
+- Render schematic sheets and board drawings on the environment host, with live reload,
+  fit/zoom/pan, navigation history, named views and custom layer visibility/opacity/Solo/sets.
+- Inspect components, pins and nets with linked board/schematic highlighting.
+- Measure distance and angles, pin annotations, and attach captures to composer drafts.
+- Compare Git commits, checkpoints and the saved working tree with structural changes and
+  aligned board overlays.
+- Run KiCad ERC/DRC, retain bounded reports and prepare summaries without sending messages.
+- Run ngspice operating-point, transient and AC analyses, parameter sweeps, saved setups,
+  waveform plots and CSV export. Designs need actual SPICE models or a supplied netlist.
+- Review/apply explicitly declared tscircuit parameters and save reusable variants.
+- Export and rotate actual GLB boards; reuse the L23 viewer without an idle render loop.
+- Keep an environment hardware catalog with manufacturer references, owned inventory,
+  dimensions, provenance and explicitly linked local assets. Starter entries do not bundle
+  third-party CAD files. Copy linked assets into immutable project folders for reuse.
+- Export a board GLB and mechanical revision metadata to this or another thread workspace
+  for enclosure design. No messages are sent to another thread.
+- Expose service operations and visible editor actions through MCP and authenticated CLI
+  commands. Visible canvas actions require a connected editor; host operations do not.
 
-## Surfaces
+Web and desktop share this surface. Remote data uses scoped RPC and signed HTTP assets;
+relay/tunnel verification remains a separate compatibility limit. Mobile has shared contracts
+but no PCB UI. Upstream servers disable the fork launcher through capability gating.
 
-- Web and desktop: supported. Everything runs on the environment server and reaches the
-  client over the WebSocket RPC, so it works locally, over Tailscale and through T3 Connect.
-- Mobile: not supported. Mobile has no right panel system; the upstream App Store app never
-  shows fork UI.
-- Upstream T3 server: the launcher entry is shown disabled with "Needs a Loom server with PCB
-  preview".
-
-## Extension points used
-
-- [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core) (fork RPC group, `ForkLayer`, `loomFeatures`), may create it.
-- [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), may create it.
-- [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), may create it.
-- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), may create it.
-- [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) and [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings) (for the unbound toggle command), may create them.
-
-Not `ext-composer`: "Send summary to chat" writes the draft through upstream's public
-composer draft store (`setPrompt`), the same path L06 uses, so it needs no composer seam.
-
-No persistence migrations: the render cache is files under `<stateDir>/fork/pcb-preview/`.
-
-## Packet seams
-
-None. Everything goes through extension points.
-
-## Optional integrations
-
-- The standalone Electronics app (`~/Developer/docs/apps/electronics/`, default port 7450).
-  If the user sets its URL in the Loom settings section, the panel shows "Open in
-  Electronics", which opens `/designs/by-path?path=<absolute entry path>` (defined in the
-  Electronics spec, SPEC.md section 5 and ARCHITECTURE.md "Loom preview contract"). Nothing
-  in this packet requires the app to exist or be running.
-- If packet L12 (panel picker) is present, the panel shows up there automatically through the
-  fork panel registry. No work in this packet.
-
-## Size
-
-Medium: about 1,850 lines including tests. One agent, 2 to 3 days.
-
-## How an agent starts
-
-Read `AGENTS.md`, `FORK.md`, the packets `README.md`, `CONVENTIONS.md`,
-`EXTENSION-POINTS.md`, then this folder in order: PRODUCT, TECHNICAL, SEAMS,
-IMPLEMENTATION, TESTING, REFERENCES. KiCad is not installed on Kyle's Mac yet (2026-09-24):
-ask Kyle to install KiCad 10 (and optionally `tscircuit`) before the manual check; the
-automated tests do not need either tool.
+No new production dependency or database migration was added. Tools are detected on the
+environment host, never downloaded by Loom. The Electronics app link remains optional.
+Task-owned scratch is removed after phases; the active review preview retains only its
+needed tools, fixture workspace, dependencies and isolated state.
 
 ## Documents
 
-- [PRODUCT.md](./PRODUCT.md): what and why, for Kyle.
-- [TECHNICAL.md](./TECHNICAL.md): the design.
-- [SEAMS.md](./SEAMS.md): every upstream touch.
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): ordered steps for the implementing agent.
-- [TESTING.md](./TESTING.md): how it is proven.
-- [REFERENCES.md](./REFERENCES.md): prior art and sources.
+- [PRODUCT.md](./PRODUCT.md): editor scope and product decisions.
+- [TECHNICAL.md](./TECHNICAL.md): boundaries and lifetime constraints.
+- [SEAMS.md](./SEAMS.md): upstream integrations.
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md): delivery status.
+- [TESTING.md](./TESTING.md): focused and integrated evidence.
+- [REFERENCES.md](./REFERENCES.md): tools and sources.
+- [User guide](../../user/pcb-preview.md): how to use the workspace.

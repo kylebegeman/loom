@@ -42,22 +42,21 @@ Studio" area:
 - `REFERENCES.md`: verified tool facts (KiCad 10.0.6 current, `kicad-cli` path on macOS,
   `tsci build`/`export` formats, licenses), reused here.
 
-## Upstream T3 Code
+## Current Loom boundaries
 
-- `apps/server/src/processRunner.ts:20-36,140-145`: `ProcessRunInput` and `ProcessRunner`.
-- `apps/web/src/composerDraftStore.ts:571` (`setPrompt` in the store interface) and `:4073`
-  (`useComposerDraftStore`): how "Send summary to chat" fills the composer; the same path
-  L06 uses.
-- `apps/server/src/workspace/WorkspacePaths.ts:92-118`: `resolveRelativePathWithinRoot`.
-- `apps/server/src/workspace/WorkspaceEntries.ts:90-107`: `search`.
-- `packages/contracts/src/project.ts:9,17-25`: `ProjectSearchEntriesInput`, limit 200.
-- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:50-56,201-203,279`:
-  thread checkpoint context (workspace root and worktree path).
-- `apps/server/src/checkpointing/Utils.ts:12-24`: `resolveThreadWorkspaceCwd` (worktree first).
-- `apps/server/src/keybindings.ts:568-569`: debounced `fs.watch` pattern.
-- `apps/server/src/atomicWrite.ts:5`: `writeFileStringAtomically`.
-- `apps/web/src/rightPanelStore.ts:160`: `closeSurface`.
-- `packages/contracts/src/auth.ts:81-88`: scope constants.
+Integration baseline: `23b9bdc48dc8ca3356df5b686c11e02a7519cb76`.
+
+- `apps/server/src/processRunner.ts`: argv-based processes, timeouts, output limits and
+  explicit environment inheritance.
+- `apps/server/src/orchestration-v2/ProjectionStore.ts` and `ProjectStore.ts`: thread,
+  project and worktree lookup. The earlier ProjectionSnapshotQuery design is obsolete.
+- `apps/server/src/workspace/WorkspacePaths.ts` and `WorkspaceEntries.ts`: validated
+  workspace-relative paths and bounded design discovery.
+- `apps/server/src/atomicWrite.ts`: publishing complete manifests and reports.
+- `packages/client-runtime/src/state/runtime.ts`: guarded commands, queries and scoped
+  subscriptions for local and remote environments.
+- `apps/web/src/composerDraftStore.ts`, `hooks/useCopyToClipboard.ts` and
+  `rightPanelStore.ts`: summary preparation, remote copying and panel lifetime.
 
 ## External
 
@@ -73,11 +72,33 @@ Studio" area:
   `unconnected_items`, `schematic_parity`, `coordinate_units`, `kicad_version`; ERC:
   `sheets[].{path, uuid_path, violations}`. Violation: `type`, `description`, `severity`
   (`error` | `warning`), `excluded`, `items[].{uuid, description, pos.{x,y}}`.
-- KiCad 9 flag parity with 10 for `pcb export svg --mode-single` and `--fit-page-to-board`
-  is UNVERIFIED; confirm with `kicad-cli pcb export svg --help` on a KiCad 9 install.
+- KiCad 10.0.6 help and actual invocations were verified. KiCad 9 execution remains
+  unverified; confirm its export/check flags on an installed KiCad 9 CLI. The attempt to
+  read the official KiCad 9 CLI page returned HTTP 403 on 2026-10-07.
 - tscircuit CLI: https://docs.tscircuit.com/command-line/tsci-export (`tsci export <file>
 -f schematic-svg|pcb-svg -o <path>`), https://docs.tscircuit.com/command-line/tsci-build
   (entrypoint discovery, `*.circuit.tsx`, exit 1 on evaluation errors). tscircuit is MIT;
-  this packet only runs the installed CLI. Whether `tsci --version` prints a bare version
-  is UNVERIFIED; parse leniently.
+  this packet only runs the installed CLI. `tsci --version` and both export formats were verified with 0.0.2764 and Bun.
 - Reference repositories in selections.md: none are relevant to PCB rendering.
+
+## Expanded tool references
+
+- KiCad 10 CLI GLB export: https://docs.kicad.org/10.0/en/cli/cli.html#pcb_export_glb.
+  Actual flags include tracks, pads, silkscreen and soldermask. Its GLB uses standard metres.
+- tscircuit export formats: https://docs.tscircuit.com/command-line/tsci-export. Actual installed
+  0.0.2764 exports Circuit JSON, GLB and SPICE as well as the two SVG views. Its
+  `circuit-json-to-gltf` dependency documents a Y-up millimetre world frame. Installed source
+  and real GLB bounds were checked; Loom normalizes that output to standard metres.
+- glTF 2.0 coordinate/unit convention: https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html.
+  Linear distances are metres; L23 converts metres to its millimetre modelling space.
+- ngspice manual: https://ngspice.sourceforge.io/docs/ngspice-manual.pdf. Actual ngspice 47
+  batch runs verified operating point, transient, AC, raw vectors and parameter sweeps.
+- tscircuit design engine: https://github.com/tscircuit/tscircuit. Loom uses its installed CLI
+  rather than evaluating project code in the browser.
+
+The starter hardware catalog's provenance is each entry's manufacturer page: Raspberry Pi
+Pico documentation, Arduino Uno Rev3 documentation, Espressif ESP32-DevKitC guide and Adafruit
+Feather overview. The shipped catalog links these sources; it does not redistribute their
+CAD files or infer that Kyle owns them. Exact board revisions and asset licenses remain entry
+metadata. KiCad demo provenance is official complex_hierarchy and One-Air-Max; the small
+resistor/capacitor and divider-netlist fixtures are synthetic verification data.

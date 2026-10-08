@@ -1,0 +1,980 @@
+/*
+ * PCB workspace. The drawing owns the window; everything else floats on it or docks to its
+ * right edge. Layout mirrors the 3D design workspace so both read as one family:
+ * document bar, canvas with floating shelves, inspector, rail, status bar.
+ */
+.root {
+  container-type: inline-size;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: 13px;
+  --pcb-canvas: #f1f3f5;
+  --pcb-surface: var(--popover);
+  --pcb-line: var(--border);
+  --pcb-shadow: 0 4px 16px rgb(0 0 0 / 12%), 0 1px 3px rgb(0 0 0 / 8%);
+  --pcb-selected: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+:global(.dark) .root {
+  --pcb-canvas: #151920;
+  --pcb-shadow: 0 6px 20px rgb(0 0 0 / 40%), 0 1px 3px rgb(0 0 0 / 30%);
+}
+.root :where(svg.lucide) {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.root :where(button, a) {
+  touch-action: manipulation;
+}
+.root :where(button:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+.root :where(button, a, select, input, textarea, summary):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  outline: none;
+}
+
+/* Document bar: which design, which view, what to do with it. */
+.docBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  padding: 7px 10px 7px 8px;
+  border-bottom: 1px solid var(--pcb-line);
+  background: var(--background);
+  flex-shrink: 0;
+}
+.docActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.designTrigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 8px 4px 4px;
+  border-radius: 8px;
+  text-align: left;
+}
+.designTrigger:hover,
+.designTrigger[data-popup-open] {
+  background: var(--accent);
+}
+.designGlyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  color: var(--primary);
+  background: var(--pcb-selected);
+}
+.designGlyph[data-kind="tscircuit"] {
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+}
+.designGlyph svg.lucide {
+  width: 17px;
+  height: 17px;
+}
+.designName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.designName strong,
+.designName small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.designName strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.designName small {
+  margin-top: 1px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.chevron {
+  color: var(--muted-foreground);
+}
+.root .chevron {
+  width: 14px;
+  height: 14px;
+}
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+}
+.segmented button:not(:disabled):hover {
+  color: var(--foreground);
+}
+.segmented button[aria-pressed="true"] {
+  color: var(--foreground);
+  background: var(--background);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+:global(.dark) .segmented button[aria-pressed="true"] {
+  background: var(--accent);
+}
+.split {
+  display: inline-flex;
+}
+.split > :first-child:not(:last-child) {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split > :last-child:not(:first-child) {
+  margin-left: -1px;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* Body: canvas, optional inspector, then the rail that opens it. */
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.canvas {
+  container: pcb-canvas / inline-size;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--pcb-canvas);
+}
+.panes {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.panes[data-linked="true"] {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: var(--pcb-line);
+}
+.pane {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--pcb-canvas);
+}
+.paneLabel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 9px;
+  background: var(--pcb-surface);
+  box-shadow: var(--pcb-shadow);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.paneStatus {
+  position: absolute;
+  top: 52px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* Floating shelves, the same shape as the 3D workspace's tool groups. */
+.shelf {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 10px;
+  background: var(--pcb-surface);
+  color: var(--popover-foreground);
+  box-shadow: var(--pcb-shadow);
+  cursor: default;
+}
+.shelfTopLeft {
+  top: 12px;
+  left: 12px;
+  max-width: calc(100% - 24px);
+}
+.toolShelf {
+  top: 62px;
+  left: 12px;
+  flex-direction: column;
+}
+.navShelf {
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.tool:not(:disabled):hover,
+.tool[data-popup-open] {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.tool[aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--pcb-selected);
+}
+.shelfLabel {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+.shelfStatic {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  flex-shrink: 0;
+  background: var(--pcb-line);
+}
+.toolShelf .divider {
+  width: 18px;
+  height: 1px;
+  margin: 3px 0;
+}
+.zoomReadout {
+  min-width: 42px;
+  text-align: center;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+/* Status cards float over the top right of the drawing and never push it around. */
+.overlayStack {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100% - 24px));
+  max-height: calc(100% - 80px);
+  overflow: auto;
+  pointer-events: none;
+}
+.overlayStack:empty {
+  display: none;
+}
+.overlayStack > *,
+.paneStatus > * {
+  pointer-events: auto;
+  margin: 0;
+  border: 1px solid var(--pcb-line);
+  border-radius: 10px;
+  background: var(--pcb-surface);
+  color: var(--popover-foreground);
+  box-shadow: var(--pcb-shadow);
+}
+.notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.notice strong {
+  font-weight: 600;
+}
+.notice p {
+  color: var(--muted-foreground);
+}
+.notice[data-tone="error"] strong,
+.notice[data-tone="error"] > p:only-child {
+  color: var(--destructive);
+}
+.overlayStack > .notice[data-tone="error"],
+.paneStatus > .notice[data-tone="error"] {
+  background: color-mix(in srgb, var(--destructive) 6%, var(--pcb-surface));
+}
+.overlayStack > .notice[data-tone="warning"] {
+  background: color-mix(in srgb, var(--warning) 8%, var(--pcb-surface));
+}
+.noticeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.noticeRow > p {
+  flex: 1;
+  min-width: 0;
+  color: var(--foreground);
+}
+.noticeRow > svg.lucide {
+  color: var(--success);
+}
+.noticeRow .tool {
+  margin: -4px -6px -4px 0;
+}
+.toolHint {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 11px 12px;
+}
+.toolHint > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.toolHint strong {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.toolHint span {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+.toolHint input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 7px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+.toolHint > button {
+  align-self: flex-end;
+}
+.operation {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.operation > svg.lucide {
+  color: var(--muted-foreground);
+}
+.operation > div {
+  flex: 1;
+  min-width: 0;
+}
+.operation strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.operation p {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+.operation > span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+.canvas > .operation {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(320px, calc(100% - 32px));
+  background: var(--pcb-surface);
+  box-shadow: var(--pcb-shadow);
+}
+.textButton {
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.logText {
+  max-height: 300px;
+  margin-top: 8px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+/* Centered states for empty, blocked and failed designs. */
+.canvasState {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background: var(--pcb-canvas);
+}
+.stateCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 380px;
+  text-align: center;
+}
+.stateIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 4px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 12px;
+  background: var(--pcb-surface);
+  box-shadow: var(--pcb-shadow);
+  color: var(--muted-foreground);
+}
+.stateIcon svg.lucide {
+  width: 20px;
+  height: 20px;
+}
+.stateCard h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.stateCard p {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.stateActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  opacity: 0.5;
+}
+.placeholder svg.lucide {
+  width: 36px;
+  height: 36px;
+}
+
+/* Drawing viewport. */
+.viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+  isolation: isolate;
+  color: var(--foreground);
+}
+.viewport[data-dragging="true"] {
+  cursor: grabbing;
+}
+.viewport:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -3px;
+}
+.drawingScene {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.drawing {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  transform-origin: 0 0;
+  user-select: none;
+  pointer-events: none;
+}
+.drawingScene .drawing {
+  width: 100%;
+  height: 100%;
+}
+.viewport[aria-busy="true"] .drawing {
+  opacity: 0.65;
+}
+:global(.dark) .viewport[data-kind="schematic"] .drawing {
+  filter: invert(0.88) hue-rotate(180deg);
+}
+.overlays {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+.layerLoading {
+  display: none;
+  position: absolute;
+  bottom: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 5px 10px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 8px;
+  background: var(--pcb-surface);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  pointer-events: none;
+}
+.viewport:has([data-layer-loading="true"][data-layer-visible="true"]) .layerLoading {
+  display: block;
+}
+.canvasError {
+  position: absolute;
+  bottom: 62px;
+  left: 12px;
+  right: 12px;
+  z-index: 3;
+  padding: 9px 12px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 9px;
+  background: var(--pcb-surface);
+  color: var(--destructive);
+  font-size: 12px;
+}
+.board3d {
+  position: absolute;
+  inset: 0;
+}
+.threeHost {
+  position: absolute;
+  inset: 0;
+}
+.threeHost canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Rail: labelled entries into the inspector, attached to the edge it opens from. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 64px;
+  padding: 8px 6px;
+  border-left: 1px solid var(--pcb-line);
+  background: var(--background);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex-shrink: 0;
+}
+.railItem[data-group] {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--pcb-line);
+}
+.railButton {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--muted-foreground);
+}
+.railButton svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+.railButton:not(:disabled):hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+.railButton[aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--pcb-selected);
+}
+.railBadge {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--warning-foreground);
+  background: color-mix(in srgb, var(--warning) 22%, var(--background));
+}
+.railBadge[data-tone="error"] {
+  color: var(--destructive-foreground, #fff);
+  background: var(--destructive);
+}
+
+/* Inspector. */
+.inspector {
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--pcb-line);
+  background: var(--background);
+  flex-shrink: 0;
+}
+.inspectorHeader {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 52px;
+  padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--pcb-line);
+  flex-shrink: 0;
+}
+.inspectorIcon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  border-radius: 8px;
+  background: var(--pcb-selected);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.inspectorIcon svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+.inspectorHeader > div {
+  flex: 1;
+  min-width: 0;
+}
+.inspectorHeader h2 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.inspectorHeader p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+.compactOnly {
+  display: none;
+}
+/* Tabs own their own bar, scroll area and footer; the body only sizes them. */
+.inspectorBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Drawing failure details in the centered states. */
+.disclosure {
+  width: 100%;
+}
+.disclosure > summary {
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.disclosure pre {
+  max-height: 220px;
+  margin-top: 6px;
+  padding: 10px;
+  overflow: auto;
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--foreground);
+  white-space: pre-wrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+}
+
+.secondaryButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--pcb-line);
+  border-radius: 7px;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.secondaryButton:not(:disabled):hover {
+  background: var(--accent);
+}
+
+/* Status bar. */
+.statusBar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 28px;
+  padding: 0 12px;
+  border-top: 1px solid var(--pcb-line);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--foreground);
+  font-weight: 500;
+}
+.stateDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.state[data-state="busy"] .stateDot {
+  background: var(--info);
+}
+.state[data-state="stale"] .stateDot {
+  background: var(--warning);
+}
+.state[data-state="error"] .stateDot {
+  background: var(--destructive);
+}
+.state[data-state="idle"] .stateDot {
+  background: var(--muted-foreground);
+}
+.statusItem {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.statusChip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+  background: var(--muted);
+}
+.statusChip:hover {
+  background: var(--accent);
+}
+.statusChip[data-tone="ok"] {
+  color: var(--success-foreground);
+}
+.statusChip[data-tone="warning"] {
+  color: var(--warning-foreground);
+}
+.statusChip[data-tone="error"] {
+  color: var(--destructive);
+}
+.statusChip[data-tone="stale"] {
+  color: var(--muted-foreground);
+}
+.spacer {
+  flex: 1;
+}
+
+@container (min-width: 1100px) {
+  .inspector {
+    width: 360px;
+  }
+}
+
+/* Panel width: the inspector becomes a sheet over the bottom of the drawing. */
+@container (max-width: 719px) {
+  .body {
+    flex-direction: column;
+  }
+  .canvas {
+    min-height: 180px;
+  }
+  .panes[data-linked="true"] {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .inspector {
+    width: auto;
+    height: 48%;
+    min-height: 220px;
+    border-left: 0;
+    border-top: 1px solid var(--pcb-line);
+  }
+  .body[data-expanded="true"] .canvas {
+    display: none;
+  }
+  .body[data-expanded="true"] .inspector {
+    flex: 1;
+    height: auto;
+  }
+  .compactOnly {
+    display: inline-flex;
+  }
+  .rail {
+    flex-direction: row;
+    width: auto;
+    padding: 4px 6px;
+    border-left: 0;
+    border-top: 1px solid var(--pcb-line);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+  .railItem {
+    flex: 1 0 auto;
+  }
+  .railItem[data-group] {
+    margin: 0 0 0 4px;
+    padding: 0 0 0 4px;
+    border-top: 0;
+    border-left: 1px solid var(--pcb-line);
+  }
+  .railButton {
+    min-width: 54px;
+    padding: 5px 4px 4px;
+  }
+  .statusItem[data-optional] {
+    display: none;
+  }
+}
+@container (max-width: 559px) {
+  .label {
+    display: none;
+  }
+  .segmented button {
+    padding: 0 8px;
+  }
+  .designName small {
+    display: none;
+  }
+  .statusBar {
+    gap: 8px;
+  }
+}
+
+/* Narrow drawing: status cards sit above the navigation shelf instead of over the labels. */
+@container pcb-canvas (max-width: 620px) {
+  .overlayStack {
+    top: auto;
+    bottom: 60px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: 55%;
+  }
+  .shelfLabel {
+    max-width: 120px;
+  }
+  .paneLabel {
+    font-size: 11px;
+  }
+}

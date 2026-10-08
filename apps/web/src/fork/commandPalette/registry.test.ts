@@ -11,12 +11,15 @@ const context = {
 };
 
 describe("fork command palette sources", () => {
-  it("hides model actions without the environment feature or an active thread", () => {
-    const source = FORK_COMMAND_PALETTE_SOURCES.find((item) => item.id === "model-preview-3d")!;
-    expect(source.items({ ...context, loomFeatures: [] })).toEqual([]);
-    expect(source.items({ ...context, activeThreadRef: null })).toEqual([]);
-    expect(source.items(context).length).toBeGreaterThan(0);
-  });
+  it.each(["model-preview-3d", "pcb-preview"])(
+    "hides %s actions without the environment feature or an active thread",
+    (id) => {
+      const source = FORK_COMMAND_PALETTE_SOURCES.find((item) => item.id === id)!;
+      expect(source.items({ ...context, loomFeatures: [] })).toEqual([]);
+      expect(source.items({ ...context, activeThreadRef: null })).toEqual([]);
+      expect(source.items(context).length).toBeGreaterThan(0);
+    },
+  );
 
   it("use unique source ids", () => {
     const ids = FORK_COMMAND_PALETTE_SOURCES.map((source) => source.id);

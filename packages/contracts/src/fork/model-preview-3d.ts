@@ -1,3 +1,4 @@
+import * as Editor from "./model-editor.ts";
 import { ModelWorkspace, ModelWorkspaceOperation } from "./model-workspace.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
@@ -6,6 +7,10 @@ import { ThreadId } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const MODEL_PREVIEW_3D_WS_METHODS = {
+  editorAction: "loom.model-preview-3d.editorAction",
+  editorEvents: "loom.model-preview-3d.editorEvents",
+  panelEvents: "loom.model-preview-3d.panelEvents",
+  completeEditorAction: "loom.model-preview-3d.completeEditorAction",
   workspace: "loom.model-preview-3d.workspace",
   updateWorkspace: "loom.model-preview-3d.updateWorkspace",
   cancelVariant: "loom.model-preview-3d.cancelVariant",
@@ -241,6 +246,29 @@ const rpc = <const Tag extends string, Payload extends Schema.Top, Success exten
     error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
   });
 export const ModelPreview3dRpcGroup = RpcGroup.make(
+  Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.editorAction, {
+    payload: Editor.ModelEditorInput,
+    success: Editor.ModelEditorResult,
+    error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.completeEditorAction, {
+    payload: Editor.ModelEditorComplete,
+    success: Editor.ModelEditorResult,
+    error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.editorEvents, {
+    payload: ModelFileRef,
+    success: Editor.ModelEditorEvent,
+    error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
+    stream: true,
+  }),
+  Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.panelEvents, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: Editor.ModelEditorEvent,
+    error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
+    stream: true,
+  }),
+
   Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.workspace, {
     payload: ModelFileRef,
     success: ModelWorkspace,

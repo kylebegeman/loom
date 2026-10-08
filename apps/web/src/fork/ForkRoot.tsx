@@ -1,3 +1,4 @@
+import { PcbPreviewCommandHost } from "./pcb-preview/commands";
 import { ModelPreview3dShortcuts } from "./model-preview-3d/Shortcuts";
 import type { ComponentType } from "react";
 
@@ -11,6 +12,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
 }> = [
   { id: "file-outline-shortcuts", Component: FileOutlineShortcuts },
   { id: "model-preview-3d-shortcuts", Component: ModelPreview3dShortcuts },
+  { id: "pcb-preview-commands", Component: PcbPreviewCommandHost },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];

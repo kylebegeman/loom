@@ -19,6 +19,14 @@ export type ScadSession = {
   applied: Readonly<Record<string, string>>;
   appliedRevision: string | null;
   setName: string | null;
+  automatic: boolean;
+  hasUnapplied: boolean;
+  historyCursor: number;
+  historyLabels: readonly string[];
+  moveHistory: (index: number) => void;
+  chooseSet: (name: string | null) => void;
+  setAutomatic: (enabled: boolean) => void;
+  apply: () => void;
   saveSet: (name: string, values: Readonly<Record<string, string>>) => Promise<void>;
   promote: (values: Readonly<Record<string, string>>, name: string) => void;
 };
@@ -114,11 +122,33 @@ export function ScadFile({
             applied: rendered?.values ?? {},
             appliedRevision: rendered?.revision ?? null,
             setName,
+            automatic,
+            hasUnapplied: preview.hasUnapplied,
+            historyCursor: history.history.cursor,
+            historyLabels: history.history.entries.map((entry) => entry.label),
+            moveHistory: history.move,
+            chooseSet: (name: string | null) =>
+              record({ setName: name, overrides: {} }, name ? `Set: ${name}` : "Source defaults"),
+            setAutomatic,
+            apply: preview.apply,
             promote,
             saveSet,
           }
         : null,
-    [data, overrides, setName, rendered, promote, saveSet],
+    [
+      data,
+      overrides,
+      setName,
+      rendered,
+      promote,
+      saveSet,
+      automatic,
+      preview.hasUnapplied,
+      preview.apply,
+      history.history,
+      history.move,
+      record,
+    ],
   );
   useEffect(() => {
     if (session) onSession(session);

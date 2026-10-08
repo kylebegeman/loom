@@ -1,7 +1,7 @@
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
-import { expect, it, vi } from "vite-plus/test";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { EMPTY_MODEL_WORKSPACE } from "@t3tools/contracts/fork";
 import { useModelEditing } from "./useModelEditing";
 const mutate = vi.hoisted(() => vi.fn());
@@ -69,4 +69,85 @@ it("shows in-flight work, excludes overlapping capture operations and clears sta
     await act(async () => renderer?.unmount());
     vi.unstubAllGlobals();
   }
+});
+
+let renderer: ReactTestRenderer | null;
+let editing: ReturnType<typeof useModelEditing>;
+const viewer = { current: null };
+function Harness({ revision }: { revision: string }) {
+  const result = useModelEditing(
+    { environmentId: EnvironmentId.make("test"), threadId: ThreadId.make("test") },
+    "board.glb",
+    viewer,
+    revision,
+    null,
+  );
+  useLayoutEffect(() => {
+    editing = result;
+  });
+  return null;
+}
+async function update(revision = "revision") {
+  await act(async () => {
+    if (renderer) renderer.update(<Harness revision={revision} />);
+    else renderer = create(<Harness revision={revision} />);
+  });
+}
+beforeEach(() => {
+  renderer = null;
+  mutate.mockReset();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+});
+afterEach(async () => {
+  await act(async () => renderer?.unmount());
+  vi.unstubAllGlobals();
+});
+it("awaits measurement persistence and preserves the first point after a failed save", async () => {
+  await update();
+  await act(async () => editing.choose("measure"));
+  await act(async () => {
+    expect(await editing.onPick([[1, 2, 3]])).toBe(true);
+  });
+  expect(editing.pendingPoint).toEqual([1, 2, 3]);
+  mutate.mockResolvedValueOnce(undefined);
+  await act(async () => {
+    expect(await editing.onPick([[4, 6, 3]])).toBe(false);
+  });
+  expect(editing.pendingPoint).toEqual([1, 2, 3]);
+  let resolve!: (value: typeof EMPTY_MODEL_WORKSPACE) => void;
+  mutate.mockImplementationOnce(
+    () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const saving = editing.onPick([[4, 6, 3]]);
+  expect(editing.pendingPoint).toEqual([1, 2, 3]);
+  await act(async () => {
+    resolve(EMPTY_MODEL_WORKSPACE);
+    expect(await saving).toBe(true);
+  });
+  expect(editing.pendingPoint).toBeNull();
+  expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
+    kind: "measurement",
+    item: { sourceRevision: "revision", start: [1, 2, 3], end: [4, 6, 3] },
+  });
+});
+it("rejects empty or inactive picks and invalidates an unfinished region when geometry changes", async () => {
+  await update();
+  expect(await editing.onPick([[1, 2, 3]])).toBe(false);
+  await act(async () => editing.choose("annotate"));
+  expect(await editing.onPick([])).toBe(false);
+  await act(async () => {
+    expect(
+      await editing.onPick([
+        [1, 2, 3],
+        [4, 5, 6],
+      ]),
+    ).toBe(true);
+  });
+  expect(editing.pendingRegion).toHaveLength(2);
+  await update("changed");
+  expect(editing.pendingRegion).toBeNull();
+  expect(mutate).not.toHaveBeenCalled();
 });

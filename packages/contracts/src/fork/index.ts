@@ -5,3 +5,8 @@ export * from "./model-preview-3d.ts";
 
 export * from "./model-workspace.ts";
 export * from "./clientRpcPermissions.ts";
+export * from "./pcb-preview.ts";
+
+export * from "./pcb-workspace.ts";
+
+export * from "./model-editor.ts";
