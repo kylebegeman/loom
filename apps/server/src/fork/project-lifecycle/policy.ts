@@ -149,6 +149,20 @@ export const machinePressure = (input: {
   return { below, inEpisode: input.inEpisode && !recovered, steer: false };
 };
 
+/** Lane port blocks sit above the dev runner's ports and below the macOS ephemeral range. */
+export const PORT_RANGE = { first: 41000, last: 48999 } as const;
+export const PORT_BLOCK = 20;
+
+/** The lowest free port block, or null when every block is taken. */
+export const allocatePortBase = (taken: ReadonlySet<number>) => {
+  for (let base = PORT_RANGE.first; base + PORT_BLOCK - 1 <= PORT_RANGE.last; base += PORT_BLOCK)
+    if (!taken.has(base)) return base;
+  return null;
+};
+
+/** Agents on Kyle's 18-thread Mac settled on six concurrent heavy builds. */
+export const autoBuildSlots = (cpuThreads: number) => Math.max(2, Math.floor(cpuThreads / 3));
+
 export const formatGb = (bytes: number) => `${Math.round(bytes / GB)} GB`;
 
 export const laneSteerText = (input: {

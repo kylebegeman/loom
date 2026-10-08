@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   ProjectLifecycleSettings,
   type LaneFreeScope,
+  type LaneLease,
   type ProjectLifecycleLane,
   type ProjectLifecycleStatus,
 } from "@t3tools/contracts/fork";
@@ -78,10 +79,13 @@ function SettingsForm({
   environmentId,
   initial,
   hasLanes,
+  autoSlots,
 }: {
   environmentId: EnvironmentId;
   initial: ProjectLifecycleSettings;
   hasLanes: boolean;
+  /** Shown while the setting is automatic; null until the status arrives. */
+  autoSlots: number | null;
 }) {
   const [settings, setSettings] = useState(initial);
   const { busy, message, act } = useAction();
@@ -153,6 +157,22 @@ function SettingsForm({
           onChange={(value) => set("reserveGb", value)}
         />
       </SettingsRow>
+      <SettingsRow
+        title="Build slots"
+        description="Heavy builds this machine runs at once; others wait their turn. Leave blank for automatic."
+      >
+        <Input
+          aria-label="Build slots"
+          type="number"
+          min={1}
+          max={64}
+          placeholder={autoSlots === null ? "Automatic" : `Automatic (${autoSlots})`}
+          value={settings.buildSlots ?? ""}
+          onChange={(event) =>
+            set("buildSlots", event.target.value === "" ? null : Number(event.target.value))
+          }
+        />
+      </SettingsRow>
       <div>
         <Button
           disabled={busy || !canSave}
@@ -206,6 +226,40 @@ function ShellRow({
   );
 }
 
+const LEASE_KIND: Record<LaneLease["kind"], { name: string; release: string }> = {
+  process: { name: "Process", release: "It and the processes it started are stopped." },
+  simulator: { name: "Simulator", release: "The simulator is shut down and deleted." },
+  container: { name: "Container", release: "The container is removed." },
+  volume: { name: "Volume", release: "The volume and its data are deleted." },
+};
+
+function LeaseList({
+  lane,
+  disabled,
+  onRelease,
+}: {
+  lane: ProjectLifecycleLane;
+  disabled: boolean;
+  onRelease: (lease: LaneLease) => void;
+}) {
+  if (lane.leases.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-1 text-sm">
+      {lane.leases.map((lease) => (
+        <li key={`${lease.kind}:${lease.ref}`} className="flex items-center justify-between gap-2">
+          <span className="min-w-0 break-all">
+            {LEASE_KIND[lease.kind].name}: {lease.label}{" "}
+            <span className="text-muted-foreground">({lease.ref})</span>
+          </span>
+          <Button size="xs" variant="outline" disabled={disabled} onClick={() => onRelease(lease)}>
+            Release
+          </Button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function LaneRow({
   environmentId,
   lane,
@@ -244,8 +298,29 @@ function LaneRow({
           {lane.running && ", agent running"}
         </span>
       </div>
-      <p className="break-all text-xs text-muted-foreground">{lane.checkoutPath}</p>
+      <p className="break-all text-xs text-muted-foreground">
+        {lane.checkoutPath}
+        {lane.ports && `. Ports ${lane.ports.first} to ${lane.ports.last}.`}
+      </p>
       {lane.message && <p className="text-xs text-muted-foreground">{lane.message}</p>}
+      <LeaseList
+        lane={lane}
+        disabled={busy || !canEdit}
+        onRelease={async (lease) => {
+          const confirmed = await ensureLocalApi().dialogs.confirm(
+            `Release ${LEASE_KIND[lease.kind].name.toLowerCase()} ${lease.label}? ${LEASE_KIND[lease.kind].release}`,
+          );
+          if (!confirmed) return;
+          await act(
+            () =>
+              runLaneCommand(lanes.releaseLease, {
+                environmentId,
+                input: { laneId: lane.id, kind: lease.kind, ref: lease.ref },
+              }),
+            "Released.",
+          );
+        }}
+      />
       <div className="flex flex-wrap gap-2">
         {free("tmp", "tmp")}
         {free("build", "build")}
@@ -283,7 +358,7 @@ function LaneRow({
           disabled={busy || !canEdit}
           onClick={async () => {
             const confirmed = await ensureLocalApi().dialogs.confirm(
-              `Discard the ${lane.name} lane for ${lane.projectName}? Its tmp, build and data folders are deleted. The checkout is not touched.`,
+              `Discard the ${lane.name} lane for ${lane.projectName}? Its tmp, build and data folders are deleted, its processes are stopped, and its simulators, containers and volumes are deleted. The checkout is not touched.`,
             );
             if (!confirmed) return;
             await act(
@@ -297,6 +372,31 @@ function LaneRow({
       </div>
       <ActionMessage message={message} />
     </li>
+  );
+}
+
+function BuildSlots({ status }: { status: ProjectLifecycleStatus }) {
+  const { count, holders } = status.buildSlots;
+  const laneName = (laneId: string | null) => {
+    const lane = status.lanes.find((candidate) => candidate.id === laneId);
+    return lane ? `${lane.projectName} / ${lane.name}` : "Outside lanes";
+  };
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <p className="text-muted-foreground">
+        {holders.length} of {count} build {count === 1 ? "slot" : "slots"} in use.
+      </p>
+      {holders.length > 0 && (
+        <ul className="flex flex-col gap-1">
+          {holders.map((holder) => (
+            <li key={holder.slot} className="break-all">
+              {laneName(holder.laneId)}:{" "}
+              <span className="text-muted-foreground">{holder.command}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -324,6 +424,7 @@ function StatusView({
         </p>
       )}
       <ShellRow environmentId={environmentId} shell={status.shell} />
+      <BuildSlots status={status} />
       {status.lanes.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No lanes yet. A lane is created when an agent starts working in a checkout.
@@ -354,6 +455,7 @@ function EnvironmentStorage({ environmentId }: { environmentId: EnvironmentId })
         environmentId={environmentId}
         initial={settings}
         hasLanes={(status?.lanes.length ?? 0) > 0}
+        autoSlots={settings.buildSlots === null ? (status?.buildSlots.count ?? null) : null}
       />
       {status && <StatusView environmentId={environmentId} status={status} />}
     </div>

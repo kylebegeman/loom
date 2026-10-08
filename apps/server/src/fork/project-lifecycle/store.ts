@@ -18,6 +18,8 @@ export interface LaneRow {
   readonly capBytes: number;
   readonly device: string | null;
   readonly createdAt: string;
+  /** First of the lane's ports; null only for lanes made before ports existed. */
+  readonly portBase: number | null;
 }
 
 interface LaneRecord {
@@ -31,6 +33,7 @@ interface LaneRecord {
   readonly cap_bytes: number;
   readonly device: string | null;
   readonly created_at: string;
+  readonly port_base: number | null;
 }
 
 const toRow = (record: LaneRecord): LaneRow => ({
@@ -44,6 +47,7 @@ const toRow = (record: LaneRecord): LaneRow => ({
   capBytes: Number(record.cap_bytes),
   device: record.device,
   createdAt: record.created_at,
+  portBase: record.port_base === null ? null : Number(record.port_base),
 });
 
 export const makeStore = Effect.gen(function* () {
@@ -70,13 +74,19 @@ export const makeStore = Effect.gen(function* () {
       return rows.map(toRow);
     }),
     insertLane: Effect.fn("ProjectLifecycleStore.insertLane")(function* (lane: LaneRow) {
-      yield* sql`INSERT INTO fork_project_lifecycle_lanes (id,checkout_path,project_id,project_name,name,lane_dir,backend,cap_bytes,device,created_at) VALUES (${lane.id},${lane.checkoutPath},${lane.projectId},${lane.projectName},${lane.name},${lane.laneDir},${lane.backend},${lane.capBytes},${lane.device},${lane.createdAt})`;
+      yield* sql`INSERT INTO fork_project_lifecycle_lanes (id,checkout_path,project_id,project_name,name,lane_dir,backend,cap_bytes,device,created_at,port_base) VALUES (${lane.id},${lane.checkoutPath},${lane.projectId},${lane.projectName},${lane.name},${lane.laneDir},${lane.backend},${lane.capBytes},${lane.device},${lane.createdAt},${lane.portBase})`;
     }),
     updateLane: Effect.fn("ProjectLifecycleStore.updateLane")(function* (
       id: string,
       fields: { readonly capBytes: number; readonly device: string | null },
     ) {
       yield* sql`UPDATE fork_project_lifecycle_lanes SET cap_bytes = ${fields.capBytes}, device = ${fields.device} WHERE id = ${id}`;
+    }),
+    setPortBase: Effect.fn("ProjectLifecycleStore.setPortBase")(function* (
+      id: string,
+      portBase: number,
+    ) {
+      yield* sql`UPDATE fork_project_lifecycle_lanes SET port_base = ${portBase} WHERE id = ${id}`;
     }),
     deleteLane: Effect.fn("ProjectLifecycleStore.deleteLane")(function* (id: string) {
       yield* sql`DELETE FROM fork_project_lifecycle_lanes WHERE id = ${id}`;

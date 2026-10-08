@@ -3,6 +3,10 @@ import * as DateTime from "effect/DateTime";
 import type { OrchestrationV2ThreadShell } from "@t3tools/contracts";
 import {
   GB,
+  PORT_BLOCK,
+  PORT_RANGE,
+  allocatePortBase,
+  autoBuildSlots,
   growTarget,
   holdsLane,
   isAppleCheckout,
@@ -23,6 +27,7 @@ const settings = {
   appleCapGb: 100,
   reserveGb: 40,
   projectCapsGb: { big: 250 },
+  buildSlots: null,
 };
 
 const shell = (fields: Partial<OrchestrationV2ThreadShell>) =>
@@ -144,5 +149,27 @@ describe("machine pressure", () => {
     expect(state.steer).toBe(false);
     state = machinePressure({ hostFreeBytes: 60 * GB, reserveBytes, inEpisode: state.inEpisode });
     expect(state.inEpisode).toBe(false);
+  });
+});
+
+describe("lane ports", () => {
+  it("hands out the first free block and runs out at the end of the range", () => {
+    expect(allocatePortBase(new Set())).toBe(PORT_RANGE.first);
+    expect(allocatePortBase(new Set([PORT_RANGE.first, PORT_RANGE.first + 2 * PORT_BLOCK]))).toBe(
+      PORT_RANGE.first + PORT_BLOCK,
+    );
+    const all = new Set<number>();
+    for (let base = PORT_RANGE.first; base + PORT_BLOCK - 1 <= PORT_RANGE.last; base += PORT_BLOCK)
+      all.add(base);
+    expect(allocatePortBase(all)).toBeNull();
+    // Blocks stay below the macOS ephemeral range.
+    expect(PORT_RANGE.last).toBeLessThan(49152);
+  });
+});
+
+describe("build slots", () => {
+  it("defaults to one slot per three CPU threads, at least two", () => {
+    expect(autoBuildSlots(18)).toBe(6);
+    expect(autoBuildSlots(4)).toBe(2);
   });
 });

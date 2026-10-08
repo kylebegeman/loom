@@ -1,6 +1,6 @@
 # L19: Project lifecycle
 
-Status: In progress (`feat/loom-project-lifecycle`). Phase 1 started 2026-10-08.
+Status: In progress (`feat/loom-project-lifecycle`). Phases 1 and 2 implemented 2026-10-08.
 
 Every thread gets a **lane**: a capped space for the disposable output its agent produces
 (scratch files, DerivedData, package caches, build products). Loom creates the lane when
@@ -14,7 +14,7 @@ parking that Kyle agreed on 2026-09-27 (phase 3).
 
 ## Scope
 
-Phase 1 (this branch):
+Phases 1 and 2 (this branch):
 
 - In: a lane per (project, checkout), created on the first run in that checkout, under
   `~/Developer/lanes/<project>/<lane>/`.
@@ -33,8 +33,10 @@ Phase 1 (this branch):
   active thread uses the checkout.
 - In: a Storage section in Loom settings with lanes, usage and actions; a palette entry; a
   low-space notice.
-- Out (phase 2): simulator, database, port, process and build-slot leases. Simulator cleanup
-  joins L09's device work.
+- In (phase 2): leases released with the lane: processes started with `lane-run` and
+  listeners on the lane's 20 ports, simulators created in the lane, Docker containers and
+  volumes labelled `loom.lane=<lane id>`. Released threads close their device panels and shut
+  down devices no other active thread uses. Machine-wide build slots for heavy builds.
 - Out (phase 3): Loom-owned checkout preparation (moving checkouts under the lane), the
   machine pool, publication policy, park and reopen. Checkout removal stays with upstream's
   worktree cleanup rules (Settings, Storage cleanup) until then.
@@ -49,7 +51,8 @@ T3 server or an older Loom server hides the section (`project-lifecycle` capabil
 ## Extension points used
 
 `ext-core` (service, migrations, RPC, capability), `ext-settings`, `ext-palette`, `ext-root`
-(low-space notice host), `ext-mcp`.
+(low-space notice host), `ext-mcp`. Phase 2 consumes upstream's `DeviceService` without
+changing it.
 
 ## Packet seams
 

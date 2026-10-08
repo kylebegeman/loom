@@ -36,5 +36,9 @@ export function createProjectLifecycleAtoms<R, E>(
       label: "loom:lanes-shell-remove",
       tag: L.removeShell,
     }),
+    releaseLease: createEnvironmentRpcCommand(runtime, {
+      label: "loom:lanes-lease-release",
+      tag: L.releaseLease,
+    }),
   };
 }

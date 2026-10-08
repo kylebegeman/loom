@@ -104,13 +104,26 @@ Decided with Kyle on 2026-10-08:
    worktree cleanup rules (remove after merge), which already verify that.
 4. A storage report is not important; the Storage section shows only lanes and machine space.
 
-Open: none blocking phase 1. Phase 2 and 3 questions are below.
+Open: none blocking phase 1. Phase 3 questions are below.
 
 ### Phase 2: leases
 
 Simulators, databases, ports, long-running processes and build slots become leases owned by
 a lane and released with it. AspectAvy agents already wrote their own build scheduler
-(`st3-slot.sh`, six machine-wide slots), which shows the need. Simulator leases join L09.
+(`st3-slot.sh`, six machine-wide slots), which shows the need.
+
+Kyle's decisions (2026-10-08):
+
+1. **Simulators: close and delete.** When a thread is released its device panels close, and
+   devices no other active thread uses are shut down. Simulators the lane created are deleted
+   with it. Simulators made outside lanes are never deleted.
+2. **Processes: stop owned ones.** Processes started with the lane's run helper, and anything
+   listening on the lane's ports, are stopped with the lane. Nothing is matched by name.
+3. **Databases: Docker label lease.** Containers and volumes labelled `loom.lane=<lane id>`
+   are removed with the lane. Agents are told to use the label.
+
+Build slots are machine-wide: heavy Xcode builds wait for a free slot automatically, and
+other builds can opt in.
 
 ### Phase 3: persistent machine pool
 

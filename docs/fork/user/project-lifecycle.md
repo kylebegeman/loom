@@ -42,12 +42,38 @@ each lane:
 
 Files in `data` are never cleared automatically.
 
+## What a lane owns
+
+Besides its space, a lane owns things its agents start, and releases them when the lane is
+deleted:
+
+- Servers and watchers started with `lane-run` (for example `lane-run --name web npm run
+dev`), and anything listening on the lane's ports. Each lane has 20 ports; the first is in
+  `LOOM_LANE_PORT`.
+- Simulators created with `xcrun simctl create` or `clone` inside the checkout. Simulators
+  you made yourself are never deleted.
+- Docker containers and volumes labelled `loom.lane=<lane id>`. The id is in `LOOM_LANE_ID`
+  and in the lane's `LANE.md`.
+
+Agents learn this from the lane tools and can hand other simulators or processes to their
+lane. When a thread is settled or archived, its device panels close, and simulators no other
+active thread is using are shut down. The Storage section lists each lane's leases with a
+**Release** button.
+
+## Build slots
+
+Heavy Xcode builds (build, test, archive) take one of the machine's build slots and wait when
+all are busy, so parallel agents do not slow the Mac to a crawl. Other builds can use
+`lane-slot` the same way. The default is one slot per three CPU threads; change it in the
+Storage settings.
+
 ## Terminal integration
 
 Agents and terminals only use a lane when told where it is. **Install** terminal
 integration in the Storage settings to add a short block to `~/.zshenv`. Inside a lane's
-checkout, new zsh shells then point `TMPDIR` at the lane and `xcodebuild` writes
-DerivedData and packages to the lane's `build` folder. **Remove** takes the block out
+checkout, new zsh shells then point `TMPDIR` at the lane, `xcodebuild` writes DerivedData
+and packages to the lane's `build` folder, and `lane-run`, `lane-slot` and the lane
+variables are available. **Remove** takes the block out
 again. Other shells and processes started outside zsh keep their usual locations.
 
 ## Managing storage

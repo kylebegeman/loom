@@ -1,6 +1,7 @@
 import {
   PROJECT_LIFECYCLE_WS_METHODS as L,
   type LaneFreeScope,
+  type LaneLeaseKind,
   type ProjectLifecycleSettings,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -23,5 +24,7 @@ export const makeProjectLifecycleRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.discard, service.discard(input.laneId)),
       [L.installShell]: () => auth.effect(L.installShell, service.installShell()),
       [L.removeShell]: () => auth.effect(L.removeShell, service.removeShell()),
+      [L.releaseLease]: (input: { laneId: string; kind: LaneLeaseKind; ref: string }) =>
+        auth.effect(L.releaseLease, service.releaseLease(input.laneId, input.kind, input.ref)),
     };
   });

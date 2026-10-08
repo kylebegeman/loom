@@ -1,6 +1,6 @@
 # L19 implementation plan
 
-Phase 1: lanes. Branch `feat/loom-project-lifecycle`.
+Phase 1: lanes. Phase 2: leases. Branch `feat/loom-project-lifecycle`.
 
 ## Before starting
 
@@ -36,12 +36,26 @@ Phase 1: lanes. Branch `feat/loom-project-lifecycle`.
 10. **Docs**: `docs/fork/user/project-lifecycle.md`; update the packet index and selections
     when the status changes.
 
-## Done when
+## Phase 2 steps
+
+1. **Contracts**: `buildSlots` setting, lane `ports`, `leases` and `helpers`, status
+   `buildSlots`, `releaseLease` RPC with `orchestration:operate`.
+2. **Policy, test first**: port blocks and the automatic slot count.
+3. **Shell, test first**: index columns for lane id and port, hook exports, the `xcrun`
+   function, `lane-run`, `lane-slot` and `xcrun` shims, slotted `xcodebuild` actions.
+4. **Leases**: `leases.ts` parsers (tested) and commands; migration 2 for `port_base`.
+5. **Service**: scan on each tick, release before detach, thread device release on settle,
+   adopt and release actions, slot holders in status. Requires `DeviceService`.
+6. **Transport and web**: RPC handler, MCP adopt and release tools, Storage section build
+   slots, lane ports and leases with Release.
 
 - A new thread's first run creates a mounted, capped lane; settling its last thread removes
   it; restarting the server re-attaches lanes.
 - With shell integration installed, `echo $TMPDIR` inside the checkout points into the lane
   and `xcodebuild build` writes DerivedData there.
 - An agent can read its lane, free it and grow it through the tools.
+- Settling a lane's last thread stops its `lane-run` processes and port listeners, deletes its
+  simulators and labelled Docker resources, and closes the thread's device panels.
+- Two heavy `xcodebuild` builds with one slot run one after the other.
 - The Storage section shows lanes and machine space and its actions work.
 - `scripts/fork/loom.sh check` passes.

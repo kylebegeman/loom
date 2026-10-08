@@ -14,5 +14,13 @@ export const ProjectLifecycleMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE IF NOT EXISTS fork_project_lifecycle_lanes (id TEXT PRIMARY KEY, checkout_path TEXT NOT NULL UNIQUE, project_id TEXT NOT NULL, project_name TEXT NOT NULL, name TEXT NOT NULL, lane_dir TEXT NOT NULL, backend TEXT NOT NULL, cap_bytes INTEGER NOT NULL, device TEXT, created_at TEXT NOT NULL)`;
       }),
     ],
+    [
+      2,
+      "LanePorts",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`ALTER TABLE fork_project_lifecycle_lanes ADD COLUMN port_base INTEGER`;
+      }),
+    ],
   ],
 };

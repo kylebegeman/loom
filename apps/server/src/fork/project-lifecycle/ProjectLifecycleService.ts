@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Lanes need statfs, realpath and file modes Effect does not expose.
 import * as NodeCrypto from "node:crypto";
-import * as NodeFs from "node:fs/promises";
-import * as NodeOs from "node:os";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import {
   CommandId,
@@ -13,11 +13,15 @@ import {
 import {
   DEFAULT_PROJECT_LIFECYCLE_CAPS,
   ProjectLifecycleError,
+  type AdoptableLeaseKind,
   type LaneFreeScope,
+  type LaneLease,
+  type LaneLeaseKind,
   type ProjectLifecycleLane,
   type ProjectLifecycleSettings,
   type ProjectLifecycleStatus,
 } from "@t3tools/contracts/fork";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -28,12 +32,31 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerConfig } from "../../config.ts";
+import { DeviceService } from "../../device/DeviceService.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { forkParked } from "../../serverActivation.ts";
 import {
+  DOCKER_LABEL,
+  ancestorsOf,
+  leaseOf,
+  ledgerLine,
+  liveProcess,
+  makeLeaseOps,
+  parseLedger,
+  parseSlotHolder,
+  withDescendants,
+  type DockerResource,
+  type LedgerEntry,
+  type ProcessInfo,
+  type SlotHolder,
+} from "./leases.ts";
+import {
   GB,
+  PORT_BLOCK,
+  allocatePortBase,
+  autoBuildSlots,
   formatGb,
   growTarget,
   holdsLane,
@@ -55,9 +78,11 @@ import {
   removeProfileBlock,
   renderHook,
   renderIndex,
-  renderXcodebuildShim,
+  renderShims,
+  ledgerPath,
   shellDir,
   shimsDir,
+  slotsDir,
 } from "./shell.ts";
 import { SPACE_FOLDERS, imageBackendAvailable, makeSpaceOps, type LanePaths } from "./space.ts";
 import { makeStore, type LaneRow } from "./store.ts";
@@ -67,6 +92,8 @@ const WATCHDOG_INTERVAL = "30 seconds";
 const FOLDER_MEASURE_INTERVAL_MS = 5 * 60 * 1000;
 /** Status snapshots go out only when a size changes by at least this much. */
 const STATUS_ROUNDING_BYTES = 100_000_000;
+/** Simulators, Docker and port listeners are listed this often; processes every tick. */
+const LEASE_SCAN_INTERVAL_MS = 2 * 60 * 1000;
 
 type Thread = OrchestrationV2ThreadShell;
 
@@ -81,11 +108,16 @@ interface LaneLive {
   crossingAt: number;
   message: string | null;
   failed: boolean;
+  leases: ReadonlyArray<LaneLease>;
 }
 
 export interface ProjectLifecycleOptions {
   readonly homeDir: string;
   readonly imageBackend: boolean;
+  /** Tests point these at stubs; by default the tools are found on PATH. */
+  readonly xcrunPath?: string;
+  readonly lsofPath?: string;
+  readonly dockerPath?: string;
 }
 
 const error = (reason: ProjectLifecycleError["reason"], message: string) =>
@@ -99,7 +131,7 @@ const node = <A>(label: string, run: () => Promise<A>) =>
 
 const exists = (path: string) =>
   Effect.promise(() =>
-    NodeFs.access(path).then(
+    NodeFSP.access(path).then(
       () => true,
       () => false,
     ),
@@ -107,10 +139,10 @@ const exists = (path: string) =>
 
 const writeAtomically = (path: string, contents: string, mode = 0o644) =>
   node(`write ${path}`, async () => {
-    await NodeFs.mkdir(NodePath.dirname(path), { recursive: true });
+    await NodeFSP.mkdir(NodePath.dirname(path), { recursive: true });
     const temporary = `${path}.${process.pid}.tmp`;
-    await NodeFs.writeFile(temporary, contents, { mode });
-    await NodeFs.rename(temporary, path);
+    await NodeFSP.writeFile(temporary, contents, { mode });
+    await NodeFSP.rename(temporary, path);
   });
 
 const lanePaths = (lane: Pick<LaneRow, "laneDir">): LanePaths => ({
@@ -122,18 +154,36 @@ const lanePaths = (lane: Pick<LaneRow, "laneDir">): LanePaths => ({
 const checkoutOf = (thread: Thread, projects: ReadonlyMap<string, OrchestrationProjectShell>) =>
   thread.worktreePath ?? projects.get(thread.projectId)?.workspaceRoot ?? null;
 
-const laneMarkdown = (lane: LaneRow) => {
+const portsOf = (lane: Pick<LaneRow, "portBase">) =>
+  lane.portBase === null ? null : { first: lane.portBase, last: lane.portBase + PORT_BLOCK - 1 };
+
+const laneMarkdown = (lane: LaneRow, lanesRoot: string) => {
   const space = lanePaths(lane).spacePath;
+  const ports = portsOf(lane);
+  const shims = shimsDir(lanesRoot);
   return `# Lane: ${lane.projectName} / ${lane.name}
 
+Lane id: ${lane.id}
 Checkout: ${lane.checkoutPath}
 Cap: ${formatGb(lane.capBytes)} (${lane.backend === "image" ? "capped disk image" : "folder, soft cap"})
-
-Shells inside the checkout get \`TMPDIR=${space}/tmp/\` and \`LOOM_LANE_BUILD\` / \`LOOM_LANE_DATA\`.
+${ports === null ? "" : `Ports: ${ports.first} to ${ports.last}\n`}
+Shells inside the checkout get \`TMPDIR=${space}/tmp/\`, \`LOOM_LANE_BUILD\` / \`LOOM_LANE_DATA\`,
+\`LOOM_LANE_ID\` and \`LOOM_LANE_PORT\` (the first of the lane's ports).
 
 - \`space/tmp\`: scratch. Loom clears it when the lane is idle and nearly full.
 - \`space/build\`: DerivedData, package checkouts and other build output.
 - \`space/data\`: files worth keeping while the thread is active.
+
+Released with the lane:
+
+- Servers and watchers started with \`${shims}/lane-run [--name NAME] command...\`.
+- Anything listening on the lane's ports.
+- Simulators made with \`xcrun simctl create\` or \`clone\` inside the checkout.
+- Docker containers and volumes labelled \`${DOCKER_LABEL}=${lane.id}\`.
+- Simulators and processes handed over with \`loom_project_lifecycle_adopt\`.
+
+Heavy builds share the machine's build slots: xcodebuild waits for one automatically, and other
+builds can use \`${shims}/lane-slot command...\`.
 
 Agents free space with the \`loom_project_lifecycle_free\` tool and raise the cap with
 \`loom_project_lifecycle_grow\`. Loom removes this lane when every thread using the checkout is
@@ -146,9 +196,17 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const config = yield* ServerConfig;
     const threads = yield* ThreadManagementService;
     const projects = yield* ProjectStore.ProjectStoreV2;
+    const devices = yield* DeviceService;
+    const platform = yield* HostProcessPlatform;
     const runner = yield* ProcessRunner.ProcessRunner;
     const store = yield* makeStore;
     const spaces = yield* makeSpaceOps;
+    const leaseOps = yield* makeLeaseOps({
+      homeDir: options.homeDir,
+      xcrunPath: options.xcrunPath ?? "xcrun",
+      lsofPath: options.lsofPath ?? "lsof",
+      dockerPath: options.dockerPath,
+    });
     const backend = options.imageBackend ? "image" : "folder";
     const opsFor = (lane: Pick<LaneRow, "backend">) =>
       lane.backend === "image" ? spaces.image : spaces.folder;
@@ -163,6 +221,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           : `${config.stateDir}/fork/project-lifecycle/lanes`,
       ...DEFAULT_PROJECT_LIFECYCLE_CAPS,
       projectCapsGb: {},
+      buildSlots: null,
     };
     const getSettings = store.getSettings(defaults).pipe(Effect.orDie);
     const rootOf = (settings: ProjectLifecycleSettings) =>
@@ -172,6 +231,20 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     const lanes = new Map<string, LaneRow>();
     for (const lane of yield* store.listLanes().pipe(Effect.orDie)) lanes.set(lane.id, lane);
+    const nextPortBase = () =>
+      allocatePortBase(
+        new Set(
+          [...lanes.values()].flatMap((lane) => (lane.portBase === null ? [] : [lane.portBase])),
+        ),
+      );
+    // Lanes made before ports existed get a block on first load.
+    for (const lane of lanes.values()) {
+      if (lane.portBase !== null) continue;
+      const portBase = nextPortBase();
+      if (portBase === null) break;
+      yield* store.setPortBase(lane.id, portBase).pipe(Effect.orDie);
+      lanes.set(lane.id, { ...lane, portBase });
+    }
     const live = new Map<string, LaneLive>();
     const liveOf = (id: string) => {
       let entry = live.get(id);
@@ -185,6 +258,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           crossingAt: 0,
           message: null,
           failed: false,
+          leases: [],
         };
         live.set(id, entry);
       }
@@ -198,6 +272,15 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     let reserveEpisode = { active: false, startedAt: 0 };
     let host: { free: number | null; total: number | null } = { free: null, total: null };
     let shellInstalled = false;
+    /** The latest look at what lanes own outside their spaces. */
+    let scan: {
+      table: ReadonlyMap<number, ProcessInfo> | null;
+      simulators: ReadonlyMap<string, { readonly name: string }> | null;
+      docker: ReadonlyArray<DockerResource> | null;
+      listeners: ReadonlyMap<string, ReadonlySet<number>>;
+      slowAt: number;
+    } = { table: null, simulators: null, docker: null, listeners: new Map(), slowAt: 0 };
+    let slotHolders: ReadonlyArray<SlotHolder> = [];
 
     // --- Threads ---------------------------------------------------------------------------
 
@@ -221,33 +304,50 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           checkoutOf(thread, view.projects) === lane.checkoutPath,
       );
 
+    /** Whether a thread outside this lane is still working; its devices are left alone. */
+    const activeElsewhere = (threadId: ThreadId, lane: LaneRow, view: Threads) =>
+      view.threads.some(
+        (thread) =>
+          thread.id === threadId &&
+          holdsLane(thread) &&
+          checkoutOf(thread, view.projects) !== lane.checkoutPath,
+      );
+
     // --- Shell files -------------------------------------------------------------------------
 
+    const slotCount = (settings: ProjectLifecycleSettings) =>
+      settings.buildSlots ?? autoBuildSlots(NodeOS.availableParallelism());
+
     const writeShellFiles = Effect.gen(function* () {
-      const root = rootOf(yield* getSettings);
+      const settings = yield* getSettings;
+      const root = rootOf(settings);
       const index = yield* Effect.forEach([...lanes.values()], (lane) =>
         Effect.promise(() =>
-          NodeFs.realpath(lane.checkoutPath).catch(() => lane.checkoutPath),
+          NodeFSP.realpath(lane.checkoutPath).catch(() => lane.checkoutPath),
         ).pipe(
           Effect.map((real) => ({
             checkoutPaths: [lane.checkoutPath, real],
             spacePath: lanePaths(lane).spacePath,
+            laneId: lane.id,
+            portBase: lane.portBase ?? 0,
           })),
         ),
       );
       yield* writeAtomically(`${shellDir(root)}/lanes.tsv`, renderIndex(index));
       yield* writeAtomically(`${shellDir(root)}/lanes.zsh`, renderHook(root));
-      yield* writeAtomically(`${shimsDir(root)}/xcodebuild`, renderXcodebuildShim(root), 0o755);
+      for (const [name, contents] of Object.entries(renderShims(root)))
+        yield* writeAtomically(`${shimsDir(root)}/${name}`, contents, 0o755);
+      yield* writeAtomically(`${slotsDir(root)}/count`, `${slotCount(settings)}\n`);
     }).pipe(
       Effect.catch((cause) => Effect.logWarning("Could not write lane shell files", { cause })),
     );
 
     const readProfile = Effect.promise(() =>
-      NodeFs.realpath(profilePath)
+      NodeFSP.realpath(profilePath)
         .catch(() => profilePath)
         .then(async (target) => ({
           target,
-          text: await NodeFs.readFile(target, "utf8").catch(() => ""),
+          text: await NodeFSP.readFile(target, "utf8").catch(() => ""),
         })),
     );
 
@@ -259,7 +359,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     // --- Status ------------------------------------------------------------------------------
 
-    const laneView = (lane: LaneRow, holders: ReadonlyArray<Thread>): ProjectLifecycleLane => {
+    const laneView = (
+      lane: LaneRow,
+      holders: ReadonlyArray<Thread>,
+      root: string,
+    ): ProjectLifecycleLane => {
       const entry = liveOf(lane.id);
       const paths = lanePaths(lane);
       return {
@@ -282,6 +386,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         running: holders.some(threadRunning),
         createdAt: lane.createdAt,
         message: entry.message,
+        ports: portsOf(lane),
+        leases: entry.leases,
+        helpers: { run: `${shimsDir(root)}/lane-run`, slot: `${shimsDir(root)}/lane-slot` },
       };
     };
 
@@ -289,9 +396,13 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       Effect.gen(function* () {
         const settings = yield* getSettings;
         const reserveBytes = settings.reserveGb * GB;
+        const root = rootOf(settings);
+        const laneBySpace = new Map(
+          [...lanes.values()].map((lane) => [lanePaths(lane).spacePath, lane.id]),
+        );
         return {
           enabled: settings.enabled,
-          lanesRoot: rootOf(settings),
+          lanesRoot: root,
           backend,
           hostFreeBytes: host.free,
           hostTotalBytes: host.total,
@@ -299,8 +410,17 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           belowReserve: host.free !== null && host.free < reserveBytes,
           shell: { installed: shellInstalled, profilePath },
           lanes: [...lanes.values()].map((lane) =>
-            laneView(lane, view === null ? [] : holdersOf(lane, view)),
+            laneView(lane, view === null ? [] : holdersOf(lane, view), root),
           ),
+          buildSlots: {
+            count: slotCount(settings),
+            holders: slotHolders.map((holder) => ({
+              slot: holder.slot,
+              pid: holder.pid,
+              laneId: laneBySpace.get(holder.spacePath) ?? null,
+              command: holder.command,
+            })),
+          },
         } satisfies ProjectLifecycleStatus;
       });
 
@@ -337,7 +457,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       let path = rootOf(yield* getSettings);
       while (path !== "/" && !(yield* exists(path))) path = NodePath.dirname(path);
       host = yield* Effect.promise(() =>
-        NodeFs.statfs(path).then(
+        NodeFSP.statfs(path).then(
           (stats) => ({ free: stats.bavail * stats.bsize, total: stats.blocks * stats.bsize }),
           () => ({ free: null, total: null }),
         ),
@@ -357,6 +477,192 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         entry.measuredAt = now;
       }
       return entry;
+    });
+
+    // --- Leases ------------------------------------------------------------------------------
+
+    const readLedger = (lane: Pick<LaneRow, "laneDir">) =>
+      Effect.promise(() =>
+        NodeFSP.readFile(ledgerPath(lane.laneDir), "utf8").then(parseLedger, () => []),
+      );
+
+    const appendLedger = (lane: LaneRow, entry: LedgerEntry) =>
+      node("record lease", () => NodeFSP.appendFile(ledgerPath(lane.laneDir), ledgerLine(entry)));
+
+    const leasesOf = (lane: LaneRow, ledger: ReadonlyArray<LedgerEntry>): Array<LaneLease> => {
+      const { table, simulators, docker } = scan;
+      const processes = ledger.filter((entry) => table !== null && liveProcess(table, entry));
+      const recorded = new Set(processes.map((entry) => Number(entry.ref)));
+      const listening = [...(scan.listeners.get(lane.id) ?? [])]
+        .filter((pid) => !recorded.has(pid))
+        .map((pid): LaneLease => ({
+          kind: "process",
+          ref: String(pid),
+          label: "Listening on a lane port",
+        }));
+      const sims = ledger
+        .filter((entry) => entry.kind === "simulator")
+        .filter((entry) => simulators === null || simulators.has(entry.ref))
+        .map((entry) => ({
+          ...leaseOf(entry),
+          label: entry.label || simulators?.get(entry.ref)?.name || "Simulator",
+        }));
+      return [
+        ...processes.map(leaseOf),
+        ...listening,
+        ...sims,
+        ...(docker ?? []).filter((resource) => resource.laneId === lane.id).map(leaseOf),
+      ];
+    };
+
+    /** Refreshes every lane's leases. Simulators, Docker and ports are listed when due or forced. */
+    const scanLeases = Effect.fn("ProjectLifecycle.scanLeases")(function* (force: boolean) {
+      const settings = yield* getSettings;
+      const ledgers = new Map<string, ReadonlyArray<LedgerEntry>>();
+      for (const lane of lanes.values()) ledgers.set(lane.id, yield* readLedger(lane));
+      const table = yield* leaseOps.processTable;
+      const now = yield* Clock.currentTimeMillis;
+      scan = { ...scan, table };
+      if (force || now - scan.slowAt >= LEASE_SCAN_INTERVAL_MS) {
+        const wantsSimulators = [...ledgers.values()].some((ledger) =>
+          ledger.some((entry) => entry.kind === "simulator"),
+        );
+        const listeners = new Map<string, ReadonlySet<number>>();
+        const self = table === null ? new Set([process.pid]) : ancestorsOf(table, process.pid);
+        for (const lane of lanes.values()) {
+          const ports = portsOf(lane);
+          if (ports === null) continue;
+          const pids = yield* leaseOps.listeners(ports.first, ports.last);
+          listeners.set(lane.id, new Set([...pids].filter((pid) => !self.has(pid))));
+        }
+        scan = {
+          table,
+          simulators: wantsSimulators ? yield* leaseOps.simulators : null,
+          docker: yield* leaseOps.dockerResources,
+          listeners,
+          slowAt: now,
+        };
+      }
+      for (const lane of lanes.values())
+        liveOf(lane.id).leases = leasesOf(lane, ledgers.get(lane.id) ?? []);
+
+      const slots = slotsDir(rootOf(settings));
+      const holders: Array<SlotHolder> = [];
+      for (let slot = 1; slot <= slotCount(settings); slot++) {
+        const text = yield* Effect.promise(() =>
+          NodeFSP.readFile(`${slots}/${slot}.holder`, "utf8").catch(() => ""),
+        );
+        const holder = parseSlotHolder(slot, text);
+        if (holder !== null && table?.get(holder.pid)?.started === holder.started)
+          holders.push(holder);
+      }
+      slotHolders = holders;
+    });
+
+    /** Stops processes and their children; never this server or anything above it. */
+    const stopProcesses = (roots: ReadonlyArray<number>) =>
+      Effect.gen(function* () {
+        const table = yield* leaseOps.processTable;
+        if (table === null) return roots.length === 0 ? [] : ["Could not list processes."];
+        const self = ancestorsOf(table, process.pid);
+        const targets = new Set([...withDescendants(table, roots)].filter((pid) => !self.has(pid)));
+        const stuck = yield* leaseOps.terminate(targets);
+        return stuck.length === 0 ? [] : [`Processes ${stuck.join(", ")} did not stop.`];
+      });
+
+    /**
+     * Closes the device panels showing a lane simulator, then deletes it. A simulator another
+     * lane's active thread is looking at is left alone.
+     */
+    const releaseSimulator = (lane: LaneRow, udid: string, view: Threads | null) =>
+      Effect.gen(function* () {
+        const sessions = (yield* devices.state).sessions.filter(
+          (session) => session.deviceId === udid,
+        );
+        if (
+          sessions.some((session) => view === null || activeElsewhere(session.threadId, lane, view))
+        )
+          return `Simulator ${udid} is open in another thread, so it was left.`;
+        yield* Effect.forEach(
+          sessions,
+          (session) =>
+            devices
+              .close({
+                threadId: session.threadId,
+                hostId: session.hostId,
+                deviceId: session.deviceId,
+              })
+              .pipe(Effect.ignore({ log: true })),
+          { discard: true },
+        );
+        return yield* leaseOps.deleteSimulator(udid);
+      });
+
+    /** Releases everything the lane owns outside its space. Returns what could not be released. */
+    const releaseLeases = Effect.fn("ProjectLifecycle.releaseLeases")(function* (lane: LaneRow) {
+      const ledger = yield* readLedger(lane);
+      const table = yield* leaseOps.processTable;
+      const ports = portsOf(lane);
+      const listening =
+        ports === null ? [] : [...(yield* leaseOps.listeners(ports.first, ports.last))];
+      const recorded = ledger
+        .filter((entry) => table !== null && liveProcess(table, entry))
+        .map((entry) => Number(entry.ref));
+      const problems = [...(yield* stopProcesses([...recorded, ...listening]))];
+      const docker = (yield* leaseOps.dockerResources) ?? [];
+      // Containers go first; a volume in use cannot be removed.
+      for (const kind of ["container", "volume"] as const)
+        for (const resource of docker)
+          if (resource.laneId === lane.id && resource.kind === kind) {
+            const problem = yield* leaseOps.removeDocker(resource);
+            if (problem !== null) problems.push(problem);
+          }
+      const simulators = ledger.filter((entry) => entry.kind === "simulator");
+      if (simulators.length > 0) {
+        const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
+        const existing = yield* leaseOps.simulators;
+        for (const entry of simulators) {
+          if (existing !== null && !existing.has(entry.ref)) continue;
+          const problem = yield* releaseSimulator(lane, entry.ref, view);
+          if (problem !== null) problems.push(problem);
+        }
+      }
+      return problems;
+    });
+
+    /**
+     * Closes a released thread's device panels. A device another active thread is showing stays
+     * on; otherwise it is shut down. Lane simulators are deleted later, with their lane.
+     */
+    const releaseThreadDevices = Effect.fn("ProjectLifecycle.releaseThreadDevices")(function* (
+      released: ThreadId,
+    ) {
+      const sessions = yield* devices.sessionsForThread(released);
+      if (sessions.length === 0) return;
+      const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
+      const { sessions: all } = yield* devices.state;
+      yield* Effect.forEach(
+        sessions,
+        (session) => {
+          const shared = all.some(
+            (other) =>
+              other.threadId !== released &&
+              other.hostId === session.hostId &&
+              other.deviceId === session.deviceId &&
+              (view === null ||
+                view.threads.some((thread) => thread.id === other.threadId && holdsLane(thread))),
+          );
+          return devices
+            .close({
+              threadId: released,
+              hostId: session.hostId,
+              deviceId: session.deviceId,
+              shutdown: !shared,
+            })
+            .pipe(Effect.ignore({ log: true }));
+        },
+        { discard: true },
+      );
     });
 
     // --- Lane operations ---------------------------------------------------------------------
@@ -388,7 +694,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     ) {
       const settings = yield* getSettings;
       const root = rootOf(settings);
-      const entries = yield* node("read checkout", () => NodeFs.readdir(checkout));
+      const entries = yield* node("read checkout", () => NodeFSP.readdir(checkout));
       const capBytes = laneCapBytes(settings, project.id, isAppleCheckout(entries));
       const existing = [...lanes.values()].map((lane) => ({
         projectId: lane.projectId as string,
@@ -401,7 +707,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       });
       const projectDir = `${root}/${folder}`;
       const taken = new Set(
-        yield* Effect.promise(() => NodeFs.readdir(projectDir).catch(() => [] as Array<string>)),
+        yield* Effect.promise(() => NodeFSP.readdir(projectDir).catch(() => [] as Array<string>)),
       );
       const name = uniqueName(laneBaseName(checkout, project.workspaceRoot), taken);
       const id = NodeCrypto.randomUUID();
@@ -417,9 +723,10 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         capBytes,
         device: null,
         createdAt: DateTime.formatIso(yield* DateTime.now),
+        portBase: nextPortBase(),
       };
-      yield* node("create lane", () => NodeFs.mkdir(lane.laneDir, { recursive: true }));
-      if (rootIsNew && process.platform === "darwin")
+      yield* node("create lane", () => NodeFSP.mkdir(lane.laneDir, { recursive: true }));
+      if (rootIsNew && platform === "darwin")
         yield* runner
           .run({ command: "tmutil", args: ["addexclusion", root], timeout: "10 seconds" })
           .pipe(Effect.ignore);
@@ -433,11 +740,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
               ? Effect.logWarning("Lane image creation failed; using a folder", { cause }).pipe(
                   Effect.andThen(
                     node("remove image", () =>
-                      NodeFs.rm(lanePaths(lane).imagePath, { force: true }),
+                      NodeFSP.rm(lanePaths(lane).imagePath, { force: true }),
                     ),
                   ),
                   Effect.andThen(
-                    node("unlock space", () => NodeFs.chmod(lanePaths(lane).spacePath, 0o755)),
+                    node("unlock space", () => NodeFSP.chmod(lanePaths(lane).spacePath, 0o755)),
                   ),
                   Effect.andThen(spaces.folder.create(lanePaths(lane), capBytes, "")),
                   Effect.as({ ...lane, backend: "folder" as const }),
@@ -445,7 +752,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
               : Effect.fail(cause),
           ),
         );
-      yield* writeAtomically(`${lane.laneDir}/LANE.md`, laneMarkdown(created));
+      yield* writeAtomically(`${lane.laneDir}/LANE.md`, laneMarkdown(created, root));
       yield* store.insertLane(created).pipe(Effect.orDie);
       lanes.set(id, created);
       liveOf(id).mounted = true;
@@ -491,8 +798,17 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           ),
         );
 
-    /** Detaches and deletes a lane. A lane with open files stays and says why. */
+    /**
+     * Releases a lane's leases, then detaches and deletes it. A lane with open files stays and
+     * says why; the next attempt releases again.
+     */
     const removeLane = Effect.fn("ProjectLifecycle.removeLane")(function* (lane: LaneRow) {
+      const problems = yield* releaseLeases(lane);
+      if (problems.length > 0)
+        yield* Effect.logWarning("Some lane leases were not released", {
+          lane: lane.laneDir,
+          problems,
+        });
       const detached = yield* detach(lane).pipe(
         Effect.as(true),
         Effect.catch((cause) =>
@@ -504,9 +820,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       );
       if (!detached) return false;
       yield* node("remove lane", async () => {
-        await NodeFs.chmod(lanePaths(lane).spacePath, 0o755).catch(() => undefined);
-        await NodeFs.rm(lane.laneDir, { recursive: true, force: true });
-        await NodeFs.rmdir(NodePath.dirname(lane.laneDir)).catch(() => undefined);
+        await NodeFSP.chmod(lanePaths(lane).spacePath, 0o755).catch(() => undefined);
+        await NodeFSP.rm(lane.laneDir, { recursive: true, force: true });
+        await NodeFSP.rmdir(NodePath.dirname(lane.laneDir)).catch(() => undefined);
       });
       yield* store.deleteLane(lane.id).pipe(Effect.orDie);
       lanes.delete(lane.id);
@@ -533,9 +849,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         const folders = scope === "all" ? SPACE_FOLDERS : [scope];
         for (const folder of folders) {
           const dir = `${lanePaths(lane).spacePath}/${folder}`;
-          const entries = await NodeFs.readdir(dir).catch(() => [] as Array<string>);
+          const entries = await NodeFSP.readdir(dir).catch(() => [] as Array<string>);
           await Promise.all(
-            entries.map((entry) => NodeFs.rm(`${dir}/${entry}`, { recursive: true, force: true })),
+            entries.map((entry) => NodeFSP.rm(`${dir}/${entry}`, { recursive: true, force: true })),
           );
         }
       });
@@ -563,7 +879,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       const next = { ...lane, capBytes: target, device };
       lanes.set(lane.id, next);
       yield* store.updateLane(lane.id, { capBytes: target, device }).pipe(Effect.orDie);
-      yield* writeAtomically(`${lane.laneDir}/LANE.md`, laneMarkdown(next)).pipe(Effect.ignore);
+      yield* writeAtomically(`${lane.laneDir}/LANE.md`, laneMarkdown(next, rootOf(settings))).pipe(
+        Effect.ignore,
+      );
       return next;
     });
 
@@ -659,6 +977,8 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         ),
       );
 
+      yield* scanLeases(false).pipe(Effect.ignore({ log: true }));
+
       const pressure = machinePressure({
         hostFreeBytes: host.free,
         reserveBytes,
@@ -748,6 +1068,99 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       yield* publish();
     });
 
+    const adoptLease = Effect.fn("ProjectLifecycle.adoptLease")(function* (
+      laneId: string,
+      kind: AdoptableLeaseKind,
+      ref: string,
+      label: string | undefined,
+    ) {
+      yield* mutate.withPermits(1)(
+        Effect.gen(function* () {
+          const lane = yield* requireLane(laneId);
+          const now = yield* Clock.currentTimeMillis;
+          if (kind === "process") {
+            const pid = /^\d+$/.test(ref.trim()) ? Number(ref.trim()) : Number.NaN;
+            const table = yield* leaseOps.processTable;
+            const info = table?.get(pid);
+            if (table === null || info === undefined)
+              return yield* error("not-found", `No process ${ref} is running.`);
+            if (ancestorsOf(table, process.pid).has(pid))
+              return yield* error("unsupported", "Loom's own processes cannot be leased.");
+            try {
+              process.kill(pid, 0);
+            } catch {
+              return yield* error("unsupported", `Process ${pid} belongs to another user.`);
+            }
+            yield* appendLedger(lane, {
+              kind,
+              ref: String(pid),
+              label: label ?? `Process ${pid}`,
+              stamp: info.started,
+            });
+          } else {
+            const simulators = yield* leaseOps.simulators;
+            const device = simulators?.get(ref.trim());
+            if (device === undefined)
+              return yield* error("not-found", `No simulator ${ref} was found.`);
+            for (const other of lanes.values())
+              if (
+                other.id !== lane.id &&
+                (yield* readLedger(other)).some(
+                  (entry) => entry.kind === "simulator" && entry.ref === ref.trim(),
+                )
+              )
+                return yield* error(
+                  "busy",
+                  `That simulator belongs to the ${other.projectName} / ${other.name} lane.`,
+                );
+            yield* appendLedger(lane, {
+              kind,
+              ref: ref.trim(),
+              label: label ?? device.name,
+              stamp: String(Math.floor(now / 1000)),
+            });
+          }
+          yield* scanLeases(true);
+        }),
+      );
+      return yield* refreshedView(laneId);
+    });
+
+    /** Stops a process, removes a container or volume, or deletes a simulator the lane owns. */
+    const releaseLease = Effect.fn("ProjectLifecycle.releaseLease")(function* (
+      laneId: string,
+      kind: LaneLeaseKind,
+      ref: string,
+    ) {
+      yield* mutate.withPermits(1)(
+        Effect.gen(function* () {
+          const lane = yield* requireLane(laneId);
+          yield* scanLeases(true);
+          const lease = liveOf(lane.id).leases.find(
+            (candidate) => candidate.kind === kind && candidate.ref === ref,
+          );
+          if (lease === undefined)
+            return yield* error("not-found", "This lane no longer holds that lease.");
+          const problems =
+            kind === "process"
+              ? yield* stopProcesses([Number(ref)])
+              : kind === "simulator"
+                ? [
+                    yield* releaseSimulator(
+                      lane,
+                      ref,
+                      yield* loadThreads.pipe(Effect.orElseSucceed(() => null)),
+                    ),
+                  ]
+                : [yield* leaseOps.removeDocker({ kind, ref })];
+          yield* scanLeases(true);
+          const failed = problems.filter((problem) => problem !== null);
+          if (failed.length > 0) return yield* error("command-failed", failed.join(" "));
+        }),
+      );
+      return yield* refreshedView(laneId);
+    });
+
     const updateSettings = Effect.fn("ProjectLifecycle.updateSettings")(function* (
       next: ProjectLifecycleSettings,
     ) {
@@ -798,6 +1211,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
         ),
       );
       if (lanes.size > 0) yield* writeShellFiles;
+      yield* scanLeases(true).pipe(Effect.ignore({ log: true }));
       yield* publish();
     });
 
@@ -825,7 +1239,13 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
             case "thread.settled":
             case "thread.archived":
             case "thread.deleted":
-              return reclaimFree(event.payload.id).pipe(
+              return getSettings.pipe(
+                Effect.flatMap((settings) =>
+                  settings.enabled
+                    ? releaseThreadDevices(event.payload.id).pipe(Effect.ignore({ log: true }))
+                    : Effect.void,
+                ),
+                Effect.andThen(reclaimFree(event.payload.id)),
                 Effect.andThen(publish()),
                 Effect.ignore({ log: true }),
               );
@@ -850,16 +1270,22 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       grow: growLane,
       mount,
       discard,
+      adoptLease,
+      releaseLease,
       installShell,
       removeShell,
       laneView: (laneId: string) => refreshedView(laneId),
     };
   });
 
-export const make = makeWith({
-  homeDir: NodeOs.homedir(),
-  imageBackend: imageBackendAvailable(),
-});
+export const make = HostProcessPlatform.pipe(
+  Effect.flatMap((platform) =>
+    makeWith({
+      homeDir: NodeOS.homedir(),
+      imageBackend: imageBackendAvailable(platform, NodeOS.release()),
+    }),
+  ),
+);
 
 export class ProjectLifecycleService extends Context.Service<
   ProjectLifecycleService,

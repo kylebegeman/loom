@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no free-space or device id query.
-import * as NodeFs from "node:fs/promises";
-import * as NodeOs from "node:os";
+import * as NodeFSP from "node:fs/promises";
 import { ProjectLifecycleError, type LaneBackend } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -40,7 +39,7 @@ export interface SpaceOps {
 }
 
 /** ASIF images need macOS 26 (Darwin 25) or later. */
-export const imageBackendAvailable = (platform = process.platform, release = NodeOs.release()) =>
+export const imageBackendAvailable = (platform: NodeJS.Platform, release: string) =>
   platform === "darwin" && Number(release.split(".")[0]) >= 25;
 
 /** `diskutil image attach` lists the image's whole disk first. */
@@ -70,6 +69,8 @@ const DiskInfoJson = Schema.fromJsonString(
   }),
 );
 
+const decodeDiskInfo = Schema.decodeEffect(DiskInfoJson);
+
 const sizeArg = (bytes: number) => `${Math.max(1, Math.round(bytes / GB))}g`;
 
 export const makeSpaceOps = Effect.gen(function* () {
@@ -94,22 +95,22 @@ export const makeSpaceOps = Effect.gen(function* () {
   const isMounted = (lane: LanePaths) =>
     node("stat", async () => {
       const [space, parent] = await Promise.all([
-        NodeFs.stat(lane.spacePath),
-        NodeFs.stat(lane.laneDir),
+        NodeFSP.stat(lane.spacePath),
+        NodeFSP.stat(lane.laneDir),
       ]);
       return space.dev !== parent.dev;
     }).pipe(Effect.orElseSucceed(() => false));
 
   const prepareSpace = (lane: LanePaths) =>
     node("prepare space", async () => {
-      await NodeFs.writeFile(`${lane.spacePath}/.metadata_never_index`, "");
+      await NodeFSP.writeFile(`${lane.spacePath}/.metadata_never_index`, "");
       for (const folder of SPACE_FOLDERS)
-        await NodeFs.mkdir(`${lane.spacePath}/${folder}`, { recursive: true });
+        await NodeFSP.mkdir(`${lane.spacePath}/${folder}`, { recursive: true });
     });
 
   /** An unmounted mount point refuses writes, so stale lane paths cannot fill the main disk. */
   const lockMountPoint = (lane: LanePaths) =>
-    node("lock mount point", () => NodeFs.chmod(lane.spacePath, 0o555));
+    node("lock mount point", () => NodeFSP.chmod(lane.spacePath, 0o555));
 
   const attach = (lane: LanePaths) =>
     Effect.gen(function* () {
@@ -132,7 +133,7 @@ export const makeSpaceOps = Effect.gen(function* () {
     Effect.gen(function* () {
       const plist = yield* runOk("diskutil", ["info", "-plist", lane.spacePath]);
       const json = yield* run("plutil", ["-convert", "json", "-o", "-", "-"], plist);
-      const info = yield* Schema.decodeEffect(DiskInfoJson)(json.stdout);
+      const info = yield* decodeDiskInfo(json.stdout);
       const store = info.APFSPhysicalStores?.[0]?.APFSPhysicalStore;
       return store === undefined ? null : wholeDisk(store);
     }).pipe(Effect.orElseSucceed(() => null));
@@ -160,7 +161,7 @@ export const makeSpaceOps = Effect.gen(function* () {
     isMounted,
     create: (lane: LanePaths, capBytes: number, volumeName: string) =>
       Effect.gen(function* () {
-        yield* node("create lane", () => NodeFs.mkdir(lane.spacePath, { recursive: true }));
+        yield* node("create lane", () => NodeFSP.mkdir(lane.spacePath, { recursive: true }));
         yield* runOk("diskutil", [
           "image",
           "create",
@@ -187,8 +188,8 @@ export const makeSpaceOps = Effect.gen(function* () {
     usage: (lane: LanePaths) =>
       Effect.gen(function* () {
         if (!(yield* isMounted(lane))) return null;
-        const stats = yield* node("statfs", () => NodeFs.statfs(lane.spacePath));
-        const file = yield* node("stat image", () => NodeFs.stat(lane.imagePath));
+        const stats = yield* node("statfs", () => NodeFSP.statfs(lane.spacePath));
+        const file = yield* node("stat image", () => NodeFSP.stat(lane.imagePath));
         return {
           usedBytes: (stats.blocks - stats.bfree) * stats.bsize,
           imageBytes: file.blocks * 512,
@@ -199,7 +200,7 @@ export const makeSpaceOps = Effect.gen(function* () {
   const folder: SpaceOps = {
     backend: "folder",
     isMounted: (lane: LanePaths) =>
-      node("stat", () => NodeFs.access(`${lane.spacePath}/tmp`)).pipe(
+      node("stat", () => NodeFSP.access(`${lane.spacePath}/tmp`)).pipe(
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       ),
@@ -224,7 +225,7 @@ export const makeSpaceOps = Effect.gen(function* () {
   const prepareFolder = (lane: LanePaths) =>
     node("create lane", async () => {
       for (const name of SPACE_FOLDERS)
-        await NodeFs.mkdir(`${lane.spacePath}/${name}`, { recursive: true });
+        await NodeFSP.mkdir(`${lane.spacePath}/${name}`, { recursive: true });
     });
 
   return { image, folder };

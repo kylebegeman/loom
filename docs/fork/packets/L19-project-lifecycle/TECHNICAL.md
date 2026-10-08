@@ -1,6 +1,6 @@
 # L19 technical design
 
-Phase 1: lanes. Phases 2 and 3 get their own design when they start.
+Phase 1: lanes. Phase 2: [leases](#phase-2-leases). Phase 3 gets its own design when it starts.
 
 ## Overview
 
@@ -16,9 +16,11 @@ its lane. The lane directory is `<lanesRoot>/<project>/<lane>/` and holds:
 | `space/tmp`   | Scratch. `TMPDIR` points here inside the checkout. Free scope `tmp`.       |
 | `space/build` | DerivedData, SwiftPM checkouts, other build output. Free scope `build`.    |
 | `space/data`  | Agent-made state worth keeping while the thread lives. Free scope `all`.   |
+| `leases.tsv`  | Phase 2 lease ledger, outside the space so it survives detaching.          |
 
-`<lanesRoot>/.loom/` holds the generated shell integration: `lanes.tsv` (checkout to space),
-`lanes.zsh` (the hook) and `shims/xcodebuild`.
+`<lanesRoot>/.loom/` holds the generated shell integration: `lanes.tsv` (checkout, space,
+lane id, first port), `lanes.zsh` (the hook), `shims/` (`xcodebuild`, `xcrun`, `lane-run`,
+`lane-slot`) and `slots/` (the build slot count, locks and holders).
 
 Everything lives in fork modules. Upstream files are not touched (see SEAMS).
 
@@ -27,30 +29,33 @@ Everything lives in fork modules. Upstream files are not touched (see SEAMS).
 `packages/contracts/src/fork/project-lifecycle.ts`:
 
 - `ProjectLifecycleSettings`: `enabled`, `lanesRoot`, `defaultCapGb`, `appleCapGb`,
-  `reserveGb`, `projectCapsGb` (project id to GB).
+  `reserveGb`, `projectCapsGb` (project id to GB), `buildSlots` (null for automatic).
 - `ProjectLifecycleLane`: id, project id and name, lane name, checkout, lane and space paths,
   backend (`image` or `folder`), state (`ready`, `unmounted`, `error`), cap, used and image
-  bytes, thread ids, whether a thread is running, a message.
+  bytes, thread ids, whether a thread is running, a message, its ports, leases and helper
+  paths.
 - `ProjectLifecycleStatus`: settings summary, backend available on this machine, host free
-  and total bytes, reserve, `belowReserve`, shell integration state, lanes.
+  and total bytes, reserve, `belowReserve`, shell integration state, lanes, build slot count
+  and holders.
 - `ProjectLifecycleError` with reasons `disabled`, `not-found`, `busy`, `no-room`,
   `unsupported`, `command-failed`.
 - RPC tags `loom.project-lifecycle.<verb>`: `getSettings`, `updateSettings`, `watch` (stream
-  of status snapshots), `free`, `grow`, `mount`, `discard`, `installShell`, `removeShell`.
+  of status snapshots), `free`, `grow`, `mount`, `discard`, `installShell`, `removeShell`, `releaseLease`.
   Reads need `orchestration:read`; everything else `orchestration:operate`.
 
 ## Server
 
 `apps/server/src/fork/project-lifecycle/`:
 
-| File                                | Role                                                                                                        |
-| ----------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `policy.ts`                         | Pure decisions: cap for a project, lane naming, pressure actions for a lane and for the machine.            |
-| `space.ts`                          | Backends. Image: `diskutil image create/attach/resize`, `diskutil unmount/eject`. Folder: `mkdir`, `du`.    |
-| `shell.ts`                          | Renders `lanes.tsv`, `lanes.zsh`, the `xcodebuild` shim and the `~/.zshenv` block; installs and removes it. |
-| `store.ts`                          | Settings and lane rows.                                                                                     |
-| `ProjectLifecycleService.ts`        | Lane registry, reactor, watchdog, actions, status stream.                                                   |
-| `rpc.ts`, `mcp.ts`, `migrations.ts` | Transport and tables.                                                                                       |
+| File                                | Role                                                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `policy.ts`                         | Pure decisions: cap for a project, lane naming, pressure actions for a lane and for the machine.         |
+| `space.ts`                          | Backends. Image: `diskutil image create/attach/resize`, `diskutil unmount/eject`. Folder: `mkdir`, `du`. |
+| `shell.ts`                          | Renders `lanes.tsv`, `lanes.zsh`, the shims and the `~/.zshenv` block; installs and removes it.          |
+| `leases.ts`                         | Lease ledger and tool output parsing; listing and releasing processes, simulators and Docker resources.  |
+| `store.ts`                          | Settings and lane rows.                                                                                  |
+| `ProjectLifecycleService.ts`        | Lane registry, reactor, watchdog, actions, status stream.                                                |
+| `rpc.ts`, `mcp.ts`, `migrations.ts` | Transport and tables.                                                                                    |
 
 ### Lane lifecycle
 
@@ -146,7 +151,7 @@ Fork tables, own migration set `fork_migrations_project_lifecycle`, no foreign k
 - `fork_project_lifecycle_lanes (id TEXT PRIMARY KEY, checkout_path TEXT NOT NULL UNIQUE,
 project_id TEXT NOT NULL, project_name TEXT NOT NULL, name TEXT NOT NULL,
 lane_dir TEXT NOT NULL, backend TEXT NOT NULL, cap_bytes INTEGER NOT NULL, device TEXT,
-created_at TEXT NOT NULL)`
+created_at TEXT NOT NULL, port_base INTEGER)` (`port_base` added by migration 2)
 
 Defaults are computed when no settings row exists: enabled, lanes root
 `~/Developer/lanes` (a dev server uses `<stateDir>/fork/project-lifecycle/lanes` and starts
@@ -164,8 +169,9 @@ reserve 40 GB.
 
 `loom_project_lifecycle_status`, `loom_project_lifecycle_free` (`scope`: `tmp`, `build` or
 `all`) and `loom_project_lifecycle_grow` act on the calling thread's lane, creating it if
-needed. Status returns the lane paths and tells the agent to put scratch, build output and
-large temporary data there. Free deletes the scope's contents and returns the space to the
+needed. Status returns the lane paths, ports, leases and helpers and tells the agent how to
+use them. `loom_project_lifecycle_adopt` hands a simulator or process to the lane and
+`loom_project_lifecycle_release` releases one lease now. Free deletes the scope's contents and returns the space to the
 host by remounting only when no thread in the lane is running. Grow refuses with `busy` when
 files are open.
 
@@ -174,6 +180,48 @@ files are open.
 The watchdog calls `statfs` per lane (microseconds) and `du` only for folder lanes every five
 minutes. Status snapshots go to clients only when a rounded value (100 MB) or a state
 changes, so a building lane does not stream every tick. The shell hook reads one small file.
+
+## Phase 2: leases
+
+A lease is something a lane owns outside its space and releases with it. Kyle chose the
+release behavior on 2026-10-08 (see PRODUCT).
+
+| Kind              | Recorded by                                                           | Alive while                  | Released by                                       |
+| ----------------- | --------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------- |
+| Process           | `lane-run` writes `process, pid, label, start time` and execs         | same pid has same start time | SIGTERM to it and its descendants, SIGKILL at 5 s |
+| Port listener     | Nothing; `lsof` on the lane's 20 ports                                | listening                    | same as a process                                 |
+| Simulator         | The `xcrun` shim records `simctl create` and `clone` output in a lane | `simctl list` still has it   | close device panels, `simctl shutdown`, `delete`  |
+| Container, volume | Nothing; Docker label `loom.lane=<lane id>`                           | `docker ps -a`, `volume ls`  | `docker rm -f`, then `docker volume rm -f`        |
+
+- **Identity.** macOS `ps` cannot read another process's environment, so processes cannot be
+  tagged by env. `lane-run` records its own pid and start time and then execs, so the pair
+  names exactly the command; a reused pid has a different start time and is ignored. Nothing
+  is ever matched by name, and the server and its ancestors are never signalled.
+- **Ledger.** `<lane>/leases.tsv` only grows. The server appends adopted leases; dead entries
+  are filtered by liveness, and the file goes with the lane.
+- **Scanning.** Each watchdog tick reads the ledgers and one `ps -Ao pid=,ppid=,lstart=`.
+  Simulators (only when a ledger has one), Docker (when found on PATH, `~/.docker/bin`,
+  `/usr/local/bin` or `/opt/homebrew/bin`) and port listeners are listed every two minutes or
+  when an action needs fresh state.
+- **Release order.** Removing a lane releases its leases first, then detaches the space, so
+  a stopped server's open files no longer block the unmount. If a release fails the lane is
+  still removed and the failure is logged; if the unmount is still busy, the next tick tries
+  both again.
+- **Devices.** On `thread.settled`, `archived` and `deleted`, the released thread's device
+  panels close (L09's `DeviceService`). A device another active thread shows stays on; any
+  other is shut down. Lane simulators are deleted only with their lane, and not while a thread
+  from another lane has them open.
+- **Ports.** Each lane gets 20 ports from 41000 to 48999, below the macOS ephemeral range and
+  away from dev runner ports. Lanes made before migration 2 get a block on first load.
+  `LOOM_LANE_PORT` and `LOOM_LANE_PORTS` are exported by the hook.
+- **Build slots.** `lane-slot` takes one of `slots/count` slots with `lockf -k -t 0` (Linux:
+  `flock -n -E 75`) around the command; the lock is released when the command exits, and
+  background children do not hold it, so Xcode's build service cannot keep a slot. A marker
+  file tells a slot that was busy from a command that exited 75. The holder file records pid,
+  start time, space and command for the Storage section. The `xcodebuild` shim runs `build`,
+  `test`, `build-for-testing`, `archive`, `analyze`, `docbuild` and `install` in a slot;
+  `test-without-building` (device runners), `clean` and queries never wait. The default count
+  is one slot per three CPU threads, at least two.
 
 ## Alternatives considered
 
