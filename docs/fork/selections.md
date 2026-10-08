@@ -25,21 +25,21 @@ Code has 10 areas and a different engine.
 
 ## Features
 
-| ID  | Feature                               | Notes                                                                                                                                                               |
-| --- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1  | Snippets library                      | Search as you type with live results. Old Loom had `;alias` + Tab expansion, fill-in fields, revision history, import and export, and terminal use.                 |
-| F2  | Thread fork, manual compaction, goals | Fork from any message, compact on demand for every provider, pinned goal passed to the agent.                                                                       |
-| F3  | AI code review                        | Selected, with a separate brainstorm on how it should work before any design.                                                                                       |
-| F4  | Utilities catalog                     | Offline developer tools in a panel. First listed as not selected; now L27.                                                                                          |
-| F5  | In-app provider sign-in and setup     | Old Loom's final in-app sign-in and setup flow for providers, including the Codex tools page and config import.                                                     |
-| F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, DeepSeek, Ollama, LM Studio. L17: DeepSeek via its Anthropic-compatible API, Gemini CLI as a custom ACP agent.                  |
-| F7  | Auto-resume after usage limits        | L28 retains automatic account failover, deferred until V2 ships; reuse upstream reset-time recovery. See the [current scope](./packets/L28-auto-resume/PRODUCT.md). |
-| F8  | Chat conveniences                     | Find in thread, clipboard history, Mermaid diagrams, file outline, model picker presets, answering a provider's question without stopping it.                       |
-| F11 | Project profiles                      | Per-project commands, tools, budgets and defaults beyond what T3's project settings cover.                                                                          |
-| F12 | Repository Estate                     | Reshaped around the ephemeral workspace: clone into `~/Developer/active`, adopt as a project, park safely when done, reopen later.                                  |
-| F13 | Lanes board and Git cockpit           | Deferred; P7 covers the per-thread view (L06).                                                                                                                      |
-| F21 | Apple tooling                         | XcodeGen, XCResult summaries, release readiness; pairs with P12.                                                                                                    |
-| F23 | Small extras                          | Configurable worktree branch prefix, container logs, and a CLI tool registry.                                                                                       |
+| ID  | Feature                               | Notes                                                                                                                                                                      |
+| --- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | Snippets library                      | Search as you type with live results. Old Loom had `;alias` + Tab expansion, fill-in fields, revision history, import and export, and terminal use.                        |
+| F2  | Thread fork, manual compaction, goals | Fork from any message, compact on demand for every provider, pinned goal passed to the agent.                                                                              |
+| F3  | AI code review                        | Selected, with a separate brainstorm on how it should work before any design.                                                                                              |
+| F4  | Utilities catalog                     | Offline developer tools in a panel. First listed as not selected; now L27.                                                                                                 |
+| F5  | In-app provider sign-in and setup     | Old Loom's final in-app sign-in and setup flow for providers, including the Codex tools page and config import.                                                            |
+| F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, DeepSeek, Ollama, LM Studio. L17: DeepSeek via its Anthropic-compatible API, Gemini CLI as a custom ACP agent.                         |
+| F7  | Auto-resume after usage limits        | L28 retains automatic account failover, deferred until V2 ships; reuse upstream reset-time recovery. See the [current scope](./packets/L28-auto-resume/PRODUCT.md).        |
+| F8  | Chat conveniences                     | Find in thread, clipboard history, Mermaid diagrams, file outline, model picker presets, answering a provider's question without stopping it.                              |
+| F11 | Project profiles                      | Per-project commands, tools, budgets and defaults beyond what T3's project settings cover.                                                                                 |
+| F12 | Repository Estate                     | L19: capped per-thread lanes and storage pressure handling first, then the persistent machine pool, on-demand checkouts, publication and safe parking. Started 2026-10-08. |
+| F13 | Lanes board and Git cockpit           | Deferred; P7 covers the per-thread view (L06).                                                                                                                             |
+| F21 | Apple tooling                         | XcodeGen, XCResult summaries, release readiness; pairs with P12.                                                                                                           |
+| F23 | Small extras                          | Configurable worktree branch prefix, container logs, and a CLI tool registry.                                                                                              |
 
 ## Outcomes of the open items
 

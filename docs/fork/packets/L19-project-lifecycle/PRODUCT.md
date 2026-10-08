@@ -2,157 +2,150 @@
 
 ## Problem
 
-Kyle treats local checkouts as a cache: clone into `~/Developer/active/<name>` when work
-starts, push everything, and remove the folder when done
-(`~/Developer/docs/workflow/ephemeral-checkouts.md`). Today that is `git clone` by hand, the
-`dev-park` shell script to remove a checkout, and remembering which repositories exist. The
-dangerous step is parking: a local-only branch, a stash, a `.env` or a local database can
-disappear with the folder. Loom already runs on the machine that holds the checkouts and
-already knows the projects, so it is the natural place to see the whole picture and to park
-safely.
+Free space on Kyle's Mac swings by hundreds of gigabytes within 10 to 15 minutes during long
+agent tasks, then fills the disk and blocks work. The space goes to output nobody owns:
+DerivedData and package checkouts under `/tmp`, cloned simulators, copied server state, local
+databases and build products. Agents are not allowed to delete freely, so the only cleanup is
+Kyle asking every thread to remove what it made, or macOS purging `/tmp` after three days.
+
+On 2026-10-08 one manual pass deleted 17 shut-down simulators (159 to 95 GB) and all
+DerivedData (67 GB), taking free space from 53 to 148 GB. `/tmp` held another 100 GB that was
+left alone because running agents were using it.
+
+Containers were considered and ruled out on the Mac: Docker cannot run Xcode or simulators,
+and macOS virtual machines are limited to two and are large. Docker remains an option for a
+later Linux homelab lane backend.
 
 ## What the user can do
 
-- Open Repositories from the sidebar footer (a Repositories icon next to Pull Requests), the
-  command palette, a shortcut, or Loom settings.
-- Pick which environment (machine) to look at. The page says which machine it is showing.
-- See every GitHub repository the environment's `gh` account can access, marked Cloned,
-  Not cloned or Parked, plus clones that are not on GitHub ("Local only").
-- Search by name and filter by All, Cloned, Not cloned, Parked.
-- Clone a repository into the clone location as a Loom project. The clone location is
-  upstream's "Add project starts in" folder (Settings, General) when set, otherwise
-  `~/Developer/active`; the page shows which folder is in use and where it comes from.
-  Progress shows in upstream's clone toast; the destination is editable before cloning (for
-  nested products).
-- Adopt a clone that is not a project yet.
-- Open the project for a cloned repository.
-- Park a checkout:
-  1. Loom checks it and shows a report.
-  2. Anything that would be lost blocks parking, with the reason and how to fix it.
-  3. Branches and tags that are not on GitHub get a "Push all branches and tags" button,
-     after which the report refreshes.
-  4. Ignored files are sorted into "Safe to lose" (build output), "Keep" (`.env` files,
-     local databases, keys, recordings) and "Review" (anything else). The dialog lists every
-     Keep file by path. Keep files never block parking, but Park stays disabled until the
-     "I have these elsewhere" box is ticked. Review files need only the general
-     acknowledgement. Loom never copies `.env` files or any other Keep file anywhere.
-  5. The project's threads can be archived at the same time (on by default).
-  6. "Move to Trash" moves the folder, and any clean linked worktrees, to the Trash on that
-     machine. The project stays in Loom.
-- Reopen a parked repository: Loom clones it back to the same path. When the project still
-  exists it keeps its threads (and can unarchive them); otherwise a new project is created.
-- Forget a parked record (the reverse of the record; the Trash is untouched).
-- Add extra "safe to lose" or "keep" patterns per environment in Settings, Loom,
-  Repositories. The section shows the clone location in use with a link to Settings, General
-  to change it.
+Lanes work without attention once enabled ("set it and forget it"):
+
+- A thread's first run creates its lane. The agent's shell commands inside the checkout write
+  scratch files and Xcode builds into the lane when shell integration is installed, and Loom's
+  agent tools tell every agent where the lane is.
+- A lane cannot grow past its cap. Before it fills, the running agent is told to clean up and
+  can do so itself with the lane tools (free scratch, free build output, free everything
+  rebuildable, or grow the lane when the machine has room).
+- An idle lane that is nearly full has its scratch cleared, and an idle full lane grows by half
+  when the machine is above its reserve.
+- When the machine falls below its reserve, Loom shows a notice and asks running agents to
+  free their lanes.
+- When a thread settles, is archived or is deleted, and no other active thread uses the same
+  checkout, its lane is thrown away.
+
+In Loom settings, Storage:
+
+- Turn lanes on or off, choose the lanes folder, set the default caps, per-project caps and
+  the machine reserve.
+- See every lane: project, checkout, used space against its cap, and its threads.
+- Free scratch, free build output, grow, or discard a lane that has no running thread.
+- Install or remove shell integration. Installing adds one marked line to `~/.zshenv`;
+  removing deletes only that line.
 
 ## Entry points
 
-| Entry                 | What it does                                                                                                                                    |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| Sidebar footer        | Repositories icon (tooltip "Repositories") next to Pull Requests, shown when any connected environment supports the feature.                    |
-| Command palette       | "Open Repositories"; "Park this project" (active thread's project); "Reopen a parked repository".                                               |
-| Keybinding            | `loom.project-lifecycle.open`, unbound by default; handled by the fork keydown listener, never written into `keybindings.json`.                 |
-| Page                  | `/loom/repositories`, optional search params `environmentId`, `filter`, `park=<projectId>`.                                                     |
-| Loom settings         | "Repositories" section: clone location in use (read only, with a link to Settings, General), extra patterns, and an "Open Repositories" button. |
-| Upstream clone toast  | Shows clone and reopen progress with cancel and retry (upstream behavior, no fork code).                                                        |
-| Upstream Archive page | Threads archived by Park appear there and can be unarchived individually (upstream behavior).                                                   |
-
-Ways out and ways to see state: Park has Reopen; a parked record has Forget; archived
-threads have upstream's unarchive and Reopen's "Unarchive threads" choice; a clone has
-upstream's cancel. The Parked filter shows every parked record with its date, old path and
-where it went in the Trash (when known).
-
-There is no project context-menu item in this packet (see Out of scope); the palette's "Park
-this project" covers it.
+- Settings, Loom, Storage.
+- Command palette: "Storage and lanes" opens the section.
+- A low-space notice links to the section.
+- Agent tools: `loom_project_lifecycle_status`, `loom_project_lifecycle_free`,
+  `loom_project_lifecycle_grow`.
 
 ## States
 
-- Loading: skeleton rows while the inventory loads; GitHub and local sections load
-  independently, so local clones show even while `gh` is slow.
-- Empty: "No repositories found on <environment>." with a hint to check `gh auth status`
-  and the clone location.
-- GitHub unavailable: a banner in place of the GitHub rows. `gh` missing: "The GitHub CLI
-  is not installed on <environment>." Not signed in: "Run `gh auth login` on <environment>
-  to list GitHub repositories." Local clones still show.
-- Error: per-section error text with Retry.
-- Disabled (server lacks `project-lifecycle`): the palette items are hidden; the page shows
-  "Repositories needs a Loom server. <environment> runs T3 Code <version>." and the
-  environment picker offers the environments that support it.
-- In progress: Clone and Reopen use upstream's clone toast. Assess, Push and Park show a
-  spinner on the dialog button; the dialog cannot be dismissed mid-move.
-- Park unavailable: on Windows environments ("Parking is not supported on Windows yet") and
-  on Linux without `gio` ("Install gio (glib) to enable the Trash on <environment>").
-
-## Copy
-
-- Page title: "Repositories". Subtitle: "GitHub is the source of truth. Local clones on
-  <environment> live in <clone location>." followed by the source: "(from Add project
-  starts in)" or "(default)", and a "Change" link to Settings, General.
-- Row badges: "Cloned", "Not cloned", "Parked", "Local only", "Project", "Private",
-  "Archived", "Fork".
-- Park dialog title: "Park <name>". Intro: "Parking moves <path> to the Trash on
-  <environment>. Loom checks that nothing unique would be lost first."
-- Blocker headings: "Uncommitted changes", "Untracked files", "Stashes", "Commits not on
-  GitHub", "Tags not on GitHub", "No origin remote", "GitHub is unreachable", "A thread is
-  still working", "A clone is in progress", "A merge or rebase is in progress", "Linked
-  worktree has changes", "Nested repository", "A safety check did not finish", "This folder
-  cannot be parked".
-- Push button: "Push all branches and tags". After success: "Pushed <n> branches."
-- Keep list heading: "Files to keep (<n>)". Checkbox: "I have these elsewhere". Hint under
-  it: "These files go to the Trash with the folder. Loom does not copy them."
-- Review acknowledgement: "I have looked at the other ignored files and do not need them."
-- Archive option: "Archive this project's <n> threads".
-- Confirm button: "Move to Trash". Toast: "Parked <name>. The folder is in the Trash on
-  <environment>."
-- Reopen dialog: "Reopen <name> into <path>?" with "Unarchive <n> threads".
-
-No em dashes in product copy.
+| State                     | What shows                                                                    |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| Lanes off                 | The section explains lanes and offers the switch. Nothing is created.         |
+| No lanes yet              | "Lanes appear when a thread starts work."                                     |
+| Lane ready                | Used and cap, threads, actions.                                               |
+| Lane near cap (75%+)      | Usage in warning color; its running agent has been asked to clean up once.    |
+| Lane full                 | Usage in error color; writes fail inside the lane until it is freed or grown. |
+| Lane not mounted          | "Not mounted" with a Mount action; scratch falls back to the usual places.    |
+| Image backend unavailable | Lanes use plain folders with a soft cap, and the section says so.             |
+| Machine below reserve     | A notice with free space and a link to Storage.                               |
+| Shell integration missing | A prompt to install it, with what it changes.                                 |
 
 ## Surfaces and connection modes
 
-- Web and desktop: full feature.
-- Mobile: none; upstream mobile never sees it.
-- Remote environments (LAN, Tailscale, T3 Connect): supported. All work runs on the chosen
-  environment's server. The Trash is that machine's Trash. The page and every confirmation
-  name the environment by its label; it never says "This Mac" for an environment it has not
-  identified as the client's own machine.
-- Upstream T3 server: feature hidden or explained as above; no fork RPC is sent.
-- Upstream client talking to a Loom server: unaffected.
+The server owns lanes, so every client sees the same state over local, tailnet and T3 Connect
+connections. Web and desktop show the Storage section and notices. Mobile shows nothing new.
+A client connected to a server without the `project-lifecycle` capability hides the section.
 
-## Decisions
+## Decisions and open questions
 
-- Parking never deletes. macOS uses `/usr/bin/trash` (present on macOS 15 and later),
-  falling back to a rename into `~/.Trash` on the same volume (what `dev-park` does). Linux
-  uses `gio trash`. Anything else refuses. Reason: old Loom's reclaim deleted permanently on
-  the server's disk.
-- The environment is always named by its label. Reason: old Loom labeled every node
-  "This Mac".
-- Parking keeps the project and its threads, archiving the threads by default. Removing a
-  project stays upstream's own action ("Remove project"), which deletes its threads.
-  Reason: chat history survives a park, and Reopen can restore the same project.
-- Clone uses upstream's tracked project clone instead of a fork clone. Reason: progress,
-  cancel, retry and project creation already exist and are tested.
-- Inventory is GitHub only, via `gh` on the selected environment. Reason: Kyle's workflow
-  is GitHub based; other forges can come later through the same service.
-- Blocking rules follow `dev-park` and the workflow doc: dirty tracked files, untracked
-  files, stashes, commits or tags not on origin, and no or unreachable origin all block.
-  Ignored files never block. Reason: those are the ways unique work gets lost.
-- Clone location: upstream's `addProjectBaseDirectory` ("Add project starts in") when set,
-  otherwise `~/Developer/active`; the page shows the folder in use. Loom keeps no clone
-  location setting of its own. Reason: Kyle's answer; one setting, owned upstream, instead of
-  two that can disagree (Kyle has not set the upstream one, so the default applies).
-- A Repositories icon sits in the sidebar footer next to Pull Requests, through a small
-  packet seam next to the existing `fork: brand` seam in `SidebarChrome.tsx`. Reason: Kyle
-  wants a visible entry; the file changes often (28 upstream commits since June), so the
-  seam is three inserted lines (two markers) and all logic lives in a fork component.
-- Keep files: a confirmation, not a block. The Park dialog lists each Keep file and enables
-  Park only after "I have these elsewhere" is ticked; Review files need only the general
-  acknowledgement; Loom never copies `.env` files. Reason: Kyle's answer; a block would
-  force moving files he already has elsewhere, and copying would spread secrets.
+Decided with Kyle on 2026-10-08:
 
-## Out of scope
+1. Lanes live in one folder, `~/Developer/lanes`, one subfolder per project and per lane.
+   Three projects look like this:
 
-- Follow-up: "Park" in the sidebar project context menu. Reason: the menu lives in
-  `LegacySidebar.tsx` (33 upstream commits since June) and is likely being replaced; revisit
-  when upstream's new sidebar settles. The palette item covers it meanwhile.
+   ```
+   ~/Developer/lanes/
+     loom/
+       main/                       threads working directly in active/loom
+         LANE.md
+         space.asif
+         space/  tmp/ build/ data/
+       loom-project-lifecycle/     a worktree lane
+         LANE.md  space.asif  space/
+     aspectavy/
+       main/ ...
+       people-redesign/ ...
+     presence/
+       main/ ...
+   ```
+
+   In phase 1 the checkout stays where the thread already has it (`~/Developer/active/<name>`
+   or a worktree). Phase 3 moves checkouts under the lane as `checkout/`.
+
+2. Caps from day one, generous: 100 GB for Apple projects and 40 GB for others. Images are
+   sparse, so a cap costs only what is used. Agents must be able to clean their own lane and
+   keep going unattended.
+3. Reclaim on settle: scratch and build output go automatically. A checkout is removed only
+   after its work is verified as published. Phase 1 leaves checkout removal to upstream's
+   worktree cleanup rules (remove after merge), which already verify that.
+4. A storage report is not important; the Storage section shows only lanes and machine space.
+
+Open: none blocking phase 1. Phase 2 and 3 questions are below.
+
+### Phase 2: leases
+
+Simulators, databases, ports, long-running processes and build slots become leases owned by
+a lane and released with it. AspectAvy agents already wrote their own build scheduler
+(`st3-slot.sh`, six machine-wide slots), which shows the need. Simulator leases join L09.
+
+### Phase 3: persistent machine pool
+
+Agreed by Kyle on 2026-09-27; it follows lanes.
+
+**My projects are available from one Loom app; choosing a machine should not require
+manually preparing the repository.** Kyle's Mac and two homelab PCs are persistent machines
+with persistent T3 state and thread history. Checkouts are disposable once their useful
+contents are safely published.
+
+1. Choose a project and start a thread on the Mac or a selected homelab machine. Automatic
+   placement may reuse upstream's machine selection when it respects project requirements.
+2. Resolve the repository and starting revision on that machine; reuse or prepare a checkout
+   there, including project setup. With lanes, this checkout lives under the lane.
+3. Run an ordinary T3 thread. Provider sessions, files, terminals and Git stay with that
+   machine.
+4. Publish completed work through commits and pushes according to an explicit project policy.
+5. Reclaim the checkout only after verifying publication and accounting for anything unique
+   on disk. Keep project and thread records so the repository can be prepared again.
+
+| Concern                                 | Direction                                                                            |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| Machine connections and agent execution | Reuse T3 environments and providers. Do not rebuild old Loom Core's runner system.   |
+| Repository identity across machines     | Reuse upstream repository identity and project grouping.                             |
+| Preparing missing checkouts             | Loom coordinates repository selection, clone or reuse, starting revision and setup.  |
+| Publication and reclamation             | Loom owns the policy and visible progress and failures.                              |
+| Runtime tools and credentials           | Belong to each machine; connecting one does not copy the Mac's tools or credentials. |
+| Upstream maintenance                    | Policy stays in fork-owned modules with narrow integration points.                   |
+
+Git is the handoff for published code, not live file synchronization. Cloud VM provisioning,
+live thread migration and agent-initiated cross-machine delegation (L08) are out of scope.
+
+Questions to settle when phase 3 starts: how a project stays discoverable with no checkout,
+checkout reuse versus isolation, the publication trigger and policy (including WIP, failed
+checks and conflicts), automatic versus manual reclamation of unique local files, recovery
+after interrupted setup or publication, and how machine selection handles a project missing
+from a machine. The earlier manual Repositories-page proposal (see REFERENCES) is input to
+that work, not an approved design.
