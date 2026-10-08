@@ -248,8 +248,10 @@ function LeaseList({
       {lane.leases.map((lease) => (
         <li key={`${lease.kind}:${lease.ref}`} className="flex items-center justify-between gap-2">
           <span className="min-w-0 break-all">
-            {LEASE_KIND[lease.kind].name}: {lease.label}{" "}
-            <span className="text-muted-foreground">({lease.ref})</span>
+            {LEASE_KIND[lease.kind].name}: {lease.label}
+            {lease.label === lease.ref ? null : (
+              <span className="text-muted-foreground"> ({lease.ref})</span>
+            )}
           </span>
           <Button size="xs" variant="outline" disabled={disabled} onClick={() => onRelease(lease)}>
             Release

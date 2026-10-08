@@ -47,9 +47,10 @@ Files in `data` are never cleared automatically.
 Besides its space, a lane owns things its agents start, and releases them when the lane is
 deleted:
 
-- Servers and watchers started with `lane-run` (for example `lane-run --name web npm run
-dev`), and anything listening on the lane's ports. Each lane has 20 ports; the first is in
-  `LOOM_LANE_PORT`.
+- Servers and watchers started with `lane-run`, and anything listening on the lane's ports.
+  Add `--detach` to keep a server running after the agent's command returns, for example
+  `lane-run --detach --name web npm run dev`; its output goes to a log in the lane's `tmp`
+  folder. Each lane has 20 ports; the first is in `LOOM_LANE_PORT`.
 - Simulators created with `xcrun simctl create` or `clone` inside the checkout. Simulators
   you made yourself are never deleted.
 - Docker containers and volumes labelled `loom.lane=<lane id>`. The id is in `LOOM_LANE_ID`

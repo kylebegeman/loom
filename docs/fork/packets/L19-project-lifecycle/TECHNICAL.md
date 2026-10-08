@@ -197,12 +197,16 @@ release behavior on 2026-10-08 (see PRODUCT).
   tagged by env. `lane-run` records its own pid and start time and then execs, so the pair
   names exactly the command; a reused pid has a different start time and is ignored. Nothing
   is ever matched by name, and the server and its ancestors are never signalled.
+- **Detaching.** Agent harnesses kill a command's process group when the command returns
+  (Codex does), so `nohup lane-run ... &` dies with the agent's command. `lane-run --detach`
+  starts itself again under `set -m` and `nohup` so the job gets its own process group, logs
+  to the lane's `space/tmp`, and prints the pid. The detached copy records the lease as usual.
 - **Ledger.** `<lane>/leases.tsv` only grows. The server appends adopted leases; dead entries
   are filtered by liveness, and the file goes with the lane.
 - **Scanning.** Each watchdog tick reads the ledgers and one `ps -Ao pid=,ppid=,lstart=`.
   Simulators (only when a ledger has one), Docker (when found on PATH, `~/.docker/bin`,
   `/usr/local/bin` or `/opt/homebrew/bin`) and port listeners are listed every two minutes or
-  when an action needs fresh state.
+  when an action needs fresh state, including every lane status the agent asks for.
 - **Release order.** Removing a lane releases its leases first, then detaches the space, so
   a stopped server's open files no longer block the unmount. If a release fails the lane is
   still removed and the failure is logged; if the unmount is still busy, the next tick tries

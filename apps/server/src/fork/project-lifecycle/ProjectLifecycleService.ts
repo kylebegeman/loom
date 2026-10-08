@@ -176,7 +176,8 @@ Shells inside the checkout get \`TMPDIR=${space}/tmp/\`, \`LOOM_LANE_BUILD\` / \
 
 Released with the lane:
 
-- Servers and watchers started with \`${shims}/lane-run [--name NAME] command...\`.
+- Servers and watchers started with \`${shims}/lane-run [--name NAME] [--detach] command...\`.
+  \`--detach\` keeps it running after your command returns and logs to \`space/tmp\`.
 - Anything listening on the lane's ports.
 - Simulators made with \`xcrun simctl create\` or \`clone\` inside the checkout.
 - Docker containers and volumes labelled \`${DOCKER_LABEL}=${lane.id}\`.
@@ -1170,6 +1171,8 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       const saved = yield* store.updateSettings(next).pipe(Effect.orDie);
       yield* writeShellFiles;
       if (shellInstalled && rootOf(next) !== rootOf(previous)) yield* installShell();
+      // The watchdog skips measuring while lanes are off, so turning them on would show no free space.
+      yield* measureHost();
       yield* publish();
       return saved;
     });
@@ -1274,7 +1277,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       releaseLease,
       installShell,
       removeShell,
-      laneView: (laneId: string) => refreshedView(laneId),
+      // Agents ask right after starting things, so their view lists Docker and ports fresh.
+      laneView: (laneId: string) =>
+        scanLeases(true).pipe(Effect.ignore({ log: true }), Effect.andThen(refreshedView(laneId))),
     };
   });
 

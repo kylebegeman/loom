@@ -11,7 +11,8 @@
   restores `TMPDIR` and `LOOM_LANE_*` for nested, symlinked and unmounted lanes; the
   `xcodebuild` shim adds paths only to build actions, keeps explicit paths and redirects a
   missing `/tmp` path; the hook exports the lane id, ports and lease file; `lane-run`
-  records its process and still runs outside a lane; `lane-slot` with one slot serializes two
+  records its process and still runs outside a lane; `lane-run --detach` outlives the
+  caller in its own process group, logs to `space/tmp` and is still recorded; `lane-slot` with one slot serializes two
   jobs and passes exit status 75 through; `xcodebuild` runs compiling actions in a slot; the
   `xcrun` shim records `simctl create` only inside a lane.
 - `leases.test.ts`: ledger parsing and liveness by start time, process trees, Docker, `lsof`
@@ -52,6 +53,11 @@ On the nightly, after installing shell integration from Settings, Loom, Storage:
    stops, deletes and removes them.
 7. Start two `xcodebuild build` runs in different lanes with build slots set to 1; the second
    waits, and Storage shows the holder.
+
+Steps 1, 2 and 4 to 7 passed on a dev server on 2026-10-08 with a Codex agent, along with
+Release from Storage and removing shell integration. Step 3 and closing device panels on
+settle were covered only by tests. That run is why `lane-run` has `--detach` and why the lane
+status tool scans fresh.
 
 ## Merge safety
 

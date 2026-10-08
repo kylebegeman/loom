@@ -237,6 +237,34 @@ describe("lane-run", () => {
     expect(started).toMatch(/^\w{3} \w{3} +\d+ \d\d:\d\d:\d\d \d{4}$/);
   });
 
+  it("detaches a command that outlives the caller's process group, still owned by the lane", () => {
+    const lanes = makeLanes();
+    const run = NodePath.join(lanes.shims, "lane-run");
+    const out = sh(
+      lanes.checkout,
+      `${run} --name web --detach sh -c 'echo serving; exec sleep 30'`,
+    );
+    const match = /^lane-run: started (\d+) \(log: (.+)\)$/.exec(out);
+    expect(match).not.toBeNull();
+    const pid = Number(match![1]);
+    try {
+      expect(match![2]).toBe(NodePath.join(lanes.space, "tmp", "lane-run-web.log"));
+      // The detached copy records itself once it starts.
+      sh(lanes.root, `for i in $(seq 100); do [ -s '${lanes.ledger}' ] && break; sleep 0.05; done`);
+      // The caller's shell has exited; the command lives on in a group of its own.
+      expect(() => process.kill(pid, 0)).not.toThrow();
+      const group = sh(lanes.root, `ps -o pgid= -p ${pid}`);
+      expect(Number(group)).toBe(pid);
+      expect(NodeFS.readFileSync(lanes.ledger, "utf8").split("\t").slice(0, 3)).toEqual([
+        "process",
+        String(pid),
+        "web",
+      ]);
+    } finally {
+      process.kill(pid, "SIGKILL");
+    }
+  });
+
   it("still runs the command outside a lane", () => {
     const lanes = makeLanes();
     expect(sh(lanes.root, `${NodePath.join(lanes.shims, "lane-run")} echo ok 2>/dev/null`)).toBe(
