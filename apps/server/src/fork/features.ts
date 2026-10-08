@@ -4,4 +4,5 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "switchboard",
   "model-preview-3d",
   "pcb-preview",
+  "project-lifecycle",
 ];

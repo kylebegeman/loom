@@ -5,7 +5,7 @@ import { McpServer } from "effect/ai";
 import { FORK_MCP_TOOLKITS } from "./index.ts";
 import { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
 
-it.effect("registers both fork toolkits without blocking startup", () =>
+it.effect("registers every fork toolkit without blocking startup", () =>
   Effect.gen(function* () {
     const layer = Layer.mergeAll(
       Layer.empty,

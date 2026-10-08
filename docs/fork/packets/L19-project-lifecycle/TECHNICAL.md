@@ -58,7 +58,8 @@ Everything lives in fork modules. Upstream files are not touched (see SEAMS).
   If no lane exists for it, create the lane directory, the space (image created at the cap,
   attached at `space/`, `.metadata_never_index` at its root, `tmp`, `build`, `data`
   created), write `LANE.md`, store the row and rewrite the index. Creation runs in the
-  background and never delays the run. Each checkout has its own lock.
+  background and never delays the run. One lock serializes lane changes; they are short
+  except for image resize.
 - **Reclaim**: on `thread.settled`, `thread.archived` and `thread.deleted`, and in the
   startup reconcile, a lane with no active holder is detached and its directory removed. A
   holder is a thread whose checkout is the lane's and which is neither archived nor settled
@@ -164,7 +165,9 @@ reserve 40 GB.
 `loom_project_lifecycle_status`, `loom_project_lifecycle_free` (`scope`: `tmp`, `build` or
 `all`) and `loom_project_lifecycle_grow` act on the calling thread's lane, creating it if
 needed. Status returns the lane paths and tells the agent to put scratch, build output and
-large temporary data there. Free and grow refuse with `busy` when files are open.
+large temporary data there. Free deletes the scope's contents and returns the space to the
+host by remounting only when no thread in the lane is running. Grow refuses with `busy` when
+files are open.
 
 ## Performance
 

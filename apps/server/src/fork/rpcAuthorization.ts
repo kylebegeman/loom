@@ -1,5 +1,6 @@
 import { PCB_PREVIEW_WS_METHODS as P } from "@t3tools/contracts/fork";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
+import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
@@ -59,6 +60,16 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [M.getSettings]: AuthOrchestrationReadScope,
   [M.updateSettings]: AuthOrchestrationOperateScope,
   [M.clearCache]: AuthOrchestrationOperateScope,
+  [L.getSettings]: AuthOrchestrationReadScope,
+  [L.updateSettings]: AuthOrchestrationOperateScope,
+  [L.watch]: AuthOrchestrationReadScope,
+  [L.free]: AuthOrchestrationOperateScope,
+  [L.grow]: AuthOrchestrationOperateScope,
+  [L.mount]: AuthOrchestrationOperateScope,
+  [L.discard]: AuthOrchestrationOperateScope,
+  // Edits the server user's ~/.zshenv, which shapes every shell agents run.
+  [L.installShell]: AuthTerminalOperateScope,
+  [L.removeShell]: AuthTerminalOperateScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

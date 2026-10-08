@@ -1,5 +1,6 @@
 import { PcbPreviewRpcGroup, PCB_PREVIEW_WS_METHODS } from "./pcb-preview.ts";
 import { ModelPreview3dRpcGroup, MODEL_PREVIEW_3D_WS_METHODS } from "./model-preview-3d.ts";
+import { ProjectLifecycleRpcGroup, PROJECT_LIFECYCLE_WS_METHODS } from "./project-lifecycle.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -31,6 +32,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   SwitchboardRpcGroup,
   ModelPreview3dRpcGroup,
   PcbPreviewRpcGroup,
+  ProjectLifecycleRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -50,5 +52,6 @@ export type ForkSubscriptionRpcTag =
   | typeof MODEL_PREVIEW_3D_WS_METHODS.panelEvents
   | typeof MODEL_PREVIEW_3D_WS_METHODS.editorEvents
   | typeof MODEL_PREVIEW_3D_WS_METHODS.watch
-  | typeof MODEL_PREVIEW_3D_WS_METHODS.workspace;
+  | typeof MODEL_PREVIEW_3D_WS_METHODS.workspace
+  | typeof PROJECT_LIFECYCLE_WS_METHODS.watch;
 export type ForkStreamCommandRpcTag = never;
