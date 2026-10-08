@@ -2,7 +2,8 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { FORK_COMMAND_PALETTE_SOURCES } from "./registry";
+import { filterCommandPaletteGroups } from "~/components/CommandPalette.logic";
+import { FORK_COMMAND_PALETTE_SOURCES, forkCommandPaletteItems } from "./registry";
 
 // Every source with its feature on and a thread open, so each lists all of its items.
 const context = {
@@ -20,6 +21,23 @@ describe("fork command palette sources", () => {
       expect(source.items(context).length).toBeGreaterThan(0);
     },
   );
+
+  it("find every item by its title", () => {
+    const items = forkCommandPaletteItems(context);
+    const missed = items.flatMap((item) => {
+      if (typeof item.title !== "string") return [];
+      const found = filterCommandPaletteGroups({
+        activeGroups: [{ value: "actions", label: "Actions", items }],
+        query: item.title,
+        isInSubmenu: false,
+        projectSearchItems: [],
+        threadSearchItems: [],
+      }).flatMap((group) => group.items);
+      return found.includes(item) ? [] : [item.title];
+    });
+    expect(items.length).toBeGreaterThan(0);
+    expect(missed).toEqual([]);
+  });
 
   it("use unique source ids", () => {
     const ids = FORK_COMMAND_PALETTE_SOURCES.map((source) => source.id);

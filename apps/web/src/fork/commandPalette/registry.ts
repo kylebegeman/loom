@@ -50,6 +50,18 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   appleBuildToolingPaletteSource,
 ];
 
+/** Every source's items. The palette matches search terms only, so a string title joins them. */
+export const forkCommandPaletteItems = (context: ForkCommandPaletteContext) =>
+  FORK_COMMAND_PALETTE_SOURCES.flatMap((source) =>
+    source
+      .items(context)
+      .map((item) =>
+        typeof item.title === "string"
+          ? { ...item, searchTerms: [item.title, ...item.searchTerms] }
+          : item,
+      ),
+  );
+
 /** Rebuilt on every render, like the palette's own action items. */
 export function useForkCommandPaletteItems(): ReadonlyArray<
   CommandPaletteActionItem | CommandPaletteSubmenuItem
@@ -76,7 +88,5 @@ export function useForkCommandPaletteItems(): ReadonlyArray<
   );
   const modelFiles =
     Option.getOrNull(AsyncResult.value(listing))?.models.map((model) => model.path) ?? [];
-  return FORK_COMMAND_PALETTE_SOURCES.flatMap((source) =>
-    source.items({ activeThreadRef, loomFeatures, modelFiles }),
-  );
+  return forkCommandPaletteItems({ activeThreadRef, loomFeatures, modelFiles });
 }
