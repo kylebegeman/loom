@@ -16,3 +16,5 @@ export * from "./project-lifecycle.ts";
 export * from "./apple-build-tooling.ts";
 
 export * from "./device-qa.ts";
+
+export * from "./code-graph.ts";

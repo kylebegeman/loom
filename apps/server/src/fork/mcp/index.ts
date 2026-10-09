@@ -4,6 +4,7 @@ import { PcbToolkit, pcbHandlers } from "../pcb-preview/mcp.ts";
 import { ProjectLifecycleToolkit, projectLifecycleHandlers } from "../project-lifecycle/mcp.ts";
 import { AppleBuildToolingToolkit, appleBuildToolingHandlers } from "../apple-build-tooling/mcp.ts";
 import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
+import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
   {
@@ -33,5 +34,11 @@ export const FORK_MCP_TOOLKITS = [
     toolkit: DeviceQaToolkit,
     handlers: deviceQaHandlers,
     register: (register: typeof toolkitRegistration) => register(DeviceQaToolkit, deviceQaHandlers),
+  },
+  {
+    toolkit: CodeGraphToolkit,
+    handlers: codeGraphHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(CodeGraphToolkit, codeGraphHandlers),
   },
 ] as const;

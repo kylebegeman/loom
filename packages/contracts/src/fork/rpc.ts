@@ -6,6 +6,7 @@ import {
   APPLE_BUILD_TOOLING_WS_METHODS,
 } from "./apple-build-tooling.ts";
 import { DeviceQaRpcGroup, DEVICE_QA_WS_METHODS } from "./device-qa.ts";
+import { CodeGraphRpcGroup, CODE_GRAPH_WS_METHODS } from "./code-graph.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -40,6 +41,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   ProjectLifecycleRpcGroup,
   AppleBuildToolingRpcGroup,
   DeviceQaRpcGroup,
+  CodeGraphRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -63,7 +65,8 @@ export type ForkSubscriptionRpcTag =
   | typeof PROJECT_LIFECYCLE_WS_METHODS.watch
   | typeof APPLE_BUILD_TOOLING_WS_METHODS.watchRuns
   | typeof DEVICE_QA_WS_METHODS.watchRuns
-  | typeof DEVICE_QA_WS_METHODS.watchEvidence;
+  | typeof DEVICE_QA_WS_METHODS.watchEvidence
+  | typeof CODE_GRAPH_WS_METHODS.subscribeStatus;
 export type ForkStreamCommandRpcTag =
   | typeof APPLE_BUILD_TOOLING_WS_METHODS.tailLog
   | typeof DEVICE_QA_WS_METHODS.runEvents;

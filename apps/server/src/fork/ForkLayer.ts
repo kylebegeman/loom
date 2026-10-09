@@ -8,6 +8,8 @@ import * as ProjectLifecycle from "./project-lifecycle/ProjectLifecycleService.t
 import * as AppleBuild from "./apple-build-tooling/AppleBuildService.ts";
 import * as DeviceQa from "./device-qa/DeviceQaService.ts";
 import { DeviceQaCleanupLive } from "./device-qa/reactor.ts";
+import * as CodeGraph from "./code-graph/CodeGraphService.ts";
+import { CodeGraphReactorLive } from "./code-graph/reactor.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -30,6 +32,11 @@ const ForkServicesLive = Layer.mergeAll(
   DeviceQaCleanupLive.pipe(
     Layer.provideMerge(
       DeviceQa.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
+    ),
+  ),
+  CodeGraphReactorLive.pipe(
+    Layer.provideMerge(
+      CodeGraph.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
     ),
   ),
 );
