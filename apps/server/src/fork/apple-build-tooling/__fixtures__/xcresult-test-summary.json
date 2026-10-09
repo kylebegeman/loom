@@ -1,0 +1,54 @@
+{
+  "devicesAndConfigurations": [
+    {
+      "device": {
+        "architecture": "arm64",
+        "deviceId": "74322AF1-3221-4088-B17E-723C865EC589",
+        "deviceName": "L10 Scratch",
+        "modelName": "iPhone 17",
+        "osBuildNumber": "24A434",
+        "osVersion": "27.0",
+        "platform": "iOS Simulator"
+      },
+      "expectedFailures": 0,
+      "failedTests": 2,
+      "passedTests": 1,
+      "skippedTests": 0,
+      "testPlanConfiguration": {
+        "configurationId": "1",
+        "configurationName": "Test Scheme Action"
+      }
+    }
+  ],
+  "environmentDescription": "SampleApp \u00b7 Built with macOS 27.0",
+  "expectedFailures": 0,
+  "failedTests": 2,
+  "finishTime": 1791481272.014,
+  "passedTests": 1,
+  "result": "Failed",
+  "runtimeWarnings": [],
+  "skippedTests": 0,
+  "startTime": 1791481236.605,
+  "statistics": [],
+  "testFailures": [
+    {
+      "failureText": "Expectation failed: double(1) == 3\ndouble(1) \u2192 2",
+      "targetName": "SampleAppTests",
+      "testIdentifier": 3,
+      "testIdentifierString": "swiftTestingFails()",
+      "testIdentifierURL": "test://com.apple.xcode/SampleApp/SampleAppTests/swiftTestingFails()",
+      "testName": "swiftTestingFails()"
+    },
+    {
+      "failureText": "XCTAssertEqual failed: (\"4\") is not equal to (\"5\") - two doubled",
+      "targetName": "SampleAppTests",
+      "testIdentifier": 1,
+      "testIdentifierString": "DoubleTests/testDoubleFails()",
+      "testIdentifierURL": "test://com.apple.xcode/SampleApp/SampleAppTests/DoubleTests/testDoubleFails",
+      "testName": "testDoubleFails()"
+    }
+  ],
+  "title": "Test - SampleApp",
+  "topInsights": [],
+  "totalTestCount": 3
+}

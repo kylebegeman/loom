@@ -22,19 +22,14 @@ is checked only when both packets exist; L10 must work independently.
 
 Server (`apps/server/src/fork/apple-build-tooling/`):
 
-| Test file                   | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commands.test.ts`          | Argv for every run kind and container kind; destination specifiers (simulator with iOS, watchOS and visionOS runtimes, device, mac, generic); `-collect-test-diagnostics` from settings; `-only-testing:` repetition; derived data flag omitted for `xcode-default`; the two validation-skipping flags never appear; no argv for any kind or destination contains `-allowProvisioningUpdates`, `-allowProvisioningDeviceRegistration`, `-authenticationKey`, `CODE_SIGN_`, `DEVELOPMENT_TEAM=` or `PROVISIONING_PROFILE`; devicectl install and launch argv; `swift test --parallel --xunit-output <runDir>/xunit.xml` with one `--filter` per escaped identifier (parentheses escaped).                                                                 |
-| `xcresult.test.ts`          | Decoding the recorded `build-results` and `test-results summary` fixtures: non-zero counts decode as non-zero (the old Loom regression); issues map to `AppleIssue` with workspace-relative file and line; `sourceURL` without a line keeps the message; an unknown extra field is ignored; a missing optional block yields `unknown` result, not a failure; caps at 100 issues and failures.                                                                                                                                                                                                                                                                                                                                                            |
-| `simulators.test.ts`        | `simctl list devices available -j` and `runtimes -j` fixtures (booted first, grouped by runtime); hand-written `devicectl --json-output` fixture with `_deprecationNotice` and the Xcode 27 `properties` dictionary: simulated entries dropped, paired and unpaired devices, `developerModeStatus` as a string and as a keyed object, fallback to the deprecated dictionaries when `properties` is missing; empty device list on non-zero exit.                                                                                                                                                                                                                                                                                                          |
-| `diagnostics.test.ts`       | From the recorded package logs: compiler errors and warnings with workspace-relative file, line and message, excerpt lines and duplicates ignored, ANSI codes stripped; XCTest and Swift Testing failure lines keyed and parsed; `classifySigningIssue` matches synthetic signing messages (marked synthetic) and ignores an ordinary compile error.                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `xunit.test.ts`             | The recorded `xunit.xml` and `xunit-swift-testing.xml`: counts, statuses, skipped reason, entity decoding; merge gives totals across both files, XCTest identifiers `<Module>.<Class>/<test>`, Swift Testing identifiers `<Module>.<func>()`, the XCTest "failure" message replaced by the log line's message with file and line; a missing file leaves that half empty; malformed XML yields no cases, not an exception.                                                                                                                                                                                                                                                                                                                                |
-| `readiness.test.ts`         | Each check's pass, warning and fail cases from synthetic build settings; the overall roll-up order (fail, warning, unknown, pass).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `detect.test.ts`            | Container classification: workspace inside a project (`App.xcodeproj/project.xcworkspace`) is not listed separately; XcodeGen spec links its generated project; skipped directories; entry limit sets `truncated`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `xcodegen.test.ts`          | Report state from fixture files: in sync, out of date (diff produced and capped), not generated, invalid spec (stderr surfaced). The `xcodegen` process is faked through a test `ProcessRunner` layer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `AppleRunStore.test.ts`     | On `SqlitePersistenceMemory`: insert and list order, retention deletes the oldest beyond `keepRunsPerProject` (default 20, and a changed value applies on the next run), `markInterrupted` on start, orphan removal for missing projects, settings defaults and updates.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `AppleBuildService.test.ts` | With a fake spawner that emits scripted output and exit codes: a second `start` on the same cwd fails with `busy`; different cwds run concurrently; `cancel` ends as `cancelled` and closes the child scope; `tailLog` from offset 0 replays the ring then follows live chunks and completes when the run ends; `watchRuns` emits on start, phase change and finish only; a failing build still extracts a summary when the bundle exists; `run` refuses a scheme with two application products; a failing device build with a signing issue gets `hint: "signing"` and the fix text; a failing devicectl install gets `hint: "device-unavailable"`; `swiftTest` creates the run directory before spawning and builds its summary from both xUnit files. |
-| `mcp.test.ts`               | Tool names start with `loom_` and are unique; disabled agent tools return the typed error; the run tool's `summaryText` is at most 8 KB and `logTail` at most 60 lines; timeouts return `status: "running"` with the run id; on a `Package.swift` container `build` and `test` start `swiftBuild` and `swiftTest` (`only_testing` as `--filter`), and `run`, `release_build` and `generate` fail with `invalid-request`. Run through `withForkRuntime` with a test `ForkRuntime` context (EXTENSION-POINTS.md, MCP tests).                                                                                                                                                                                                                               |
+| Test file                   | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `commands.test.ts`          | Destination specifiers (simulator platform from its runtime, device, Mac, generic, release platform from `SUPPORTED_PLATFORMS`); `xcodebuild` argv for every kind with container, scheme, destination, derived data (omitted when Xcode or the lane shim chooses it) and result bundle; one `-only-testing:` per identifier; XcodeGen specs build through their generated project; no argv contains provisioning, signing or validation-skipping flags; `swift test --parallel --xunit-output` with escaped `--filter`s; simctl and devicectl install and launch argv; display quoting.                                                                                              |
+| `parsers.test.ts`           | Recorded `xcresulttool` fixtures: non-zero counts decode as non-zero (the old Loom regression), workspace-relative files with 1-based lines, target-qualified identifiers, unknown or missing fields degrade, defensive `sourceURL` parsing, issue caps. Recorded `simctl` fixtures (booted first) and devicectl in the current and deprecated forms (synthetic devices). Recorded package logs: compiler errors once each without excerpts or color codes, XCTest and Swift Testing failure lines, signing classification (synthetic messages). Recorded xUnit files: counts, statuses, skip reasons, entities, merged identifiers including a Swift Testing suite, missing halves. |
+| `workspace.test.ts`         | Detection (embedded workspaces and generated projects not listed twice, XcodeGen project name, skipped folders, entry limit sets `truncated`); readiness checks and roll-up order; `-list -json`, test plan and workspace listings; the one application a scheme builds; the XcodeGen mirror comparison through a stub `xcodegen` (not generated, in sync, out of date with diff and changed schemes, invalid spec).                                                                                                                                                                                                                                                                 |
+| `AppleRunStore.test.ts`     | On `SqlitePersistenceMemory`: round trip and newest-first listing, `markInterrupted`, pruning beyond the kept count while keeping running runs and dropping removed projects, settings defaults for missing fields.                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `AppleBuildService.test.ts` | Real stub executables in a scratch workspace: swift build summarizes compiler errors; runs go through the lane's slot and folders; one run per workspace and cancel ends the whole process tree (checked by pid); `tailLog` order and resume from an offset; swift test summary from xUnit; a scheme built into Loom's DerivedData and launched on this Mac; log-based errors without a result bundle; request checks against workspace and platform; settings and clearing finished history.                                                                                                                                                                                        |
+| `mcp.test.ts`               | Container, scheme and destination defaults; package `build`/`test` map to swift and the rest are refused; unique `loom_` tool names; an agent run returns its compact summary; both tools refuse when agent tools are off.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 
 Contracts (`packages/contracts/src/fork/`):
 
@@ -47,17 +42,20 @@ palette and keybinding registry tests) must still pass with this packet's entrie
 
 Web (`apps/web/src/fork/apple-build-tooling/`):
 
-| Test file           | Covers                                                                                                                                                                                         |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `selection.test.ts` | The selection store: per environment and project keys, a stored scheme that no longer exists falls back to the first scheme, storage failures (throwing `localStorage`) fall back to defaults. |
+| Test file           | Covers                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `selection.test.ts` | Stored selections per environment and project, unreadable or throwing storage counts as nothing remembered; action to run kind per container; the missing-choice messages; a single test replaces the test plan; scheme preselection (remembered, then named after the project, then first); destination grouping and disabled devices; toolchain fix commands; issue grouping and dedupe. |
+
+Client runtime: `packages/client-runtime/src/fork/apple-build-tooling.test.ts` covers the log
+view's line cap across chunks.
 
 No markup tests for the panel (AGENTS.md: do not render to static markup to assert props).
 
 ## Commands
 
 ```sh
-vp test run apps/server/src/fork/apple-build-tooling packages/contracts/src/fork/apple-build-tooling.test.ts apps/web/src/fork/apple-build-tooling
-vp test run apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts apps/web/src/fork/panels/registry.test.ts apps/web/src/fork/settings/registry.test.ts packages/contracts/src/fork/keybindings.test.ts
+vp test run apps/server/src/fork/apple-build-tooling packages/contracts/src/fork/apple-build-tooling.test.ts apps/web/src/fork/apple-build-tooling packages/client-runtime/src/fork/apple-build-tooling.test.ts
+vp test run apps/server/src/fork/rpcAuthorization.test.ts apps/server/src/fork/features.test.ts apps/web/src/fork/panels/registry.test.ts apps/web/src/fork/settings/registry.test.ts apps/web/src/fork/commandPalette/registry.test.ts packages/contracts/src/fork/keybindings.test.ts
 vp lint apps/server/src/fork/apple-build-tooling apps/web/src/fork/apple-build-tooling packages/contracts/src/fork packages/client-runtime/src/fork
 vp run --filter @t3tools/contracts typecheck
 vp run --filter t3 typecheck
@@ -109,8 +107,84 @@ With Kyle's permission (AGENTS.md: ask before dev servers and browsers), on a Ma
 Physical device install is covered by manual step 9c only (PRODUCT.md, Decisions); no
 automated test talks to a device.
 
+## Results
+
+Recorded 2026-10-08 on `feat/loom-apple-build-tooling`, Xcode 27.0 (27A266a), Swift 6.4,
+xcresulttool 25115 (schema 0.4.0), XcodeGen 2.46.0, xcbeautify 3.2.1.
+
+Automated, all passing: both test command lines above (15 files, 97 tests) plus the L19
+suite (`apps/server/src/fork/project-lifecycle`, 37 tests), lint over the four fork
+directories and `apps/web/src/fork/commandPalette`, and `tsc --noEmit` in server, web,
+contracts and client runtime.
+
+Real toolchain, through `AppleBuildService` with in-memory stores and no client, on a scratch
+SwiftUI app (XcodeGen spec, XCTest and Swift Testing tests) and a scratch package:
+
+- Detection lists the spec (with its generated project) and the package; the toolchain
+  reports Xcode, runtimes, XcodeGen, xcbeautify, `mcpbridge` and the headless server state.
+- `swift build` succeeds. `swift test` reports 6 tests, 3 failed (XCTest, top-level Swift
+  Testing and a Swift Testing suite) with messages, workspace-relative files and lines.
+  "Test only this" for each runs exactly that one test.
+- Simulator build succeeds; a compile error is listed with `App/Sources/App.swift` and its
+  line. Test reports 3 tests, 2 failed; "Test only this" works for both the XCTest
+  (`SampleAppTests/DoubleTests/testDoubleFails()`) and Swift Testing identifier forms.
+- Build and run installs and launches on a booted simulator, and asks the Device panel to
+  open it; a failing Device panel does not fail the run.
+- Cancelling a cold release build ends `cancelled` with no process left whose arguments name
+  the run's directory. `tailLog` on a finished run replays the log and ends with `done`.
+- XcodeGen: in sync, then out of date with a pbxproj diff after adding a source folder,
+  `invalid` with XcodeGen's message for a broken spec, and in sync again after Generate.
+- History lists every run newest first.
+
+In a running web client (worktree dev server with a copy of real state, Browser panel), on
+the same scratch app:
+
+- The panel shows the toolchain, controls, destinations grouped by runtime plus this Mac,
+  generic destinations and the paired phone, results with "started by an agent", history,
+  the command line, the log (shown and downloaded), the running line and the live log.
+- Simulator test failures show `Tests/Tests.swift` and their lines for both XCTest and Swift
+  Testing. "Test only this" runs one test; "Add to composer" inserts the failure report.
+- XcodeGen out of date with its diff, Generate, then in sync without a reload.
+- Palette: "Apple: Open build panel", "Apple: Build" with the remembered selection, and
+  "Apple: Cancel run" during a run. Cancel from the palette and from the panel both end
+  `cancelled` with no `xcodebuild` or build script process left.
+- From a real thread, the status tool lists destinations, the run tool rejects an unknown
+  scheme with the schemes that exist, and a test run reports 1 passed and 2 failed.
+- A build for the paired phone while it was unreachable shows the locked or disconnected
+  message.
+- The `X` launcher shortcut opens the panel; a draft thread shows the start-the-thread message.
+- Settings, Loom: the Apple build section shows derived data and run storage sizes, and a
+  toggle survives a reload.
+
+Physical device (step 9c), with the paired phone unlocked and connected, on two scratch
+XcodeGen apps with automatic signing:
+
+- With a team that has a profile covering the phone, Build and run signs, installs and
+  launches the app on the phone (confirmed by `devicectl device info processes`).
+- Without a team, the run fails with the signing message and the `signing` hint.
+- `git status` in both projects is clean afterwards: Loom changed nothing in them.
+
+These checks found and fixed: swift test reporting a failed build when only tests failed,
+Swift Testing failures without a workspace path, a Device panel defect failing a launched
+run, compiler paths below `/private` staying absolute, xcodebuild test failures without a
+file or line (taken from the log now), fork palette items not found by their own titles (any
+fork source, not only this one), the XcodeGen card staying out of date after Generate, an
+unreachable device getting raw xcodebuild text instead of the device message, and a build
+xcodebuild never started reporting `succeeded` with an error.
+
+Not yet verified:
+
+- Remote access and an upstream server.
+- The Mac destination with a real app is covered by stubs only. Readiness on a real project
+  (8) and retention in practice (9d, covered by `AppleRunStore.test.ts`) remain. A device
+  with Developer Mode off or unpaired was not available, so its disabled row is covered by
+  `selection.test.ts` only.
+- Lane builds with a real L19 lane (covered by stubs in `AppleBuildService.test.ts`).
+- The merged tree with the newest nightly was not typechecked; the depended-on APIs did not
+  change.
+
 ## Merge safety
 
-Record here the merge preview result against the newest nightly (SEAMS.md, "Merge check") and,
-after Kyle merges, the result of `scripts/fork/loom.sh integrate nightly --dry-run` from a
-clean, synced `main`.
+`git merge-tree` against `v0.0.46-nightly.20261008.2833` (`a6ec88f7a7`) and against
+`origin/main` at `62f05fc04b` (2026-10-08): no conflicts. After Kyle merges, record the result
+of `scripts/fork/loom.sh integrate nightly --dry-run` from a clean, synced `main`.

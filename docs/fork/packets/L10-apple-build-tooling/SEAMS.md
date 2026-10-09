@@ -73,6 +73,9 @@ git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 Record the tag and result here. With no packet seams, any conflict must be on an extension
 point seam line listed above.
 
+2026-10-08: `v0.0.46-nightly.20261008.2833` (`a6ec88f7a7`) merges with no conflicts, and so
+does `origin/main` at `62f05fc04b`.
+
 ## FORK.md rows
 
 No "Packet seams" rows. If this packet created extension points, their rows go in FORK.md's

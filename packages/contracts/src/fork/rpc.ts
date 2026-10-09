@@ -1,6 +1,10 @@
 import { PcbPreviewRpcGroup, PCB_PREVIEW_WS_METHODS } from "./pcb-preview.ts";
 import { ModelPreview3dRpcGroup, MODEL_PREVIEW_3D_WS_METHODS } from "./model-preview-3d.ts";
 import { ProjectLifecycleRpcGroup, PROJECT_LIFECYCLE_WS_METHODS } from "./project-lifecycle.ts";
+import {
+  AppleBuildToolingRpcGroup,
+  APPLE_BUILD_TOOLING_WS_METHODS,
+} from "./apple-build-tooling.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -33,6 +37,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   ModelPreview3dRpcGroup,
   PcbPreviewRpcGroup,
   ProjectLifecycleRpcGroup,
+  AppleBuildToolingRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -42,7 +47,7 @@ export const LoomWsRpcGroup = WsRpcGroup.merge(ForkRpcGroup);
 /**
  * Fork streaming tags, added to the client's stream unions
  * (packages/client-runtime/src/rpc/client.ts, fork: ext-core). A streaming fork
- * method missing here would be typed as unary. Replace `never` with the first tag.
+ * method missing here would be typed as unary.
  */
 export type ForkSubscriptionRpcTag =
   | typeof PCB_PREVIEW_WS_METHODS.workspaceUpdates
@@ -53,5 +58,6 @@ export type ForkSubscriptionRpcTag =
   | typeof MODEL_PREVIEW_3D_WS_METHODS.editorEvents
   | typeof MODEL_PREVIEW_3D_WS_METHODS.watch
   | typeof MODEL_PREVIEW_3D_WS_METHODS.workspace
-  | typeof PROJECT_LIFECYCLE_WS_METHODS.watch;
-export type ForkStreamCommandRpcTag = never;
+  | typeof PROJECT_LIFECYCLE_WS_METHODS.watch
+  | typeof APPLE_BUILD_TOOLING_WS_METHODS.watchRuns;
+export type ForkStreamCommandRpcTag = typeof APPLE_BUILD_TOOLING_WS_METHODS.tailLog;

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="TestResults" errors="0" tests="3" failures="2" skipped="1" time="0.000744167">
+    <testcase classname="PkgTests" name="addBreaks()" time="0.000511208" >
+      <failure message="Expectation failed: add(1, 1) == 3 (error): one plus one" />
+    </testcase>
+    <testcase classname="PkgTests" name="addWorks()" time="0.000160167" />
+    <testcase classname="PkgTests.Grouped" name="insideSuiteFails()" time="0.000399667" >
+      <failure message="Expectation failed: add(0, 0) == 1 (error)" />
+    </testcase>
+    <testcase classname="PkgTests" name="addLater()" >
+      <skipped>not ready</skipped>
+    </testcase>
+  </testsuite>
+</testsuites>

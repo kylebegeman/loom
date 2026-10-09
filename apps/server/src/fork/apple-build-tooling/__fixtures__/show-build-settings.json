@@ -1,0 +1,19 @@
+[
+  {
+    "action": "build",
+    "target": "SampleApp",
+    "buildSettings": {
+      "PRODUCT_TYPE": "com.apple.product-type.application",
+      "TARGET_BUILD_DIR": "/Users/test/scratch/dd/Build/Products/Debug-iphonesimulator",
+      "WRAPPER_NAME": "SampleApp.app",
+      "PRODUCT_BUNDLE_IDENTIFIER": "dev.loom.sample.SampleApp",
+      "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
+      "MARKETING_VERSION": "1.0",
+      "CURRENT_PROJECT_VERSION": "1",
+      "IPHONEOS_DEPLOYMENT_TARGET": "18.0",
+      "ASSETCATALOG_COMPILER_APPICON_NAME": "AppIcon",
+      "PLATFORM_NAME": "iphonesimulator",
+      "SDKROOT": "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator27.0.sdk"
+    }
+  }
+]

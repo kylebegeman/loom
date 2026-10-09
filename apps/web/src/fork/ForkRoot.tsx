@@ -1,6 +1,7 @@
 import { PcbPreviewCommandHost } from "./pcb-preview/commands";
 import { ModelPreview3dShortcuts } from "./model-preview-3d/Shortcuts";
 import { ProjectLifecycleHost } from "./project-lifecycle/StorageHost";
+import { AppleBuildToolingShortcuts } from "./apple-build-tooling/Shortcuts";
 import type { ComponentType } from "react";
 
 import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
@@ -15,6 +16,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "model-preview-3d-shortcuts", Component: ModelPreview3dShortcuts },
   { id: "pcb-preview-commands", Component: PcbPreviewCommandHost },
   { id: "project-lifecycle-host", Component: ProjectLifecycleHost },
+  { id: "apple-build-tooling-shortcuts", Component: AppleBuildToolingShortcuts },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];

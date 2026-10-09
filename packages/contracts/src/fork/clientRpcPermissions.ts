@@ -2,6 +2,7 @@ import { PCB_PREVIEW_WS_METHODS as P } from "./pcb-preview.ts";
 import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "../auth.ts";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "./model-preview-3d.ts";
 import { PROJECT_LIFECYCLE_WS_METHODS as L } from "./project-lifecycle.ts";
+import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "./apple-build-tooling.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -34,4 +35,9 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [L.releaseLease]: AuthOrchestrationOperateScope,
   [L.installShell]: AuthTerminalOperateScope,
   [L.removeShell]: AuthTerminalOperateScope,
+  [A.start]: AuthTerminalOperateScope,
+  [A.cancel]: AuthTerminalOperateScope,
+  [A.clearHistory]: AuthTerminalOperateScope,
+  [A.openResultBundle]: AuthTerminalOperateScope,
+  [A.updateSettings]: AuthOrchestrationOperateScope,
 } as const;

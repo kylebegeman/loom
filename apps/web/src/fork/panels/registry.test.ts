@@ -9,7 +9,7 @@ import { FORK_PANELS, forkPanelSurface } from "./registry";
 const UPSTREAM_LETTERS = new Set(["A", "B", "D", "F", "L", "M", "P", "T"]);
 
 describe("fork right panels", () => {
-  it.each(["model-preview-3d", "pcb-preview"])(
+  it.each(["model-preview-3d", "pcb-preview", "apple-build-tooling"])(
     "requires a thread and the environment feature for %s",
     (id) => {
       const panel = FORK_PANELS.find((item) => item.id === id)!;

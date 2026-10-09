@@ -1,0 +1,35 @@
+Test Suite 'Selected tests' started at 2026-10-08 13:39:55.391.
+Test Suite 'PkgTests.xctest' started at 2026-10-08 13:39:55.393.
+Test Suite 'MathTests' started at 2026-10-08 13:39:55.393.
+Test Case '-[PkgTests.MathTests testAddFails]' started.
+/Users/test/scratch/Pkg/Tests/PkgTests/XCTests.swift:5: error: -[PkgTests.MathTests testAddFails] : XCTAssertEqual failed: ("4") is not equal to ("5") - two plus two
+Test Case '-[PkgTests.MathTests testAddFails]' failed (0.046 seconds).
+Test Suite 'MathTests' failed at 2026-10-08 13:39:55.439.
+	 Executed 1 test, with 1 failure (0 unexpected) in 0.046 (0.046) seconds
+Test Suite 'PkgTests.xctest' failed at 2026-10-08 13:39:55.439.
+	 Executed 1 test, with 1 failure (0 unexpected) in 0.046 (0.046) seconds
+Test Suite 'Selected tests' failed at 2026-10-08 13:39:55.439.
+	 Executed 1 test, with 1 failure (0 unexpected) in 0.046 (0.048) seconds
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite Grouped started.
+􀙟  Test addLater() skipped: "not ready"
+􀟈  Test addBreaks() started.
+􀟈  Test insideSuiteFails() started.
+􀟈  Test addWorks() started.
+􁁛  Test addWorks() passed after 0.001 seconds.
+􀢄  Test insideSuiteFails() recorded an issue at SwiftTests.swift:7:35: Expectation failed: add(0, 0) == 1
+􀄵  add(0, 0) == 1 → false
+􀄵    add(0, 0) → 0
+􀢄  Test addBreaks() recorded an issue at SwiftTests.swift:4:26: Expectation failed: add(1, 1) == 3
+􀄵  one plus one
+􀄵  add(1, 1) == 3 → false
+􀄵    add(1, 1) → 2
+􀢄  Test insideSuiteFails() failed after 0.001 seconds with 1 issue.
+􀢄  Test addBreaks() failed after 0.001 seconds with 1 issue.
+􀢄  Suite Grouped failed after 0.001 seconds with 1 issue.
+􀢄  Test run with 4 tests in 1 suite failed after 0.001 seconds with 2 issues.
+Note: Some test targets reported failures:
+  - PkgTests (XCTest)
+  - PkgTests (Swift Testing)

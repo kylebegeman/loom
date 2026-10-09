@@ -1,5 +1,6 @@
 import { ModelPreviewMigrations } from "../model-preview-3d/migrations.ts";
 import { ProjectLifecycleMigrations } from "../project-lifecycle/migrations.ts";
+import { AppleBuildToolingMigrations } from "../apple-build-tooling/migrations.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Migrator from "effect/sql/Migrator";
@@ -18,6 +19,7 @@ export interface ForkMigrationSet {
 export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
   ModelPreviewMigrations,
   ProjectLifecycleMigrations,
+  AppleBuildToolingMigrations,
 ];
 
 export const forkMigrationsTable = (slug: string) => `fork_migrations_${slug.replaceAll("-", "_")}`;
