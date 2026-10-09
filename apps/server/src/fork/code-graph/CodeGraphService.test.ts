@@ -68,7 +68,7 @@ esac
   return path;
 };
 
-const setup = (options: { readonly graphify?: string } = {}) =>
+const setup = (options: { readonly graphify?: string; readonly installed?: boolean } = {}) =>
   Effect.gen(function* () {
     const home = NodeFS.realpathSync(
       NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-graph-")),
@@ -82,7 +82,9 @@ const setup = (options: { readonly graphify?: string } = {}) =>
     git(repo, "init", "-q");
     git(repo, "add", ".");
     git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init");
-    const graphify = options.graphify ?? writeGraphify(home);
+    const graphify =
+      options.graphify ??
+      (options.installed === false ? NodePath.join(home, "graphify") : writeGraphify(home));
     const stateDir = NodePath.join(home, "state");
     let projectExists = true;
 
@@ -169,6 +171,21 @@ describe("CodeGraphService", () => {
         );
         const error = yield* Effect.flip(t.service.build(projectId, "full"));
         expect(error.reason).toBe("graphify-missing");
+      }),
+    ),
+  );
+
+  it.live("finds Graphify installed after the cached check when asked to look again", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const t = yield* setup({ installed: false });
+        expect((yield* t.service.status(projectId)).availability._tag).toBe("missing");
+        writeGraphify(t.home);
+        expect((yield* t.service.status(projectId)).availability._tag).toBe("missing");
+        expect((yield* t.service.recheck(projectId)).availability).toMatchObject({
+          _tag: "available",
+          tested: true,
+        });
       }),
     ),
   );

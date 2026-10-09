@@ -14,7 +14,7 @@ export const makeCodeGraphRpcHandlers = (auth: ForkRpcAuth) =>
     const service = yield* CodeGraphService;
     return {
       [G.status]: (input: { projectId: ProjectId }) =>
-        auth.effect(G.status, service.status(input.projectId)),
+        auth.effect(G.status, service.recheck(input.projectId)),
       [G.subscribeStatus]: (input: { projectId: ProjectId }) =>
         auth.stream(G.subscribeStatus, service.subscribeStatus(input.projectId)),
       [G.list]: () => auth.effect(G.list, service.list),

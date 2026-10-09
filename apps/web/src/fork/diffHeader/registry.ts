@@ -2,6 +2,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { ComponentType } from "react";
 
 import type { DiffPanelSelection } from "~/diffPanelStore";
+import { codeGraphDiffHeaderAction } from "../code-graph/diffHeaderAction";
 
 export interface ForkDiffHeaderActionProps {
   readonly threadRef: ScopedThreadRef | null | undefined;
@@ -19,5 +20,5 @@ export interface ForkDiffHeaderAction {
 
 /** One line per packet. Order is left-to-right order in the header. */
 export const FORK_DIFF_HEADER_ACTIONS: ReadonlyArray<ForkDiffHeaderAction> = [
-  // codeGraphDiffHeaderAction,
+  codeGraphDiffHeaderAction,
 ];

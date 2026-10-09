@@ -229,6 +229,7 @@ const M = CODE_GRAPH_WS_METHODS;
 const ProjectRef = Schema.Struct({ projectId: ProjectId });
 
 export const CodeGraphRpcGroup = RpcGroup.make(
+  /** Checks for Graphify again rather than using the cached answer. */
   Rpc.make(M.status, { payload: ProjectRef, success: CodeGraphStatus, error: errors }),
   Rpc.make(M.subscribeStatus, {
     payload: ProjectRef,

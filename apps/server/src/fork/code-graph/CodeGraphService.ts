@@ -657,6 +657,19 @@ export const makeWith = (options: CodeGraphOptions) =>
       status: (projectId: ProjectId) => statusOf(projectId),
       /** Re-runs `graphify --version` instead of using the cached answer. */
       checkAvailability: availability(true),
+      /** Checks for Graphify again, tells every open panel, and returns the project's status. */
+      recheck: (projectId: ProjectId) =>
+        availability(true).pipe(
+          Effect.andThen(store.list().pipe(Effect.orDie)),
+          Effect.tap((records) =>
+            Effect.sync(() => {
+              notify(projectId);
+              for (const record of records)
+                if (record.projectId !== projectId) notify(record.projectId);
+            }),
+          ),
+          Effect.andThen(statusOf(projectId)),
+        ),
       subscribeStatus,
       list,
       build,
