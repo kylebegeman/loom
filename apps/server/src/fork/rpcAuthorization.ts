@@ -2,6 +2,7 @@ import { PCB_PREVIEW_WS_METHODS as P } from "@t3tools/contracts/fork";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
 import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
 import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "@t3tools/contracts/fork";
+import { DEVICE_QA_WS_METHODS as Q } from "@t3tools/contracts/fork";
 import {
   AuthOrchestrationReadScope,
   AuthTerminalOperateScope,
@@ -87,6 +88,25 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [A.clearHistory]: AuthTerminalOperateScope,
   [A.openResultBundle]: AuthTerminalOperateScope,
   [A.updateSettings]: AuthOrchestrationOperateScope,
+  [Q.status]: AuthOrchestrationReadScope,
+  [Q.listFlows]: AuthOrchestrationReadScope,
+  [Q.readFlow]: AuthOrchestrationReadScope,
+  [Q.getRun]: AuthOrchestrationReadScope,
+  [Q.watchRuns]: AuthOrchestrationReadScope,
+  [Q.runEvents]: AuthOrchestrationReadScope,
+  [Q.watchEvidence]: AuthOrchestrationReadScope,
+  [Q.getSettings]: AuthOrchestrationReadScope,
+  // Flows, captures and installs run host commands against devices.
+  [Q.runFlows]: AuthTerminalOperateScope,
+  [Q.cancelRun]: AuthTerminalOperateScope,
+  [Q.capture]: AuthTerminalOperateScope,
+  [Q.stopRecording]: AuthTerminalOperateScope,
+  [Q.installApp]: AuthTerminalOperateScope,
+  [Q.statusBar]: AuthTerminalOperateScope,
+  [Q.disableArgentTelemetry]: AuthTerminalOperateScope,
+  [Q.deleteEvidence]: AuthOrchestrationOperateScope,
+  [Q.deleteAllEvidence]: AuthOrchestrationOperateScope,
+  [Q.updateSettings]: AuthOrchestrationOperateScope,
 } as const satisfies Readonly<Record<ForkRpcMethod, AuthEnvironmentScope>>;
 
 const denied = (scope: AuthEnvironmentScope) =>

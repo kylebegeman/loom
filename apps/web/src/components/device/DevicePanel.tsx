@@ -1,4 +1,5 @@
 import { DeviceHostUpdates } from "./DeviceHostUpdates";
+import { DeviceQaToolbarActions } from "../../fork/device-qa/DeviceToolbarActions"; // fork: device-qa
 import type {
   DevicePlatform,
   DeviceServiceState,
@@ -199,19 +200,26 @@ export function DevicePanel(props: {
       ) : null}
       <div className="@container relative flex min-h-0 flex-1">
         {activeDevice && activeSession ? (
-          <DeviceWorkspace
-            key={`${environmentId}\u0000${deviceKey(activeDevice)}`}
-            environmentId={environmentId}
-            device={activeDevice}
-            hostLabel={
-              state.hosts.find((host) => host.id === activeDevice.hostId)?.label ?? "Device host"
-            }
-            hostDiagnostics={state.hostStatusDetail}
-            visible={props.visible}
-            onFloat={floatActive}
-            onClose={() => closeActive(false)}
-            onPowerOff={() => closeActive(true)}
-          />
+          // fork: device-qa - column wrapper and toolbar row above DeviceWorkspace
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <DeviceQaToolbarActions threadRef={props.threadRef} device={activeDevice} />
+            <div className="relative flex min-h-0 flex-1">
+              <DeviceWorkspace
+                key={`${environmentId}\u0000${deviceKey(activeDevice)}`}
+                environmentId={environmentId}
+                device={activeDevice}
+                hostLabel={
+                  state.hosts.find((host) => host.id === activeDevice.hostId)?.label ??
+                  "Device host"
+                }
+                hostDiagnostics={state.hostStatusDetail}
+                visible={props.visible}
+                onFloat={floatActive}
+                onClose={() => closeActive(false)}
+                onPowerOff={() => closeActive(true)}
+              />
+            </div>
+          </div>
         ) : pendingDevice || hostBusy || !loaded ? (
           <DeviceLoadingView
             name={pendingDevice?.name ?? "Devices"}

@@ -1,0 +1,7 @@
+# Synthetic: written by hand from argent 0.25.2's --json-stream records (cli-cmds.mjs writeJsonStreamRecord), not recorded from a device.
+{"event":"progress","data":{"index":0,"kind":"echo","flow":"login","status":"pass","message":"Start on the sign-in screen"}}
+{"event":"progress","data":{"index":1,"kind":"launch","flow":"login","target":"com.example.app","status":"pass","durationMs":812}}
+Tool server ready on port 3001
+{"event":"progress","data":{"index":2,"kind":"tap","flow":"login","target":"Sign in","status":"pass","durationMs":140,"newField":true}}
+{"event":"progress","data":{"index":3,"kind":"snapshot","flow":"login","status":"pass","snapshotKey":"home__ios-1206x2622","artifacts":{"current":null}}}
+{"event":"result","data":{"flow":"login","device":"iPhone 17 (Simulated)","executionPrerequisite":"","ok":true,"passed":4,"failed":0,"skipped":0,"errored":0,"startedAt":1790000000000,"durationMs":2210,"steps":[{"index":0,"kind":"echo","flow":"login","status":"pass","message":"Start on the sign-in screen"},{"index":1,"kind":"launch","flow":"login","target":"com.example.app","status":"pass","durationMs":812},{"index":2,"kind":"tap","flow":"login","target":"Sign in","status":"pass","durationMs":140},{"index":3,"kind":"snapshot","flow":"login","status":"pass","snapshotKey":"home__ios-1206x2622","artifacts":{"current":null}}]}}

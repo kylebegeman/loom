@@ -1,7 +1,11 @@
 # L09: Device QA and flows
 
-Status: Implement now. Kyle confirmed the full packet on 2026-09-27. See the
+Status: Complete; merged in PR #14 (2026-10-09). Verified on a real simulator and
+emulator, in the web and desktop clients, on Android mobile, against an upstream server, over
+a remote connection and through an SSH stand-in. A real remote Mac over SSH is still open; see
+[TESTING.md](./TESTING.md#results). Kyle confirmed the full packet on 2026-09-27. See the
 [selected queue](../IMPLEMENT-NOW.md#selected-queue).
+User guide: [Device QA](../../user/device-qa.md).
 
 Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Reuse existing core,
 panels, palette, root and keybinding extension points; create settings and MCP only if an

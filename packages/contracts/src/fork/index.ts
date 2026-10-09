@@ -14,3 +14,5 @@ export * from "./model-editor.ts";
 export * from "./project-lifecycle.ts";
 
 export * from "./apple-build-tooling.ts";
+
+export * from "./device-qa.ts";

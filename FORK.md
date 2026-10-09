@@ -78,6 +78,7 @@ The shared plumbing packets register into, specified in
 | `apps/web/src/components/ChatView.tsx`                                                       | `ext-panels`      | Renders fork panels, passes panel actions to both tab bars, and lets focusable canvases own keyboard input. |
 | `apps/web/src/components/CommandPalette.tsx`                                                 | `ext-palette`     | Adds fork palette items to the root action list.                                                            |
 | `packages/contracts/src/keybindings.ts`                                                      | `ext-keybindings` | Fork `loom.*` commands join the static keybinding command list.                                             |
+| `apps/web/src/components/settings/KeybindingsSettings.logic.ts`                              | `ext-keybindings` | Fork feature names in keybinding labels, such as "Device QA".                                               |
 | `packages/client-runtime/package.json` (no marker)                                           | `ext-core`        | `./fork` subpath export, after `./errors`.                                                                  |
 | `apps/web/src/components/settings/settingsSearch.ts`                                         | `ext-settings`    | Adds the Loom settings route, label and scope.                                                              |
 | `apps/web/src/components/settings/SettingsSidebarNav.tsx`                                    | `ext-settings`    | Gives the Loom page its icon.                                                                               |
@@ -105,6 +106,11 @@ L24 adds an optional `extendEnv` flag to `apps/server/src/processRunner.ts`
 (`fork: pcb-preview`) so circuit code receives only its filtered environment.
 Existing callers retain inherited variables. See the
 [L24 packet](docs/fork/packets/L24-pcb-preview/SEAMS.md).
+
+L09 wraps DeviceWorkspace in `apps/web/src/components/device/DevicePanel.tsx`
+(`fork: device-qa`, 2 marker lines) to put the Device QA toolbar row above the device
+being viewed. The row renders nothing against a server without Device QA. See the
+[L09 packet](docs/fork/packets/L09-device-qa/SEAMS.md).
 
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.

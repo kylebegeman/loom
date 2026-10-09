@@ -1,8 +1,7 @@
 # L10: Apple build tooling
 
-Status: Implemented on `feat/loom-apple-build-tooling` (2026-10-08), not yet merged. The
-manual checks in [TESTING.md](./TESTING.md#results) remain, including the physical iPhone
-run. Kyle confirmed the full packet on 2026-09-27. See the
+Status: Complete; merged in PR #13 (2026-10-08). The checks still open are listed in
+[TESTING.md](./TESTING.md#results). Kyle confirmed the full packet on 2026-09-27. See the
 [selected queue](../IMPLEMENT-NOW.md#selected-queue).
 
 Integration review: Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`. Current projection

@@ -3,6 +3,7 @@ import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "../auth
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "./model-preview-3d.ts";
 import { PROJECT_LIFECYCLE_WS_METHODS as L } from "./project-lifecycle.ts";
 import { APPLE_BUILD_TOOLING_WS_METHODS as A } from "./apple-build-tooling.ts";
+import { DEVICE_QA_WS_METHODS as Q } from "./device-qa.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
@@ -40,4 +41,14 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [A.clearHistory]: AuthTerminalOperateScope,
   [A.openResultBundle]: AuthTerminalOperateScope,
   [A.updateSettings]: AuthOrchestrationOperateScope,
+  [Q.runFlows]: AuthTerminalOperateScope,
+  [Q.cancelRun]: AuthTerminalOperateScope,
+  [Q.capture]: AuthTerminalOperateScope,
+  [Q.stopRecording]: AuthTerminalOperateScope,
+  [Q.installApp]: AuthTerminalOperateScope,
+  [Q.statusBar]: AuthTerminalOperateScope,
+  [Q.disableArgentTelemetry]: AuthTerminalOperateScope,
+  [Q.deleteEvidence]: AuthOrchestrationOperateScope,
+  [Q.deleteAllEvidence]: AuthOrchestrationOperateScope,
+  [Q.updateSettings]: AuthOrchestrationOperateScope,
 } as const;

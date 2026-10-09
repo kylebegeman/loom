@@ -240,7 +240,7 @@ export const DeviceQaSettings = Schema.Struct({
 export const DeviceQaEvidenceList = Schema.Struct({
   items: Schema.Array(DeviceQaEvidence), // latest 200
   totalCount: Schema.Int,
-  totalBytes: Schema.Number, // sum of size_bytes of the thread's evidence rows
+  totalBytes: Schema.Number, // bytes deleting the thread's evidence frees; flow reports belong to runs
 });
 
 export class DeviceQaError extends Schema.TaggedError<DeviceQaError>()("DeviceQaError", {
@@ -332,7 +332,12 @@ lists `--version, -v` in its help, `packages/argent/src/cli.ts:78`). Telemetry:
 
 Every argent process Loom starts gets `DO_NOT_TRACK=1` in its environment (argent's telemetry
 doc: "The environment variable `DO_NOT_TRACK=1` still turns telemetry off regardless of either
-file"). The "Turn off telemetry" button runs `argent telemetry disable` (global scope) on Kyle's
+file"). That env only binds the processes Loom spawns: `argent flow run` executes its steps
+through argent's shared tool-server (`~/.argent/tool-server.json`), reuses any healthy one for
+the same install regardless of its environment, and the server reports `tool:*` events by its
+own env and config. A server an agent's argent MCP started without `DO_NOT_TRACK` therefore
+counts Loom's flow steps unless argent's config has telemetry off; the panel's telemetry notice
+says so. The "Turn off telemetry" button runs `argent telemetry disable` (global scope) on Kyle's
 click. Loom never writes argent's project config (`telemetry disable --scope project` writes
 `.argent/config.json` into the repo; that is Kyle's call, and the user doc mentions it).
 

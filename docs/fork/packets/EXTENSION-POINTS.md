@@ -1513,8 +1513,11 @@ SCRIPT_RUN_COMMAND_PATTERN])` (`packages/contracts/src/keybindings.ts:57-105`), 
   `resolveShortcutCommand` (`apps/web/src/keybindings.ts:227`) with its own `when` context,
   e.g. `apps/web/src/routes/_chat.tsx:25-175`.
 - The Keybindings settings page lists every static command and derives labels from the id
-  (`apps/web/src/components/settings/KeybindingsSettings.logic.ts:266-285`), so
-  `loom.snippets.open` shows as "Loom: Snippets: Open" with no extra work.
+  (`commandLabel` in `apps/web/src/components/settings/KeybindingsSettings.logic.ts`), so
+  `loom.snippets.open` shows as "Loom: Snippets: Open" with no extra work. A slug with an
+  acronym or digit (`device-qa`, `pcb-preview`) needs an entry in
+  `FORK_KEYBINDING_FEATURE_NAMES` (`packages/contracts/src/fork/keybindings.ts`), or it
+  shows as "Loom: Device Qa".
 
 ### Seams (`packages/contracts/src/keybindings.ts`, `fork: ext-keybindings`)
 
