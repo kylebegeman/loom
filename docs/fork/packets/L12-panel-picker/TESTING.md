@@ -90,6 +90,19 @@ Run the `git merge-tree` preview from SEAMS.md on the branch and record the resu
 the merge to `main`, `scripts/fork/loom.sh integrate nightly --dry-run` from a clean,
 synced `main`.
 
+## Results
+
+2026-10-09 on `feat/loom-panel-picker`:
+
+- `vp test run apps/web/src/fork/panel-picker`: 24 tests pass across `rank.test.ts`,
+  `defaultShortcut.test.ts` and `preferences.test.ts`.
+- `vp lint` on the changed web files: clean apart from upstream's existing
+  `exhaustive-effect-dependencies` warning on the launcher's letter listener.
+- Typecheck of `@t3tools/web` and `@t3tools/contracts` passes; `scripts/fork/loom.sh check`
+  passes.
+- Merge preview: see [SEAMS.md](./SEAMS.md#merge-check).
+- The manual check above has not run yet; it needs a dev client and Kyle's go-ahead.
+
 ## Acceptance criteria
 
 - Upstream's surfaces behave exactly as before when picked; only the list presentation
