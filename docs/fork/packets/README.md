@@ -67,6 +67,9 @@ The 2026-09-27 review identified these items to revisit:
   contracts and SDK choices; jevgrep is a separate retrieval candidate, not a hub replacement.
 - **Shared surfaces and App Kit:** the extension SDK/server/dock stack is a separate draft
   proposal. Record the overlap without assuming acceptance, APIs or a delivery date.
+  Its author closed it on 2026-10-02; a smaller upstream plugin stack (#16047 and up) is
+  open but not agreed. Loom's own plugin contract, [L30](./L30-plugins/), builds plugins
+  into the app and depends on neither proposal; Kyle parked it on 2026-10-09.
 - **V2 cutover:** recheck the database-generation-aware backup/rollback path, protocol
   compatibility across clients and legacy-history limitations before installing V2.
 
@@ -168,6 +171,7 @@ means the packet registers nothing in server core and needs it only as the prere
 | L27 | [`utilities`](./L27-utilities/)                           | Twenty-nine offline developer tools (encoders, JWT decode, hashes, regex, subnet and chmod calculators) in a panel.        | F4                           | core\*, root, panels, palette, keys                                             | Implement now                                 |
 | L28 | [`auto-resume`](./L28-auto-resume/)                       | Retain automatic switching between eligible subscription accounts; reuse upstream reset-time recovery after V2 ships.      | F7                           | Reassess after V2                                                               | Deferred: V2                                  |
 | L29 | [`jev-hub`](./L29-jev-hub/)                               | Trial and tune Jev decisions: a decision log with ratings, a playground, question templates, test sets and replay.         | Jev hub                      | core, root, panels, settings, palette, keys, mcp, decide                        | Deferred: V2                                  |
+| L30 | [`plugins`](./L30-plugins/)                               | Every Loom feature becomes a plugin with one definition per layer, switched on or off per environment in Settings.         | Kyle, 2026-10-09             | core, root, panels, settings, palette, keys                                     | Parked                                        |
 
 L22, L25 and L26 came from the review of the reference repositories, and L29 from settling
 the packet questions; Kyle confirmed all four on 2026-09-24.

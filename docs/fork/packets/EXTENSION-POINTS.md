@@ -10,6 +10,13 @@ upstream. Packets register into it and touch no further upstream code.
 All citations are to this fork at upstream v0.0.42 (commit `a931bd85f3`). Line numbers drift;
 search for the quoted code when they do.
 
+## Plugins (parked proposal)
+
+[L30](./L30-plugins/), parked on 2026-10-09, would replace the hand-edited registration lists
+below with one plugin definition per feature per layer, plus per-environment enable and
+disable. It is not selected: the "Registering" steps in each section are authoritative. If L30
+is picked up, it rewrites those steps to name the plugin slot each extension point fills.
+
 ## How to use this file
 
 These are V1 integration designs. The [packet planning policy](./README.md#planning-policy-after-the-upstream-review)

@@ -84,6 +84,12 @@ implementation readiness. Confirmed deferrals:
   The [jevgrep review](./L29-jev-hub/REFERENCES.md#jevgrep-review-2026-09-27) identifies an
   independent code-retrieval experiment and SDK options for later evaluation. Neither is
   selected for installation or implementation by this review.
+- **L30 Loom plugins: designed and parked by Kyle on 2026-10-09.** Every feature becomes a
+  plugin with one definition per layer and a per-environment switch in Settings. The packet
+  is fully documented but not selected for implementation. The selected packets have
+  landed and register the old way, so picking up L30 includes converting them. Re-verify
+  its source citations before starting. See
+  [L30](./L30-plugins/README.md#revisiting).
 
 All packets already marked `Deferred: V2` in the [index](./README.md#packet-index) stay
 deferred. L04 is archived following Kyle’s 2026-10-07 decision to hide its UI and
