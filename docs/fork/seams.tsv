@@ -47,6 +47,7 @@ apps/server/src/observability/RpcInstrumentation.ts	ext-core	1
 packages/contracts/src/clientRpcPermissions.ts	ext-core	3
 apps/web/src/reopenClosedView.ts	ext-panels	1
 apps/web/src/closedViewStore.ts	ext-panels	2
+apps/web/src/components/DiffPanel.tsx	ext-diff-header	2
 apps/server/src/auth/RpcAuthorization.ts	ext-core	1
 packages/client-runtime/src/state/runtime.ts	ext-core	1
 packages/client-runtime/src/state/usage.test.ts	ext-core	1

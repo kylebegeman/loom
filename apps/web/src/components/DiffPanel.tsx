@@ -87,6 +87,8 @@ import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
 import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
+// fork: ext-diff-header
+import { ForkDiffHeaderActions } from "../fork/diffHeader/ForkDiffHeaderActions";
 
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
@@ -924,6 +926,13 @@ export default function DiffPanel({
         )}
       </div>
       <div className="flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]">
+        {/* fork: ext-diff-header */}
+        <ForkDiffHeaderActions
+          threadRef={routeThreadRef}
+          files={codeViewFiles}
+          scopeLabel={selectedScopeLabel}
+          selection={diffSelection}
+        />
         {codeViewFiles.length > 0 || (!selectedTurn && selectedGitSource?.files?.length) ? (
           <DiffStatLabel
             additions={diffLineStat.additions}

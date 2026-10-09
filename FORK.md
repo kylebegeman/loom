@@ -90,6 +90,7 @@ The shared plumbing packets register into, specified in
 | `packages/client-runtime/src/state/runtime.ts`, `usage.test.ts`                              | `ext-core`        | Expose cancellable document results through the shared command boundary.                                    |
 | `apps/server/src/observability/RpcInstrumentation.ts`                                        | `ext-core`        | Label fork RPC spans within the shared middleware.                                                          |
 | `apps/web/src/closedViewStore.ts`, `reopenClosedView.ts`                                     | `ext-panels`      | Persist and reopen fork documents; retire archived inspector history.                                       |
+| `apps/web/src/components/DiffPanel.tsx`                                                      | `ext-diff-header` | Fork buttons in the diff panel header, such as the code graph's Impact button.                              |
 
 ### Dependencies added by packets
 
