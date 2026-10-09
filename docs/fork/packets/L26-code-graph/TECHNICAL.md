@@ -1,514 +1,292 @@
 # L26 technical design
 
-> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
-> Preserve the full product intent; reassess released contracts before using this design.
-> See [PRODUCT.md](./PRODUCT.md#current-decision).
-
-Citations are to this fork at upstream v0.0.42 (`a931bd85f3`) and to Graphify at
-`Graphify-Labs/graphify@4c73561` (PyPI `graphifyy` 0.9.67). Verify Graphify flags against the
-installed version before relying on them; its CLI parses arguments by hand and changes often.
+As built on `feat/loom-code-graph` against orchestration V2 and Graphify 0.9.83 (PyPI
+`graphifyy`). Graphify's CLI parses arguments by hand and changes often; check the flags
+below against a new release before raising the pinned version.
 
 ## Overview
 
 ```
-                 environment server (ForkLayer)                          clients
+                 environment server (ForkLayer)                         clients
  ┌──────────────────────────────────────────────────────────┐
- │ CodeGraphRunner   spawns `graphify extract|update`        │  loom.code-graph.* RPC
- │   (ProcessRunner-like, env scrubbed, GRAPHIFY_OUT=...)    │ ─────────────────────▶ Code map panel
- │ CodeGraphIndex    loads graph.json -> adjacency index     │                       Diff "Impact" button
- │   (LRU of 2 projects, reloaded on build)                  │                       Settings section
- │ CodeGraphService  status, build queue, queries, impact    │                       Palette items
- │ CodeGraphReactor  auto-update after turns, cleanup        │  CodeGraphOpenWatcher (ForkRoot):
- │   + noteProjectOpened: auto-update a stale graph          │  reports the active project
- │ fork_code_graph_* tables, <stateDir>/fork/code-graph/...   │  loom_code_graph_query (MCP)
+ │ CodeGraphRunner   spawns `graphify --version|extract|update`│  loom.code-graph.* RPC
+ │   (env scrubbed, GRAPHIFY_OUT=<state dir>)                 │ ─────────────────────▶ Code map panel
+ │ CodeGraphIndex    parses graph.json into an adjacency index│                       Diff header button
+ │ CodeGraphService  status, build queue, queries, impact     │                       Settings section
+ │ CodeGraphStore    fork_code_graph_* tables                 │                       Palette items
+ │ reactor.ts        checkpoint.captured -> auto-update       │  CodeGraphOpenWatcher (ForkRoot)
+ │                   project.deleted -> forget graph          │  reports the active project
+ │ <stateDir>/fork/code-graph/<encoded projectId>/            │  loom_code_graph_query (MCP)
  └──────────────────────────────────────────────────────────┘ ─────────────────────▶ agents
 ```
 
-Graphify is used only as a graph **builder**. All queries run in TypeScript over its
-`graph.json`, so queries are fast, typed and bounded, and no Python process runs per request.
+Graphify is used only as a graph builder. All queries run in TypeScript over its
+`graph.json`, so answers are typed and bounded, and no Python process runs per request.
 
 ## Graphify integration
 
 ### Detection
 
-`CodeGraphRunner.detect` runs `<command> --version` (timeout 10 s). The command is the
-configured argv, default `["graphify"]`; users with uv but no install can set
-`["uvx", "--from", "graphifyy==0.9.67", "graphify"]`. Cache the result for 60 s and on
-"Check again".
+The service runs `<command> --version` with a 60 second timeout (`uvx` may download Graphify
+on first use). The command is the configured argv, default `["graphify"]`; the settings
+"Use uvx" button stores `["uvx", "--from", "graphifyy==0.9.83", "graphify"]`. The answer is
+cached for 60 seconds per command. The `loom.code-graph.status` RPC bypasses the cache and
+notifies every subscribed project, so "Check again" and the panel's refresh button see a
+fresh install. Changing the command clears the cache.
 
-Version policy (Kyle): `TESTED_GRAPHIFY_VERSION = "0.9.67"` is pinned in every install
-command Loom shows (`uv tool install "graphifyy==0.9.67"`, the `uvx --from graphifyy==0.9.67`
-form, and `pipx install "graphifyy==0.9.67"`). Any other version, older or newer, still runs:
-status reports `available` with `tested: false`, and the UI labels it "Untested version
-<x>". Safety comes from the shape check on `graph.json` (below), not from refusing a
-version. A version string that does not parse is also `tested: false`.
+Version policy (Kyle): `TESTED_GRAPHIFY_VERSION = "0.9.83"` in
+`packages/contracts/src/fork/code-graph.ts` is pinned in every command Loom shows
+(`graphifyInstallCommands()` returns the `uv tool install` and `pipx install` forms,
+`graphifyUvxCommand()` the uvx argv). Any other version, older or newer, still runs with
+`tested: false`; safety comes from the shape check on `graph.json`, not from refusing a
+version.
 
 ### Commands Loom runs
 
-| Purpose            | argv (after the configured command)                 | Notes                                                                                                                                                                                                                        |
-| ------------------ | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Full build         | `extract <root> --code-only --out <outDir>`         | Pure local AST, no API key (`graphify/cli.py:3218-3345`, `--code-only` at 3332). Clusters by default; communities keep numeric ids.                                                                                          |
-| Incremental update | `update <root>`                                     | Re-extracts changed files only, no LLM (`cli.py:2403-2461`, `watch.py:1379`). Takes a per-repository lock. Refuses to shrink the graph unless forced; on a shrink refusal Loom offers "Rebuild" (full build with `--force`). |
-| Forced rebuild     | `extract <root> --code-only --force --out <outDir>` | After a failed or refused update.                                                                                                                                                                                            |
+`CodeGraphRunner.buildArgv` builds argv only from a closed `GraphifyInvocation` union:
 
-Process environment for every call:
+| Build mode | argv (after the configured command)                 | Notes                                                                                                                                |
+| ---------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `full`     | `extract <root> --code-only --out <outDir>`         | Local tree-sitter extraction, no LLM. An `update` request for a project without a graph runs as `full`.                              |
+| `update`   | `update <root>`                                     | Re-extracts changed files. Refuses to write a smaller graph; Loom detects "Refusing to overwrite" and records `shrinkRefused: true`. |
+| `force`    | `extract <root> --code-only --force --out <outDir>` | "Rebuild anyway" after a refused update.                                                                                             |
 
-- `GRAPHIFY_OUT=<outDir>` (absolute). Graphify reads it once at import
-  (`graphify/paths.py`, `GRAPHIFY_OUT = os.environ.get("GRAPHIFY_OUT", "graphify-out")`), so
-  every reader, including `update` and the query stamp file (`cli.py:687-696`), writes there
-  instead of `<root>/graphify-out/`. Also pass `--out <outDir>` where the command accepts it.
-- LLM credentials removed as defense in depth, so a future default change cannot spend money:
-  drop `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `GEMINI_API_KEY`,
-  `GOOGLE_API_KEY`, `MOONSHOT_API_KEY`, `DEEPSEEK_API_KEY`, `AZURE_OPENAI_API_KEY`,
-  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` and any key matching
-  `/_API_KEY$/` (backends listed in `graphify/llm.py:102-215`).
-- `PYTHONUNBUFFERED=1` so progress lines stream.
-- `cwd` is the project root. Timeout: 20 minutes for builds, configurable later.
-- Output cap: keep the last 200 lines of stdout and stderr for status and errors.
+Every child gets:
 
-Builds must stream progress, so they use a spawned child with line reading (Effect
-`ChildProcess` from `effect/unstable/process`, as upstream's `processRunner.ts` does
-internally) rather than `ProcessRunner.run`, which buffers. Cancellation kills the child PID
-Loom spawned and nothing else (AGENTS.md rule 1).
+- `GRAPHIFY_OUT=<outDir>`. Graphify reads it once at import, so it must be in the spawn
+  environment; it keeps `update` and every other writer out of `<root>/graphify-out/`.
+- LLM credentials removed: any `*_API_KEY`, `OPENAI_BASE_URL` and the AWS credential and
+  profile variables, so no Graphify default can spend money.
+- `GRAPHIFY_NO_TIPS=1` and `PYTHONUNBUFFERED=1`, so output is plain and streams.
+- `cwd` is the project root. A 20 minute timeout for builds.
+
+`startGraphify` spawns with `node:child_process` (`shell: false`), splits stdout and stderr
+into lines for progress, keeps the last 200 lines for errors, and stops only the child it
+spawned (SIGTERM, then SIGKILL after 5 seconds). A spawn failure becomes an output line and
+an exit of `null`, which detection reads as "missing".
 
 ### What Loom never runs
 
-These write agent or repository configuration and are never called
-(`graphify/install.py`, `graphify/hooks.py`): `graphify install`, `graphify <platform>
-install` (claude, codex, opencode, cursor, gemini and the rest; they edit `CLAUDE.md`,
-`AGENTS.md`, `.claude/settings.json`, `.codex/hooks.json`, `GEMINI.md`), `graphify hook
-install` (git hooks, merge driver, `.gitattributes`), `graphify uninstall`, `graphify watch`,
-`graphify label`, `cluster-only` without `--no-label`, `prs --triage`, `add <url>`, `clone`,
-and Graphify's MCP server (`python -m graphify.serve`). A test asserts the runner only ever
-builds argv starting with `extract` or `update` (plus `--version`).
+`graphify install` and the per-platform installers (they edit `CLAUDE.md`, `AGENTS.md`,
+`.claude/settings.json`, `.codex/hooks.json` and similar), `graphify hook install` (git hooks,
+merge driver, `.gitattributes`), `uninstall`, `watch`, `label`, `prs --triage`, `add`,
+`clone`, and Graphify's MCP server. The runner cannot build their argv; a test asserts the
+only first arguments are `--version`, `extract` and `update`.
 
 ### Output files
 
-`<stateDir>/fork/code-graph/<projectId>/` holds Graphify's `graph.json`, `manifest.json`,
-`cache/` and analysis files. `stateDir` comes from `ServerConfig`
-(`apps/server/src/config.ts:117-131`); join paths like upstream features do. Loom reads only
-`graph.json`.
+`<stateDir>/fork/code-graph/<encodeURIComponent(projectId)>/` holds Graphify's `graph.json`,
+`manifest.json`, cache and analysis files. Loom reads only `graph.json`. Deleting a graph
+removes the whole folder.
 
 ## graph.json and the index
 
-NetworkX node-link JSON written by `graphify/export.py:272-417`:
+Graphify writes NetworkX node-link JSON. `CodeGraphIndex.parseGraph` is the shape check: a
+top-level object with `nodes` and `links` (or `edges`) arrays, every node with string `id`,
+`label` and `source_file`, every link with string `source`, `target` and `relation`. Unknown
+keys are ignored, links to unlisted nodes are skipped, and the first problem is named in a
+`graph-invalid` message that includes the Graphify version from `graph.graphify_version`
+and the pinned install command. Files over `CODE_GRAPH_MAX_GRAPH_BYTES` (100 MB) are refused
+before reading.
 
-```jsonc
-{
-  "directed": false,
-  "multigraph": false,
-  "graph": {},
-  "nodes": [
-    {
-      "id": "src_api_ts_handler",
-      "label": "handler",
-      "file_type": "code",
-      "source_file": "src/api.ts",
-      "source_location": "L24",
-      "community": 3,
-      "community_name": "...",
-    },
-  ],
-  "links": [
-    {
-      "source": "a",
-      "target": "b",
-      "relation": "calls",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "src/api.ts",
-      "source_location": "L30",
-      "weight": 1.0,
-    },
-  ],
-  "hyperedges": [],
-  "built_at_commit": "<sha>",
-}
-```
+- Every link is treated as directed, source to target, whatever `directed` says.
+- Display kind is inferred: a node whose label equals its file's basename is a `file`, the
+  target of a `method` link is a `method`, anything else a `symbol`. Nodes with no file (or
+  `external: true`) are imported packages; they count as reachable but never appear in
+  results.
+- Lines come from `source_location` (`"L<n>"`).
 
-- Required node fields: `id`, `label`, `file_type`, `source_file`; required link fields:
-  `source`, `target`, `relation`, `confidence`, `source_file` (`graphify/validate.py:4-7`).
-- No symbol-kind field. Loom infers a display kind: a node whose label equals the basename of
-  its `source_file` is a `file`; a node that is the target of a `method` link is a `method`;
-  otherwise `symbol`. Relations seen: `contains`, `calls`, `imports`, `imports_from`, `uses`,
-  `method`, `inherits`, `implements`, `mixes_in`, `references`, `rationale_for`,
-  `semantically_similar_to` (the last two only appear with LLM extraction, never with
-  `--code-only`).
-- Lines are start lines as `"L<n>"`; no end line or column.
-- `directed: false` in the file, but relations have a direction (`source` calls `target`).
-  The index treats every link as directed source to target.
+The service keeps at most two project indexes in memory (least recently used first out),
+replaced after each successful build and dropped on delete.
 
-Decoding: a permissive Effect Schema (unknown keys ignored, required fields checked) run on a
-streamed read. This is the shape check: top level `nodes` and `links` arrays, every node with
-string `id`, `label`, `source_file`, every link with string `source`, `target`, `relation`,
-and optional `source_location` matching `L<n>`. A failure is `graph-invalid` with a clear
-message that names the version, for example "This graph was built by Graphify 0.10.2 and
-does not have the shape Loom reads (links[12] has no relation). Loom is tested with Graphify
-0.9.67: uv tool install \"graphifyy==0.9.67\"". The previous good index stays loaded, and
-the status keeps the failed build's error; refuse files over `MAX_GRAPH_BYTES = 100 MB` (Graphify's own cap is 512 MiB,
-`graphify/security.py:32`). The index:
+### Queries
 
-```ts
-interface CodeGraphIndex {
-  readonly projectId: ProjectId;
-  readonly builtAtCommit: string | null;
-  readonly nodes: ReadonlyArray<IndexedNode>;          // id, label, kind, file, line, community
-  readonly byId: ReadonlyMap<string, number>;
-  readonly out: ReadonlyArray<ReadonlyArray<Edge>>;    // node index -> outgoing
-  readonly in: ReadonlyArray<ReadonlyArray<Edge>>;     // node index -> incoming
-  readonly byFile: ReadonlyMap<string, ReadonlyArray<number>>;
-  readonly labelTrigrams: ...;                          // or a sorted label array for prefix + fuzzy search
-}
-interface Edge { readonly to: number; readonly relation: string; readonly line: number | null; readonly confidence: string }
-```
-
-Memory: ERPNext-sized graphs (about 22.6k nodes and 48.7k links, Graphify's `BENCHMARKS.md`)
-index in tens of MB. Keep at most two project indexes (LRU), dropped on rebuild or delete.
-
-### Impact (blast radius)
-
-A TypeScript port of Graphify's reverse traversal (`graphify/affected.py`, `affected_nodes`
-at 189, `DEFAULT_AFFECTED_RELATIONS` at 10-32):
-
-1. Seeds: every node whose `source_file` is one of the changed files (paths relative to the
-   project or worktree root; renames use the new path; deleted files still seed through the
-   old graph).
-2. Breadth-first over **incoming** edges of Graphify's default affected relations (`calls`,
-   `indirect_call`, `references`, `imports`, `imports_from`, `dynamic_import`, `re_exports`,
-   `inherits`, `extends`, `implements`, `uses`, `mixes_in`, `embeds`, `requires`; copy the
-   list from the pinned version into `IMPACT_RELATIONS`), up to `depth` (default 2, max 3),
-   skipping nodes in the changed files themselves.
-3. Result: hits `{node, depth, viaRelation, viaNode}` capped at `MAX_IMPACT_HITS = 300`,
-   grouped by file with the minimum depth per file, sorted by depth then fan-in.
-
-Graphify's `compute_pr_impact` (`graphify/prs.py:260`) counts touched communities; Loom
-reports the same (distinct communities among seeds and hits).
-
-### Neighborhood and path
-
-- Neighborhood: outgoing and incoming edges of one node, grouped by relation and direction,
-  up to `depth` 2 and 80 nodes, plus the edges among them, for the small graph.
-- Path: bidirectional BFS shortest path between two nodes (undirected over relations), at
-  most 8 hops, like Graphify's `shortest_path` tool.
-- Search: case-insensitive prefix match first, then substring, then a subsequence match on
-  labels and file paths; 50 results max.
+- **Search**: case-insensitive on the label with or without a trailing `()`: exact, prefix,
+  substring, file path, then subsequence. 50 results.
+- **Neighborhood**: nodes within 1 or 2 hops in either direction, nearest first, capped at
+  80, plus the edges among them.
+- **Path** (agent tool only): shortest path in either direction over any relation, at most
+  8 hops.
+- **Impact**: a port of Graphify's reverse walk (`graphify/affected.py`). Seeds are every node
+  in the changed files plus their members (`method` and `contains` targets). The walk
+  follows incoming edges of `IMPACT_RELATIONS` (Graphify's `DEFAULT_AFFECTED_RELATIONS`:
+  `calls`, `indirect_call`, `references`, `imports`, `imports_from`, `dynamic_import`,
+  `re_exports`, `inherits`, `extends`, `implements`, `uses`, `mixes_in`, `embeds`,
+  `requires`) up to depth 1 to 3 (default 2). Hits record the relation, the node they came
+  through and the call or import line, sorted by depth then fan-in, capped at 300. Files are
+  grouped with their minimum depth and hit count. Changed files the graph does not know are
+  returned as `unknownFiles`; `communities` counts distinct communities among seeds and hits.
+- **Summary**: node, edge and file counts, relation counts, the 30 largest communities with
+  their top files, and the 20 most connected symbols.
 
 ### Staleness
 
-`status.stale` is true when `built_at_commit` differs from `git rev-parse HEAD` in the
-project root, or when `git status --porcelain` is non-empty for tracked code files. Computed
-on status reads with a 30 s cache, using upstream's `GitVcsDriver` (`apps/server/src/vcs/`)
-or a plain `git` call through `ProcessRunner`.
+The record stores `HEAD` and a fingerprint of the uncommitted state when a successful build
+started. `stale` means `HEAD` moved since; `dirty` means the fingerprint changed (a hash of
+`git status --porcelain=v1 -z --untracked-files=all` plus the size and mtime of up to 2,000
+changed files). Both are cached for 30 seconds per project and dropped after a build or a
+project-root turn. Impact results carry their own `stale` flag, comparing the thread
+checkout's `HEAD` with the build commit.
+
+## Build queue
+
+`CodeGraphService` holds one `Semaphore(1)`, so one Graphify process runs per environment.
+Each project has at most one waiting entry; a second request merges into it, keeping the
+stronger mode (`update` < `full` < `force`). Status reports `queued: true` while waiting and
+`state: "building"` with `progress` (mode, start time, last output line) while running.
+Progress notifications are throttled to two per second.
+
+Outcomes: a clean exit loads `graph.json` and becomes `ready`; a failed load (missing, too
+large, wrong shape) or a non-zero exit becomes `failed` but keeps the previous build's
+numbers, commit and file, so queries keep answering. Cancel removes a waiting entry or
+stops the running child and restores the previous record. At startup, rows left in
+`building` by a dead server are reset to `ready` (an earlier build exists) or `none`.
+
+## Automatic updates
+
+Off by default (`autoUpdate` in settings). `autoUpdate(projectId)` queues an `update` only
+when the setting is on, nothing is queued or running for the project, a graph exists, the
+graph is stale or dirty, Graphify is available, and the project has not auto-updated in the
+last 2 minutes. It never builds a first graph. Two triggers call it:
+
+- **Turns.** `reactor.ts` runs `ThreadManagementService.streamDomainEvents` and, for each
+  `checkpoint.captured` event with a non-empty `payload.files`, calls
+  `noteThreadChanged(threadId)`. That resolves the thread through `ProjectionStoreV2` and
+  returns early when the thread has a `worktreePath`: a worktree turn leaves the project
+  root, and so its graph, unchanged.
+- **Opening a project.** `noteProjectOpened` (RPC) forks the check into the service scope
+  and returns at once. The web `CodeGraphOpenWatcher` sends it when the active thread's
+  `(environmentId, projectId)` changes, at most once per 10 minutes per pair, remembering the
+  last 20 pairs in memory.
+
+## Project deletion
+
+`reactor.ts` reads `OrchestrationEventStore.latestApplicationSequence` at start and streams
+`streamApplicationEvents({ afterSequence })`; each `project.deleted` calls `forgetProject`,
+which cancels any build and removes the folder, the row and cached state. A forked
+`forgetMissingProjects` catch-up removes graphs of projects that no longer resolve in
+`ProjectStoreV2`, covering deletions while the server was down. No cursor table is needed.
+Each stream runs under `forkParked` and logs instead of failing the layer.
 
 ## Contracts
 
-`packages/contracts/src/fork/code-graph.ts`:
+`packages/contracts/src/fork/code-graph.ts` defines the schemas, `CodeGraphError` (reasons
+`graphify-missing`, `no-graph`, `graph-too-large`, `graph-invalid`, `build-running`,
+`build-failed`, `project-not-found`, `node-not-found`, `agent-tool-off`), the settings with
+defaults `{ command: ["graphify"], autoUpdate: false }`, and `CodeGraphRpcGroup`, merged into
+`ForkRpcGroup`. Every error union is `CodeGraphError | EnvironmentAuthorizationError`.
 
-```ts
-export const CODE_GRAPH_WS_METHODS = {
-  status: "loom.code-graph.status",
-  subscribeStatus: "loom.code-graph.subscribeStatus",
-  build: "loom.code-graph.build",
-  cancel: "loom.code-graph.cancel",
-  deleteGraph: "loom.code-graph.delete",
-  summary: "loom.code-graph.summary",
-  search: "loom.code-graph.search",
-  neighborhood: "loom.code-graph.neighborhood",
-  impact: "loom.code-graph.impact",
-  setAgentTool: "loom.code-graph.setAgentTool",
-  noteProjectOpened: "loom.code-graph.noteProjectOpened",
-  getSettings: "loom.code-graph.getSettings",
-  updateSettings: "loom.code-graph.updateSettings",
-} as const;
+| Tag                                                | Kind   | Scope                   | Notes                                                                                        |
+| -------------------------------------------------- | ------ | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `loom.code-graph.status`                           | unary  | `orchestration:read`    | Re-checks Graphify, bypassing the cache, and notifies subscribers.                           |
+| `loom.code-graph.subscribeStatus`                  | stream | `orchestration:read`    | Current status, then on change. A `ForkSubscriptionRpcTag`.                                  |
+| `loom.code-graph.list`                             | unary  | `orchestration:read`    | Status of every project with a stored row (settings list).                                   |
+| `loom.code-graph.build`                            | unary  | `orchestration:operate` | `{ projectId, mode: "update" \| "full" \| "force" }`; returns at once, builds in background. |
+| `loom.code-graph.cancel`, `loom.code-graph.delete` | unary  | `orchestration:operate` |                                                                                              |
+| `summary`, `search`, `neighborhood`, `impact`      | unary  | `orchestration:read`    | Bounded answers. `impact` takes optional `threadId`, `files` (max 2,000) and `depth`.        |
+| `loom.code-graph.setAgentTool`                     | unary  | `orchestration:operate` | Creates the project row (state `none`) if missing.                                           |
+| `loom.code-graph.noteProjectOpened`                | unary  | `orchestration:read`    | Returns at once.                                                                             |
+| `loom.code-graph.getSettings`                      | unary  | `orchestration:read`    |                                                                                              |
+| `loom.code-graph.updateSettings`                   | unary  | `terminal:operate`      | The command chooses an executable the server runs.                                           |
 
-export const CodeGraphAvailability = Schema.Union([
-  /** tested is false for any version other than TESTED_GRAPHIFY_VERSION ("0.9.67"). */
-  Schema.TaggedStruct("available", { version: Schema.String, tested: Schema.Boolean }),
-  Schema.TaggedStruct("missing", {
-    command: Schema.Array(Schema.String),
-    installHint: Schema.String, // always pins 0.9.67
-  }),
-]);
-
-export const CodeGraphBuildState = Schema.Literals(["none", "building", "ready", "failed"]);
-
-export const CodeGraphStatus = Schema.Struct({
-  projectId: ProjectId,
-  availability: CodeGraphAvailability,
-  state: CodeGraphBuildState,
-  builtAt: Schema.NullOr(Schema.String),
-  builtAtCommit: Schema.NullOr(Schema.String),
-  headCommit: Schema.NullOr(Schema.String),
-  stale: Schema.Boolean,
-  dirty: Schema.Boolean,
-  nodeCount: Schema.Number,
-  edgeCount: Schema.Number,
-  graphBytes: Schema.Number,
-  /** True while an update waits behind another project's build. */
-  queued: Schema.Boolean,
-  progress: Schema.NullOr(Schema.Struct({ startedAt: Schema.String, lastLine: Schema.String })),
-  error: Schema.NullOr(Schema.Struct({ summary: Schema.String, detail: Schema.String })),
-  /** Per project, off by default: whether loom_code_graph_query answers for this project. */
-  agentTool: Schema.Boolean,
-});
-
-export const CodeGraphNode = Schema.Struct({
-  id: Schema.String,
-  label: Schema.String,
-  kind: Schema.Literals(["file", "method", "symbol"]),
-  file: Schema.String,
-  line: Schema.NullOr(Schema.Number),
-  community: Schema.NullOr(Schema.Number),
-});
-
-export const CodeGraphImpactInput = Schema.Struct({
-  projectId: ProjectId,
-  /** Thread whose worktree roots the paths; defaults to the project root. */
-  threadId: Schema.optional(ThreadId),
-  /** Relative paths. Absent: the working tree changes of the thread's checkout. */
-  files: Schema.optional(Schema.Array(Schema.String).check(Schema.isMaxLength(2_000))),
-  depth: Schema.optional(Schema.Literals([1, 2, 3])),
-});
-
-export const CodeGraphImpactResult = Schema.Struct({
-  seedFiles: Schema.Array(Schema.String),
-  unknownFiles: Schema.Array(Schema.String), // changed files the graph does not know
-  hits: Schema.Array(
-    Schema.Struct({
-      node: CodeGraphNode,
-      depth: Schema.Number,
-      viaRelation: Schema.String,
-      viaNodeId: Schema.String,
-    }),
-  ),
-  files: Schema.Array(
-    Schema.Struct({ file: Schema.String, minDepth: Schema.Number, hitCount: Schema.Number }),
-  ),
-  communities: Schema.Number,
-  truncated: Schema.Boolean,
-  stale: Schema.Boolean,
-});
-
-export class CodeGraphError extends Schema.TaggedError<CodeGraphError>()("CodeGraphError", {
-  reason: Schema.Literals([
-    "graphify-missing",
-    "no-graph",
-    "graph-too-large",
-    "graph-invalid",
-    "build-running",
-    "build-failed",
-    "project-not-found",
-    "node-not-found",
-    "agent-tool-off",
-  ]),
-  message: Schema.String,
-}) {}
-
-export const CodeGraphSettings = Schema.Struct({
-  command: Schema.Array(Schema.String).check(Schema.isMinLength(1)),
-  /** Off by default. Updates existing graphs after turns that change files and when a
-   * client opens a project whose graph is stale. Never builds a first graph. */
-  autoUpdate: Schema.Boolean,
-});
-```
-
-Summary, search and neighborhood results follow the same pattern (arrays of
-`CodeGraphNode` plus edges `{ from, to, relation }`), each capped server-side.
-
-| Tag                                                           | Kind                                    | Scope                   | Notes                                                                                                                   |
-| ------------------------------------------------------------- | --------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `loom.code-graph.status`                                      | unary                                   | `orchestration:read`    |                                                                                                                         |
-| `loom.code-graph.subscribeStatus`                             | subscription (`ForkSubscriptionRpcTag`) | `orchestration:read`    | Emits the current status, then on change; progress lines throttled to 2 per second.                                     |
-| `loom.code-graph.build`                                       | unary                                   | `orchestration:operate` | `{ projectId, mode: "update" \| "full" \| "force" }`; returns the status immediately, the build runs in the background. |
-| `loom.code-graph.cancel`                                      | unary                                   | `orchestration:operate` |                                                                                                                         |
-| `loom.code-graph.delete`                                      | unary                                   | `orchestration:operate` | Deletes the project's output directory and row.                                                                         |
-| `loom.code-graph.summary`, `search`, `neighborhood`, `impact` | unary                                   | `orchestration:read`    |                                                                                                                         |
-| `loom.code-graph.setAgentTool`                                | unary                                   | `orchestration:operate` | `{ projectId, enabled }`; creates the project row (state `none`) if missing.                                            |
-| `loom.code-graph.noteProjectOpened`                           | unary                                   | `orchestration:read`    | `{ projectId }`; returns void at once. Queues an update only when `autoUpdate` is on, a graph exists, and it is stale.  |
-| `loom.code-graph.getSettings`                                 | unary                                   | `orchestration:read`    |                                                                                                                         |
-| `loom.code-graph.updateSettings`                              | unary                                   | `terminal:operate`      | Changing the command means choosing an executable to run on the server, so it takes the terminal-level scope.           |
-
-Every error union is `Schema.Union([CodeGraphError, EnvironmentAuthorizationError])`.
+Server scopes live in `FORK_RPC_REQUIRED_SCOPES`; client write guards (`build`, `cancel`,
+`delete`, `setAgentTool`, `updateSettings`) in `FORK_CLIENT_GUARDED_RPC_SCOPES`.
 
 ## Server
 
 `apps/server/src/fork/code-graph/`:
 
-- `CodeGraphRunner.ts`: detect, spawn build or update with streamed lines, cancel. Depends on
-  the platform `ChildProcessSpawner` (as upstream's `processRunner.ts` does) and
-  `ServerConfig`. Pure helpers `buildArgv(mode, root, outDir)` and
-  `scrubEnvironment(env)` are unit tested.
-- `CodeGraphIndex.ts`: decode and index `graph.json`; `impact`, `neighborhood`, `path`,
-  `search`, `summary` as pure functions over the index (the bulk of the tests).
-- `CodeGraphStore.ts`: repository for the two tables (below).
-- `CodeGraphService.ts`: `Context.Service` combining them: a build queue with one build at a
-  time per environment (`Semaphore(1)`, Kyle's decision) and at most one queued entry per
-  project (a second request for a queued project keeps its place; a manual full or force
-  build replaces a queued automatic update), status `PubSub` for subscriptions (`queued`
-  true while waiting), LRU of indexes, staleness. Other fork services may call its query
-  methods directly (`impact`, `neighborhood`, `search`); the per-project agent switch gates
-  only the MCP tool. Resolves `projectId` to `workspaceRoot` and a
-  thread to its `worktreePath` through `ProjectionSnapshotQuery.getProjectShellById` /
-  `getThreadShellById` (the same calls `apps/server/src/mcp/toolkits/pullRequests/handlers.ts:148-181`
-  makes).
-- `CodeGraphReactor.ts`: a `Layer.effectDiscard` in `ForkServicesLive`, started with
-  `forkParked(...)` (`apps/server/src/serverActivation.ts:11-26`). It subscribes to
-  `orchestrationEngine.streamDomainEvents` and:
-  - on `thread.turn-diff-completed` (`packages/contracts/src/orchestration.ts:2084`) with
-    changed files, when `autoUpdate` is on and a graph exists for the thread's project,
-    queues an `update` (coalesced: at most one queued update per project, and not more often
-    than every 2 minutes);
-  - on `project.deleted` (`orchestration.ts:1944`) deletes the project's graph directory and
-    row.
-    Missing an event only means a later manual update; no cursor table is needed.
-- Opening a stale project (Kyle's decision): `noteProjectOpened({ projectId })` checks
-  `autoUpdate`, that a graph exists (`ready`, or `failed` with a previous `graph.json`), and
-  staleness (the same 30 s cached check), then queues an `update` in the background with the
-  same coalescing and 2 minute floor as the reactor. It never starts a first build and never
-  waits for the build. The web sends it from `CodeGraphOpenWatcher` (Clients).
-- `rpc.ts`: `makeCodeGraphRpcHandlers(auth)`, each handler
-  `auth.effect(TAG, withForkRuntime(...))`.
-- `mcp.ts`: the toolkit (below).
-- `migrations.ts`: `CodeGraphMigrations`.
-
-`ProcessRunner` is provided locally in upstream (`server.ts:326,392,407`), not globally; the
-fork service provides its own `ProcessRunner.layer` for short git calls (stateless, safe to
-provide again) and uses the child process spawner directly for builds.
+- `CodeGraphRunner.ts`: `buildArgv`, `graphifyEnvironment`, version parsing, shrink-refusal
+  detection and `startGraphify`.
+- `CodeGraphIndex.ts`: `parseGraph` and the pure queries above.
+- `CodeGraphStore.ts` and `migrations.ts`: the two tables below.
+- `git.ts`: `head`, `changedFiles` (paths relative to the scanned folder, using
+  `rev-parse --show-prefix`) and `treeFingerprint`, through upstream's `ProcessRunner`.
+- `CodeGraphService.ts`: the `Context.Service`. Resolves projects through
+  `ProjectStoreV2.get` and threads (with `worktreePath`) through
+  `ProjectionStoreV2.getThread`. Status subscriptions use a listener set and
+  `Stream.callback` with a one-slot sliding buffer, so bursts collapse into one status read.
+  Its layer provides `ProcessRunner.layer`; `ForkLayer` provides `ProjectionStore.layer` and
+  `ProjectStore.layer`.
+- `reactor.ts`: `CodeGraphReactorLive`, merged with the service layer in `ForkServicesLive`.
+- `rpc.ts`: thin handlers, each one service call under `auth.effect` or `auth.stream`.
+- `mcp.ts`: the agent tool.
 
 ## Storage
 
-```sql
--- migration 1 (fork_migrations_code_graph)
-CREATE TABLE IF NOT EXISTS fork_code_graph_projects (
-  project_id        TEXT PRIMARY KEY,
-  workspace_root    TEXT NOT NULL,
-  out_dir           TEXT NOT NULL,
-  state             TEXT NOT NULL CHECK (state IN ('none','building','ready','failed')),
-  built_at          TEXT,
-  built_at_commit   TEXT,
-  graphify_version  TEXT,
-  node_count        INTEGER NOT NULL DEFAULT 0,
-  edge_count        INTEGER NOT NULL DEFAULT 0,
-  graph_bytes       INTEGER NOT NULL DEFAULT 0,
-  agent_tool        INTEGER NOT NULL DEFAULT 0, -- per project, off by default
-  last_error_json   TEXT,
-  updated_at        TEXT NOT NULL
-);
+Migration set `code-graph`, id 1:
 
-CREATE TABLE IF NOT EXISTS fork_code_graph_settings (
-  id          INTEGER PRIMARY KEY CHECK (id = 1),
-  settings_json TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
-);
-```
+- `fork_code_graph_projects`: one row per project with workspace root, output folder, state,
+  build time and commit, tree fingerprint, Graphify version, node, edge and byte counts, the
+  `agent_tool` switch (default 0) and the last error as JSON.
+- `fork_code_graph_settings`: a key/value table holding the settings JSON; fields added later
+  take their defaults.
 
-No foreign keys into upstream tables (EXTENSION-POINTS.md, Persistence). A `building` row
-found at startup is reset to its previous state (`ready` if `graph.json` exists, otherwise
-`none`) because the child did not survive the restart.
+No foreign keys into upstream tables.
 
 ## Clients
 
-- `packages/client-runtime/src/fork/code-graph.ts`: query atom families for `status`,
-  `summary`, `search`, `neighborhood`, `impact`, `getSettings`; a subscription atom family for
-  `subscribeStatus`; commands for `build`, `cancel`, `delete`, `updateSettings`. Labels
-  `loom:code-graph:<name>`.
+- `packages/client-runtime/src/fork/code-graph.ts`: `createCodeGraphAtoms` with a
+  subscription family for status, query families for list, summary, search, neighborhood,
+  impact and settings, and commands for recheck (the status RPC), build, cancel, delete,
+  setAgentTool, noteProjectOpened and updateSettings.
 - `apps/web/src/fork/code-graph/`:
-  - `state.ts`: web instances with `connectionAtomRuntime`.
-  - `panel.tsx`: `ForkPanelDefinition` `{ id: "code-graph", title: "Code map", icon:
-NetworkIcon, shortcut: "Y", isAvailable: threadRef !== null &&
-loomFeatures.includes("code-graph") }`. The panel reads the thread's project from the
-    thread ref.
-  - `CodeGraphPanel.tsx` with tabs `OverviewTab`, `SearchTab`, `ImpactTab`, and
-    `NeighborhoodGraph.tsx` (static SVG, radial layout computed once per selection: the focus
-    node in the center, depth-1 nodes on a ring ordered by relation, depth-2 on an outer ring;
-    no physics, no animation).
-  - `impactStore.ts`: zustand, session only, `{ [threadKey]: { files, scopeLabel, requestId } }`
-    written by the diff button and read by `ImpactTab`; the panel surface uses
-    `forkPanelSurface("code-graph", "impact")` so the Impact tab opens as its own tab id.
-  - `diffHeaderAction.tsx`: the `ext-diff-header` action (`codeGraphDiffHeaderAction`, whose
-    component is `DiffImpactButton`).
-  - `palette.tsx`, `settings.tsx` (settings section: Graphify command with the pinned install
-    command, "Update graphs automatically", and a per-project list with size, "Let agents
-    query the code graph" per project, and "Delete graph").
-  - The Overview tab header shows the same per-project switch, "Let agents query the code
-    graph for this project", and the version label ("Graphify 0.9.67", or "Graphify 0.10.2,
-    untested version" in a warning tone).
-  - `CodeGraphOpenWatcher.tsx`, a `ForkRoot` component (`ext-web-root`): reads the active
-    thread's environment and project from the route and, when the project changes and the
-    environment has `code-graph`, calls `noteProjectOpened` once. It remembers the last 20
-    `(environmentId, projectId)` pairs it reported in memory and skips a pair reported in the
-    last 10 minutes, so switching threads inside a project sends nothing. Renders nothing.
-  - "Open file" uses `useRightPanelStore.getState().openFile(threadRef, file, line)`.
-  - "Add to message" appends a compact Markdown list (at most 40 lines: files by depth, top
-    symbols) to the thread's composer draft with `useComposerDraftStore.getState()`'s
-    `getComposerDraft` and `setPrompt`, the pattern `PullRequestDetailPanel.tsx:1071-1095`
-    uses.
+  - `panel.tsx`: the `ForkPanelDefinition` (id `code-graph`, title "Code map", `NetworkIcon`,
+    shortcut `Y`, available with a thread and the `code-graph` feature), lazily loading
+    `CodeGraphPanel.tsx`. A hidden panel renders nothing, which drops its status stream;
+    builds continue on the server.
+  - `viewStore.ts`: a per-thread zustand store (view, impact request, focused node), kept for
+    the session while the panel is closed. `state.ts`'s `openImpact` writes the Impact view
+    and the diff's files into it, then opens the single `forkPanelSurface("code-graph")`.
+  - `diffHeaderAction.tsx`: `codeGraphDiffHeaderAction`, an icon button that renders null
+    without a thread, files or the feature, and makes no request until clicked.
+  - `NeighborhoodGraph.tsx` and `radialLayout.ts`: a static SVG, focus in the center, direct
+    neighbors on an inner ring grouped by relation, second hops on an outer ring.
+  - `impactSummary.ts`: Markdown of at most 40 lines (files nearest first, then the ten most
+    direct symbols); `state.ts`'s `appendToComposer` adds it to the draft as its own
+    paragraph.
+  - `CodeGraphOpenWatcher.tsx` with `openWatcher.logic.ts`, `palette.tsx`, `settings.tsx`.
 
-## Agent-facing tools
+## Agent-facing tool
 
-One tool, `loom_code_graph_query`, in `apps/server/src/fork/code-graph/mcp.ts` registered in
-`ForkMcpToolkitsLive`:
+`loom_code_graph_query` in `mcp.ts`, registered through `FORK_MCP_TOOLKITS`:
 
-```ts
-const CodeGraphQueryInput = Schema.Struct({
-  mode: Schema.Literals(["search", "neighbors", "impact", "path"]),
-  /** search: text; neighbors: a symbol or file label or node id; path: the start. */
-  query: Schema.optional(Schema.String),
-  /** path: the end. */
-  target: Schema.optional(Schema.String),
-  /** impact: relative paths; absent means the thread's uncommitted changes. */
-  files: Schema.optional(Schema.Array(Schema.String)),
-  depth: Schema.optional(Schema.Literals([1, 2, 3])),
-});
-```
+- Parameters: `mode` (`search`, `neighbors`, `impact`, `path`), `query`, `to` (the path's
+  end), `files` (impact; defaults to the thread checkout's uncommitted changes) and `depth`
+  (1 to 3).
+- Description, paid in every session: "Query this project's code graph built by Loom: find
+  symbols, list callers and callees, trace a path, or list what changed files can affect."
+- Access: `McpToolAccess.readsAsCaller`, so only an agent in a Loom thread can call it. The
+  handler resolves the thread's project and fails with `agent-tool-off` unless that
+  project's switch is on, `no-graph` without a graph. It never starts a build.
+- Output: plain text with at most 40 lines per section and a count of what it left out,
+  plus a `stale` flag. `neighbors` lists direct edges as "Uses" and "Used by".
+- Annotations: title "Query the code graph", read-only, not destructive.
 
-- Description (short, it is paid for every turn): "Query this project's code graph built by
-  Loom: find symbols, list callers and callees, trace a path, or list what changed files can
-  affect."
-- Output: plain text lines `label  kind  file:line  (relation, depth)`, capped at about
-  2,000 tokens, ending with "Graph built at <sha>; stale" when stale.
-- Handler reads `McpInvocationContext` (`threadId`), resolves the thread's project, and fails
-  with a typed error when the project's `agent_tool` is off ("The code graph tool is off for
-  this project. Turn on 'Let agents query the code graph' in the Code map panel."), Graphify
-  never built a graph for the project, or the feature is missing. It never starts a build.
-- The per-project switch gates calls, not listing: upstream's MCP server lists every tool to
-  every session (EXTENSION-POINTS.md, section 10), so the short description is paid in every
-  session whatever the switch says. That cost is why the description stays one sentence.
-- If L15 (AI code review) is present, it reads impact server-side through
-  `CodeGraphService.impact` for its reviewer brief, whatever the agent switch says; no agent
-  queries the graph in that path.
-- Annotations: `Tool.Title` "Query code graph", `Tool.Readonly` true.
-
-## Provider decisions
-
-The tool rides on the existing `t3-code` MCP server that every adapter attaches (Claude,
-Codex, Cursor, Grok, OpenCode, Antigravity; EXTENSION-POINTS.md, MCP tools). The server is
-attached whenever the session has any MCP capability, and `pull-requests` is always granted
-(`apps/server/src/provider/Layers/ProviderService.ts:906-913`), so no adapter change is
-needed. Verify at implementation time that a session with browser and device access off
-still lists the tool.
+The tool rides on the shared `t3-code` MCP server every adapter attaches, so no adapter
+changes are needed. The per-project switch cannot hide it from `tools/list`; it only makes
+calls fail politely, which is why the description stays one sentence.
 
 ## Performance
 
-- Builds run in a child process, off the server's event loop; one at a time by default.
-- The only large file read is `graph.json`, parsed once per build into the index.
-- Every RPC answer is capped (50 search results, 80 neighborhood nodes, 300 impact hits,
-  30 communities, 20 hub symbols). Nothing streams the graph.
-- Status subscription payloads are small; progress lines are throttled.
-- The diff button makes no request until clicked.
-- The neighborhood SVG is static; no continuous animation.
+- Builds run in a child process, one at a time per environment.
+- `graph.json` is size-checked, then parsed once per build into the index.
+- Every RPC answer is capped (50 search results, 80 neighborhood nodes, 300 impact hits, 30
+  communities, 20 hubs). Nothing streams the graph.
+- Status streams collapse bursts and throttle progress lines.
+- The panel and diff button make no request until shown or clicked; the neighborhood SVG is
+  static, with no animation.
 
 ## Alternatives considered
 
-- **Attach Graphify's MCP server to provider sessions**: needs a seam in all six adapters,
-  its tools return prose, it adds ten tools to every session, and `get_pr_impact` shells out
-  to `gh`. Rejected.
-- **Shell out to `graphify query|affected|path` per request**: a Python start per query
-  (hundreds of ms), text-only output to re-parse, and `query` writes a stamp file. Rejected
-  for the UI; the TS port of the traversal is small.
-- **Graphify output inside the repository (`graphify-out/`)**: pollutes the user's tree and
-  git status. Rejected.
-- **A graph rendering library (sigma, cytoscape, d3-force)** for a whole-repo map: a new
-  dependency needing approval, and a large force layout repaints continuously. Deferred.
-- **Per-file impact badges in the diff file list**: a second seam in `DiffFileTree.tsx` or the
-  code view; the header button plus panel covers the need.
+- **Attach Graphify's MCP server to provider sessions**: needs a seam in every adapter, adds
+  about ten prose-returning tools to every session, and one shells out to `gh`. Rejected.
+- **Shell out to `graphify query|affected|path` per request**: a Python start per query,
+  text output to re-parse, and `query` writes a stamp file. Rejected; the traversal port is
+  small.
+- **Graphify output inside the repository (`graphify-out/`)**: pollutes the tree and git
+  status. Rejected.
+- **A graph rendering library for a whole-repository map**: a new dependency, and a force
+  layout repaints continuously. Deferred.
+- **Per-file impact badges in the diff file list**: a second seam in the diff views; the
+  header button plus panel covers the need.

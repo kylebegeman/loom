@@ -1,150 +1,101 @@
-# L26 implementation plan
+# L26 implementation
 
-> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
-> Preserve the full product intent; reassess released contracts before using this design.
-> See [PRODUCT.md](./PRODUCT.md#current-decision).
-
-Ordered steps for one agent. Each step leaves the tree compiling.
-
-## Before starting
-
-- Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md and this
-  folder.
-- Install Graphify on the dev machine: `uv tool install "graphifyy==0.9.67"`. Run
-  `graphify extract <small repo> --code-only --out "$scratch"` with `GRAPHIFY_OUT="$scratch"`
-  (a directory from `scratch=$(mktemp -d)`, outside the worktree) by hand once and confirm: the
-  flags are accepted, nothing is written inside the repository, no network access happens
-  (watch with Little Snitch or `nettop` if unsure), and `graph.json` matches TECHNICAL.
-  Check `graphify update <repo>` the same way. Copy a small real `graph.json` (a few hundred
-  nodes, from a fork-owned or public repository) into the test fixtures.
-- Seed the worktree `.t3` with real data for the manual pass (AGENTS.md, "Test data"). Never
-  point a server at `~/.t3/userdata`.
+Built on `feat/loom-code-graph` in three commits. This file records the layout, what changed
+from the original plan, and the traps a maintainer should keep in mind.
 
 ## File layout
 
 ```
-packages/contracts/src/fork/code-graph.ts
+packages/contracts/src/fork/code-graph.ts           code-graph.test.ts
 packages/client-runtime/src/fork/code-graph.ts
 apps/server/src/fork/code-graph/
-  migrations.ts  CodeGraphStore.ts  CodeGraphRunner.ts  CodeGraphIndex.ts
-  CodeGraphService.ts  CodeGraphReactor.ts  rpc.ts  mcp.ts
-  __fixtures__/graph.small.json
+  CodeGraphRunner.ts  CodeGraphIndex.ts  CodeGraphStore.ts  CodeGraphService.ts
+  git.ts  reactor.ts  rpc.ts  mcp.ts  migrations.ts
+  __fixtures__/graph.small.json                     (written by Graphify 0.9.83)
   *.test.ts
+apps/web/src/fork/diffHeader/                       (ext-diff-header)
+  registry.ts  ForkDiffHeaderActions.tsx  registry.test.ts
 apps/web/src/fork/code-graph/
-  state.ts  panel.tsx  CodeGraphPanel.tsx  OverviewTab.tsx  SearchTab.tsx  ImpactTab.tsx
-  NeighborhoodGraph.tsx  impactStore.ts  diffHeaderAction.tsx  palette.tsx  settings.tsx
-  CodeGraphOpenWatcher.tsx  openWatcher.logic.ts  radialLayout.ts  impactSummary.ts  *.test.ts
-docs/fork/user/code-graph.md
+  state.ts  viewStore.ts  panel.tsx  CodeGraphPanel.tsx  parts.tsx  NeighborhoodGraph.tsx
+  radialLayout.ts  impactSummary.ts  diffHeaderAction.tsx  palette.tsx  settings.tsx
+  CodeGraphOpenWatcher.tsx  openWatcher.logic.ts  *.test.ts
 ```
 
-## Steps
+## Commits
 
-1. **Extension points.** Existence checks for `ext-core`, `ext-panels`, `ext-mcp`,
-   `ext-settings`, `ext-palette`, `ext-web-root`; create missing ones exactly as specified,
-   one commit each.
-2. **Contracts.** `code-graph.ts` as sketched in TECHNICAL: schemas, `CodeGraphError`,
-   `CODE_GRAPH_WS_METHODS`, `CodeGraphRpcGroup`. Streaming tag
-   `loom.code-graph.subscribeStatus` goes into `ForkSubscriptionRpcTag`. Register the group
-   and exports in `fork/rpc.ts` and `fork/index.ts`. Typecheck contracts, server, web,
-   client-runtime and mobile.
-3. **Index first (pure).** `CodeGraphIndex.ts`: decode with the shape check (the
-   `graph-invalid` message names the Graphify version and the pinned 0.9.67 install command),
-   index, `search`, `neighborhood`, `path`, `impact`, `summary`, kind inference. Test against the fixture before any process or
-   database code exists.
-4. **Storage.** `migrations.ts` (`CodeGraphMigrations`, slug `code-graph`, id 1) registered in
-   `FORK_MIGRATION_SETS`; `CodeGraphStore.ts` repository following
-   `apps/server/src/persistence/Layers/OrchestrationCommandReceipts.ts:16-90`.
-5. **Runner.** `CodeGraphRunner.ts`: `detect` (returns `{ version, tested }`, with
-   `TESTED_GRAPHIFY_VERSION = "0.9.67"`; no minimum version), `installHint()` (always the
-   pinned command), `buildArgv`, `scrubEnvironment`, `start` (spawn
-   with streamed lines, returns a handle with `lines`, `exit`, `cancel`). Spawn through the
-   platform `ChildProcessSpawner` with `resolveSpawnCommand` from `@t3tools/shared/shell` as
-   `apps/server/src/processRunner.ts` does, so Windows and PATH resolution behave like
-   upstream. Kill only the spawned child.
-6. **Service.** `CodeGraphService.ts`: settings (defaults `{ command: ["graphify"],
-autoUpdate: false }`), the per-project agent switch (`setAgentTool`, stored in
-   `fork_code_graph_projects.agent_tool`, default 0), status and staleness, the build queue
-   (`Effect.Semaphore` of 1 per environment, at most one queued entry per project, `queued`
-   in the status), `noteProjectOpened` (auto-update on, graph exists, stale: queue an update
-   in the background; never a first build), status `PubSub`, index LRU, project and thread
-   resolution through `ProjectionSnapshotQuery`, startup reset of stale `building` rows. Add `CodeGraphService` to `ForkServices` and its layer to
-   `ForkServicesLive`; append `"code-graph"` to `LOOM_SERVER_FEATURES`.
-7. **Reactor.** `CodeGraphReactor.ts` with `forkParked`, coalesced auto-update on
-   `thread.turn-diff-completed` (when `autoUpdate` is on), cleanup on `project.deleted`.
-8. **RPC handlers.** `rpc.ts` spread into `ForkRpcGroup.of`, scopes added to
-   `FORK_RPC_REQUIRED_SCOPES` as in the TECHNICAL table.
-9. **MCP tool.** `mcp.ts` (`CodeGraphToolkitRegistrationLive`) appended to
-   `ForkMcpToolkitsLive`. The handler checks the thread's project's `agent_tool` switch and
-   fails with `agent-tool-off` and the "turn it on in the Code map panel" message. Non-empty parameters struct (EXTENSION-POINTS.md warns an empty one
-   makes some providers drop every tool).
-10. **Client runtime.** Atom families and commands in `client-runtime/src/fork/code-graph.ts`,
-    exported from the fork index.
-11. **Web panel.** `panel.tsx` registered in `FORK_PANELS` (shortcut `Y`); tabs; static SVG
-    neighborhood with a pure `radialLayout` (tested); "Open file" and "Add to message"; the
-    Overview header's per-project agent switch and version label ("untested version" when
-    `tested` is false); "Waiting for another build" while `queued`.
-    **Open watcher:** `CodeGraphOpenWatcher.tsx` in `FORK_ROOT_COMPONENTS`: read the active
-    thread's environment and project the same way the palette registry reads the active
-    thread; `openWatcher.logic.ts` (pure, tested) decides whether a `(environmentId,
-projectId)` change should be reported (not within 10 minutes of the last report, at most
-    20 remembered pairs); call `noteProjectOpened` fire and forget.
-12. **Diff header action.** Run the `ext-diff-header` existence check and create it if
-    missing (own commit, EXTENSION-POINTS.md section 17). Then `impactStore.ts` and
-    `diffHeaderAction.tsx`, and register `codeGraphDiffHeaderAction` in
-    `FORK_DIFF_HEADER_ACTIONS` ([SEAMS.md](./SEAMS.md)).
-13. **Palette and settings.** `palette.tsx` in `FORK_COMMAND_PALETTE_SOURCES` (values
-    `action:loom:code-graph:open`, `:impact`, `:rebuild`); `settings.tsx` in
-    `FORK_SETTINGS_SECTIONS` (id `code-graph`), reading the settings scope's environment and
-    showing its own unavailable state without the feature: Graphify command and the pinned
-    install command, "Update graphs automatically", and the per-project list (size, agent
-    switch, "Delete graph").
-14. **Docs.** `docs/fork/user/code-graph.md` (what it does, the pinned install command and
-    what "untested version" means, that Loom never runs Graphify's installers, where the graph
-    is stored, the per-project agent switch and its token cost, and when automatic updates
-    run). No FORK.md "Packet seams" row (extension point rows only, in their own commits).
-    Status in the packets index.
+1. `13fa404a42` feat(fork): add the diff panel header extension point. The two
+   `DiffPanel.tsx` seams, the registry and renderer, the registry test, the `seams.tsv`
+   row and the FORK.md row.
+2. `b188786e4b` feat(fork-code-graph): build code graphs with Graphify on the server.
+   Contracts, the runner, index, store, git helpers, service, reactor, RPC handlers, MCP
+   tool, migrations and their registrations.
+3. `ee70a90584` feat(fork-code-graph): show the code map panel and change impact. Client
+   runtime atoms, the web panel, diff header action, palette, settings and open watcher.
+   It also made the status RPC re-check Graphify, so "Check again" sees a fresh install.
 
-Commit extension points separately, then
-`feat(fork-code-graph): build a code graph with Graphify and show change impact`. Revert
-`pnpm-lock.yaml` noise before every commit. No new npm dependency is needed.
+## Changes from the plan
+
+- Integration uses released V2 contracts. Auto-update listens for `checkpoint.captured`
+  (with files) on `ThreadManagementService.streamDomainEvents`; deletion comes from
+  `OrchestrationEventStore.streamApplicationEvents` after `latestApplicationSequence`, with
+  a `forgetMissingProjects` catch-up at start. Projects and threads resolve through
+  `ProjectStoreV2` and `ProjectionStoreV2`.
+- Worktree turns never trigger updates; only turns in the project root change the graphed
+  tree.
+- Status subscriptions use a listener set and `Stream.callback`, not a `PubSub`.
+- The diff header button switches the one Code map surface to Impact through the per-thread
+  `viewStore.ts`. There is no `impactStore.ts` and no second `forkPanelSurface(..., "impact")`
+  tab. The three views are a segmented toggle inside one component file instead of
+  separate tab files.
+- The agent switch and "Delete graph" sit in the Overview's "This project" section; the
+  untested-version note appears in the graph status area rather than a header label.
+- `loom.code-graph.list` was added for the settings list of project graphs.
+- Staleness compares a fingerprint of uncommitted changes at build time instead of treating
+  any dirty tree as stale, so a graph built on a dirty tree is not reported stale forever.
+- The runner spawns with `node:child_process` directly; short git calls use upstream's
+  `ProcessRunner`.
+- The version check allows 60 seconds, because `uvx` may download Graphify on first use.
+- The palette's third item is "Code map: Build or update graph" (value
+  `action:loom:code-graph:update`), which builds a first graph or updates an existing one.
+- `graph.json` is read whole and parsed once after the size check, not streamed.
+- The user guide is `docs/fork/user/code-graph.md`.
 
 ## Pitfalls
 
 - **Never run anything but `--version`, `extract` and `update`.** A single `graphify install`
-  rewrites `CLAUDE.md`, `AGENTS.md` and hook files in the user's repository and home. The
-  runner builds argv from a closed union; a test enforces it.
-- **`GRAPHIFY_OUT` is read at import time.** Set it in the child's environment, not after
-  start. Without it, Graphify writes `graphify-out/` into the repository.
-- **Relative paths.** Graphify stores `source_file` relative to the root it scanned. A thread in
-  a worktree has the same relative layout, so impact maps worktree-relative diff paths onto the
-  project graph; the result is marked stale when the worktree's HEAD differs from
-  `built_at_commit`.
-- **Shrink guard.** `update` refuses to write a smaller graph unless forced
-  (`graphify/export.py:273-327`). Surface it as "The update would remove part of the graph;
-  rebuild instead?" and run the `force` mode on confirmation.
-- **Per-repository lock.** A second Graphify process on the same repository blocks; the queue
-  must never start two for one project.
-- **Big graphs.** Enforce `MAX_GRAPH_BYTES` before reading; parse once; do not hold the raw
-  JSON string after indexing.
-- **Server restart during a build.** The child dies with the server; reset `building` rows at
-  startup and keep the previous `graph.json` usable (Graphify writes atomically).
-- **Upstream tests.** Do not add fork requirements to transport layers; handlers use
-  `withForkRuntime` (EXTENSION-POINTS.md, Server core).
-- **Tool cost.** Keep the MCP description to one sentence. The per-project switch cannot
-  hide the tool from `tools/list`; it only makes calls fail politely.
-- **Auto-update on open must stay cheap.** `noteProjectOpened` returns before any git call
-  finishes; the staleness check and the queueing run in a forked fiber. A client that opens
-  ten projects quickly queues at most ten coalesced updates, run one at a time.
+  rewrites `CLAUDE.md`, `AGENTS.md` and hook files in the repository and home. The runner
+  builds argv from a closed union, and a test enforces it.
+- **`GRAPHIFY_OUT` is read at import time.** It must be in the child's spawn environment.
+  Without it Graphify writes `graphify-out/` into the repository.
+- **Relative paths.** Graphify stores `source_file` relative to the folder it scanned.
+  `git.changedFiles` strips `rev-parse --show-prefix` so porcelain paths match, and a
+  worktree's paths map onto the project graph because the layout is the same.
+- **Shrink guard.** `update` refuses to write a smaller graph unless forced. Loom keeps the
+  previous graph, marks the error `shrinkRefused` and offers a forced rebuild.
+- **Per-repository lock.** A second Graphify process on one repository blocks; the
+  one-permit semaphore and one-entry-per-project queue prevent it.
+- **Server restart during a build.** The child dies with the server; startup resets
+  `building` rows, and the previous `graph.json` stays usable because Graphify writes it
+  atomically.
+- **Transports stay thin.** Handlers call one service method under `withForkRuntime`; the
+  MCP layer binds `ForkRuntime` at construction.
+- **Tool cost.** Keep the MCP description to one sentence. The switch cannot hide the tool
+  from `tools/list`.
+- **Opening projects must stay cheap.** `noteProjectOpened` returns before any git call; the
+  staleness check and queueing run in a fiber in the service scope.
 
 ## Done when
 
-The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done), plus:
+Met by the branch:
 
-- A graph builds and updates for a real repository with no files created inside it
-  (`git status` unchanged) and no LLM environment variables passed to the child.
-- Impact from the diff button lists callers of a changed function in another file.
-- The agent tool answers `neighbors` and `impact` for a Codex and a Claude session in a
-  project with the switch on, and refuses with the clear message in a project without it.
-- With auto-update on, opening a project whose graph is behind `HEAD` updates it in the
-  background without a click; two stale projects update one after the other.
-- Without Graphify installed, every entry point explains what to install.
+- Graphs build and update with no files written inside the repository and no LLM variables
+  passed to the child (service and runner tests).
+- Impact lists callers of a changed file in other files, from the diff's files or the
+  checkout's changes.
+- Without Graphify, the panel, settings and the build RPC explain what to install.
+- With automatic updates on, a project-root turn updates the graph and a worktree turn does
+  not.
+
+Still to confirm in a real client: the checks under "Manual check" in
+[TESTING.md](./TESTING.md#manual-check), including the agent tool from real Claude and Codex
+sessions and an update triggered by opening an out-of-date project.
