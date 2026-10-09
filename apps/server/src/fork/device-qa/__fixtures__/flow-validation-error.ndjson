@@ -1,0 +1,2 @@
+# Synthetic: argent 0.25.2's error record for a flow it rejects before running.
+{"event":"error","error":"Invalid flow file: unknown key \"tapp\"","error_code":"FLOW_FILE_INVALID","error_kind":"validation"}

@@ -287,6 +287,13 @@ describe("KeybindingsSettings.logic", () => {
     expect(commandLabel("script.setup-db.run")).toBe("Run Script: Setup Db");
   });
 
+  it("uses Loom feature names that the id cannot title-case", () => {
+    expect(commandLabel("loom.device-qa.run-last-flow")).toBe("Loom: Device QA: Run Last Flow");
+    expect(commandLabel("loom.pcb-preview.toggle")).toBe("Loom: PCB Preview: Toggle");
+    expect(commandLabel("loom.model-preview-3d.capture")).toBe("Loom: 3D Model: Capture");
+    expect(commandLabel("loom.file-outline.toggle")).toBe("Loom: File Outline: Toggle");
+  });
+
   it("builds known when variable options from defaults without frontend labels", () => {
     const options = buildWhenVariableOptions();
 

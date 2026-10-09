@@ -1,0 +1,6 @@
+* synthetic: shape of `adb devices -l`, with made-up serials *
+List of devices attached
+emulator-5554          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:1
+emulator-5556          offline transport_id:2
+TESTSERIAL01           device usb:1-1 product:test model:Test_Phone device:test transport_id:3
+

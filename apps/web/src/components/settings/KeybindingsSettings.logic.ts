@@ -6,6 +6,7 @@ import {
   type ResolvedKeybindingRule,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import { FORK_KEYBINDING_FEATURE_NAMES } from "@t3tools/contracts/fork"; // fork: ext-keybindings
 import {
   DEFAULT_RESOLVED_KEYBINDINGS,
   parseKeybindingWhenExpression,
@@ -380,6 +381,9 @@ export function commandLabel(command: KeybindingCommand): string {
   if (raw.startsWith("script.") && raw.endsWith(".run")) {
     return `Run Script: ${titleCaseCommandSegment(raw.slice("script.".length, -".run".length))}`;
   }
+  const [scope, feature = "", action = ""] = raw.split(".");
+  const forkFeature = scope === "loom" ? FORK_KEYBINDING_FEATURE_NAMES[feature] : undefined; // fork: ext-keybindings
+  if (forkFeature) return `Loom: ${forkFeature}: ${titleCaseCommandSegment(action)}`; // fork: ext-keybindings
   return raw.split(".").map(titleCaseCommandSegment).join(": ");
 }
 

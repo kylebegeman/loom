@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import { ModelPreviewSettingsSection } from "../model-preview-3d/SettingsSection";
 import { ProjectLifecycleSettingsSection } from "../project-lifecycle/SettingsSection";
 import { AppleBuildToolingSettingsSection } from "../apple-build-tooling/settings";
+import { DeviceQaSettingsSection } from "../device-qa/settings";
 export interface ForkSettingsSection {
   readonly id: string;
   readonly title: string;
@@ -17,4 +18,5 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     title: "Apple build",
     Component: AppleBuildToolingSettingsSection,
   },
+  { id: "device-qa", title: "Device QA", Component: DeviceQaSettingsSection },
 ];

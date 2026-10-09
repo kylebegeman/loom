@@ -6,6 +6,8 @@ import * as ModelPreview from "./model-preview-3d/ModelPreviewService.ts";
 import { ModelPreviewHttpRoutes } from "./model-preview-3d/http.ts";
 import * as ProjectLifecycle from "./project-lifecycle/ProjectLifecycleService.ts";
 import * as AppleBuild from "./apple-build-tooling/AppleBuildService.ts";
+import * as DeviceQa from "./device-qa/DeviceQaService.ts";
+import { DeviceQaCleanupLive } from "./device-qa/reactor.ts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -23,6 +25,12 @@ const ForkServicesLive = Layer.mergeAll(
   AppleBuild.layer.pipe(
     Layer.provideMerge(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
     Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
+  ),
+  // The cleanup reactor shares the Device QA service it cleans for.
+  DeviceQaCleanupLive.pipe(
+    Layer.provideMerge(
+      DeviceQa.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
+    ),
   ),
 );
 
