@@ -152,6 +152,17 @@ the same scratch app:
   scheme with the schemes that exist, and a test run reports 1 passed and 2 failed.
 - A build for the paired phone while it was unreachable shows the locked or disconnected
   message.
+- The `X` launcher shortcut opens the panel; a draft thread shows the start-the-thread message.
+- Settings, Loom: the Apple build section shows derived data and run storage sizes, and a
+  toggle survives a reload.
+
+Physical device (step 9c), with the paired phone unlocked and connected, on two scratch
+XcodeGen apps with automatic signing:
+
+- With a team that has a profile covering the phone, Build and run signs, installs and
+  launches the app on the phone (confirmed by `devicectl device info processes`).
+- Without a team, the run fails with the signing message and the `signing` hint.
+- `git status` in both projects is clean afterwards: Loom changed nothing in them.
 
 These checks found and fixed: swift test reporting a failed build when only tests failed,
 Swift Testing failures without a workspace path, a Device panel defect failing a launched
@@ -163,12 +174,11 @@ xcodebuild never started reporting `succeeded` with an error.
 
 Not yet verified:
 
-- The `X` launcher shortcut and the Settings section in a client (the Browser panel host
-  disconnected before these), remote access and an upstream server.
-- Build and run on a physical device: the paired phone was unreachable (devicectl tunnel
-  `unavailable`), so only the failure path ran. The Mac destination with a real app is
-  covered by stubs only. Readiness on a real project (8) and retention in practice (9d,
-  covered by `AppleRunStore.test.ts`) remain.
+- Remote access and an upstream server.
+- The Mac destination with a real app is covered by stubs only. Readiness on a real project
+  (8) and retention in practice (9d, covered by `AppleRunStore.test.ts`) remain. A device
+  with Developer Mode off or unpaired was not available, so its disabled row is covered by
+  `selection.test.ts` only.
 - Lane builds with a real L19 lane (covered by stubs in `AppleBuildService.test.ts`).
 - The merged tree with the newest nightly was not typechecked; the depended-on APIs did not
   change.
