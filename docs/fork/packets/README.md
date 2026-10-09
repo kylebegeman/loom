@@ -55,8 +55,10 @@ The 2026-09-27 review identified these items to revisit:
 - **L06, L07, L11, L12, L13, L14, L15, L18:** preserve the proposals pending review
   of changed UI, run, request, checkpoint and provider behavior. Review individual parts
   separately when a packet is picked up.
-- **L10:** implemented on `feat/loom-apple-build-tooling`, pending review and the manual
-  checks (physical iPhone included). Builds run through the thread's L19 lane when it has one.
+- **L09:** on `main` (PR #14). A real remote Mac over SSH is still to check; see
+  [TESTING.md](./L09-device-qa/TESTING.md#results).
+- **L10:** on `main` (PR #13). Builds run through the thread's L19 lane when it has one. The
+  checks still open are listed in [TESTING.md](./L10-apple-build-tooling/TESTING.md#results).
 - **L19:** lanes are on `main`: capped per-thread space for disposable output, pressure
   handling and agent self-cleanup (phase 1) and leases (phase 2). Deferred: the agreed
   persistent machine pool with on-demand checkouts, publication and safe parking
@@ -145,8 +147,8 @@ means the packet registers nothing in server core and needs it only as the prere
 | L06 | [`source-control-cockpit`](./L06-source-control-cockpit/) | The thread's branch, PR and CI status, commit graph, check logs, conflicts and safe switching.                             | P7 (F13 deferred)            | core, root, panels, palette, keys                                               | Deferred: V2                                  |
 | L07 | [`bottom-dock`](./L07-bottom-dock/)                       | Turn the terminal drawer into a tabbed dock with Tasks, Activity and Approvals tabs, with optional Jev risk badges.        | P10                          | core, root, settings, palette, keys, decide                                     | Deferred: V2                                  |
 | L08 | [`multi-thread-runs`](./L08-multi-thread-runs/)           | Send one prompt to several models, let agents delegate to other threads, and track runs.                                   | P11, F9 (tiny version)       | core, root, panels, settings, palette, keys, mcp, decide                        | Deferred: V2                                  |
-| L09 | [`device-qa`](./L09-device-qa/)                           | Run UI flows on simulators and collect screenshots and recordings as thread evidence.                                      | P12                          | core, root, panels, settings, palette, keys, mcp                                | Implement now                                 |
-| L10 | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                          | core, root, panels, settings, palette, keys, mcp                                | Implemented (`feat/loom-apple-build-tooling`) |
+| L09 | [`device-qa`](./L09-device-qa/)                           | Run UI flows on simulators and collect screenshots and recordings as thread evidence.                                      | P12                          | core, root, panels, settings, palette, keys, mcp                                | Complete (PR #14)                             |
+| L10 | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                          | core, root, panels, settings, palette, keys, mcp                                | Complete (PR #13)                             |
 | L11 | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                          | core, root, panels, settings, palette, keys, mcp, desktop                       | Deferred: V2                                  |
 | L12 | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                          | core\*, root, panels, settings, palette, keys                                   | Deferred: V2                                  |
 | L13 | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard history)  | core, root, settings, palette, keys, composer                                   | Deferred: V2                                  |

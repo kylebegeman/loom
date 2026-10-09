@@ -6,14 +6,14 @@ are designated for implementation; retained proposals remain parked.
 
 ## Selected queue
 
-| Order | Packet                                                | Status                                                                | Decision                                                                                        |
-| ----- | ----------------------------------------------------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| 1     | [L23 3D preview](./L23-model-preview-3d/)             | Complete; Loom `0.0.46-nightly.20261007.2787`                         | Full L23, redesign and five selected editing additions verified; final audit closed 2026-10-07. |
-| 2     | [L24 PCB preview](./L24-pcb-preview/)                 | Complete; Loom `0.0.46-nightly.20261008.2801`                         | Full packet plus eight editor features, 3D, library/reuse and MCP/CLI approved in this thread.  |
-| 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Implemented on `feat/loom-apple-build-tooling`; manual checks pending | Kyle confirmed the full packet on 2026-09-27.                                                   |
-| 4     | [L09 Device QA](./L09-device-qa/)                     | Implement now                                                         | Kyle confirmed the full flow/evidence packet on 2026-09-27.                                     |
-| 5     | [L27 Utilities](./L27-utilities/)                     | Implement now                                                         | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
-| 6     | [L05 File outline](./L05-file-outline/)               | Implement now                                                         | Kyle included the complete selected language coverage on 2026-09-27.                            |
+| Order | Packet                                                | Status                                        | Decision                                                                                        |
+| ----- | ----------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| 1     | [L23 3D preview](./L23-model-preview-3d/)             | Complete; Loom `0.0.46-nightly.20261007.2787` | Full L23, redesign and five selected editing additions verified; final audit closed 2026-10-07. |
+| 2     | [L24 PCB preview](./L24-pcb-preview/)                 | Complete; Loom `0.0.46-nightly.20261008.2801` | Full packet plus eight editor features, 3D, library/reuse and MCP/CLI approved in this thread.  |
+| 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Complete; merged in PR #13                    | Kyle confirmed the full packet on 2026-09-27.                                                   |
+| 4     | [L09 Device QA](./L09-device-qa/)                     | Complete; merged in PR #14                    | Kyle confirmed the full flow/evidence packet on 2026-09-27.                                     |
+| 5     | [L27 Utilities](./L27-utilities/)                     | Implement now                                 | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
+| 6     | [L05 File outline](./L05-file-outline/)               | Implement now                                 | Kyle included the complete selected language coverage on 2026-09-27.                            |
 
 Order reflects product priority, not dependencies. An agent asked to choose the next item
 starts with the first incomplete, unclaimed packet. Closing L23 does not start another project. Each packet can still be implemented independently.
