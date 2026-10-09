@@ -244,5 +244,26 @@ packet-seam file that may conflict is `apps/web/src/components/device/DevicePane
 Preview on 2026-10-08 against `v0.0.46-nightly.20261008.2849`, with this packet's
 uncommitted work in a temporary tree: DevicePanel merges cleanly. The only conflicts,
 `apps/desktop/src/app/DesktopAppIdentity.test.ts` and `apps/server/src/provider/CodexProvider.ts`,
-also appear for `main` alone and are not this packet's. The post-merge
-`loom.sh integrate nightly --dry-run` is still to run, outside Loom.
+also appear for `main` alone and are not this packet's.
+
+Post-merge dry run on 2026-10-09, from `main` at `b471ca57a6` against
+`v0.0.46-nightly.20261009.2873`: passed (merge, seam check, fork tests, web build,
+typechecks and a signed app build) after the fixes below. Only the seam manifest fix is this
+packet's; it lands on `main` with this note. The rest comes from upstream changes and must be
+redone in the real integration of this or a later release:
+
+- Conflicts: in `DesktopAppIdentity.test.ts` keep the fork's `fork: brand` assertions; in
+  `CodexProvider.ts` take upstream's imports and keep the `codex-login-email` import; in
+  `packages/shared/package.json` keep both the fork's `./brand` export and upstream's
+  `./authScopeOptions`.
+- Moved imports: `expandHomePath` now comes from `@t3tools/provider-core/server/pathExpansion`
+  (`codex-login-email`), and `atomicWrite` from `@t3tools/shared/atomicWrite` (`pcb-preview`,
+  `model-preview-3d`).
+- Seam manifest: `DevicePanel.tsx` (`device-qa`) and `KeybindingsSettings.logic.ts`
+  (`ext-keybindings`) had markers without rows. Fixed on `main`.
+- Brand test: upstream now names the app by stage, so `DesktopAppIdentity.test.ts` expects
+  the runtime name `Loom <stage>` and the About name "Loom" for Alpha, otherwise
+  `Loom (<stage>)`. Four `fork: brand` markers; bump its `seams.tsv` count to 4.
+- Thread inspector: upstream moved Grok, OpenCode and Pi into provider packages and removed
+  their icons from `Icons.tsx`. `InspectorHero.tsx` draws package glyphs through
+  `providerClients` and `ProviderPackageIcon`, as `ProviderInstanceIcon` does.

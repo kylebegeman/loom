@@ -27,6 +27,7 @@ apps/web/src/components/RightPanelTabs.tsx	ext-panels	8
 apps/web/src/rightPanelStore.ts	ext-panels	8
 apps/web/src/components/CommandPalette.tsx	ext-palette	3
 packages/contracts/src/keybindings.ts	ext-keybindings	2
+apps/web/src/components/settings/KeybindingsSettings.logic.ts	ext-keybindings	3
 apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/CodexProvider.ts	codex-login-email	2
@@ -61,3 +62,4 @@ apps/web/src/components/chat/MessagesTimeline.tsx	compaction-recovery	1
 apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	1
 apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
+apps/web/src/components/device/DevicePanel.tsx	device-qa	2
