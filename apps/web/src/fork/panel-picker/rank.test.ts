@@ -62,6 +62,13 @@ describe("rankPanelActions", () => {
     expect(labels(rankPanelActions(actions, "zzz", []).panels)).toEqual([]);
   });
 
+  it("finds a browser profile row by the word browser plus the profile name", () => {
+    const profiles = [...actions, action("Browser: Work", ""), action("Browser: Personal", "")];
+    expect(labels(rankPanelActions(profiles, "browser work", []).panels)).toEqual([
+      "Browser: Work",
+    ]);
+  });
+
   it("matches upstream surfaces by their fork-owned description", () => {
     expect(labels(rankPanelActions(actions, "shell", []).panels)).toEqual(["Terminal"]);
   });
@@ -75,6 +82,20 @@ describe("rankPanelActions", () => {
 });
 
 describe("upstreamSurfaceDescription", () => {
+  // Upstream's surface labels, listed by hand: RightPanelTabs.tsx is a component module.
+  // When upstream adds a surface, add its label and a description in rank.ts.
+  it.each([
+    "Browser",
+    "Terminal",
+    "Files",
+    "Diff",
+    "Pull request",
+    "Linked pull requests",
+    "Device",
+  ])("describes %s", (label) => {
+    expect(upstreamSurfaceDescription(label)).toMatch(/\.$/);
+  });
+
   it("describes upstream surfaces and nothing else", () => {
     expect(upstreamSurfaceDescription("Device")).toBe(
       "Watch an iOS Simulator or Android Emulator.",
