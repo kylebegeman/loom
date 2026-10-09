@@ -40,7 +40,7 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import * as ProcessRunner from "../../processRunner.ts";
-import { writeFileStringAtomically } from "../../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { applyWorkspaceOperation } from "./workspace.ts";
 import { makeStore } from "./store.ts";
 import { mintToken, verifyToken, resolveTokenPath, isContained } from "./signedFiles.ts";

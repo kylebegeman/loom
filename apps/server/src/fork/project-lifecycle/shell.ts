@@ -247,8 +247,13 @@ if [ -n "$detach" ]; then
     [ -n "$ledger" ] && [ -d "$(dirname "$ledger")/space/tmp" ] && dir="$(dirname "$ledger")/space/tmp"
     log="\${dir%/}/lane-run-$(printf '%s' "\${name:-$1}" | tr -c 'A-Za-z0-9._-' '-' | cut -c1-60).log"
   fi
-  # set -m gives the job its own process group; bash's setpgid race notice is not an error.
-  pid=$(exec 2>/dev/null; set -m; nohup "$self" --name "\${name:-$*}" -- "$@" >> "$log" 2>&1 < /dev/null & echo $!)
+  # setsid (Linux) or set -m (macOS, where sh is bash) gives the job its own process group;
+  # dash ignores set -m without a terminal. bash's setpgid race notice is not an error.
+  if command -v setsid >/dev/null 2>&1; then
+    pid=$(exec 2>/dev/null; nohup setsid "$self" --name "\${name:-$*}" -- "$@" >> "$log" 2>&1 < /dev/null & echo $!)
+  else
+    pid=$(exec 2>/dev/null; set -m; nohup "$self" --name "\${name:-$*}" -- "$@" >> "$log" 2>&1 < /dev/null & echo $!)
+  fi
   echo "lane-run: started $pid (log: $log)"
   exit 0
 fi

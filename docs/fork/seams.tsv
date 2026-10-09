@@ -3,7 +3,7 @@
 # cannot carry a comment; the third column is text the file must still contain.
 apps/desktop/resources/dmg/dmg-background-latest.svg	brand	2
 apps/desktop/resources/dmg/dmg-background-nightly.svg	brand	2
-apps/desktop/src/app/DesktopAppIdentity.test.ts	brand	2
+apps/desktop/src/app/DesktopAppIdentity.test.ts	brand	4
 apps/desktop/src/app/DesktopEnvironment.ts	brand	3
 apps/web/index.html	brand	2
 apps/web/src/branding.logic.ts	brand	2

@@ -2,16 +2,9 @@ import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { ProviderDriverKind } from "@t3tools/contracts";
-import {
-  AntigravityIcon,
-  ClaudeAI,
-  CursorIcon,
-  GrokIcon,
-  type Icon,
-  OpenAI,
-  OpenCodeIcon,
-  PiAgentIcon,
-} from "~/components/Icons";
+import { AntigravityIcon, ClaudeAI, type Icon, OpenAI } from "~/components/Icons";
+import { ProviderPackageIcon } from "~/components/chat/ProviderPackageIcon";
+import { providerClients } from "~/components/settings/providerDriverMeta";
 import { cn } from "~/lib/utils";
 import type { InspectorAction, InspectorFact, InspectorModel } from "./model";
 import {
@@ -98,21 +91,23 @@ export function InspectorHero({
 }
 
 // Upstream keeps its copy private to ProviderInstanceIcon, which brings a badge the chip has no room for.
+// Other providers draw their package's glyph, as ProviderInstanceIcon does.
 const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,
   [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
-  [ProviderDriverKind.make("opencode")]: OpenCodeIcon,
-  [ProviderDriverKind.make("cursor")]: CursorIcon,
-  [ProviderDriverKind.make("grok")]: GrokIcon,
   [ProviderDriverKind.make("antigravity")]: AntigravityIcon,
-  [ProviderDriverKind.make("pi")]: PiAgentIcon,
 };
 
 function FactChip({ fact }: { fact: InspectorFact }) {
   const Icon = fact.driverKind ? (PROVIDER_ICON_BY_PROVIDER[fact.driverKind] ?? null) : null;
+  const packageIcon = fact.driverKind ? providerClients.get(fact.driverKind)?.icon : undefined;
   const chip = (
     <>
-      {Icon ? <Icon aria-hidden /> : null}
+      {packageIcon ? (
+        <ProviderPackageIcon icon={packageIcon} aria-hidden />
+      ) : Icon ? (
+        <Icon aria-hidden />
+      ) : null}
       {fact.label}
     </>
   );
