@@ -138,7 +138,8 @@ const callerThread = Effect.gen(function* () {
   return invocation.thread.threadId;
 });
 
-const query = (input: typeof QueryParams.Type) =>
+/** The tool's answer for the calling thread's project, refused unless its switch is on. */
+export const queryCodeGraph = (input: typeof QueryParams.Type) =>
   Effect.gen(function* () {
     const service = yield* CodeGraphService;
     const threadId = yield* callerThread;
@@ -198,7 +199,7 @@ export const codeGraphHandlers = McpToolAccess.toLayer(
     const runtime = yield* ForkRuntime;
     return {
       loom_code_graph_query: McpToolAccess.readsAsCaller((input) =>
-        withForkRuntime(query(input)).pipe(Effect.provideService(ForkRuntime, runtime)),
+        withForkRuntime(queryCodeGraph(input)).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
     };
   }),

@@ -2,9 +2,20 @@
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "@effect/vitest";
-
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { CodeGraphError } from "@t3tools/contracts/fork";
+import * as Effect from "effect/Effect";
+import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { impact, parseGraph, type CodeGraphIndex } from "./CodeGraphIndex.ts";
-import { formatImpact, formatNeighbors, formatPath, formatSearch } from "./mcp.ts";
+import { CodeGraphService } from "./CodeGraphService.ts";
+import {
+  AGENT_TOOL_OFF_MESSAGE,
+  formatImpact,
+  formatNeighbors,
+  formatPath,
+  formatSearch,
+  queryCodeGraph,
+} from "./mcp.ts";
 
 const index = (() => {
   const parsed = parseGraph(
@@ -53,4 +64,73 @@ describe("agent tool output", () => {
     expect(text).toMatch(/ {2}src\/DeviceQaService\.ts \(\d+ symbols?, 1 hop\)/);
     expect(formatImpact(impact(index, [], 2))).toBe("No changed files.");
   });
+});
+
+function partial<A extends object>(methods: Partial<A>): A {
+  return new Proxy(methods as A, {
+    get(target, key) {
+      if (key in target) return Reflect.get(target, key);
+      throw new Error(`Unexpected test service call: ${String(key)}`);
+    },
+  });
+}
+
+const projectId = ProjectId.make("project-graph");
+const threadId = ThreadId.make("thread-agent");
+
+const invocation = (thread: boolean) =>
+  ({
+    environmentId: EnvironmentId.make("env"),
+    capabilities: new Set(),
+    issuedAt: 0,
+    requestNamespace: "test",
+    thread: thread
+      ? { threadId, providerSessionId: "session", providerInstanceId: "codex" as never }
+      : undefined,
+    client: undefined,
+  }) as McpInvocationContext["Service"];
+
+/** A service whose project has a graph only when `record` is given. */
+const service = (record: { readonly agentTool: boolean } | null) =>
+  partial<CodeGraphService["Service"]>({
+    threadCheckout: () => Effect.succeed({ projectId, inProjectRoot: true } as never),
+    graphRecord: () => Effect.succeed(record as never),
+    indexFor: () =>
+      Effect.fail(new CodeGraphError({ reason: "no-graph", message: "No code graph yet." })),
+  });
+
+const run = (
+  input: Parameters<typeof queryCodeGraph>[0],
+  options: { readonly thread: boolean; readonly record: { readonly agentTool: boolean } | null },
+) =>
+  queryCodeGraph(input).pipe(
+    Effect.provideService(CodeGraphService, service(options.record)),
+    Effect.provideService(McpInvocationContext, invocation(options.thread)),
+  );
+
+describe("agent tool access", () => {
+  it.effect("answers only thread callers whose project has the switch on", () =>
+    Effect.gen(function* () {
+      const notThread = yield* Effect.flip(
+        run({ mode: "search", query: "x" }, { thread: false, record: { agentTool: true } }),
+      );
+      expect(notThread.reason).toBe("project-not-found");
+
+      const noGraph = yield* Effect.flip(
+        run({ mode: "search", query: "x" }, { thread: true, record: null }),
+      );
+      expect(noGraph).toMatchObject({ reason: "agent-tool-off", message: AGENT_TOOL_OFF_MESSAGE });
+
+      const off = yield* Effect.flip(
+        run({ mode: "search", query: "x" }, { thread: true, record: { agentTool: false } }),
+      );
+      expect(off.reason).toBe("agent-tool-off");
+
+      // With the switch on, the query reaches the graph, which reports its own absence.
+      const missing = yield* Effect.flip(
+        run({ mode: "search", query: "x" }, { thread: true, record: { agentTool: true } }),
+      );
+      expect(missing.reason).toBe("no-graph");
+    }),
+  );
 });
