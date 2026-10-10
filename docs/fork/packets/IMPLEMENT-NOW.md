@@ -13,13 +13,13 @@ are designated for implementation; retained proposals remain parked.
 | 3     | [L10 Apple build tooling](./L10-apple-build-tooling/) | Complete; merged in PR #13                    | Kyle confirmed the full packet on 2026-09-27.                                                   |
 | 4     | [L09 Device QA](./L09-device-qa/)                     | Complete; merged in PR #14                    | Kyle confirmed the full flow/evidence packet on 2026-09-27.                                     |
 | 5     | [L27 Utilities](./L27-utilities/)                     | Implement now                                 | Kyle included the complete 29-tool packet on 2026-09-27.                                        |
-| 6     | [L05 File outline](./L05-file-outline/)               | Implement now                                 | Kyle included the complete selected language coverage on 2026-09-27.                            |
+| 6     | [L05 File outline](./L05-file-outline/)               | Complete; on main in `1daaebb2b9`             | Kyle included the complete selected language coverage on 2026-09-27.                            |
 
 Order reflects product priority, not dependencies. An agent asked to choose the next item
 starts with the first incomplete, unclaimed packet. Closing L23 does not start another project. Each packet can still be implemented independently.
 
 All candidate dispositions are settled for this review. The comparison below retains the
-reasons for selection or deferral; only the selected queue is available for implementation. L23 is complete and integrated on main; the other selections remain queued.
+reasons for selection or deferral; only the selected queue is available for implementation. L27 is the only selection not yet implemented.
 
 ## Candidates for the queue
 

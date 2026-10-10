@@ -1,11 +1,10 @@
 # L05: File outline
 
-Status: Implemented locally on `feat/fork-file-outline`; not merged or published.
+Status: Complete; on `main` since 2026-10-04 (integrated in `1daaebb2b9`).
 
-Kyle requested the full packet on 2026-10-04. Implementation uses the released V2
-integration at `8781ba48a2`, in `/Users/kyle/Developer/worktrees/loom-file-outline`.
-Focused automated checks and the integrated Browser pass are recorded in
-[TESTING.md](./TESTING.md), including verification limits.
+Kyle requested the full packet on 2026-10-04. Implementation built on the V2 integration at
+`8781ba48a2`. Focused automated checks and the integrated Browser pass are recorded in
+[TESTING.md](./TESTING.md), including the manual checks that remain unverified.
 
 A symbol list for the file open in the Files panel. A toggle in the file header opens an
 outline column beside the source (functions, classes, types, methods, Markdown headings);

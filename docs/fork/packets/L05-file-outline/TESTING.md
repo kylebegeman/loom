@@ -59,8 +59,7 @@ media/table suppression and a separate remote/upstream-server client pass remain
 in the live client. Contract, source, parser and contextual palette tests cover those relevant
 boundaries; they do not substitute for claiming these manual checks passed.
 
-The isolated test server and state remain available for continuation. Desktop consumes the
-same bundle; no separate packaged desktop launch or mobile UI pass was performed.
+Desktop consumes the same bundle; no separate packaged desktop launch or mobile UI pass was performed.
 
 ## Merge safety
 
