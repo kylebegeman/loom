@@ -14,6 +14,9 @@ Selection F6 in [selections.md](../../selections.md). `bagelvault/loom` at `a79e
 | [.ledger/entries/0955-complete-p36-gemini-copilot-provider-drivers.md](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/0955-complete-p36-gemini-copilot-provider-drivers.md)                                                                                                                       |            | Keep the invariants: opt-in, disabled by default, shared ACP translators, text generation with no filesystem or terminal capability. Its note: Copilot was never run for real.                      |
 | [.ledger/entries/0183-ph13-model-endpoint-chat-routing.md](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/0183-ph13-model-endpoint-chat-routing.md)                                                                                                                                               |            | Keep the idea (endpoint records projected into provider instances, secrets only server-side). Drop the Model Lab and Secret Vault machinery; upstream's sensitive environment variables replace it. |
 
+Entries about Gemini, Copilot and ACP drivers, here and in the lists below, served parts B
+and C, retired on 2026-10-09. They are kept as prior art only.
+
 ## Upstream T3 Code
 
 - `apps/server/src/provider/ProviderDriver.ts:67-173` (driver SPI), `builtInDrivers.ts`.

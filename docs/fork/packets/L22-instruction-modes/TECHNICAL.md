@@ -155,8 +155,8 @@ whole cache is cleared when the library snapshot's `seq` changes.
 
 Registered by `InstructionModesService` through `registerForkTurnInputContributor`
 ([EXTENSION-POINTS.md, section 16](../EXTENSION-POINTS.md#16-provider-turn-input-ext-turn-input))
-with id `instruction-modes` and order 10. Assigned orders: L20 private mode 5, this packet 10,
-L03 goal 20. The registry already skips continuations and slash commands and does the
+with id `instruction-modes` and order 10. Assigned orders: L20 private mode 5, this packet 10.
+The registry already skips continuations and slash commands and does the
 prepending.
 
 ```ts
@@ -219,16 +219,15 @@ rules into skill arguments; prepending keeps them in the leading text.
 
 ### Per-provider behavior
 
-| Provider           | What the agent sees                                                                                                                    | Notes                                                                               |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Codex              | The block at the start of the user message, alongside upstream's per-turn `developer_instructions` (`CodexSessionRuntime.ts:583-605`). | `$skill` input items unaffected.                                                    |
-| Claude             | The block in the leading text; the system prompt append from `ClaudeAdapter.ts:4724-4729` unchanged.                                   | Skill dispatch preserved (above). Plan mode unaffected.                             |
-| Cursor, Grok       | The block in the ACP prompt text; upstream's runtime instructions block (`CursorAdapter.ts:1067`, `GrokAdapter.ts:1619`) unchanged.    |                                                                                     |
-| OpenCode           | The block in the user part; upstream's `system` field (`OpenCodeAdapter.ts:3223`) unchanged.                                           |                                                                                     |
-| Antigravity        | The block in the prompt text (`AntigravityAdapter.ts:1088` shows upstream's own text block).                                           |                                                                                     |
-| Fork drivers (L17) | Same, through `sendTurn`.                                                                                                              |                                                                                     |
-| Slash commands     | Nothing: `/compact`, `/feedback`, typed `/skill` commands pass unchanged.                                                              | A mode turned on right before `/compact` is delivered with the next normal message. |
-| Continuations      | Nothing: `input` is `undefined`.                                                                                                       |                                                                                     |
+| Provider       | What the agent sees                                                                                                                    | Notes                                                                               |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Codex          | The block at the start of the user message, alongside upstream's per-turn `developer_instructions` (`CodexSessionRuntime.ts:583-605`). | `$skill` input items unaffected.                                                    |
+| Claude         | The block in the leading text; the system prompt append from `ClaudeAdapter.ts:4724-4729` unchanged.                                   | Skill dispatch preserved (above). Plan mode unaffected.                             |
+| Cursor, Grok   | The block in the ACP prompt text; upstream's runtime instructions block (`CursorAdapter.ts:1067`, `GrokAdapter.ts:1619`) unchanged.    |                                                                                     |
+| OpenCode       | The block in the user part; upstream's `system` field (`OpenCodeAdapter.ts:3223`) unchanged.                                           |                                                                                     |
+| Antigravity    | The block in the prompt text (`AntigravityAdapter.ts:1088` shows upstream's own text block).                                           |                                                                                     |
+| Slash commands | Nothing: `/compact`, `/feedback`, typed `/skill` commands pass unchanged.                                                              | A mode turned on right before `/compact` is delivered with the next normal message. |
+| Continuations  | Nothing: `input` is `undefined`.                                                                                                       |                                                                                     |
 
 If L20's private mode is on for the project, its `<loom_private_mode>` block (order 5) comes
 first; the two never interact.

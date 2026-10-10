@@ -8,17 +8,16 @@ already drive this model, and how much fork code does connecting it take?
 
 ## Summary
 
-| Target                        | Recommended path                                                                     | Fork code                     | Confidence                       |
-| ----------------------------- | ------------------------------------------------------------------------------------ | ----------------------------- | -------------------------------- |
-| DeepSeek (native API)         | Claude Code instance with `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic`    | Preset dialog only            | High (vendor doc)                |
-| Ollama                        | Claude Code instance with `ANTHROPIC_BASE_URL=http://localhost:11434` (Ollama 0.14+) | Preset dialog only            | High (vendor doc), one known bug |
-| LM Studio                     | Same, if its Anthropic-compatible endpoint works; else OpenCode                      | Preset dialog only            | Medium: verify                   |
-| Other Anthropic-compatible    | Same, "Other" preset                                                                 | Preset dialog only            | High                             |
-| OpenAI-compatible only        | Upstream OpenCode driver (configures OpenAI-compatible providers natively)           | None (docs link)              | High                             |
-| Any ACP agent                 | Fork ACP driver `loomAcp` with a user-supplied command                               | Generic ACP adapter + profile | Medium                           |
-| Gemini CLI                    | A `loomAcp` instance running `gemini --acp` (no driver of its own)                   | None beyond `loomAcp`         | Medium                           |
-| GitHub Copilot CLI            | Fork ACP driver `loomCopilot` (`copilot --acp`), built last                          | Profile on the same adapter   | Medium: verify flags and auth    |
-| Raw model API with no harness | Not supported                                                                        | None                          | Decision                         |
+| Target                        | Recommended path                                                                     | Fork code          | Confidence                       |
+| ----------------------------- | ------------------------------------------------------------------------------------ | ------------------ | -------------------------------- |
+| DeepSeek (native API)         | Claude Code instance with `ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic`    | Preset dialog only | High (vendor doc)                |
+| Ollama                        | Claude Code instance with `ANTHROPIC_BASE_URL=http://localhost:11434` (Ollama 0.14+) | Preset dialog only | High (vendor doc), one known bug |
+| LM Studio                     | Same, if its Anthropic-compatible endpoint works; else OpenCode                      | Preset dialog only | Medium: verify                   |
+| Other Anthropic-compatible    | Same, "Other" preset                                                                 | Preset dialog only | High                             |
+| OpenAI-compatible only        | Upstream OpenCode driver (configures OpenAI-compatible providers natively)           | None (docs link)   | High                             |
+| Any ACP agent, Gemini CLI     | Upstream's ACP Registry (custom ACP commands included); retired here 2026-10-09      | None               | Decision                         |
+| GitHub Copilot CLI            | Upstream's ACP Registry; retired here 2026-10-09                                     | None               | Decision                         |
+| Raw model API with no harness | Not supported                                                                        | None               | Decision                         |
 
 ## DeepSeek
 
@@ -64,37 +63,11 @@ suggests OpenCode when the Messages call fails.
 Remote: the endpoint is reached from the environment's machine. An Ollama running on Kyle's
 Mac serves threads Kyle drives from his phone.
 
-## GitHub Copilot CLI
+## ACP agents, Gemini CLI and GitHub Copilot (retired)
 
-Copilot CLI 1.0.88 (installed locally) lists `--acp` ("Start as Agent Client Protocol
-server"). Old Loom launched it as `copilot --acp --stdio`; the local help does not list
-`--stdio`, so the driver starts with `--acp` and the implementing agent checks whether stdio
-is the default. Authentication belongs to the CLI (its own login, or a GitHub token in the
-environment); the driver's signed-out message suggests the CLI's own login first and a
-`GH_TOKEN` environment variable second (Kyle's decision) when ACP `initialize` or
-`session/new` asks for authentication. Kyle does not use Copilot, so it is built last. Copilot also supports custom model
-providers ("BYOK") and DeepSeek documents a Copilot CLI integration, so Copilot is a second
-route to endpoint models for users who prefer it.
-
-## Gemini CLI
-
-Google stopped serving Gemini CLI for individual accounts (free, Google AI Pro and Ultra) on
-June 18, 2026, in favor of Antigravity CLI, which upstream T3 already supports with in-app
-sign-in. Gemini CLI still serves Gemini Code Assist Standard and Enterprise licenses and
-keeps `--acp` (Gemini CLI 0.46.0 installed locally). Decision (Kyle): no dedicated
-`loomGemini` driver. Code Assist users run Gemini CLI as a custom ACP agent (`loomAcp` with
-command `gemini` and argument `--acp`); everyone else uses Antigravity through upstream.
-
-## Generic ACP agents and the registry
-
-ACP's public registry (`agentclientprotocol/registry`, `FORMAT.md`) describes each agent with
-`id`, `name`, `version`, `description`, `repository`, `license`, `icon` and a `distribution`
-object: `binary` (per platform `darwin-aarch64`, `linux-x86_64`, ... with `archive`,
-`sha256`, `cmd`, `args`, `env`), `npx` (`package`, `args`, `env`) or `uvx`. The aggregated
-`registry.json` location was not confirmed. Old Loom downloaded and checksum-verified
-binaries into its home; that is a lot of supply-chain surface for a first version. The
-`loomAcp` driver instead runs a command the user supplies (which may be `npx <package>`), and
-a registry browser that pre-fills the command is a follow-up.
+This packet first planned fork ACP drivers for custom commands (Gemini CLI as `gemini
+--acp`) and Copilot CLI (`copilot --acp`). Kyle approved retiring them on 2026-10-09:
+upstream T3 Code's ACP Registry includes Copilot and Gemini and accepts custom ACP commands.
 
 ## Building our own agent loop (rejected for now)
 
@@ -109,11 +82,11 @@ a registry browser that pre-fills the command is a follow-up.
 - **block/buzz `buzz-agent`** (Apache-2.0) is an ACP agent over Anthropic or
   OpenAI-compatible APIs, but by its own README "Non-streaming. No persistence.", it
   advertises `loadSession: false`, and it has no built-in file tools: all tools come from MCP
-  servers (`crates/buzz-agent/README.md`). It could still run under `loomAcp` as a custom
-  command for experiments.
+  servers (`crates/buzz-agent/README.md`). It could still run as a custom ACP command in
+  upstream's ACP Registry for experiments.
 - **Old Loom's `OpenAiResponsesAdapter` and `ModelEndpointDriver`** were chat-only: they kept
   a message array and streamed text, with no tool loop.
 
 Revisit only if Kyle needs a model that has neither an Anthropic-compatible endpoint nor
-OpenCode support. The likely answer then is running pi's own coding agent over ACP under
-`loomAcp`, not a fork-owned loop.
+OpenCode support. The likely answer then is running pi's own coding agent over ACP through
+upstream's ACP Registry, not a fork-owned loop.

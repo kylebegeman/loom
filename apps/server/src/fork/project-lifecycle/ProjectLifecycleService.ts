@@ -118,7 +118,15 @@ export interface ProjectLifecycleOptions {
   readonly xcrunPath?: string;
   readonly lsofPath?: string;
   readonly dockerPath?: string;
+  /** Free and total bytes on the volume holding `path`. Tests pin it; by default statfs. */
+  readonly hostSpace?: (path: string) => Promise<{ readonly free: number; readonly total: number }>;
 }
+
+const statfsSpace = (path: string) =>
+  NodeFSP.statfs(path).then((stats) => ({
+    free: stats.bavail * stats.bsize,
+    total: stats.blocks * stats.bsize,
+  }));
 
 const error = (reason: ProjectLifecycleError["reason"], message: string) =>
   new ProjectLifecycleError({ reason, message });
@@ -150,6 +158,9 @@ const lanePaths = (lane: Pick<LaneRow, "laneDir">): LanePaths => ({
   spacePath: `${lane.laneDir}/space`,
   imagePath: `${lane.laneDir}/space.asif`,
 });
+
+/** The image volume name Finder and diskutil show for a lane. */
+const volumeName = (laneId: string) => `loom-${laneId.slice(0, 8)}`;
 
 const checkoutOf = (thread: Thread, projects: ReadonlyMap<string, OrchestrationProjectShell>) =>
   thread.worktreePath ?? projects.get(thread.projectId)?.workspaceRoot ?? null;
@@ -211,7 +222,11 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const backend = options.imageBackend ? "image" : "folder";
     const opsFor = (lane: Pick<LaneRow, "backend">) =>
       lane.backend === "image" ? spaces.image : spaces.folder;
-    const profilePath = `${options.homeDir}/.zshenv`;
+    // A dev server installs its shell hook into a profile of its own, never the real ~/.zshenv.
+    const profilePath =
+      config.devUrl === undefined
+        ? `${options.homeDir}/.zshenv`
+        : `${config.stateDir}/fork/project-lifecycle/zshenv`;
 
     const defaults: ProjectLifecycleSettings = {
       // A dev server keeps its own lanes and starts disabled, so it never touches real lanes.
@@ -457,11 +472,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const measureHost = Effect.fn("ProjectLifecycle.measureHost")(function* () {
       let path = rootOf(yield* getSettings);
       while (path !== "/" && !(yield* exists(path))) path = NodePath.dirname(path);
+      const hostSpace = options.hostSpace ?? statfsSpace;
       host = yield* Effect.promise(() =>
-        NodeFSP.statfs(path).then(
-          (stats) => ({ free: stats.bavail * stats.bsize, total: stats.blocks * stats.bsize }),
-          () => ({ free: null, total: null }),
-        ),
+        hostSpace(path).catch(() => ({ free: null, total: null })),
       );
     });
 
@@ -670,7 +683,17 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     const attach = (lane: LaneRow) =>
       Effect.gen(function* () {
-        const { device } = yield* opsFor(lane).attach(lanePaths(lane));
+        const { device } = yield* opsFor(lane).attach(
+          lanePaths(lane),
+          lane.capBytes,
+          volumeName(lane.id),
+        );
+        // A lane folder deleted outside Loom comes back empty and needs its notes again.
+        if (!(yield* exists(`${lane.laneDir}/LANE.md`)))
+          yield* writeAtomically(
+            `${lane.laneDir}/LANE.md`,
+            laneMarkdown(lane, rootOf(yield* getSettings)),
+          );
         if (device !== lane.device) {
           const next = { ...lane, device };
           lanes.set(lane.id, next);
@@ -732,7 +755,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           .run({ command: "tmutil", args: ["addexclusion", root], timeout: "10 seconds" })
           .pipe(Effect.ignore);
       const created = yield* opsFor(lane)
-        .create(lanePaths(lane), capBytes, `loom-${id.slice(0, 8)}`)
+        .create(lanePaths(lane), capBytes, volumeName(id))
         .pipe(
           Effect.map(({ device }) => ({ ...lane, device })),
           // A failed image leaves a folder lane with a soft cap rather than no lane.

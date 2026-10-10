@@ -1,7 +1,10 @@
 # L28: Automatic account failover
 
-Status: Deferred until Orchestrator V2 ships. Product intent retained; implementation
-contracts are deliberately undecided.
+Status: Retired. Kyle approved retiring the whole packet on 2026-10-09: Switchboard, Kyle's
+external tool, already resumes rate-limited agents automatically, which covers account
+failover (Loom's Switchboard mode routes Claude and Codex through it; see FORK.md). Nothing
+was built. The documents below describe the retired design and are kept for reference only;
+do not implement them.
 
 When a provider usage limit stops a thread, Loom should be able to continue it on another
 eligible subscription account. Kyle retained this feature on 2026-09-27. It is an optional

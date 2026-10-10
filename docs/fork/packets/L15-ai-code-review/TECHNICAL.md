@@ -93,9 +93,8 @@ ones to use; constants are named so they can be tuned in one place.
 Start dialog / palette / diff button / chip / agent tool
         |
         v
-AiCodeReviewService.prepare     -> target diff, stats, estimate, defaults
-AiCodeReviewService.resolveAuto -> Auto pick (Jev) for the dialog's Auto slots
-AiCodeReviewService.start       -> review row + one run per reviewer
+AiCodeReviewService.prepare -> target diff, stats, estimate, defaults
+AiCodeReviewService.start   -> review row + one run per reviewer
         |  thread.create + thread.turn.start (approval-required, server-built brief)
         v
 Reviewer threads (ordinary threads, any provider)
@@ -104,7 +103,7 @@ Reviewer threads (ordinary threads, any provider)
 findings stored per run                    fenced-JSON fallback (reviewer thread only)
         |                                          |  else failed + "Ask again"
         v                                          v
-all runs terminal -> merge (Jev Noul per candidate pair, else rule) -> groups
+all runs terminal -> merge (file, line and title rule) -> groups
         |
         v
 Review panel (subscription per source thread) -> "Fix this" -> composer review comments
@@ -118,7 +117,6 @@ suggestion is a reactor on `thread.turn-diff-completed`; cleanup follows `thread
 ```ts
 export const AI_CODE_REVIEW_WS_METHODS = {
   prepare: "loom.ai-code-review.prepare",
-  resolveAuto: "loom.ai-code-review.resolveAuto",
   start: "loom.ai-code-review.start",
   cancel: "loom.ai-code-review.cancel",
   askAgain: "loom.ai-code-review.askAgain",
@@ -205,50 +203,14 @@ export const ReviewFindingGroup = Schema.Struct({
   confidence: ReviewConfidence, // effective confidence, see "Merge"
   findingIds: Schema.Array(TrimmedNonEmptyString),
   reviewerRunIds: Schema.Array(TrimmedNonEmptyString), // distinct reviewer runs, for "Found by"
-  mergedBy: Schema.Literals(["single", "rule", "jev"]),
+  mergedBy: Schema.Literals(["single", "rule"]),
 });
 
-export const ReviewerPick = Schema.Union([
-  Schema.TaggedStruct("manual", {}),
-  Schema.TaggedStruct("jev", {
-    decisionId: TrimmedNonEmptyString,
-    confidence: Schema.Number,
-    effortConfidence: Schema.NullOr(Schema.Number), // null when the preset allowed one level
-  }),
-  Schema.TaggedStruct("fallback", {
-    // ext-decide fallback reasons plus this packet's own pre-checks
-    reason: Schema.Literals([
-      "disabled",
-      "no-key",
-      "project-off",
-      "agent-not-allowed",
-      "timeout",
-      "error",
-      "low-confidence",
-      "too-few-candidates",
-    ]),
-    decisionId: Schema.NullOr(TrimmedNonEmptyString),
-  }),
-]);
-
-/** A reviewer slot as settings and the dialog describe it. */
-export const ReviewerSlot = Schema.Union([
-  Schema.TaggedStruct("auto", {}),
-  Schema.TaggedStruct("model", {
-    modelSelection: ModelSelection,
-    effort: Schema.NullOr(ReviewEffortLevel), // null: the preset default
-  }),
-]);
-
-/** What `start` receives per reviewer: unresolved Auto, or a resolved choice. */
-export const StartReviewer = Schema.Union([
-  Schema.TaggedStruct("auto", {}),
-  Schema.TaggedStruct("resolved", {
-    modelSelection: ModelSelection,
-    effort: Schema.NullOr(ReviewEffortLevel),
-    pick: ReviewerPick,
-  }),
-]);
+/** A reviewer slot as settings, the dialog and `start` describe it. */
+export const ReviewerSlot = Schema.Struct({
+  modelSelection: ModelSelection,
+  effort: Schema.NullOr(ReviewEffortLevel), // null: the preset's effort
+});
 
 export const ReviewerRun = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -257,7 +219,6 @@ export const ReviewerRun = Schema.Struct({
   reviewerThreadId: Schema.NullOr(ThreadId),
   modelSelection: Schema.NullOr(ModelSelection),
   effort: Schema.NullOr(ReviewEffortLevel),
-  pick: Schema.NullOr(ReviewerPick),
   state: Schema.Literals(["starting", "running", "completed", "failed", "cancelled"]),
   submitSource: Schema.NullOr(Schema.Literals(["tool", "fallback-json"])),
   verdict: Schema.NullOr(ReviewVerdict),
@@ -284,7 +245,6 @@ export const ReviewEstimate = Schema.Struct({
   deletions: NonNegativeInt,
   changedLines: NonNegativeInt, // additions + deletions, computed in code
   tokensPerReviewer: NonNegativeInt,
-  languages: Schema.Array(Schema.String),
   truncated: Schema.Boolean, // git output hit its cap; the estimate is a lower bound
 });
 
@@ -298,7 +258,7 @@ export const ReviewSummary = Schema.Struct({
   lenses: Schema.Array(ReviewLens),
   origin: Schema.Literals(["user", "agent", "auto"]),
   state: Schema.Literals(["running", "completed", "failed", "cancelled"]),
-  merge: Schema.Literals(["pending", "single", "rule", "jev"]),
+  merge: Schema.Literals(["pending", "single", "rule"]),
   estimate: ReviewEstimate,
   runs: Schema.Array(ReviewerRun),
   openCounts: Schema.Struct({
@@ -316,7 +276,6 @@ export const ReviewSuggestion = Schema.Struct({
   turnId: TurnId,
   turnNumber: PositiveInt,
   changedLines: NonNegativeInt,
-  reason: Schema.Literals(["jev", "threshold"]),
   large: Schema.Boolean, // above the confirmation threshold
   createdAt: IsoDateTime,
 });
@@ -333,28 +292,16 @@ export const ReviewDetail = Schema.Struct({
   findings: Schema.Array(ReviewFinding),
 });
 
-export const ReviewEffortRange = Schema.Struct({
-  min: ReviewEffortLevel,
-  max: ReviewEffortLevel,
-  default: ReviewEffortLevel,
-}); // checked: min <= default <= max in level order
-
 export const AiCodeReviewSettings = Schema.Struct({
   /** Empty: one slot with the source thread's model. */
   defaultReviewers: Schema.Array(ReviewerSlot).check(
     Schema.isMaxLength(AI_CODE_REVIEW_MAX_REVIEWERS),
   ),
-  candidates: Schema.Array(
-    Schema.Struct({
-      modelSelection: ModelSelection,
-      description: Schema.String.check(Schema.isMaxLength(400)),
-    }),
-  ).check(Schema.isMaxLength(20)),
   effortPreset: ReviewEffortPresetId,
   effortPresets: Schema.Struct({
-    quick: ReviewEffortRange,
-    balanced: ReviewEffortRange,
-    thorough: ReviewEffortRange,
+    quick: ReviewEffortLevel,
+    balanced: ReviewEffortLevel,
+    thorough: ReviewEffortLevel,
   }),
   lenses: Schema.Struct({
     correctness: Schema.Boolean,
@@ -395,60 +342,52 @@ export class AiCodeReviewError extends Schema.TaggedError<AiCodeReviewError>()(
 ) {}
 ```
 
-Defaults (`AI_CODE_REVIEW_DEFAULT_SETTINGS`): no default reviewers, no candidates, preset
-`balanced`, presets `quick {low, medium, low}`, `balanced {medium, high, medium}`, `thorough
-{high, max, high}`, lenses correctness only, empty extra instructions,
-`confirmAboveChangedLines` 2,000, `suggestAfterTurns` true, `suggestAboveChangedLines` 200,
-`allowAgents` false. At least one lens must be on (`updateSettings` rejects otherwise).
+Defaults (`AI_CODE_REVIEW_DEFAULT_SETTINGS`): no default reviewers, preset `balanced`,
+presets `quick` low, `balanced` medium, `thorough` high, lenses correctness only, empty
+extra instructions, `confirmAboveChangedLines` 2,000, `suggestAfterTurns` true,
+`suggestAboveChangedLines` 200, `allowAgents` false. At least one lens must be on
+(`updateSettings` rejects otherwise).
 
 ### RPCs
 
-| Tag                     | Input                                                                                                       | Output                                                                                                                                                              | Scope                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `prepare`               | `{ sourceThreadId, target }`                                                                                | `{ targetLabel, resolvedBaseRef, estimate, noChanges, sourceBusy, reviewRunning, turns, recentCommits, reviewers: Array<{ slot, sameAsAuthor }>, lensesAvailable }` | `orchestration:read`    |
-| `resolveAuto`           | `{ sourceThreadId, target, slots: Array<ReviewerSlot> (1 to 3) }`                                           | `{ reviewers: Array<{ slot, resolved?: StartReviewer }> }` (`resolved` set for each Auto slot)                                                                      | `orchestration:operate` |
-| `start`                 | `{ sourceThreadId, target, instructions?, reviewers: Array<StartReviewer> (1 to 3), lenses, confirmLarge }` | `{ reviewId }`                                                                                                                                                      | `orchestration:operate` |
-| `cancel`                | `{ reviewId }`                                                                                              | `{}`                                                                                                                                                                | `orchestration:operate` |
-| `askAgain`              | `{ runId }`                                                                                                 | `{}`                                                                                                                                                                | `orchestration:operate` |
-| `subscribeThread`       | `{ sourceThreadId }`                                                                                        | stream of `ThreadReviewsSnapshot` (`ForkSubscriptionRpcTag`)                                                                                                        | `orchestration:read`    |
-| `get`                   | `{ reviewId }`                                                                                              | `ReviewDetail`                                                                                                                                                      | `orchestration:read`    |
-| `setGroupState`         | `{ reviewId, groupIds, state }`                                                                             | `{}`                                                                                                                                                                | `orchestration:operate` |
-| `getHandBack`           | `{ reviewId, groupIds }`                                                                                    | `Array<{ groupId, file, startLine, endLine, lines: string or null, text }>`                                                                                         | `orchestration:operate` |
-| `dismissSuggestion`     | `{ threadId }`                                                                                              | `{}`                                                                                                                                                                | `orchestration:operate` |
-| `getSettings`           | `{}`                                                                                                        | `{ settings, impeccable: { available, path } }`                                                                                                                     | `orchestration:read`    |
-| `updateSettings`        | `AiCodeReviewSettings`                                                                                      | `AiCodeReviewSettings`                                                                                                                                              | `orchestration:operate` |
-| `getProjectSettings`    | `{ projectId }`                                                                                             | `AiCodeReviewProjectSettings`                                                                                                                                       | `orchestration:read`    |
-| `updateProjectSettings` | `AiCodeReviewProjectSettings`                                                                               | `AiCodeReviewProjectSettings`                                                                                                                                       | `orchestration:operate` |
+| Tag                     | Input                                                                                                      | Output                                                                                                                                                              | Scope                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `prepare`               | `{ sourceThreadId, target }`                                                                               | `{ targetLabel, resolvedBaseRef, estimate, noChanges, sourceBusy, reviewRunning, turns, recentCommits, reviewers: Array<{ slot, sameAsAuthor }>, lensesAvailable }` | `orchestration:read`    |
+| `start`                 | `{ sourceThreadId, target, instructions?, reviewers: Array<ReviewerSlot> (1 to 3), lenses, confirmLarge }` | `{ reviewId }`                                                                                                                                                      | `orchestration:operate` |
+| `cancel`                | `{ reviewId }`                                                                                             | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `askAgain`              | `{ runId }`                                                                                                | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `subscribeThread`       | `{ sourceThreadId }`                                                                                       | stream of `ThreadReviewsSnapshot` (`ForkSubscriptionRpcTag`)                                                                                                        | `orchestration:read`    |
+| `get`                   | `{ reviewId }`                                                                                             | `ReviewDetail`                                                                                                                                                      | `orchestration:read`    |
+| `setGroupState`         | `{ reviewId, groupIds, state }`                                                                            | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `getHandBack`           | `{ reviewId, groupIds }`                                                                                   | `Array<{ groupId, file, startLine, endLine, lines: string or null, text }>`                                                                                         | `orchestration:operate` |
+| `dismissSuggestion`     | `{ threadId }`                                                                                             | `{}`                                                                                                                                                                | `orchestration:operate` |
+| `getSettings`           | `{}`                                                                                                       | `{ settings, impeccable: { available, path } }`                                                                                                                     | `orchestration:read`    |
+| `updateSettings`        | `AiCodeReviewSettings`                                                                                     | `AiCodeReviewSettings`                                                                                                                                              | `orchestration:operate` |
+| `getProjectSettings`    | `{ projectId }`                                                                                            | `AiCodeReviewProjectSettings`                                                                                                                                       | `orchestration:read`    |
+| `updateProjectSettings` | `AiCodeReviewProjectSettings`                                                                              | `AiCodeReviewProjectSettings`                                                                                                                                       | `orchestration:operate` |
 
 All tags are `loom.ai-code-review.<name>` and every error union includes
 `EnvironmentAuthorizationError` (EXTENSION-POINTS.md, server core). `getHandBack` reads file
 contents from the checkout, so it takes the operate scope like the action it belongs to.
-`prepare` never calls Jev; `resolveAuto` does, and every sent Jev request is paid and logged
-in `fork_decide_decisions`, so it takes the operate scope like `start`.
-Jev availability is not part of L15's RPCs: the web asks
-`useDecideFeature(environmentId, "ai-code-review.reviewer-pick")`
-(`apps/web/src/fork/decide/state.ts`) and offers "Auto (Jev)" only when `usable` is true,
-hiding it entirely when `supported` is false.
 
 ### Server layout (`apps/server/src/fork/ai-code-review/`)
 
-| File                     | Role                                                                                                                                |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `migrations.ts`          | `AiCodeReviewMigrations` (slug `ai-code-review`, tracking table `fork_migrations_ai_code_review`).                                  |
-| `AiCodeReviewStore.ts`   | Repository for the tables in [Storage](#storage).                                                                                   |
-| `targetDiff.ts`          | Diff text, refs and label per target (below).                                                                                       |
-| `diffStats.ts`           | Pure: parse a unified diff into files, additions, deletions, languages, file kinds, size and file-count buckets; token estimate.    |
-| `ReviewBrief.ts`         | Pure: the reviewer brief per target, lenses, instructions and optional impact summary.                                              |
-| `findingValidation.ts`   | Pure plus a file probe: path normalization, checkout containment, line clamping, per-run dedupe.                                    |
-| `fallbackParser.ts`      | Pure: the last fenced `json` block of a reviewer's final message, decoded with `ReviewSubmitInput`.                                 |
-| `mergeRule.ts`           | Pure: candidate pairs, the deterministic "same issue" rule, union-find, group fields.                                               |
-| `effort.ts`              | Pure: preset ranges, level order, mapping a level to a model's provider option.                                                     |
-| `decide.ts`              | `aiCodeReviewDecideFeatures` for `ext-decide` and the pure state and question builders for each feature.                            |
-| `impeccable.ts`          | Binary lookup, argv builder (pure), run, JSON to findings mapping.                                                                  |
-| `integrations.ts`        | Optional L02 lineage row, L18 reviewer binding, L26 impact summary; each a no-op when the other packet is absent.                   |
-| `AiCodeReviewService.ts` | `Context.Service`: prepare, resolve Auto, start, cancel, ask again, submit handling, turn-end handling, merge, hand-back, settings. |
-| `AiCodeReviewReactor.ts` | `Layer.effectDiscard` with `forkParked`: domain event watcher, startup reconciliation, suggestions, cleanup.                        |
-| `rpc.ts`, `mcp.ts`       | RPC handlers and the two MCP tools.                                                                                                 |
+| File                     | Role                                                                                                                  |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `migrations.ts`          | `AiCodeReviewMigrations` (slug `ai-code-review`, tracking table `fork_migrations_ai_code_review`).                    |
+| `AiCodeReviewStore.ts`   | Repository for the tables in [Storage](#storage).                                                                     |
+| `targetDiff.ts`          | Diff text, refs and label per target (below).                                                                         |
+| `diffStats.ts`           | Pure: parse a unified diff into files, additions, deletions; token estimate.                                          |
+| `ReviewBrief.ts`         | Pure: the reviewer brief per target, lenses, instructions and optional impact summary.                                |
+| `findingValidation.ts`   | Pure plus a file probe: path normalization, checkout containment, line clamping, per-run dedupe.                      |
+| `fallbackParser.ts`      | Pure: the last fenced `json` block of a reviewer's final message, decoded with `ReviewSubmitInput`.                   |
+| `mergeRule.ts`           | Pure: pairs across runs, the deterministic "same issue" rule, union-find, group fields.                               |
+| `effort.ts`              | Pure: preset ranges, level order, mapping a level to a model's provider option.                                       |
+| `impeccable.ts`          | Binary lookup, argv builder (pure), run, JSON to findings mapping.                                                    |
+| `integrations.ts`        | Optional L02 lineage row, L18 reviewer binding, L26 impact summary; each a no-op when the other packet is absent.     |
+| `AiCodeReviewService.ts` | `Context.Service`: prepare, start, cancel, ask again, submit handling, turn-end handling, merge, hand-back, settings. |
+| `AiCodeReviewReactor.ts` | `Layer.effectDiscard` with `forkParked`: domain event watcher, startup reconciliation, suggestions, cleanup.          |
+| `rpc.ts`, `mcp.ts`       | RPC handlers and the two MCP tools.                                                                                   |
 
 The service is named `AiCodeReviewService` so it never collides with upstream's
 `ReviewService` (`apps/server/src/review/ReviewService.ts:22`), which it uses.
@@ -478,20 +417,15 @@ summaries (`{ turnId, turnNumber, files, changedLines }`, newest first, at most 
 
 ### Estimate (`diffStats.ts`)
 
-`changedLines = additions + deletions`, counted from the unified diff in code (Jev never
-counts). `tokensPerReviewer = ESTIMATE_OVERHEAD_TOKENS + ceil(diffChars / 4) *
+`changedLines = additions + deletions`, counted from the unified diff in code.
+`tokensPerReviewer = ESTIMATE_OVERHEAD_TOKENS + ceil(diffChars / 4) *
 ESTIMATE_DIFF_MULTIPLIER`, rounded up to the next 5k, with `ESTIMATE_OVERHEAD_TOKENS = 8_000`
 (brief, tools, repository instructions) and `ESTIMATE_DIFF_MULTIPLIER = 3` (the diff once, and
-about twice as much surrounding code). It is a rough guide and the UI says "about". Languages
-come from a small extension map; file kinds (`source`, `tests`, `docs`, `config`, `styles`)
-from path patterns. Size buckets for Jev state: `tiny` (under 20 changed lines), `small` (20 to
-199), `medium` (200 to 999), `large` (1,000 to 4,999), `very large` (5,000 or more).
-File-count buckets: `one` (1 file), `few` (2 to 5), `several` (6 to 20), `many` (21 to 100),
-`very many` (more than 100).
+about twice as much surrounding code). It is a rough guide and the UI says "about".
 
 ### Lifecycle
 
-**prepare** (read only; never calls Jev):
+**prepare** (read only):
 
 1. Load the source thread shell (`ProjectionSnapshotQuery.getThreadShellById`,
    `ProjectionSnapshotQuery.ts:217`); refuse a thread that is a reviewer thread of any run
@@ -505,25 +439,18 @@ File-count buckets: `one` (1 file), `few` (2 to 5), `several` (6 to 20), `many` 
    slot), else `settings.defaultReviewers`, else one slot with the source thread's
    `modelSelection`. `sameAsAuthor` compares `instanceId` and `model`.
 
-**resolveAuto** (the dialog calls it after `prepare` when a slot is Auto, and again when the
-user switches a slot to Auto): load the source thread and compute the target diff and stats
-as `prepare` steps 1 and 2 do, then run
-[reviewer-pick](#jev-feature-ai-code-reviewreviewer-pick) for the Auto slots with origin
-`user`, excluding models already in other slots.
-
 **start** (the server recomputes everything; client estimates are never trusted):
 
 1. Validate: thread exists and is not a reviewer thread, 1 to 3 reviewers, no running review
-   for this source (`review-running`), changes exist (`no-changes`), every resolved model's
+   for this source (`review-running`), changes exist (`no-changes`), every reviewer model's
    provider instance is available (`model-unavailable`, checked against the provider instance
    registry the model picker reads).
 2. Size: when `changedLines > confirmAboveChangedLines`, a user start needs `confirmLarge`
    (else `confirmation-required`); agent and automatic starts create or update the thread's
    suggestion with `large: true` instead and return without starting.
-3. Resolve remaining Auto slots (reviewer-pick with the review's origin).
-4. Insert the review and one run per reviewer (`starting`), plus an `impeccable` run when that
+3. Insert the review and one run per reviewer (`starting`), plus an `impeccable` run when that
    lens is on and the binary is available.
-5. Per reviewer run, dispatch through `OrchestrationEngineService.dispatch` with server
+4. Per reviewer run, dispatch through `OrchestrationEngineService.dispatch` with server
    command ids `server:ai-code-review:<uuid>` (the `serverCommandId` shape in
    `apps/server/src/ws.ts:734`):
    - `thread.create` (`packages/contracts/src/orchestration.ts:1047-1062`): new `threadId`,
@@ -536,8 +463,8 @@ as `prepare` steps 1 and 2 do, then run
      command's decoding default is `full-access`, `orchestration.ts:1251`) and
      `interactionMode: "default"`.
    - A dispatch failure fails that run with `start-failed`; other runs continue.
-6. Optional integrations: L02 lineage row per reviewer thread (below).
-7. Clear the thread's suggestion if it pointed at this target's turn; publish the snapshot.
+5. Optional integrations: L02 lineage row per reviewer thread (below).
+6. Clear the thread's suggestion if it pointed at this target's turn; publish the snapshot.
 
 **Running.** `AiCodeReviewReactor` keeps an in-memory map `reviewerThreadId -> runId` for runs
 in `starting` or `running`, loaded from the store at start. It subscribes to
@@ -564,8 +491,8 @@ reviewer thread's final assistant message (`latestTurn.assistantMessageId` throu
 `fallbackParser`. A valid block completes the run with `submitSource: "fallback-json"`;
 otherwise the run fails with `no-submit`. Either way dispatch `thread.settle` for the reviewer
 thread (`orchestration.ts:1083`). When every run of the review is terminal, run
-[Merge](#merge-mergerulets-decidets) and set the review state: `completed` if any reviewer run completed, `failed`
-if all failed, `cancelled` if the user cancelled.
+[Merge](#merge-mergerulets) and set the review state: `completed` if any reviewer run
+completed, `failed` if all failed, `cancelled` if the user cancelled.
 
 **Cancel.** Dispatch `thread.turn.interrupt` (`orchestration.ts:1281`) for each running
 reviewer thread and mark those runs `cancelled`; findings already submitted stay and are
@@ -648,192 +575,32 @@ last fenced block whose info string is `json`, decodes it with `ReviewSubmitInpu
 the same validation. Prose, `[P1]`-style lines and other blocks are ignored. It is never
 called for other threads.
 
-### Merge (`mergeRule.ts`, `decide.ts`)
+### Merge (`mergeRule.ts`)
 
-Merge runs when all runs of a review are terminal (and provisionally, rule only, after each
-reviewer run completes, so the panel shows partial results).
+Merge runs when all runs of a review are terminal (and provisionally after each reviewer run
+completes, so the panel shows partial results).
 
 1. Findings from `reviewer` runs are merge candidates; `impeccable` findings each form their
    own group (`mergedBy: "single"`) and never count toward "Found by".
-2. Candidate pairs (code): findings from different runs with the same `file` (both `null`
-   counts as the same "general" bucket) whose ranges, widened by `MERGE_CANDIDATE_SLACK = 20`
-   lines, overlap (a finding without lines pairs with any finding in the same file).
-3. With Jev available: [finding-merge](#jev-feature-ai-code-reviewfinding-merge) answers the
-   first `MAX_MERGE_PAIRS = 120` pairs in one request. Noul at or above `MERGE_SAME = 0.7` is
-   "same", at or below `MERGE_DIFFERENT = 0.3` is "different", in between falls back to the
-   rule for that pair. Pairs beyond the cap, and every pair when Jev falls back, use the rule.
-4. Rule: same file bucket; ranges overlap after widening each by `MERGE_LINE_SLACK = 3`
-   lines (or neither has lines); and title word-set Jaccard similarity at least
-   `MERGE_TITLE_SIMILARITY = 0.4` (lowercase words of three or more letters, minus a short
-   stop-word list).
-5. Union-find over "same" pairs (transitivity lives in code, never in Jev). Each set is a
-   group: representative = highest severity, then highest confidence, then earliest run,
-   then ordinal; `severity` = highest; `confidence` = highest member confidence, raised to at
-   least `medium` when the group was found by two or more reviewer runs; `mergedBy` = `jev`
-   if any Jev "same" answer joined it, else `rule`, or `single` for one finding.
-6. Re-merge (after "Ask again") recomputes groups; a new group inherits the strongest state of
+2. Pairs: findings from different runs. The rule calls a pair "same" when both have the same
+   `file` (both `null` counts as the same "general" bucket); their ranges overlap after
+   widening each by `MERGE_LINE_SLACK = 3` lines (or neither has lines); and their title
+   word-set Jaccard similarity is at least `MERGE_TITLE_SIMILARITY = 0.4` (lowercase words of
+   three or more letters, minus a short stop-word list).
+3. Union-find over "same" pairs. Each set is a group: representative = highest severity, then
+   highest confidence, then earliest run, then ordinal; `severity` = highest; `confidence` =
+   highest member confidence, raised to at least `medium` when the group was found by two or
+   more reviewer runs; `mergedBy` = `rule`, or `single` for one finding.
+4. Re-merge (after "Ask again") recomputes groups; a new group inherits the strongest state of
    the old groups its findings came from (`sent-to-fix` over `dismissed` over `open`).
 
 "Found by N of M": N = `reviewerRunIds.length`, M = reviewer runs of the review that
 completed. Shown only when M is 2 or more.
 
-### Jev features (`ext-decide`)
-
-The features live in `apps/server/src/fork/ai-code-review/decide.ts` as
-`aiCodeReviewDecideFeatures` (type `DecideFeature` from
-`apps/server/src/fork/decide/registry.ts`) and are appended to `FORK_DECIDE_FEATURES` there
-(EXTENSION-POINTS.md, section 18, "Registering a packet"; create the extension point if its
-existence check fails, exactly as specified). All three default to mode `manual` and use
-`jev-latest` unless the user pins a version in L29.
-
-Every call is `yield* LoomDecide` then
-`decide(featureId, { state, questions }, { origin, threadId, projectId })`
-(`apps/server/src/fork/decide/LoomDecide.ts`). `decide` never fails and resolves within its
-timeout (1,000 ms default); it runs `redactState` and `fitBudget` on every request itself and
-applies the feature's threshold to every Choice and Score answer, so L15 passes no `threshold`
-and keeps its thresholds in `defaultThreshold` (where L29's tuning can change them). L15 builds
-state with named fields and `diffExcerpt(diff, { maxTokens })`
-(`apps/server/src/fork/decide/diffExcerpt.ts`, returning `{ text, files, totals, truncated }`;
-`text` is what goes into the state). Arrays that may be trimmed (file lists) put the least
-important items first, because `fitBudget` drops array elements from the start before it
-shortens strings. Numbers go in as named buckets computed in code, never as arithmetic for Jev
-([jaggedness](https://docs.typesafe.ai/model-jaggedness/jev-1.13)). Every
-`{ status: "fallback" }` takes the non-Jev path described per feature, and the decision id (when
-present) is kept with the result for display and L29 ratings.
-
-```ts
-import type { DecideFeature } from "../decide/registry.ts";
-
-export const aiCodeReviewDecideFeatures: ReadonlyArray<DecideFeature> = [
-  {
-    id: "ai-code-review.reviewer-pick",
-    packet: "L15",
-    label: "Pick the reviewer model",
-    description:
-      "Picks the model and effort for Auto reviewer slots; without Jev, Auto uses the default reviewer and the preset's default effort.",
-    defaultMode: "manual",
-    defaultThreshold: 0.5,
-    // agentTool defaults to true: loom_ai_code_review_start reaches it for agent-started reviews.
-  },
-  {
-    id: "ai-code-review.turn-suggest",
-    packet: "L15",
-    label: "Suggest a review after a turn",
-    description:
-      "Decides whether to show 'Review this turn?' after a turn; without Jev, a changed-line threshold decides.",
-    defaultMode: "manual",
-    defaultThreshold: 0.5,
-    agentTool: false, // automatic only; no MCP tool reaches it
-  },
-  {
-    id: "ai-code-review.finding-merge",
-    packet: "L15",
-    label: "Merge findings across reviewers",
-    description:
-      "Decides whether findings from different reviewers are the same issue; without Jev, a file, line and title rule decides.",
-    defaultMode: "manual",
-    agentTool: false, // automatic only; Noul answers, never gated by a threshold
-  },
-];
-```
-
-**Agent switches.** Only `reviewer-pick` can be reached by an agent: `loom_ai_code_review_start`
-resolves Auto slots with origin `agent`, and `decide` returns `agent-not-allowed` unless the
-user turned on that feature's "Let agents use this" in the Jev section; the review then uses
-the default reviewer, and the tool result says so in one line. The start tool itself is gated
-by L15's own "Let agents use this" (`allowAgents`), because starting a review spends reviewer
-tokens whether or not Jev is involved; L15 adds no second Jev gate. `turn-suggest` and
-`finding-merge` always run with origin `auto` (also inside agent-started reviews), so they
-follow only their "Use Jev" switch.
-
-#### Jev feature `ai-code-review.reviewer-pick`
-
-Origin: `user` (dialog), `agent` (agent tool), `auto` (automatic start). Skipped in code, with
-`too-few-candidates`, when fewer than two candidates are available after removing models that
-are unavailable or already in another slot; one remaining candidate is used directly with
-`pick: manual`.
-
-State:
-
-```json
-{
-  "change": {
-    "target": "uncommitted changes",
-    "size": "medium (200 to 999 changed lines)",
-    "file_count": "several (6 to 20 files)",
-    "kinds": ["source", "tests"],
-    "languages": ["TypeScript", "CSS"],
-    "files": ["apps/web/src/..."]
-  },
-  "author_model": "Claude Opus (Claude)",
-  "extra_instructions": "Focus on the migration.",
-  "diff_excerpt": "..."
-}
-```
-
-`files` holds at most 100 paths; `diff_excerpt` uses `diffExcerpt(diff, { maxTokens: 6_000 })`.
-
-Questions:
-
-- `reviewer`: Choice, instructions "Which candidate is the best reviewer for the change in
-  `change` and `diff_excerpt`?", criteria = one entry per candidate: key = a unique readable
-  label built in code (model name and provider instance), value = the user's description (or
-  null). Keys map back to `ModelSelection` in code.
-- `effort` (only when the preset range has two or more levels): Score, instructions "How much
-  reasoning effort does a careful review of the change in `change` and `diff_excerpt` need?",
-  criteria = the preset's levels in order, each described: low "Small or mechanical change",
-  medium "Ordinary feature or fix", high "Tricky logic, concurrency, security or data
-  handling", max "Large, subtle or high-risk change".
-
-Use:
-
-- `answered`: both answers are confident. Take the `reviewer` choice, and the effort level
-  `clamp(round(score), 0, levels - 1)`.
-- `fallback` with reason `low-confidence`: the result still carries `answers` and
-  `lowConfidenceKeys` (EXTENSION-POINTS.md section 18), which names the unsure questions. If
-  only `effort` is
-  unsure, keep the `reviewer` pick (`pick: jev`, `effortConfidence` recorded) with the preset
-  default effort. If `reviewer` is unsure, use the default model and the preset default effort
-  (`pick: fallback`, reason `low-confidence`, the decision id kept).
-- Any other fallback: the default model (the first non-Auto default slot, else the source
-  thread's model) and the preset default effort, with the reason. The dialog shows it: "Auto
-  unavailable (no Jev key): using Claude Opus", or "Jev was not sure: using Claude Opus".
-
-#### Jev feature `ai-code-review.turn-suggest`
-
-Runs in the reactor on `thread.turn-diff-completed` with origin `auto`. Code pre-gates, in
-order: `suggestAfterTurns` on; the thread is not a reviewer thread; no running review for the
-thread; the checkpoint status is `ready`; `changedLines` (sum over the payload's `files`) is at
-least `SUGGEST_MIN_CHANGED_LINES = 20`. Then:
-
-State: `{ "turn": { "size", "file_count", "kinds", "languages", "files" }, "request": <first 500
-characters of the turn's user message>, "diff_excerpt": <diffExcerpt, 4_000 tokens> }`.
-
-Question `worth_review`: Score, instructions "How useful would an independent code review of
-the changes in `turn` and `diff_excerpt` be before the user keeps them?", criteria ["Not
-useful: docs, formatting, renames or other mechanical changes", "Somewhat useful: small logic
-changes with low risk", "Clearly useful: new logic, security, data handling, concurrency, or
-code many callers depend on"].
-
-Use: `answered` suggests when `score >= 1.5` and does not suggest below it. Any fallback,
-including `low-confidence` (its answer is not used), suggests when
-`changedLines >= suggestAboveChangedLines` (`reason: "threshold"`).
-
-#### Jev feature `ai-code-review.finding-merge`
-
-Origin `auto`. State: `{ "findings": { "f1": { "file", "lines": "L10 to L14", "title",
-"category", "body": <first 600 characters> }, ... } }` with only the findings that appear in
-candidate pairs. Questions, one Noul per pair `same_f1_f2`: instructions "Do `findings.f1` and
-`findings.f2` describe the same problem in the code?", criteria true "The same underlying
-problem, even if worded differently or with different fixes", false "Different problems, even
-if they are in the same place". Use as described in [Merge](#merge-mergerulets-decidets). One request per review;
-the pair cap keeps it inside the 64k request budget
-([speculative fan-out](https://docs.typesafe.ai/patterns/fan-out)).
-
 ### Effort (`effort.ts`)
 
-Levels are ordered `low < medium < high < max`. A preset's range bounds Auto's effort pick and
-supplies the default for manual slots. A level maps to a model's provider option through its
+Levels are ordered `low < medium < high < max`. The selected preset's level is the effort of
+every slot that does not set its own. A level maps to a model's provider option through its
 `ModelCapabilities.optionDescriptors` (`packages/contracts/src/model.ts:125-127`): the `select`
 descriptor whose id is `effort` (Claude, `apps/server/src/provider/ClaudeModelCatalog.ts:196`)
 or `reasoningEffort` (Codex, `apps/server/src/provider/Layers/CodexProvider.ts:180`; Grok,
@@ -845,7 +612,11 @@ goes into `modelSelection.options` as `{ id, value }` (`ProviderOptionSelection`
 
 ### Suggestions and automatic starts
 
-- A suggestion is stored per thread (the latest only) with the turn, changed lines, reason and
+- The reactor handles `thread.turn-diff-completed` and creates a suggestion when, in order:
+  `suggestAfterTurns` is on; the thread is not a reviewer thread; no review of the thread is
+  running; the checkpoint status is `ready`; and `changedLines` (sum over the payload's
+  `files`) is at least `suggestAboveChangedLines`.
+- A suggestion is stored per thread (the latest only) with the turn, changed lines and
   `large`. It is published in `ThreadReviewsSnapshot.suggestion`, dismissed by
   `dismissSuggestion`, replaced by the next turn's suggestion, and cleared when a review of
   that turn starts.
@@ -863,11 +634,10 @@ commitSha?: string, instructions?: string (max 4,000) }`. `turn` means the lates
 - Gate: `settings.allowAgents` (else failure `disabled`); the caller is not a reviewer thread
   (`reviewer-thread`). The caller's own turn is running by definition, so the source-busy
   warning does not apply.
-- Starts with origin `agent`, default reviewers and lenses. Auto slots call reviewer-pick with
-  origin `agent`, which falls back to the default model unless that decide feature allows
-  agents. Above the confirmation threshold it creates a `large` suggestion and returns
-  `{ status: "suggested", message: "The change is large; the user was asked to start the
-review." }`; otherwise `{ status: "started", reviewId, message }`.
+- Starts with origin `agent`, default reviewers and lenses. Above the confirmation threshold
+  it creates a `large` suggestion and returns
+  `{ status: "suggested", message: "The change is large; the user was asked to start the review." }`;
+  otherwise `{ status: "started", reviewId, message }`.
 
 ### impeccable lens (`impeccable.ts`)
 
@@ -924,15 +694,16 @@ targets have no diff scope, so they show "Open file" only.
   `INSERT OR IGNORE INTO fork_thread_lineage_links (child_thread_id, parent_thread_id,
 project_id, kind, context_mode, through_message_id, carried_message_count, created_by,
 created_at) VALUES (?, ?, ?, 'review', 'none', NULL, 0, 'user', ?)` (`created_by` is
-  `'agent'` for agent-started reviews), guarded by the `sqlite_master` check L08 uses. L02
+  `'agent'` for agent-started reviews), guarded by a `sqlite_master` check that the table
+  exists. L02
   defines the `review` kind in `ThreadLineageKind` and its `CHECK` (L02 TECHNICAL.md,
   Storage); on an older L02 table whose `CHECK` predates it, `INSERT OR IGNORE` skips the row
   (SQLite applies IGNORE to CHECK violations). Failures are logged and ignored.
 - **L18 present** (`project-profiles` in `LOOM_SERVER_FEATURES` and its service in the
   runtime): the web registers a `ProfileBindingSource` in L18's `PROFILE_BINDING_SOURCES`
   (`apps/web/src/fork/project-profiles/bindingSources.ts`, L18 TECHNICAL.md) with kind
-  `ai-code-review-reviewer`, label "Reviewer", feature `ai-code-review`, options = "Auto
-  (Jev)" plus the available models. The binding id is the JSON of a `ReviewerSlot`. The
+  `ai-code-review-reviewer`, label "Reviewer", feature `ai-code-review`, options = the
+  available models. The binding id is the JSON of a `ReviewerSlot`. The
   server reads the project's profile in `prepare` with `ProjectProfileService.get(projectId)`
   (L18 TECHNICAL.md, "Binding sources"), looked up as an optional service; the first binding
   of that kind wins. Without L18 there is no per-project reviewer.
@@ -942,8 +713,6 @@ created_at) VALUES (?, ?, ?, 'review', 'none', NULL, 0, 'user', ?)` (`created_by
   gets at most 40 lines: files by minimum depth with hit counts, and "truncated" when capped.
   Absent, stale or failing graph: no section. Wire it with an optional service lookup so L15
   builds and runs without L26.
-- **L29 present:** nothing to do; the Decisions panel shows L15's decide calls from
-  `fork_decide_decisions`.
 
 ### Storage
 
@@ -976,7 +745,6 @@ CREATE TABLE IF NOT EXISTS fork_ai_code_review_runs (
   reviewer_thread_id  TEXT,
   model_json          TEXT,
   effort              TEXT,
-  pick_json           TEXT,
   state               TEXT NOT NULL,
   submit_source       TEXT,
   verdict_json        TEXT,
@@ -1014,9 +782,7 @@ CREATE TABLE IF NOT EXISTS fork_ai_code_review_suggestions (
   turn_id         TEXT NOT NULL,
   turn_number     INTEGER NOT NULL,
   changed_lines   INTEGER NOT NULL,
-  reason          TEXT NOT NULL,
   large           INTEGER NOT NULL,
-  decision_id     TEXT,
   state           TEXT NOT NULL CHECK (state IN ('open', 'dismissed', 'started')),
   created_at      TEXT NOT NULL
 );
@@ -1041,9 +807,8 @@ new fields need no migration.
 ### Capability and version skew
 
 Append `"ai-code-review"` to `LOOM_SERVER_FEATURES`. Every client entry point checks
-`supportsLoomFeature(capabilities, "ai-code-review")`; Auto slots and Jev wording also need
-`decide`. Upstream clients on a Loom server see reviewer threads as ordinary threads. No
-upstream wire schema or event type changes.
+`supportsLoomFeature(capabilities, "ai-code-review")`. Upstream clients on a Loom server see
+reviewer threads as ordinary threads. No upstream wire schema or event type changes.
 
 ### Web (`apps/web/src/fork/ai-code-review/`)
 
@@ -1060,9 +825,7 @@ upstream wire schema or event type changes.
   through `ext-web-root`; opened by the panel, palette, diff button, chip and keybinding.
   Model choice per slot reuses upstream's model picker if it can be rendered standalone,
   otherwise a list built from the provider instances' models; either way it only offers
-  available models. "Auto (Jev)" is offered only when
-  `useDecideFeature(environmentId, "ai-code-review.reviewer-pick").usable`; a saved Auto slot
-  shows the fallback line otherwise. Auto slots resolve through `resolveAuto` after `prepare`.
+  available models.
 - `handBack.ts` (above), `markdown.ts` (Copy as Markdown).
 - `palette.tsx`: items `action:loom:ai-code-review:uncommitted`, `:branch`, `:turn`, `:commit`,
   `:panel`, each with `shortcutCommand` where relevant.
@@ -1075,8 +838,7 @@ upstream wire schema or event type changes.
   `StartReviewDialogHost` subscribes with `onForkCommand("loom.ai-code-review.start", ...)`;
   no packet keydown listener.
 - `settings.tsx`: section id `ai-code-review`, title "AI code review", with the project scope
-  subsection for `autoStartSuggested`. The Auto candidates field is hidden when
-  `useDecideFeature(...).supported` is false (effort presets stay: they also set manual slots); Jev's own switches stay in the Jev section.
+  subsection for `autoStartSuggested`.
 - `profileBinding.ts`: the L18 binding source, registered only when L18 is present.
 
 ### Mobile
@@ -1089,7 +851,4 @@ Nothing in v1. The client-runtime atoms are shared, so a later mobile view needs
   demand with `get`.
 - Completion is driven by domain events and tool calls; no polling. The reactor's filter is a
   map lookup per event.
-- Jev calls are at most one per Auto resolution, one per completed turn that passes the code
-  pre-gates, and one per finished multi-reviewer review; all are bounded by the 1 s timeout
-  and never on a request path longer than the dialog's Auto slot.
 - The chip is a static element; no animation.

@@ -35,11 +35,12 @@ function Tool({
               ? `${status.version ?? "Detected"}${status.path ? ` · ${status.path}` : ""}`
               : "Not detected on the environment host."
       }
-    >
-      <a className="text-sm underline" href={url} target="_blank" rel="noreferrer">
-        Install instructions
-      </a>
-    </SettingsRow>
+      control={
+        <a className="text-sm underline" href={url} target="_blank" rel="noreferrer">
+          Install instructions
+        </a>
+      }
+    />
   );
 }
 function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }) {
@@ -53,14 +54,16 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
   const valid = !url.trim() || electronicsDesignUrl(url, "/design.kicad_pro") !== null;
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        Tools run on this environment's host. Loom searches PATH, standard macOS KiCad
-        installations, and each project's node_modules/.bin/tsci. tscircuit also needs Bun.
-      </p>
-      {(result.waiting || result._tag === "Initial") && (
-        <OperationStatus label="Detecting PCB tools" />
-      )}
-      {asyncError(result) && <p role="alert">{asyncError(result)}</p>}
+      <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
+        <p className="text-sm text-muted-foreground">
+          Tools run on this environment's host. Loom searches PATH, standard macOS KiCad
+          installations, and each project's node_modules/.bin/tsci. tscircuit also needs Bun.
+        </p>
+        {(result.waiting || result._tag === "Initial") && (
+          <OperationStatus label="Detecting PCB tools" />
+        )}
+        {asyncError(result) && <p role="alert">{asyncError(result)}</p>}
+      </div>
       <Tool name="KiCad CLI" status={info?.kicad} url="https://www.kicad.org/download/" />
       <Tool
         name="tscircuit CLI"
@@ -72,57 +75,61 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
         status={info?.ngspice}
         url="https://ngspice.sourceforge.io/download.html"
       />
-      <p className="text-xs text-muted-foreground">
-        A project-local tscircuit installation is detected when you open that project's preview.
-        Detection refreshes at most once per minute.
-      </p>
-      <div>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={result.waiting}
-          onClick={() => appAtomRegistry.refresh(pcb.status(target))}
-        >
-          Check tools again
-        </Button>
+      <div className="flex flex-col gap-3 px-3 sm:px-4">
+        <p className="text-xs text-muted-foreground">
+          A project-local tscircuit installation is detected when you open that project's preview.
+          Detection refreshes at most once per minute.
+        </p>
+        <div>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={result.waiting}
+            onClick={() => appAtomRegistry.refresh(pcb.status(target))}
+          >
+            Check tools again
+          </Button>
+        </div>
       </div>
       <SettingsRow
         title="Electronics app URL"
         description="Optional deep link for opening designs. Saved on this device."
       >
-        <Input
-          aria-label="Electronics app URL"
-          type="url"
-          placeholder="https://electronics.example.com"
-          value={url}
-          onChange={(e) => {
-            setUrl(e.target.value);
-            setMessage(null);
-          }}
-        />
+        <div className="flex flex-col gap-2 pb-2">
+          <Input
+            aria-label="Electronics app URL"
+            type="url"
+            placeholder="https://electronics.example.com"
+            value={url}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setMessage(null);
+            }}
+          />
+          {!valid && (
+            <p role="alert" className="text-sm">
+              Enter an HTTP or HTTPS URL without embedded credentials.
+            </p>
+          )}
+          <div>
+            <Button
+              size="sm"
+              disabled={!valid}
+              onClick={() => {
+                save(url.trim());
+                setMessage(url.trim() ? "Electronics link saved." : "Electronics link removed.");
+              }}
+            >
+              Save link
+            </Button>
+          </div>
+          {message && (
+            <p role="status" className="text-sm">
+              {message}
+            </p>
+          )}
+        </div>
       </SettingsRow>
-      {!valid && (
-        <p role="alert" className="text-sm">
-          Enter an HTTP or HTTPS URL without embedded credentials.
-        </p>
-      )}
-      <div>
-        <Button
-          size="sm"
-          disabled={!valid}
-          onClick={() => {
-            save(url.trim());
-            setMessage(url.trim() ? "Electronics link saved." : "Electronics link removed.");
-          }}
-        >
-          Save link
-        </Button>
-      </div>
-      {message && (
-        <p role="status" className="text-sm">
-          {message}
-        </p>
-      )}
     </div>
   );
 }

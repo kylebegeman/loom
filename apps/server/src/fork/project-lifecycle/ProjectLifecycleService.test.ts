@@ -20,6 +20,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as Config from "../../config.ts";
@@ -33,6 +34,7 @@ import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite
 import * as ProcessRunner from "../../processRunner.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLifecycleMigrations } from "./migrations.ts";
+import { GB } from "./policy.ts";
 import { makeWith } from "./ProjectLifecycleService.ts";
 import { makeStore } from "./store.ts";
 
@@ -57,6 +59,8 @@ const thread = (id: string, fields: Partial<OrchestrationV2ThreadShell> = {}) =>
     settledAt: null,
     settledOverride: null,
     activeRunId: null,
+    creationSource: "web",
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
     ...fields,
   }) as OrchestrationV2ThreadShell;
 
@@ -111,101 +115,118 @@ const alive = (pid: number) => {
   }
 };
 
-const setup = Effect.gen(function* () {
-  const home = NodeFS.realpathSync(NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-lc-")));
-  yield* Effect.addFinalizer(() =>
-    Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true })),
-  );
-  const checkout = NodePath.join(home, "src", "app");
-  const worktree = NodePath.join(home, "worktrees", "app-feature");
-  NodeFS.mkdirSync(checkout, { recursive: true });
-  NodeFS.mkdirSync(worktree, { recursive: true });
-  NodeFS.writeFileSync(NodePath.join(checkout, "App.xcodeproj"), "");
+/** `devUrl` makes the service behave as a dev server would. */
+const setupWith = (options: { readonly devUrl?: URL } = {}) =>
+  Effect.gen(function* () {
+    const home = NodeFS.realpathSync(
+      NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-lc-")),
+    );
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => NodeFS.rmSync(home, { recursive: true, force: true })),
+    );
+    const checkout = NodePath.join(home, "src", "app");
+    const worktree = NodePath.join(home, "worktrees", "app-feature");
+    NodeFS.mkdirSync(checkout, { recursive: true });
+    NodeFS.mkdirSync(worktree, { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(checkout, "App.xcodeproj"), "");
 
-  const threads: Array<OrchestrationV2ThreadShell> = [];
-  const sent: Array<ThreadManagementSendInput> = [];
-  const events = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
-  const threadManagement = partial<ThreadManagementService["Service"]>({
-    getShellSnapshot: () =>
-      Effect.succeed({
-        schemaVersion: 1,
-        snapshotSequence: 0,
-        threads: [...threads],
-        archivedThreads: [],
-      }),
-    sendToThread: (input) =>
-      Effect.sync(() => {
-        sent.push(input);
-        // The service ignores the result.
-        return {} as never;
-      }),
-    streamDomainEvents: Stream.fromPubSub(events),
+    const threads: Array<OrchestrationV2ThreadShell> = [];
+    const sent: Array<ThreadManagementSendInput> = [];
+    const events = yield* PubSub.unbounded<OrchestrationV2DomainEvent>();
+    const threadManagement = partial<ThreadManagementService["Service"]>({
+      getShellSnapshot: () =>
+        Effect.succeed({
+          schemaVersion: 1,
+          snapshotSequence: 0,
+          threads: [...threads],
+          archivedThreads: [],
+        }),
+      sendToThread: (input) =>
+        Effect.sync(() => {
+          sent.push(input);
+          // The service ignores the result.
+          return {} as never;
+        }),
+      streamDomainEvents: Stream.fromPubSub(events),
+    });
+    const projects = partial<ProjectStore.ProjectStoreV2["Service"]>({
+      listShells: () =>
+        Effect.succeed([
+          { id: projectId, title: "App", workspaceRoot: checkout } as OrchestrationProjectShell,
+        ]),
+    });
+    const deviceSessions: Array<DeviceSession> = [];
+    const closed: Array<{ threadId: string; deviceId?: string; shutdown?: boolean }> = [];
+    const devices = partial<DeviceService["Service"]>({
+      state: Effect.sync(
+        () => ({ sessions: [...deviceSessions] }) as unknown as DeviceServiceState,
+      ),
+      sessionsForThread: (threadId) =>
+        Effect.sync(() => deviceSessions.filter((entry) => entry.threadId === threadId)),
+      close: (input) =>
+        Effect.sync(() => {
+          closed.push({
+            threadId: input.threadId,
+            ...(input.deviceId === undefined ? {} : { deviceId: input.deviceId }),
+            ...(input.shutdown === undefined ? {} : { shutdown: input.shutdown }),
+          });
+          for (let index = deviceSessions.length - 1; index >= 0; index--) {
+            const entry = deviceSessions[index]!;
+            if (entry.threadId === input.threadId && entry.deviceId === input.deviceId)
+              deviceSessions.splice(index, 1);
+          }
+        }),
+    });
+    const { stubs, log } = writeStubs(home);
+    const context = yield* Layer.build(
+      Layer.mergeAll(
+        options.devUrl === undefined
+          ? Config.layerTest(home, NodePath.join(home, "state"))
+          : Layer.effect(
+              Config.ServerConfig,
+              Config.ServerConfig.pipe(
+                Effect.map((config) => ({ ...config, devUrl: options.devUrl })),
+              ),
+            ).pipe(Layer.provide(Config.layerTest(home, NodePath.join(home, "state")))),
+        SqlitePersistenceMemory,
+        ProcessRunner.layer,
+      ).pipe(Layer.provideMerge(NodeServices.layer)),
+    );
+    yield* runForkMigrationSet(ProjectLifecycleMigrations).pipe(Effect.provide(context));
+    const create = makeWith({
+      homeDir: home,
+      imageBackend: false,
+      xcrunPath: NodePath.join(stubs, "xcrun"),
+      dockerPath: NodePath.join(stubs, "docker"),
+      lsofPath: NodePath.join(stubs, "lsof"),
+      // Growth and reserve steering depend on free space, so the host is pinned well above both.
+      hostSpace: async () => ({ free: 1000 * GB, total: 2000 * GB }),
+    }).pipe(
+      Effect.provide(context),
+      Effect.provideService(ThreadManagementService, threadManagement),
+      Effect.provideService(ProjectStore.ProjectStoreV2, projects),
+      Effect.provideService(DeviceService, devices),
+    );
+    const service = yield* create;
+    yield* service.updateSettings({ ...(yield* service.getSettings), reserveGb: 0 });
+    const store = yield* makeStore.pipe(Effect.provide(context));
+    return {
+      home,
+      checkout,
+      worktree,
+      threads,
+      sent,
+      events,
+      service,
+      create,
+      store,
+      deviceSessions,
+      closed,
+      log,
+    };
   });
-  const projects = partial<ProjectStore.ProjectStoreV2["Service"]>({
-    listShells: () =>
-      Effect.succeed([
-        { id: projectId, title: "App", workspaceRoot: checkout } as OrchestrationProjectShell,
-      ]),
-  });
-  const deviceSessions: Array<DeviceSession> = [];
-  const closed: Array<{ threadId: string; deviceId?: string; shutdown?: boolean }> = [];
-  const devices = partial<DeviceService["Service"]>({
-    state: Effect.sync(() => ({ sessions: [...deviceSessions] }) as unknown as DeviceServiceState),
-    sessionsForThread: (threadId) =>
-      Effect.sync(() => deviceSessions.filter((entry) => entry.threadId === threadId)),
-    close: (input) =>
-      Effect.sync(() => {
-        closed.push({
-          threadId: input.threadId,
-          ...(input.deviceId === undefined ? {} : { deviceId: input.deviceId }),
-          ...(input.shutdown === undefined ? {} : { shutdown: input.shutdown }),
-        });
-        for (let index = deviceSessions.length - 1; index >= 0; index--) {
-          const entry = deviceSessions[index]!;
-          if (entry.threadId === input.threadId && entry.deviceId === input.deviceId)
-            deviceSessions.splice(index, 1);
-        }
-      }),
-  });
-  const { stubs, log } = writeStubs(home);
-  const context = yield* Layer.build(
-    Layer.mergeAll(
-      Config.layerTest(home, NodePath.join(home, "state")),
-      SqlitePersistenceMemory,
-      ProcessRunner.layer,
-    ).pipe(Layer.provideMerge(NodeServices.layer)),
-  );
-  yield* runForkMigrationSet(ProjectLifecycleMigrations).pipe(Effect.provide(context));
-  const create = makeWith({
-    homeDir: home,
-    imageBackend: false,
-    xcrunPath: NodePath.join(stubs, "xcrun"),
-    dockerPath: NodePath.join(stubs, "docker"),
-    lsofPath: NodePath.join(stubs, "lsof"),
-  }).pipe(
-    Effect.provide(context),
-    Effect.provideService(ThreadManagementService, threadManagement),
-    Effect.provideService(ProjectStore.ProjectStoreV2, projects),
-    Effect.provideService(DeviceService, devices),
-  );
-  const service = yield* create;
-  yield* service.updateSettings({ ...(yield* service.getSettings), reserveGb: 0 });
-  const store = yield* makeStore.pipe(Effect.provide(context));
-  return {
-    home,
-    checkout,
-    worktree,
-    threads,
-    sent,
-    events,
-    service,
-    create,
-    store,
-    deviceSessions,
-    closed,
-    log,
-  };
-});
+
+const setup = setupWith();
 
 const laneOf = (status: ProjectLifecycleStatus, checkoutPath: string) =>
   status.lanes.find((lane) => lane.checkoutPath === checkoutPath);
@@ -349,6 +370,21 @@ describe("ProjectLifecycleService", () => {
 
       yield* t.service.removeShell();
       expect(NodeFS.readFileSync(target, "utf8")).toBe("export EDITOR=vim\n");
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("installs a dev server's shell hook in its own profile, not ~/.zshenv", () =>
+    Effect.gen(function* () {
+      const t = yield* setupWith({ devUrl: new URL("http://localhost:5733") });
+      NodeFS.writeFileSync(`${t.home}/.zshenv`, "export EDITOR=vim\n");
+
+      yield* t.service.installShell();
+      const status = yield* Stream.runHead(t.service.changes);
+      const profilePath = Option.getOrThrow(status).shell.profilePath;
+      expect(profilePath.startsWith(`${t.home}/state/`)).toBe(true);
+      expect(NodeFS.readFileSync(profilePath, "utf8")).toContain("lanes.zsh'");
+      yield* t.service.removeShell();
+      expect(NodeFS.readFileSync(`${t.home}/.zshenv`, "utf8")).toBe("export EDITOR=vim\n");
     }).pipe(Effect.scoped),
   );
 

@@ -3,7 +3,7 @@ import type { ExecutionEnvironmentCapabilities } from "@t3tools/contracts";
 const NO_FEATURES: ReadonlyArray<string> = [];
 
 /**
- * Loom features (packet slugs, `core`, `decide`) an environment supports. Empty on upstream
+ * Loom features (packet slugs and `core`) an environment supports. Empty on upstream
  * T3 servers.
  */
 export const loomFeaturesOf = (

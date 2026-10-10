@@ -84,12 +84,10 @@ implementation readiness. Confirmed deferrals:
 - **L26 Code graph: deferred by Kyle on 2026-09-27, included on 2026-10-09** once V2
   shipped in nightly (selected queue, order 8), and built on V2 events with the full code
   map, change-impact, agent-query and automatic-update scope.
-- **L29 Jev hub: confirmed deferred by Kyle on 2026-09-27.** Retain the full log,
-  playground, templates, ratings and tuning scope. Revisit released thread/turn/diff/approval
-  contracts and the deferred consumers after V2 ships; no partial playground substitute.
-  The [jevgrep review](./L29-jev-hub/REFERENCES.md#jevgrep-review-2026-09-27) identifies an
-  independent code-retrieval experiment and SDK options for later evaluation. Neither is
-  selected for installation or implementation by this review.
+- **L29 Jev hub: retired by Kyle on 2026-10-09.** Jev moved to its own project outside
+  Loom, and Loom drops all Jev support. Do not implement it here.
+- **L28 Auto-resume: retired by Kyle on 2026-10-09.** Switchboard, Kyle's external tool,
+  already resumes rate-limited agents automatically.
 - **L30 Loom plugins: designed and parked by Kyle on 2026-10-09.** Every feature becomes a
   plugin with one definition per layer and a per-environment switch in Settings. The packet
   is fully documented but not selected for implementation. The selected packets have

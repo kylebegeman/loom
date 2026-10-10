@@ -30,7 +30,8 @@ whichever client sends the message, including the upstream mobile app.
   - Native per-provider instruction channels (Codex developer instructions, Claude system
     prompt). One uniform path instead; see TECHNICAL.md, "Alternatives".
   - Skills (L21) and AGENTS.md or CLAUDE.md editing.
-  - Pinned goals (L03). L03 contributes through the same extension point.
+  - Pinned goals. L03's fork goals were retired on 2026-10-09; upstream's native `/goal`
+    covers them.
   - Sync of packs between environments. Point each environment's folder at a synced
     dotfiles checkout, or use export and import.
   - Follow-up: sending the block only when the set changes (Kyle chose every turn).
@@ -67,9 +68,6 @@ None. The only upstream touch is the `ext-turn-input` extension point.
 
 ## Optional integrations
 
-- If L17 is present, its drivers receive modes too (they go through `sendTurn`).
-- If L03 is present, its goal block is sent after this packet's block (order 20 against
-  10); neither packet depends on the other.
 - If L20's private mode is on for a project, its block (order 5) is sent before this one;
   neither packet depends on the other.
 

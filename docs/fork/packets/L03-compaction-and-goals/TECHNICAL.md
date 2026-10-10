@@ -1,7 +1,13 @@
 # L03 technical design
 
-All citations are to this fork at upstream v0.0.42 (commit `a931bd85f3`). Line numbers drift;
-search for the quoted code when they do.
+All citations are to this fork at upstream v0.0.42 (commit `a931bd85f3`), before V2. V2
+removed `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts`; recheck every
+citation against current source before building. Line numbers drift; search for the quoted
+code when they do.
+
+The fork goal design (a goal table, RPCs, a chip, a composer button and delivery through
+`ext-turn-input`) was retired on 2026-10-09, Kyle approved: upstream's native `/goal` with
+its banner covers it (README, "Retired parts").
 
 ## Overview
 
@@ -10,12 +16,9 @@ search for the quoted code when they do.
    palette / keybinding --> threadEnvironment.startTurn({ message: { text: "/compact" } })
                              --> upstream ProviderCommandReactor /compact path (unchanged)
 
- Goals
-   chip / footer button / palette / keybinding --> loom.compaction-and-goals.{getGoal,setGoal,clearGoal}
-                                    --> ThreadGoalStore (fork_compaction_and_goals_goals)
-   ProviderService.sendTurn --(ext-turn-input)--> goal contributor
-                                    --> prepends <loom_goal> to the provider input when active
-   GoalCleanupReactor: thread.deleted / project.deleted
+ Goal shortcuts (client-only)
+   palette / keybinding --> threadEnvironment.startTurn({ message: { text: "/goal ..." } })
+                         --> upstream native /goal (Codex, Claude; unchanged)
 ```
 
 ## Part A: compaction
@@ -116,224 +119,63 @@ registered in `ForkRoot` that subscribes with `onForkCommand` and reads the acti
 same way the palette registry does (`useHandleNewThread().activeThread`,
 `apps/web/src/hooks/useHandleNewThread.ts:442`).
 
-## Part B: goals
+## Part B: goal shortcuts
 
-### Contracts (`packages/contracts/src/fork/compaction-and-goals.ts`)
+### What upstream already does
 
-```ts
-export const COMPACTION_AND_GOALS_WS_METHODS = {
-  getGoal: "loom.compaction-and-goals.getGoal",
-  setGoal: "loom.compaction-and-goals.setGoal",
-  setGoalState: "loom.compaction-and-goals.setGoalState",
-  clearGoal: "loom.compaction-and-goals.clearGoal",
-} as const;
+Codex and Claude support a native `/goal` (`docs/user/composer.md`, "Goals"). The thread
+shell carries the active provider thread's goal (`goal` on the thread shell,
+`packages/contracts/src/orchestrationV2.ts`, `OrchestrationV2ProviderGoal`), and
+`presentProviderGoal` (`packages/client-runtime/src/state/threadExecution.ts`) derives its
+title and `canResume`. `ChatView`'s goal row sends `/goal resume` and `/goal clear` through
+`sendStandaloneCommand`, the same standalone turn path as `/compact`, and shows those
+buttons only while the thread is idle.
 
-export const THREAD_GOAL_MAX_CHARS = 4_000;
+### Palette and keybinding
 
-export const ThreadGoalState = Schema.Literals(["active", "paused", "met"]);
-export type ThreadGoalState = typeof ThreadGoalState.Type;
+`apps/web/src/fork/compaction-and-goals/goals.ts` exports a pure
+`resolveGoalCommands(input)` over the same inputs as `resolveCompactionAvailability` plus the
+shell's `goal`. It returns the items to show and, for each, `available` or a disabled reason:
 
-export const ThreadGoal = Schema.Struct({
-  threadId: ThreadId,
-  objective: TrimmedNonEmptyString.check(Schema.isMaxLength(THREAD_GOAL_MAX_CHARS)),
-  state: ThreadGoalState,
-  setAt: IsoDateTime,
-  updatedAt: IsoDateTime,
-});
-export type ThreadGoal = typeof ThreadGoal.Type;
+- no server thread: no goal items;
+- the thread's provider driver is not Codex or Claude: "Goals need Codex or Claude";
+- session `starting` or `running`: "Wait for the current turn to finish";
+- a pending approval or user input: "Answer the pending request first";
+- "Set goal" always (it replaces an existing goal, as `/goal <objective>` does upstream);
+  "Clear goal" when `goal` is set; "Pause goal" for Codex with an `active` goal; "Resume
+  goal" for Codex when `presentProviderGoal(goal, false).canResume`.
 
-export class ThreadGoalError extends Schema.TaggedError<ThreadGoalError>()("ThreadGoalError", {
-  reason: Schema.Literals(["thread-not-found", "goal-not-found", "persistence"]),
-  detail: Schema.String,
-}) {}
+Each item dispatches the same `startTurn` as compaction with the text `/goal pause`,
+`/goal resume`, `/goal clear` or `/goal <objective>`. "Set goal" and the keybinding command
+`loom.compaction-and-goals.goal` open a small dialog (`SetGoalDialog.tsx`, a textarea and
+"Set goal"/"Cancel"); the trimmed objective must be non-empty and is sent as one line after
+`/goal `. Errors surface as a toast with the command failure.
 
-// getGoal:      { threadId }                         -> { goal: NullOr(ThreadGoal) }
-// setGoal:      { threadId, objective, state? }      -> { goal: ThreadGoal }   (state defaults to "active")
-// setGoalState: { threadId, state }                  -> { goal: ThreadGoal }   (fails goal-not-found)
-// clearGoal:    { threadId }                         -> { cleared: ThreadGoal | null } (returned for Undo)
-// Every error union: Schema.Union([ThreadGoalError, EnvironmentAuthorizationError]).
-export const CompactionAndGoalsRpcGroup = RpcGroup.make(/* four Rpc.make(...) */);
-```
+Gating: no `loomFeatures` check; the items only send upstream commands.
 
-Scopes: `getGoal` `orchestration:read`; the three writes `orchestration:operate`. All
-unary. Register the group in `fork/rpc.ts` and export the file from `fork/index.ts`.
+### Files (`apps/web/src/fork/compaction-and-goals/`)
 
-### Storage
-
-Migration set slug `compaction-and-goals` (tracking table
-`fork_migrations_compaction_and_goals`), id 1 `Goals`:
-
-```sql
-CREATE TABLE IF NOT EXISTS fork_compaction_and_goals_goals (
-  thread_id   TEXT PRIMARY KEY,
-  project_id  TEXT NOT NULL,
-  objective   TEXT NOT NULL,
-  state       TEXT NOT NULL CHECK (state IN ('active', 'paused', 'met')),
-  set_at      TEXT NOT NULL,
-  updated_at  TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS fork_compaction_and_goals_goals_project
-  ON fork_compaction_and_goals_goals (project_id);
-```
-
-`set_at` changes only when the objective text changes; state changes update `updated_at`.
-`project_id` is copied from the thread shell at write time so a `project.deleted` cleanup
-needs no join.
-
-### Server (`apps/server/src/fork/compaction-and-goals/`)
-
-| File                   | Contents                                                                                                                                                                           |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `migrations.ts`        | `CompactionAndGoalsMigrations`.                                                                                                                                                    |
-| `ThreadGoalStore.ts`   | Repository: `get(threadId)`, `upsert(goal, projectId)`, `setState`, `delete`, `deleteByProject`.                                                                                   |
-| `ThreadGoalService.ts` | RPC logic: validates the thread exists and is not deleted (`ProjectionSnapshotQuery.getThreadShellById`, `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:217`). |
-| `goalTurnInput.ts`     | The `ext-turn-input` contributor and the pure `renderGoalBlock` formatter.                                                                                                         |
-| `cleanupReactor.ts`    | `thread.deleted` and `project.deleted` cleanup with `forkParked`, like L02's.                                                                                                      |
-| `rpc.ts`               | `makeCompactionAndGoalsRpcHandlers(auth)`.                                                                                                                                         |
-
-`ThreadGoalStore` and `ThreadGoalService` join `ForkServices` and `ForkServicesLive`;
-`"compaction-and-goals"` is appended to `LOOM_SERVER_FEATURES`.
-
-The reactor mirrors `apps/server/src/orchestration/Layers/ThreadDeletionReactor.ts:92-106`
-(`forkParked` at `apps/server/src/serverActivation.ts:12-26`) on
-`engine.streamDomainEvents` (`OrchestrationEngine.ts:83`), with a startup sweep of goals
-whose thread is gone from `getShellSnapshot()`.
-
-### Delivery through `ext-turn-input`
-
-The one place every provider turn passes through is `ProviderService.sendTurn`
-(`apps/server/src/provider/Layers/ProviderService.ts:1569`). After it expands citations
-(`const inputTextWithCitations = ...`, 1584-1585) it re-validates the text against the
-schema (1586-1592) and then appends attachment paths (1594-1670) before routing to the
-adapter. Adapters then add their own runtime text: Codex per turn in
-`collaborationMode.settings.developer_instructions` (`CodexSessionRuntime.ts:583-606`),
-Claude once per session in `systemPrompt.append` (`ClaudeAdapter.ts:4724-4729`), OpenCode
-per turn as `system` (`OpenCodeAdapter.ts:3214-3227`), ACP adapters as a trailing text part
-(`CursorAdapter.ts:1060-1068`, `GrokAdapter.ts:1619-1623`, `AntigravityAdapter.ts:1082-1090`).
-None of those accepts a user-defined, per-thread instruction, and the provider input
-contract has no field for one (`ProviderSendTurnInput`, `packages/contracts/src/provider.ts:69-82`).
-Hooking `sendTurn` once covers all six adapters with one seam.
-
-The extension point
-([EXTENSION-POINTS.md, section 16](../EXTENSION-POINTS.md#16-provider-turn-input-ext-turn-input))
-collects blocks from registered contributors and prepends them to the provider-bound text,
-sorted by order. It already skips continuation turns (no input), slash commands such as
-upstream's own `/compact` turn (which `compactThread` sends through this same `sendTurn`),
-and any block that would exceed the input limit; a failing contributor is logged and skipped.
-This packet's contributor has id `compaction-and-goals` and order 20, so L20's private mode
-block (order 5) and L22's instruction modes block (order 10), when present, come first.
-
-Prepending rather than appending keeps Claude's skill dispatch intact: a `$skill` mention
-turns into a final `/name` block whose trailing text becomes the skill's arguments
-(`apps/server/src/provider/Drivers/ClaudeSkillDispatch.ts:1-24`), so appended goal text would
-be passed to the skill.
-
-`makeGoalTurnInputContributor(store)`, registered in `ThreadGoalService`'s layer with
-`registerForkTurnInputContributor`:
-
-```ts
-export const renderGoalBlock = (objective: string): string =>
-  `<loom_goal>\nThe user pinned this standing goal to the thread. Keep working toward it across turns, and say so when you believe it is met.\n<objective>\n${escapeGoalTags(objective)}\n</objective>\n</loom_goal>`;
-
-export const makeGoalTurnInputContributor = (store: ThreadGoalStore["Service"]) => ({
-  id: "compaction-and-goals",
-  order: 20,
-  contribute: ({ threadId }: ForkTurnInputContext) =>
-    store.get(threadId).pipe(
-      Effect.map((goal) =>
-        Option.isSome(goal) && goal.value.state === "active"
-          ? renderGoalBlock(goal.value.objective)
-          : undefined,
-      ),
-      Effect.orElseSucceed(() => undefined),
-    ),
-});
-```
-
-`PROVIDER_SEND_TURN_MAX_INPUT_CHARS` is 120,000 (`packages/contracts/src/orchestration.ts:164`).
-`escapeGoalTags` replaces `</objective>` and `</loom_goal>` in the objective with look-alikes,
-so a goal cannot break the wrapper. The objective is at most 4,000 characters, so the block
-stays far below the input limit.
-
-What this means per provider:
-
-- The goal text lands in each provider's native transcript (Claude session file, Codex
-  rollout, OpenCode session) as part of the user turn. T3's timeline shows only what the user
-  typed. Opening the session in the provider's own CLI shows the goal block; accepted.
-- Token cost: at most about 1,100 tokens per turn while a goal is active.
-- Plan mode: Codex and Claude plan turns receive the goal too; this is desirable.
-
-### Clients
-
-- `packages/client-runtime/src/fork/compaction-and-goals.ts`:
-  `createCompactionAndGoalsAtoms(runtime)` returning `getGoal` (query family,
-  `staleTimeMs: 10_000`) and `setGoal`, `setGoalState`, `clearGoal` (commands whose
-  `onSuccess` refreshes the thread's `getGoal` entry). Factories at
-  `packages/client-runtime/src/state/runtime.ts:612,678`.
-- `apps/web/src/fork/compaction-and-goals/`:
-
-| File                     | Purpose                                                                                                                                                                 |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `state.ts`               | Atom instances with `connectionAtomRuntime`; `useThreadGoal(ref)`; capability check.                                                                                    |
-| `compaction.ts`          | `resolveCompactionAvailability`, `useCompactThread()`.                                                                                                                  |
-| `goalEditorStore.ts`     | Small zustand store `{ openFor: ScopedThreadRef \| null }`.                                                                                                             |
-| `ThreadGoalChip.tsx`     | The chip (seam component). Renders `null` without the feature, a server thread, or a goal.                                                                              |
-| `GoalComposerButton.tsx` | `ext-composer` footer block (`FORK_COMPOSER_BLOCKS` entry, id `compaction-and-goals`). Opens the editor dialog through `goalEditorStore`.                               |
-| `GoalEditor.tsx`         | Popover content with the 4,000-character textarea and counter.                                                                                                          |
-| `GoalCommandsHost.tsx`   | `ForkRoot` component: subscribes to the two keybinding commands; renders the editor dialog when opened from the palette or keybinding (the chip opens its own popover). |
-| `palette.tsx`            | Palette source for compaction and goal items.                                                                                                                           |
-
-`ThreadGoalChip` layout: it sits in the banner overlay at the top of the chat column
-(`ChatView.tsx:9423-9437`), which is `pointer-events-none absolute inset-x-0 top-0 z-20`;
-the chip sets `pointer-events-auto`, centers itself with the timeline's max width
-(`max-w-3xl`, as the timeline root does), wraps long text (`wrap-anywhere`, one line
-collapsed, full text expanded), and never animates continuously. It refetches the goal on
-window focus through the query's stale time.
-
-`GoalComposerButton` receives `{ environmentId, threadRef, size }` from ext-composer
-(EXTENSION-POINTS.md, section 11). It renders `null` without the feature or when
-`useThreadShell(threadRef)` (`apps/web/src/state/entities.ts:99`) returns `null` (a draft
-thread). Otherwise it renders a small ghost button sized by `size` (target icon, label
-"Goal" at `sm`, icon only at `xs`) with the tooltip "Set goal" or "Edit goal" from
-`useThreadGoal(threadRef)`; clicking sets `goalEditorStore.openFor = threadRef`, and
-`GoalCommandsHost` renders the same editor dialog the palette uses. The block is appended
-by ext-composer, so upstream hides it first when the footer runs out of space; the palette,
-keybinding and chip remain.
-
-Goal gating: `supportsLoomFeature(serverConfig?.environment.capabilities, "compaction-and-goals")`
-for the thread's environment.
+| File                | Purpose                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| `compaction.ts`     | `resolveCompactionAvailability`, `useCompactThread()`.                                           |
+| `goals.ts`          | `resolveGoalCommands`, `useSendGoalCommand()`.                                                   |
+| `SetGoalDialog.tsx` | The set goal dialog.                                                                             |
+| `CommandsHost.tsx`  | `ForkRoot` component: subscribes to the two keybinding commands and renders the set goal dialog. |
+| `palette.tsx`       | Palette source for compaction and goal items.                                                    |
 
 ## Agent-facing tools
 
-None. An MCP tool ("read my goal") would depend on the agent choosing to call it, which
-defeats a standing instruction (EXTENSION-POINTS.md, Orchestration rule 5 lists it first,
-but it does not meet "passed to the provider").
+None. Agents can already send `/compact` and `/goal` as ordinary turns.
 
 ## Performance
 
-- Server: one indexed primary-key read per provider turn, only when a goal contributor is
-  registered. No read at all for slash commands and continuation turns.
-- Client: one small query per visible thread; the chip is a few elements. No subscription.
-- Palette items are pure functions of the shell and provider entries, rebuilt per palette
-  render like upstream's.
+Palette items are pure functions of the shell and provider entries, rebuilt per palette
+render like upstream's. No server work, no subscriptions.
 
 ## Alternatives considered
 
-- **Goals as orchestration state with new events** (old Loom 0011: `thread.goal-set` and
-  `thread.goal-cleared` events, `goal` on the thread read model). Rejected: new events are a
-  one-way door and touch the decider, projector and every read model.
-- **Client-side prefix on each message.** Rejected: it shows in the user's bubble, is missed
-  by turns sent from other clients (mobile, other browsers), and needs a composer send hook
-  that does not exist.
-- **Session-level instructions** (Claude `systemPrompt.append`, Codex
-  `developerInstructions` at thread start). Rejected for v1: Claude cannot change them
-  without restarting the session, and it needs adapter seams in each driver.
-- **Codex native goals** (`thread/goal/set|get|clear`, `V2ThreadGoalSetParams` at
-  `packages/effect-codex-app-server/src/_generated/schema.gen.ts:40443`, statuses at 6899).
-  Follow-up (decided: not now): needs access to the running Codex session from fork code (a
-  Codex adapter seam), covers only one provider, and would double-deliver alongside the
-  text path unless the contributor skipped Codex. Revisit only if Codex native goals add
-  behavior the text path lacks, such as persistence across Codex's own compaction.
-- **A composer context record per turn** (the zero-seam path L02 uses for transcripts).
-  Rejected: it must be attached by the client at send time, again needing a send hook, and
-  would show a chip in every message.
+- **Fork goals with per-turn delivery** (a goal table, a chip, and a `<loom_goal>` block
+  prepended to every turn through `ext-turn-input`). Designed here, then retired on
+  2026-10-09, Kyle approved: upstream's native `/goal` and banner cover it.
+- **Goals as orchestration state with new events** (old Loom 0011). Rejected: new events are
+  a one-way door; upstream now owns goal state natively.

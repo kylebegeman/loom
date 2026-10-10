@@ -44,6 +44,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { Command, Flag } from "effect/cli";
 
 import * as ProjectionStore from "../src/orchestration-v2/ProjectionStore.ts";
+// fork: dev-db
+import { FORK_LIVE_RESOURCE_TABLES } from "../src/fork/devDb.ts";
 import { migrationManifest, runMigrations } from "../src/persistence/Migrations.ts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
@@ -302,6 +304,7 @@ const copySourceSlice = Effect.fn("copyDevDbSourceSlice")(function* (sourcePath:
       }
       for (const { name } of tables) {
         if (CLEARED_TABLES.includes(name)) continue;
+        if (FORK_LIVE_RESOURCE_TABLES.includes(name)) continue; // fork: dev-db
         const nullable = threadIdNullable.get(name);
         const filter = !filtered
           ? ""

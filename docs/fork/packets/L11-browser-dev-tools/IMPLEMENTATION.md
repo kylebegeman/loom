@@ -19,7 +19,8 @@ dock through `ext-desktop`.
 ## Phase 0: extension points
 
 Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-settings`,
-`ext-palette`, `ext-web-root`, `ext-keybindings`, `ext-mcp`. `ext-desktop` waits for phase 4.
+`ext-palette`, `ext-web-root`, `ext-keybindings`. `ext-desktop` waits for phase 4. `ext-mcp`
+is no longer needed (phase 3 is retired).
 
 ## Phase 1: servers and HTTP lab
 
@@ -27,7 +28,7 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
    only add handlers); registration; keybinding commands.
 2. Server pure modules with tests: `servers.ts` (candidates, package manager, likely-server
    rules, duplicate hiding, terminal id), `httpLab.ts` (limits, header redaction, text vs binary),
-   `obscura.ts` (argv, URL policy), `compose.ts` and `databases.ts` argv and parsers.
+   `compose.ts` and `databases.ts` argv and parsers.
 3. `migrations.ts`, `store.ts` with `SqlitePersistenceMemory` tests.
 4. `DevEnvironmentService.ts`, servers part:
    - Candidates from `ServerSettingsService` + `resolveProjectScripts` and the workspace's
@@ -94,10 +95,10 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
    Redis-compatible image whose entrypoint accepts server flags.") and "Databases of removed
    projects".
 
-## Phase 3: Obscura agent tool
+## Phase 3: Obscura agent tool (retired)
 
-10. `mcp.ts`: `loom_browser_dev_tools_fetch`; settings `obscuraPath`, `obscuraObeyRobots`,
-    `obscuraAllowPrivateNetwork`, `agentFetchEnabled`; status card in the settings section.
+Retired on 2026-10-09, Kyle approved (README, "Retired parts"). Step 10 is skipped; the step
+numbers below are kept.
 
 ## Phase 4: dev dock (desktop, needs `ext-desktop`)
 
@@ -164,10 +165,7 @@ Existence checks and creation (own commits) for `ext-core`, `ext-panels`, `ext-s
 
 16. `docs/fork/user/browser-dev-tools.md`: servers (and that they run in thread terminals),
     varlock, compose, databases (where the data lives, how to remove it, remote URL note), HTTP
-    lab (runs on the environment host), the dev dock (desktop), Obscura (install from its
-    releases, robots.txt default, private network setting; for Obscura's own MCP server use stdio
-    or `obscura mcp --http` on 127.0.0.1 only, never a non-loopback bind without
-    `OBSCURA_MCP_TOKEN`).
+    lab (runs on the environment host) and the dev dock (desktop).
 17. FORK.md rows, packet index Status, README Status.
 18. Merge check and definition of done.
 

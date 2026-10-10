@@ -9,19 +9,19 @@ Code has 10 areas and a different engine.
 
 ## Panels
 
-| ID  | Panel                                  | Notes                                                                                                                                                      |
-| --- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P1  | Snippets                               | Pairs with F1.                                                                                                                                             |
-| P5  | Threads: related threads and Pair mode | Parent, child and sibling threads; two threads side by side (the merge step was dropped in L02). F16 parts 1 and 2 (L02).                                  |
-| P6  | Thread Inspector                       | Status card for branch, worktree, changes, plan and approvals (L04 dropped old Loom's pin). Client-only in old Loom.                                       |
-| P7  | Source control: lanes, graph, CI       | Lanes, branch graph, CI checks, conflicts, safe branch switching. Pairs with F13. T3 already covers pull request review.                                   |
-| P8  | File Outline                           | Symbol list for the open file. Client-only in old Loom.                                                                                                    |
-| P10 | Bottom dock                            | Build each tab as its own feature, one at a time: tasks, activity ledger, approvals and the rest. T3 has only a terminal drawer today.                     |
-| P11 | Swarm dock                             | Project-wide view of multi-agent runs.                                                                                                                     |
-| P12 | Device extras                          | Build and install, evidence capture, scripted UI checks. Expand with the new headless Xcode and simulator tooling. T3 already has the device panel itself. |
-| P13 | Browser extras                         | Dev servers, Docker, local databases, HTTP lab, console and network diagnostics, inside the browser panel.                                                 |
-| P14 | Panel picker                           | Streamlined and far more compact than old Loom's catalog.                                                                                                  |
-| P15 | Composer drawers                       | Per-turn tool overrides and clipboard history.                                                                                                             |
+| ID  | Panel                                  | Notes                                                                                                                                                                                                                 |
+| --- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | Snippets                               | Pairs with F1.                                                                                                                                                                                                        |
+| P5  | Threads: related threads and Pair mode | Parent, child and sibling threads; two threads side by side (the merge step was dropped in L02). F16 parts 1 and 2 (L02).                                                                                             |
+| P6  | Thread Inspector                       | Status card for branch, worktree, changes, plan and approvals (L04 dropped old Loom's pin). Client-only in old Loom.                                                                                                  |
+| P7  | Source control: lanes, graph, CI       | Lanes, branch graph, CI checks, conflicts, safe branch switching. Pairs with F13. T3 already covers pull request review.                                                                                              |
+| P8  | File Outline                           | Symbol list for the open file. Client-only in old Loom.                                                                                                                                                               |
+| P10 | Bottom dock                            | Build each tab as its own feature, one at a time: tasks, approvals and the rest. T3 has only a terminal drawer today. The activity ledger was retired on 2026-10-09; upstream has thread find and a timeline minimap. |
+| P11 | Swarm dock                             | Project-wide view of multi-agent runs.                                                                                                                                                                                |
+| P12 | Device extras                          | Build and install, evidence capture, scripted UI checks. Expand with the new headless Xcode and simulator tooling. T3 already has the device panel itself.                                                            |
+| P13 | Browser extras                         | Dev servers, Docker, local databases, HTTP lab, console and network diagnostics, inside the browser panel.                                                                                                            |
+| P14 | Panel picker                           | Streamlined and far more compact than old Loom's catalog.                                                                                                                                                             |
+| P15 | Composer drawers                       | Per-turn tool overrides and clipboard history.                                                                                                                                                                        |
 
 ## Features
 
@@ -33,13 +33,13 @@ Code has 10 areas and a different engine.
 | F4  | Utilities catalog                     | Offline developer tools in a panel. First listed as not selected; now L27.                                                                                                 |
 | F5  | In-app provider sign-in and setup     | Old Loom's final in-app sign-in and setup flow for providers, including the Codex tools page and config import.                                                            |
 | F6  | More providers                        | Gemini, GitHub Copilot, ACP agents, DeepSeek, Ollama, LM Studio. L17: DeepSeek via its Anthropic-compatible API, Gemini CLI as a custom ACP agent.                         |
-| F7  | Auto-resume after usage limits        | L28 retains automatic account failover, deferred until V2 ships; reuse upstream reset-time recovery. See the [current scope](./packets/L28-auto-resume/PRODUCT.md).        |
+| F7  | Auto-resume after usage limits        | L28, retired on 2026-10-09: Switchboard, Kyle's external tool, already resumes rate-limited agents automatically.                                                          |
 | F8  | Chat conveniences                     | Find in thread, clipboard history, Mermaid diagrams, file outline, model picker presets, answering a provider's question without stopping it.                              |
 | F11 | Project profiles                      | Per-project commands, tools, budgets and defaults beyond what T3's project settings cover.                                                                                 |
 | F12 | Repository Estate                     | L19: capped per-thread lanes and storage pressure handling first, then the persistent machine pool, on-demand checkouts, publication and safe parking. Started 2026-10-08. |
 | F13 | Lanes board and Git cockpit           | Deferred; P7 covers the per-thread view (L06).                                                                                                                             |
 | F21 | Apple tooling                         | XcodeGen, XCResult summaries, release readiness; pairs with P12.                                                                                                           |
-| F23 | Small extras                          | Configurable worktree branch prefix, container logs, and a CLI tool registry.                                                                                              |
+| F23 | Small extras                          | Container logs and a CLI tool registry. The worktree branch prefix was retired on 2026-10-09; upstream has a per-project setting.                                          |
 
 ## Outcomes of the open items
 
@@ -52,9 +52,9 @@ written, and where each ended up:
 | 3D modeling (Blender, OpenSCAD) for printing | L23 preview/editing workspace shipped; print readiness and slicing deferred. Fabrication remains separate. |
 | KiCad circuit board design and management    | Split: an in-Loom PCB preview (L24), the workbench as the Electronics app.                                 |
 | Image generation and photo lab               | Standalone app (Image Lab).                                                                                |
-| Headless web scraper (Obscura)               | Standalone app (Web Scraper); L11 can use Obscura if installed.                                            |
+| Headless web scraper (Obscura)               | Standalone app (Web Scraper). L11's Obscura fetch was retired on 2026-10-09; agents have browser tools.    |
 | Research workspace (notebooklm-py)           | Standalone app (Research Desk).                                                                            |
-| F9 orchestration tools for agents            | A tiny version (delegate to other threads) is part of L08.                                                 |
+| F9 orchestration tools for agents            | Covered upstream (delegation and thread launch); L08 was retired on 2026-10-09.                            |
 | F10 context engine                           | Skipped.                                                                                                   |
 | F13 lanes board and Git cockpit              | Deferred. P7 (lanes, graph, CI for one thread) is L06.                                                     |
 | F16 pair mode                                | Parts 1 and 2 (related threads, side by side) are part of L02.                                             |
@@ -65,8 +65,8 @@ Each selected item is built as an implementation packet under
 [packets/](./packets/README.md). F4 and F7 were first listed as not selected and are now
 packets L27 and L28. L22, L25 and L26 were not in the original selection; they came from the
 review of the reference repositories below. L29 (Jev hub) came from settling the packet
-questions: Jev, TypeSafe's decision model, is used optionally by several packets through the
-shared `ext-decide` extension point, and L29 adds the tools to trial and tune it.
+questions; it was retired on 2026-10-09 with all Jev support, because Jev moved to its own
+project outside Loom.
 
 | Packet | Selection                           | Packet | Selection         |
 | ------ | ----------------------------------- | ------ | ----------------- |
@@ -84,7 +84,7 @@ shared `ext-decide` extension point, and L29 adds the tools to trial and tune it
 | L12    | P14                                 | L26    | Repository review |
 | L13    | P15, F8 (clipboard history)         | L27    | F4                |
 | L14    | F8 (the rest)                       | L28    | F7                |
-|        |                                     | L29    | Jev hub           |
+|        |                                     | L29    | Jev hub (retired) |
 
 ## Standalone apps, specified separately
 

@@ -2,6 +2,9 @@
 
 ## Old Loom
 
+Entries about find in thread and Mermaid served parts A and B, retired on 2026-10-09.
+They are kept as prior art only.
+
 Selection item F8 in [selections.md](../../selections.md). Old Loom is `bagelvault/loom` at
 `a79ec506` (0.13.10).
 
@@ -50,12 +53,6 @@ Selection item F8 in [selections.md](../../selections.md). Old Loom is `bagelvau
 - Default shortcut: `resolveShortcutCommand` (`apps/web/src/keybindings.ts:227`),
   `shortcutKeyFromEvent` (83); upstream defaults `packages/shared/src/keybindings.ts:21-70`
   (`mod+shift+f` taken, `mod+f` free).
-- Effort options (part E): `primarySelectDescriptor`
-  (`apps/web/src/components/chat/TraitsPicker.tsx:167`), `getProviderOptionDescriptors`
-  (`packages/shared/src/model.ts:141`), effort descriptor ids
-  (`apps/server/src/provider/ClaudeModelCatalog.ts:196`,
-  `apps/server/src/provider/Layers/CodexProvider.ts:180`); draft `prompt` and `images`
-  (`apps/web/src/composerDraftStore.ts:378-405`).
 
 ## External
 
@@ -70,13 +67,3 @@ Selection item F8 in [selections.md](../../selections.md). Old Loom is `bagelvau
   `node_modules/@legendapp/list/react.d.ts` (installed version).
 - Model Context Protocol tool annotations (read-only, destructive, idempotent, open
   world): <https://modelcontextprotocol.io/specification>.
-- Jev (part E), docs read 2026-09-24: API and Choice answers with `confidence`
-  (<https://docs.typesafe.ai/api>, <https://docs.typesafe.ai/primitives/choice>),
-  confidence semantics (<https://docs.typesafe.ai/confidence>), jaggedness of jev-1.13 (no
-  math or counting, keep state small, adversarial state can steer;
-  <https://docs.typesafe.ai/model-jaggedness/jev-1.13>), models and version pinning
-  (<https://docs.typesafe.ai/models>). The client, key, timeout, redaction, budget,
-  threshold and log are ext-decide's (EXTENSION-POINTS.md section 18: `LoomDecide.decide`,
-  `DecideFeature` and `FORK_DECIDE_FEATURES` in `apps/server/src/fork/decide/registry.ts`,
-  `DecideFallbackReason` and `JevQuestions` in `packages/contracts/src/fork/decide.ts`,
-  `decideFeatureState` and `useDecideFeature` on the client).

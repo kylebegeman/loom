@@ -57,7 +57,7 @@ With Kyle's permission for a dev server and browser. Scratch folders under `.t3/
    (after the refresh); turn it on again.
 4. Turn a Codex skill off; the Codex scope note shows; turn it back on.
 5. Run "Install skills from git" from the palette: Skills opens on Sources with the URL field
-   focused. The Suggested list shows impeccable, ponytail and TypeSafe with licenses. Fetch
+   focused. The Suggested list shows impeccable and ponytail with licenses. Fetch
    ponytail from it (with Kyle's consent for the network access); its six skills are
    preselected; the target picker defaults to the scratch shared Claude folder and lists the
    accounts that see it. Install `skills/ponytail`; it appears once with the Loom badge and

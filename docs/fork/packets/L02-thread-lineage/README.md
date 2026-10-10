@@ -87,9 +87,10 @@ Details in [SEAMS.md](./SEAMS.md).
 
 ## Optional integrations
 
-- If L08 (multi-thread runs) is present, its agent-started child threads appear here as
-  `delegate` children: L08 writes rows into `fork_thread_lineage_links` when that table
-  exists. Nothing in this packet depends on L08.
+- Agent-started child threads: the `delegate` kind was for L08, retired on 2026-10-09
+  because upstream's delegation and thread launch now start child threads. Nothing writes
+  `delegate` rows. When this packet resumes, review the kind and the Agent threads section
+  against upstream's child-thread data.
 - If L15 (AI code review) is present, its reviewer threads appear here as `review`
   children under Reviews: L15 writes rows into `fork_thread_lineage_links` when that table
   exists. Nothing in this packet depends on L15.

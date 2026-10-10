@@ -46,8 +46,8 @@ login`" (`apps/server/src/provider/Layers/CodexProvider.ts:554`), and for Claude
 - Out:
   - Sign-in for Cursor, Grok and OpenCode (they manage their own logins; upstream's messages
     stay). Antigravity keeps upstream's flow.
-  - Sign-in for L17's Copilot and custom ACP agent drivers, Gemini CLI among them (their CLIs
-    own login; L17 may register its own setup section later).
+  - Sign-in for ACP agents such as Copilot and Gemini CLI (upstream's ACP Registry runs them;
+    their CLIs own login). L17's fork drivers for them were retired on 2026-10-09.
   - Account usage meters and reset credits (upstream already shows usage limits).
   - A cross-provider skill registry (L21). This packet only toggles Codex skills.
   - Continuous sync of Claude configuration into Codex; import is one-shot.
@@ -89,9 +89,7 @@ None. Every upstream touch goes through `ext-core`, `ext-providers`, `ext-settin
   method (`skills/config/write`), so they cannot disagree. Follow-up, not built by this
   packet: a "Manage all skills" link on the Codex tools page's skill list that opens L21's
   panel.
-- If L17 is present, its Copilot driver (and its generic ACP agent option) could register
-  their own setup sections later; nothing in this packet depends on that. L17's model
-  endpoint instances are Claude instances that set `ANTHROPIC_BASE_URL`; this packet treats
+- If L17 is present, its model endpoint instances are Claude instances that set `ANTHROPIC_BASE_URL`; this packet treats
   every such instance as a custom-endpoint instance (no sign-in offered, see TECHNICAL.md),
   whether or not L17 created it.
 

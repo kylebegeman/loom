@@ -49,13 +49,11 @@ files.
 | Environment capability entry  | the slug, in `capabilities.loomFeatures` | `"snippets"`                    |
 | Right panel id                | `<slug>` or `<slug>:<name>`              | `snippets`                      |
 | Desktop IPC channel           | `loom:<slug>:<name>`                     | `loom:apple-build-tooling:run`  |
-| Settings section id           | the slug, or the extension point name    | `snippets`, `decide`            |
+| Settings section id           | the slug, or the extension point name    | `snippets`                      |
 
 The MCP tool example is illustrative; L01 ships no MCP tools. Extension points that own wire
 names, tables or a capability use their short name in place of the slug: `core`
-(`loom.core.info`, capability `core`) and `decide` (`loom.decide.*`, `fork_decide_*`,
-`fork_migrations_decide`, capability and settings section `decide`). No packet may use these
-as its slug.
+(`loom.core.info`, capability `core`). No packet may use it as its slug.
 
 Wire names and user-facing identifiers say "loom"; code paths and database objects say
 "fork". Never reuse an upstream name, and never rename an upstream identifier (FORK.md,

@@ -26,7 +26,12 @@ export interface SpaceOps {
     capBytes: number,
     volumeName: string,
   ) => Op<{ readonly device: string | null }>;
-  readonly attach: (lane: LanePaths) => Op<{ readonly device: string | null }>;
+  /** Mounts the space, starting an empty one when its image or folder is gone. */
+  readonly attach: (
+    lane: LanePaths,
+    capBytes: number,
+    volumeName: string,
+  ) => Op<{ readonly device: string | null }>;
   readonly detach: (lane: LanePaths, device: string | null) => Op<void>;
   readonly resize: (
     lane: LanePaths,
@@ -112,7 +117,7 @@ export const makeSpaceOps = Effect.gen(function* () {
   const lockMountPoint = (lane: LanePaths) =>
     node("lock mount point", () => NodeFSP.chmod(lane.spacePath, 0o555));
 
-  const attach = (lane: LanePaths) =>
+  const mount = (lane: LanePaths) =>
     Effect.gen(function* () {
       if (yield* isMounted(lane)) return { device: yield* deviceOf(lane) };
       const stdout = yield* runOk("diskutil", [
@@ -156,34 +161,45 @@ export const makeSpaceOps = Effect.gen(function* () {
       yield* lockMountPoint(lane);
     });
 
+  const createImage = (lane: LanePaths, capBytes: number, volumeName: string) =>
+    Effect.gen(function* () {
+      yield* node("create lane", () => NodeFSP.mkdir(lane.spacePath, { recursive: true }));
+      yield* runOk("diskutil", [
+        "image",
+        "create",
+        "blank",
+        "--format",
+        "ASIF",
+        "--size",
+        sizeArg(capBytes),
+        "--volumeName",
+        volumeName,
+        lane.imagePath,
+      ]);
+      return yield* mount(lane);
+    });
+
   const image: SpaceOps = {
     backend: "image",
     isMounted,
-    create: (lane: LanePaths, capBytes: number, volumeName: string) =>
+    create: createImage,
+    attach: (lane: LanePaths, capBytes: number, volumeName: string) =>
       Effect.gen(function* () {
-        yield* node("create lane", () => NodeFSP.mkdir(lane.spacePath, { recursive: true }));
-        yield* runOk("diskutil", [
-          "image",
-          "create",
-          "blank",
-          "--format",
-          "ASIF",
-          "--size",
-          sizeArg(capBytes),
-          "--volumeName",
-          volumeName,
-          lane.imagePath,
-        ]);
-        return yield* attach(lane);
+        if (yield* isMounted(lane)) return yield* mount(lane);
+        const imageExists = yield* node("stat image", () => NodeFSP.access(lane.imagePath)).pipe(
+          Effect.as(true),
+          Effect.orElseSucceed(() => false),
+        );
+        // A lane folder deleted outside Loom takes its image along.
+        return yield* imageExists ? mount(lane) : createImage(lane, capBytes, volumeName);
       }),
-    attach,
     detach,
     /** The lane must be detached; attaching again fills the container to the new size. */
     resize: (lane: LanePaths, capBytes: number, device: string | null) =>
       Effect.gen(function* () {
         yield* detach(lane, device);
         yield* runOk("diskutil", ["image", "resize", "--size", sizeArg(capBytes), lane.imagePath]);
-        return yield* attach(lane);
+        return yield* mount(lane);
       }),
     usage: (lane: LanePaths) =>
       Effect.gen(function* () {
@@ -206,7 +222,8 @@ export const makeSpaceOps = Effect.gen(function* () {
       ),
     create: (lane: LanePaths, _capBytes: number, _volumeName: string) =>
       prepareFolder(lane).pipe(Effect.as({ device: null })),
-    attach: (lane: LanePaths) => prepareFolder(lane).pipe(Effect.as({ device: null })),
+    attach: (lane: LanePaths, _capBytes: number, _volumeName: string) =>
+      prepareFolder(lane).pipe(Effect.as({ device: null })),
     detach: (_lane: LanePaths, _device: string | null) => Effect.void,
     resize: (_lane: LanePaths, _capBytes: number, _device: string | null) =>
       Effect.succeed({ device: null }),

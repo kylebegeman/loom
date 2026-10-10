@@ -16,12 +16,6 @@ afterwards; agents have no way to start or check on another thread at all.
 - **Sample one model.** The same dialog has a "Same model, several times" mode: one provider
   and model, run 2 to 6 times with the same prompt (the same 6-thread cap). Members are named
   "<title> (<provider> <model>, run 2 of 3)". Useful to see how much one model's answers vary.
-- **Get a ranking hint.** When every member of a compare run has stopped working, "Rank with
-  Jev" asks Jev which result best meets a rubric (prefilled from settings, editable per run).
-  The run shows Jev's pick, the order it implies and the confidence, labeled as a hint: Jev
-  sees an excerpt of each result (the final reply and a capped diff), never whole transcripts,
-  and never the provider or model names. It changes nothing: no thread is archived, merged or
-  preferred.
 - **Watch runs.** The Runs panel lists the project's runs newest first: title, kind
   (Compare, or Delegated by "<thread>"), age and an aggregate status (Working, Needs you,
   Done, Error). Expanding a run shows each member with provider, model, status, branch and
@@ -36,13 +30,8 @@ afterwards; agents have no way to start or check on another thread at all.
   edits never collide with the caller's. For read-only jobs (research, review) the agent can
   pass `worktree: false` to run in the caller's workspace instead; Loom then starts the task
   with a one-line note telling the child not to edit files.
-- **Jev routing for delegated threads.** When an agent delegates without naming a provider
-  or model, and "Let agents use this" is on for "Delegated thread routing" (Loom settings,
-  Jev), Jev picks the model and reasoning effort from Kyle's routing candidates (each with a
-  description Kyle writes, and the efforts it may use). Without Jev, or when Jev is slow,
-  fails or is unsure, the child uses the caller's model and effort, as before. The Runs panel
-  shows how each child's model was chosen ("Picked by Jev (confidence 0.74)", "Caller's model:
-  Jev timed out", or "Chosen by the agent").
+- **Delegated model.** When an agent delegates without naming a provider or model, the child
+  uses the caller's model and effort.
 - **Stay in control.** Delegation is off by default; a thread can have at most four active
   children (configurable); children cannot delegate further unless the depth limit is raised;
   a child never gets a more permissive runtime mode than its parent; approvals in children
@@ -53,15 +42,13 @@ afterwards; agents have no way to start or check on another thread at all.
 
 ## Entry points
 
-| Action              | Where                                                                                                                                                                                                                                    |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Compare models      | Palette "Compare models..."; Runs panel "New compare"; keybinding command `loom.multi-thread-runs.compare` (unbound).                                                                                                                    |
-| Runs panel          | Right panel launcher and "+" menu ("Runs", letter N); palette "Show runs"; keybinding command `loom.multi-thread-runs.runs` (unbound).                                                                                                   |
-| Delegation settings | Settings > Loom > Multi-thread runs (scope-gated like General: applies to the selected environment).                                                                                                                                     |
-| Jev features        | Settings > Loom > Jev: "Use Jev" for "Delegated thread routing" (plus "Let agents use this", which routing needs) and for "Compare ranking hint" (no agent switch); routing candidates and the default rubric live in Multi-thread runs. |
-| Ranking hint        | Runs panel, on a finished compare run: "Rank with Jev"; "Re-rank"; "Clear hint".                                                                                                                                                         |
-| Agent tools         | `loom_multi_thread_runs_start_thread`, `loom_multi_thread_runs_get_thread` on T3's MCP server, visible to every agent.                                                                                                                   |
-| Leave               | Close the panel tab; Archive or Remove a run; turn delegation off.                                                                                                                                                                       |
+| Action              | Where                                                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Compare models      | Palette "Compare models..."; Runs panel "New compare"; keybinding command `loom.multi-thread-runs.compare` (unbound).                  |
+| Runs panel          | Right panel launcher and "+" menu ("Runs", letter N); palette "Show runs"; keybinding command `loom.multi-thread-runs.runs` (unbound). |
+| Delegation settings | Settings > Loom > Multi-thread runs (scope-gated like General: applies to the selected environment).                                   |
+| Agent tools         | `loom_multi_thread_runs_start_thread`, `loom_multi_thread_runs_get_thread` on T3's MCP server, visible to every agent.                 |
+| Leave               | Close the panel tab; Archive or Remove a run; turn delegation off.                                                                     |
 
 ## Copy
 
@@ -71,17 +58,6 @@ afterwards; agents have no way to start or check on another thread at all.
   workspace options "Separate worktrees (recommended)" and "Project root (read-only
   questions)"; warning with project root and more than one member: "Members share the
   project root and can overwrite each other's edits."; button "Start N threads".
-- Ranking: button "Rank with Jev"; dialog field "Rubric" (prefilled, at most 1,000
-  characters) and the note "Jev sees each member's final reply and a capped diff, not the
-  whole thread. Provider and model names are not sent."; result line "Jev hint: <member>
-  looks best against the rubric (confidence 0.71). Order: <member>, <member>, <member>.";
-  low confidence: "Jev had no clear pick for this rubric."; failure: "Jev could not rank
-  these (timed out). Try again."; stale: "Results changed since this hint.".
-- Routing settings: "Routing candidates" with rows "Provider and model", "When to use it"
-  (description, 10 to 300 characters, sent to Jev), "Allowed efforts"; help text "Used only
-  when an agent delegates without naming a model and Jev routing is allowed for agents.";
-  "Default ranking rubric" (default "Does what the prompt asks, is correct, changes only what
-  is needed, and says what is left open.").
 - Panel empty state: "No runs in this project yet. Compare models, or let agents start
   threads from Settings > Loom."
 - Settings: "Let agents start threads" with help text "Adds two tools to every agent session
@@ -110,12 +86,7 @@ afterwards; agents have no way to start or check on another thread at all.
   Starting until their shells report a session.
 - Disabled: all entry points hidden without `multi-thread-runs`; "New compare" disabled
   with a reason when fewer than two provider instances are ready ("Different models" mode)
-  or when none is ready ("Same model" mode). Jev UI (rank button, routing settings) hidden
-  without the `decide` capability (routing labels on existing members still show); "Rank with Jev" hidden unless Jev is
-  usable for it ("Use Jev" on, key saved), and disabled with "Waiting for N members to
-  finish" while members work. The routing editor notes when "Let agents use this" is off.
-- Ranking in progress: "Asking Jev..." on the button (at most 5 seconds, then the timeout
-  message).
+  or when none is ready ("Same model" mode).
 
 ## Surfaces and connection modes
 
@@ -139,11 +110,3 @@ hidden. Upstream clients on a Loom server: runs are invisible but threads are or
 - Delegated threads default to a new worktree; `worktree: false` uses the caller's workspace
   for read-only jobs such as research or review. Reason (Kyle): isolation by default, with a
   cheap path for jobs that write nothing.
-- Jev routes model and effort for delegated threads (feature
-  `multi-thread-runs.delegate-routing`), only for agent calls that name no model, only with
-  "Let agents use this" on, falling back to the caller's model and effort. Reason (Kyle, Jev
-  cross-cutting decision): cheap, calibrated routing with a safe default.
-- Compare gets a Jev ranking hint against a rubric (feature `multi-thread-runs.compare-rank`),
-  user-started, labeled as a hint because Jev sees excerpts, not whole transcripts; the
-  fallback is no ranking. Reason (Kyle): a first read on which result to open first, never an
-  automatic judgment.

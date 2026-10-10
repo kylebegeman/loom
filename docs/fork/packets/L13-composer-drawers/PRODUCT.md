@@ -119,4 +119,4 @@ unavailable.
   designed here.
 - Clipboard history is off by default, in memory by default, never sent to a server, and
   filtered for secrets locally before it is stored. No clipboard content is ever sent to
-  Jev or any other service for secret detection (rejected in the Jev review).
+  another service for secret detection.

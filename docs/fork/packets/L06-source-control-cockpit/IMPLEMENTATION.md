@@ -109,10 +109,12 @@ Typecheck `@t3tools/client-runtime`.
 In `apps/web/src/fork/source-control-cockpit/`, in this order:
 
 1. `state.ts`, `viewStore.ts`.
-2. `panel.tsx` and `CockpitPanel.tsx` with the view tabs; register in `FORK_PANELS`.
-3. `LaneView.tsx`: status from upstream's `vcsEnvironment.status` family (find the exact
-   call in `apps/web/src/components/GitActionsControl.tsx:1064-1070`), lane facts, sibling
-   threads, PR rows, stash rows with Apply and Pop, operation banner.
+2. `panel.tsx` and `CockpitPanel.tsx` with the view tabs and the header: status from
+   upstream's `vcsEnvironment.status` family (find the exact call in
+   `apps/web/src/components/GitActionsControl.tsx:1064-1070`), lane facts and the operation
+   banner. Register in `FORK_PANELS`. The retired lane card (README, "Retired parts") is not
+   built.
+3. `useCheckoutThreads.ts`: sibling threads on the same checkout and branch.
 4. `graphLayout.ts` (pure, tested) and `GraphView.tsx`.
 5. `ConflictsView.tsx` and `prompts.ts` (`buildResolveLocalConflictsPrompt`). Continue and
    Abort buttons with `AlertDialog` confirmations and the disabled states from PRODUCT.md
@@ -123,12 +125,12 @@ In `apps/web/src/fork/source-control-cockpit/`, in this order:
    (`:170-205`): `resolveBranchSelectionTarget`, `vcsEnvironment.switchRef`,
    `updateThreadMetadata`, `stopThreadSession` when the worktree changes. For "Stash and
    switch": `stashPush` first; on success continue; on failure stop and show the message.
-   After a successful stash and switch, the lane card of the old branch shows the stash with
-   Apply and Pop.
+   The view lists stashes from lane facts with Apply and Pop; after a successful stash and
+   switch, the stash shows there.
 7. `ChecksView.tsx` with the 30 second poll (`useEffect` interval that runs only while the
    view is mounted, `document.visibilityState === "visible"` and a check is pending) and the
    log drawer; `buildFixCheckPrompt` in `prompts.ts`.
-8. Leak check button in the lane card when `leakCheck.available`.
+8. Leak check row in the Checks view when `leakCheck.available`.
 9. `palette.tsx` and `ShortcutHost.tsx`; register both.
 10. Typecheck `@t3tools/web`.
 

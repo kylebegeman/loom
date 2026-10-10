@@ -5,7 +5,9 @@ Citations are to this fork at upstream v0.0.42, checked against
 
 ## Overview
 
-Two independent parts.
+One part remains: model endpoints. Parts B (ACP agents) and C (GitHub Copilot) were retired
+on 2026-10-09 because upstream's ACP Registry covers them (README, "Retired parts"); this
+packet adds no provider driver.
 
 ```
 Part A: model endpoints (no driver)
@@ -17,13 +19,6 @@ Part A: model endpoints (no driver)
             (own CLAUDE_CONFIG_DIR, endpoint env vars, customModels)
      └── loom.more-providers.endpointRecord ──> fork_more_providers_endpoints (no secrets)
      └── loom.more-providers.endpointSetSkillsLink ──> per-instance switch, later
-
-Part B: ACP agents (fork drivers through ext-providers)
-  FORK_PROVIDER_DRIVERS = [loomAcp, loomCopilot]   (loomCopilot added last, phase C)
-     each = makeAcpAgentDriver(profile)
-        snapshot: initialize-only probe (no session, no MCP, no auth side effects)
-        adapter:  makeAcpAgentAdapter(profile) on upstream AcpSessionRuntime
-        textGeneration: unsupported (supportsTextGeneration: false)
 ```
 
 ## Part A: model endpoints
@@ -222,157 +217,11 @@ endpoint key never mixes with a cached Anthropic login (`docs/user/providers-cla
 "OpenRouter"). If L16 is present, its sign-in decorator skips these instances because they
 set `ANTHROPIC_BASE_URL`.
 
-## Part B: ACP agents
-
-### Settings schemas (`packages/contracts/src/fork/more-providers.ts`)
-
-Built like upstream's (`packages/contracts/src/settings.ts:543-555` is not exported; the fork
-file repeats its three lines: `Schema.Struct(fields)` annotated with
-`providerSettingsFormSchema: { order }`). Field annotations use the same
-`providerSettingsForm` keys, so upstream's generic form renders them.
-
-```ts
-export const LoomCopilotSettings = forkProviderSettingsSchema(
-  {
-    enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false)), hidden),
-    binaryPath: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("")),
-      Schema.annotateKey({
-        title: "Binary path",
-        description: "Path to the Copilot CLI. Leave empty to use `copilot` from PATH.",
-        providerSettingsForm: { placeholder: "copilot", clearWhenEmpty: "omit" },
-      }),
-    ),
-    launchArgs: TrimmedString.pipe(/* "Additional arguments after --acp" */),
-    customModels: Schema.Array(CustomModelSetting).pipe(/* hidden, default [] */),
-  },
-  { order: ["binaryPath", "launchArgs"] },
-);
-// LoomAcpSettings: command (required, text; description names the Gemini CLI example,
-//   PRODUCT.md), args (textarea, one per line), displayHint (text, e.g. "Gemini CLI"),
-//   customModels (hidden).
-```
-
-Every fork driver defaults to `enabled: false` in its schema, like upstream's opt-in drivers,
-and the Add dialog enables the instance it creates.
-
-### Driver factory (`apps/server/src/fork/more-providers/acp/`)
-
-```ts
-export interface AcpAgentProfile<Settings> {
-  readonly driverKind: ProviderDriverKind; // "loomAcp" | "loomCopilot"
-  readonly displayName: string;
-  readonly settingsSchema: Schema.Codec<Settings, unknown>;
-  readonly spawn: (settings: Settings, cwd: string, env: NodeJS.ProcessEnv) => AcpSpawnInput;
-  /** Preferred ACP auth method ids, in order; the first one the agent advertises is used. */
-  readonly authMethodPreference: ReadonlyArray<string>;
-  readonly messages: {
-    readonly notInstalled: (settings: Settings) => string;
-    /** Receives the agent's advertised auth method names, possibly empty. */
-    readonly signedOut: (authMethodNames: ReadonlyArray<string>) => string;
-  };
-}
-
-export const makeAcpAgentDriver = <Settings>(
-  profile: AcpAgentProfile<Settings>,
-): ForkProviderDriver => ({
-  driverKind: profile.driverKind,
-  metadata: { displayName: profile.displayName, supportsMultipleInstances: true },
-  configSchema: profile.settingsSchema,
-  defaultConfig: () => Schema.decodeSync(profile.settingsSchema)({}),
-  create: (input) =>
-    Effect.gen(function* () {
-      /* see below */
-    }),
-});
-```
-
-`create` follows `GrokDriver.ts` (`apps/server/src/provider/Drivers/GrokDriver.ts:59-157`),
-the smallest upstream ACP driver:
-
-- `processEnv = mergeProviderInstanceEnvironment(input.environment)`;
-  `continuationIdentity = defaultProviderContinuationIdentity({ driverKind, instanceId })`;
-  `stampIdentity = withInstanceIdentity(...)` (`Drivers/instanceIdentity.ts`).
-- `adapter = yield* makeAcpAgentAdapter(profile, effectiveSettings, { instanceId,
-environment: processEnv, nativeEventLogger })`.
-- `snapshot = yield* makeManagedServerProvider({ ... checkProvider })` where
-  `checkProvider` spawns the agent, sends ACP `initialize` only, reads
-  `agentInfo`, `agentCapabilities` and `authMethods`, and closes. No `session/new`, no
-  `authenticate`, no MCP servers: upstream's rule is that a health check must not create
-  sessions or trigger sign-in (`docs/internals/providers.md`, "Setup must not happen as a
-  health-check side effect"). Status mapping: spawn failure with "not found" -> not installed;
-  initialize succeeded -> ready (auth unknown); initialize error mentioning authentication, or
-  a later session failure with an ACP auth-required error recorded by the adapter -> auth
-  unauthenticated with `messages.signedOut`.
-- Maintenance: `makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null })`
-  (as `GrokDriver.ts:39-42`).
-- Models: the snapshot lists custom models plus the models the adapter last observed from a
-  real session (`session/new` or `session/load` returns `models.availableModels` and a model
-  config option; `AcpRuntimeModel.extractModelConfigId`, `AcpRuntimeModel.ts:138`). Until
-  then a single "Agent default" model with slug `default`. `refreshModels` (a
-  `ProviderInstance` field upstream already calls for explicit model refresh) opens one
-  throwaway session in the server's `cwd` without MCP servers to read the list.
-- `textGeneration`: a stub whose operations fail with upstream's `TextGenerationError`
-  "Text generation is not available for this provider."; the snapshot sets
-  `supportsTextGeneration: false` so clients do not offer it.
-
-### Adapter (`makeAcpAgentAdapter`)
-
-Derived from `apps/server/src/provider/Layers/CursorAdapter.ts` (1,256 lines), the plainest
-upstream ACP adapter. Copy its structure into the fork and remove Cursor-specific parts
-(parameterized model picker capabilities, `CursorAcpExtension`, Cursor transport-failure
-handling, Cursor permission launch arguments). What remains and is generic:
-
-| Concern      | Implementation                                                                                                                                                                                                                                                                                         |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Runtime      | `AcpSessionRuntime.layer({ spawn, cwd, clientInfo, authMethodId, mcpServers, resumeSessionId, clientCapabilities })` (`acp/AcpSessionRuntime.ts:80-113,1085`).                                                                                                                                         |
-| Auth method  | After `initialize`, the first id in `profile.authMethodPreference` that the agent advertises; otherwise the agent's first advertised method.                                                                                                                                                           |
-| MCP          | The `t3-code` HTTP MCP server from `McpProviderSession.readMcpProviderSession(threadId)`, exactly as `CursorAdapter.ts:543-575`, only when the agent advertises `mcpCapabilities.http`.                                                                                                                |
-| Events       | `AcpCoreRuntimeEvents` builders (`acp/AcpCoreRuntimeEvents.ts:68-234`) for tool calls, plan updates, content deltas, assistant items, requests.                                                                                                                                                        |
-| Approvals    | ACP `session/request_permission` -> T3 approval request; replies with `acpPermissionOutcome` (`acp/AcpAdapterSupport.ts:46`). In full-access runtime mode, auto-reply with the agent's `allow_once` option, never `allow_always` (same reasoning as OpenCode's `once`, `docs/internals/providers.md`). |
-| Models       | `session/set_model` or the model config option, as `applyCursorAcpModelSelection` does but without Cursor's parameterized picker.                                                                                                                                                                      |
-| Plan mode    | Only when the agent advertises a session mode with id `plan`; otherwise `showInteractionModeToggle: false`.                                                                                                                                                                                            |
-| Resume       | `resumeCursor = { sessionId }`; `resumeMethod: "load"` only when `agentCapabilities.loadSession` is true. Otherwise start fresh and emit one `runtime.warning` "This agent cannot resume its earlier session; it starts fresh."                                                                        |
-| Images       | Sent only when `promptCapabilities.image` is true; otherwise the attachment path is in the text (ProviderService already appends paths).                                                                                                                                                               |
-| Interrupt    | ACP `session/cancel` (`cancelBehavior: "interrupt"`).                                                                                                                                                                                                                                                  |
-| Rollback     | Unsupported (`supportsConversationRollback: false`), like Cursor.                                                                                                                                                                                                                                      |
-| Capabilities | `{ sessionModelSwitch: "in-session", supportsConversationRollback: false }`.                                                                                                                                                                                                                           |
-| Logging      | `ProviderEventLoggers.native` as Cursor does; stderr through `onStderr` with secret redaction.                                                                                                                                                                                                         |
-
-### Profiles
-
-Build order: `loomAcp` first (phase B), `loomCopilot` last (phase C).
-
-| Driver kind   | Spawn                                                        | Auth preference                     | Signed-out message                                                                                                                                                                | Notes                                                                                                                              |
-| ------------- | ------------------------------------------------------------ | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `loomAcp`     | `<command> <args...>` exactly as configured, `cwd` = project | the agent's first advertised method | "Not signed in. Sign in with this agent's own command on this environment, then refresh." plus the advertised method names                                                        | The user owns the command; Loom never downloads it. Gemini CLI runs here as `gemini` + `--acp`; sign in with the Gemini CLI first. |
-| `loomCopilot` | `<binaryPath or "copilot"> --acp <launchArgs>`               | the agent's advertised login method | "Not signed in. Run `copilot` on this environment and sign in with its login command, then refresh. Or add a `GH_TOKEN` environment variable to this provider." (CLI login first) | Built last. Verify whether `--stdio` is needed (old Loom passed it; 1.0.88's help lists only `--acp`) and the exact login command. |
-
-`GH_TOKEN` as a Copilot CLI credential (a token with Copilot access) is from GitHub's
-Copilot CLI documentation as remembered at writing time and was not re-verified; phase C's
-first step checks it with `copilot --help` and GitHub's docs, and adjusts the message if the
-variable name differs (for example `GITHUB_TOKEN`).
-
-### Web (`apps/web/src/fork/more-providers/`)
-
-- `clientDefinitions.ts`: two `ProviderClientDefinition`s appended through
-  `FORK_PROVIDER_CLIENT_DEFINITIONS`: `{ value: "loomAcp", label: "ACP agent", icon:
-ACPRegistryIcon, settingsSchema: LoomAcpSettings, badgeLabel: "Loom" }` (phase B) and
-  `{ value: "loomCopilot", label: "GitHub Copilot CLI", icon: GithubCopilotIcon, ... }`
-  (phase C). The icons already exist in upstream's `apps/web/src/components/Icons.tsx`
-  (`GithubCopilotIcon` and `ACPRegistryIcon`; line numbers drift, search for the names).
-- `icons.ts`: the same two in `FORK_PROVIDER_ICONS`.
-- The generic settings form, model picker, status banner and provider cards need nothing
-  else: they are driven by the definition and the snapshot.
-
 ### Gating
 
-The fork driver definitions are compiled into the web bundle, but a Loom client talking to an
-upstream server must not offer them in the Add dialog. `FORK_PROVIDER_CLIENT_DEFINITIONS` is
-static, so gating happens in the server: an upstream server simply has no such driver, and an
-instance added anyway shows as unavailable. To avoid that trap, the "Add ACP agent" palette
-item and the Model endpoints section check `supportsLoomFeature(caps, "more-providers")`.
-The Add dialog itself cannot be gated without a seam; this is recorded as a known limit.
+The "Add model endpoint" palette item and the Model endpoints section check
+`supportsLoomFeature(caps, "more-providers")`; on an upstream server the section says "Needs a
+Loom server".
 
 ## Storage
 
@@ -399,9 +248,7 @@ sensitive environment variables.
 | Codex                     | Not used for endpoints (its custom providers speak the Responses API; out of scope). |
 | OpenCode                  | Documented as the route for OpenAI-compatible-only endpoints; no code.               |
 | Cursor, Grok, Antigravity | Untouched.                                                                           |
-| `loomAcp`, `loomCopilot`  | New, on the generic ACP adapter; `loomCopilot` built last.                           |
-| Gemini CLI                | No driver of its own; runs as a `loomAcp` instance (`gemini --acp`).                 |
-| Antigravity               | Upstream's; the recommended Google route for individual accounts.                    |
+| ACP agents, Copilot       | Retired here; upstream's ACP Registry covers them.                                   |
 
 ## Agent-facing tools
 
@@ -410,12 +257,7 @@ None.
 ## Performance
 
 - The skills link is one `lstat` per endpoint row when the Model endpoints section loads.
-- Probes run on instance creation and settings changes (upstream's managed snapshot cadence),
-  each an `initialize` round trip with a 10 s limit. No sessions in probes.
-- Each ACP thread owns one agent process, as Cursor and Grok do.
 - The endpoint probe runs only on user action.
-- Event mapping reuses upstream's `decideToolCallUpdateEmission`
-  (`AcpRuntimeModel.ts:645`) so chatty agents do not flood the WebSocket.
 
 ## Alternatives considered
 
@@ -423,14 +265,6 @@ None.
 - **Endpoint instances through Codex custom model providers**: Codex speaks the Responses
   API to providers; DeepSeek and Ollama document Anthropic compatibility and Claude Code
   usage, so Claude is the surer path.
-- **One ACP driver kind with presets**: a single kind would share one icon and label in the
-  model picker. Copilot keeps its own kind for its icon and messages; everything else,
-  Gemini CLI included, uses `loomAcp`.
-- **A dedicated `loomGemini` driver**: dropped by Kyle. Individual Gemini CLI accounts
-  stopped working on 2026-06-18 and upstream supports Antigravity; the generic option
-  covers Code Assist users.
 - **An OpenCode preset for DeepSeek**: declined by Kyle; the Claude-based preset is enough.
-- **Reusing upstream's reserved kinds** (`githubCopilot`, `gemini`, `acpRegistry`): a future
-  upstream driver would decode fork configs with its own schema. Rejected.
-- **ACP registry download**: out of scope (supply-chain surface, platform archives); a
-  registry browser that fills in `npx`/`uvx` commands is a follow-up.
+- **Fork ACP and Copilot drivers**: designed here, then retired by Kyle on 2026-10-09 in
+  favor of upstream's ACP Registry.

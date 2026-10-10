@@ -2,35 +2,36 @@
 
 Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
-Four small, independent conveniences, each shippable on its own:
+Three small, independent conveniences, each shippable on its own. Parts keep their original
+letters.
 
-1. **Worktree branch prefix (A).** New worktree threads end up on branches named
-   `<your prefix>/<generated-name>` (default `loom/`, for example `loom/fix-login-redirect`)
-   instead of upstream's fixed `t3code/...`. Set per environment in Loom settings.
-2. **No AI identification (D).** A per-project switch for work repositories: branches are
+1. **No AI identification (D).** A per-project switch for work repositories: branches are
    named by change type (`feature/`, `fix/`, `hotfix/`, `chore/`, `docs/`, `refactor/`),
    every agent is told to leave AI out of commits, pull requests, comments and authorship,
    Claude's own attribution is turned off for the session, and new commits are checked after
    each turn with a copyable fix command when something slips through. Loom never rewrites
    history itself.
-3. **Containers panel (B).** A right panel that lists the environment's Docker or Podman
+2. **Containers panel (B).** A right panel that lists the environment's Docker or Podman
    containers (this project's compose containers first) and follows a container's logs in
    the thread's terminal drawer.
-4. **CLI tools (C).** A Loom settings section that shows which command-line tools are
+3. **CLI tools (C).** A Loom settings section that shows which command-line tools are
    installed on the environment, their versions and paths, how each was installed, and the
    command to update it (with an optional "Check for updates").
+
+## Retired parts
+
+Kyle approved on 2026-10-09 retiring **part A, worktree branch prefix** (a per-environment
+`loom/` branch prefix), because upstream T3 Code (Orchestrator V2, now in Loom nightly) has
+a branch prefix setting per project. Its setting, schema and settings block are removed from
+this folder. Part D keeps the branch namer and first-turn rename seam it shared with part A;
+in private projects its change-type names replace upstream's project prefix.
 
 ## Scope
 
 - In:
-  - Part A (`worktree-prefix`): a validated per-environment setting, default `loom`; the
-    server's first-turn branch rename uses it. Temporary branches keep upstream's
-    `t3code/<hex>` form for the few seconds before the rename. PR checkout branches keep
-    upstream naming.
   - Part D (`private-mode`): per-project switch in a fork table, reachable from Loom
     settings, the command palette and (when L18 is present) the project profile;
-    change-type branch names by keyword rules, with an optional Jev choice only when Jev is on
-    for the project (off by default for private projects); an `ext-turn-input` instruction
+    change-type branch names by keyword rules; an `ext-turn-input` instruction
     (order 5) for every provider; Claude Code `attribution` emptied through the Agent SDK
     `settings` (one packet seam); a post-turn commit check with a timeline row, a web toast
     with a copyable fix command, "Rename branch" for a leftover temporary branch, and an
@@ -44,8 +45,7 @@ Four small, independent conveniences, each shippable on its own:
     path, install manager, update command (copy only); "Check for updates" through
     `brew outdated` and `npm outdated -g`.
 - Out:
-  - Follow-up: prefixing temporary branches, per-project prefixes, renaming existing
-    branches.
+  - A fork worktree branch prefix: retired, see above.
   - Follow-up: a Codex-side attribution switch, only if the verification step shows Codex
     adds its trailer despite the instruction.
   - Follow-up: scanning pull request bodies and code comments for AI markers.
@@ -59,7 +59,7 @@ Four small, independent conveniences, each shippable on its own:
 
 ## Surfaces
 
-Web and desktop: supported. Mobile: no UI; parts A and D run on the server, so branch
+Web and desktop: supported. Mobile: no UI; part D runs on the server, so private branch
 naming, the private mode instruction, Claude's attribution setting and the commit check apply
 to threads started or messaged from mobile on a Loom server, and mobile sees the warning rows
 in the timeline. Remote: everything runs on the thread's or the selected settings scope's
@@ -73,14 +73,14 @@ environment, over the fork RPC and upstream's terminal RPC.
 - [`ext-turn-input`](../EXTENSION-POINTS.md#16-provider-turn-input-ext-turn-input) (part D, contributor `small-extras-private-mode`, order 5, block `<loom_private_mode>`).
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette) (part D, toggle and check).
 - [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) (part D, the warning toast host).
-- `ext-decide` (EXTENSION-POINTS.md, section 18; part D, feature `small-extras.branch-type`).
 
 Created as specified in EXTENSION-POINTS.md when missing, one commit each.
 
 ## Packet seams
 
-- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` (parts A and D): one
-  import and one wrapped statement where the generated branch name is built.
+- `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` (part D): one import and
+  one wrapped statement where the generated branch name is built. V2 removed this file; the
+  seam's new location comes from released source.
 - `apps/server/src/provider/Layers/ClaudeAdapter.ts` (part D): one import and one spread at
   the start of the Agent SDK `settings` object.
 
@@ -90,26 +90,24 @@ Details in [SEAMS.md](./SEAMS.md).
 
 - If L18 (project profiles) is present, its profile shows part D's switch through
   `PROFILE_SECTION_ROWS`; whichever packet lands second adds the registration line.
-- If L29 (Jev hub) is present, the `small-extras.branch-type` decisions appear in its log
-  like any other feature; nothing else changes.
-- If L22 (instruction modes) or L03 (goals) is present, their blocks follow the private mode
-  block (orders 10 and 20 after 5); none depends on another.
+- If L22 (instruction modes) is present, its block follows the private mode block (order 10
+  after 5); neither depends on the other.
 - If L06 (source control cockpit) is present, nothing changes; it reads branch names from
-  git and shows whatever prefix they carry.
+  git.
 - L11 (browser dev tools) covers Docker Compose stacks for dev; part B's panel lists every
   container and follows logs. They share no code.
 
 ## Size estimate
 
-Medium overall, about 2.7k lines with tests. Part A ~200, part D ~1,300 (server 750, web
-250, tests 300), part B ~450, part C ~600, shared settings plumbing ~150.
+Medium overall, about 2.5k lines with tests. Part D ~1,300 (server 750, web 250, tests
+300, including the branch namer), part B ~450, part C ~600, shared settings plumbing ~150.
 
 ## How an agent starts
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md and EXTENSION-POINTS.md, then
 this folder. Implement the shared plumbing (IMPLEMENTATION.md step 2) with the first part
 you build, then each part in any order. A part is done on its own; set the Status to
-"In progress (A done)" and so on.
+"In progress (D done)" and so on.
 
 ## Documents
 

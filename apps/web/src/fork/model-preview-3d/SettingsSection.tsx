@@ -67,95 +67,119 @@ function SettingsForm({
     }, "Settings saved.");
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        These settings apply to the selected environment. OpenSCAD runs on that host.
-      </p>
-      {!info && status.waiting && <OperationStatus label="Detecting OpenSCAD" />}
-      <p className="text-sm">
-        {info?.openscad.path
-          ? `OpenSCAD ${info.openscad.version ?? "unknown version"} · ${info.openscad.supportsManifold ? "Manifold available" : "CGAL"} · ${info.openscad.supportsSummary ? "Geometry summaries available" : "No geometry summaries"}`
-          : "OpenSCAD was not detected. Mesh previews still work."}{" "}
-        <a
-          href="https://openscad.org/downloads.html#snapshots"
-          target="_blank"
-          rel="noreferrer"
-          className="underline"
-        >
-          Get a development snapshot
-        </a>
-      </p>
+      <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
+        <p className="text-sm text-muted-foreground">
+          These settings apply to the selected environment. OpenSCAD runs on that host.
+        </p>
+        {!info && status.waiting && <OperationStatus label="Detecting OpenSCAD" />}
+        <p className="text-sm">
+          {info?.openscad.path
+            ? `OpenSCAD ${info.openscad.version ?? "unknown version"} · ${info.openscad.supportsManifold ? "Manifold available" : "CGAL"} · ${info.openscad.supportsSummary ? "Geometry summaries available" : "No geometry summaries"}`
+            : "OpenSCAD was not detected. Mesh previews still work."}{" "}
+          <a
+            href="https://openscad.org/downloads.html#snapshots"
+            target="_blank"
+            rel="noreferrer"
+            className="underline"
+          >
+            Get a development snapshot
+          </a>
+        </p>
+      </div>
       <SettingsRow
         title="OpenSCAD executable"
         description="Leave blank to search PATH and macOS applications."
       >
-        <Input
-          aria-label="OpenSCAD executable"
-          value={settings.openscadPath ?? ""}
-          onChange={(event) => set("openscadPath", event.target.value || null)}
-        />
+        <div className="flex flex-col gap-2 pb-2">
+          <Input
+            aria-label="OpenSCAD executable"
+            value={settings.openscadPath ?? ""}
+            onChange={(event) => set("openscadPath", event.target.value || null)}
+          />
+        </div>
       </SettingsRow>
-      <SettingsRow title="Render backend">
-        <select
-          aria-label="Render backend"
-          value={settings.backend}
-          onChange={(event) =>
-            set("backend", event.target.value as ModelPreviewSettings["backend"])
-          }
-        >
-          {["auto", "manifold", "cgal"].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
-      </SettingsRow>
-      <SettingsRow title="Render timeout (seconds)">
-        <Input
-          aria-label="Render timeout"
-          type="number"
-          min={1}
-          max={600}
-          value={settings.renderTimeoutSeconds}
-          onChange={(event) => set("renderTimeoutSeconds", Number(event.target.value))}
-        />
-      </SettingsRow>
-      <SettingsRow title="Render colors" description="Export SCAD as 3MF to preserve model colors.">
-        <input
-          aria-label="Render colors"
-          type="checkbox"
-          checked={settings.renderColors}
-          onChange={(event) => set("renderColors", event.target.checked)}
-        />
-      </SettingsRow>
-      <SettingsRow title="Maximum file size (MB)">
-        <Input
-          aria-label="Maximum file size"
-          type="number"
-          min={1}
-          max={2048}
-          value={settings.maxFileMegabytes}
-          onChange={(event) => set("maxFileMegabytes", Number(event.target.value))}
-        />
-      </SettingsRow>
-      <SettingsRow title="Build plate">
-        <select
-          aria-label="Build plate"
-          value={settings.buildPlate.preset}
-          onChange={(event) =>
-            set("buildPlate", {
-              ...settings.buildPlate,
-              preset: event.target.value as ModelPreviewSettings["buildPlate"]["preset"],
-            })
-          }
-        >
-          {Object.entries(BUILD_PLATE_PRESETS).map(([key, value]) => (
-            <option key={key} value={key}>
-              {value.label} ({value.volumeMm.join(" x ")} mm)
-            </option>
-          ))}
-          <option value="custom">Custom</option>
-        </select>
-      </SettingsRow>
+      <SettingsRow
+        title="Render backend"
+        control={
+          <select
+            aria-label="Render backend"
+            value={settings.backend}
+            onChange={(event) =>
+              set("backend", event.target.value as ModelPreviewSettings["backend"])
+            }
+          >
+            {["auto", "manifold", "cgal"].map((value) => (
+              <option key={value}>{value}</option>
+            ))}
+          </select>
+        }
+      />
+      <SettingsRow
+        title="Render timeout (seconds)"
+        control={
+          <Input
+            aria-label="Render timeout"
+            type="number"
+            size="sm"
+            className="w-full sm:w-24"
+            min={1}
+            max={600}
+            value={settings.renderTimeoutSeconds}
+            onChange={(event) => set("renderTimeoutSeconds", Number(event.target.value))}
+          />
+        }
+      />
+      <SettingsRow
+        title="Render colors"
+        description="Export SCAD as 3MF to preserve model colors."
+        control={
+          <input
+            aria-label="Render colors"
+            type="checkbox"
+            checked={settings.renderColors}
+            onChange={(event) => set("renderColors", event.target.checked)}
+          />
+        }
+      />
+      <SettingsRow
+        title="Maximum file size (MB)"
+        control={
+          <Input
+            aria-label="Maximum file size"
+            type="number"
+            size="sm"
+            className="w-full sm:w-24"
+            min={1}
+            max={2048}
+            value={settings.maxFileMegabytes}
+            onChange={(event) => set("maxFileMegabytes", Number(event.target.value))}
+          />
+        }
+      />
+      <SettingsRow
+        title="Build plate"
+        control={
+          <select
+            aria-label="Build plate"
+            value={settings.buildPlate.preset}
+            onChange={(event) =>
+              set("buildPlate", {
+                ...settings.buildPlate,
+                preset: event.target.value as ModelPreviewSettings["buildPlate"]["preset"],
+              })
+            }
+          >
+            {Object.entries(BUILD_PLATE_PRESETS).map(([key, value]) => (
+              <option key={key} value={key}>
+                {value.label} ({value.volumeMm.join(" x ")} mm)
+              </option>
+            ))}
+            <option value="custom">Custom</option>
+          </select>
+        }
+      />
       {settings.buildPlate.preset === "custom" ? (
-        <div className="flex gap-2">
+        <div className="flex gap-2 px-3 sm:px-4">
           {(["X", "Y", "Z"] as const).map((axis, index) => (
             <label key={axis}>
               {axis} mm
@@ -176,74 +200,79 @@ function SettingsForm({
         </div>
       ) : (
         BUILD_PLATE_PRESETS[settings.buildPlate.preset].note && (
-          <p className="text-xs text-muted-foreground">
+          <p className="px-3 text-xs text-muted-foreground sm:px-4">
             {BUILD_PLATE_PRESETS[settings.buildPlate.preset].note}
           </p>
         )
       )}
       <SettingsRow title="Fabrication app URL" description="Optional link for STEP files.">
-        <Input
-          aria-label="Fabrication app URL"
-          type="url"
-          value={settings.fabricationUrl ?? ""}
-          onChange={(event) => set("fabricationUrl", event.target.value || null)}
-        />
+        <div className="flex flex-col gap-2 pb-2">
+          <Input
+            aria-label="Fabrication app URL"
+            type="url"
+            value={settings.fabricationUrl ?? ""}
+            onChange={(event) => set("fabricationUrl", event.target.value || null)}
+          />
+        </div>
       </SettingsRow>
       <SettingsRow
         title="Let agents render models and propose variants"
         description="Enable shared tools for model PNG views and parameter proposals in the variant workbench."
-      >
-        <input
-          aria-label="Let agents render models and propose variants"
-          type="checkbox"
-          checked={settings.agentToolEnabled}
-          onChange={(event) => set("agentToolEnabled", event.target.checked)}
-        />
-      </SettingsRow>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          disabled={busy !== null || !canSave}
-          title={
-            canSave ? undefined : "This connection requires permission to edit model settings."
-          }
-          onClick={() => void save()}
-        >
-          Save settings
-        </Button>
-        <Button
-          variant="outline"
-          disabled={busy !== null}
-          onClick={() =>
-            void act(async () => {
-              if (settings.openscadPath !== initial.openscadPath)
-                throw new Error("Save the executable path before refreshing detection.");
-              setDetection(
-                await runModelCommand(models.detect, { environmentId, input: { refresh: true } }),
-              );
-            }, "Detection refreshed.")
-          }
-        >
-          Refresh detection
-        </Button>
-        <Button
-          variant="outline"
-          disabled={busy !== null || !canSave}
-          onClick={() =>
-            void act(
-              () => runModelCommand(models.clearCache, { environmentId, input: {} }),
-              "Render cache cleared.",
-            )
-          }
-        >
-          Clear render cache
-        </Button>
+        control={
+          <input
+            aria-label="Let agents render models and propose variants"
+            type="checkbox"
+            checked={settings.agentToolEnabled}
+            onChange={(event) => set("agentToolEnabled", event.target.checked)}
+          />
+        }
+      />
+      <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            disabled={busy !== null || !canSave}
+            title={
+              canSave ? undefined : "This connection requires permission to edit model settings."
+            }
+            onClick={() => void save()}
+          >
+            Save settings
+          </Button>
+          <Button
+            variant="outline"
+            disabled={busy !== null}
+            onClick={() =>
+              void act(async () => {
+                if (settings.openscadPath !== initial.openscadPath)
+                  throw new Error("Save the executable path before refreshing detection.");
+                setDetection(
+                  await runModelCommand(models.detect, { environmentId, input: { refresh: true } }),
+                );
+              }, "Detection refreshed.")
+            }
+          >
+            Refresh detection
+          </Button>
+          <Button
+            variant="outline"
+            disabled={busy !== null || !canSave}
+            onClick={() =>
+              void act(
+                () => runModelCommand(models.clearCache, { environmentId, input: {} }),
+                "Render cache cleared.",
+              )
+            }
+          >
+            Clear render cache
+          </Button>
+        </div>
+        {busy && <OperationStatus label={busy} />}
+        {message && (
+          <p role={failed ? "alert" : "status"} className="text-sm">
+            {message}
+          </p>
+        )}
       </div>
-      {busy && <OperationStatus label={busy} />}
-      {message && (
-        <p role={failed ? "alert" : "status"} className="text-sm">
-          {message}
-        </p>
-      )}
     </div>
   );
 }

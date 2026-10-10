@@ -154,7 +154,7 @@ contents are safely published.
 | Upstream maintenance                    | Policy stays in fork-owned modules with narrow integration points.                   |
 
 Git is the handoff for published code, not live file synchronization. Cloud VM provisioning,
-live thread migration and agent-initiated cross-machine delegation (L08) are out of scope.
+live thread migration and agent-initiated cross-machine delegation are out of scope.
 
 Questions to settle when phase 3 starts: how a project stays discoverable with no checkout,
 checkout reuse versus isolation, the publication trigger and policy (including WIP, failed

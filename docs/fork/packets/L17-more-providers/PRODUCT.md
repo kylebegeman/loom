@@ -2,12 +2,15 @@
 
 ## Problem
 
-Kyle wants to use models beyond his Codex and Claude subscriptions: DeepSeek on its own API,
-local models through Ollama or LM Studio, GitHub Copilot, and agents that speak the Agent
-Client Protocol. Upstream T3 Code can already reach some of these (OpenCode, Claude routers),
-but only after hand-editing environment variables and custom model ids per instance, and it
-has no Copilot or generic ACP provider. Old Loom had Gemini, Copilot, ACP registry and
-OpenAI-endpoint drivers; its endpoint drivers were chat-only and could not edit files.
+Kyle wants to use models beyond his Codex and Claude subscriptions: DeepSeek on its own API
+and local models through Ollama or LM Studio. Upstream T3 Code can already reach these
+(OpenCode, Claude routers), but only after hand-editing environment variables and custom
+model ids per instance. Old Loom had OpenAI-endpoint drivers, but they were chat-only and
+could not edit files.
+
+GitHub Copilot and other Agent Client Protocol agents were part of this packet until Kyle
+approved retiring them on 2026-10-09: upstream's ACP Registry covers them (README, "Retired
+parts").
 
 ## What the user can do
 
@@ -17,29 +20,23 @@ OpenAI-endpoint drivers; its endpoint drivers were chat-only and could not edit 
 - Choose whether an endpoint instance shares your Claude skills (on for cloud endpoints, off
   for local models), and change it later per instance.
 - Refresh an endpoint instance's model list later.
-- Add any ACP agent by giving its command, arguments and environment variables. Gemini CLI
-  (for Code Assist Standard or Enterprise accounts) is one: command `gemini`, argument
-  `--acp`.
-- Add GitHub Copilot CLI as a provider and chat with it in any project.
-- Pick these providers in the model picker, see their status, approve their tool calls,
-  interrupt them, and continue their threads after a restart when the agent supports it.
+- Pick endpoint instances in the model picker and use them like any Claude instance.
 
 ## Entry points
 
 | Where                                    | What                                                                                                                                                                    |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Settings > Loom > Model endpoints        | List of endpoint instances (derived from provider instances this packet created) with **Refresh models** and a "Share Claude skills" switch each, and **Add endpoint**. |
-| Settings > Providers > Add provider      | "ACP agent" and "GitHub Copilot CLI" appear after upstream's drivers (via `ext-providers`).                                                                             |
-| Settings > Providers, an instance editor | The generic settings form for the fork drivers; endpoint instances use the usual Claude form (refresh models from Settings > Loom > Model endpoints).                   |
+| Settings > Providers, an instance editor | Endpoint instances use the usual Claude form (refresh models from Settings > Loom > Model endpoints).                                                                   |
 | Model picker in the composer             | The new instances, like any provider.                                                                                                                                   |
-| Command palette                          | "Add model endpoint", "Add ACP agent", "Add GitHub Copilot provider".                                                                                                   |
+| Command palette                          | "Add model endpoint".                                                                                                                                                   |
 | Keybinding                               | None.                                                                                                                                                                   |
 
 Ways out: an endpoint instance is removed or disabled in the provider editor like any
-instance (Model endpoints lists it with **Open in Providers**). ACP instances are removed the
-same way. Model list refresh can be repeated. The endpoint test reruns with **Refresh
-models** on its Model endpoints row. The skills switch turns sharing on and off again (off
-removes only Loom's symlink, never a real folder).
+instance (Model endpoints lists it with **Open in Providers**). Model list refresh can be
+repeated. The endpoint test reruns with **Refresh models** on its Model endpoints row. The
+skills switch turns sharing on and off again (off removes only Loom's symlink, never a real
+folder).
 
 ## Flows
 
@@ -66,30 +63,10 @@ removes only Loom's symlink, never a real folder).
    environment variables, adds the chosen models as custom models, and opens it in the model
    picker's list. A toast: "DeepSeek is ready. Pick it in the model picker."
 
-### Add an ACP agent (for example Gemini CLI) or GitHub Copilot
-
-Through upstream's **Add provider** dialog. ACP agent has Command, Arguments (one per line),
-Display hint (for example "Gemini CLI"), and the usual Environment variables; it runs in the
-project folder. Its Command description reads: "The agent's command on this environment, for
-example `gemini` with the argument `--acp` for Gemini CLI." The Copilot form has Binary path
-and Launch arguments (defaults shown as placeholders). After saving, the status row shows
-one of:
-
-- "Ready" with the agent's reported name and version.
-- Copilot signed out: "Not signed in. Run `copilot` on this environment and sign in with its
-  login command, then refresh. Or add a `GH_TOKEN` environment variable to this provider."
-- Custom agent signed out: "Not signed in. Sign in with this agent's own command on this
-  environment, then refresh." plus the agent's advertised auth method names when it sends
-  them.
-- "Copilot CLI not found. Install it on this environment or set its path." (custom agent:
-  "`<command>` was not found on this environment.")
-
 ### Use it in a thread
 
-Same as any provider: pick the instance in the model picker, send. Tool calls appear in the
-work log, approvals in the approval panel, plans in the plan panel when the agent sends ACP
-plan updates. Model selection lists the models the agent advertises (ACP session models or a
-"model" config option); when it advertises none, the picker shows a single "Agent default".
+Same as any Claude instance: pick the endpoint instance in the model picker, send. Tool
+calls, approvals and plans work as they do for Claude, because Claude Code is the agent.
 
 ## States
 
@@ -100,37 +77,24 @@ plan updates. Model selection lists the models the agent advertises (ACP session
 - Endpoint skills switch: linked, not linked, "This endpoint has its own skills folder; Loom
   leaves it alone." (a real folder exists), "Your main Claude skills folder was not found."
   (nothing to link).
-- ACP driver status: pending ("Checking Copilot CLI." or, for a custom agent, "Checking
-  `<command>`."), ready, not installed, not signed in, error (agent crashed during
-  initialize, with the first stderr line when it has no secrets).
-- In a thread: agent without `session/load` support: after a server restart the next message
-  starts a new agent session, and the thread's work log shows "This agent cannot resume its
-  earlier session; it starts fresh." Replaying history into a fresh session is out of scope.
 
 ## Surfaces and connection modes
 
-Web and desktop supported. No mobile UI; threads on these providers still work from the
-upstream mobile app. Remote works in every mode because endpoint calls and agents run on the
-environment. On an upstream server the Model endpoints section explains itself and the fork
-drivers are absent (their settings entries appear as unavailable providers there, and come
-back when Loom runs again).
+Web and desktop supported. No mobile UI; threads on endpoint instances still work from the
+upstream mobile app. Remote works in every mode because endpoint calls run on the
+environment. On an upstream server the Model endpoints section explains itself, and endpoint
+instances keep working because they are plain Claude instances.
 
 ## Decisions
 
-- No fork-owned agent loop. Endpoints ride Claude Code; agents ride ACP (RESEARCH.md).
+- No fork-owned agent loop. Endpoints ride Claude Code (RESEARCH.md).
 - DeepSeek is a Claude-based instance only (DeepSeek's Anthropic-compatible API); there is no
   OpenCode preset. It stays a documented, tested preset; Kyle is not setting it up now.
 - Endpoint skills: cloud endpoints (DeepSeek, Other) share the main Claude skills folder
   through a `skills` symlink, like Kyle's `~/.claude_N` accounts; local models (Ollama,
   LM Studio) start with none. Each endpoint instance has its own switch.
-- Fork driver kinds are `loomAcp` and `loomCopilot`, not upstream's reserved "coming soon"
-  kinds (`githubCopilot`, `acpRegistry`), so a future upstream driver cannot misread a fork
-  instance's config.
-- No dedicated Gemini driver. Google stopped serving Gemini CLI to individual accounts on
-  2026-06-18 and upstream supports Antigravity; Gemini CLI is reachable through the generic
-  custom ACP agent option (`gemini --acp`).
-- Copilot is built last (Kyle does not use it). Its signed-out status suggests the Copilot
-  CLI's own login first, with `GH_TOKEN` as the alternative.
+- ACP agents (Gemini CLI among them) and GitHub Copilot: retired by Kyle on 2026-10-09.
+  Upstream's ACP Registry includes Copilot and Gemini and accepts custom ACP commands.
 - Endpoint instances are ordinary Claude instances. They survive rollbacks to upstream and are
   editable in the normal provider editor. The fork only remembers which instances it created
   (for the Model endpoints list) in a fork table.

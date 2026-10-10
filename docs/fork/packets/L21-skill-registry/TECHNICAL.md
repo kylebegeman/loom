@@ -324,18 +324,16 @@ into it, never earlier.
 
 A constant list served by `sources`; nothing is fetched until the user clicks Fetch.
 
-| id            | URL                                          | License    | Preselect (Claude targets)                                        | Preselect (agents, Codex targets) |
-| ------------- | -------------------------------------------- | ---------- | ----------------------------------------------------------------- | --------------------------------- |
-| `impeccable`  | `https://github.com/pbakaus/impeccable`      | Apache-2.0 | `.claude/skills/impeccable`                                       | `.agents/skills/impeccable`       |
-| `ponytail`    | `https://github.com/DietrichGebert/ponytail` | MIT        | `skills/ponytail`, `-audit`, `-debt`, `-gain`, `-help`, `-review` | same                              |
-| `typesafe-ai` | `https://github.com/typesafe-ai/skills`      | MIT        | `skills/typesafe-ai`                                              | same                              |
+| id           | URL                                          | License    | Preselect (Claude targets)                                        | Preselect (agents, Codex targets) |
+| ------------ | -------------------------------------------- | ---------- | ----------------------------------------------------------------- | --------------------------------- |
+| `impeccable` | `https://github.com/pbakaus/impeccable`      | Apache-2.0 | `.claude/skills/impeccable`                                       | `.agents/skills/impeccable`       |
+| `ponytail`   | `https://github.com/DietrichGebert/ponytail` | MIT        | `skills/ponytail`, `-audit`, `-debt`, `-gain`, `-help`, `-review` | same                              |
 
 Licenses and paths checked with `gh api` on 2026-09-24. impeccable ships one copy of its
 skill per tool (`.claude/`, `.agents/`, `.cursor/`, `plugin/` and more), so the fetched list
 groups entries with the same name and shows each subpath; the preselection picks the copy
 for the chosen target family. A preselected subpath missing after a fetch (the repository
-changed) is simply not preselected. The TypeSafe skill is listed, never installed without a
-click (L29 decision).
+changed) is simply not preselected.
 
 ### Sources and installs (`sources.ts`, `installs.ts`)
 
@@ -439,7 +437,7 @@ SparklesIcon, shortcut: "K", unavailableHint: "Needs a Loom server", isAvailable
     `inventory.logic.ts` (filters, grouping, badge derivation; pure).
   - Resource ids: `SkillsPanel` starts on the tab named by `surface.resourceId`.
     `forkPanelSurface("skill-registry", "sources")` opens the Sources tab with the URL field
-    focused ("Install skills from git", and L29's "Install the TypeSafe skill");
+    focused ("Install skills from git");
     `forkPanelSurface("skill-registry", "lab")` opens the Lab ("Create a skill"); no resource
     id opens the Skills tab.
   - `palette.ts`, `SkillRegistryShortcuts.tsx` (the `ForkRoot` component SEAMS.md registers;
