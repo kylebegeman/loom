@@ -143,7 +143,16 @@ cannot serve right now: the `loom.switchboard.limits` RPC reads the Switchboard
 controller's status on `127.0.0.1:8318`, so while every Codex account is on credits only
 the credit models stay selectable. Off, launches and the picker are upstream's.
 
-| `apps/web/src/components/files/FilePreviewPanel.tsx` | `file-outline` | Outline toggle and column inside the file viewer. See `docs/fork/packets/L05-file-outline`. |
+`apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 2 marker lines) skips the Loom
+tables listed in `apps/server/src/fork/devDb.ts` when it copies the real database. Their
+rows name the live install's lanes, run folders and graphs, and a dev server reconciling
+them would release leases, clear scratch or delete files that belong to the live install.
+Add a table there when a feature stores host resources it later cleans up.
+
+L05 adds the outline toggle and column to the file viewer in
+`apps/web/src/components/files/FilePreviewPanel.tsx` (`fork: file-outline`, 3 marker
+lines). See the [L05 packet](docs/fork/packets/L05-file-outline/SEAMS.md) and
+[user help](docs/fork/user/file-outline.md).
 
 ## Identifiers kept on purpose
 
