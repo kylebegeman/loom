@@ -1,10 +1,9 @@
 import styles from "./workspace.module.css";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { ChevronDownIcon, Grid3x3Icon } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
-  BUILD_PLATE_PRESETS,
   type BuildPlatePresetId,
   type BuildPlateSetting,
   type ModelPreviewSettings,
@@ -26,6 +25,7 @@ import {
   BUILD_PLATE_PATTERNS,
   bedGroups,
   buildPlateLabel,
+  buildPlateNote,
   formatVolume,
   resolveBuildVolume,
 } from "./buildPlate";
@@ -47,17 +47,24 @@ export function useBuildPlate(environmentId: EnvironmentId, settings: ModelPrevi
   const [pending, setPending] = useState<BuildPlateSetting | null>(null);
   if (pending !== null && samePlate(pending, settings.buildPlate)) setPending(null);
   const plate = pending ?? settings.buildPlate;
+  // Saves send the whole settings object, so they read the newest props, not the ones captured
+  // when the control rendered, and a failed save only undoes its own choice.
+  const latest = useRef({ settings, plate });
+  useLayoutEffect(() => {
+    latest.current = { settings, plate };
+  });
   const save = async (next: BuildPlateSetting) => {
-    if (samePlate(next, plate)) return;
+    if (samePlate(next, latest.current.plate)) return;
+    latest.current.plate = next;
     setPending(next);
     try {
       await runModelCommand(models.updateSettings, {
         environmentId,
-        input: { ...settings, buildPlate: next },
+        input: { ...latest.current.settings, buildPlate: next },
       });
       appAtomRegistry.refresh(models.settings({ environmentId, input: {} }));
     } catch (error) {
-      setPending(null);
+      setPending((current) => (current === next ? null : current));
       toastManager.add({
         type: "error",
         title: "Bed not changed",
@@ -122,7 +129,7 @@ export function BedPicker({
 }) {
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const volume = resolveBuildVolume(plate);
-  const note = plate.preset === "custom" ? null : BUILD_PLATE_PRESETS[plate.preset].note;
+  const note = buildPlateNote(plate);
   const label = buildPlateLabel(plate);
   return (
     <Popover>

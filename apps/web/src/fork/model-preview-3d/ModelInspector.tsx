@@ -36,13 +36,7 @@ import {
 } from "~/components/ui/menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { meshStats } from "./viewer/load";
-import {
-  bedGroups,
-  buildPlateLabel,
-  fitsBuildVolume,
-  formatVolume,
-  type BuildVolume,
-} from "./buildPlate";
+import { bedGroups, buildPlateLabel, bedFit, formatVolume, type BuildVolume } from "./buildPlate";
 import { useBuildPlate } from "./BedPicker";
 import { Chip, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
 
@@ -364,9 +358,9 @@ export function PartSection({
     const limit = volume[axis];
     return limit === null || limit === undefined ? 0 : value - limit;
   });
-  const fits = fitsBuildVolume(stats.size, volume);
-  const rotated =
-    !fits && stats.size[0]! <= volume[1] && stats.size[1]! <= volume[0] && over[2]! <= 1e-6;
+  const fit = bedFit(stats.size, volume);
+  const fits = fit === "fits";
+  const rotated = fit === "rotated";
   const manifold = render?.summary?.manifold;
   return (
     <div className={styles["model-inspector-scroll"]}>
@@ -394,7 +388,7 @@ export function PartSection({
           ) : (
             <Chip tone="warning">
               <TriangleAlertIcon />
-              Too large
+              {rotated ? "Fits rotated" : "Too large"}
             </Chip>
           )}
           <div className="flex-1" />

@@ -16,6 +16,9 @@ export const resolvePlate = (setting: BuildPlateSetting): Plate => ({
 });
 export const buildPlateLabel = (setting: BuildPlateSetting) =>
   setting.preset === "custom" ? "Custom bed" : BUILD_PLATE_PRESETS[setting.preset].label;
+/** Extra limits worth knowing, such as per-nozzle reach on a dual-nozzle printer. */
+export const buildPlateNote = (setting: BuildPlateSetting): string | null =>
+  setting.preset === "custom" ? null : BUILD_PLATE_PRESETS[setting.preset].note;
 export const formatVolume = (volume: BuildVolume) =>
   volume.filter((value) => value !== null).join(" × ");
 /** Bed choices grouped for menus: printers, surfaces, then the custom size. */
@@ -50,3 +53,11 @@ export const BUILD_PLATE_PATTERNS: readonly {
 export const fitsBuildVolume = (size: readonly number[], volume: BuildVolume) =>
   size.length === 3 &&
   size.every((v, i) => Number.isFinite(v) && (volume[i] === null || v <= volume[i]! + 1e-6));
+/** Whether a part fits as placed, fits once turned 90° on the bed, or does not fit at all. */
+export type BedFit = "fits" | "rotated" | "too-large";
+export const bedFit = (size: readonly number[], volume: BuildVolume): BedFit =>
+  fitsBuildVolume(size, volume)
+    ? "fits"
+    : size.length === 3 && fitsBuildVolume([size[1]!, size[0]!, size[2]!], volume)
+      ? "rotated"
+      : "too-large";

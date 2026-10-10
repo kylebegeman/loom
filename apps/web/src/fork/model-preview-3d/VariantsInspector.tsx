@@ -81,7 +81,7 @@ import {
   rebaseParameterValues,
   validParameterLiteral,
 } from "./params";
-import { fitsBuildVolume, type Plate } from "./buildPlate";
+import { bedFit, type Plate } from "./buildPlate";
 import {
   Chip,
   EmptyNote,
@@ -261,7 +261,7 @@ function VariantDetail({
   const differ = changedParameters(parameters, draft, defaults).length;
   const inUse = same(draft, session.values);
   const stale = !!variant.thumbnail && variant.renderedRevision !== session.data.sourceRevision;
-  const oversized = variant.dimensions && !fitsBuildVolume(variant.dimensions, plate.volume);
+  const fit = variant.dimensions ? bedFit(variant.dimensions, plate.volume) : "fits";
   return (
     <>
       <div className={styles["model-detail-head"]}>
@@ -326,7 +326,11 @@ function VariantDetail({
           {variant.dimensions && !dirty
             ? `, ${variant.dimensions.map((value) => value.toFixed(0)).join(" × ")} mm`
             : ""}
-          {oversized && !dirty ? ", too large for the plate" : ""}
+          {dirty || fit === "fits"
+            ? ""
+            : fit === "rotated"
+              ? ", fits the plate if rotated 90°"
+              : ", too large for the plate"}
         </div>
         {error && (
           <p role="alert" className={styles["model-help"]} data-tone="error">
@@ -1096,8 +1100,7 @@ export function VariantsInspector({
               const values = rebaseParameterValues(session.data.parameters, variant.values);
               const isSelected = selection.includes(variant.id);
               const inUse = same(values, session.values);
-              const oversized =
-                variant.dimensions && !fitsBuildVolume(variant.dimensions, plate.volume);
+              const fit = variant.dimensions ? bedFit(variant.dimensions, plate.volume) : "fits";
               const stale =
                 !!variant.thumbnail && variant.renderedRevision !== session.data.sourceRevision;
               const toggle = () =>
@@ -1146,8 +1149,8 @@ export function VariantsInspector({
                     )}
                     {inUse ? (
                       <Chip tone="primary">In use</Chip>
-                    ) : oversized ? (
-                      <Chip tone="warning">Too large</Chip>
+                    ) : fit !== "fits" ? (
+                      <Chip tone="warning">{fit === "rotated" ? "Fits rotated" : "Too large"}</Chip>
                     ) : stale ? (
                       <Chip>Out of date</Chip>
                     ) : null}
