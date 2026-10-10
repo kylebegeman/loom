@@ -82,6 +82,12 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 // fork: ext-panels
 import { ForkSurfaceIcon, forkSurfaceTitle, type ForkSurfaceAction } from "~/fork/panels/surface";
+// fork: panel-picker
+import {
+  LoomPanelPickerButton,
+  LoomPanelPickerLauncher,
+  useLoomPanelPicker,
+} from "~/fork/panel-picker/PanelPicker";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 interface RightPanelTabsProps {
@@ -464,6 +470,18 @@ function RightPanelEmptyState(props: {
     node?.focus();
   }, []);
 
+  const loomPanelPicker = useLoomPanelPicker(); // fork: panel-picker
+  if (loomPanelPicker.enabled) {
+    // fork: panel-picker
+    return (
+      <LoomPanelPickerLauncher
+        actions={actions}
+        browserProfiles={props.browserProfiles}
+        onAddBrowserInProfile={props.onAddBrowserInProfile}
+      />
+    );
+  }
+
   const isHighlighted = (action: SurfaceAction) =>
     highlightIndex !== -1 && availableActions[highlightIndex] === action;
 
@@ -811,6 +829,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const addSurfaceTriggerRef = useRef<HTMLButtonElement>(null);
   const [renamingDevice, setRenamingDevice] = useState<string | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
+  const loomPanelPicker = useLoomPanelPicker(); // fork: panel-picker
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
     canScrollLeft: false,
@@ -1255,7 +1274,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 </div>
               );
             })}
-            {props.open !== false ? (
+            {props.open !== false && loomPanelPicker.enabled ? ( // fork: panel-picker
+              <LoomPanelPickerButton
+                actions={addSurfaceActions}
+                browserProfiles={browserProfiles}
+                onAddBrowserInProfile={props.onAddBrowserInProfile}
+                open={addSurfaceMenuOpen}
+                onOpenChange={setAddSurfaceMenuOpen}
+                triggerRef={addSurfaceTriggerRef}
+              />
+            ) : null}
+            {props.open !== false && !loomPanelPicker.enabled ? ( // fork: panel-picker
               <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
                 <MenuTrigger
                   ref={addSurfaceTriggerRef}

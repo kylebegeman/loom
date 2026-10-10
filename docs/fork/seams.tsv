@@ -63,3 +63,4 @@ apps/web/src/components/chat/MessagesTimeline.logic.test.ts	compaction-recovery	
 apps/web/src/components/chat/V2LifecycleRow.tsx	compaction-recovery	1
 apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
+apps/web/src/components/RightPanelTabs.tsx	panel-picker	6

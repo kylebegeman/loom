@@ -21,6 +21,13 @@ starts with the first incomplete, unclaimed packet. Closing L23 does not start a
 All candidate dispositions are settled for this review. The comparison below retains the
 reasons for selection or deferral; only the selected queue is available for implementation. L27 is the only selection not yet implemented.
 
+Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
+
+| Order | Packet                                  | Status                                 | Decision                                                                  |
+| ----- | --------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------- |
+| 7     | [L12 Panel picker](./L12-panel-picker/) | Done; on `feat/loom-panel-picker`      | Kyle included the full packet on 2026-10-09.                              |
+| 8     | [L26 Code graph](./L26-code-graph/)     | In progress; on `feat/loom-code-graph` | Kyle included the full packet on 2026-10-09; it was deferred only for V2. |
+
 ## Candidates for the queue
 
 Source review: 2026-09-27, Loom `e73fc8faca2cfbf1e1b0fafa1cd85ce37c508fff`.
@@ -74,7 +81,8 @@ implementation readiness. Confirmed deferrals:
   reports, enablement and test-thread behavior before choosing contracts. The existing `$`
   picker covers invocation, not this management UI. Do not build a partial file browser in
   the meantime; there is no deadline.
-- **L26 Code graph: confirmed deferred by Kyle on 2026-09-27.** Preserve the full
+- **L26 Code graph: deferred by Kyle on 2026-09-27, included on 2026-10-09** once V2
+  shipped in nightly (selected queue, order 8). The original deferral note: preserve the full
   code map, change-impact, agent-query and automatic-update scope. Revisit released turn
   completion, project deletion, checkpoint/diff and MCP contracts after V2 ships. Do not
   build a temporary manual-only graph or speculative V2 integration. There is no deadline.

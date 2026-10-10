@@ -7,6 +7,7 @@ import type { ComponentType } from "react";
 
 import { FileOutlineShortcuts } from "./file-outline/FileOutlineShortcuts";
 import { ForkGlobalShortcuts } from "./keybindings/ForkGlobalShortcuts";
+import { PanelPickerCommandHost } from "./panel-picker/PanelPickerCommandHost";
 
 /** Components mounted once in the authenticated app shell. One line per packet. */
 const FORK_ROOT_COMPONENTS: ReadonlyArray<{
@@ -19,6 +20,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "project-lifecycle-host", Component: ProjectLifecycleHost },
   { id: "apple-build-tooling-shortcuts", Component: AppleBuildToolingShortcuts },
   { id: "device-qa-shortcuts", Component: DeviceQaShortcuts },
+  { id: "panel-picker-commands", Component: PanelPickerCommandHost },
   { id: "shortcuts", Component: ForkGlobalShortcuts },
   // { id: "snippets-dialog", Component: SnippetsDialogHost },
 ];

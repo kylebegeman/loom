@@ -72,19 +72,23 @@ multi-line seam under its marker.)
 
 ### 4. "+" button (before line 1245) and 5. upstream menu condition (line 1245)
 
+As built: upstream renders the "+" menu whenever the panel is open and opens it from
+`rightPanel.new`, so the button takes upstream's open state and trigger ref.
+
 ```diff
              })}
-+            {/* fork: panel-picker */}
-+            {props.surfaces.length > 0 && loomPanelPicker.enabled ? (
+-            {props.open !== false ? (
++            {props.open !== false && loomPanelPicker.enabled ? ( // fork: panel-picker
 +              <LoomPanelPickerButton
 +                actions={addSurfaceActions}
 +                browserProfiles={browserProfiles}
 +                onAddBrowserInProfile={props.onAddBrowserInProfile}
++                open={addSurfaceMenuOpen}
++                onOpenChange={setAddSurfaceMenuOpen}
++                triggerRef={addSurfaceTriggerRef}
 +              />
 +            ) : null}
-+            {/* fork: panel-picker: upstream menu only when the picker is off */}
--            {props.surfaces.length > 0 ? (
-+            {props.surfaces.length > 0 && !loomPanelPicker.enabled ? (
++            {props.open !== false && !loomPanelPicker.enabled ? ( // fork: panel-picker
                <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
 ```
 
@@ -107,6 +111,11 @@ Expected: exit 0, or a conflict only in `RightPanelTabs.tsx` (or the ext-panels 
 marked lines. `RightPanelTabs.tsx` changes often upstream (new surfaces add rows to both
 arrays); those edits land inside the arrays, away from these seams, and flow into the
 picker automatically. Record the tag and the result here.
+
+Result on 2026-10-09 against `v0.0.46-nightly.20261009.2886`: `RightPanelTabs.tsx` and
+every L12 file merge cleanly. The preview exits 1 on three files L12 does not touch
+(`DesktopAppIdentity.test.ts`, `CodexProvider.ts`, `packages/shared/package.json`); main
+at `da31d9942f` conflicts on the same three.
 
 On a conflict: keep upstream's version of the surrounding code, reapply the diffs above,
 and confirm the launcher early return is still after the component's last hook.

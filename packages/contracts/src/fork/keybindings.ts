@@ -13,6 +13,7 @@ export const FORK_KEYBINDING_COMMANDS = [
   "loom.device-qa.toggle",
   "loom.device-qa.capture",
   "loom.device-qa.run-last-flow",
+  "loom.panel-picker.open",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];
 

@@ -4,6 +4,7 @@ import { ModelPreviewSettingsSection } from "../model-preview-3d/SettingsSection
 import { ProjectLifecycleSettingsSection } from "../project-lifecycle/SettingsSection";
 import { AppleBuildToolingSettingsSection } from "../apple-build-tooling/settings";
 import { DeviceQaSettingsSection } from "../device-qa/settings";
+import { PanelPickerSettingsSection } from "../panel-picker/settings";
 export interface ForkSettingsSection {
   readonly id: string;
   readonly title: string;
@@ -19,4 +20,5 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
     Component: AppleBuildToolingSettingsSection,
   },
   { id: "device-qa", title: "Device QA", Component: DeviceQaSettingsSection },
+  { id: "panel-picker", title: "Panel picker", Component: PanelPickerSettingsSection },
 ];

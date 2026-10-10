@@ -44,15 +44,15 @@ The 2026-09-27 review identified these items to revisit:
   schedules. Preserve the additional product ideas; do not implement competing lifecycles.
 - **L21:** unified skill management and creation retained, deferred by Kyle on 2026-09-27.
   Revisit released provider/account discovery, enablement and test-thread contracts after V2.
-- **L26:** full code graph retained, deferred by Kyle on 2026-09-27. Revisit released
-  turn-completion, project-deletion, diff and MCP integration after V2; no manual-only substitute.
+- **L12, L26:** included by Kyle on 2026-10-09 now that V2 ships in nightly. L26's
+  integration was redesigned against released V2 events; see its TECHNICAL.md.
 - **L16, L17:** reassess shared authentication, ACP Registry and provider backports before
   designing extra account/provider infrastructure.
 - **L03, L22, L20:** their shared turn-input plan and some packet seams reference V1 code
   removed by V2. Choose new integration points only from released source.
 - **L04:** archived by Kyle on 2026-10-07. Its UI is hidden; the implementation remains
   available for reference.
-- **L06, L07, L11, L12, L13, L14, L15, L18:** preserve the proposals pending review
+- **L06, L07, L11, L13, L14, L15, L18:** preserve the proposals pending review
   of changed UI, run, request, checkpoint and provider behavior. Review individual parts
   separately when a packet is picked up.
 - **L09:** on `main` (PR #14). A real remote Mac over SSH is still to check; see
@@ -153,7 +153,7 @@ means the packet registers nothing in server core and needs it only as the prere
 | L09 | [`device-qa`](./L09-device-qa/)                           | Run UI flows on simulators and collect screenshots and recordings as thread evidence.                                      | P12                          | core, root, panels, settings, palette, keys, mcp                                | Complete (PR #14)                             |
 | L10 | [`apple-build-tooling`](./L10-apple-build-tooling/)       | Build, test and run Xcode and Swift projects with parsed error and test summaries.                                         | F21                          | core, root, panels, settings, palette, keys, mcp                                | Complete (PR #13)                             |
 | L11 | [`browser-dev-tools`](./L11-browser-dev-tools/)           | Dev servers, Docker Compose, local databases, an HTTP lab, and console and network tabs.                                   | P13                          | core, root, panels, settings, palette, keys, mcp, desktop                       | Deferred: V2                                  |
-| L12 | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                          | core\*, root, panels, settings, palette, keys                                   | Deferred: V2                                  |
+| L12 | [`panel-picker`](./L12-panel-picker/)                     | Open any right panel surface from one compact, searchable, keyboard-driven picker.                                         | P14                          | core\*, root, panels, settings, palette, keys                                   | Done (`feat/loom-panel-picker`)               |
 | L13 | [`composer-drawers`](./L13-composer-drawers/)             | Send one message with other settings, add a schema, attach shell output, or reuse clipboard items.                         | P15, F8 (clipboard history)  | core, root, settings, palette, keys, composer                                   | Deferred: V2                                  |
 | L14 | [`chat-conveniences`](./L14-chat-conveniences/)           | Find in thread, Mermaid diagrams, model presets with an optional Jev Auto preset, and questions that do not stop the turn. | F8 (the rest)                | core, root, settings, palette, keys, mcp, composer, decide                      | Deferred: V2                                  |
 | L15 | [`ai-code-review`](./L15-ai-code-review/)                 | A second model reviews changes and chosen findings go back to be fixed.                                                    | F3                           | core, root, panels, settings, palette, keys, mcp, composer, diff-header, decide | Deferred: V2                                  |

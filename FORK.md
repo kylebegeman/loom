@@ -112,6 +112,14 @@ L09 wraps DeviceWorkspace in `apps/web/src/components/device/DevicePanel.tsx`
 being viewed. The row renders nothing against a server without Device QA. See the
 [L09 packet](docs/fork/packets/L09-device-qa/SEAMS.md).
 
+L12 renders the right panel's empty-state launcher and the tab bar's "+" menu through
+the Loom panel picker in `apps/web/src/components/RightPanelTabs.tsx` (`fork: panel-picker`,
+6 marker lines). Both seams read upstream's own action arrays, and the "+" popover reuses
+upstream's open state and trigger, so `rightPanel.new` still opens it. With the picker
+turned off in Settings the upstream list and menu render unchanged. See the
+[L12 packet](docs/fork/packets/L12-panel-picker/SEAMS.md) and
+[user help](docs/fork/user/panel-picker.md).
+
 The thread inspector is archived in `apps/web/src/fork/thread-inspector/`. Its header
 seam and UI registrations are removed.
 

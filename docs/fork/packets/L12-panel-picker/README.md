@@ -1,6 +1,6 @@
 # L12: Panel picker
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Done. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 A compact, searchable picker for opening right-panel surfaces. It replaces upstream's flat
 "Open a surface" launcher (shown when the right panel is empty) and the tab bar's "+" menu
@@ -11,6 +11,16 @@ deliberately much smaller than old Loom's catalog (about 1,000 lines of catalog 
 code there; about 530 here).
 
 Selection item: P14 (Panel picker), see [selections.md](../../selections.md).
+
+Kyle included the full packet on 2026-10-09, after V2 shipped in nightly. Built on
+`feat/loom-panel-picker`; user guide: [Panel picker](../../user/panel-picker.md).
+
+As built against upstream at Loom `da31d9942f`: upstream now has seven surfaces (no
+Agents surface), always shows the "+" button while the panel is open, and opens that
+menu with `rightPanel.new` (`mod+t`). The picker's "+" popover therefore takes upstream's
+own open state and trigger ref, so `mod+t` and closing the panel keep working, and the
+row descriptions come from upstream's list where it has one (Device). The client code
+lives in `apps/web/src/fork/panel-picker/`.
 
 ## Scope
 
