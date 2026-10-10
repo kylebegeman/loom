@@ -454,8 +454,6 @@ None.
   Kyle's decision, pending verification of what each SDK accepts. It needs an optional field
   on upstream's `thread.turn.start` and adapter seams, so it belongs to a provider-seam
   packet.
-- Sending clipboard text to Jev for secret detection: rejected, because it would send the
-  clipboard to a third party. The local regex filter stays.
 - A terminal-context chip for shell output (`handle.addTerminalContext`): renders nicely,
   but the chip points at a terminal id that does not exist; a fenced block is honest and
   works in every provider.

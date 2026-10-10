@@ -179,8 +179,7 @@ The layer loads settings and the private project set once at build time into mem
 input contributor, all in the layer's scope. `updateSettings` and `setPrivateProject` write
 their rows and update the `Ref`s. Dependencies: `SqlClient`, `VcsProcess`,
 `ProjectionSnapshotQuery`, `OrchestrationEngineService`, `GitWorkflowService`,
-`VcsStatusBroadcaster`, `ServerConfig`, `FileSystem`, `Path`, and `LoomDecide` from
-`ext-decide` (part D, branch type only).
+`VcsStatusBroadcaster`, `ServerConfig`, `FileSystem` and `Path`.
 
 ### Web settings section
 
@@ -230,7 +229,7 @@ against released V2 source before building.
 ### Design: the branch namer
 
 The seam replaces the generated name with the result of a fork function that may run an
-Effect (part D needs a project lookup and, optionally, Jev):
+Effect (part D needs a project lookup):
 
 ```ts
 // apps/server/src/fork/small-extras/branchNaming.ts
@@ -293,12 +292,7 @@ const nameBranch = (input: ForkBranchNamingInput) =>
     const fragment = fragmentOf(input.branch);
     const project = yield* projectOfThread(input.threadId); // getThreadShellById, cached
     if (project !== null && (yield* isPrivateProject(project.id))) {
-      const type = yield* chooseBranchType({
-        fragment,
-        messageText: input.messageText,
-        project,
-        threadId: input.threadId,
-      });
+      const type = branchTypeFromKeywords(fragment, input.messageText);
       return privateBranchName(type, fragment); // part D, below
     }
     return input.branch; // upstream's name, with upstream's own prefix
@@ -462,84 +456,6 @@ export function privateBranchName(type: BranchType, fragment: string): string {
 The fragment is upstream's already-sanitized output (`[a-z0-9/_-]`, at most 64 characters),
 so the result is a valid branch name. A fragment that itself contains an agent name (the
 user asked for "add claude adapter") is kept: it describes the product, not the author.
-
-### Branch type with Jev (optional, `ext-decide`)
-
-`chooseBranchType` asks Jev only when the project is private **and** `ext-decide` returns an
-answer; every other outcome uses `branchTypeFromKeywords`.
-
-- Feature registration (`apps/server/src/fork/small-extras/decide.ts`), in the
-  `ext-decide` feature registry (EXTENSION-POINTS.md, section 18):
-
-  ```ts
-  export const BRANCH_TYPE_FEATURE: DecideFeature = {
-    id: "small-extras.branch-type",
-    packet: "L20",
-    label: "Branch type in private projects",
-    description:
-      "Picks feature, fix, hotfix, chore, docs or refactor for a new worktree branch in a project with No AI identification; without Jev, keyword rules pick it (default feature).",
-    defaultMode: "manual",
-    defaultThreshold: 0.6,
-    agentTool: false,
-  };
-  ```
-
-  `DecideFeature` comes from `apps/server/src/fork/decide/registry.ts`, and the file's export
-  is appended to `FORK_DECIDE_FEATURES` there. `manual` means Jev is asked automatically
-  (origin `"auto"`) whenever it is allowed for the project. No MCP tool reaches the feature,
-  so `agentTool: false` limits its modes to off and manual.
-
-- Call, inside the namer (never on the turn's critical path; the rename runs after text
-  generation):
-
-  ```ts
-  const result =
-    yield *
-    decide.decide(
-      BRANCH_TYPE_FEATURE.id,
-      {
-        // decide() runs redactState and fitBudget itself; only cap the message here.
-        state: {
-          branch_name: fragment.replace(/[-_/]+/g, " "),
-          first_message: messageText.slice(0, 3_000),
-        },
-        questions: {
-          branch_type: {
-            type: "choice",
-            instructions:
-              "Which kind of change does `first_message` ask for? `branch_name` is a short summary of the same request.",
-            criteria: {
-              feature: "Adds new behavior or a new capability.",
-              fix: "Corrects a defect in existing behavior.",
-              hotfix:
-                "Corrects an urgent defect in software that is already released or in production.",
-              chore:
-                "Maintenance with no behavior change: dependencies, build, CI, tooling or configuration.",
-              docs: "Changes only documentation or code comments.",
-              refactor: "Restructures existing code without changing its behavior.",
-            },
-          },
-        },
-      },
-      { origin: "auto", threadId, projectId },
-    );
-  ```
-
-  `answered` with a `choice` in `BRANCH_TYPES` uses it; `fallback` (any reason: `disabled`,
-  `no-key`, `project-off`, `timeout`, `error`, `low-confidence`) uses the keyword rules. The
-  threshold is applied by `decide()` itself, so the namer passes none and never re-checks
-  confidence. The
-  Jev client's own 1 second timeout applies, well inside the namer's 5 seconds. Criteria are
-  written literally and contain no negations or counting, per the jev-1.13 guidance
-  (https://docs.typesafe.ai/model-jaggedness/jev-1.13).
-
-- **Jev off by default for private projects.** When both parts exist, turning a project
-  private sets `ext-decide`'s per-project override to "Jev off" if the project has no
-  explicit Jev choice yet, and the service does the same at startup for every private
-  project (idempotent). A user who then turns Jev on for that project keeps that choice;
-  turning private mode off leaves the Jev choice as it is. It uses `LoomDecide`'s
-  `getProjectOverride` (null means no explicit choice) and `setProjectOverride(projectId,
-"off")` (EXTENSION-POINTS.md section 18).
 
 ### Commit check
 
@@ -1033,9 +949,8 @@ the turn instruction.
 
 ## Performance
 
-- Part D naming: one lookup and a string replacement per first turn; the optional Jev
-  call is bounded by its 1 second timeout and runs after text generation, off the turn's
-  critical path.
+- Part D naming: one lookup and a string replacement per first turn, after text generation
+  and off the turn's critical path.
 - Part D per turn: the contributor and the Claude resolver read in-memory state; the commit
   check runs two or three short git commands after each turn of a private project only, with
   concurrency 2 across threads. Non-private threads cost one set lookup.

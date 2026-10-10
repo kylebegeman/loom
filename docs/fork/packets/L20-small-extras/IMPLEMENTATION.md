@@ -17,9 +17,8 @@ project; never mark one of Kyle's real repositories private during development.
 ### 1. Extension points
 
 Existence checks for `ext-core` (always), `ext-settings` (parts C and D), `ext-panels`
-(part B), `ext-turn-input`, `ext-palette`, `ext-web-root` and `ext-decide` (part D). Create
-missing ones exactly as specified, one commit each (`ext-decide` exactly as
-EXTENSION-POINTS.md section 18 specifies).
+(part B), `ext-turn-input`, `ext-palette` and `ext-web-root` (part D). Create missing ones
+exactly as specified, one commit each.
 
 ### 2. Shared plumbing (with the first part)
 
@@ -70,24 +69,20 @@ EXTENSION-POINTS.md section 18 specifies).
    `checkPrivateThread` (returns its result only, `noBranch` on a detached HEAD);
    `renamePrivateBranch` with upstream's rename steps and `generatedWorktreeBranchName` in
    `branchNaming.ts`, the fork copy of upstream's sanitizer (TECHNICAL.md, Commit check).
-7. **Jev branch type.** `apps/server/src/fork/small-extras/decide.ts`: register `small-extras.branch-type` in the `ext-decide`
-   registry; `chooseBranchType` calls `decide` and falls back to the keyword rules; the
-   "Jev off by default" reconciliation on `setPrivateProject` and at startup, using section
-   18's per-project override API (TECHNICAL.md names it).
-8. Add `"private-mode"` to `IMPLEMENTED_SMALL_EXTRAS_PARTS`.
-9. **Web.** `PrivateProjectsBlock.tsx` in the settings section; `palette.tsx` (toggle with
+7. Add `"private-mode"` to `IMPLEMENTED_SMALL_EXTRAS_PARTS`.
+8. **Web.** `PrivateProjectsBlock.tsx` in the settings section; `palette.tsx` (toggle with
    Undo, check); `PrivateModeWarningToasts.tsx` in `FORK_ROOT_COMPONENTS` with the shared
    toast builder `privateModeToast.ts`; `PrivateModeProfileRow.tsx` and, if L18 exists, its
    registration in `PROFILE_SECTION_ROWS`.
-10. **Verify Codex's commit behavior** (TECHNICAL.md, Provider decisions): with the installed
-    codex-cli (record `codex --version`), in a scratch repository marked private on a dev
-    server, ask a Codex thread to make a small change and commit it. Inspect
-    `git log -1 --format='%B%n%an <%ae>%n%cn <%ce>'`. Then repeat with the project not
-    private. Record in TECHNICAL.md, "Codex facts": the version, whether Codex added
-    `Co-authored-by: Codex <noreply@openai.com>` in each case, and whether the commit check
-    caught it. If Codex adds the trailer despite the instruction, add a line to PRODUCT.md's
-    Out of scope follow-up with the evidence; do not add a Codex seam in this packet.
-11. **Verify Claude's attribution** the same way: in the private scratch project, a Claude
+9. **Verify Codex's commit behavior** (TECHNICAL.md, Provider decisions): with the installed
+   codex-cli (record `codex --version`), in a scratch repository marked private on a dev
+   server, ask a Codex thread to make a small change and commit it. Inspect
+   `git log -1 --format='%B%n%an <%ae>%n%cn <%ce>'`. Then repeat with the project not
+   private. Record in TECHNICAL.md, "Codex facts": the version, whether Codex added
+   `Co-authored-by: Codex <noreply@openai.com>` in each case, and whether the commit check
+   caught it. If Codex adds the trailer despite the instruction, add a line to PRODUCT.md's
+   Out of scope follow-up with the evidence; do not add a Codex seam in this packet.
+10. **Verify Claude's attribution** the same way: in the private scratch project, a Claude
     thread's commit has no `Co-Authored-By` and no "Generated with" line; with the project
     not private (new thread), the default attribution appears (proves the seam is what
     turned it off). Check `claude.query.settings_json` in the trace shows the attribution

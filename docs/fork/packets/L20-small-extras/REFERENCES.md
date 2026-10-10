@@ -91,9 +91,6 @@ entries are kept as prior art only.
   and a `commit_attribution_enabled` value (source unverified); `codex features list` shows
   `codex_git_commit` as removed. Open upstream discussion:
   https://github.com/openai/codex/issues/19799.
-- Jev API and jev-1.13 guidance (https://docs.typesafe.ai/api,
-  https://docs.typesafe.ai/model-jaggedness/jev-1.13): Choice question and answer shapes,
-  literal criteria.
 - git `rebase --exec`, `--rebase-merges`, `commit --amend --reset-author`
   (https://git-scm.com/docs/git-rebase, https://git-scm.com/docs/git-commit).
 

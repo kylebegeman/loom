@@ -249,9 +249,10 @@ CREATE INDEX IF NOT EXISTS fork_thread_lineage_links_project
 
 - One parent per child (primary key on the child). Siblings are rows sharing
   `parent_thread_id`, excluding the thread itself.
-- The `delegate` kind exists so L08 can record agent-started children, and the `review` kind
-  so L15 can record reviewer threads, each with `INSERT OR IGNORE` when this table exists.
-  Keep the column list stable; L08's and L15's TECHNICAL.md document the same columns.
+- The `review` kind exists so L15 can record reviewer threads with `INSERT OR IGNORE` when
+  this table exists. The `delegate` kind was for L08, retired on 2026-10-09; nothing writes
+  it now (README, Optional integrations). Keep the column list stable; L15's TECHNICAL.md
+  documents the same columns.
 - No foreign keys into upstream tables (EXTENSION-POINTS.md, Persistence).
 - Cleanup: the reactor deletes rows whose `child_thread_id` is deleted and all rows of a
   deleted project. Rows whose parent was deleted stay; the panel shows "Forked from a deleted
@@ -638,7 +639,7 @@ composer draft store.
 
 ## Agent-facing tools
 
-None. Agent-started threads belong to L08.
+None. Agents start child threads through upstream's delegation and thread launch.
 
 ## Performance
 

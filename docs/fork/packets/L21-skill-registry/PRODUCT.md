@@ -36,7 +36,7 @@ editing files by hand and starting a thread to try it.
 - Turn a Claude skill off (or on) for the current project, or for one Claude account, or for
   all Claude accounts. Turn a Codex skill off or on for a Codex home.
 - Install skills from a git repository: paste an `https` URL (optionally a branch or tag),
-  or pick one of the suggested sources (impeccable, ponytail, TypeSafe), see the skills it
+  or pick one of the suggested sources (impeccable, ponytail), see the skills it
   contains with their descriptions and a "contains scripts" flag, pick skills and a target,
   and install. Nothing from the repository runs. Targets: the shared Claude folder
   `~/.claude/skills` (the default, seen by every Claude account whose `skills` folder links
@@ -103,8 +103,7 @@ button re-reads it.
   folder; "All agents (~/.agents/skills): Codex, Cursor". When no Claude account reads the
   shared folder: "No Claude account reads this folder."
 - Suggested sources: "impeccable (Apache-2.0): design skill for frontend work.",
-  "ponytail (MIT): least-code review and audit skills.", "TypeSafe (MIT): the skill for
-  building with TypeSafe's Jev API." Note under the list: "Loom copies only the skill
+  "ponytail (MIT): least-code review and audit skills." Note under the list: "Loom copies only the skill
   folders. It never runs a project's installer."
 
 ## States
@@ -145,13 +144,11 @@ files and git all live on the environment.
   one copy reaches every account (Kyle, 2026-09-24).
 - `~/.agents/skills` is offered as a cross-provider target for installs and the Lab. Reason:
   Codex and Cursor read it (Kyle, 2026-09-24). Loom creates the folder on first use.
-- Suggested sources are impeccable (Apache-2.0), ponytail (MIT) and typesafe-ai/skills (MIT,
-  https://github.com/typesafe-ai/skills); only their skill folders are copied. Reason: Kyle's
-  picks; the TypeSafe skill is the explicit install path agreed for L29, which never installs
-  it automatically.
+- Suggested sources are impeccable (Apache-2.0) and ponytail (MIT); only their skill folders
+  are copied. Reason: Kyle's picks. A third, typesafe-ai/skills for Jev, was removed on
+  2026-10-09 when Jev moved to its own project outside Loom.
 
 ## Out of scope
 
-- Follow-up: a Jev skill suggestion (kept in L29's idea catalog). Reason: not selected for now.
 - Follow-up: agent-facing tools such as `loom_skill_registry_scaffold`. Reason: every MCP
   tool costs prompt tokens in every session; wait for a need.

@@ -74,13 +74,12 @@ a new orchestration command and event, which this fork does not allow.
 ## Other Loom packets
 
 - L02 thread lineage: `fork_thread_lineage_links` columns and kinds
-  ([L02 TECHNICAL.md](../L02-thread-lineage/TECHNICAL.md)); L08 uses the same
-  `INSERT OR IGNORE` pattern ([L08 TECHNICAL.md](../L08-multi-thread-runs/TECHNICAL.md)).
+  ([L02 TECHNICAL.md](../L02-thread-lineage/TECHNICAL.md)); L15 inserts its `review` rows
+  with `INSERT OR IGNORE`.
 - L18 project profiles: `ProfileBindingSource` and `PROFILE_BINDING_SOURCES`
   ([L18 TECHNICAL.md](../L18-project-profiles/TECHNICAL.md), "Binding sources").
 - L26 code graph: `CodeGraphImpactInput` and `CodeGraphImpactResult`
   ([L26 TECHNICAL.md](../L26-code-graph/TECHNICAL.md), "Impact").
-- L29 Jev hub and `ext-decide` (EXTENSION-POINTS.md, section 18).
 
 ## Reference repositories
 
@@ -102,19 +101,3 @@ a new orchestration command and event, which this fork does not allow.
 - Claude Code slash commands (`/review`, `/security-review`):
   <https://docs.claude.com/en/docs/claude-code/slash-commands>; whether the Agent SDK path
   runs them is unverified.
-- TypeSafe (Jev) documentation, read 2026-09-24:
-  - API: <https://docs.typesafe.ai/api> (endpoint, question and answer types, errors).
-  - Questions: <https://docs.typesafe.ai/primitives>,
-    <https://docs.typesafe.ai/primitives/choice>, <https://docs.typesafe.ai/primitives/score>,
-    <https://docs.typesafe.ai/primitives/noul>.
-  - State: <https://docs.typesafe.ai/concepts/state>.
-  - Confidence: <https://docs.typesafe.ai/confidence>.
-  - Models and limits (64k per request, 32k for state plus the longest question):
-    <https://docs.typesafe.ai/models>.
-  - Jev 1.13 jaggedness (literal reading, no counting or math, irrelevant state hurts):
-    <https://docs.typesafe.ai/model-jaggedness/jev-1.13>.
-  - Speculative fan-out (many questions in one request):
-    <https://docs.typesafe.ai/patterns/fan-out>.
-  - Entity alignment (pairwise "same item" decisions, the pattern behind finding merge):
-    <https://docs.typesafe.ai/cookbooks/entity_alignment> (listed in the docs index, not read
-    for this packet).

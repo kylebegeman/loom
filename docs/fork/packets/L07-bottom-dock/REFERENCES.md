@@ -2,6 +2,9 @@
 
 Treat external repositories as references, not code to copy.
 
+Entries that served only the retired Activity tab and Jev risk badge (README, "Retired
+parts") are removed; git history keeps them.
+
 ## Old Loom
 
 P10 in [selections.md](../../selections.md). Old Loom (`bagelvault/loom` 0.13.10):
@@ -30,11 +33,6 @@ P10 in [selections.md](../../selections.md). Old Loom (`bagelvault/loom` 0.13.10
   requirements every 5 s; drop both (upstream has neither) and note its counter bug
   (lines 755 and 763 show the same number). `ThreadRunLedgerPanel` (463-516) and
   `ThreadRunPacketsPanel` (1429-1890): dropped by the brief.
-- https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/chat/ThreadActivityLedgerPanel.tsx
-  (504 lines). Keep: search, tone chips (All, Work, Decisions, Errors), expandable rows with
-  payload on demand, compact and full layouts. Drop: the server ledger RPC with facets and
-  paging (`apps/server/src/persistence/Layers/ProjectionThreadActivities.ts:199-282` in old
-  Loom); this packet searches the client window and pages with upstream's older-turns load.
 - https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/ChatView.tsx
   (12,528 lines; `renderBottomPanelSurface` at 11916, `runProjectScript` at 5916-6005). The
   main lesson: old Loom put all dock wiring inside ChatView; this packet keeps ChatView to a
@@ -55,29 +53,14 @@ P10 in [selections.md](../../selections.md). Old Loom (`bagelvault/loom` 0.13.10
 - `packages/shared/src/projectScripts.ts:17-75`, `packages/contracts/src/orchestration.ts:391-425`.
 - `apps/server/src/project/ProjectSetupScriptRunner.ts:341`: `setup-<id>` terminals.
 - `packages/contracts/src/orchestration.ts:596-606,780-786,815-851,1288-1295`.
-- `apps/web/src/session-logic.ts:451-512`: work log derivation and exclusions.
-- `apps/web/src/state/entities.ts:77-79,95-140`, `apps/web/src/state/threads.ts:35`.
-- `packages/client-runtime/src/state/threadState.ts:35`,
-  `packages/client-runtime/src/state/threads.ts:115,634`.
-- `packages/client-runtime/src/pendingRequests.ts:12-19,49-66,86-93,122-196`.
+- `apps/web/src/state/entities.ts:77-79,95-140`.
+- `packages/client-runtime/src/pendingRequests.ts:12-19,86-93,122`.
 - `apps/web/src/components/chat/ComposerPendingApprovalPanel.tsx:11`,
   `apps/web/src/components/chat/ComposerPendingApprovalActions.tsx:29`.
 - `apps/web/src/components/Sidebar.logic.ts:526-534,985-996`: sidebar pending pills.
-- `apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts:97`: 500-activity window.
-- `apps/server/src/orchestration/Services/ProjectionSnapshotQuery.ts:249`: `getThreadDetailById` (phase 5 lookup).
-- `packages/contracts/src/orchestration.ts:139-144`: `ProviderRequestKind`.
-- `packages/contracts/src/baseSchemas.ts:167`: `ApprovalRequestId`.
-- `apps/web/src/components/CommandPalette.logic.ts:369-443`: token matching.
 
 ## External
 
-- `@legendapp/list` (already an `apps/web` dependency, MIT): https://github.com/LegendApp/legend-list.
 - WAI-ARIA tabs pattern for the strip's keyboard behavior:
   https://www.w3.org/WAI/ARIA/apg/patterns/tabs/.
-- TypeSafe Jev (phase 5), docs read 2026-09-24: API and Choice answers with `confidence`
-  (https://docs.typesafe.ai/api), confidence as the fallback gate
-  (https://docs.typesafe.ai/confidence), state kept small and literal criteria
-  (https://docs.typesafe.ai/concepts/state, https://docs.typesafe.ai/model-jaggedness/jev-1.13),
-  models, limits and version pinning (https://docs.typesafe.ai/models). The HTTP client,
-  redaction, budget and logging come from `ext-decide` (EXTENSION-POINTS.md section 18).
 - Reference repositories in selections.md: none relevant.

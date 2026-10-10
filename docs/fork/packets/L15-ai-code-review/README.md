@@ -7,26 +7,32 @@ reviewers (other models, or the same one with a review brief) each run as an ord
 "Review: <title>" thread, read the diff, and submit severity-ranked findings with file and
 line through a Loom MCP tool. Loom merges findings across reviewers ("Found by 2 of 3"),
 shows them in a Review panel, and hands chosen ones back to the working thread's composer as
-review comments, never sent automatically. Jev (TypeSafe) optionally picks the reviewer model
-and effort, suggests reviews after large turns, and decides which findings are the same
-issue; every Jev use has a non-Jev fallback.
+review comments, never sent automatically.
 
 The design session was held on 2026-09-24; its decisions are in
 [DESIGN-SESSION.md, section 7](./DESIGN-SESSION.md#7-decision-record).
+
+## Retired parts
+
+Kyle approved on 2026-10-09 removing the optional Jev decisions (Auto reviewer and effort
+pick, turn suggestion, finding merge), because Jev moved to its own project outside Loom.
+Their design is removed from this folder; git history keeps it. The behavior they fell back
+to is now the only behavior: reviewer slots are chosen models with the effort preset,
+suggestions use the changed-line threshold, and findings merge by the file, line and title
+rule.
 
 ## Scope
 
 - In: targets uncommitted changes, branch against base, a single turn (checkpoint refs), a
   single commit, each with extra instructions; reviewer threads (`approval-required`,
   settled when done) with the `loom_ai_code_review_submit` tool, a fenced-JSON fallback on
-  reviewer threads only, and "Ask again"; up to three reviewers in parallel with merge; Auto
-  (Jev) reviewer and effort pick bounded by Quick / Balanced / Thorough presets; findings with
-  severity Blocking / Should fix / Nit and confidence low / medium / high; the Review panel
-  (letter W); hand-back as upstream review comments and "Copy as Markdown"; lenses
-  correctness, simplicity (ponytail-style) and impeccable UI checks; cost estimate with
-  confirmation above 2,000 changed lines; the "Review this turn?" chip; per-project
-  automatic start of suggested reviews; the agent tool `loom_ai_code_review_start` behind "Let
-  agents use this".
+  reviewer threads only, and "Ask again"; up to three reviewers in parallel with merge; Quick /
+  Balanced / Thorough effort presets; findings with severity Blocking / Should fix / Nit and
+  confidence low / medium / high; the Review panel (letter W); hand-back as upstream review
+  comments and "Copy as Markdown"; lenses correctness, simplicity (ponytail-style) and
+  impeccable UI checks; cost estimate with confirmation above 2,000 changed lines; the
+  "Review this turn?" chip; per-project automatic start of suggested reviews; the agent tool
+  `loom_ai_code_review_start` behind "Let agents use this".
 - Out (see [PRODUCT.md](./PRODUCT.md#out-of-scope-and-follow-ups)):
   - Follow-up: headless quick review (A3).
   - Follow-up: inline finding annotations in the diff panel.
@@ -54,9 +60,7 @@ letter W), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette)
 changes", shared with L26), [`ext-composer`](../EXTENSION-POINTS.md#11-composer-ext-composer)
 (suggestion chip), [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) (start
 dialog host), [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings)
-(`loom.ai-code-review.start`, unbound), and `ext-decide` (EXTENSION-POINTS.md, section 18;
-features `ai-code-review.reviewer-pick`, `ai-code-review.turn-suggest`,
-`ai-code-review.finding-merge`).
+(`loom.ai-code-review.start`, unbound).
 
 ## Packet seams
 
@@ -71,24 +75,22 @@ None. See [SEAMS.md](./SEAMS.md).
   binding.
 - L26 code graph present: the blast radius of the changed files goes into the reviewer's
   brief (read server-side regardless of L26's agent switch).
-- L29 Jev hub present: L15's Jev decisions appear in the Decisions panel for rating. L15 needs
-  only `ext-decide`, not L29.
 
 ## Size
 
-Large: about 6,000 to 7,500 lines with tests (server about half, web about a third, contracts
-and tests the rest). Phases 1 to 5 (single reviewer, no Jev) are about 3,500 of that.
+Large: about 5,500 to 7,000 lines with tests (server about half, web about a third, contracts
+and tests the rest). Phases 1 to 5 (single reviewer) are about 3,500 of that.
 
 ## Documents
 
 - [PRODUCT.md](./PRODUCT.md): outcome, flows, entry points, states, copy, settings,
   decisions and follow-ups.
 - [TECHNICAL.md](./TECHNICAL.md): research findings and the design (contracts, RPCs,
-  lifecycle, brief, validation, merge, Jev features, storage, web).
+  lifecycle, brief, validation, merge, storage, web).
 - [SEAMS.md](./SEAMS.md): extension points and registrations; no packet seams.
 - [IMPLEMENTATION.md](./IMPLEMENTATION.md): phases and pitfalls.
 - [TESTING.md](./TESTING.md): automated tests, manual checks, acceptance criteria.
 - [DESIGN-SESSION.md](./DESIGN-SESSION.md): the options brief (history) and the decision
   record.
-- [REFERENCES.md](./REFERENCES.md): old Loom files, upstream files, other packets, reference
-  repositories, TypeSafe docs.
+- [REFERENCES.md](./REFERENCES.md): old Loom files, upstream files, other packets and
+  reference repositories.

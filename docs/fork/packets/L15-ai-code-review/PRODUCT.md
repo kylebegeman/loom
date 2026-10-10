@@ -23,8 +23,9 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
   block from its final message (reviewer threads only), and otherwise offers "Ask again".
 - **Targets.** Uncommitted changes, branch against base, a single turn, a single commit; each
   with optional extra instructions.
-- **Reviewers.** One to three per review, in parallel. Each slot is a model or "Auto (Jev)".
-  Defaults come from Loom settings, overridden per project by L18 when present.
+- **Reviewers.** One to three per review, in parallel. Each slot is a model, with the effort
+  from the selected preset (Quick, Balanced, Thorough) unless the slot sets its own. Defaults
+  come from Loom settings, overridden per project by L18 when present.
 - **Findings.** Blocking / Should fix / Nit, confidence low / medium / high, file and line
   range, category. Findings from several reviewers are merged into one card with "Found by 2
   of 3".
@@ -35,9 +36,6 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
 - **Triggers.** Manual (Review panel, palette, diff panel button, keybinding); a quiet
   "Review this turn?" chip after a turn; agents through `loom_ai_code_review_start` when
   allowed; per-project automatic start of suggested reviews.
-- **Jev** (optional everywhere, always with a fallback): picks the reviewer model and effort,
-  decides whether a turn is worth a review, and decides which findings from different
-  reviewers are the same issue.
 - **Moved to later versions:** see [Out of scope](#out-of-scope-and-follow-ups).
 
 ## What the user can do
@@ -45,8 +43,7 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
 - Start a review of the thread's uncommitted changes, its branch against a base, one turn, or
   one commit, with optional extra instructions.
 - See the cost before starting: files, changed lines, estimated tokens, reviewer count.
-- Pick one to three reviewers, each a specific model and effort or "Auto (Jev)", and see
-  which model Auto picked, with what confidence, before starting.
+- Pick one to three reviewers, each a specific model and effort.
 - Turn the simplicity and impeccable lenses on for one review.
 - Watch the reviewers run (each is a normal thread), cancel the review, open any reviewer
   thread.
@@ -73,12 +70,9 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
    any, else the latest turn.
 3. The dialog loads the estimate: "12 files, 840 changed lines". With reviewers, "3
    reviewers, about 3 x 40k tokens". "No changes to review" disables Start.
-4. Reviewer slots are preselected from settings (project override first). An "Auto (Jev)"
-   slot shows the pick when it resolves: "Auto: GPT-5 Codex, high effort (confidence 0.82)",
-   with a menu to replace it by any model. If Jev is not used, the slot says why: "Auto
-   unavailable (no Jev key): using Claude Opus". A slot whose model equals the source
-   thread's model shows "Same model as the author. A different model catches different
-   mistakes."
+4. Reviewer slots are preselected from settings (project override first), each with a menu
+   to replace it by any model. A slot whose model equals the source thread's model shows
+   "Same model as the author. A different model catches different mistakes."
 5. Lenses: Correctness (on), Simplicity (per settings), UI checks with impeccable (shown only
    when installed). Optional "Extra instructions".
 6. Above the confirmation threshold (2,000 changed lines by default) the Start button reads
@@ -116,9 +110,8 @@ shown in a Review panel, merged across reviewers, and handed back as upstream re
 ### Suggested reviews
 
 - After a turn that changed code in a thread (not a reviewer thread), Loom may show a quiet
-  chip in the composer footer: "Review this turn?" with a close button. With Jev, the
-  decision is a score of how useful a review would be; without Jev, the turn must change at
-  least 200 lines (configurable).
+  chip in the composer footer: "Review this turn?" with a close button. The turn must change
+  at least 200 lines (configurable).
 - Clicking the chip opens the start dialog with that turn preselected. Closing it dismisses
   the suggestion. The Review panel shows the same suggestion at the top.
 - With "Start suggested reviews automatically" on for the project, a suggested review starts
@@ -144,7 +137,7 @@ becomes a suggestion instead, and the tool says so. Findings still go back only 
 | Keybinding `loom.ai-code-review.start` (unbound by default)                                                                        | Opens the start dialog with the default target.                                           | n/a                                                     |
 | Agent tool `loom_ai_code_review_start`                                                                                             | Starts a review of the calling thread when "Let agents use this" is on.                   | "Cancel review" in the panel; the setting off.          |
 | Reviewer threads in the sidebar                                                                                                    | "Review: <source title>" (with the model name when there are several), settled when done. | Unsettle, archive or delete like any thread.            |
-| Settings, Loom, "AI code review"                                                                                                   | Defaults, candidates, effort presets, lenses, thresholds, agent and suggestion switches.  | Same section.                                           |
+| Settings, Loom, "AI code review"                                                                                                   | Defaults, effort presets, lenses, thresholds, agent and suggestion switches.              | Same section.                                           |
 | Settings, Loom, "AI code review", project scope                                                                                    | "Start suggested reviews automatically".                                                  | Same switch.                                            |
 | L18 project profile (when present), Bindings, "Reviewer"                                                                           | Per-project default reviewer.                                                             | Remove the binding.                                     |
 
@@ -158,7 +151,6 @@ becomes a suggestion instead, and the tool says so. Findings still go back only 
 | Source thread is working     | Uncommitted and Branch targets: a warning, "The agent is still working. The review sees the changes as they are now." Start stays enabled. |
 | A review is already running  | Dialog: "A review of this thread is running." with "Open".                                                                                 |
 | Estimating                   | Dialog shows a skeleton for the estimate line; Start disabled until it loads.                                                              |
-| Auto picking                 | The Auto slot shows "Picking..." for at most about a second, then the pick or the fallback line.                                           |
 | Reviewer model unavailable   | Slot: "<model> is not available on this server" and Start disabled until changed.                                                          |
 | Large review                 | "Start large review" and "2,400 changed lines is above your 2,000 line limit."                                                             |
 | Running                      | Per reviewer: "Reviewing" with elapsed time, or "Waiting for approval".                                                                    |
@@ -172,7 +164,6 @@ becomes a suggestion instead, and the tool says so. Findings still go back only 
 | Reviewer thread deleted      | That reviewer: "Review thread deleted"; its findings stay.                                                                                 |
 | impeccable missing           | The UI checks lens is not shown.                                                                                                           |
 | impeccable failed            | A line under the review: "UI checks failed: <message>". Other findings unaffected.                                                         |
-| Jev unavailable              | Auto slots fall back with the reason; suggestions use the line threshold; merging uses the rule. Nothing else changes.                     |
 
 ## Copy
 
@@ -180,7 +171,7 @@ becomes a suggestion instead, and the tool says so. Findings still go back only 
   second opinion before you commit." with "New review".
 - Dialog title "Review changes". Target labels: "Uncommitted changes", "Branch against
   <base>", "Turn <n> (<files> files, <lines> changed lines)", "Commit <short sha> <subject>". Fields:
-  "Reviewers", "Add reviewer", "Auto (Jev)", "Effort", "Lenses", "Correctness", "Simplicity",
+  "Reviewers", "Add reviewer", "Effort", "Lenses", "Correctness", "Simplicity",
   "UI checks (impeccable)", "Extra instructions". Buttons "Start review", "Start large
   review", "Cancel".
 - Estimate: "<files> files, <lines> changed lines. <n> reviewers, about <n> x <k>k tokens."
@@ -199,36 +190,28 @@ becomes a suggestion instead, and the tool says so. Findings still go back only 
 
 Loom settings page, section "AI code review" (server-side, per environment):
 
-| Setting                              | Default                                       | Notes                                                                                                                                                                                                                                                                             |
-| ------------------------------------ | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Default reviewers                    | One slot: the source thread's model           | One to three slots; each a model (with effort) or "Auto (Jev)" (shown only when Jev is available).                                                                                                                                                                                |
-| Auto candidates                      | Empty                                         | Models Auto may choose from, each with an editable description ("Strong at TypeScript and UI"). Auto needs at least two available candidates.                                                                                                                                     |
-| Effort preset                        | Balanced                                      | Quick, Balanced, Thorough. Each preset has an editable range (lowest and highest effort) and a default effort. Defaults: Quick low to medium (low), Balanced medium to high (medium), Thorough high to max (high). Bounds Auto's effort pick and sets the effort of manual slots. |
-| Lenses                               | Correctness on, Simplicity off, UI checks off | Defaults for the start dialog. UI checks only when impeccable is installed.                                                                                                                                                                                                       |
-| Extra instructions                   | Empty                                         | Added to every brief (up to 4,000 characters).                                                                                                                                                                                                                                    |
-| Confirm reviews above                | 2,000 changed lines                           | Also the limit above which automatic and agent-started reviews become suggestions.                                                                                                                                                                                                |
-| Suggest reviews after turns          | On                                            | The "Review this turn?" chip.                                                                                                                                                                                                                                                     |
-| Suggest when a turn changes at least | 200 lines                                     | Used when Jev is not used for the suggestion.                                                                                                                                                                                                                                     |
-| Let agents use this                  | Off                                           | Allows `loom_ai_code_review_start`.                                                                                                                                                                                                                                               |
+| Setting                              | Default                                       | Notes                                                                                                                                                                   |
+| ------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Default reviewers                    | One slot: the source thread's model           | One to three slots; each a model, with an optional effort.                                                                                                              |
+| Effort preset                        | Balanced                                      | Quick, Balanced, Thorough. Each preset has an editable effort. Defaults: Quick low, Balanced medium, Thorough high. Sets the effort of slots that do not set their own. |
+| Lenses                               | Correctness on, Simplicity off, UI checks off | Defaults for the start dialog. UI checks only when impeccable is installed.                                                                                             |
+| Extra instructions                   | Empty                                         | Added to every brief (up to 4,000 characters).                                                                                                                          |
+| Confirm reviews above                | 2,000 changed lines                           | Also the limit above which automatic and agent-started reviews become suggestions.                                                                                      |
+| Suggest reviews after turns          | On                                            | The "Review this turn?" chip.                                                                                                                                           |
+| Suggest when a turn changes at least | 200 lines                                     | The size at which the "Review this turn?" chip appears.                                                                                                                 |
+| Let agents use this                  | Off                                           | Allows `loom_ai_code_review_start`.                                                                                                                                     |
 
 Project scope of the same section: "Start suggested reviews automatically" (off). Per-project
 default reviewer: through the L18 project profile when L18 is present (binding "Reviewer");
 without L18 there is no per-project reviewer override.
-
-Jev switches live in the Jev section owned by `ext-decide`, one row per feature: "Pick the
-reviewer model" (Use Jev, and "Let agents use this", which lets agent-started reviews use Auto;
-off means they use the default reviewer), "Suggest a review after a turn" and "Merge findings
-across reviewers" (Use Jev only; they are automatic, so they have no agent switch), plus "Jev off
-for this project". L15's own "Let agents use this" above decides whether agents may start
-reviews at all.
 
 ## Surfaces
 
 - Web and desktop: full feature.
 - Mobile: nothing fork-specific in v1. Reviewer threads are normal threads and show in the
   mobile thread list with their transcripts.
-- Remote: everything runs on the server over the environment WebSocket (reviewers, git,
-  impeccable, Jev), so it works locally, over Tailscale and through T3 Connect.
+- Remote: everything runs on the server over the environment WebSocket (reviewers, git
+  and impeccable), so it works locally, over Tailscale and through T3 Connect.
 - Upstream T3 server: every entry point hidden; a restored panel tab shows "Needs a Loom
   server". Upstream clients on a Loom server see reviewer threads as ordinary threads.
 
@@ -247,9 +230,8 @@ reviews at all.
 - Reviewer threads in the sidebar, settled when done, grouped under the source in L02's
   Related threads when present, never auto-archived. Visible but out of the way.
 - Reviewer choice: global default, L18 per-project override, preselected and changeable per
-  review, with an author-model hint. Plus "Auto (Jev)" over an editable candidate pool, with a
-  capped diff excerpt, also picking effort inside the preset bounds. Fast default choice;
-  Kyle has a Jev key with early access.
+  review, with an author-model hint; effort from the selected preset unless a slot sets its
+  own. Fast default choice.
 - Reviewer runtime mode always `approval-required`. The shared checkout must not change
   silently.
 - Targets: uncommitted, branch, turn, commit, each with extra instructions. Other people's
@@ -266,13 +248,11 @@ reviews at all.
 - Triggers: manual, quiet chip, agents when allowed, per-project automatic start. No
   pre-Commit or pre-PR hook (needs an upstream seam).
 - History belongs to the source thread and is deleted with it. No separate retention policy.
-- Multi-model fan-out (up to three) and merge with "Found by N of M" in v1, Jev merge with a
-  deterministic fallback. Agreement is signal.
+- Multi-model fan-out (up to three) and merge with "Found by N of M" in v1, merged by a
+  deterministic rule. Agreement is signal.
 - Cost guard: estimate always shown, confirmation above 2,000 changed lines, never refuse;
   automatic and agent starts above the limit become suggestions. Kyle decides spending.
 - Mobile: nothing fork-specific in v1. No right panel system there.
-- Jev everywhere it helps, always optional, with a non-Jev fallback, through `ext-decide`.
-  Kyle's testing-period policy.
 
 ## Out of scope and follow-ups
 

@@ -26,8 +26,7 @@ prefix, was retired on 2026-10-09 because upstream has a branch prefix setting p
   - New worktree branches are named by change type instead of upstream's project prefix:
     `feature/`, `fix/`, `hotfix/`, `chore/`, `docs/` or `refactor/`, followed by the
     generated name, for example `fix/login-redirect`. The type is picked from the generated
-    name and the first message by fixed keyword rules (default `feature/`). When Jev is turned on for the project, Jev
-    may pick the type instead; Jev starts turned off for private projects.
+    name and the first message by fixed keyword rules (default `feature/`).
   - Every message the agent receives (every provider) starts with a short instruction: no
     mention of AI, agents, models or tools, and no co-author trailers, in commit messages,
     pull request titles and bodies, code comments or authorship.
@@ -164,10 +163,8 @@ No em dashes in product copy. Nothing in these strings attributes work to AI; th
   extra seams in `GitManager.ts` and `BitbucketApi.ts`.
 - No AI identification is a per-project switch stored in a fork table. Reason: it is a
   property of the repository (work versus personal), not of a thread or an environment.
-- Private branch names use a change-type prefix chosen by fixed keyword rules; Jev may choose
-  only when Jev is on for that project, and Jev defaults to off for private projects when
-  both exist. Reason: Kyle's answer; a work repository should not send its first message to
-  a third party unless he opts in.
+- Private branch names use a change-type prefix chosen by fixed keyword rules. An optional Jev
+  choice was removed on 2026-10-09 when Jev moved to its own project outside Loom.
 - The work is on the agent side: upstream's own commit and pull request text generation adds
   no attribution (checked in `TextGenerationPrompts.ts` and `GitManager.ts`). Every provider
   gets the instruction; Claude additionally gets its documented `attribution` setting

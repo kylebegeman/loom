@@ -50,8 +50,6 @@ Kyle approved this retirement on 2026-10-09.
   - Pull request review, comments, merge buttons: upstream's pull request panel owns them.
   - Commit, push, create PR: upstream's `GitActionsControl` owns them.
   - Restack and virtual branches.
-  - Follow-up: a Jev CI failure classification for the Checks view. Not selected for now;
-    kept as an idea in L29's catalog.
   - Non-GitHub CI (GitLab, Forgejo, Azure DevOps, Bitbucket). The Checks view says
     "Checks are available for GitHub repositories" for other remotes. Upstream's PR panel
     still shows their PR checks.

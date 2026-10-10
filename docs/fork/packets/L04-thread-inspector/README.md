@@ -61,7 +61,7 @@ It creates any that are missing, exactly as EXTENSION-POINTS.md specifies.
 
 ## Optional integrations
 
-- L02 (thread lineage), L03 (goals) and L08 (runs) can each add an inspector row through
+- L02 (thread lineage) and L03 (goals) can each add an inspector row through
   `FORK_INSPECTOR_SECTIONS` (`apps/web/src/fork/thread-inspector/sections.ts`) when this
   packet is present. This packet ships none of those rows and depends on none of them.
 

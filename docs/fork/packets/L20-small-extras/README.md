@@ -31,8 +31,7 @@ in private projects its change-type names replace upstream's project prefix.
 - In:
   - Part D (`private-mode`): per-project switch in a fork table, reachable from Loom
     settings, the command palette and (when L18 is present) the project profile;
-    change-type branch names by keyword rules, with an optional Jev choice only when Jev is on
-    for the project (off by default for private projects); an `ext-turn-input` instruction
+    change-type branch names by keyword rules; an `ext-turn-input` instruction
     (order 5) for every provider; Claude Code `attribution` emptied through the Agent SDK
     `settings` (one packet seam); a post-turn commit check with a timeline row, a web toast
     with a copyable fix command, "Rename branch" for a leftover temporary branch, and an
@@ -74,7 +73,6 @@ environment, over the fork RPC and upstream's terminal RPC.
 - [`ext-turn-input`](../EXTENSION-POINTS.md#16-provider-turn-input-ext-turn-input) (part D, contributor `small-extras-private-mode`, order 5, block `<loom_private_mode>`).
 - [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette) (part D, toggle and check).
 - [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) (part D, the warning toast host).
-- `ext-decide` (EXTENSION-POINTS.md, section 18; part D, feature `small-extras.branch-type`).
 
 Created as specified in EXTENSION-POINTS.md when missing, one commit each.
 
@@ -92,8 +90,6 @@ Details in [SEAMS.md](./SEAMS.md).
 
 - If L18 (project profiles) is present, its profile shows part D's switch through
   `PROFILE_SECTION_ROWS`; whichever packet lands second adds the registration line.
-- If L29 (Jev hub) is present, the `small-extras.branch-type` decisions appear in its log
-  like any other feature; nothing else changes.
 - If L22 (instruction modes) is present, its block follows the private mode block (order 10
   after 5); neither depends on the other.
 - If L06 (source control cockpit) is present, nothing changes; it reads branch names from

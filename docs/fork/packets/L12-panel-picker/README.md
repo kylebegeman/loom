@@ -78,7 +78,7 @@ Any of them may have to be created by this packet (run each existence check firs
 
 ## Optional integrations
 
-- Every packet that registers a fork panel (L01 Snippets, L04, L06, L27, L29 and others)
+- Every packet that registers a fork panel (L01 Snippets, L04, L06, L27 and others)
   appears in the picker with no change to this packet. A panel that sets `description`
   shows it under its title; a panel without one shows only its title.
 

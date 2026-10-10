@@ -10,7 +10,6 @@
 | `ext-turn-input` | D     | contributor `small-extras-private-mode`, order 5, registered at runtime by `SmallExtrasService`                                                                                                                              |
 | `ext-palette`    | D     | `smallExtrasPaletteSource` in `FORK_COMMAND_PALETTE_SOURCES`                                                                                                                                                                 |
 | `ext-web-root`   | D     | `{ id: "small-extras-private-warnings", Component: PrivateModeWarningToasts }` in `FORK_ROOT_COMPONENTS`                                                                                                                     |
-| `ext-decide`     | D     | feature `small-extras.branch-type` in the decide feature registry (EXTENSION-POINTS.md, section 18)                                                                                                                          |
 
 Part D's server pieces that upstream code calls (the branch namer and the private thread
 resolver) are registered at runtime through module-level functions in fork files, the same
@@ -19,8 +18,7 @@ pattern `ext-turn-input` uses; they are not extension points.
 ## Extension points created by this packet
 
 Whichever of the above is missing, created exactly as EXTENSION-POINTS.md specifies, one
-commit each, before packet code. `ext-decide` is created "if missing, exactly as specified in
-EXTENSION-POINTS.md section 18". Record the commits here, or "None: all existed".
+commit each, before packet code. Record the commits here, or "None: all existed".
 
 ## Packet seams
 

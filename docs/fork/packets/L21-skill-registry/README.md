@@ -36,8 +36,8 @@ installer, update or remove what Loom installed, and create a new skill: scaffol
     `SKILL.md` folders found, copy chosen skills into a chosen target folder, record the
     source and commit. Default Claude target: the shared `~/.claude/skills` (Kyle's
     `~/.claude_N/skills` are symlinks to it); a single account's own folder and
-    `~/.agents/skills` (cross-provider) are selectable. Suggested sources: impeccable,
-    ponytail and typesafe-ai/skills, fetched only on request. Update (fetch, show what changed, replace) and remove (move into
+    `~/.agents/skills` (cross-provider) are selectable. Suggested sources: impeccable
+    and ponytail, fetched only on request. Update (fetch, show what changed, replace) and remove (move into
     Loom's trash folder) only for skills Loom installed.
   - Creation lab: scaffold a skill from a form, edit `SKILL.md` in the panel with validation,
     and "Test in new thread" (refresh the provider, open a new thread in the chosen project
@@ -51,7 +51,6 @@ installer, update or remove what Loom installed, and create a new skill: scaffol
     thread.
   - Editing skill files other than `SKILL.md` (scripts, references) inside the panel.
   - Mobile UI.
-  - Follow-up: a Jev skill suggestion (L29's idea catalog; not selected for now).
   - Follow-up: agent-facing MCP tools (for example scaffolding a skill from an agent).
 
 ## Surfaces
@@ -81,10 +80,6 @@ None. See [SEAMS.md](./SEAMS.md).
 - If L16 is present, its Codex tools page also toggles Codex skills; both call Codex's
   `skills/config/write`, so they agree. Nothing is required from L16.
 - If L22 is present, nothing changes: instruction modes are not skills.
-- If L29 is present, its drafting brief links to the TypeSafe skill; its "Install the
-  TypeSafe skill" button opens this panel on the Sources tab
-  (`forkPanelSurface("skill-registry", "sources")`), and installing it is the user's click on
-  the "TypeSafe" suggested source there. L21 never installs it on its own.
 
 ## Size estimate
 
