@@ -67,6 +67,8 @@ function GbInput({
     <Input
       aria-label={label}
       type="number"
+      size="sm"
+      className="w-full sm:w-24"
       min={min}
       max={4000}
       value={value}
@@ -107,82 +109,96 @@ function SettingsForm({
       <SettingsRow
         title="Give each checkout a lane"
         description="Agents get a capped space for temporary files and build output. Lanes are removed when their threads settle or are archived."
-      >
-        <Switch
-          aria-label="Give each checkout a lane"
-          checked={settings.enabled}
-          onCheckedChange={(checked) => set("enabled", checked)}
-        />
-      </SettingsRow>
+        control={
+          <Switch
+            aria-label="Give each checkout a lane"
+            checked={settings.enabled}
+            onCheckedChange={(checked) => set("enabled", checked)}
+          />
+        }
+      />
       <SettingsRow
         title="Lanes folder"
         description={
           hasLanes ? "Discard every lane before moving the folder." : "Created when needed."
         }
       >
-        <Input
-          aria-label="Lanes folder"
-          value={settings.lanesRoot}
-          disabled={hasLanes}
-          onChange={(event) => set("lanesRoot", event.target.value)}
-        />
+        <div className="flex flex-col gap-2 pb-2">
+          <Input
+            aria-label="Lanes folder"
+            value={settings.lanesRoot}
+            disabled={hasLanes}
+            onChange={(event) => set("lanesRoot", event.target.value)}
+          />
+        </div>
       </SettingsRow>
-      <SettingsRow title="Lane cap (GB)" description="Applies to new lanes.">
-        <GbInput
-          label="Lane cap"
-          min={1}
-          value={settings.defaultCapGb}
-          onChange={(value) => set("defaultCapGb", value)}
-        />
-      </SettingsRow>
+      <SettingsRow
+        title="Lane cap (GB)"
+        description="Applies to new lanes."
+        control={
+          <GbInput
+            label="Lane cap"
+            min={1}
+            value={settings.defaultCapGb}
+            onChange={(value) => set("defaultCapGb", value)}
+          />
+        }
+      />
       <SettingsRow
         title="Xcode project lane cap (GB)"
         description="Xcode builds keep DerivedData and packages in the lane."
-      >
-        <GbInput
-          label="Xcode project lane cap"
-          min={1}
-          value={settings.appleCapGb}
-          onChange={(value) => set("appleCapGb", value)}
-        />
-      </SettingsRow>
+        control={
+          <GbInput
+            label="Xcode project lane cap"
+            min={1}
+            value={settings.appleCapGb}
+            onChange={(value) => set("appleCapGb", value)}
+          />
+        }
+      />
       <SettingsRow
         title="Keep free on this disk (GB)"
         description="Below this, running agents are asked to free space and lanes stop growing."
-      >
-        <GbInput
-          label="Keep free on this disk"
-          min={0}
-          value={settings.reserveGb}
-          onChange={(value) => set("reserveGb", value)}
-        />
-      </SettingsRow>
+        control={
+          <GbInput
+            label="Keep free on this disk"
+            min={0}
+            value={settings.reserveGb}
+            onChange={(value) => set("reserveGb", value)}
+          />
+        }
+      />
       <SettingsRow
         title="Build slots"
         description="Heavy builds this machine runs at once; others wait their turn. Leave blank for automatic."
-      >
-        <Input
-          aria-label="Build slots"
-          type="number"
-          min={1}
-          max={64}
-          placeholder={autoSlots === null ? "Automatic" : `Automatic (${autoSlots})`}
-          value={settings.buildSlots ?? ""}
-          onChange={(event) =>
-            set("buildSlots", event.target.value === "" ? null : Number(event.target.value))
-          }
-        />
-      </SettingsRow>
-      <div>
-        <Button
-          disabled={busy || !canSave}
-          title={canSave ? undefined : "This connection cannot edit storage settings."}
-          onClick={() => void save()}
-        >
-          Save settings
-        </Button>
+        control={
+          <Input
+            aria-label="Build slots"
+            type="number"
+            size="sm"
+            className="w-full sm:w-36"
+            min={1}
+            max={64}
+            placeholder={autoSlots === null ? "Automatic" : `Automatic (${autoSlots})`}
+            value={settings.buildSlots ?? ""}
+            onChange={(event) =>
+              set("buildSlots", event.target.value === "" ? null : Number(event.target.value))
+            }
+          />
+        }
+      />
+      <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
+        <div>
+          <Button
+            disabled={busy || !canSave}
+            title={canSave ? undefined : "This connection cannot edit storage settings."}
+            onClick={() => void save()}
+          >
+            Save settings
+          </Button>
+        </div>
+        <ActionMessage message={message} />
       </div>
-      <ActionMessage message={message} />
     </div>
   );
 }
@@ -201,27 +217,32 @@ function ShellRow({
       <SettingsRow
         title="Terminal integration"
         description={`Routes TMPDIR and Xcode build output into the lane when a shell is inside a checkout. Edits ${shell.profilePath}.`}
-      >
-        <Button
-          variant="outline"
-          disabled={busy || !canEdit}
-          onClick={() =>
-            void act(
-              () =>
-                runLaneCommand(shell.installed ? lanes.removeShell : lanes.installShell, {
-                  environmentId,
-                  input: {},
-                }),
-              shell.installed
-                ? "Removed. New shells no longer use lanes."
-                : "Installed. New shells use lanes.",
-            )
-          }
-        >
-          {shell.installed ? "Remove" : "Install"}
-        </Button>
-      </SettingsRow>
-      <ActionMessage message={message} />
+        control={
+          <Button
+            variant="outline"
+            disabled={busy || !canEdit}
+            onClick={() =>
+              void act(
+                () =>
+                  runLaneCommand(shell.installed ? lanes.removeShell : lanes.installShell, {
+                    environmentId,
+                    input: {},
+                  }),
+                shell.installed
+                  ? "Removed. New shells no longer use lanes."
+                  : "Installed. New shells use lanes.",
+              )
+            }
+          >
+            {shell.installed ? "Remove" : "Install"}
+          </Button>
+        }
+      />
+      {message && (
+        <div className="px-3 sm:px-4">
+          <ActionMessage message={message} />
+        </div>
+      )}
     </div>
   );
 }
@@ -411,33 +432,37 @@ function StatusView({
 }) {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">
-        {status.hostFreeBytes === null
-          ? "Free space unknown."
-          : `${formatGb(status.hostFreeBytes)} free of ${formatGb(status.hostTotalBytes)}.`}{" "}
-        {status.backend === "image"
-          ? "Lanes are capped disk images."
-          : "Lanes are folders with a soft cap."}{" "}
-        {status.lanesRoot}
-      </p>
-      {status.belowReserve && (
-        <p role="alert" className="text-sm">
-          Free space is below the {formatGb(status.reserveBytes)} reserve.
-        </p>
-      )}
-      <ShellRow environmentId={environmentId} shell={status.shell} />
-      <BuildSlots status={status} />
-      {status.lanes.length === 0 ? (
+      <div className="flex flex-col gap-3 px-3 sm:px-4">
         <p className="text-sm text-muted-foreground">
-          No lanes yet. A lane is created when an agent starts working in a checkout.
+          {status.hostFreeBytes === null
+            ? "Free space unknown."
+            : `${formatGb(status.hostFreeBytes)} free of ${formatGb(status.hostTotalBytes)}.`}{" "}
+          {status.backend === "image"
+            ? "Lanes are capped disk images."
+            : "Lanes are folders with a soft cap."}{" "}
+          {status.lanesRoot}
         </p>
-      ) : (
-        <ul className="flex flex-col gap-2">
-          {status.lanes.map((lane) => (
-            <LaneRow key={lane.id} environmentId={environmentId} lane={lane} />
-          ))}
-        </ul>
-      )}
+        {status.belowReserve && (
+          <p role="alert" className="text-sm">
+            Free space is below the {formatGb(status.reserveBytes)} reserve.
+          </p>
+        )}
+      </div>
+      <ShellRow environmentId={environmentId} shell={status.shell} />
+      <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
+        <BuildSlots status={status} />
+        {status.lanes.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No lanes yet. A lane is created when an agent starts working in a checkout.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {status.lanes.map((lane) => (
+              <LaneRow key={lane.id} environmentId={environmentId} lane={lane} />
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }

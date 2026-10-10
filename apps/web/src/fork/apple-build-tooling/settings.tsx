@@ -54,14 +54,18 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
     title: string,
     description: string,
   ) => (
-    <SettingsRow title={title} description={description}>
-      <Switch
-        aria-label={title}
-        disabled={!canEdit || save.busy}
-        checked={settings[key] === true}
-        onCheckedChange={(checked) => update({ [key]: checked })}
-      />
-    </SettingsRow>
+    <SettingsRow
+      title={title}
+      description={description}
+      control={
+        <Switch
+          aria-label={title}
+          disabled={!canEdit || save.busy}
+          checked={settings[key] === true}
+          onCheckedChange={(checked) => update({ [key]: checked })}
+        />
+      }
+    />
   );
   const clearHistory = async (includeDerivedData: boolean) => {
     const confirmed = await ensureLocalApi().dialogs.confirm(
@@ -98,96 +102,113 @@ function EnvironmentAppleBuild({ environmentId }: { environmentId: EnvironmentId
       <SettingsRow
         title="Collect test diagnostics"
         description="Gathering diagnostics after a failed test can add minutes."
-      >
-        <Switch
-          aria-label="Collect test diagnostics"
-          disabled={!canEdit || save.busy}
-          checked={settings.collectTestDiagnostics === "on-failure"}
-          onCheckedChange={(checked) =>
-            update({ collectTestDiagnostics: checked ? "on-failure" : "never" })
-          }
-        />
-      </SettingsRow>
+        control={
+          <Switch
+            aria-label="Collect test diagnostics"
+            disabled={!canEdit || save.busy}
+            checked={settings.collectTestDiagnostics === "on-failure"}
+            onCheckedChange={(checked) =>
+              update({ collectTestDiagnostics: checked ? "on-failure" : "never" })
+            }
+          />
+        }
+      />
       <SettingsRow
         title="Derived data"
         description={`Loom's own folder keeps its builds apart from a running Xcode. ${formatBytes(storage.derivedDataBytes)} in Loom's folder.`}
-      >
-        <Select
-          value={settings.derivedData}
-          disabled={!canEdit || save.busy}
-          onValueChange={(value) => {
-            if (value) update({ derivedData: value });
-          }}
-          items={DERIVED_DATA}
-        >
-          <SelectTrigger size="sm" aria-label="Derived data">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectPopup>
-            {DERIVED_DATA.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      </SettingsRow>
+        control={
+          <Select
+            value={settings.derivedData}
+            disabled={!canEdit || save.busy}
+            onValueChange={(value) => {
+              if (value) update({ derivedData: value });
+            }}
+            items={DERIVED_DATA}
+          >
+            <SelectTrigger size="sm" aria-label="Derived data">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              {DERIVED_DATA.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
       <SettingsRow
         title="Runs kept per project"
         description={`Older runs, their logs and result bundles are deleted. ${storage.runCount} runs use ${formatBytes(storage.runsBytes)}.`}
-      >
-        <Input
-          aria-label="Runs kept per project"
-          type="number"
-          min={KEEP_MIN}
-          max={KEEP_MAX}
-          disabled={!canEdit || save.busy}
-          value={keepValue}
-          onChange={(event) => setKeep(event.target.value)}
-          onBlur={() => {
-            const next = Math.round(Number(keepValue));
-            setKeep(null);
-            if (
-              Number.isFinite(next) &&
-              next >= KEEP_MIN &&
-              next <= KEEP_MAX &&
-              next !== settings.keepRunsPerProject
-            )
-              update({ keepRunsPerProject: next });
-          }}
-        />
-      </SettingsRow>
+        control={
+          <Input
+            aria-label="Runs kept per project"
+            type="number"
+            size="sm"
+            className="w-full sm:w-24"
+            min={KEEP_MIN}
+            max={KEEP_MAX}
+            disabled={!canEdit || save.busy}
+            value={keepValue}
+            onChange={(event) => setKeep(event.target.value)}
+            onBlur={() => {
+              const next = Math.round(Number(keepValue));
+              setKeep(null);
+              if (
+                Number.isFinite(next) &&
+                next >= KEEP_MIN &&
+                next <= KEEP_MAX &&
+                next !== settings.keepRunsPerProject
+              )
+                update({ keepRunsPerProject: next });
+            }}
+          />
+        }
+      />
       {toggle(
         "openLaunchedSimulatorInDevicePanel",
         "Show launched simulators in the Device panel",
         "After Build and run on a simulator, open it in the thread's Device panel.",
       )}
-      {save.error && <Alert>{save.error}</Alert>}
-      <SettingsRow title="Run history" description="Clearing is refused while a run is going.">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={!canClear || clear.busy}
-            onClick={() => void clearHistory(false)}
-          >
-            Clear history
-          </Button>
-          <Button
-            size="sm"
-            variant="destructive-outline"
-            disabled={!canClear || clear.busy}
-            onClick={() => void clearHistory(true)}
-          >
-            Delete derived data
-          </Button>
+      {save.error && (
+        <div className="px-3 sm:px-4">
+          <Alert>{save.error}</Alert>
         </div>
-      </SettingsRow>
-      {clear.error && <Alert>{clear.error}</Alert>}
-      {notice && (
-        <p role="status" className="text-sm">
-          {notice}
-        </p>
+      )}
+      <SettingsRow
+        title="Run history"
+        description="Clearing is refused while a run is going."
+        control={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canClear || clear.busy}
+              onClick={() => void clearHistory(false)}
+            >
+              Clear history
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive-outline"
+              disabled={!canClear || clear.busy}
+              onClick={() => void clearHistory(true)}
+            >
+              Delete derived data
+            </Button>
+          </div>
+        }
+      />
+      {(clear.error || notice) && (
+        <div className="flex flex-col gap-2 px-3 pb-3 sm:px-4">
+          {clear.error && <Alert>{clear.error}</Alert>}
+          {notice && (
+            <p role="status" className="text-sm">
+              {notice}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
