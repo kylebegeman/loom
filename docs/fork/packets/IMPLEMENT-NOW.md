@@ -18,8 +18,9 @@ are designated for implementation; retained proposals remain parked.
 Order reflects product priority, not dependencies. An agent asked to choose the next item
 starts with the first incomplete, unclaimed packet. Closing L23 does not start another project. Each packet can still be implemented independently.
 
-All candidate dispositions are settled for this review. The comparison below retains the
-reasons for selection or deferral; only the selected queue is available for implementation. L27 is the only selection not yet implemented.
+All candidate dispositions are settled for the 2026-09-27 review. The comparison below retains
+the reasons for selection or deferral; only the selected queue is available for implementation.
+L27 is the only original 2026-09-27 selection not yet implemented. Later selections appear below.
 
 Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
 
@@ -27,6 +28,20 @@ Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
 | ----- | --------------------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
 | 7     | [L12 Panel picker](./L12-panel-picker/) | Done; on `feat/loom-panel-picker` | Kyle included the full packet on 2026-10-09.                              |
 | 8     | [L26 Code graph](./L26-code-graph/)     | Done; on `feat/loom-code-graph`   | Kyle included the full packet on 2026-10-09; it was deferred only for V2. |
+
+Kyle selected the 3D and PCB follow-ups on 2026-10-10, leaving out goal-driven exploration,
+mobile 3D, a new viewer core, simulation results on the schematic and parts sourcing:
+
+| Order | Packets                                               | Status                                 | Decision                                                                |
+| ----- | ----------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------- |
+| 9     | [3D follow-ups](./MODEL-3D-FOLLOW-UPS.md), L31 to L51 | Documented; see the index for each one | Kyle selected all 21 on 2026-10-10. Build in the suggested order there. |
+| 10    | [PCB follow-ups](./PCB-FOLLOW-UPS.md), L52 to L70     | Documented; see the index for each one | Kyle selected all 19 on 2026-10-10. Build in the suggested order there. |
+
+Each follow-up is an independent packet. One marked "Needs decision" in the
+[packet index](./README.md#packet-index) waits for Kyle's answer to the question in its
+PRODUCT.md; the others can start now. Fixes found while writing them are on the local
+branches `feat/model-bed-picker` and `fix/preview-defects`; packets that touch the same code
+say what to do when those commits are or are not on the base.
 
 ## Candidates for the queue
 

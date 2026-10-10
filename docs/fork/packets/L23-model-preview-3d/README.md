@@ -3,7 +3,9 @@
 Status: Complete. Included in Loom `0.0.46-nightly.20261007.2787` on `main`.
 The original L23 scope, UI redesign and selected editing expansion are complete: parameter
 history, measurements/sections, named views/capture presets, variant exploration and model
-review. Print-readiness remains deferred. See TESTING.md for evidence and verification limits.
+review. See TESTING.md for evidence and verification limits. Follow-up work, including
+print-readiness and slicing estimates, is split into packets L31 to L51; see
+[MODEL-3D-FOLLOW-UPS.md](../MODEL-3D-FOLLOW-UPS.md).
 
 Final audit and release closeout: 2026-10-07. Implemented on
 `feat/loom-model-preview-3d` and integrated with current Loom and the upstream nightly.
@@ -48,7 +50,7 @@ panel can link to it when a URL is configured, and never depends on it.
     size, build plate preset (or custom size), optional Fabrication app URL, "Let agents render models and propose variants" (the agent tool, on by default).
   - Palette entries and unbound keybinding commands.
 - Out:
-  - Direct geometry editing, print-readiness analysis, slicing, printer control, print queues
+  - Direct geometry editing, print-readiness analysis (now L46), slicing (now L47), printer control, print queues
     and a printing model library. Measurements, section planes and parameter exploration are
     included in the selected editing expansion.
   - Running Blender from Loom (headless scripts, `.blend` previews). Blender MCP from agents is

@@ -7,7 +7,9 @@ Integration baseline: `23b9bdc48dc8ca3356df5b686c11e02a7519cb76`.
 Kyle authorized the original KiCad/tscircuit preview packet, all eight editor additions,
 theme-aware drawings, rotatable 3D boards, a reusable hardware library, cross-thread board
 references, and PCB/3D MCP and CLI parity. This is an editor with optional tools. Educational
-content, slicing, fabrication and ordering remain outside this work.
+content, slicing and ordering remain outside this work. Follow-up work, including fab checks
+and fabrication packages, is split into packets L52 to L70; see
+[PCB-FOLLOW-UPS.md](../PCB-FOLLOW-UPS.md).
 
 ## Scope
 

@@ -35,7 +35,9 @@ web pages, and leaves slicing and printers to the separate Fabrication app.
 Kyle authorized all three minor features and the first two major features: session-local
 parameter history; surface measurements and section planes; named views and repeatable capture
 presets; a SCAD variant workbench; and model annotations with point-and-discuss requests.
-Print-readiness is deferred until experience using the panel informs a focused proposal.
+Print-readiness was deferred until experience using the panel informed a focused proposal;
+on 2026-10-10 Kyle selected it as [L46](../L46-model-print-check/) among the follow-ups in
+[MODEL-3D-FOLLOW-UPS.md](../MODEL-3D-FOLLOW-UPS.md).
 
 The workbench supports saved candidates, set import, one- or two-parameter sweeps, cancellable
 thumbnail batches, linked two-candidate comparison, promotion and saving named sets. Agent
