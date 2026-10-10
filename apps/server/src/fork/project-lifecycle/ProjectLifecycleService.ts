@@ -21,7 +21,7 @@ import {
   type ProjectLifecycleSettings,
   type ProjectLifecycleStatus,
 } from "@t3tools/contracts/fork";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -209,7 +209,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const threads = yield* ThreadManagementService;
     const projects = yield* ProjectStore.ProjectStoreV2;
     const devices = yield* DeviceService;
-    const platform = yield* HostProcessPlatform;
+    const platform = yield* HostProcess.Platform;
     const runner = yield* ProcessRunner.ProcessRunner;
     const store = yield* makeStore;
     const spaces = yield* makeSpaceOps;
@@ -1338,7 +1338,7 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     };
   });
 
-export const make = HostProcessPlatform.pipe(
+export const make = HostProcess.Platform.pipe(
   Effect.flatMap((platform) =>
     makeWith({
       homeDir: NodeOS.homedir(),

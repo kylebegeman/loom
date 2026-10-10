@@ -9,7 +9,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { ChildProcessSpawner } from "effect/process";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import * as ProcessRunner from "./processRunner.ts";
@@ -142,7 +142,7 @@ describe("runProcess", () => {
       env: { PATH: "/safe/bin" },
       extendEnv: false,
     }).pipe(
-      Effect.provideService(HostProcessEnvironment, { PATH: "/host/bin", API_TOKEN: "private" }),
+      Effect.provideService(HostProcess.Environment, { PATH: "/host/bin", API_TOKEN: "private" }),
     );
   });
 
@@ -167,8 +167,8 @@ describe("runProcess", () => {
       args: ["repos", "pr", "list", "--source-branch", "feature & release"],
       env: { AZURE_CONFIG_DIR: "C:\\Users\\tester\\.azure" },
     }).pipe(
-      Effect.provideService(HostProcessPlatform, "win32"),
-      Effect.provideService(HostProcessEnvironment, {
+      Effect.provideService(HostProcess.Platform, "win32"),
+      Effect.provideService(HostProcess.Environment, {
         PATH: "C:\\Users\\tester\\AppData\\Roaming\\npm",
         PATHEXT: ".COM;.EXE;.BAT;.CMD",
       }),
@@ -429,7 +429,7 @@ describe("isWindowsCommandNotFound", () => {
       const isCommandNotFound = yield* ProcessRunner.isWindowsCommandNotFound(
         1,
         "wird nicht als interner oder externer Befehl, betriebsfahiges Programm oder Batch-Datei erkannt",
-      ).pipe(Effect.provideService(HostProcessPlatform, "win32"));
+      ).pipe(Effect.provideService(HostProcess.Platform, "win32"));
       expect(isCommandNotFound).toBe(true);
     }),
   );

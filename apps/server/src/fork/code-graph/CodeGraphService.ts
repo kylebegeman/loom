@@ -14,7 +14,7 @@ import {
   type CodeGraphSettingsPatch,
   type CodeGraphStatus,
 } from "@t3tools/contracts/fork";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -722,7 +722,7 @@ export const makeWith = (options: CodeGraphOptions) =>
   });
 
 export const make = Effect.gen(function* () {
-  const env = yield* HostProcessEnvironment;
+  const env = yield* HostProcess.Environment;
   return yield* makeWith({ env });
 });
 

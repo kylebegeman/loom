@@ -29,7 +29,7 @@ import {
   type DeviceQaStep,
   type DeviceQaTarget,
 } from "@t3tools/contracts/fork";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
@@ -1528,8 +1528,8 @@ export const makeWith = (options: DeviceQaOptions) =>
   });
 
 export const make = Effect.gen(function* () {
-  const platform = yield* HostProcessPlatform;
-  const env = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const env = yield* HostProcess.Environment;
   return yield* makeWith({ platform, env, homeDir: env.HOME || NodeOS.homedir() });
 });
 

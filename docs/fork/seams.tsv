@@ -19,6 +19,7 @@ apps/server/src/ws.ts	ext-core	4
 packages/client-runtime/src/rpc/client.ts	ext-core	3
 packages/client-runtime/src/rpc/protocol.ts	ext-core	2
 packages/contracts/src/environment.ts	ext-core	2
+apps/server/package.json	-	"diff": "8.0.3"
 packages/client-runtime/package.json	-	"./fork"
 packages/contracts/package.json	-	"./fork"
 apps/web/src/routes/__root.tsx	ext-web-root	2

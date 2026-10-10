@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -158,7 +158,7 @@ const runnerLayer = ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer));
  */
 describe.runIf(
   process.env.LOOM_TEST_IMAGE_BACKEND === "1" &&
-    imageBackendAvailable(HostProcessPlatform.defaultValue(), NodeOS.release()),
+    imageBackendAvailable(HostProcess.Platform.defaultValue(), NodeOS.release()),
 )("image backend on this host", () => {
   it.live(
     "creates a capped volume, refuses writes once detached, and grows",

@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 
 import type { ServerProvider } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
@@ -53,9 +54,12 @@ export const withCodexLoginEmail = <S extends AccountStatus>(
   if (!home || snapshot.account.account != null || status.status !== "ready" || status.auth.email) {
     return Effect.succeed(status);
   }
-  return Effect.tryPromise(() =>
-    NodeFSP.readFile(NodePath.join(expandHomePath(home), "auth.json"), "utf8"),
-  ).pipe(
+  return HostProcess.HomeDirectory.pipe(
+    Effect.flatMap((userHome) =>
+      Effect.tryPromise(() =>
+        NodeFSP.readFile(NodePath.join(expandHomePath(home, userHome), "auth.json"), "utf8"),
+      ),
+    ),
     Effect.map((text) => {
       const email = emailFromCodexAuth(text);
       return email ? { ...status, auth: { ...status.auth, email } } : status;

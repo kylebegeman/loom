@@ -7,7 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
-import { HostProcessEnvironment } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as PcbPreview from "./PcbPreviewService.ts";
 import * as Config from "../../config.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -78,7 +78,7 @@ realTest(
                 }),
             }),
           ),
-          Effect.provideService(HostProcessEnvironment, {
+          Effect.provideService(HostProcess.Environment, {
             ...NodeProcess.env,
             API_TOKEN: "must-not-be-inherited",
             HOME: state,

@@ -9,6 +9,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
   AuthOrchestrationOperateScope,
+  AuthSettingsWriteScope,
   AuthTerminalOperateScope, // fork: pcb-preview
   AuthSourceControlWriteScope,
   ThreadId,
@@ -80,6 +81,32 @@ describe("command permissions", () => {
           yield* policy.authorize(registry, env);
           expect(registry.get(policy.permissionAtom(env))).toBe(true);
         }
+      }),
+    ),
+  );
+
+  it.effect("requires the destination settings grant to run storage cleanup", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const cleanup = createCommandPermissions(runtime, WS_METHODS.serverRunStorageCleanup);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(cleanup.permissionAtom(env))).toBe(false);
+        expect((yield* cleanup.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
+          "EnvironmentAuthorizationError",
+        );
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(true),
+            scopes: [AuthSettingsWriteScope],
+            permissions: [AuthSettingsWriteScope],
+          }),
+        );
+        expect(registry.get(cleanup.permissionAtom(env))).toBe(true);
+        yield* cleanup.authorize(registry, env);
+        registry.set(sessions(other), AsyncResult.success(grant(false)));
+        expect(registry.get(cleanup.permissionAtom(other))).toBe(false);
       }),
     ),
   );
