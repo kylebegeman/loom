@@ -1,6 +1,5 @@
 import {
   BoxGeometry,
-  GridHelper,
   Mesh,
   MeshStandardMaterial,
   Texture,
@@ -14,6 +13,7 @@ const doubles = vi.hoisted(() => ({
   renderer: null as unknown,
   controls: null as unknown,
   environment: null as unknown,
+  resized: null as (() => void) | null,
 }));
 vi.mock("three", async (original) => ({
   ...(await original<typeof import("three")>()),
@@ -25,6 +25,12 @@ vi.mock("three", async (original) => ({
       return doubles.environment;
     }
     dispose() {}
+  },
+}));
+vi.mock("~/lib/observeResize", () => ({
+  observeResize: (_element: Element, callback: () => void) => {
+    doubles.resized = callback;
+    return () => {};
   },
 }));
 vi.mock("three/addons/controls/OrbitControls.js", () => ({
@@ -93,7 +99,6 @@ beforeEach(() => {
     observe() {}
     disconnect() {}
   };
-  vi.stubGlobal("ResizeObserver", observer);
   vi.stubGlobal("MutationObserver", observer);
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     const id = ++sequence;
@@ -108,7 +113,8 @@ function host() {
 }
 it("coalesces interactions into one frame and leaves no frame loop while idle or hidden", () => {
   const viewer = createViewer(host());
-  viewer.setBuildVolume([350, 320, 325]);
+  gpu.render.mockClear();
+  viewer.setBed([350, 320], "grid-mm");
   viewer.setGrid(false);
   viewer.setAxes(true);
   change?.();
@@ -122,9 +128,17 @@ it("coalesces interactions into one frame and leaves no frame loop while idle or
   change?.();
   expect(frames.size).toBe(0);
   viewer.setVisible(true);
-  expect(frames.size).toBe(1);
-  flushFrame();
   expect(gpu.render).toHaveBeenCalledTimes(2);
+  expect(frames.size).toBe(0);
+  viewer.dispose();
+});
+it("repaints in the same frame as a resize, which clears the canvas", () => {
+  const viewer = createViewer(host());
+  flushFrame();
+  gpu.render.mockClear();
+  doubles.resized!();
+  expect(gpu.setSize).toHaveBeenLastCalledWith(600, 400);
+  expect(gpu.render).toHaveBeenCalledOnce();
   expect(frames.size).toBe(0);
   viewer.dispose();
 });
@@ -259,26 +273,20 @@ it("restores the working camera before asynchronous image encoding finishes", as
   viewer.dispose();
 });
 
-it("places the build plate under the model's footprint without moving the model", () => {
+it("places the bed under the model's footprint without moving the model", () => {
   const viewer = createViewer(host());
-  viewer.setBuildVolume([350, 320, 325]);
+  viewer.setBed([350, 320], "grid-mm");
   const geometry = new BoxGeometry(100, 40, 20);
   geometry.translate(50, 20, 15);
   const model = new Mesh(geometry, new MeshStandardMaterial());
   viewer.setModel(model, false);
   flushFrame();
   const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
-  let grid: GridHelper | undefined;
-  scene.traverse((object) => {
-    if (object instanceof GridHelper) grid = object;
-  });
-  expect(grid!.position.toArray()).toEqual([50, 20, 5]);
+  expect(scene.getObjectByName("bed")!.position.toArray()).toEqual([50, 20, 5]);
   expect(model.position.toArray()).toEqual([0, 0, 0]);
-  viewer.setBuildVolume([250, 250, 250]);
+  viewer.setBed([250, 250], "plain");
   flushFrame();
-  scene.traverse((object) => {
-    if (object instanceof GridHelper) grid = object;
-  });
-  expect(grid!.position.toArray()).toEqual([50, 20, 5]);
+  expect(scene.getObjectsByProperty("name", "bed")).toHaveLength(1);
+  expect(scene.getObjectByName("bed")!.position.toArray()).toEqual([50, 20, 5]);
   viewer.dispose();
 });

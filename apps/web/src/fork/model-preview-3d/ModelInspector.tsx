@@ -1,7 +1,6 @@
 import styles from "./workspace.module.css";
-import { useState, type KeyboardEvent } from "react";
+import type { KeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
 import {
   ApertureIcon,
   BoxIcon,
@@ -35,13 +34,17 @@ import {
   MenuSeparator,
   MenuTrigger,
 } from "~/components/ui/menu";
-import { toastManager } from "~/components/ui/toast";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { appAtomRegistry } from "~/rpc/atomRegistry";
 import type { meshStats } from "./viewer/load";
-import { buildPlateLabel, buildPlateOptions, fitsBuildVolume } from "./buildPlate";
+import {
+  bedGroups,
+  buildPlateLabel,
+  fitsBuildVolume,
+  formatVolume,
+  type BuildVolume,
+} from "./buildPlate";
+import { useBuildPlate } from "./BedPicker";
 import { Chip, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
-import { models, runModelCommand } from "./state";
 
 export type InspectorTab = "customize" | "variants" | "markup" | "views" | "part";
 const TABS: readonly { id: InspectorTab; label: string; icon: LucideIcon; scad: boolean }[] = [
@@ -184,7 +187,7 @@ function PlateFit({
   fits,
 }: {
   size: readonly number[];
-  volume: readonly [number, number, number];
+  volume: BuildVolume;
   fits: boolean;
 }) {
   const [bx, by, bz] = volume;
@@ -199,7 +202,7 @@ function PlateFit({
     lines.push({ key: `x${x}`, x1: ox + x, y1: oy, x2: ox + x, y2: oy + by });
   for (let y = PLATE_GRID_MM; y < by; y += PLATE_GRID_MM)
     lines.push({ key: `y${y}`, x1: ox, y1: oy + y, x2: ox + bx, y2: oy + y });
-  const fill = Math.min(1, size[2]! / bz);
+  const fill = bz === null ? 0 : Math.min(1, size[2]! / bz);
   return (
     <div className={styles["model-fit-body"]}>
       <svg
@@ -236,33 +239,39 @@ function PlateFit({
           {bx} × {by} mm
         </text>
       </svg>
-      <svg viewBox="0 0 38 120" role="img" aria-label={`Height ${size[2]!.toFixed(1)} of ${bz} mm`}>
-        <rect
-          x={11}
-          y={2}
-          width={16}
-          height={104}
-          rx={4}
-          fill="var(--muted)"
-          stroke="var(--border)"
-        />
-        <rect
-          x={11}
-          y={2 + 104 * (1 - fill)}
-          width={16}
-          height={104 * fill}
-          rx={4}
-          fill={`color-mix(in oklab, ${size[2]! > bz ? "var(--warning)" : "var(--primary)"} 55%, transparent)`}
-        />
-        <text x={19} y={118} fontSize={10} textAnchor="middle" fill="var(--muted-foreground)">
-          {Math.round((size[2]! / bz) * 100)}%
-        </text>
-      </svg>
+      {bz !== null && (
+        <svg
+          viewBox="0 0 38 120"
+          role="img"
+          aria-label={`Height ${size[2]!.toFixed(1)} of ${bz} mm`}
+        >
+          <rect
+            x={11}
+            y={2}
+            width={16}
+            height={104}
+            rx={4}
+            fill="var(--muted)"
+            stroke="var(--border)"
+          />
+          <rect
+            x={11}
+            y={2 + 104 * (1 - fill)}
+            width={16}
+            height={104 * fill}
+            rx={4}
+            fill={`color-mix(in oklab, ${size[2]! > bz ? "var(--warning)" : "var(--primary)"} 55%, transparent)`}
+          />
+          <text x={19} y={118} fontSize={10} textAnchor="middle" fill="var(--muted-foreground)">
+            {Math.round((size[2]! / bz) * 100)}%
+          </text>
+        </svg>
+      )}
     </div>
   );
 }
 
-/** Chooses the printer for this environment. The plate and fit checks follow the saved setting. */
+/** Chooses the bed for this environment. The plate and fit checks follow the saved setting. */
 function PrinterMenu({
   environmentId,
   settings,
@@ -270,35 +279,13 @@ function PrinterMenu({
   environmentId: EnvironmentId;
   settings: ModelPreviewSettings;
 }) {
-  const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
-  // Shows the choice while the save and settings refresh are in flight.
-  const [pending, setPending] = useState<BuildPlatePresetId | null>(null);
-  if (pending !== null && pending === settings.buildPlate.preset) setPending(null);
-  const preset = pending ?? settings.buildPlate.preset;
-  const choose = async (next: BuildPlatePresetId) => {
-    if (next === preset) return;
-    setPending(next);
-    try {
-      await runModelCommand(models.updateSettings, {
-        environmentId,
-        input: { ...settings, buildPlate: { ...settings.buildPlate, preset: next } },
-      });
-      appAtomRegistry.refresh(models.settings({ environmentId, input: {} }));
-    } catch (error) {
-      setPending(null);
-      toastManager.add({
-        type: "error",
-        title: "Printer not changed",
-        description: error instanceof Error ? error.message : "The setting could not be saved.",
-      });
-    }
-  };
+  const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const trigger = (
     <MenuTrigger
       disabled={!canSave}
       render={<Button variant="ghost-muted" size="xs" className="min-w-0" />}
     >
-      <span className="truncate">{buildPlateLabel({ ...settings.buildPlate, preset })}</span>
+      <span className="truncate">{buildPlateLabel(plate)}</span>
       <ChevronsUpDownIcon />
     </MenuTrigger>
   );
@@ -312,27 +299,29 @@ function PrinterMenu({
         </Tip>
       )}
       <MenuPopup align="end">
-        <MenuGroup>
-          <MenuGroupLabel>Printer</MenuGroupLabel>
-          <MenuRadioGroup
-            value={preset}
-            onValueChange={(next: BuildPlatePresetId) => void choose(next)}
-          >
-            {buildPlateOptions(settings.buildPlate.customMm).map((option) => (
-              <MenuRadioItem key={option.id} value={option.id} closeOnClick>
-                <span className="flex items-center gap-2">
-                  <span className="flex w-3.5 shrink-0">
-                    <MenuRadioItemIndicator />
+        <MenuRadioGroup
+          value={plate.preset}
+          onValueChange={(next: BuildPlatePresetId) => void save({ ...plate, preset: next })}
+        >
+          {bedGroups(plate.customMm).map((group) => (
+            <MenuGroup key={group.label}>
+              <MenuGroupLabel>{group.label}</MenuGroupLabel>
+              {group.options.map((option) => (
+                <MenuRadioItem key={option.id} value={option.id} closeOnClick>
+                  <span className="flex items-center gap-2">
+                    <span className="flex w-3.5 shrink-0">
+                      <MenuRadioItemIndicator />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                    <span className="ps-4 text-muted-foreground text-xs tabular-nums">
+                      {formatVolume(option.volumeMm)}
+                    </span>
                   </span>
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  <span className="ps-4 text-muted-foreground text-xs tabular-nums">
-                    {option.volumeMm.join(" × ")}
-                  </span>
-                </span>
-              </MenuRadioItem>
-            ))}
-          </MenuRadioGroup>
-        </MenuGroup>
+                </MenuRadioItem>
+              ))}
+            </MenuGroup>
+          ))}
+        </MenuRadioGroup>
         <MenuSeparator />
         <MenuItem render={<Link to="/settings/loom" />}>
           <Settings2Icon />
@@ -356,7 +345,7 @@ export function PartSection({
   environmentId: EnvironmentId;
   stats: ReturnType<typeof meshStats> | null;
   settings: ModelPreviewSettings;
-  volume: readonly [number, number, number];
+  volume: BuildVolume;
   render: ScadRenderResult | null;
   format: string;
   path: string;
@@ -371,13 +360,13 @@ export function PartSection({
         <EmptyNote>Dimensions appear when the model loads.</EmptyNote>
       </div>
     );
-  const over = stats.size.map((value, axis) => value - volume[axis]!);
+  const over = stats.size.map((value, axis) => {
+    const limit = volume[axis];
+    return limit === null || limit === undefined ? 0 : value - limit;
+  });
   const fits = fitsBuildVolume(stats.size, volume);
   const rotated =
-    !fits &&
-    stats.size[0]! <= volume[1] &&
-    stats.size[1]! <= volume[0] &&
-    stats.size[2]! <= volume[2];
+    !fits && stats.size[0]! <= volume[1] && stats.size[1]! <= volume[0] && over[2]! <= 1e-6;
   const manifold = render?.summary?.manifold;
   return (
     <div className={styles["model-inspector-scroll"]}>
@@ -414,7 +403,7 @@ export function PartSection({
         <PlateFit size={stats.size} volume={volume} fits={fits} />
         <p className={styles["model-fit-advice"]}>
           {fits ? (
-            `${Math.min(...volume.map((value, axis) => value - stats.size[axis]!)).toFixed(0)} mm of clearance on the tightest axis.`
+            `${Math.min(...over.map((value, axis) => (volume[axis] === null ? Infinity : -value))).toFixed(0)} mm of clearance on the tightest axis.`
           ) : (
             <>
               <strong>
@@ -427,7 +416,7 @@ export function PartSection({
               </strong>{" "}
               {rotated
                 ? "It fits if you rotate it 90° on the plate."
-                : "Split the part or choose a larger printer. You can still preview and capture it."}
+                : "Split the part or choose a larger bed. You can still preview and capture it."}
             </>
           )}
         </p>

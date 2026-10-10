@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   BUILD_PLATE_PRESETS,
   ModelPreviewSettings,
+  type BuildPlatePattern,
   type BuildPlatePresetId,
   type ModelPreviewStatus,
 } from "@t3tools/contracts/fork";
@@ -18,6 +19,8 @@ import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import {
   Select,
+  SelectGroup,
+  SelectGroupLabel,
   SelectItem,
   SelectPopup,
   SelectTrigger,
@@ -26,7 +29,7 @@ import {
 import { useServerConfigs } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { OperationStatus } from "./OperationStatus";
-import { buildPlateOptions } from "./buildPlate";
+import { BUILD_PLATE_PATTERNS, bedGroups, buildPlateLabel, formatVolume } from "./buildPlate";
 import { models, runModelCommand } from "./state";
 
 const validateSettings = Schema.decodeSync(ModelPreviewSettings);
@@ -50,7 +53,6 @@ function SettingsForm({
   const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
   const status = useAtomValue(models.status({ environmentId, input: {} }));
   const info = detection ?? Option.getOrNull(AsyncResult.value(status));
-  const printers = buildPlateOptions(settings.buildPlate.customMm);
   const set = <K extends keyof ModelPreviewSettings>(key: K, value: ModelPreviewSettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }));
   const act = async (task: () => Promise<unknown>, success: string) => {
@@ -180,7 +182,8 @@ function SettingsForm({
         }
       />
       <SettingsRow
-        title="Build plate"
+        title="Bed"
+        description="The plate under the model and the size fit checks use."
         control={
           <Select
             value={settings.buildPlate.preset}
@@ -188,21 +191,24 @@ function SettingsForm({
               if (next) set("buildPlate", { ...settings.buildPlate, preset: next });
             }}
           >
-            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Build plate">
-              <SelectValue>
-                {printers.find(({ id }) => id === settings.buildPlate.preset)?.label}
-              </SelectValue>
+            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed">
+              <SelectValue>{buildPlateLabel(settings.buildPlate)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              {printers.map((printer) => (
-                <SelectItem key={printer.id} value={printer.id}>
-                  <span className="flex w-full items-center gap-4">
-                    <span className="flex-1">{printer.label}</span>
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                      {printer.volumeMm.join(" × ")} mm
-                    </span>
-                  </span>
-                </SelectItem>
+              {bedGroups(settings.buildPlate.customMm).map((group) => (
+                <SelectGroup key={group.label}>
+                  <SelectGroupLabel>{group.label}</SelectGroupLabel>
+                  {group.options.map((option) => (
+                    <SelectItem key={option.id} value={option.id}>
+                      <span className="flex w-full items-center gap-4">
+                        <span className="flex-1">{option.label}</span>
+                        <span className="text-muted-foreground text-xs tabular-nums">
+                          {formatVolume(option.volumeMm)} mm
+                        </span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               ))}
             </SelectPopup>
           </Select>
@@ -214,7 +220,7 @@ function SettingsForm({
             <label key={axis}>
               {axis} mm
               <Input
-                aria-label={`Custom build volume ${axis}`}
+                aria-label={`Custom bed ${axis}`}
                 type="number"
                 min={10}
                 max={2000}
@@ -235,6 +241,33 @@ function SettingsForm({
           </p>
         )
       )}
+      <SettingsRow
+        title="Bed pattern"
+        control={
+          <Select
+            value={settings.buildPlate.pattern}
+            onValueChange={(next: BuildPlatePattern | null) => {
+              if (next) set("buildPlate", { ...settings.buildPlate, pattern: next });
+            }}
+          >
+            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed pattern">
+              <SelectValue>
+                {
+                  BUILD_PLATE_PATTERNS.find(({ value }) => value === settings.buildPlate.pattern)
+                    ?.name
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {BUILD_PLATE_PATTERNS.map((pattern) => (
+                <SelectItem key={pattern.value} value={pattern.value}>
+                  {pattern.name}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
       <SettingsRow title="Fabrication app URL" description="Optional link for STEP files.">
         <div className="flex flex-col gap-2 pb-2">
           <Input

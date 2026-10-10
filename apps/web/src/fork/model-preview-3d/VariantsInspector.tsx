@@ -81,7 +81,7 @@ import {
   rebaseParameterValues,
   validParameterLiteral,
 } from "./params";
-import { fitsBuildVolume } from "./buildPlate";
+import { fitsBuildVolume, type Plate } from "./buildPlate";
 import {
   Chip,
   EmptyNote,
@@ -100,7 +100,7 @@ function ComparePane({
   dimensionKey,
   threadRef,
   path,
-  volume,
+  plate,
   camera,
   onCamera,
   onDimensions,
@@ -109,7 +109,7 @@ function ComparePane({
   dimensionKey: string;
   threadRef: ScopedThreadRef;
   path: string;
-  volume: readonly [number, number, number];
+  plate: Plate;
   camera: ModelCamera | null;
   onCamera: (camera: ModelCamera) => void;
   onDimensions: (id: string, dimensions: readonly [number, number, number]) => void;
@@ -167,7 +167,7 @@ function ComparePane({
         <Suspense fallback={<OperationStatus label="Preparing comparison viewer" />}>
           <ViewerCanvas
             {...mesh}
-            volume={volume}
+            plate={plate}
             visible={true}
             viewerRef={viewer}
             savedViewRef={saved}
@@ -197,7 +197,7 @@ type SaveCandidate = { name: string; values: Readonly<Record<string, string>> };
 function VariantDetail({
   variant,
   session,
-  volume,
+  plate,
   mutate,
   rendering,
   onBack,
@@ -209,7 +209,7 @@ function VariantDetail({
 }: {
   variant: ModelVariant;
   session: ScadSession;
-  volume: readonly [number, number, number];
+  plate: Plate;
   mutate: Mutation;
   rendering: boolean;
   onBack: () => void;
@@ -261,7 +261,7 @@ function VariantDetail({
   const differ = changedParameters(parameters, draft, defaults).length;
   const inUse = same(draft, session.values);
   const stale = !!variant.thumbnail && variant.renderedRevision !== session.data.sourceRevision;
-  const oversized = variant.dimensions && !fitsBuildVolume(variant.dimensions, volume);
+  const oversized = variant.dimensions && !fitsBuildVolume(variant.dimensions, plate.volume);
   return (
     <>
       <div className={styles["model-detail-head"]}>
@@ -542,7 +542,7 @@ export function VariantsInspector({
   session,
   threadRef,
   path,
-  volume,
+  plate,
   onActivity,
 }: {
   onActivity: (activity: OperationProgress | null) => void;
@@ -551,7 +551,7 @@ export function VariantsInspector({
   session: ScadSession | null;
   threadRef: ScopedThreadRef;
   path: string;
-  volume: readonly [number, number, number];
+  plate: Plate;
 }) {
   const [saveCandidate, setSaveCandidate] = useState<SaveCandidate | null>(null);
   const [candidateSetName, setSetName] = useState("");
@@ -718,7 +718,7 @@ export function VariantsInspector({
         try {
           viewer = createViewer(host);
           viewer.setVisible(false);
-          viewer.setBuildVolume(volume);
+          viewer.setBed([plate.volume[0], plate.volume[1]], plate.pattern);
           loadAbort.current = abort;
           const model = await loadModel(
             modelUrl(threadRef.environmentId, result.mesh.relativeUrl),
@@ -921,7 +921,7 @@ export function VariantsInspector({
                     dimensionKey={comparisonKey(variant)}
                     threadRef={threadRef}
                     path={path}
-                    volume={volume}
+                    plate={plate}
                     camera={camera}
                     onCamera={setCamera}
                     onDimensions={onDimensions}
@@ -973,7 +973,7 @@ export function VariantsInspector({
           key={detail.id}
           variant={detail}
           session={session}
-          volume={volume}
+          plate={plate}
           mutate={mutate}
           rendering={queue.includes(detail.id)}
           onBack={() => setDetailId(null)}
@@ -1096,7 +1096,8 @@ export function VariantsInspector({
               const values = rebaseParameterValues(session.data.parameters, variant.values);
               const isSelected = selection.includes(variant.id);
               const inUse = same(values, session.values);
-              const oversized = variant.dimensions && !fitsBuildVolume(variant.dimensions, volume);
+              const oversized =
+                variant.dimensions && !fitsBuildVolume(variant.dimensions, plate.volume);
               const stale =
                 !!variant.thumbnail && variant.renderedRevision !== session.data.sourceRevision;
               const toggle = () =>

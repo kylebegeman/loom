@@ -60,7 +60,8 @@ import {
   type InspectorBadge,
   type InspectorTab,
 } from "./ModelInspector";
-import { resolveBuildVolume, fitsBuildVolume } from "./buildPlate";
+import { resolvePlate, fitsBuildVolume } from "./buildPlate";
+import { BedPicker } from "./BedPicker";
 import { changedParameters } from "./params";
 import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
 import { attachModelImage, captureToComposer, captureBase64 } from "./capture";
@@ -439,7 +440,8 @@ function ModelFile({
   useEffect(() => {
     handleEditorRequest(editorRequest);
   }, [editorRequest]);
-  const volume = useMemo(() => resolveBuildVolume(settings.buildPlate), [settings.buildPlate]);
+  const plate = useMemo(() => resolvePlate(settings.buildPlate), [settings.buildPlate]);
+  const volume = plate.volume;
   const watched = useAtomValue(
     models.watch({ environmentId: threadRef.environmentId, input: file }),
   );
@@ -843,7 +845,7 @@ function ModelFile({
                 <ViewerCanvas
                   url={mesh.url}
                   format={mesh.format}
-                  volume={volume}
+                  plate={plate}
                   visible={visible}
                   viewerRef={viewer}
                   savedViewRef={savedView}
@@ -895,6 +897,7 @@ function ModelFile({
           )}
           {hint && <ToolHint onDone={editing.stopPicking}>{hint}</ToolHint>}
           <DisplayTools
+            bed={<BedPicker environmentId={threadRef.environmentId} settings={settings} />}
             {...display}
             onWireframe={(wireframe) => setDisplay((value) => ({ ...value, wireframe }))}
             onGrid={(grid) => setDisplay((value) => ({ ...value, grid }))}
@@ -1065,7 +1068,7 @@ function ModelFile({
                   session={session}
                   threadRef={threadRef}
                   path={path}
-                  volume={volume}
+                  plate={plate}
                   onActivity={setVariantActivity}
                 />
               </fieldset>
@@ -1143,7 +1146,7 @@ function ModelFile({
         {oversized && (
           <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
             <TriangleAlertIcon />
-            Larger than the build plate
+            Larger than the bed
           </button>
         )}
         <span

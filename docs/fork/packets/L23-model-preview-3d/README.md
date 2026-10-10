@@ -29,10 +29,12 @@ panel can link to it when a URL is configured, and never depends on it.
     in the Fabrication app (STEP import is planned there).").
   - One panel tab per file; open from the launcher's file picker, the palette, or a keybinding.
   - three.js viewer, lazy-loaded: orbit, pan, zoom, fit, iso/front/top/right views, wireframe,
-    grid sized to the chosen build plate, axes, bounding box dimensions in mm, triangle count, a
-    "Larger than the build volume" warning, light and dark themes. Render on demand only.
-  - Build plate presets for Kyle's printers: Bambu Lab H2D (default, 350 x 320 x 325 mm), Bambu
-    Lab H2C (330 x 320 x 325 mm), Anycubic Kobra S1 (250 x 250 x 250 mm), and Custom.
+    a bed sized to the chosen preset, axes, bounding box dimensions in mm, triangle count, a
+    "Larger than the bed" warning, light and dark themes. Render on demand only.
+  - Bed presets, chosen from the viewport's Bed menu, the Part tab or settings: printers (Bambu
+    Lab H2D as the default, H2C, X1/P1/A1, A1 mini; Anycubic Kobra S1; Prusa CORE One, MK4S,
+    MINI+; Creality K1 Max, Ender-3 V3), surfaces with no height limit (A4, US Letter, 12 in
+    square, 1 m square), and Custom. Patterns: 10 mm grid (default), 1 in grid, plain.
   - Live reload when the file (or, for `.scad`, any file it includes) changes on disk.
   - OpenSCAD: server-side render to binary STL (or 3MF with colors, a setting), customizer
     parameters parsed from the source and editable in a form, parameter sets from the OpenSCAD

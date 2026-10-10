@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } 
 import { RotateCcwIcon } from "lucide-react";
 import type { ScadParameter } from "@t3tools/contracts/fork";
 import { Input } from "~/components/ui/input";
+import { observeResize } from "~/lib/observeResize";
 import { Kbd } from "~/components/ui/kbd";
 import { Switch } from "~/components/ui/switch";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "~/components/ui/tooltip";
@@ -181,10 +182,7 @@ export function useSlidingThumb<T extends HTMLElement>(selector: string, selecte
     };
     place();
     // Labels that appear on selection and panel resizes move the selected item.
-    const observer = new ResizeObserver(place);
-    observer.observe(track);
-    for (const child of track.children) observer.observe(child);
-    return () => observer.disconnect();
+    return observeResize([track, ...track.children], place);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A new selection moves the thumb.
   }, [selector, selected]);
   return ref;

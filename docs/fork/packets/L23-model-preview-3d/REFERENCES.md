@@ -102,6 +102,20 @@ Checked on 2026-09-24.
 - Anycubic Kobra S1: 250 x 250 x 250 mm,
   https://store.anycubic.com/products/kobra-s1-ace-2-pro-combo-3d-printer (fetched).
 
+Added 2026-10-10, from search results (pages not opened):
+
+- Bambu Lab X1, P1 and A1: 256 x 256 x 256 mm, https://bambulab.com/en/a1/tech-specs and
+  https://us.store.bambulab.com/products/p1s. Bambu Studio limits default print height to 250 mm.
+- Bambu Lab A1 mini: 180 x 180 x 180 mm, https://3dpros.com/printers/bambu-lab-a1-mini.
+- Prusa CORE One: 250 x 220 x 270 mm; Prusa MK4S: 250 x 210 x 220 mm (3D Printing Industry and
+  SimplyPrint listings).
+- Prusa MINI+: 180 x 180 x 180 mm,
+  https://www.prusa3d.com/product/original-prusa-mini-semi-assembled-3d-printer-enclosure-bundle-5/.
+- Creality K1 Max: 300 x 300 x 300 mm,
+  https://www.creality.shop/products/creality-k1-max-ai-fast-3d-printer.
+- Creality Ender-3 V3: 220 x 220 x 250 mm (3DPros and 3DJake listings).
+- Surfaces use standard sizes: A4 297 x 210 mm, US Letter 279.4 x 215.9 mm.
+
 ## Implementation verification, 2026-10-07
 
 Installed `three` and `@types/three` 0.186.0 were inspected directly. `ThreeMFLoader`

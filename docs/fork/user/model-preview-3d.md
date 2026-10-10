@@ -6,12 +6,16 @@ list; optional shortcuts for opening the panel and capturing a view are in Keybi
 
 Loom previews STL, 3MF, OBJ, glTF and GLB. Drag to orbit, drag with the middle or right
 button to pan, and scroll to zoom. The floating tools choose a standard or saved view and
-toggle wireframe, the build plate and axes. Maximize the panel for a larger work area with
-the inspector alongside your part. In a narrow panel the inspector opens as a sheet below
-the viewport; expand it for long forms, then return to the viewport.
+toggle wireframe, the bed and axes. The **Bed** menu in the viewport sets what the part rests
+on: a printer's build plate, a flat surface such as an A4 sheet or a 1 m square, or a custom
+size, with a 10 mm grid, a 1 in grid or a plain surface. Surfaces have no height limit. The
+choice is saved for the environment, so the Part tab, variants and settings follow it.
+Maximize the panel for a larger work area with the inspector alongside your part. In a narrow
+panel the inspector opens as a sheet below the viewport; expand it for long forms, then return
+to the viewport.
 
 While the panel has focus, **F** fits the model, **O** and **H** choose orbit or pan,
-**1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, plate and axes,
+**1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
 and **I** shows or hides the inspector. The help button beside the zoom controls lists every
 shortcut.
 Dimensions are in millimetres: STL and OBJ are treated as mm, 3MF uses its recorded units,
@@ -35,7 +39,7 @@ installing or changing the executable.
 
 The inspector has five tabs: **Customize** and **Variants** for SCAD files, then **Markup**,
 **Views** and **Part** for every model. A badge on a tab points to something that needs you,
-such as open change requests or a part that is larger than the build plate.
+such as open change requests or a part that is larger than the bed.
 
 **Customize** edits customizer inputs. Pick a saved set from the menu at the top, search by
 name, description or group, and drag a number field sideways to scrub it or click it to type
@@ -53,10 +57,10 @@ during rendering, Loom discards that output; live reload prepares the new versio
 Refresh preview.
 
 Settings control the render backend, timeout, color export and file-size limit. Choose the
-Bambu Lab H2D, Bambu Lab H2C, Anycubic Kobra S1, or a custom build volume from the printer
-menu in **Part** or in settings; set the custom size in settings. **Part** shows the dimensions
-against that printer; oversized parts show a warning in the status bar and on the tab, and
-previewing them is still allowed. Clear render cache removes cached outputs.
+bed from the **Bed** menu in the viewport, the printer menu in **Part**, or settings; set a
+custom size in the **Bed** menu or settings. **Part** shows the dimensions against that bed;
+oversized parts show a warning in the status bar and on the tab, and previewing them is still
+allowed. Clear render cache removes cached outputs.
 
 ## Show the agent your part
 

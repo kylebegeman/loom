@@ -14,8 +14,9 @@ web pages, and leaves slicing and printers to the separate Fabrication app.
 - Open the **3D model** panel from the launcher, the "+" menu, the palette or a keybinding, and
   pick any model file in the workspace from a searchable list.
 - Orbit, pan and zoom; jump to iso, front, top or right; fit to view; toggle wireframe, grid and
-  axes. See the size (X by Y by Z in mm) and the triangle count, on a grid the size of the
-  chosen printer's build plate, with a warning when the part is larger than its build volume.
+  axes. See the size (X by Y by Z in mm) and the triangle count, on a bed the size of the
+  chosen printer's build plate or a reference surface, with a warning when the part is larger
+  than the bed. Change the bed and its pattern from the viewport.
 - Keep the panel open while an agent edits the file: the view reloads on save and keeps the
   camera.
 - For OpenSCAD files: see the render log, whether the result is manifold, and edit the
@@ -23,8 +24,8 @@ web pages, and leaves slicing and printers to the separate Fabrication app.
   parameter set; save the current values as a new set in the file's customizer JSON.
 - Capture the current view, or a sheet of four standard views, into the composer, so the next
   message shows the agent the part.
-- Configure OpenSCAD (path, backend, timeout, colors), the build plate (Bambu Lab H2D, Bambu Lab
-  H2C, Anycubic Kobra S1, or a custom size), the maximum file size, an optional Fabrication app
+- Configure OpenSCAD (path, backend, timeout, colors), the bed (a printer, a surface, or a
+  custom size) and its pattern, the maximum file size, an optional Fabrication app
   link, and "Let agents render models and propose variants" in Loom settings.
 - Let agents render a model to PNG views with `loom_model_preview_3d_render` (on by default;
   "Let agents render models and propose variants" turns it off).
@@ -112,5 +113,10 @@ to provider and add-on setup guidance; Loom does not repair external provider co
   350 x 320 x 325 mm (default), Bambu Lab H2C 330 x 320 x 325 mm (left nozzle
   325 x 320 x 320, both nozzles 300 x 320 x 325, shown as a note), Anycubic Kobra S1
   250 x 250 x 250 mm, and Custom. A generic 256 mm grid would not match any printer he owns.
+  On 2026-10-10 Kyle asked to compare parts against other beds from the viewport, so the presets
+  also cover common printers (Bambu Lab X1/P1/A1 and A1 mini, Prusa CORE One, MK4S and MINI+,
+  Creality K1 Max and Ender-3 V3) and surfaces with no height limit (A4, US Letter, a 12 in
+  square, a 1 m square), with a 10 mm grid, 1 in grid or plain pattern. Older saved settings
+  decode with the 10 mm grid.
 - Multi-material units (2 AMS, 2 AMS HT, ACE 2 Pro) are not modelled here: a preview does not
   need them; the Fabrication app's printer presets record them.

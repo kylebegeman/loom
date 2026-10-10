@@ -7,6 +7,7 @@ import type {
 } from "@t3tools/contracts/fork";
 import { useEffect, useRef } from "react";
 import type { ModelFormat } from "@t3tools/contracts/fork";
+import type { Plate } from "../buildPlate";
 import { createViewer, type ModelViewer, type NavigationMode } from "./createViewer";
 import { disposeModel, loadModel, type meshStats } from "./load";
 const EMPTY_MEASUREMENTS: readonly ModelMeasurement[] = [];
@@ -14,7 +15,7 @@ const EMPTY_ANNOTATIONS: readonly ModelAnnotation[] = [];
 export default function ViewerCanvas({
   url,
   format,
-  volume,
+  plate,
   visible,
   viewerRef,
   savedViewRef,
@@ -43,7 +44,7 @@ export default function ViewerCanvas({
   camera?: ModelCamera | null;
   url: string;
   format: ModelFormat;
-  volume: readonly [number, number, number];
+  plate: Plate;
   visible: boolean;
   viewerRef: React.RefObject<ModelViewer | null>;
   savedViewRef: React.RefObject<ReturnType<ModelViewer["snapshot"]> | null>;
@@ -96,8 +97,8 @@ export default function ViewerCanvas({
     };
   }, [viewerRef, savedViewRef, onError]);
   useEffect(() => {
-    viewerRef.current?.setBuildVolume(volume);
-  }, [volume, viewerRef]);
+    viewerRef.current?.setBed([plate.volume[0], plate.volume[1]], plate.pattern);
+  }, [plate, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setVisible(visible);
   }, [visible, viewerRef]);

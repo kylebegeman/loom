@@ -145,6 +145,7 @@ export function ViewTools({
   );
 }
 export function DisplayTools({
+  bed,
   wireframe,
   grid,
   axes,
@@ -152,6 +153,8 @@ export function DisplayTools({
   onGrid,
   onAxes,
 }: {
+  /** The bed picker, shown before the display menu. */
+  bed?: ReactNode;
   wireframe: boolean;
   grid: boolean;
   axes: boolean;
@@ -161,6 +164,8 @@ export function DisplayTools({
 }) {
   return (
     <div className={styles["model-floating"] + " " + styles["model-display-tools"]}>
+      {bed}
+      {bed && <span className={styles["model-tool-divider"]} />}
       <Menu>
         <MenuTrigger
           render={<button className={styles["model-tool"]} aria-label="Display options" />}
@@ -176,7 +181,7 @@ export function DisplayTools({
               <MenuShortcut>W</MenuShortcut>
             </MenuCheckboxItem>
             <MenuCheckboxItem checked={grid} onCheckedChange={onGrid}>
-              Build plate
+              Bed
               <MenuShortcut>G</MenuShortcut>
             </MenuCheckboxItem>
             <MenuCheckboxItem checked={axes} onCheckedChange={onAxes}>
@@ -197,7 +202,7 @@ const HELP = [
   ["Standard views", "1 to 4"],
   ["Measure, annotate", "M, N"],
   ["Section plane", "S"],
-  ["Wireframe, plate, axes", "W, G, A"],
+  ["Wireframe, bed, axes", "W, G, A"],
   ["Inspector", "I"],
 ] as const;
 export function NavigationTools({

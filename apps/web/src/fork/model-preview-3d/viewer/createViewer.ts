@@ -4,6 +4,7 @@ import type {
   ModelSection,
   ModelMeasurement,
   ModelAnnotation,
+  BuildPlatePattern,
 } from "@t3tools/contracts/fork";
 import {
   ACESFilmicToneMapping,
@@ -20,7 +21,6 @@ import {
   SpriteMaterial,
   Color,
   DirectionalLight,
-  GridHelper,
   Group,
   Mesh,
   MOUSE,
@@ -35,6 +35,8 @@ import {
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { observeResize } from "~/lib/observeResize";
+import { createBed } from "./bed";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
 import styles from "../workspace.module.css";
@@ -326,12 +328,13 @@ export function createViewer(host: HTMLElement) {
   scene.add(helpers);
   let model: Object3D | null = null,
     box = new Box3(),
-    grid: GridHelper | null = null,
+    bed: ReturnType<typeof createBed> | null = null,
     axes: AxesHelper | null = null;
   let frame: number | null = null,
     disposed = false,
     visible = true,
     gridVisible = true,
+    dark = false,
     axesVisible = false,
     wireframe = false,
     navigationMode: NavigationMode = "orbit";
@@ -362,20 +365,21 @@ export function createViewer(host: HTMLElement) {
     if (!restoring) onCamera?.(snapshot());
   };
   controls.addEventListener("change", controlsChanged);
+  // Resizing clears the canvas, so paint again before the browser does, not on the next frame.
   const resize = () => {
     const width = Math.max(1, host.clientWidth),
       height = Math.max(1, host.clientHeight);
     renderer.setSize(width, height);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
-    requestRender();
+    render();
   };
-  const observer = new ResizeObserver(resize);
-  observer.observe(host);
+  const stopObserving = observeResize(host, resize);
   resize();
   const theme = () => {
-    const dark = document.documentElement.classList.contains("dark");
+    dark = document.documentElement.classList.contains("dark");
     scene.background = new Color(dark ? 0x151920 : 0xf1f3f5);
+    bed?.setTheme(dark);
     requestRender();
   };
   const themeObserver = new MutationObserver(theme);
@@ -402,12 +406,11 @@ export function createViewer(host: HTMLElement) {
         for (const material of Array.isArray(object.material) ? object.material : [object.material])
           if ("wireframe" in material) material.wireframe = wireframe;
     });
-  const setBuildVolume = (volume: readonly [number, number, number]) => {
-    if (grid) {
-      helpers.remove(grid);
-      grid.geometry.dispose();
-      for (const material of Array.isArray(grid.material) ? grid.material : [grid.material])
-        material.dispose();
+  /** Draws a width × depth bed in mm with the chosen pattern, replacing the current one. */
+  const setBed = (footprint: readonly [number, number], pattern: BuildPlatePattern) => {
+    if (bed) {
+      helpers.remove(bed.object);
+      bed.dispose();
     }
     if (axes) {
       helpers.remove(axes);
@@ -415,25 +418,24 @@ export function createViewer(host: HTMLElement) {
       for (const material of Array.isArray(axes.material) ? axes.material : [axes.material])
         material.dispose();
     }
-    grid = new GridHelper(1, 20, 0x78808b, 0x737b87);
-    grid.rotation.x = Math.PI / 2;
-    grid.scale.set(volume[0], 1, volume[1]);
-    grid.visible = gridVisible;
-    placeGrid();
-    helpers.add(grid);
-    axes = new AxesHelper(Math.min(...volume) / 4);
+    bed = createBed(footprint[0], footprint[1], pattern);
+    bed.setTheme(dark);
+    bed.object.visible = gridVisible;
+    placeBed();
+    helpers.add(bed.object);
+    axes = new AxesHelper(Math.min(...footprint) / 4);
     axes.visible = axesVisible;
     helpers.add(axes);
     requestRender();
   };
   // Like a slicer bed, the plate sits under the model's footprint centre at its lowest point.
   // The model keeps its own coordinates, so measurements, annotations and sections stay valid.
-  const placeGrid = () => {
-    if (!grid) return;
-    if (!model) grid.position.set(0, 0, 0);
+  const placeBed = () => {
+    if (!bed) return;
+    if (!model) bed.object.position.set(0, 0, 0);
     else {
       const center = box.getCenter(new Vector3());
-      grid.position.set(center.x, center.y, box.min.z);
+      bed.object.position.set(center.x, center.y, box.min.z);
     }
   };
   const snapshot = (): ModelCamera => ({
@@ -501,7 +503,7 @@ export function createViewer(host: HTMLElement) {
       section = state.section ?? section;
       applySection();
       applyWireframe();
-      if (grid) grid.visible = gridVisible;
+      if (bed) bed.object.visible = gridVisible;
       if (axes) axes.visible = axesVisible;
       camera.updateProjectionMatrix();
       controls.update();
@@ -522,7 +524,7 @@ export function createViewer(host: HTMLElement) {
       }
       model = next;
       box = stats.box;
-      placeGrid();
+      placeBed();
       scene.add(model);
       applyWireframe();
       applySection();
@@ -547,7 +549,7 @@ export function createViewer(host: HTMLElement) {
     fit() {
       setView("iso");
     },
-    setBuildVolume,
+    setBed,
     setWireframe(value: boolean) {
       wireframe = value;
       applyWireframe();
@@ -555,7 +557,7 @@ export function createViewer(host: HTMLElement) {
     },
     setGrid(value: boolean) {
       gridVisible = value;
-      if (grid) grid.visible = value;
+      if (bed) bed.object.visible = value;
       requestRender();
     },
     setAxes(value: boolean) {
@@ -565,10 +567,7 @@ export function createViewer(host: HTMLElement) {
     },
     setVisible(value: boolean) {
       visible = value;
-      if (visible) {
-        resize();
-        requestRender();
-      }
+      if (visible) resize();
     },
     async capture(four: boolean): Promise<Blob> {
       if (!model) throw new Error("Load a model before capturing it.");
@@ -629,7 +628,7 @@ export function createViewer(host: HTMLElement) {
     dispose() {
       disposed = true;
       if (frame !== null) cancelAnimationFrame(frame);
-      observer.disconnect();
+      stopObserving();
       themeObserver.disconnect();
       controls.removeEventListener("change", controlsChanged);
       clearOverlay();
@@ -646,15 +645,12 @@ export function createViewer(host: HTMLElement) {
       renderer.domElement.removeEventListener("mousedown", preventAutoscroll);
       controls.dispose();
       if (model) disposeModel(model);
-      helpers.traverse((object) => {
-        if (object instanceof GridHelper || object instanceof AxesHelper) {
-          object.geometry.dispose();
-          for (const material of Array.isArray(object.material)
-            ? object.material
-            : [object.material])
-            material.dispose();
-        }
-      });
+      bed?.dispose();
+      if (axes) {
+        axes.geometry.dispose();
+        for (const material of Array.isArray(axes.material) ? axes.material : [axes.material])
+          material.dispose();
+      }
       environment.dispose();
       renderer.dispose();
       renderer.forceContextLoss();

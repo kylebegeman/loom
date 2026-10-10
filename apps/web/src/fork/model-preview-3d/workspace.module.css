@@ -740,7 +740,8 @@ fieldset.model-inspector-tab-panel {
   .model-hint {
     bottom: 108px;
   }
-  .model-view-tools .model-tool > span {
+  .model-view-tools .model-tool > span,
+  .model-display-tools .model-tool > span {
     display: none;
   }
 }
