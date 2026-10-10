@@ -1,4 +1,4 @@
-import type { CodeGraphImpactResult } from "@t3tools/contracts/fork";
+import { describeImpactFile, type CodeGraphImpactResult } from "@t3tools/contracts/fork";
 
 /** The summary stays short enough to paste into a prompt. */
 export const SUMMARY_MAX_LINES = 40;
@@ -33,10 +33,7 @@ export function impactSummary(
   return [
     ...header,
     "Files that can be affected:",
-    ...shown.map(
-      (file) =>
-        `- ${file.file} (${file.hitCount} symbol${file.hitCount === 1 ? "" : "s"}, ${hops(file.minDepth)})`,
-    ),
+    ...shown.map((file) => `- ${file.file} (${describeImpactFile(file)})`),
     ...(hidden > 0 ? [`- and ${hidden} more file${hidden === 1 ? "" : "s"}`] : []),
     ...symbolBlock,
   ].join("\n");

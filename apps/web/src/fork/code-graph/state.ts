@@ -30,8 +30,11 @@ export const errorText = (error: unknown) =>
       ? String(error.message)
       : String(error);
 
+/** The thread's project, or the project of a draft that has not started yet. */
 export const projectIdOf = (threadRef: ScopedThreadRef): ProjectId | null =>
-  readThreadShell(threadRef)?.projectId ?? null;
+  readThreadShell(threadRef)?.projectId ??
+  useComposerDraftStore.getState().getDraftThreadByRef(threadRef)?.projectId ??
+  null;
 
 export function openPanel(threadRef: ScopedThreadRef) {
   useRightPanelStore.getState().openSurface(threadRef, forkPanelSurface(PANEL_ID));

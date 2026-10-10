@@ -172,15 +172,25 @@ export const CodeGraphImpactHit = Schema.Struct({
 });
 export type CodeGraphImpactHit = typeof CodeGraphImpactHit.Type;
 
+export const CodeGraphImpactFile = Schema.Struct({
+  file: Schema.String,
+  minDepth: Schema.Number,
+  /** Symbols reached in the file; 0 when only the file itself is, through an import. */
+  hitCount: Schema.Number,
+});
+export type CodeGraphImpactFile = typeof CodeGraphImpactFile.Type;
+
+/** "3 symbols, 1 hop", or "imported, 2 hops" for a file reached only through an import. */
+export const describeImpactFile = ({ hitCount, minDepth }: CodeGraphImpactFile) =>
+  `${hitCount === 0 ? "imported" : `${hitCount} symbol${hitCount === 1 ? "" : "s"}`}, ${minDepth} hop${minDepth === 1 ? "" : "s"}`;
+
 export const CodeGraphImpactResult = Schema.Struct({
   seedFiles: Schema.Array(Schema.String),
   /** Changed files the graph does not know. */
   unknownFiles: Schema.Array(Schema.String),
   hits: Schema.Array(CodeGraphImpactHit),
   /** Nearest first, then by hit count. */
-  files: Schema.Array(
-    Schema.Struct({ file: Schema.String, minDepth: Schema.Number, hitCount: Schema.Number }),
-  ),
+  files: Schema.Array(CodeGraphImpactFile),
   communities: Schema.Number,
   truncated: Schema.Boolean,
   stale: Schema.Boolean,

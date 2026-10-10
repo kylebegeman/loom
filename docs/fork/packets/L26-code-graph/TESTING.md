@@ -11,7 +11,7 @@ Server (`apps/server/src/fork/code-graph/`):
 
 | Test file                  | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CodeGraphIndex.test.ts`   | Parsing the fixture with its Graphify version and commit; file, method and symbol kinds and external nodes; the shape check naming the first bad field; dangling links skipped; search ranking (exact, prefix, substring, with or without `()`), file path matches and the cap; `resolveNode` by id, path or label; neighborhood order, edges and node cap; shortest path both ways and the hop limit; impact listing callers and importers in other files nearest first, deeper with more depth, ignoring non-impact relations; summary counts, communities and hubs without external nodes.                                                                                                                                                               |
+| `CodeGraphIndex.test.ts`   | Parsing the fixture with its Graphify version and commit; file, method and symbol kinds and external nodes; the shape check naming the first bad field; dangling links skipped; search ranking (exact, prefix, substring, with or without `()`), file path matches and the cap; `resolveNode` by id, path or label; neighborhood order, edges and node cap; shortest path both ways and the hop limit; impact listing callers and importers in other files nearest first, deeper with more depth, ignoring non-impact relations, and a file reached only through an import listed without counting as a symbol; summary counts, communities and hubs without external nodes.                                                                                |
 | `CodeGraphRunner.test.ts`  | `buildArgv` only ever produces `--version`, `extract` or `update`; the child environment drops LLM credentials and sets `GRAPHIFY_OUT` outside the repository; version parsing and the tested-version check; shrink-refusal detection; `startGraphify` streams lines, reports the exit code and environment, stops a running process, and reports a missing command.                                                                                                                                                                                                                                                                                                                                                                                        |
 | `CodeGraphStore.test.ts`   | On `SqlitePersistenceMemory`: a project's record, error and agent switch round-trip; `building` rows reset at startup; settings keep stored values and fill new fields with defaults.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `CodeGraphService.test.ts` | Against a scratch git repository and a stub Graphify script: a missing Graphify reports the pinned 0.9.83 install command and `build` fails `graphify-missing`; `recheck` finds a Graphify installed after the cached check; a full build lands under the state directory with no `graphify-out/` in the repository, answers summary, search and impact, then reads dirty after an edit and stale after a commit; a refused update keeps the previous graph answering until a forced rebuild; cancel returns a slow build to its previous state; automatic updates are off by default, skip worktree turns and run for project-root turns; delete removes the folder, row and agent switch, and `forgetMissingProjects` removes graphs of missing projects. |
@@ -84,21 +84,24 @@ With Kyle's permission, one integrated pass with `test-t3-app` against a worktre
 4. Change a widely used function in a thread and open the diff panel. "Show impact of these
    changes" switches the open Code map tab to Impact (no second tab), with callers in other
    files at 1 hop. Change hops; "Add to message" appends the summary to the composer;
-   "Use uncommitted changes" switches back.
-5. Select one turn in the diff panel; the button traces that turn's files.
-6. Commit: the graph reads out of date; "Update" refreshes it. Delete files and update:
+   "Use uncommitted changes" switches back. A later turn that reverts the change empties
+   Impact without a manual refresh.
+5. On a new thread before its first message, the panel opens (no "start the thread" note)
+   and Impact traces the project root's uncommitted changes.
+6. Select one turn in the diff panel; the button traces that turn's files.
+7. Commit: the graph reads out of date; "Update" refreshes it. Delete files and update:
    the shrink refusal keeps the old graph and "Rebuild anyway" replaces it.
-7. Turn on "Let agents query the code graph for this project" and ask a Claude and a Codex
+8. Turn on "Let agents query the code graph for this project" and ask a Claude and a Codex
    thread to use `loom_code_graph_query` for a symbol's callers and for impact. In a project
    with the switch off, the call fails with the "tool is off" message.
-8. Turn on automatic updates. Finish a project-root turn that edits files: one update runs.
+9. Turn on automatic updates. Finish a project-root turn that edits files: one update runs.
    A worktree thread's turn starts none. Commit in a second project with a graph, then open
    one of its threads: an update starts in the background, and a build requested meanwhile
    shows "Waiting for another build".
-9. Delete a graph from settings; its folder is gone.
-10. Connect to an upstream T3 server: the launcher entry is disabled, there is no diff
+10. Delete a graph from settings; its folder is gone.
+11. Connect to an upstream T3 server: the launcher entry is disabled, there is no diff
     button or palette item, and settings says the server does not have the code graph.
-11. Remote: repeat step 3 from a browser over Tailscale.
+12. Remote: repeat step 3 from a browser over Tailscale.
 
 ## Merge safety
 

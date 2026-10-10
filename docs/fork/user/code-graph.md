@@ -40,8 +40,11 @@ environment, so building a graph never calls a model or spends money.
   neighborhood, with the symbols it uses and the ones that use it listed below. Select any
   of them to move there, or open its file.
 - **Impact** traces the thread's uncommitted changes through the graph and lists the files
-  they can affect, nearest first. Choose how many hops to follow (1 to 3). **Add to message**
-  puts a short summary in the composer so the agent can check those files.
+  they can affect, nearest first, with how many of each file's symbols are reached. A file
+  marked **imported** is reached only because it imports a changed file. Choose how many hops
+  to follow (1 to 3). **Add to message** puts a short summary in the composer so the agent
+  can check those files. Before a new thread's first message, Impact traces the project's
+  main checkout, so you can check a change before asking for it.
 
 To trace a particular turn, open it in the diff panel and press the code map button in the
 diff header (**Show impact of these changes**).

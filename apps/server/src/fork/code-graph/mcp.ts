@@ -1,5 +1,9 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
-import { CodeGraphError, type CodeGraphImpactResult } from "@t3tools/contracts/fork";
+import {
+  CodeGraphError,
+  describeImpactFile,
+  type CodeGraphImpactResult,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
@@ -119,10 +123,7 @@ export const formatImpact = (result: Omit<CodeGraphImpactResult, "stale">) => {
     "Files that can be affected, nearest first:",
     ...result.files
       .slice(0, AGENT_LIST_LIMIT)
-      .map(
-        (file) =>
-          `  ${file.file} (${file.hitCount} symbol${file.hitCount === 1 ? "" : "s"}, ${file.minDepth} hop${file.minDepth === 1 ? "" : "s"})`,
-      ),
+      .map((file) => `  ${file.file} (${describeImpactFile(file)})`),
     ...more(result.files.length),
     ...(result.truncated ? ["  (stopped early; the change reaches further)"] : []),
   ].join("\n");

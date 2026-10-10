@@ -129,72 +129,77 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
         title="Graphify command"
         description="How Loom starts Graphify on this environment's host. Loom never installs it."
       >
-        <Input
-          aria-label="Graphify command"
-          font="mono"
-          placeholder="graphify"
-          disabled={disabled}
-          value={shownCommand}
-          onChange={(event) => setCommandText(event.target.value)}
-          onBlur={() => {
-            const next = parseCommand(shownCommand);
-            setCommandText(null);
-            if (next.length > 0 && next.join(" ") !== settings.command.join(" "))
-              update({ command: next });
-          }}
-        />
-      </SettingsRow>
-      <div className="flex flex-col gap-2">
-        <Muted>
-          Loom is tested with Graphify {TESTED_GRAPHIFY_VERSION}.
-          {availability?._tag === "available" &&
-            ` This host has ${availability.version}${availability.tested ? "." : ", an untested version."}`}
-          {availability?._tag === "missing" && " Graphify was not found on this host."} Install it
-          with one of these commands, or run it through uvx without installing.
-        </Muted>
-        {graphifyInstallCommands().map((command) => (
-          <CommandLine key={command} command={command} />
-        ))}
-        <div className="flex flex-wrap gap-1.5">
-          <Button
-            size="xs"
-            variant="outline"
+        <div className="flex flex-col gap-2 pb-2">
+          <Input
+            aria-label="Graphify command"
+            font="mono"
+            placeholder="graphify"
             disabled={disabled}
-            onClick={() => update({ command: graphifyUvxCommand() })}
-          >
-            Use uvx
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            disabled={disabled}
-            onClick={() => update({ command: DEFAULT_CODE_GRAPH_SETTINGS.command })}
-          >
-            Reset command
-          </Button>
+            value={shownCommand}
+            onChange={(event) => setCommandText(event.target.value)}
+            onBlur={() => {
+              const next = parseCommand(shownCommand);
+              setCommandText(null);
+              if (next.length > 0 && next.join(" ") !== settings.command.join(" "))
+                update({ command: next });
+            }}
+          />
+          <Muted>
+            Loom is tested with Graphify {TESTED_GRAPHIFY_VERSION}.
+            {availability?._tag === "available" &&
+              ` This host has ${availability.version}${availability.tested ? "." : ", an untested version."}`}
+            {availability?._tag === "missing" && " Graphify was not found on this host."} Install it
+            with one of these commands, or run it through uvx without installing.
+          </Muted>
+          {graphifyInstallCommands().map((command) => (
+            <CommandLine key={command} command={command} />
+          ))}
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={disabled}
+              onClick={() => update({ command: graphifyUvxCommand() })}
+            >
+              Use uvx
+            </Button>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={disabled}
+              onClick={() => update({ command: DEFAULT_CODE_GRAPH_SETTINGS.command })}
+            >
+              Reset command
+            </Button>
+          </div>
+          {save.error && <Alert>{save.error}</Alert>}
         </div>
-      </div>
+      </SettingsRow>
       <SettingsRow
         title="Update graphs automatically"
         description="After a turn changes files in a project's main checkout, and when you open a project whose graph is out of date. Never builds a first graph."
+        control={
+          <Switch
+            aria-label="Update graphs automatically"
+            disabled={disabled}
+            checked={settings.autoUpdate}
+            onCheckedChange={(checked) => update({ autoUpdate: checked })}
+          />
+        }
+      />
+      <SettingsRow
+        title="Project graphs"
+        description={
+          graphs?.length === 0
+            ? "No project has a graph yet. Build one from the Code map panel."
+            : "Graphs this environment keeps, with their size."
+        }
       >
-        <Switch
-          aria-label="Update graphs automatically"
-          disabled={disabled}
-          checked={settings.autoUpdate}
-          onCheckedChange={(checked) => update({ autoUpdate: checked })}
-        />
-      </SettingsRow>
-      {save.error && <Alert>{save.error}</Alert>}
-      <div className="flex flex-col gap-1">
-        <h3 className="font-medium text-sm">Project graphs</h3>
         {failureOf(listResult) ? (
           <Alert>{failureOf(listResult)}</Alert>
         ) : !graphs ? (
           <Muted>Loading...</Muted>
-        ) : graphs.length === 0 ? (
-          <Muted>No project has a graph yet. Build one from the Code map panel.</Muted>
-        ) : (
+        ) : graphs.length === 0 ? null : (
           <ul className="flex flex-col">
             {graphs.map((status) => (
               <ProjectGraph
@@ -207,7 +212,7 @@ function EnvironmentCodeGraph({ environmentId }: { environmentId: EnvironmentId 
             ))}
           </ul>
         )}
-      </div>
+      </SettingsRow>
     </div>
   );
 }

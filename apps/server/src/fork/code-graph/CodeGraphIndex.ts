@@ -364,6 +364,7 @@ export const impact = (
   }
 
   const hits: Array<CodeGraphImpactHit & { fanIn: number }> = [];
+  const byFile = new Map<string, { file: string; minDepth: number; hitCount: number }>();
   const communities = new Set<number>();
   for (const { node } of queue) {
     const community = index.nodes[node]!.community;
@@ -379,6 +380,20 @@ export const impact = (
       queue.push({ node: edge.node, depth: current.depth + 1 });
       if (node.external) continue;
       if (node.community !== null) communities.add(node.community);
+      // A file node lists its file without counting as one of its symbols.
+      const symbol = node.kind !== "file";
+      const entry = byFile.get(node.file);
+      if (entry) {
+        entry.minDepth = Math.min(entry.minDepth, current.depth + 1);
+        if (symbol) entry.hitCount += 1;
+      } else {
+        byFile.set(node.file, {
+          file: node.file,
+          minDepth: current.depth + 1,
+          hitCount: symbol ? 1 : 0,
+        });
+      }
+      if (!symbol) continue;
       hits.push({
         node: toNode(node),
         depth: current.depth + 1,
@@ -393,16 +408,6 @@ export const impact = (
   hits.sort(
     (a, b) => a.depth - b.depth || b.fanIn - a.fanIn || a.node.file.localeCompare(b.node.file),
   );
-  const byFile = new Map<string, { file: string; minDepth: number; hitCount: number }>();
-  for (const hit of hits) {
-    const entry = byFile.get(hit.node.file);
-    if (entry) {
-      entry.minDepth = Math.min(entry.minDepth, hit.depth);
-      entry.hitCount += 1;
-    } else {
-      byFile.set(hit.node.file, { file: hit.node.file, minDepth: hit.depth, hitCount: 1 });
-    }
-  }
   return {
     seedFiles,
     unknownFiles,

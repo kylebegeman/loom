@@ -134,13 +134,13 @@ export const plural = (count: number, word: string) =>
   `${count.toLocaleString()} ${word}${count === 1 ? "" : "s"}`;
 
 /** Re-renders once a second while `active`, for elapsed times; idle otherwise. */
-export function useNow(active: boolean) {
+/** The current time, refreshed every `intervalMs`. */
+export function useNow(intervalMs: number) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(timer);
-  }, [active]);
+  }, [intervalMs]);
   return now;
 }
 

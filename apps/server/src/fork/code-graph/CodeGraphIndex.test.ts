@@ -213,6 +213,26 @@ describe("impact", () => {
       { file: "c.ts", minDepth: 2, hitCount: 1 },
     ]);
   });
+
+  it("lists a file reached only through an import without counting it as a symbol", () => {
+    const index = load({
+      nodes: [
+        { id: "a", label: "a()", source_file: "a.ts" },
+        { id: "fb", label: "b.ts", source_file: "b.ts" },
+        { id: "c", label: "c()", source_file: "c.ts" },
+      ],
+      links: [
+        { source: "fb", target: "a", relation: "imports" },
+        { source: "c", target: "fb", relation: "calls" },
+      ],
+    });
+    const result = impact(index, ["a.ts"], 2);
+    expect(result.hits.map((hit) => hit.node.label)).toEqual(["c()"]);
+    expect(result.files).toEqual([
+      { file: "b.ts", minDepth: 1, hitCount: 0 },
+      { file: "c.ts", minDepth: 2, hitCount: 1 },
+    ]);
+  });
 });
 
 describe("summary", () => {

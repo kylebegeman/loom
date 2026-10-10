@@ -13,6 +13,7 @@ import {
 import type { ProjectId, ScopedThreadRef } from "@t3tools/contracts";
 import {
   TESTED_GRAPHIFY_VERSION,
+  describeImpactFile,
   type CodeGraphBuildMode,
   type CodeGraphImpactDepth,
   type CodeGraphNeighborhood,
@@ -26,6 +27,7 @@ import { Skeleton } from "~/components/ui/skeleton";
 import { Switch } from "~/components/ui/switch";
 import { toastManager } from "~/components/ui/toast";
 import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
+import { useComposerDraftStore } from "~/composerDraftStore";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useThreadShell } from "~/state/entities";
@@ -76,13 +78,14 @@ function openFile(threadRef: ScopedThreadRef, path: string, line: number | null)
 }
 
 /** Queries answer from the graph in memory; a new build means asking again. */
-function useRefreshOn(atom: Atom.Atom<unknown> | null, builtAt: string | null) {
-  const seen = useRef(builtAt);
+/** Refreshes `atom` when `key` changes after the first render. */
+function useRefreshOn(atom: Atom.Atom<unknown> | null, key: string | null) {
+  const seen = useRef(key);
   useEffect(() => {
-    if (builtAt === seen.current) return;
-    seen.current = builtAt;
+    if (key === seen.current) return;
+    seen.current = key;
     if (atom) appAtomRegistry.refresh(atom);
-  }, [atom, builtAt]);
+  }, [atom, key]);
 }
 
 function Loading({ text }: { text: string }) {
@@ -197,7 +200,8 @@ function GraphState({
   const action = useAction();
   const canOperate = useAtomValue(codeGraph.build.permissionAtom(environmentId));
   const building = status.state === "building";
-  const now = useNow(building);
+  // Seconds for a build's elapsed time; minutes keep "Built 5m ago" current.
+  const now = useNow(building ? 1_000 : 60_000);
   const disabled = !canOperate || action.busy;
   const build = (mode: CodeGraphBuildMode) =>
     void action.act(() =>
@@ -735,16 +739,20 @@ function Impact({
   onClearRequest: () => void;
 }) {
   const [depth, setDepth] = useState<CodeGraphImpactDepth>(2);
+  const shell = useThreadShell(threadRef);
+  const started = shell !== null;
   const atom = codeGraph.impact({
     environmentId: threadRef.environmentId,
     input: {
       projectId,
-      threadId: threadRef.threadId,
+      // A draft has no checkout of its own yet; its changes are the project root's.
+      ...(started ? { threadId: threadRef.threadId } : {}),
       depth,
       ...(request ? { files: request.files } : {}),
     },
   });
-  useRefreshOn(atom, status.builtAt);
+  // A finished turn can change the uncommitted files, as can a new graph.
+  useRefreshOn(atom, `${status.builtAt}|${request ? "" : (shell?.latestRun?.completedAt ?? "")}`);
   const result = useAtomValue(atom);
   const impact = valueOf(result);
   const failure = failureOf(result);
@@ -789,7 +797,7 @@ function Impact({
                   >
                     <span className="truncate text-sm">{entry.file}</span>
                     <span className="shrink-0 text-muted-foreground text-xs tabular-nums">
-                      {plural(entry.hitCount, "symbol")}, {hops(entry.minDepth)}
+                      {describeImpactFile(entry)}
                     </span>
                   </button>
                 </li>
@@ -968,16 +976,18 @@ function Body({ threadRef, projectId }: { threadRef: ScopedThreadRef; projectId:
 }
 
 export default function CodeGraphPanel({ threadRef, visible }: ForkPanelProps) {
-  const shell = useThreadShell(threadRef);
-  if (!shell)
+  const shellProjectId = useThreadShell(threadRef)?.projectId;
+  const draftProjectId = useComposerDraftStore(
+    (store) => store.getDraftThreadByRef(threadRef)?.projectId,
+  );
+  const projectId = shellProjectId ?? draftProjectId;
+  if (!projectId)
     return (
       <div className="p-3">
-        <Muted>
-          The code map uses this thread's project. Send a message to start the thread first.
-        </Muted>
+        <Muted>The code map needs a thread in a project.</Muted>
       </div>
     );
   // Hidden panels drop their status stream; a build continues on the server.
   if (!visible) return null;
-  return <Body threadRef={threadRef} projectId={shell.projectId} />;
+  return <Body threadRef={threadRef} projectId={projectId} />;
 }
