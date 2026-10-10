@@ -23,7 +23,7 @@ import {
   type AppleToolchain,
   type AppleWorkspaceRef,
 } from "@t3tools/contracts/fork";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -1564,8 +1564,8 @@ export const makeWith = (options: AppleBuildOptions) =>
   });
 
 export const make = Effect.gen(function* () {
-  const platform = yield* HostProcessPlatform;
-  const env = yield* HostProcessEnvironment;
+  const platform = yield* HostProcess.Platform;
+  const env = yield* HostProcess.Environment;
   return yield* makeWith({ platform, env });
 });
 

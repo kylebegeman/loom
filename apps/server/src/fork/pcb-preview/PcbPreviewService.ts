@@ -54,7 +54,7 @@ import { simulationNetlist, parseSpiceRaw } from "./simulation.ts";
 import { cropPhysicalSvg, normalizeCircuitSvg } from "./svg.ts";
 import { starterHardware } from "./hardware.ts";
 import { normalizeCircuitGlb } from "./glb.ts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import { ServerConfig } from "../../config.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -201,14 +201,14 @@ export const make = Effect.gen(function* () {
     workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const entries = yield* WorkspaceEntries,
     runner = yield* ProcessRunner.ProcessRunner;
-  const environment = yield* HostProcessEnvironment,
-    platform = yield* HostProcessPlatform;
+  const environment = yield* HostProcess.Environment,
+    platform = yield* HostProcess.Platform;
   const bound = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     effect.pipe(
       Effect.provideService(FileSystem.FileSystem, fs),
       Effect.provideService(Path.Path, path),
-      Effect.provideService(HostProcessEnvironment, environment),
-      Effect.provideService(HostProcessPlatform, platform),
+      Effect.provideService(HostProcess.Environment, environment),
+      Effect.provideService(HostProcess.Platform, platform),
     );
   const checked = <A, R>(effect: Effect.Effect<A, PcbPreviewError | PlatformError, R>) =>
     bound(effect).pipe(Effect.catchTags({ PlatformError: () => Effect.fail(ioFailure()) }));

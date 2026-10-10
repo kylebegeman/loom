@@ -2997,7 +2997,11 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           assert.isAtLeast(settledIndex, 0);
           assert.isAbove(terminalIndex, settledIndex);
           assert.equal(harness.terminalEvents()[0]?.status, status);
-        }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
       ),
   );
 

@@ -142,7 +142,7 @@ describe("runProcess", () => {
       env: { PATH: "/safe/bin" },
       extendEnv: false,
     }).pipe(
-      Effect.provideService(HostProcessEnvironment, { PATH: "/host/bin", API_TOKEN: "private" }),
+      Effect.provideService(HostProcess.Environment, { PATH: "/host/bin", API_TOKEN: "private" }),
     );
   });
 

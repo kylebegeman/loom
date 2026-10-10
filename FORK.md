@@ -98,6 +98,10 @@ L23 adds `three` and `@types/three` 0.186.0 to `apps/web`, approved by Kyle on
 2026-09-24. The renderer and loaders live in a lazy chunk loaded by the 3D panel.
 The lockfile changes are limited to those packages and their required dependencies.
 
+`apps/server` keeps `diff` 8.0.3 for the Apple build tooling's project patches. Upstream
+dropped it in `v0.0.46-nightly.20261010.2935`; a seam row keeps the next merge from
+removing it again.
+
 ### Packet seams
 
 Upstream edits a single packet needs that no extension point covers. Each packet's `SEAMS.md`

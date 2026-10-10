@@ -11,7 +11,7 @@ import * as PubSub from "effect/PubSub";
 import * as TestClock from "effect/testing/TestClock";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as PcbPreview from "./PcbPreviewService.ts";
 import * as Config from "../../config.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -175,14 +175,14 @@ const setup = Effect.gen(function* () {
       Effect.provideService(WorkspaceEntries, entries),
       Effect.provideService(ProcessRunner, processRunner),
       Effect.provideService(FileSystem.FileSystem, filesystem),
-      Effect.provideService(HostProcessEnvironment, {
+      Effect.provideService(HostProcess.Environment, {
         PATH: bin,
         HOME: root,
         API_TOKEN: "private",
         T3CODE_HOME: "private",
         NODE_OPTIONS: "private",
       }),
-      Effect.provideService(HostProcessPlatform, "linux"),
+      Effect.provideService(HostProcess.Platform, "linux"),
     );
   return {
     fs,
