@@ -23,20 +23,23 @@ import {
   FolderOpenIcon,
   MoreHorizontalIcon,
   RefreshCwIcon,
+  PanelRightIcon,
   Settings2Icon,
-  SlidersHorizontalIcon,
+  TriangleAlertIcon,
   XIcon,
-  RulerIcon,
-  MessageSquarePlusIcon,
 } from "lucide-react";
 import {
   type ModelEntry,
   type ModelPreviewSettings,
+  type ModelSavedView,
+  type ModelSection,
   type ScadRenderResult,
 } from "@t3tools/contracts/fork";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "~/components/ui/menu";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { randomUUID } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { forkPanelSurface } from "../panels/registry";
 import type { ForkPanelProps } from "../panels/types";
@@ -44,24 +47,44 @@ import { models, modelUrl, runModelCommand } from "./state";
 import { OperationStatus, type OperationProgress } from "./OperationStatus";
 import { ScadFile, type ScadSession } from "./ScadCustomizer";
 import { useModelEditing } from "./useModelEditing";
-import { ToolsInspector, ViewsInspector, ReviewInspector } from "./EditingInspector";
+import { MarkupSection, openRequestCount, type MarkupActions } from "./MarkupSection";
+import { ViewsSection } from "./ViewsSection";
 import { VariantsInspector } from "./VariantsInspector";
 import type { ModelCamera } from "@t3tools/contracts/fork";
 import { ModelPicker } from "./ModelPicker";
-import { InspectorHeader, GeometryInspector, RenderLog, type InspectorTab } from "./ModelInspector";
+import {
+  InspectorTabs,
+  PartSection,
+  defaultInspectorTab,
+  resolveInspectorTab,
+  type InspectorBadge,
+  type InspectorTab,
+} from "./ModelInspector";
 import { resolveBuildVolume, fitsBuildVolume } from "./buildPlate";
-import { captureNamedViews } from "./viewer/captureSheet";
+import { changedParameters } from "./params";
+import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
 import { attachModelImage, captureToComposer, captureBase64 } from "./capture";
 import { type ModelViewer, type NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
 import type { meshStats } from "./viewer/load";
 import { onModelAction } from "./actions";
-import { ModelTool, ViewTools, DisplayTools, NavigationTools, CaptureMenu } from "./WorkspaceTools";
+import {
+  CaptureMenu,
+  DisplayTools,
+  ModelTool,
+  NavigationTools,
+  SectionStrip,
+  ToolHint,
+  ToolRail,
+  ViewTools,
+  type PickTool,
+} from "./WorkspaceTools";
 
 export { ModelPicker } from "./ModelPicker";
 const idleEditor = Atom.make(AsyncResult.initial<typeof ModelEditorEvent.Type, never>());
 const ViewerCanvas = lazy(() => import("./viewer/ViewerCanvas"));
 const failureMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const AXIS_INDEX = { x: 0, y: 1, z: 2 } as const;
 
 function ModelFile({
   threadRef,
@@ -102,9 +125,10 @@ function ModelFile({
   const [inspectorOpen, setInspectorOpen] = useState(format === "scad"),
     [inspectorExpanded, setInspectorExpanded] = useState(false),
     [inspectorTab, setInspectorTab] = useState<InspectorTab>(
-      format === "scad" ? "parameters" : "model",
+      defaultInspectorTab(format === "scad"),
     ),
     [activeView, setActiveView] = useState<View | null>("iso"),
+    [activeViewId, setActiveViewId] = useState<string | null>(null),
     [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit"),
     [display, setDisplay] = useState({ wireframe: false, grid: true, axes: false });
   const [variantActivity, setVariantActivity] = useState<OperationProgress | null>(null);
@@ -112,6 +136,7 @@ function ModelFile({
   const [geometryRevision, setGeometryRevision] = useState("");
   const editing = useModelEditing(threadRef, path, viewer, geometryRevision, session);
   const perform = editing.perform;
+  const { copyToClipboard } = useCopyToClipboard();
   const recall = (camera: ModelCamera, refit: boolean) => {
     setDisplay({ wireframe: camera.wireframe, grid: camera.gridVisible, axes: camera.axesVisible });
     setNavigationMode(camera.navigationMode);
@@ -119,20 +144,31 @@ function ModelFile({
     viewer.current?.restore(camera);
     if (refit) viewer.current?.refit();
     setActiveView(null);
+    setActiveViewId(null);
   };
-  const onNavigate = useCallback(() => setActiveView(null), []);
+  const recallView = (view: ModelSavedView) => {
+    recall(view.camera, view.sourceRevision !== geometryRevision);
+    setActiveViewId(view.id);
+  };
+  const onNavigate = useCallback(() => {
+    setActiveView(null);
+    setActiveViewId(null);
+  }, []);
   const setView = (view: View) => {
     viewer.current?.setView(view);
     setActiveView(view);
+    setActiveViewId(null);
   };
   const fit = () => {
     viewer.current?.fit();
     setActiveView("iso");
+    setActiveViewId(null);
   };
-  const showLog = () => {
+  const openTab = (tab: InspectorTab) => {
+    setInspectorTab(tab);
     setInspectorOpen(true);
-    setInspectorTab("log");
   };
+  const showLog = () => openTab("part");
   useEffect(() => {
     if (!success) return;
     const timeout = setTimeout(() => setSuccess(null), 5000);
@@ -201,20 +237,19 @@ function ModelFile({
             get();
             editing.choose(c.name === "select" ? null : (c.name as "measure" | "annotate"));
             break;
-          case "inspector":
+          case "inspector": {
             if (c.enabled === false) {
               setInspectorOpen(false);
               break;
             }
-            if (
-              !["parameters", "model", "log", "tools", "views", "review", "variants"].includes(
-                c.name ?? "",
-              )
-            )
-              throw new Error("Choose a valid inspector tab.");
-            setInspectorTab(c.name as InspectorTab);
-            setInspectorOpen(true);
+            const tab = resolveInspectorTab(c.name, format === "scad");
+            if (!tab)
+              throw new Error(
+                `Choose one of these inspector tabs: ${(format === "scad" ? ["customize", "variants"] : []).concat("markup", "views", "part").join(", ")}.`,
+              );
+            openTab(tab);
             break;
+          }
           case "refresh":
             setRevision((r) => r + 1);
             break;
@@ -222,7 +257,7 @@ function ModelFile({
             const saved = editing.data.views.find((v) => v.id === c.name || v.name === c.name);
             if (!saved) throw new Error("Unknown saved view.");
             get();
-            recall(saved.camera, false);
+            recallView(saved);
             break;
           }
           case "parameters": {
@@ -408,12 +443,20 @@ function ModelFile({
   const watched = useAtomValue(
     models.watch({ environmentId: threadRef.environmentId, input: file }),
   );
-  const [seen, setSeen] = useState<{
-    watched: typeof watched | null;
-    settings: ModelPreviewSettings | null;
-  }>({ watched: null, settings: null });
-  if (seen.watched !== watched || seen.settings !== settings) {
-    setSeen({ watched, settings });
+  // Printer, agent and Fabrication settings do not change the mesh, so they skip the reload.
+  const loadKey = JSON.stringify([
+    settings.openscadPath,
+    settings.backend,
+    settings.renderTimeoutSeconds,
+    settings.renderColors,
+    settings.maxFileMegabytes,
+  ]);
+  const [seen, setSeen] = useState<{ watched: typeof watched | null; loadKey: string | null }>({
+    watched: null,
+    loadKey: null,
+  });
+  if (seen.watched !== watched || seen.loadKey !== loadKey) {
+    setSeen({ watched, loadKey });
     setRevision((value) => value + 1);
   }
   const watchError =
@@ -491,6 +534,95 @@ function ModelFile({
   }, [file, threadRef.environmentId, format, revision, allowLarge]);
   const busy = loadingFile || (!stats && !error && !watchError);
   const captureBusy = capturing || editing.operation !== null;
+  const editDisabled = !editing.canEdit || !stats || busy || captureBusy;
+  const viewThumbnail = useCallback(
+    async (view: ModelSavedView) => {
+      const current = viewer.current;
+      if (!current || !stats || busy) return null;
+      const original = current.snapshot();
+      let blob: Promise<Blob>;
+      try {
+        current.restore(view.camera);
+        if (view.sourceRevision !== geometryRevision) current.refit();
+        blob = current.capture(false);
+      } finally {
+        current.restore(original);
+      }
+      return thumbnail(await blob);
+    },
+    // oxlint-disable-next-line react/memo-dependencies -- The revision decides whether a saved view refits; the rule misses its use inside try.
+    [stats, busy, geometryRevision],
+  );
+  const saveView = () => {
+    const camera = viewer.current?.snapshot();
+    if (!camera || !geometryRevision) return;
+    const names = new Set(editing.data.views.map((view) => view.name));
+    let index = editing.data.views.length + 1;
+    while (names.has(`View ${index}`)) index++;
+    const id = randomUUID();
+    openTab("views");
+    void editing
+      .mutate({
+        kind: "view",
+        item: { id, name: `View ${index}`, sourceRevision: geometryRevision, camera },
+      })
+      .then((saved) => {
+        if (!saved) return;
+        setActiveView(null);
+        setActiveViewId(id);
+      });
+  };
+  const updateView = (view: ModelSavedView) => {
+    const camera = viewer.current?.snapshot();
+    if (!camera || !geometryRevision) return;
+    void editing
+      .mutate({ kind: "view", item: { ...view, camera, sourceRevision: geometryRevision } })
+      .then((saved) => saved && setActiveViewId(view.id));
+  };
+  const sectionBounds = (axis: ModelSection["axis"]) =>
+    stats
+      ? {
+          min: stats.box.min.getComponent(AXIS_INDEX[axis]),
+          max: stats.box.max.getComponent(AXIS_INDEX[axis]),
+        }
+      : { min: 0, max: 100 };
+  const centred = (axis: ModelSection["axis"]) => {
+    const { min, max } = sectionBounds(axis);
+    return Math.round(min + max) / 2;
+  };
+  const changeSection = (next: ModelSection) =>
+    editing.setSection(
+      next.axis === editing.section.axis ? next : { ...next, offset: centred(next.axis) },
+    );
+  const toggleSection = () => {
+    const section = editing.section;
+    if (section.enabled) editing.setSection({ ...section, enabled: false });
+    else if (stats)
+      editing.setSection({ ...section, enabled: true, offset: centred(section.axis) });
+  };
+  const startTool = (tool: PickTool) => {
+    if (editing.picking === tool) editing.stopPicking();
+    else {
+      editing.choose(tool);
+      openTab("markup");
+    }
+  };
+  const markupActions: MarkupActions = {
+    onTool: startTool,
+    onMovePin: editing.movePin,
+    onDiscard: editing.cancel,
+    onSave: async (name, request, addToComposer) => {
+      const saved = await editing.addAnnotation(name, request);
+      if (saved && addToComposer) await editing.prepareRequest(saved);
+      return !!saved;
+    },
+    onRequest: editing.prepareRequest,
+    onReselect: editing.reselect,
+    onReview: editing.review,
+    onShow: (annotation) =>
+      recall(annotation.camera, annotation.sourceRevision !== geometryRevision),
+    onCopy: (text) => copyToClipboard(text),
+  };
   const capture = useCallback(
     async (four: boolean) => {
       if (!viewer.current || !stats || busy) {
@@ -559,12 +691,46 @@ function ModelFile({
   const issues =
     render?.log.filter((line) => line.level === "error" || line.level === "warning").length ?? 0;
   const oversized = stats && !fitsBuildVolume(stats.size, volume);
+  const unapplied =
+    session && !session.automatic && session.hasUnapplied
+      ? changedParameters(session.data.parameters, session.values, session.applied).length
+      : 0;
+  const openRequests = openRequestCount(editing.data.annotations, geometryRevision);
+  const badges: Partial<Record<InspectorTab, InspectorBadge>> = {};
+  if (unapplied) badges.customize = { tone: "warning", count: unapplied };
+  if (openRequests) badges.markup = { tone: "primary", count: openRequests };
+  if (oversized || issues) badges.part = { tone: "warning", count: null };
+  const hint =
+    editing.picking === "measure"
+      ? editing.pendingPoint
+        ? "Click the second point"
+        : "Click the first point to measure from"
+      : editing.picking === "annotate"
+        ? "Click the part you want changed"
+        : null;
   return (
     <div
       className={styles["model-workspace"]}
       tabIndex={-1}
       aria-label="3D model workspace"
       onKeyDown={(event) => {
+        const typing =
+          event.target instanceof HTMLElement &&
+          event.target.closest("input, textarea, select, [contenteditable=true]");
+        if (
+          visible &&
+          session &&
+          !typing &&
+          !event.defaultPrevented &&
+          (event.metaKey || event.ctrlKey) &&
+          event.key.toLowerCase() === "z"
+        ) {
+          const index = session.historyCursor + (event.shiftKey ? 1 : -1);
+          if (index >= 0 && index < session.historyLabels.length) session.moveHistory(index);
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
         if (
           !visible ||
           event.defaultPrevented ||
@@ -578,7 +744,12 @@ function ModelFile({
         )
           return;
         const key = event.key.toLowerCase();
-        if (key === "escape") editing.cancel();
+        if (key === "escape" && (editing.picking || editing.pendingRegion)) {
+          if (editing.picking) editing.stopPicking();
+          else editing.cancel();
+        } else if (key === "m" && !editDisabled) startTool("measure");
+        else if (key === "n" && !editDisabled) startTool("annotate");
+        else if (key === "s" && !editDisabled) toggleSection();
         else if (["1", "2", "3", "4"].includes(key) && stats)
           setView((["iso", "front", "top", "right"] as const)[Number(key) - 1]!);
         else if (key === "f" && stats) fit();
@@ -613,17 +784,21 @@ function ModelFile({
         </div>
         <div className={styles["model-document-actions"]}>
           <CaptureMenu
-            disabled={!editing.canEdit || !stats || busy || captureBusy}
+            disabled={editDisabled}
             capturing={captureBusy}
+            sheets={editing.data.presets}
             onCapture={(four) => void capture(four)}
+            onSheet={(sheet) =>
+              void editing.captureViews(sheet.viewIds, sheet.includeMeasurements, sheet.name)
+            }
           />
           <ModelTool
-            label="Toggle inspector (I)"
+            label={inspectorOpen ? "Hide inspector" : "Show inspector"}
+            kbd="I"
             aria-pressed={inspectorOpen}
             onClick={() => setInspectorOpen((value) => !value)}
           >
-            <SlidersHorizontalIcon />
-            <span className={styles["model-action-label"]}>Inspector</span>
+            <PanelRightIcon />
           </ModelTool>
           <Menu>
             <MenuTrigger
@@ -634,16 +809,16 @@ function ModelFile({
             <MenuPopup align="end">
               <MenuItem onClick={picker}>
                 <FolderOpenIcon />
-                Choose model file
+                Open another file
               </MenuItem>
               <MenuItem onClick={() => setRevision((value) => value + 1)}>
                 <RefreshCwIcon />
-                Refresh preview
+                Reload from disk
               </MenuItem>
               <MenuSeparator />
               <MenuItem render={<Link to="/settings/loom" />}>
                 <Settings2Icon />
-                3D model settings
+                Printer and preview settings
               </MenuItem>
             </MenuPopup>
           </Menu>
@@ -694,33 +869,31 @@ function ModelFile({
               <p>{pending ? "Preparing your part..." : "Loading model..."}</p>
             </div>
           )}
-          <div className={styles["model-edit-tools"]}>
-            <ModelTool
-              label="Measure surfaces"
-              disabled={!editing.canEdit || !stats || busy || captureBusy}
-              aria-pressed={editing.picking === "measure"}
-              onClick={() => {
-                editing.choose(editing.picking === "measure" ? null : "measure");
-                setInspectorTab("tools");
-                setInspectorOpen(true);
-              }}
-            >
-              <RulerIcon />
-            </ModelTool>
-            <ModelTool
-              label="Annotate model region"
-              disabled={!editing.canEdit || !stats || busy || captureBusy}
-              aria-pressed={editing.picking === "annotate"}
-              onClick={() => {
-                editing.choose(editing.picking === "annotate" ? null : "annotate");
-                setInspectorTab("review");
-                setInspectorOpen(true);
-              }}
-            >
-              <MessageSquarePlusIcon />
-            </ModelTool>
-          </div>
-          <ViewTools active={activeView} onView={setView} disabled={!stats} />
+          <ViewTools
+            active={activeView}
+            savedViews={editing.data.views}
+            activeViewId={activeViewId}
+            onView={setView}
+            onSavedView={recallView}
+            onSaveView={saveView}
+            disabled={!stats}
+          />
+          <ToolRail
+            tool={editing.picking}
+            section={editing.section.enabled}
+            disabled={editDisabled}
+            onTool={startTool}
+            onSection={toggleSection}
+          />
+          {editing.section.enabled && stats && (
+            <SectionStrip
+              section={editing.section}
+              bounds={sectionBounds(editing.section.axis)}
+              onChange={changeSection}
+              onRemove={toggleSection}
+            />
+          )}
+          {hint && <ToolHint onDone={editing.stopPicking}>{hint}</ToolHint>}
           <DisplayTools
             {...display}
             onWireframe={(wireframe) => setDisplay((value) => ({ ...value, wireframe }))}
@@ -780,16 +953,6 @@ function ModelFile({
             {editing.error && (
               <div className={styles["model-notice"]} data-tone="error" role="alert">
                 {editing.error}
-              </div>
-            )}
-            {editing.picking && (
-              <div className={styles["model-floating"] + " px-3 py-2 text-xs"} role="status">
-                {editing.picking === "measure"
-                  ? editing.pendingPoint
-                    ? "Pick the second surface point"
-                    : "Pick the first surface point"
-                  : "Click a surface or drag over a region"}{" "}
-                · Escape cancels
               </div>
             )}
             {captureError && (
@@ -854,7 +1017,7 @@ function ModelFile({
           hidden={!inspectorOpen}
           aria-label="Model inspector"
         >
-          <InspectorHeader
+          <InspectorTabs
             active={inspectorTab}
             onTab={setInspectorTab}
             onClose={() => {
@@ -862,40 +1025,36 @@ function ModelFile({
               viewer.current?.focus();
             }}
             scad={format === "scad"}
-            errors={issues}
+            badges={badges}
             expanded={inspectorExpanded}
             onExpand={() => setInspectorExpanded((value) => !value)}
           />
           <div className={styles["model-inspector-content"]}>
-            <fieldset
-              disabled={!editing.canEdit}
-              className={styles["model-inspector-tab-panel"]}
-              hidden={inspectorTab !== "tools"}
-            >
-              <ToolsInspector
-                data={editing.data}
-                mutate={editing.mutate}
-                sourceRevision={geometryRevision}
-                section={editing.section}
-                onSection={editing.setSection}
-                picking={editing.picking}
-                onPicking={editing.choose}
-                pendingPoint={editing.pendingPoint}
-              />
-            </fieldset>
-            <div className={styles["model-inspector-tab-panel"]} hidden={inspectorTab !== "views"}>
-              <ViewsInspector
-                data={editing.data}
-                mutate={editing.mutate}
-                sourceRevision={geometryRevision}
-                camera={() => viewer.current?.snapshot() ?? null}
-                onRecall={recall}
-                onCapture={editing.captureViews}
-                disabled={!editing.canEdit || !stats || busy || captureBusy}
-              />
-            </div>
+            {format === "scad" && (
+              <div
+                role="tabpanel"
+                aria-labelledby="model-tab-customize"
+                className={styles["model-inspector-tab-panel"]}
+                hidden={inspectorTab !== "customize"}
+              >
+                <ScadFile
+                  threadRef={threadRef}
+                  path={path}
+                  revision={revision}
+                  pending={pending}
+                  onSession={setSession}
+                  onMesh={onMesh}
+                  onResult={onResult}
+                  onPending={onPending}
+                  onRefreshing={setRefreshing}
+                  onError={onError}
+                />
+              </div>
+            )}
             {format === "scad" && (
               <fieldset
+                role="tabpanel"
+                aria-labelledby="model-tab-variants"
                 disabled={!editing.canEdit}
                 className={styles["model-inspector-tab-panel"]}
                 hidden={inspectorTab !== "variants"}
@@ -912,65 +1071,68 @@ function ModelFile({
               </fieldset>
             )}
             <fieldset
+              role="tabpanel"
+              aria-labelledby="model-tab-markup"
               disabled={!editing.canEdit}
               className={styles["model-inspector-tab-panel"]}
-              hidden={inspectorTab !== "review"}
+              hidden={inspectorTab !== "markup"}
             >
-              <ReviewInspector
+              <MarkupSection
                 data={editing.data}
                 mutate={editing.mutate}
                 sourceRevision={geometryRevision}
-                pending={editing.pendingRegion}
-                disabled={!editing.canEdit || !stats || busy || captureBusy}
-                onCancel={editing.cancel}
-                onAdd={editing.addAnnotation}
-                onRequest={async (annotation) => {
-                  await editing.prepareRequest(annotation);
-                }}
-                onRelink={editing.reselect}
-                onReview={editing.review}
+                picking={editing.picking}
+                pendingRegion={editing.pendingRegion}
+                relink={editing.relink}
+                busy={editing.operation !== null}
+                disabled={editDisabled}
+                actions={markupActions}
               />
             </fieldset>
-            {format === "scad" && (
-              <div
-                className={styles["model-inspector-tab-panel"]}
-                hidden={inspectorTab !== "parameters"}
-              >
-                <ScadFile
-                  threadRef={threadRef}
-                  path={path}
-                  revision={revision}
-                  pending={pending}
-                  onSession={setSession}
-                  onMesh={onMesh}
-                  onResult={onResult}
-                  onPending={onPending}
-                  onRefreshing={setRefreshing}
-                  onError={onError}
-                />
-              </div>
-            )}
-            <div className={styles["model-inspector-tab-panel"]} hidden={inspectorTab !== "model"}>
-              <GeometryInspector
+            <fieldset
+              role="tabpanel"
+              aria-labelledby="model-tab-views"
+              disabled={!editing.canEdit}
+              className={styles["model-inspector-tab-panel"]}
+              hidden={inspectorTab !== "views"}
+            >
+              <ViewsSection
+                data={editing.data}
+                mutate={editing.mutate}
+                sourceRevision={geometryRevision}
+                visible={visible && inspectorOpen && inspectorTab === "views"}
+                activeViewId={activeViewId}
+                disabled={editDisabled}
+                onSave={saveView}
+                onRecall={recallView}
+                onUpdate={updateView}
+                onCapture={editing.captureViews}
+                onThumbnail={viewThumbnail}
+              />
+            </fieldset>
+            <div
+              role="tabpanel"
+              aria-labelledby="model-tab-part"
+              className={styles["model-inspector-tab-panel"]}
+              hidden={inspectorTab !== "part"}
+            >
+              <PartSection
+                environmentId={threadRef.environmentId}
                 stats={stats}
                 settings={settings}
                 volume={volume}
                 render={render}
                 format={format}
+                path={path}
               />
             </div>
-            {format === "scad" && (
-              <div className={styles["model-inspector-tab-panel"]} hidden={inspectorTab !== "log"}>
-                <RenderLog render={render} />
-              </div>
-            )}
           </div>
         </aside>
       </div>
       <div className={styles["model-status-bar"]}>
         <span>
           {stats
-            ? `${stats.size.map((value) => value.toFixed(2)).join(" × ")} mm`
+            ? `${stats.size.map((value) => value.toFixed(1)).join(" × ")} mm`
             : "Dimensions in millimetres"}
         </span>
         {stats && (
@@ -979,14 +1141,9 @@ function ModelFile({
           </span>
         )}
         {oversized && (
-          <button
-            className="text-warning-foreground"
-            onClick={() => {
-              setInspectorOpen(true);
-              setInspectorTab("model");
-            }}
-          >
-            Exceeds build volume
+          <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
+            <TriangleAlertIcon />
+            Larger than the build plate
           </button>
         )}
         <span

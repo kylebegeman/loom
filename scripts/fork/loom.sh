@@ -143,7 +143,10 @@ run_checks() {
   say "Running the fork's tests"
   local tests=()
   while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)
-  pnpm exec vp test run "${tests[@]}"
+  # Test paths are substring filters, so exclude agent worktrees nested in the
+  # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
+  # desktop artifact tests assert is absent.
+  env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
   say "Regenerating web routes and building the web client"
   (cd apps/web && pnpm exec vp build)
   local d

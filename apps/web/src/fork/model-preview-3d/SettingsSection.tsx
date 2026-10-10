@@ -3,6 +3,7 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   BUILD_PLATE_PRESETS,
   ModelPreviewSettings,
+  type BuildPlatePresetId,
   type ModelPreviewStatus,
 } from "@t3tools/contracts/fork";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
@@ -15,12 +16,25 @@ import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { useServerConfigs } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { OperationStatus } from "./OperationStatus";
+import { buildPlateOptions } from "./buildPlate";
 import { models, runModelCommand } from "./state";
 
 const validateSettings = Schema.decodeSync(ModelPreviewSettings);
+const BACKENDS = [
+  { value: "auto", label: "Automatic" },
+  { value: "manifold", label: "Manifold" },
+  { value: "cgal", label: "CGAL" },
+] as const satisfies readonly { value: ModelPreviewSettings["backend"]; label: string }[];
 function SettingsForm({
   environmentId,
   initial,
@@ -36,6 +50,7 @@ function SettingsForm({
   const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
   const status = useAtomValue(models.status({ environmentId, input: {} }));
   const info = detection ?? Option.getOrNull(AsyncResult.value(status));
+  const printers = buildPlateOptions(settings.buildPlate.customMm);
   const set = <K extends keyof ModelPreviewSettings>(key: K, value: ModelPreviewSettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }));
   const act = async (task: () => Promise<unknown>, success: string) => {
@@ -101,17 +116,25 @@ function SettingsForm({
       <SettingsRow
         title="Render backend"
         control={
-          <select
-            aria-label="Render backend"
+          <Select
             value={settings.backend}
-            onChange={(event) =>
-              set("backend", event.target.value as ModelPreviewSettings["backend"])
-            }
+            onValueChange={(next) => {
+              if (next) set("backend", next);
+            }}
           >
-            {["auto", "manifold", "cgal"].map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
+            <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Render backend">
+              <SelectValue>
+                {BACKENDS.find(({ value }) => value === settings.backend)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {BACKENDS.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
         }
       />
       <SettingsRow
@@ -159,23 +182,30 @@ function SettingsForm({
       <SettingsRow
         title="Build plate"
         control={
-          <select
-            aria-label="Build plate"
+          <Select
             value={settings.buildPlate.preset}
-            onChange={(event) =>
-              set("buildPlate", {
-                ...settings.buildPlate,
-                preset: event.target.value as ModelPreviewSettings["buildPlate"]["preset"],
-              })
-            }
+            onValueChange={(next: BuildPlatePresetId | null) => {
+              if (next) set("buildPlate", { ...settings.buildPlate, preset: next });
+            }}
           >
-            {Object.entries(BUILD_PLATE_PRESETS).map(([key, value]) => (
-              <option key={key} value={key}>
-                {value.label} ({value.volumeMm.join(" x ")} mm)
-              </option>
-            ))}
-            <option value="custom">Custom</option>
-          </select>
+            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Build plate">
+              <SelectValue>
+                {printers.find(({ id }) => id === settings.buildPlate.preset)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {printers.map((printer) => (
+                <SelectItem key={printer.id} value={printer.id}>
+                  <span className="flex w-full items-center gap-4">
+                    <span className="flex-1">{printer.label}</span>
+                    <span className="text-muted-foreground text-xs tabular-nums">
+                      {printer.volumeMm.join(" × ")} mm
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
         }
       />
       {settings.buildPlate.preset === "custom" ? (

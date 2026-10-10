@@ -137,14 +137,17 @@ export const ScadRenderResult = Schema.Struct({
   ),
 });
 
-export const BuildPlatePresetId = Schema.Literals([
-  "bambu-h2d",
-  "bambu-h2c",
-  "anycubic-kobra-s1",
-  "custom",
-]);
+type BuildPlatePreset = {
+  readonly label: string;
+  readonly volumeMm: readonly [number, number, number];
+  readonly note: string | null;
+};
 
-/** Vendor build volumes in mm (X, Y, Z). The note is shown under the preset in settings. */
+/**
+ * Printers offered in settings and the Part tab, in menu order. To add a printer, add one
+ * entry with a stable id: the setting schema, menus and fit checks all read this table.
+ * Volumes are vendor build volumes in mm (X, Y, Z); the note explains nozzle limits.
+ */
 export const BUILD_PLATE_PRESETS = {
   "bambu-h2d": {
     label: "Bambu Lab H2D",
@@ -157,7 +160,12 @@ export const BUILD_PLATE_PRESETS = {
     note: "Left nozzle: 325 x 320 x 320 mm. Both nozzles: 300 x 320 x 325 mm.",
   },
   "anycubic-kobra-s1": { label: "Anycubic Kobra S1", volumeMm: [250, 250, 250], note: null },
-} as const;
+} as const satisfies Record<string, BuildPlatePreset>;
+
+export const BuildPlatePresetId = Schema.Literals([
+  ...(Object.keys(BUILD_PLATE_PRESETS) as (keyof typeof BUILD_PLATE_PRESETS)[]),
+  "custom",
+]);
 
 export const BuildPlateSetting = Schema.Struct({
   preset: BuildPlatePresetId,

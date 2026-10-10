@@ -3,7 +3,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import type { ModelAnnotation, ModelPoint, ModelSection } from "@t3tools/contracts/fork";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { randomUUID } from "~/lib/utils";
-import type { ModelViewer } from "./viewer/createViewer";
+import type { ModelViewer, OverlayAnnotation } from "./viewer/createViewer";
 import type { ScadSession } from "./ScadCustomizer";
 import { attachModelImage } from "./capture";
 import { useModelWorkspace } from "./useModelWorkspace";
@@ -51,12 +51,14 @@ export function useModelEditing(
     [workspace.data.measurements, sourceRevision],
   );
   const annotations = useMemo(() => {
-    const items = workspace.data.annotations.filter(
-      (item) => item.sourceRevision === sourceRevision,
+    // Pins carry their position in the full request list, which includes older revisions.
+    const items: OverlayAnnotation[] = workspace.data.annotations.flatMap((item, index) =>
+      item.sourceRevision === sourceRevision ? [{ ...item, number: index + 1 }] : [],
     );
     const camera = pendingCamera;
     if (pendingRegion && camera)
       items.push({
+        number: workspace.data.annotations.length + 1,
         id: "pending-region",
         name: "Selected region",
         sourceRevision,
@@ -121,12 +123,14 @@ export function useModelEditing(
   const markedCapture = async (annotation: ModelAnnotation) => {
     if (!viewer.current) throw new Error("Load the model before capturing it.");
     const original = viewer.current.snapshot();
+    const position = workspace.data.annotations.findIndex((item) => item.id === annotation.id);
+    const number = position < 0 ? workspace.data.annotations.length + 1 : position + 1;
     try {
       viewer.current.restore(annotation.camera);
       if (annotation.sourceRevision !== sourceRevision) viewer.current.refit();
       viewer.current.setOverlays(
         [],
-        annotation.sourceRevision === sourceRevision ? [{ ...annotation, status: "open" }] : [],
+        annotation.sourceRevision === sourceRevision ? [{ ...annotation, number }] : [],
         null,
       );
       return viewer.current.capture(false);
@@ -135,9 +139,10 @@ export function useModelEditing(
       viewer.current.setOverlays(measurements, annotations, pendingPoint);
     }
   };
+  /** Saves the pending region and resolves with the saved annotation, or null. */
   const addAnnotation = async (name: string, request: string) =>
-    !!(await perform("Saving marked annotation", async () => {
-      if (!pendingRegion || !viewer.current) return false;
+    (await perform("Saving marked annotation", async () => {
+      if (!pendingRegion || !viewer.current) return null;
       if (session && session.appliedRevision !== sourceRevision)
         throw new Error(
           "Wait for the current preview to finish loading before saving this annotation.",
@@ -154,14 +159,15 @@ export function useModelEditing(
         parameters: session?.applied ?? {},
         referenceImage: null,
       };
-      const referenceImage = await thumbnail(await markedCapture(annotation));
-      const saved = await workspace.mutate({
-        kind: "annotation",
-        item: { ...annotation, referenceImage },
-      });
-      if (saved) cancel();
-      return !!saved;
-    }));
+      const item = {
+        ...annotation,
+        referenceImage: await thumbnail(await markedCapture(annotation)),
+      };
+      const saved = await workspace.mutate({ kind: "annotation", item });
+      if (!saved) return null;
+      cancel();
+      return item;
+    })) ?? null;
   const prepareRequest = async (annotation: ModelAnnotation) => {
     return await perform("Preparing agent request", async () => {
       await attachModelImage(
@@ -209,6 +215,14 @@ export function useModelEditing(
     choose("annotate");
     setRelink(annotation);
   };
+  /** Pick the pending region again while keeping the request being written. */
+  const movePin = () => setPicking("annotate");
+  /** Leaves the picking tool but keeps a request that is being written. */
+  const stopPicking = () => {
+    if (!pendingRegion) return cancel();
+    setPicking(null);
+    setPendingPoint(null);
+  };
   return {
     ...workspace,
     operation,
@@ -230,6 +244,9 @@ export function useModelEditing(
     captureAnnotation: (annotation: ModelAnnotation) =>
       perform("Capturing marked annotation", () => markedCapture(annotation)),
     reselect,
+    relink,
+    movePin,
+    stopPicking,
     error: error ?? workspace.error,
   };
 }

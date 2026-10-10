@@ -78,3 +78,37 @@ export function rebaseParameterValues(
     ]),
   );
 }
+/** Human-readable value: option labels, quoted strings unwrapped, switches as On or Off. */
+export function displayParameterValue(parameter: ScadParameter, literal: string) {
+  const option = parameter.options?.find((item) => item.value === literal);
+  if (option) return option.label;
+  if (parameter.kind === "boolean") return literal === "true" ? "On" : "Off";
+  if (parameter.kind === "string") return stringParameterValue(literal);
+  const vector = parameter.kind === "vector" ? vectorParameterValue(literal) : null;
+  return vector ? vector.join(" × ") : literal;
+}
+/** Parameters whose value differs from the baseline, in source order. */
+export function changedParameters(
+  parameters: readonly ScadParameter[],
+  values: Readonly<Record<string, string>>,
+  baseline: Readonly<Record<string, string>>,
+) {
+  return parameters.filter(
+    (parameter) =>
+      (values[parameter.name] ?? parameter.defaultValue) !==
+      (baseline[parameter.name] ?? parameter.defaultValue),
+  );
+}
+/** Short summary such as "Width 120, Rows 3" for the parameters that differ from the baseline. */
+export function describeValues(
+  parameters: readonly ScadParameter[],
+  values: Readonly<Record<string, string>>,
+  baseline: Readonly<Record<string, string>>,
+) {
+  return changedParameters(parameters, values, baseline)
+    .map(
+      (parameter) =>
+        `${parameterLabel(parameter.name)} ${displayParameterValue(parameter, values[parameter.name] ?? parameter.defaultValue)}`,
+    )
+    .join(", ");
+}

@@ -1,18 +1,25 @@
 import styles from "./workspace.module.css";
-import type { ComponentProps, ReactNode } from "react";
+import { Fragment, type ComponentProps, type ReactNode } from "react";
 import {
-  BoxIcon,
+  BookmarkIcon,
   CameraIcon,
   ChevronDownIcon,
+  FlipHorizontal2Icon,
   FocusIcon,
   Grid2X2Icon,
   HandIcon,
   HelpCircleIcon,
   LayersIcon,
+  MapPinIcon,
   OrbitIcon,
   PlusIcon,
   MinusIcon,
+  Rotate3dIcon,
+  RulerIcon,
+  SliceIcon,
+  XIcon,
 } from "lucide-react";
+import type { ModelCapturePreset, ModelSavedView, ModelSection } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import {
   Menu,
@@ -23,18 +30,28 @@ import {
   MenuSeparator,
   MenuGroupLabel,
   MenuGroup,
+  MenuShortcut,
 } from "~/components/ui/menu";
+import { Kbd } from "~/components/ui/kbd";
 import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "~/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "~/components/ui/tooltip";
 import type { NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
+import { Scrub, Segmented } from "./controls";
 
 /** Feature-owned controls for the floating 3D tool shelves. */
 export function ModelTool({
   label,
+  kbd,
+  side,
   children,
   ...props
-}: ComponentProps<"button"> & { label: string; children: ReactNode }) {
+}: ComponentProps<"button"> & {
+  label: string;
+  kbd?: string;
+  side?: "top" | "bottom" | "left" | "right";
+  children: ReactNode;
+}) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -44,7 +61,12 @@ export function ModelTool({
       >
         {children}
       </TooltipTrigger>
-      <TooltipPopup>{label}</TooltipPopup>
+      <TooltipPopup side={side}>
+        <span className="flex items-center gap-2">
+          {label}
+          {kbd && <Kbd>{kbd}</Kbd>}
+        </span>
+      </TooltipPopup>
     </Tooltip>
   );
 }
@@ -56,13 +78,24 @@ export const VIEW_LABELS: Record<View, string> = {
 };
 export function ViewTools({
   active,
+  savedViews,
+  activeViewId,
   onView,
+  onSavedView,
+  onSaveView,
   disabled,
 }: {
   active: View | null;
+  savedViews: readonly ModelSavedView[];
+  activeViewId: string | null;
   onView: (view: View) => void;
+  onSavedView: (view: ModelSavedView) => void;
+  onSaveView: () => void;
   disabled: boolean;
 }) {
+  const label = active
+    ? VIEW_LABELS[active]
+    : (savedViews.find((view) => view.id === activeViewId)?.name ?? "Custom view");
   return (
     <div className={styles["model-floating"] + " " + styles["model-view-tools"]}>
       <Menu>
@@ -70,25 +103,42 @@ export function ViewTools({
           render={
             <button
               className={styles["model-tool"]}
-              aria-label="Camera views"
+              aria-label={`Camera view: ${label}`}
               disabled={disabled}
             />
           }
         >
-          <BoxIcon />
-          <span>{active ? VIEW_LABELS[active] : "Custom view"}</span>
+          <Rotate3dIcon />
+          <span>{label}</span>
           <ChevronDownIcon />
         </MenuTrigger>
         <MenuPopup align="start">
           <MenuGroup>
-            <MenuGroupLabel>Camera</MenuGroupLabel>
+            <MenuGroupLabel>Standard</MenuGroupLabel>
             {(["iso", "front", "top", "right"] as const).map((view, index) => (
               <MenuItem key={view} onClick={() => onView(view)}>
+                <Rotate3dIcon />
                 {VIEW_LABELS[view]}
-                <span className="ml-auto text-xs text-muted-foreground">{index + 1}</span>
+                <MenuShortcut>{index + 1}</MenuShortcut>
               </MenuItem>
             ))}
           </MenuGroup>
+          {savedViews.length > 0 && (
+            <MenuGroup>
+              <MenuGroupLabel>Saved</MenuGroupLabel>
+              {savedViews.map((view) => (
+                <MenuItem key={view.id} onClick={() => onSavedView(view)}>
+                  <BookmarkIcon />
+                  <span className="truncate">{view.name}</span>
+                </MenuItem>
+              ))}
+            </MenuGroup>
+          )}
+          <MenuSeparator />
+          <MenuItem onClick={onSaveView}>
+            <PlusIcon />
+            Save current view
+          </MenuItem>
         </MenuPopup>
       </Menu>
     </div>
@@ -123,13 +173,15 @@ export function DisplayTools({
             <MenuGroupLabel>Display</MenuGroupLabel>
             <MenuCheckboxItem checked={wireframe} onCheckedChange={onWireframe}>
               Wireframe
+              <MenuShortcut>W</MenuShortcut>
             </MenuCheckboxItem>
-            <MenuSeparator />
             <MenuCheckboxItem checked={grid} onCheckedChange={onGrid}>
-              Build plate grid
+              Build plate
+              <MenuShortcut>G</MenuShortcut>
             </MenuCheckboxItem>
             <MenuCheckboxItem checked={axes} onCheckedChange={onAxes}>
-              XYZ axes
+              Axes
+              <MenuShortcut>A</MenuShortcut>
             </MenuCheckboxItem>
           </MenuGroup>
         </MenuPopup>
@@ -137,6 +189,17 @@ export function DisplayTools({
     </div>
   );
 }
+const HELP = [
+  ["Orbit", "Drag, O"],
+  ["Pan", "Middle or right drag, H"],
+  ["Zoom", "Scroll, + and −"],
+  ["Fit model", "F"],
+  ["Standard views", "1 to 4"],
+  ["Measure, annotate", "M, N"],
+  ["Section plane", "S"],
+  ["Wireframe, plate, axes", "W, G, A"],
+  ["Inspector", "I"],
+] as const;
 export function NavigationTools({
   mode,
   onMode,
@@ -156,20 +219,44 @@ export function NavigationTools({
       role="group"
       aria-label="Viewport navigation"
     >
-      <ModelTool label="Orbit (O)" aria-pressed={mode === "orbit"} onClick={() => onMode("orbit")}>
+      <ModelTool
+        label="Orbit"
+        kbd="O"
+        side="top"
+        aria-pressed={mode === "orbit"}
+        onClick={() => onMode("orbit")}
+      >
         <OrbitIcon />
       </ModelTool>
-      <ModelTool label="Pan (H)" aria-pressed={mode === "pan"} onClick={() => onMode("pan")}>
+      <ModelTool
+        label="Pan"
+        kbd="H"
+        side="top"
+        aria-pressed={mode === "pan"}
+        onClick={() => onMode("pan")}
+      >
         <HandIcon />
       </ModelTool>
       <span className={styles["model-tool-divider"]} />
-      <ModelTool label="Zoom out (-)" disabled={disabled} onClick={() => onZoom(1.2)}>
+      <ModelTool
+        label="Zoom out"
+        kbd="−"
+        side="top"
+        disabled={disabled}
+        onClick={() => onZoom(1.2)}
+      >
         <MinusIcon />
       </ModelTool>
-      <ModelTool label="Zoom in (+)" disabled={disabled} onClick={() => onZoom(1 / 1.2)}>
+      <ModelTool
+        label="Zoom in"
+        kbd="+"
+        side="top"
+        disabled={disabled}
+        onClick={() => onZoom(1 / 1.2)}
+      >
         <PlusIcon />
       </ModelTool>
-      <ModelTool label="Fit model (F)" disabled={disabled} onClick={onFit}>
+      <ModelTool label="Fit model" kbd="F" side="top" disabled={disabled} onClick={onFit}>
         <FocusIcon />
       </ModelTool>
       <span className={styles["model-tool-divider"]} />
@@ -182,24 +269,16 @@ export function NavigationTools({
         <PopoverPopup side="top" width="sm">
           <PopoverTitle>Navigate the model</PopoverTitle>
           <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-xs">
-            <dt className="text-muted-foreground">Orbit</dt>
-            <dd>Drag · O</dd>
-            <dt className="text-muted-foreground">Pan</dt>
-            <dd>Right drag · H</dd>
-            <dt className="text-muted-foreground">Zoom</dt>
-            <dd>Scroll · + / −</dd>
-            <dt className="text-muted-foreground">Fit model</dt>
-            <dd>F</dd>
-            <dt className="text-muted-foreground">Standard views</dt>
-            <dd>1 / 2 / 3 / 4</dd>
-            <dt className="text-muted-foreground">Inspector</dt>
-            <dd>I</dd>
-            <dt className="text-muted-foreground">Wireframe / grid / axes</dt>
-            <dd>W / G / A</dd>
+            {HELP.map(([action, keys]) => (
+              <Fragment key={action}>
+                <dt className="text-muted-foreground">{action}</dt>
+                <dd>{keys}</dd>
+              </Fragment>
+            ))}
           </dl>
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-            Keyboard controls work while the 3D workspace is focused. Pan mode makes dragging move
-            the model.
+            Shortcuts work while the 3D workspace is focused. Pan mode makes a plain drag move the
+            model.
           </p>
         </PopoverPopup>
       </Popover>
@@ -209,14 +288,18 @@ export function NavigationTools({
 export function CaptureMenu({
   disabled,
   capturing,
+  sheets,
   onCapture,
+  onSheet,
 }: {
   disabled: boolean;
   capturing: boolean;
+  sheets: readonly ModelCapturePreset[];
   onCapture: (four: boolean) => void;
+  onSheet: (sheet: ModelCapturePreset) => void;
 }) {
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex items-center gap-1.5">
       <Button
         size="sm"
         disabled={disabled || capturing}
@@ -241,7 +324,7 @@ export function CaptureMenu({
         </MenuTrigger>
         <MenuPopup align="end">
           <MenuGroup>
-            <MenuGroupLabel>Attach to composer</MenuGroupLabel>
+            <MenuGroupLabel>Attach to the composer</MenuGroupLabel>
             <MenuItem onClick={() => onCapture(false)}>
               <CameraIcon />
               Current view
@@ -251,8 +334,151 @@ export function CaptureMenu({
               Four-view sheet
             </MenuItem>
           </MenuGroup>
+          {sheets.length > 0 && (
+            <MenuGroup>
+              <MenuGroupLabel>Review sheets</MenuGroupLabel>
+              {sheets.map((sheet) => (
+                <MenuItem key={sheet.id} onClick={() => onSheet(sheet)}>
+                  <Grid2X2Icon />
+                  <span className="truncate">{sheet.name}</span>
+                </MenuItem>
+              ))}
+            </MenuGroup>
+          )}
         </MenuPopup>
       </Menu>
+    </div>
+  );
+}
+export type PickTool = "measure" | "annotate";
+/** Vertical rail for the tools that act on the model itself. */
+export function ToolRail({
+  tool,
+  section,
+  disabled,
+  onTool,
+  onSection,
+}: {
+  tool: PickTool | null;
+  section: boolean;
+  disabled: boolean;
+  onTool: (tool: PickTool) => void;
+  onSection: () => void;
+}) {
+  return (
+    <div
+      className={styles["model-floating"] + " " + styles["model-rail"]}
+      role="toolbar"
+      aria-label="Viewport tools"
+      aria-orientation="vertical"
+    >
+      <ModelTool
+        label="Measure"
+        kbd="M"
+        side="right"
+        disabled={disabled}
+        aria-pressed={tool === "measure"}
+        onClick={() => onTool("measure")}
+      >
+        <RulerIcon />
+      </ModelTool>
+      <ModelTool
+        label="Annotate for the agent"
+        kbd="N"
+        side="right"
+        disabled={disabled}
+        aria-pressed={tool === "annotate"}
+        onClick={() => onTool("annotate")}
+      >
+        <MapPinIcon />
+      </ModelTool>
+      <span className={styles["model-tool-divider"]} />
+      <ModelTool
+        label="Section plane"
+        kbd="S"
+        side="right"
+        disabled={disabled}
+        aria-pressed={section}
+        onClick={onSection}
+      >
+        <SliceIcon />
+      </ModelTool>
+    </div>
+  );
+}
+const AXES = [
+  { value: "x", label: "X" },
+  { value: "y", label: "Y" },
+  { value: "z", label: "Z" },
+] as const;
+/** Section plane controls, shown over the viewport while a section is active. */
+export function SectionStrip({
+  section,
+  bounds,
+  onChange,
+  onRemove,
+}: {
+  section: ModelSection;
+  /** Model extent along the current axis, in millimetres. */
+  bounds: { min: number; max: number };
+  onChange: (section: ModelSection) => void;
+  onRemove: () => void;
+}) {
+  const range = { min: Math.floor(bounds.min), max: Math.ceil(bounds.max), step: 0.5 };
+  return (
+    <div
+      className={styles["model-floating"] + " " + styles["model-section-strip"]}
+      role="group"
+      aria-label="Section plane"
+    >
+      <div className={styles["model-section-axis"]}>
+        <Segmented
+          label="Section axis"
+          options={AXES}
+          value={section.axis}
+          onChange={(axis) => onChange({ ...section, axis })}
+        />
+      </div>
+      <input
+        type="range"
+        aria-label="Section offset"
+        min={range.min}
+        max={range.max}
+        step={range.step}
+        value={section.offset}
+        onChange={(event) => onChange({ ...section, offset: Number(event.target.value) })}
+      />
+      <div className={styles["model-section-value"]}>
+        <Scrub
+          value={section.offset}
+          range={range}
+          label="Section offset"
+          unit="mm"
+          onChange={(offset) => onChange({ ...section, offset })}
+        />
+      </div>
+      <ModelTool
+        label="Keep the other side"
+        aria-pressed={section.flipped}
+        onClick={() => onChange({ ...section, flipped: !section.flipped })}
+      >
+        <FlipHorizontal2Icon />
+      </ModelTool>
+      <ModelTool label="Remove section" kbd="S" onClick={onRemove}>
+        <XIcon />
+      </ModelTool>
+    </div>
+  );
+}
+/** Instruction shown while a picking tool waits for a click on the model. */
+export function ToolHint({ children, onDone }: { children: ReactNode; onDone: () => void }) {
+  return (
+    <div className={styles["model-hint"]} role="status">
+      <span>{children}</span>
+      <Kbd>Esc</Kbd>
+      <Button variant="ghost-muted" size="xs" onClick={onDone}>
+        Done
+      </Button>
     </div>
   );
 }

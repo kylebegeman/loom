@@ -1,28 +1,33 @@
-import type { ParameterHistory } from "./parameterHistory";
-import { Menu, MenuTrigger, MenuPopup, MenuItem } from "~/components/ui/menu";
-import { Undo2Icon, Redo2Icon, HistoryIcon } from "lucide-react";
-import { OperationStatus } from "./OperationStatus";
 import styles from "./workspace.module.css";
-import { useId, useState, type CSSProperties } from "react";
+import { useState } from "react";
 import {
-  ChevronDownIcon,
+  ChevronRightIcon,
+  ChevronsUpDownIcon,
+  HistoryIcon,
+  PlusIcon,
+  Redo2Icon,
   RotateCcwIcon,
   SaveIcon,
   SearchIcon,
-  SlidersHorizontalIcon,
+  Undo2Icon,
+  XIcon,
 } from "lucide-react";
 import type { ScadParameter, ScadParameters } from "@t3tools/contracts/fork";
 import { Input } from "~/components/ui/input";
 import { Button } from "~/components/ui/button";
 import { Switch } from "~/components/ui/switch";
-import { NumberField, NumberFieldGroup, NumberFieldInput } from "~/components/ui/number-field";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectPopup,
-  SelectItem,
-} from "~/components/ui/select";
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuSeparator,
+  MenuShortcut,
+} from "~/components/ui/menu";
 import {
   Dialog,
   DialogPopup,
@@ -32,192 +37,94 @@ import {
   DialogPanel,
   DialogFooter,
 } from "~/components/ui/dialog";
-import {
-  parameterLabel,
-  parameterValues,
-  stringParameterValue,
-  vectorParameterValue,
-} from "./params";
-import { ModelTool } from "./WorkspaceTools";
+import type { ParameterHistory } from "./parameterHistory";
+import { OperationStatus } from "./OperationStatus";
+import { parameterLabel, parameterValues } from "./params";
+import { Chip, EmptyNote, ParameterRow, Tip } from "./controls";
 
-function ParameterField({
-  parameter,
-  value,
-  baseline,
-  onChange,
+const HISTORY_SHOWN = 12;
+const SEARCH_THRESHOLD = 5;
+
+function ago(time: number, now: number) {
+  if (!time) return "";
+  const minutes = Math.floor((now - time) / 60000);
+  if (minutes < 1) return "now";
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h`;
+}
+
+/** Render state shown in the Customize footer. */
+function PreviewStatus({
+  pending,
+  automatic,
+  hasUnapplied,
 }: {
-  parameter: ScadParameter;
-  value: string;
-  baseline: string;
-  onChange: (value: string) => void;
+  pending: boolean;
+  automatic: boolean;
+  hasUnapplied: boolean;
 }) {
-  const id = useId();
-  const label = parameterLabel(parameter.name);
-  const vector = parameter.kind === "vector" ? vectorParameterValue(value) : null;
-  const number = (
-    inputId: string,
-    inputLabel: string,
-    current: number,
-    commit: (value: number) => void,
-  ) => (
-    <NumberField
-      id={inputId}
-      value={current}
-      min={parameter.range?.min}
-      max={parameter.range?.max}
-      step={parameter.range?.step ?? 1}
-      size="sm"
-      onValueChange={(next) => {
-        if (next !== null && Number.isFinite(next)) commit(next);
-      }}
-    >
-      <NumberFieldGroup>
-        <NumberFieldInput aria-label={inputLabel} />
-      </NumberFieldGroup>
-    </NumberField>
-  );
+  const [tone, text] = pending
+    ? (["busy", "Rendering preview"] as const)
+    : hasUnapplied
+      ? automatic
+        ? (["busy", "Preview updates when you stop editing"] as const)
+        : (["warning", "Changes not applied"] as const)
+      : (["ready", "Up to date"] as const);
   return (
-    <div className={styles["model-parameter-field"]}>
-      <div className={styles["model-parameter-label"]}>
-        <label htmlFor={id}>{label}</label>
-        {value !== baseline && (
-          <ModelTool label={`Reset ${label}`} onClick={() => onChange(baseline)}>
-            <RotateCcwIcon />
-          </ModelTool>
-        )}
-      </div>
-      {parameter.description && (
-        <p className={styles["model-parameter-description"]}>{parameter.description}</p>
-      )}
-      {parameter.options?.length ? (
-        <Select
-          value={value}
-          onValueChange={(next) => {
-            if (next !== null) onChange(next);
-          }}
-          items={parameter.options}
-        >
-          <SelectTrigger id={id} size="sm" aria-label={label}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectPopup>
-            {parameter.options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-      ) : parameter.kind === "boolean" ? (
-        <Switch
-          id={id}
-          size="sm"
-          aria-label={label}
-          checked={value === "true"}
-          onCheckedChange={(next) => onChange(String(next))}
-        />
-      ) : parameter.kind === "number" ? (
-        <>
-          <div className={parameter.range ? styles["model-parameter-range"] : undefined}>
-            {parameter.range && (
-              <input
-                type="range"
-                style={
-                  {
-                    "--model-range-fill": `${Math.max(0, Math.min(100, ((Number(value) - parameter.range.min) / (parameter.range.max - parameter.range.min || 1)) * 100))}%`,
-                  } as CSSProperties
-                }
-                aria-label={`${label} slider`}
-                min={parameter.range.min}
-                max={parameter.range.max}
-                step={parameter.range.step ?? "any"}
-                value={Number(value)}
-                onChange={(event) => onChange(event.target.value)}
-              />
-            )}
-            {number(id, label, Number(value), (next) => onChange(String(next)))}
-          </div>
-          {parameter.range && (
-            <div className={styles["model-range-bounds"]}>
-              <span>{parameter.range.min}</span>
-              <span>{parameter.range.max}</span>
-            </div>
-          )}
-        </>
-      ) : vector ? (
-        <div className={styles["model-vector"]}>
-          {vector.map((coordinate, index) => {
-            const axis = vector.length === 3 ? ["X", "Y", "Z"][index] : String(index + 1);
-            const axisId = index === 0 ? id : `${id}-${index}`;
-            return (
-              <div key={axis}>
-                <label htmlFor={axisId}>{axis}</label>
-                {number(axisId, `${label} ${axis}`, coordinate, (next) => {
-                  const updated = [...vector];
-                  updated[index] = next;
-                  onChange(JSON.stringify(updated));
-                })}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <Input
-          id={id}
-          aria-label={label}
-          size="sm"
-          value={parameter.kind === "string" ? stringParameterValue(value) : value}
-          onChange={(event) =>
-            onChange(
-              parameter.kind === "string" ? JSON.stringify(event.target.value) : event.target.value,
-            )
-          }
-        />
-      )}
-    </div>
+    <span className={styles["model-preview-status"]} role="status">
+      <span className={styles["model-state-dot"]} data-tone={tone} />
+      <span className="truncate">{text}</span>
+    </span>
   );
 }
+
 function ParameterGroup({
   name,
   parameters,
   current,
   baseline,
+  open,
+  onToggle,
   onChange,
-  searching,
 }: {
-  name: string;
-  searching: boolean;
+  name: string | null;
   parameters: readonly ScadParameter[];
   current: Record<string, string>;
   baseline: Record<string, string>;
+  open: boolean;
+  onToggle: () => void;
   onChange: (name: string, value: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const changed = parameters.filter((p) => current[p.name] !== baseline[p.name]).length;
   return (
-    <details
-      className={styles["model-parameter-group"]}
-      open={searching || expanded}
-      onToggle={(event) => {
-        if (!searching) setExpanded(event.currentTarget.open);
-      }}
-    >
-      <summary>
-        <ChevronDownIcon />
-        {name}
-        <span>{parameters.length}</span>
-      </summary>
-      {parameters.map((parameter) => (
-        <ParameterField
-          key={parameter.name}
-          parameter={parameter}
-          value={current[parameter.name]!}
-          baseline={baseline[parameter.name]!}
-          onChange={(value) => onChange(parameter.name, value)}
-        />
-      ))}
-    </details>
+    <section className={styles["model-param-group"]}>
+      {name !== null && (
+        <button
+          type="button"
+          className={styles["model-param-group-head"]}
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          <ChevronRightIcon />
+          <span>{name}</span>
+          <small>{changed ? `${changed} of ${parameters.length} changed` : ""}</small>
+        </button>
+      )}
+      {open &&
+        parameters.map((parameter) => (
+          <ParameterRow
+            key={parameter.name}
+            parameter={parameter}
+            value={current[parameter.name]!}
+            baseline={baseline[parameter.name]!}
+            onChange={(value) => onChange(parameter.name, value)}
+          />
+        ))}
+    </section>
   );
 }
+
+/** Customize tab: parameter set, history, searchable grouped parameters and preview controls. */
 export function Parameters({
   history,
   onHistory,
@@ -252,29 +159,42 @@ export function Parameters({
   onReset: () => void;
 }) {
   const [search, setSearch] = useState("");
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [saveOpen, setSaveOpen] = useState(false),
     [saveName, setSaveName] = useState(""),
     [saving, setSaving] = useState(false),
-    [saveError, setSaveError] = useState<string | null>(null);
+    [saveError, setSaveError] = useState<string | null>(null),
+    [historyTime, setHistoryTime] = useState(0);
   const current = parameterValues(data.parameters, values);
   const baseline = parameterValues(data.parameters, setName ? (data.setValues[setName] ?? {}) : {});
   const changed = data.parameters.filter(
     (parameter) => current[parameter.name] !== baseline[parameter.name],
   ).length;
+  const query = search.trim().toLowerCase();
   const groups = new Map<string, ScadParameter[]>();
   for (const parameter of data.parameters) {
     if (
-      search &&
+      query &&
       !`${parameter.name} ${parameterLabel(parameter.name)} ${parameter.description ?? ""} ${parameter.group}`
         .toLowerCase()
-        .includes(search.toLowerCase())
+        .includes(query)
     )
       continue;
-    const group = parameter.group || "General";
-    groups.set(group, [...(groups.get(group) ?? []), parameter]);
+    groups.set(parameter.group, [...(groups.get(parameter.group) ?? []), parameter]);
   }
+  // A file without customizer groups reads as one plain list.
+  const headed = groups.size > 1 || !groups.has("");
+  const sidecar = path
+    .replace(/\.scad$/i, ".json")
+    .split("/")
+    .at(-1);
   const trimmedName = saveName.trim();
   const replacing = data.sets.includes(trimmedName);
+  const openSave = (name: string) => {
+    setSaveName(name);
+    setSaveError(null);
+    setSaveOpen(true);
+  };
   const save = async () => {
     if (!trimmedName || saving) return;
     setSaving(true);
@@ -288,155 +208,176 @@ export function Parameters({
       setSaving(false);
     }
   };
+  const shownHistory = history.entries
+    .map((entry, index) => ({ entry, index }))
+    .slice(-HISTORY_SHOWN)
+    .toReversed();
   return (
     <>
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
-        <div className="flex items-center gap-1">
-          <ModelTool
-            label="Undo parameter edit"
+      <div className={styles["model-customize-head"]}>
+        <Menu>
+          <MenuTrigger
+            render={<button type="button" className={styles["model-set-button"]} />}
+            aria-label="Parameter set"
+          >
+            <span className={styles["model-set-name"]}>{setName ?? "Source defaults"}</span>
+            {changed > 0 && <Chip tone="primary">{changed} changed</Chip>}
+            <ChevronsUpDownIcon />
+          </MenuTrigger>
+          <MenuPopup align="start">
+            <MenuGroup>
+              <MenuGroupLabel>Parameter sets</MenuGroupLabel>
+              <MenuRadioGroup
+                value={setName ?? ""}
+                onValueChange={(next: string) => onSet(next || null)}
+              >
+                <MenuRadioItem value="">Source defaults</MenuRadioItem>
+                {data.sets.map((name) => (
+                  <MenuRadioItem key={name} value={name}>
+                    {name}
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuGroup>
+            <MenuSeparator />
+            <MenuItem onClick={() => openSave("")}>
+              <PlusIcon />
+              Save as new set
+            </MenuItem>
+            {setName && (
+              <MenuItem disabled={!changed} onClick={() => openSave(setName)}>
+                <SaveIcon />
+                Update “{setName}”
+              </MenuItem>
+            )}
+            <MenuItem disabled={!changed} onClick={() => onSet(setName)}>
+              <RotateCcwIcon />
+              {setName ? "Reset to set values" : "Reset changes"}
+            </MenuItem>
+            <MenuItem disabled={!setName && !changed} onClick={onReset}>
+              <RotateCcwIcon />
+              Restore source defaults
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+        <Tip label="Undo" kbd="⌘Z">
+          <Button
+            variant="ghost-muted"
+            size="icon-sm"
+            aria-label="Undo parameter edit"
             disabled={history.cursor === 0}
             onClick={() => onHistory(history.cursor - 1)}
           >
             <Undo2Icon />
-          </ModelTool>
-          <ModelTool
-            label="Redo parameter edit"
-            disabled={history.cursor === history.entries.length - 1}
+          </Button>
+        </Tip>
+        <Tip label="Redo" kbd="⇧⌘Z">
+          <Button
+            variant="ghost-muted"
+            size="icon-sm"
+            aria-label="Redo parameter edit"
+            disabled={history.cursor >= history.entries.length - 1}
             onClick={() => onHistory(history.cursor + 1)}
           >
             <Redo2Icon />
-          </ModelTool>
-        </div>
-        <Menu>
+          </Button>
+        </Tip>
+        <Menu onOpenChange={(open) => open && setHistoryTime(Date.now())}>
           <MenuTrigger
-            render={<button className={styles["model-tool"]} aria-label="Parameter history" />}
+            render={<Button variant="ghost-muted" size="icon-sm" aria-label="Parameter history" />}
           >
-            <HistoryIcon /> History
+            <HistoryIcon />
           </MenuTrigger>
           <MenuPopup align="end">
-            {history.entries.map((entry, index) => (
-              // oxlint-disable-next-line react/no-array-index-key -- History entries retain their position until the bounded log truncates.
-              <MenuItem key={index} onClick={() => onHistory(index)}>
-                {index === history.cursor ? "Current: " : ""}
-                {entry.label}
-              </MenuItem>
-            ))}
+            <MenuGroup>
+              <MenuGroupLabel>History</MenuGroupLabel>
+              <MenuRadioGroup
+                value={history.cursor}
+                onValueChange={(next: number) => onHistory(next)}
+              >
+                {shownHistory.map(({ entry, index }) => (
+                  <MenuRadioItem key={`${index}:${entry.time}`} value={index}>
+                    <span className="min-w-0 truncate">{entry.label}</span>
+                    <MenuShortcut>{ago(entry.time, historyTime)}</MenuShortcut>
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuGroup>
           </MenuPopup>
         </Menu>
       </div>
-      <div className={styles["model-parameter-presets"]}>
-        <div className="flex items-center justify-between gap-2 text-xs">
-          <span className="font-medium">Parameter set</span>
-          <ModelTool
-            label="Save parameter set"
-            onClick={() => {
-              setSaveName(setName ?? "");
-              setSaveError(null);
-              setSaveOpen(true);
-            }}
-          >
-            <SaveIcon />
-          </ModelTool>
-        </div>
-        <Select
-          value={setName ?? ""}
-          onValueChange={(next) => onSet(next || null)}
-          items={[
-            { value: "", label: "Source defaults" },
-            ...data.sets.map((name) => ({ value: name, label: name })),
-          ]}
-        >
-          <SelectTrigger size="sm" aria-label="Parameter set">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectPopup>
-            <SelectItem value="">Source defaults</SelectItem>
-            {data.sets.map((name) => (
-              <SelectItem key={name} value={name}>
-                {name}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <span>{changed ? `${changed} modified` : "No changes to this set"}</span>
-          {changed > 0 && (
-            <Button size="micro" variant="ghost" onClick={() => onSet(setName)}>
-              Reset changes
-            </Button>
-          )}
-        </div>
-      </div>
-      {data.parameters.length > 5 && (
-        <div className={styles["model-parameter-search"]}>
+      {data.parameters.length > SEARCH_THRESHOLD && (
+        <div className={styles["model-search"]}>
+          <SearchIcon />
           <Input
-            type="search"
             size="sm"
-            aria-label="Find parameter"
-            placeholder="Find parameter..."
+            aria-label="Search parameters"
+            placeholder="Search parameters"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && search) {
+                event.stopPropagation();
+                setSearch("");
+              }
+            }}
           />
+          {search && (
+            <Button
+              variant="ghost-muted"
+              size="icon-xs"
+              aria-label="Clear search"
+              onClick={() => setSearch("")}
+            >
+              <XIcon />
+            </Button>
+          )}
         </div>
       )}
       <div className={styles["model-inspector-scroll"]}>
         {data.parameters.length === 0 ? (
-          <div className={styles["model-empty"]}>
-            <SlidersHorizontalIcon />
-            <strong>No customizer parameters</strong>
-            <p>Add customizer variables to the SCAD source to edit them here.</p>
-          </div>
+          <EmptyNote>Add customizer variables to the SCAD source to edit them here.</EmptyNote>
         ) : groups.size === 0 ? (
-          <div className={styles["model-empty"]}>
-            <SearchIcon />
-            <strong>No matching parameters</strong>
-            <Button size="sm" variant="ghost" onClick={() => setSearch("")}>
+          <EmptyNote>
+            No parameters match “{search.trim()}”.
+            <Button variant="outline" size="xs" onClick={() => setSearch("")}>
               Clear search
             </Button>
-          </div>
+          </EmptyNote>
         ) : (
-          [...groups].map(([name, parameters]) => (
+          [...groups].map(([group, parameters]) => (
             <ParameterGroup
-              key={name}
-              name={name}
-              searching={search.trim().length > 0}
+              key={group}
+              name={headed ? group || "General" : null}
               parameters={parameters}
               current={current}
               baseline={baseline}
+              open={!headed || !!query || !collapsed[group]}
+              onToggle={() => setCollapsed((state) => ({ ...state, [group]: !state[group] }))}
               onChange={onChange}
             />
           ))
         )}
-        {data.parameters.length > 0 && (
-          <div className="p-3">
-            <Button size="sm" variant="ghost-muted" onClick={onReset}>
-              <RotateCcwIcon />
-              Restore source defaults
-            </Button>
-          </div>
-        )}
       </div>
-      <div className={styles["model-parameter-footer"]}>
-        <label className={styles["model-preview-switch"]}>
-          <span>
-            Auto preview<small>Render parameter changes as you edit</small>
-          </span>
-          <Switch size="sm" checked={automatic} onCheckedChange={onAutomatic} />
-        </label>
+      <div className={styles["model-inspector-foot"]}>
+        <PreviewStatus pending={pending} automatic={automatic} hasUnapplied={hasUnapplied} />
+        <div className="flex-1" />
+        <Tip label="Render after every change">
+          <label className={styles["model-live"]}>
+            Live
+            <Switch
+              size="sm"
+              aria-label="Live preview"
+              checked={automatic}
+              onCheckedChange={onAutomatic}
+            />
+          </label>
+        </Tip>
         {!automatic && (
-          <Button size="sm" disabled={!hasUnapplied} onClick={onApply}>
-            Apply changes
+          <Button size="xs" disabled={!hasUnapplied || pending} onClick={onApply}>
+            Apply
           </Button>
         )}
-        <p role="status">
-          {pending
-            ? "Rendering your changes..."
-            : hasUnapplied
-              ? automatic
-                ? "Updating preview..."
-                : "Changes are ready to apply."
-              : "Preview is up to date."}
-        </p>
       </div>
       <Dialog
         open={saveOpen}
@@ -453,14 +394,7 @@ export function Parameters({
           >
             <DialogHeader>
               <DialogTitle>Save parameter set</DialogTitle>
-              <DialogDescription>
-                Keep these values in{" "}
-                {path
-                  .replace(/\.scad$/i, ".json")
-                  .split("/")
-                  .at(-1)}{" "}
-                for later.
-              </DialogDescription>
+              <DialogDescription>Keep these values in {sidecar} for later.</DialogDescription>
             </DialogHeader>
             <DialogPanel>
               <label className="flex flex-col gap-2 text-sm">
