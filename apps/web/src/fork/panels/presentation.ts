@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useRightPanelStore } from "~/rightPanelStore";
 const eventName = "loom:panel-presentation";
 type Request = {
   threadRef: ScopedThreadRef;
@@ -32,11 +33,7 @@ export function requestPanelPresentation(threadRef: ScopedThreadRef, maximized: 
     );
   });
 }
-export function useForkPanelPresentation(
-  threadRef: ScopedThreadRef | null,
-  available: boolean,
-  setMaximized: (key: string | null) => void,
-) {
+export function useForkPanelPresentation(threadRef: ScopedThreadRef | null, available: boolean) {
   useEffect(() => {
     const onRequest = (event: Event) => {
       const request = (event as CustomEvent<Request>).detail;
@@ -45,10 +42,10 @@ export function useForkPanelPresentation(
         request.reject(new Error("This window is too narrow to maximize the panel."));
         return;
       }
-      setMaximized(request.maximized ? scopedThreadKey(threadRef) : null);
+      useRightPanelStore.getState().setMaximized(threadRef, request.maximized);
       request.resolve();
     };
     window.addEventListener(eventName, onRequest);
     return () => window.removeEventListener(eventName, onRequest);
-  }, [threadRef, available, setMaximized]);
+  }, [threadRef, available]);
 }
