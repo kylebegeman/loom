@@ -2,42 +2,6 @@
 
 ## Automated tests
 
-Part A, `apps/web/src/fork/chat-conveniences/find/findMatches.test.ts` (pure):
-
-- Only `message` rows with role user or assistant are searched; work rows are skipped.
-- Case-insensitive by default; "Match case" respected.
-- Markdown reduction: `**bold**`, inline code, link targets and headings do not create or
-  hide matches (a search for "bold" matches `**bold**`; a search for "https" does not
-  match a link whose visible text lacks it).
-- Order follows the row order; next and previous wrap.
-- Empty and whitespace queries return no results.
-
-Part A default shortcut, `find/defaultShortcut.test.ts` (pure):
-
-- `shouldOpenFindFromDefaultShortcut` is true only for `mod+F` with the setting on, the
-  command palette closed, no user binding resolved for the event, a timeline handle, no
-  terminal or preview focus, and a target outside right-panel surfaces, dialogs and menus.
-  Each excluded case returns false (the listener then does not call `preventDefault`, so
-  the browser's find runs on web).
-- `mod+shift+f` never matches (upstream's project search).
-
-Part A highlighting: the web unit tests run in Node without a DOM
-(`apps/web/vite.config.ts`, project `unit`), so split `highlight.ts` into a pure
-`matchSpans(segments: string[], query, matchCase)` that returns
-`{ segment, start, end }` spans across consecutive text segments (a match may cross a
-segment boundary, for example `**bo**ld`), tested in `findMatches.test.ts`, and a thin DOM
-layer (TreeWalker, `Range`, `CSS.highlights`) verified manually.
-
-Part B, `mermaid/renderMermaid.test.ts` (with `mermaid` mocked):
-
-- Renders are serialized (a second render starts only after the first settles, including
-  after a rejection).
-- Cache hit returns the same SVG without calling `render`; the LRU evicts the oldest past
-  50 entries.
-- A render slower than the timeout rejects with a timeout error; a later render still runs.
-- Source over 20,000 characters is rejected before loading Mermaid.
-- The module is imported once however many renders run.
-
 Part C, `presets/presets.test.ts`:
 
 - Storage: decode drops invalid entries; at most 9; order preserved; storage that throws
@@ -115,10 +79,7 @@ extension points' tests.
 ## Commands
 
 ```sh
-vp test run apps/web/src/fork/chat-conveniences/find/findMatches.test.ts \
-  apps/web/src/fork/chat-conveniences/find/defaultShortcut.test.ts \
-  apps/web/src/fork/chat-conveniences/mermaid/renderMermaid.test.ts \
-  apps/web/src/fork/chat-conveniences/presets/presets.test.ts \
+vp test run apps/web/src/fork/chat-conveniences/presets/presets.test.ts \
   apps/web/src/fork/chat-conveniences/presets/autoPreset.test.ts \
   apps/server/src/fork/chat-conveniences/AskService.test.ts \
   apps/server/src/fork/chat-conveniences/autoPresetRequest.test.ts \
@@ -128,31 +89,18 @@ vp test run apps/web/src/fork/chat-conveniences/find/findMatches.test.ts \
   packages/contracts/src/fork/chat-conveniences.test.ts \
   packages/contracts/src/fork/keybindings.test.ts
 vp lint apps/web/src/fork/chat-conveniences apps/server/src/fork/chat-conveniences \
-  packages/contracts/src/fork packages/client-runtime/src/fork \
-  apps/web/src/components/ChatView.tsx apps/web/src/components/ChatMarkdown.tsx
+  packages/contracts/src/fork packages/client-runtime/src/fork
 vp run --filter @t3tools/web typecheck
 vp run --filter t3 typecheck                  # parts D and E
-vp run --filter @t3tools/contracts typecheck  # parts A, C, D and E
+vp run --filter @t3tools/contracts typecheck  # parts C, D and E
 vp run --filter @t3tools/client-runtime typecheck  # part E
 vp run --filter @t3tools/mobile typecheck     # contracts changed
 ```
-
-Part B also: `vp run --filter @t3tools/web build` once, to check chunking (see
-IMPLEMENTATION.md).
 
 ## Manual check
 
 With Kyle's permission, `test-t3-app` on web, then the desktop dev app, with seeded data:
 
-A. In a long thread, `mod+F`, type a word from an early message: the counter updates, Enter
-scrolls to it and highlights it; Shift+Enter goes back; Escape clears. While a turn
-streams, find still moves (live follow stops). With older turns, "Load earlier" loads
-them and the count grows. Focus the terminal and press `mod+F`: nothing from Loom. On
-web with the setting off, the browser's find opens.
-B. Ask an agent for a Mermaid flowchart: code while streaming, diagram after; toggle Code;
-copy source; switch the app theme: the diagram re-renders in the other theme; a broken
-diagram shows its error and code. The network panel shows the Mermaid chunk loading only
-then. Turn the setting off: code blocks only.
 C. Save two presets (different accounts and efforts), apply each from the popover, the
 palette and a bound key; the composer's model and effort follow; on a thread locked to
 Codex, a Claude preset is dimmed with the reason; delete and undo.
@@ -175,22 +123,20 @@ was on, the chip shows the reason. Switch it back on and turn "Jev off for this 
 Auto is still offered, and the chip reads "Auto: keeping current model" with the reason
 "Jev is off for this project." Last, remove the key: "No Jev key on this environment."
 
-Upstream-server case: A, B, C work; the agent tool list has no `loom_` tool; Auto is
+Upstream-server case: C works; the agent tool list has no `loom_` tool; Auto is
 hidden. Loom server without ext-decide's `decide` capability: Auto is hidden and no
 `loom.decide.*` request is sent.
 
 ## Merge safety
 
 `git merge-tree` preview (SEAMS.md) on the branch; `scripts/fork/loom.sh integrate
-nightly --dry-run` after merging to `main`. `ChatView.tsx` and `ChatMarkdown.tsx`
-conflicts are expected occasionally; reapply at the quoted anchors.
+nightly --dry-run` after merging to `main`. The packet has no packet seams.
 
 ## Acceptance criteria
 
 - Each built part meets its PRODUCT.md behavior and states on web and desktop (D on every
   client).
 - No new orchestration event types; no new wire schemas on upstream methods.
-- Mermaid is absent from the initial bundle; find costs nothing while closed.
 - Auto never changes the selection without **Use**, never delays a send, and its every
   failure leaves the current selection in place.
 - No Loom entry is written to `keybindings.json`.

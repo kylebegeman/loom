@@ -2,10 +2,6 @@
 
 ## Problem
 
-- Long threads are hard to navigate: there is no way to find "that command the agent
-  suggested earlier" except scrolling. Web users get the browser's find, which misses
-  messages scrolled out of the virtualized list; the desktop app has no find at all.
-- Agents often explain architecture with Mermaid diagrams, which arrive as unreadable code.
 - Switching between a few favorite model setups (for example "Opus, high effort" and
   "Codex personal account, medium") takes several clicks in the picker every time.
 - Codex can ask a question and keep working; other providers either block on the question
@@ -18,28 +14,8 @@
 
 ## What the user can do
 
-A. Find in thread
-
-- Press `mod+F` in a thread (on by default; or use the palette or a custom binding). A find
-  bar appears at the top right of the timeline with the search field focused. Outside the
-  chat (terminal, browser preview, a right-panel surface) `mod+F` keeps its usual meaning,
-  including the browser's own find on web.
-- Type: matching messages are counted live ("3 of 12"), matches in visible messages are
-  highlighted, and the current match is scrolled into view with a stronger highlight.
-- Enter goes to the next match, Shift+Enter to the previous (wrapping). Escape closes and
-  removes highlights.
-- Toggle "Match case". Search covers user and assistant messages that are loaded; when the
-  thread has older turns, the bar shows "Searching loaded turns. Load earlier" and the
-  link loads more.
-
-B. Mermaid diagrams
-
-- A ` ```mermaid ` code block in a message shows as a diagram once the message is
-  complete. While the message is still streaming it shows as code.
-- The block header has "Code" to switch to the source (with upstream's copy and wrap
-  buttons) and "Diagram" to switch back, plus "Copy source".
-- A diagram that fails to render shows the code with "Couldn't render this diagram: <reason>".
-- Turn diagrams off in Settings > Loom > Chat conveniences.
+Parts A (find in thread) and B (Mermaid diagrams) were retired on 2026-10-09 because
+upstream ships both (README, "Retired parts").
 
 C. Model presets
 
@@ -89,24 +65,15 @@ E. Auto preset (Jev)
 
 ## Entry points
 
-| Part     | Way in                                                                                                                                                                                                                            | Way out / state                                                                                              |
-| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| A        | `mod+F` in a thread view (on by default, switchable), keybinding command `loom.chat-conveniences.find` (unbound), palette "Find in thread"                                                                                        | Escape or the close button; highlights clear.                                                                |
-| B        | Automatic for `mermaid` blocks                                                                                                                                                                                                    | "Code" toggle per block; Settings switch turns rendering off everywhere.                                     |
-| C        | Footer presets button; palette "Apply model preset: …", "Save model preset", "Manage model presets"; `loom.chat-conveniences.presets` (opens the list), `preset-1` to `preset-5`                                                  | Escape closes the list; delete has Undo; any preset change can be changed back with the picker.              |
-| D        | Agent-initiated                                                                                                                                                                                                                   | Answer or Dismiss in the question panel.                                                                     |
-| E        | Presets list "Set up Auto" and "Auto"; chip **Use** or **Suggest**; `loom.chat-conveniences.auto-accept` (unbound); palette "Use Auto suggestion", "Turn off Auto"                                                                | Chip close button, applying another preset, or the palette item. The model is never changed without **Use**. |
-| Settings | Settings > Loom > Chat conveniences: "`mod+F` opens Find in thread", "Render Mermaid diagrams", "Auto: suggest while typing"; Settings > Loom > Jev (ext-decide): the key and Auto's "Use Jev" switch (Auto has no agents switch) | Switch back.                                                                                                 |
+| Part     | Way in                                                                                                                                                                           | Way out / state                                                                                              |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| C        | Footer presets button; palette "Apply model preset: …", "Save model preset", "Manage model presets"; `loom.chat-conveniences.presets` (opens the list), `preset-1` to `preset-5` | Escape closes the list; delete has Undo; any preset change can be changed back with the picker.              |
+| D        | Agent-initiated                                                                                                                                                                  | Answer or Dismiss in the question panel.                                                                     |
+| E        | Presets list "Set up Auto" and "Auto"; chip **Use** or **Suggest**; `loom.chat-conveniences.auto-accept` (unbound); palette "Use Auto suggestion", "Turn off Auto"               | Chip close button, applying another preset, or the palette item. The model is never changed without **Use**. |
+| Settings | Settings > Loom > Chat conveniences: "Auto: suggest while typing"; Settings > Loom > Jev (ext-decide): the key and Auto's "Use Jev" switch (Auto has no agents switch)           | Switch back.                                                                                                 |
 
 ## States
 
-- A: no query: "Type to search this thread"; no results: "No matches"; the timeline not
-  mounted yet: the bar does not open. `mod+F` falls through to the browser (web) or does
-  nothing (desktop) when focus is in a terminal, the browser preview, a right-panel
-  surface, or when the setting is off.
-- B: rendering: the block keeps the code's height with a "Rendering diagram" label (no
-  spinner animation); error as above; source over 20,000 characters: shown as code with
-  "Diagram too large to render."
 - C: no presets: "No presets yet" and "Save current setup"; unavailable preset as above;
   saving with 9 presets: "Replace a preset" mode (choose one to overwrite, Escape cancels).
 - D: too many open asks from the tool on one thread (3 unanswered calls, each with up to 3
@@ -123,10 +90,6 @@ E. Auto preset (Jev)
 
 ## Copy
 
-- A: placeholder "Find in thread"; counter "3 of 12"; "No matches"; "Match case" (toggle
-  with `Aa` icon); "Searching loaded turns. Load earlier".
-- B: header label "Diagram"; buttons "Code", "Diagram", "Copy source"; "Rendering diagram";
-  "Couldn't render this diagram: …"; "Diagram too large to render."
 - C: "Presets"; "Save current setup"; "Name" placeholder "Opus, high effort"; toast
   "Preset deleted" with "Undo"; unavailable reasons "This account isn't set up on this
   environment.", "This model is no longer available.", "This thread uses <provider>;
@@ -152,8 +115,8 @@ E. Auto preset (Jev)
 
 ## Surfaces and connection modes
 
-A, B, C are client-side (web and desktop) and work with any environment, including
-upstream servers. D needs a Loom server with `chat-conveniences` in `loomFeatures`; the
+C is client-side (web and desktop) and works with any environment, including upstream
+servers. D needs a Loom server with `chat-conveniences` in `loomFeatures`; the
 answer path is upstream's, so every client (including upstream mobile) handles it. E needs
 a Loom server with `chat-conveniences` and `decide`; the Jev call runs on that server, so
 it works the same locally, over Tailscale and through T3 Connect, and the key never
@@ -161,17 +124,8 @@ reaches a client.
 
 ## Decisions
 
-- Find searches message data (what the timeline has loaded), not the DOM, because the
-  timeline is virtualized; highlighting uses the CSS Custom Highlight API on rendered rows,
-  so no markup changes.
-- `mod+F` opens Find in thread by default, with a setting to turn it off. The fork handles
-  the key directly instead of a default keybinding written into `keybindings.json`, which
-  upstream T3 Code would flag as invalid after a rollback (EXTENSION-POINTS.md,
-  Keybindings). Outside the chat the browser's find still works, and a user binding on
-  `mod+F` wins over the default.
-- `mermaid` is approved as a lazily loaded `apps/web` dependency in its own chunk. It
-  renders to an image (`<img>` with an SVG blob), so diagram content can never run script
-  or touch the page, and it is loaded only when a diagram appears.
+- Find in thread and Mermaid diagrams: retired by Kyle on 2026-10-09; upstream ships both.
+  The earlier approval of a `mermaid` dependency no longer applies to this packet.
 - Presets are per client (localStorage), like upstream's client settings.
 - Ask without stopping reuses upstream's message-mode question activity and answer path
   (no new events, no new UI); the fork only adds the MCP tool that posts it. The tool is

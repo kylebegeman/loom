@@ -3,6 +3,10 @@
 Citations are to this fork at upstream v0.0.42 (`a931bd85f3`), rechecked on 2026-09-24 at
 `137e432394`.
 
+Part A (worktree branch prefix) was retired on 2026-10-09 because upstream has a branch
+prefix setting per project (README, "Retired parts"). Part D keeps the branch namer it
+shared with part A; the remaining parts keep their letters.
+
 ## Overview
 
 One fork service, `SmallExtrasService`, owns the packet's settings and the server side of
@@ -10,13 +14,12 @@ each part. Parts are listed in a constant so clients can tell which ones a serve
 
 ```
  Loom settings section "small-extras"          Right panel "small-extras:containers"
-   |- Worktree branch prefix (A)                 |- list (fork RPC)
-   |- No AI identification: private projects (D) |- Follow logs -> upstream terminal.open + terminal.write
-   |- CLI tools (C)                              v
-   v
+   |- No AI identification: private projects (D) |- list (fork RPC)
+   |- CLI tools (C)                              |- Follow logs -> upstream terminal.open + terminal.write
+   v                                             v
  loom.small-extras.* (fork RPC) ---------> SmallExtrasService (ForkLayer)
  palette items (D), ForkRoot toasts (D)       |- settings row, private projects, scan state (fork tables)
-                                              |- branch namer (A, D)  <- ProviderCommandReactor seam
+                                              |- branch namer (D)  <- ProviderCommandReactor seam
                                               |- private thread resolver (D) <- ClaudeAdapter seam
                                               |- turn input contributor (D) -> ext-turn-input, order 5
                                               |- commit check reactor (D) -> thread.activity.append + warnings stream
@@ -30,12 +33,7 @@ each part. Parts are listed in a constant so clients can tell which ones a serve
 
 ```ts
 /** Every part this packet can ship. A server lists the ones it implements. */
-export const SMALL_EXTRAS_PARTS = [
-  "worktree-prefix",
-  "private-mode",
-  "containers",
-  "cli-tools",
-] as const;
+export const SMALL_EXTRAS_PARTS = ["private-mode", "containers", "cli-tools"] as const;
 export type SmallExtrasPart = (typeof SMALL_EXTRAS_PARTS)[number];
 
 export const SMALL_EXTRAS_WS_METHODS = {
@@ -51,17 +49,7 @@ export const SMALL_EXTRAS_WS_METHODS = {
   listCliTools: "loom.small-extras.listCliTools", // part C
 } as const;
 
-export const WorktreeBranchPrefix = Schema.String.check(
-  Schema.isMaxLength(64),
-  // Old Loom's rule: lowercase, no refs/heads/, no "//" or "--", alphanumeric ends.
-  Schema.isPattern(/^(?!refs\/heads(?:\/|$))(?!.*\/\/)(?!.*--)[a-z0-9](?:[a-z0-9/_-]*[a-z0-9])?$/),
-);
-
-export const DEFAULT_WORKTREE_BRANCH_PREFIX = "loom";
-
 export const SmallExtrasSettings = Schema.Struct({
-  /** null = upstream's "t3code". Defaults to "loom". */
-  worktreeBranchPrefix: Schema.NullOr(WorktreeBranchPrefix),
   containerRuntime: Schema.Literals(["auto", "docker", "podman"]),
   /** Extra executables for the CLI tools list, probed with --version. */
   extraCliTools: Schema.Array(
@@ -69,7 +57,6 @@ export const SmallExtrasSettings = Schema.Struct({
   ).check(Schema.isMaxLength(30)),
 });
 export const DEFAULT_SMALL_EXTRAS_SETTINGS: SmallExtrasSettings = {
-  worktreeBranchPrefix: DEFAULT_WORKTREE_BRANCH_PREFIX,
   containerRuntime: "auto",
   extraCliTools: [],
 };
@@ -143,8 +130,7 @@ CREATE TABLE IF NOT EXISTS fork_small_extras_private_scans (
 ```
 
 Settings decode with `SmallExtrasSettings`; invalid or missing JSON yields the defaults (and
-logs a warning), so a fresh environment starts with the `loom` prefix. One row per
-environment by construction (each server has its own `state.sqlite`). Migration 2 ships with
+logs a warning). One row per environment by construction (each server has its own `state.sqlite`). Migration 2 ships with
 part D; the migration set's ids are fixed, so whichever part lands first still creates only
 the migrations it needs and later parts append theirs in id order.
 
@@ -203,12 +189,17 @@ their rows and update the `Ref`s. Dependencies: `SqlClient`, `VcsProcess`,
 reads the selected settings scope (EXTENSION-POINTS.md, Settings: the page is scope-gated
 like General; use the scope context from `apps/web/src/components/settings/useScopedSettings.ts:30`)
 to pick the environment, checks `supportsLoomFeature(..., "small-extras")`, loads `info` and
-`getSettings`, and renders one block for each settings part, in the order A, D, C; a part
+`getSettings`, and renders one block for each settings part, in the order D, C; a part
 that is not in `info.parts` shows "Needs a newer Loom server" in its block. Rows use
 upstream's `SettingsRow` and `DraftInput` (`apps/web/src/components/settings/settingsLayout.tsx:268`;
 `DraftInput` as used in `SettingsPanels.tsx:2849-2858`).
 
-## Part A: worktree branch prefix
+## Branch naming (part D)
+
+Part D names private projects' branches by change type at the first-turn rename, through
+the namer it once shared with the retired part A. Upstream's per-project branch prefix
+setting now shapes the generated name too; recheck the citations below and `fragmentOf`
+against released V2 source before building.
 
 ### How upstream names worktree branches
 
@@ -232,12 +223,11 @@ upstream's `SettingsRow` and `DraftInput` (`apps/web/src/components/settings/set
 - Other code that recognizes temporary branches: `CheckpointReactor.ts:553` (skips branch
   drift for temporary refs) and `GitActionsControl.logic.ts:405-406` (does not regress a
   semantic branch to a temporary one). Both keep working because temporary branches keep
-  the `t3code/` form.
+  upstream's form.
 - PR checkout branches (`t3code/pr-<n>/...`, `apps/server/src/git/GitManager.ts:277`,
-  `apps/server/src/sourceControl/BitbucketApi.ts:525`) keep upstream naming (PRODUCT.md,
-  Decisions). No seam there.
+  `apps/server/src/sourceControl/BitbucketApi.ts:525`) keep upstream naming. No seam there.
 
-### Design: one branch namer for parts A and D
+### Design: the branch namer
 
 The seam replaces the generated name with the result of a fork function that may run an
 Effect (part D needs a project lookup and, optionally, Jev):
@@ -302,7 +292,7 @@ const nameBranch = (input: ForkBranchNamingInput) =>
   Effect.gen(function* () {
     const fragment = fragmentOf(input.branch);
     const project = yield* projectOfThread(input.threadId); // getThreadShellById, cached
-    if (partD && project !== null && (yield* isPrivateProject(project.id))) {
+    if (project !== null && (yield* isPrivateProject(project.id))) {
       const type = yield* chooseBranchType({
         fragment,
         messageText: input.messageText,
@@ -311,24 +301,16 @@ const nameBranch = (input: ForkBranchNamingInput) =>
       });
       return privateBranchName(type, fragment); // part D, below
     }
-    const prefix = partA ? (yield* Ref.get(settingsRef)).worktreeBranchPrefix : null;
-    return prefix === null || prefix === WORKTREE_BRANCH_PREFIX
-      ? input.branch
-      : `${prefix}/${fragment}`;
+    return input.branch; // upstream's name, with upstream's own prefix
   });
 ```
-
-(`partA` and `partD` stand for "this server implements the part"; a server with only part D
-returns upstream's name for non-private projects.)
 
 Edge cases:
 
 - If the generated name already exists as a branch, upstream's `renameBranch` handles the
-  collision the same way for any prefix (verify in `GitVcsDriverCore.renameBranch`).
+  collision the same way for any name (verify in `GitVcsDriverCore.renameBranch`).
 - If text generation fails, upstream leaves the temporary `t3code/<hex>` branch; the namer
   is never called. In a private project the commit check reports it (part D).
-- A nested prefix (`kyle/agents`) is allowed; the worktree directory name replaces `/` with
-  `-` (`apps/server/src/vcs/GitVcsDriverCore.ts:3056-3058`), which is harmless.
 
 ## Part D: No AI identification (private projects)
 
@@ -420,7 +402,7 @@ Claude Code setting facts, verified 2026-09-24:
 
 Registered by `SmallExtrasService` with `registerForkTurnInputContributor`
 (EXTENSION-POINTS.md, section 16): id `small-extras-private-mode`, order 5, so it comes
-before L22's modes (10) and L03's goal (20). It returns the block only for threads whose
+before L22's modes (10). It returns the block only for threads whose
 project is private, from the same in-memory lookups (no SQL on the hot path after the first
 turn of a thread), and `undefined` otherwise. It is sent on every turn, except the two
 cases in Known limits (slash commands and messages near the input limit).
@@ -751,14 +733,13 @@ repository it fails with `not-a-repository`. The messages for both are in PRODUC
 
 ### Provider decisions (part D)
 
-| Provider           | Instruction                      | Deterministic switch                                                                                              | Commit check |
-| ------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------ |
-| Claude             | yes                              | `attribution` settings at session start (packet seam)                                                             | yes          |
-| Codex              | yes                              | None in the app-server schema (`packages/effect-codex-app-server/src/_generated`, checked 2026-09-24). See below. | yes          |
-| Cursor, Grok       | yes                              | None known.                                                                                                       | yes          |
-| OpenCode           | yes                              | None known.                                                                                                       | yes          |
-| Antigravity        | yes                              | None known.                                                                                                       | yes          |
-| Fork drivers (L17) | yes (they go through `sendTurn`) | None.                                                                                                             | yes          |
+| Provider     | Instruction | Deterministic switch                                                                                              | Commit check |
+| ------------ | ----------- | ----------------------------------------------------------------------------------------------------------------- | ------------ |
+| Claude       | yes         | `attribution` settings at session start (packet seam)                                                             | yes          |
+| Codex        | yes         | None in the app-server schema (`packages/effect-codex-app-server/src/_generated`, checked 2026-09-24). See below. | yes          |
+| Cursor, Grok | yes         | None known.                                                                                                       | yes          |
+| OpenCode     | yes         | None known.                                                                                                       | yes          |
+| Antigravity  | yes         | None known.                                                                                                       | yes          |
 
 Codex facts (2026-09-24): the app-server's generated schema has no attribution option. The
 installed codex-cli 0.156.1 binary contains a `<git_attribution>` developer-instruction block
@@ -1052,7 +1033,7 @@ the turn instruction.
 
 ## Performance
 
-- Part A and D naming: one lookup and a string replacement per first turn; the optional Jev
+- Part D naming: one lookup and a string replacement per first turn; the optional Jev
   call is bounded by its 1 second timeout and runs after text generation, off the turn's
   critical path.
 - Part D per turn: the contributor and the Claude resolver read in-memory state; the commit
@@ -1069,12 +1050,8 @@ the turn instruction.
 
 ## Alternatives considered
 
-- **Prefix the temporary branch too.** Needs seams in `packages/shared/src/git.ts`,
-  `ChatView.tsx` and mobile, and upstream's mobile app would keep creating `t3code/<hex>`
-  anyway. Old Loom went further and persisted per-thread provenance (a migration plus
-  projection changes across 44 files); far too heavy.
-- **Add the prefix to upstream `ServerSettings`.** Forbidden: unknown keys are dropped and
-  the file is rewritten (EXTENSION-POINTS.md, Persistence).
+- **A fork worktree branch prefix (part A).** Retired by Kyle on 2026-10-09; upstream has a
+  branch prefix setting per project.
 - **Write `.claude/settings.local.json` into private repositories** to turn off Claude's
   attribution. Writes into the work repository (it could be committed) and changes Kyle's
   manual Claude sessions there too. The SDK `settings` option is per session and leaves no

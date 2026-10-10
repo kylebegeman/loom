@@ -16,8 +16,10 @@ Selection: F2 (manual compaction and goals). Source: `bagelvault/loom` at `a79ec
 | [apps/web/src/components/chat/GoalChip.tsx](https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/chat/GoalChip.tsx)                               | 188 | Adapt: editor with counter, state badges (and the "Blocked" badge idea for a future Codex-native phase). Rebuild on the fork store and upstream UI primitives.                                                                                                                                                                    |
 | [apps/web/src/components/chat/GoalChip.test.tsx](https://github.com/bagelvault/loom/blob/a79ec506/apps/web/src/components/chat/GoalChip.test.tsx)                     | 62  | Drop: markup test. L03 tests logic only (AGENTS.md).                                                                                                                                                                                                                                                                              |
 
-Old Loom's Claude goal mirroring sent `/goal <objective>` into the SDK prompt queue. Whether
-current Claude Code supports a `/goal` command is unverified; L03 does not rely on it.
+Old Loom's Claude goal mirroring sent `/goal <objective>` into the SDK prompt queue. Upstream
+now supports native `/goal` for Codex and Claude (`docs/user/composer.md`, "Goals"), which
+retired L03's fork goals on 2026-10-09 (README, "Retired parts"); the goal UX rows above are
+kept as prior art only.
 
 ## Upstream T3 Code
 
@@ -41,13 +43,14 @@ current Claude Code supports a `/goal` command is unverified; L03 does not rely 
 | `apps/web/src/components/CommandPalette.logic.ts:127-161`                                                                                  | Palette item shape (`disabled`, `description`, `shortcutCommand`).                               |
 | `packages/client-runtime/src/state/threadCommands.ts:209`                                                                                  | `startTurn` command.                                                                             |
 | `docs/user/providers-claude.md:44-54`, `docs/user/composer.md:151-152`                                                                     | Upstream user docs for compaction.                                                               |
-| `packages/effect-codex-app-server/src/_generated/meta.gen.ts:15-17,128-129`, `schema.gen.ts:6899,16184,40443`                              | Codex goal API (deferred follow-up).                                                             |
+| `packages/effect-codex-app-server/src/_generated/meta.gen.ts:15-17,128-129`, `schema.gen.ts:6899,16184,40443`                              | Codex goal API, now used by upstream's native `/goal`.                                           |
 
 ## External
 
 - Codex app-server goal methods (`thread/goal/set|get|clear`, notifications
   `thread/goal/updated|cleared`), from https://github.com/openai/codex (Apache-2.0) as
-  generated in `packages/effect-codex-app-server`. Not used in v1.
+  generated in `packages/effect-codex-app-server`. Used by upstream's native `/goal`, not by
+  this packet.
 - DietrichGebert/ponytail (https://github.com/DietrichGebert/ponytail, MIT): rule packs
-  delivered to agents, relevant to the shared `ext-turn-input` extension point that L22 also uses. No
+  delivered to agents, relevant to the shared `ext-turn-input` extension point that L22 uses. No
   code reused.

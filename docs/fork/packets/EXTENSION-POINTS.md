@@ -1191,7 +1191,6 @@ L (Linked pull requests), M (Device), P (Pull request) and T (Terminal)
 | I      | Inspector       | `thread-inspector`        | L04    |
 | J      | Decisions       | `jev-hub`                 | L29    |
 | K      | Skills          | `skill-registry`          | L21    |
-| N      | Runs            | `multi-thread-runs`       | L08    |
 | O      | 3D model        | `model-preview-3d`        | L23    |
 | Q      | Device QA       | `device-qa`               | L09    |
 | R      | Related threads | `thread-lineage`          | L02    |
@@ -1545,8 +1544,8 @@ invalid entries. A packet that wants a default key adds a fork `keydown` listene
 `ForkRoot` component, guarded by a client setting (on by default) that turns it off. The
 listener returns without `preventDefault` when the event is already handled, when the command
 palette is open, or when `resolveShortcutCommand` resolves any user binding for the event, so
-user bindings always win. The fork command stays unbound and bindable. L12 (`mod+shift+'`) and
-L14 (`mod+F`) follow this pattern.
+user bindings always win. The fork command stays unbound and bindable. L12 (`mod+shift+'`)
+follows this pattern.
 
 ### Fork-owned files
 
@@ -2064,7 +2063,7 @@ commands. No new commands or events.**
    `ProviderService.compactThread`, `Services/ProviderService.ts:57`) and runs when a user
    message is exactly `/compact` (`apps/server/src/orchestration/Layers/ProviderCommandReactor.ts:91-94`).
    A packet can reuse that path before adding anything.
-5. Content injected into agent turns (a pinned goal, instruction modes) goes through
+5. Content injected into agent turns (private mode, instruction modes) goes through
    [Provider turn input](#16-provider-turn-input-ext-turn-input), which covers every provider
    from one seam in `ProviderService.sendTurn`. An MCP tool the agent calls
    ([MCP](#10-agent-facing-mcp-tools-ext-mcp)) remains the choice for content the agent
@@ -2252,12 +2251,13 @@ ships mobile UI:
 ## 15. Provider drivers (`ext-providers`)
 
 Prerequisite: none (packets using it usually also use `ext-core` and `ext-settings`). Used by
-L16 (provider sign-in) and L17 (more providers).
+L16 (provider sign-in). L17's ACP and Copilot drivers, the first whole-driver users, were
+retired on 2026-10-09 (Kyle approved) in favor of upstream's ACP Registry; the driver path
+below is kept for a future packet, and `loomAcp` and `loomCopilot` are examples only.
 
 ### Purpose
 
-Let a packet (a) add a whole provider driver (L17: custom ACP agents, Gemini CLI among them
-through `gemini --acp`, and Copilot CLI) and (b) decorate an upstream driver's instances
+Let a packet (a) add a whole provider driver and (b) decorate an upstream driver's instances
 (L16: attach in-app sign-in to Codex and Claude instances), plus show the matching settings
 form, icon and a setup section in **Settings > Providers**, without further upstream edits.
 
@@ -2545,11 +2545,12 @@ test -f apps/server/src/fork/providers/drivers.ts && test -f apps/web/src/fork/p
 ## 16. Provider turn input (`ext-turn-input`)
 
 Prerequisite: server core (contributors are registered by fork services in `ForkLayer`).
-Used by L03 (pinned goals), L20 (private mode) and L22 (instruction modes).
+Used by L20 (private mode) and L22 (instruction modes). L03's pinned goals, its first
+proposed user, were retired on 2026-10-09 (Kyle approved) in favor of upstream's native `/goal`.
 
 ### Purpose
 
-Let fork services add standing text (a pinned goal, instruction modes) to the text a
+Let fork services add standing text (private mode, instruction modes) to the text a
 provider receives for a user turn, for every provider and every client, without changing
 what T3's timeline shows. This is the one path for such text;
 [Orchestration](#12-orchestration-and-thread-behavior), rule 5, forbids other seams in the
@@ -2591,7 +2592,6 @@ provider command path.
   | ----- | --------------------------- | ------ | -------------------------- |
   | 5     | `small-extras-private-mode` | L20    | `<loom_private_mode>`      |
   | 10    | `instruction-modes`         | L22    | `<loom_instruction_modes>` |
-  | 20    | `compaction-and-goals`      | L03    | `<loom_goal>`              |
 
   A new contributor adds a row here with an unused order.
 
@@ -2722,9 +2722,9 @@ In the packet's service layer (inside `ForkServicesLive`):
 ```ts
 yield *
   registerForkTurnInputContributor({
-    id: "compaction-and-goals",
-    order: 20,
-    contribute: ({ threadId }) => goalBlockFor(threadId), // reads the packet's own state
+    id: "instruction-modes",
+    order: 10,
+    contribute: ({ threadId }) => modesBlockFor(threadId), // reads the packet's own state
   });
 ```
 
@@ -2889,7 +2889,6 @@ capability) and [Settings](#7-settings-ext-settings) (the "Jev" section). Used b
 | Packet | Feature ids                                                                                    |
 | ------ | ---------------------------------------------------------------------------------------------- |
 | L07    | `bottom-dock.approval-risk`                                                                    |
-| L08    | `multi-thread-runs.delegate-routing`, `multi-thread-runs.compare-rank`                         |
 | L14    | `chat-conveniences.auto-preset`                                                                |
 | L15    | `ai-code-review.reviewer-pick`, `ai-code-review.turn-suggest`, `ai-code-review.finding-merge`  |
 | L20    | `small-extras.branch-type`                                                                     |
@@ -3926,12 +3925,10 @@ the same spot.
 - **Chat header actions** (`ChatHeader.tsx`, the `data-chat-header-actions` group). Only L04
   (the Inspector eye button) adds a button there; its packet seam is two marked lines.
 - **Chat banner overlay** (`ChatView.tsx`, the overlay that hosts `ProviderStatusBanner`).
-  Only L03 (the goal chip) mounts there.
-- **Other `ChatView.tsx` spots.** L07 mounts the bottom dock above the terminal drawer list
-  and L14 calls a timeline hook next to the live-follow effect. With L03's chip these are
-  three different positions in the file, so one extension point would still need a seam at
-  each; the packet seams stay, each two marked lines. L14 notes when to promote its hook to
-  an `ext-timeline` point.
+  No packet mounts there since L03's goal chip was retired on 2026-10-09.
+- **Other `ChatView.tsx` spots.** L07 mounts the bottom dock above the terminal drawer list.
+  L14's timeline hook and L03's chip were retired on 2026-10-09, so this is the only packet
+  position left in the file and stays a packet seam of two marked lines.
 
 ---
 

@@ -1,6 +1,6 @@
 # L11: Browser dev tools
 
-Status: Ready to build. <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
+Status: Ready to build. The Obscura web fetch is retired (see [Retired parts](#retired-parts)). <!-- Not started | Designing | Ready to build | In progress | Done | Blocked: reason -->
 
 Makes the browser preview a small dev environment. A **Dev environment** right panel starts,
 stops and restarts the project's dev servers (in thread terminals, so upstream's port discovery
@@ -8,12 +8,19 @@ links each server to its URL and the preview opens it), runs Docker Compose stac
 throwaway local Postgres and Redis (Valkey) containers with a copyable connection URL, and has a compact
 HTTP request lab. Inside upstream's preview panel, a slim **dev dock** under the page shows the
 page's console messages and network requests, live, with one click to send errors to the
-composer. Agents get an optional fast page fetcher (Obscura) that returns Markdown or links and
-obeys robots.txt by default.
+composer.
 
 Upstream's preview already does element picking and annotation ("pick an element and send it
 to the composer"), dev server port discovery, and agent-only console and network capture. This
 packet builds on those and replaces none of them.
+
+## Retired parts
+
+Kyle approved this retirement on 2026-10-09.
+
+- **Obscura web fetch** (the optional agent tool `loom_browser_dev_tools_fetch` with its
+  robots.txt and private network settings). Covered by what agents already have: upstream's
+  browser tools and their providers' own web fetch. The packet no longer uses `ext-mcp`.
 
 ## Scope
 
@@ -40,9 +47,6 @@ packet builds on those and replaces none of them.
   - Dev dock in the preview panel (desktop only, like the preview itself): console and network
     tabs for the active preview tab, error counts on the collapsed bar, filters, clear, request
     details, "Send errors to composer".
-  - Obscura (optional, user-installed): agent tool `loom_browser_dev_tools_fetch` for Markdown,
-    text or links of a URL, obeying robots.txt unless Kyle turns that off; loopback URLs allowed
-    for local dev servers, other private addresses only with a setting.
   - Loom settings section, palette entries, unbound keybinding commands.
 - Out:
   - Element pick and annotation (upstream has it: `apps/desktop/src/preview/PickPreload.ts`,
@@ -53,8 +57,7 @@ packet builds on those and replaces none of them.
   - Recording or proxying preview traffic into the HTTP lab (old Loom's lab was fixture-only).
   - Browser scenario replay (old Loom's ScenarioRunner saved empty steps; argent's Chromium
     flows, L09, are the path if wanted later).
-  - Running Obscura's MCP server for providers. The user doc explains adding it themselves on
-    loopback.
+  - An agent page fetch tool (retired, see above).
   - Mobile UI; the preview itself is desktop-only upstream.
 
 ## Surfaces
@@ -73,8 +76,8 @@ packet builds on those and replaces none of them.
 
 ## Extension points used
 
-- [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core), [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) + [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings),
-  [`ext-mcp`](../EXTENSION-POINTS.md#10-agent-facing-mcp-tools-ext-mcp). Any may be created by this packet.
+- [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core), [`ext-panels`](../EXTENSION-POINTS.md#6-right-panels-ext-panels), [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings), [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette), [`ext-web-root`](../EXTENSION-POINTS.md#5-web-root-ext-web-root) + [`ext-keybindings`](../EXTENSION-POINTS.md#9-keybindings-ext-keybindings).
+  Any may be created by this packet.
 - `ext-desktop` ([EXTENSION-POINTS.md, section 13](../EXTENSION-POINTS.md#13-desktop-ipc-ext-desktop-optional)) for the console and network
   collector in the Electron main process (phase 4).
 
@@ -92,13 +95,13 @@ share no code.
 
 ## Size estimate
 
-Large: about 4,000 to 5,000 lines including tests. Servers and compose about 1,200, databases
+Large: about 3,800 to 4,800 lines including tests. Servers and compose about 1,200, databases
 400, HTTP lab 500, desktop collector and dock 900, panel UI 1,200.
 
 ## How an agent starts
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md, then this
-folder. Phases 1 to 3 do not need `ext-desktop`; phase 4 does.
+folder. Phases 1 and 2 do not need `ext-desktop`; phase 4 does. Phase 3 (Obscura) is retired.
 
 ## Documents
 

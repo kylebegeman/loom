@@ -624,7 +624,6 @@ config: codex ? { homePath: sharedHomePath, shadowHomePath: folder } : { homePat
 | Cursor      | Not supported: `cursor-agent login` is interactive and upstream reports its status; revisit on request.                                                                                                                 |
 | Grok        | Not supported: upstream deliberately avoids auth side effects in probes (`docs/internals/providers.md`).                                                                                                                |
 | OpenCode    | Not supported: OpenCode owns many provider logins (`opencode auth`); out of scope.                                                                                                                                      |
-| L17 drivers | Their packet decides. The setup slot is available to them.                                                                                                                                                              |
 
 ## Agent-facing tools
 

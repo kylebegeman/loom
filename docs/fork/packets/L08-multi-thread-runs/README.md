@@ -1,6 +1,9 @@
 # L08: Multi-thread runs and swarm dock
 
-Status: Ready to build.
+Status: Retired. Kyle approved retiring the whole packet on 2026-10-09: upstream sends one
+prompt to several models and has agent delegation, thread launch and an Agents view. Nothing
+was built. The documents below describe the retired design and are kept for reference only;
+do not implement them.
 
 Work that spans several threads at once. **Compare**: send one prompt to several providers
 or models in one step, or to one model several times, each in its own thread and (by

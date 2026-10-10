@@ -7,7 +7,8 @@ creates the extension point.
 
 Created exactly as [EXTENSION-POINTS.md](../EXTENSION-POINTS.md) specifies when missing, each in
 its own commit before packet code: `ext-core` (section 1), `ext-panels` (6), `ext-settings`
-(7), `ext-palette` (8), `ext-web-root` (5), `ext-keybindings` (9), `ext-mcp` (10).
+(7), `ext-palette` (8), `ext-web-root` (5), `ext-keybindings` (9). `ext-mcp` (10) was needed
+only for the retired Obscura fetch tool.
 
 ### `ext-desktop` (section 13)
 

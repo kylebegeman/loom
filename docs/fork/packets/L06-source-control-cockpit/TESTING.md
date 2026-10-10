@@ -46,7 +46,7 @@ echo "$repo"
 ```
 
 1. Add the fixture folder as a project; open a thread in it.
-2. Open Source control from the launcher (letter G). Lane shows "Rebase in progress: 1
+2. Open Source control from the launcher (letter G). The header shows "Rebase in progress: 1
    conflicted file"; Conflicts lists `f.txt` as both-modified with 1 marker; "Open file"
    opens it; "Ask the agent to resolve" fills the composer and nothing is sent; the
    commands copy. Continue is disabled with "Resolve and stage every conflicted file
@@ -54,10 +54,9 @@ echo "$repo"
 3. Resolve by hand and `git add f.txt` in the terminal. Continue rebase, confirm: the
    rebase finishes and the banner clears. Recreate the fixture, then Abort rebase, confirm:
    the branch is back at its pre-rebase commit. Cancel in either dialog changes nothing.
-4. Make a dirty change to `f.txt` and add an untracked file, open Safe switch, pick the
+4. Make a dirty change to `f.txt` and add an untracked file, open Switch, pick the
    other branch: verdict "conflict". "Stash and switch" switches; the untracked file is in
-   the stash and an ignored file stays; the old branch's lane shows the stash; Pop
-   restores both.
+   the stash and an ignored file stays; the Switch view lists the stash; Pop restores both.
 5. On a real GitHub project with Actions (Kyle's choice), Checks lists runs for the head,
    "Open log" shows the tail of a failed job, "Open on GitHub" opens the job.
 6. Graph shows HEAD, upstream and the default branch with the merge base marked.

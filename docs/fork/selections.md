@@ -39,7 +39,7 @@ Code has 10 areas and a different engine.
 | F12 | Repository Estate                     | L19: capped per-thread lanes and storage pressure handling first, then the persistent machine pool, on-demand checkouts, publication and safe parking. Started 2026-10-08. |
 | F13 | Lanes board and Git cockpit           | Deferred; P7 covers the per-thread view (L06).                                                                                                                             |
 | F21 | Apple tooling                         | XcodeGen, XCResult summaries, release readiness; pairs with P12.                                                                                                           |
-| F23 | Small extras                          | Configurable worktree branch prefix, container logs, and a CLI tool registry.                                                                                              |
+| F23 | Small extras                          | Container logs and a CLI tool registry. The worktree branch prefix was retired on 2026-10-09; upstream has a per-project setting.                                          |
 
 ## Outcomes of the open items
 
@@ -52,9 +52,9 @@ written, and where each ended up:
 | 3D modeling (Blender, OpenSCAD) for printing | L23 preview/editing workspace shipped; print readiness and slicing deferred. Fabrication remains separate. |
 | KiCad circuit board design and management    | Split: an in-Loom PCB preview (L24), the workbench as the Electronics app.                                 |
 | Image generation and photo lab               | Standalone app (Image Lab).                                                                                |
-| Headless web scraper (Obscura)               | Standalone app (Web Scraper); L11 can use Obscura if installed.                                            |
+| Headless web scraper (Obscura)               | Standalone app (Web Scraper). L11's Obscura fetch was retired on 2026-10-09; agents have browser tools.    |
 | Research workspace (notebooklm-py)           | Standalone app (Research Desk).                                                                            |
-| F9 orchestration tools for agents            | A tiny version (delegate to other threads) is part of L08.                                                 |
+| F9 orchestration tools for agents            | Covered upstream (delegation and thread launch); L08 was retired on 2026-10-09.                            |
 | F10 context engine                           | Skipped.                                                                                                   |
 | F13 lanes board and Git cockpit              | Deferred. P7 (lanes, graph, CI for one thread) is L06.                                                     |
 | F16 pair mode                                | Parts 1 and 2 (related threads, side by side) are part of L02.                                             |

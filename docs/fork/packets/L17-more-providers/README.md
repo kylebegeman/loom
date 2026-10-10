@@ -1,19 +1,29 @@
 # L17: More providers
 
-Status: Ready to build.
+Status: Ready to build. Parts B and C are retired (see [Retired parts](#retired-parts)).
 
-Bring more models and agents into Loom without building a coding agent of our own. Two
-parts. **Model endpoints** turns DeepSeek, Ollama, LM Studio and any other
-Anthropic-compatible endpoint into a ready-to-use Claude provider instance in one dialog:
-Claude Code stays the agent (tools, approvals, resume, compaction) and only the model behind
-it changes. **ACP agents** adds provider drivers for agents that speak the Agent Client
-Protocol: any custom ACP command (Gemini CLI included, as `gemini --acp`) and, last in the
-build order, GitHub Copilot CLI, both on one fork-owned generic ACP adapter built on
-upstream's ACP runtime.
+Bring more models into Loom without building a coding agent of our own. **Model endpoints**
+turns DeepSeek, Ollama, LM Studio and any other Anthropic-compatible endpoint into a
+ready-to-use Claude provider instance in one dialog, with a connection test: Claude Code
+stays the agent (tools, approvals, resume, compaction) and only the model behind it changes.
 
 The key question from the brief, "providers in T3 are agent harnesses; raw model APIs need an
 agent loop", is answered in [RESEARCH.md](./RESEARCH.md): for every target there is an
 existing harness that already speaks to it natively, so this packet adds no agent loop.
+
+## Retired parts
+
+Kyle approved on 2026-10-09 retiring parts B and C, because upstream T3 Code (Orchestrator
+V2, now in Loom nightly) covers them:
+
+- **Part B, ACP agents** (the generic `loomAcp` driver for custom ACP commands, Gemini CLI
+  among them): upstream's ACP Registry lists ACP agents, Gemini included, and accepts custom
+  ACP commands.
+- **Part C, GitHub Copilot** (the `loomCopilot` driver): upstream's ACP Registry includes
+  Copilot.
+
+Their design is removed from this folder; git history keeps it. What remains is part A,
+model endpoints.
 
 ## Scope
 
@@ -28,33 +38,16 @@ existing harness that already speaks to it natively, so this packet adds no agen
     skills folder through a `skills` symlink, like Kyle's `~/.claude_N` accounts; local
     presets (Ollama, LM Studio) start with none. A per-instance switch in Model endpoints
     changes it later.
-  - A fork ACP driver factory and two drivers on it: `loomAcp` (custom command, arguments
-    and environment; also the route for Gemini CLI with `gemini --acp`) and, last,
-    `loomCopilot` (`copilot --acp`). Streaming, tool calls, approvals, plan updates, model
-    selection when the agent offers it, session resume when the agent supports
-    `session/load`, the `t3-code` MCP server, and interrupt.
-  - Settings forms, icons and provider status for the two drivers, through the
-    `ext-providers` extension point. Copilot's signed-out status suggests the Copilot CLI's
-    own login first and a `GH_TOKEN` environment variable as the alternative.
 - Out:
   - A fork-owned agent loop over raw chat-completions APIs (withastro/flue, pi-agent-core, or
     old Loom's `OpenAiResponsesAdapter`). Rejected for now; RESEARCH.md says when to revisit.
   - OpenAI-compatible endpoints that have no Anthropic-compatible API. Use upstream's OpenCode
     driver, which configures such providers natively; this packet's docs link to it.
-  - A dedicated Gemini CLI driver (`loomGemini`): dropped. Google stopped serving Gemini CLI
-    to individual accounts on 2026-06-18 and upstream supports Antigravity; Gemini CLI stays
-    reachable as a custom ACP agent (`gemini --acp`).
+  - ACP agents, Gemini CLI and GitHub Copilot: retired, see above. Use upstream's ACP
+    Registry.
   - An OpenCode preset for DeepSeek: declined by Kyle; DeepSeek is a Claude-based preset
     only.
-  - Follow-up: an ACP registry browser that fills in `npx`/`uvx` commands. Downloading
-    agent binaries from the registry stays out (supply-chain surface); the custom driver
-    runs a command the user already has.
-  - Text generation (titles, commit messages) with the ACP drivers: they report
-    `supportsTextGeneration: false` in v1.
-  - In-app sign-in for Copilot or custom ACP agents (their CLIs own login; the
-    `ext-providers` setup slot could host it later).
-  - Mobile UI. Threads on these drivers still work from the upstream mobile app (with the
-    Codex logo as their icon, see `ext-providers`, Known limits).
+  - Mobile UI. Threads on endpoint instances still work from the upstream mobile app.
 
 ## Surfaces
 
@@ -63,15 +56,16 @@ existing harness that already speaks to it natively, so this packet adds no agen
   mobile app because the server does the work.
 - Remote: supported. Endpoint tests and model lists run on the environment's machine, so an
   Ollama on the server's `localhost` works from a phone.
-- Upstream T3 server: the Model endpoints section says "Needs a Loom server". Fork drivers do
-  not exist there; settings entries for them survive and show as unavailable providers.
+- Upstream T3 server: the Model endpoints section says "Needs a Loom server". Endpoint
+  instances created earlier are plain Claude instances and keep working there.
 
 ## Extension points used
 
 - [`ext-core`](../EXTENSION-POINTS.md#1-server-core-ext-core): RPC group `loom.more-providers.*`, capability `more-providers`.
-- `ext-providers` ([EXTENSION-POINTS.md, section 15](../EXTENSION-POINTS.md#15-provider-drivers-ext-providers)): the two drivers, their settings forms and icons.
 - [`ext-settings`](../EXTENSION-POINTS.md#7-settings-ext-settings): the "Model endpoints" section.
-- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette): "Add model endpoint", "Add ACP agent", "Add GitHub Copilot provider".
+- [`ext-palette`](../EXTENSION-POINTS.md#8-command-palette-ext-palette): "Add model endpoint".
+
+`ext-providers` was needed only for the retired ACP and Copilot drivers.
 
 ## Packet seams
 
@@ -80,25 +74,19 @@ None. See [SEAMS.md](./SEAMS.md).
 ## Optional integrations
 
 - If L16 is present, its decorator leaves endpoint instances alone (it skips every Claude
-  instance that sets `ANTHROPIC_BASE_URL`), so they show no sign-in. L17 could later register
-  a Copilot sign-in section in the same setup slot.
-- If L22 (instruction modes) is present, its per-turn instructions reach these drivers too,
-  because they go through upstream's `ProviderService.sendTurn`.
+  instance that sets `ANTHROPIC_BASE_URL`), so they show no sign-in.
+- If L22 (instruction modes) is present, its per-turn instructions reach endpoint instances
+  too, because they are Claude instances and go through upstream's `ProviderService.sendTurn`.
 
 ## Size estimate
 
-Large: about 3,400 to 4,300 lines including tests. Model endpoints about 1,000 (server probe,
-model listing and skills link 400, web dialog and section 500, tests 100+). Generic ACP
-adapter about 1,600, two driver profiles 200, snapshots and settings 450, tests 750.
-
-Phase A (model endpoints) ships alone and delivers the "DeepSeek native" goal. Phase B (the
-generic ACP driver `loomAcp`) is independent of phase A. Phase C (Copilot) comes last and
-only adds a profile, a client definition and a palette item on top of phase B.
+Medium: about 1,000 lines including tests (server probe, model listing and skills link 400,
+web dialog and section 500, tests 100+). It delivers the "DeepSeek native" goal on its own.
 
 ## How an agent starts
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, EXTENSION-POINTS.md, then this
-folder: PRODUCT, RESEARCH, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING, REFERENCES. Start with phase A. Do not put real API keys in tests or fixtures.
+folder: PRODUCT, RESEARCH, TECHNICAL, SEAMS, IMPLEMENTATION, TESTING, REFERENCES. Do not put real API keys in tests or fixtures.
 
 ## Documents
 

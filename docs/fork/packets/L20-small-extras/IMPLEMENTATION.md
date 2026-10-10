@@ -1,8 +1,8 @@
 # L20 implementation plan
 
 Each part is independently shippable. Build step 2 with whichever part comes first; then
-steps 3 to 6 in any order (part D after part A is slightly less work, since the reactor seam
-then exists). Commit per part: `feat(fork-small-extras): ...`.
+parts D (steps 3 and 4), B (step 5) and C (step 6) in any order. Part A was retired on
+2026-10-09 (README, "Retired parts"). Commit per part: `feat(fork-small-extras): ...`.
 
 ## Before starting
 
@@ -16,7 +16,7 @@ project; never mark one of Kyle's real repositories private during development.
 
 ### 1. Extension points
 
-Existence checks for `ext-core` (always), `ext-settings` (parts A, C and D), `ext-panels`
+Existence checks for `ext-core` (always), `ext-settings` (parts C and D), `ext-panels`
 (part B), `ext-turn-input`, `ext-palette`, `ext-web-root` and `ext-decide` (part D). Create
 missing ones exactly as specified, one commit each (`ext-decide` exactly as
 EXTENSION-POINTS.md section 18 specifies).
@@ -24,7 +24,7 @@ EXTENSION-POINTS.md section 18 specifies).
 ### 2. Shared plumbing (with the first part)
 
 1. `packages/contracts/src/fork/small-extras.ts`: `SMALL_EXTRAS_PARTS`,
-   `SmallExtrasSettings` (default prefix `loom`), `SmallExtrasInfo`, `SmallExtrasError`, and
+   `SmallExtrasSettings`, `SmallExtrasInfo`, `SmallExtrasError`, and
    the `info`, `getSettings`, `updateSettings` RPCs. Export and merge into `ForkRpcGroup`.
 2. `apps/server/src/fork/small-extras/migrations.ts` (`SmallExtrasMigrations`, id 1
    `Settings`), `store.ts` (read and upsert the single row), `parts.ts`
@@ -35,22 +35,17 @@ EXTENSION-POINTS.md section 18 specifies).
    block per part (empty until a part lands). Register it.
 5. Typecheck contracts, server, client-runtime, web.
 
-### 3. Part A: worktree branch prefix
+### 3. Branch namer (part D)
 
 1. `apps/server/src/fork/small-extras/branchNaming.ts` (`registerForkBranchNamer`,
    `forkWorktreeBranchName`, TECHNICAL.md) and its test.
-2. The service registers its namer in the layer scope; the namer reads the prefix from the
-   settings `Ref` (updated by `updateSettings`).
-3. The seam in `ProviderCommandReactor.ts` (SEAMS.md), then `vp fmt` on that file.
-4. Add `"worktree-prefix"` to `IMPLEMENTED_SMALL_EXTRAS_PARTS`.
-5. Settings block: `DraftInput` bound to `worktreeBranchPrefix` (empty string saves `null`),
-   inline validation with the same schema (`Schema.decodeUnknownResult(WorktreeBranchPrefix)`),
-   reset button (back to `loom`), and a preview line "New branches look like
-   <prefix>/fix-login-redirect".
-6. Test: a focused test on the reactor would need the whole reactor harness; instead test
-   `forkWorktreeBranchName` (no namer, a namer, a failing and a slow namer) plus a service
-   test that `updateSettings` changes what the namer returns. Verify the seam manually
-   (TESTING.md).
+2. The service registers its namer in the layer scope; it returns upstream's name until
+   step 4 adds the private case.
+3. The first-turn rename seam (SEAMS.md; its V1 location is gone, so pick the V2 location
+   from released source first), then `vp fmt` on that file.
+4. Test: a focused test on the rename would need the whole reactor harness; instead test
+   `forkWorktreeBranchName` (no namer, a namer, a failing and a slow namer). Verify the seam
+   manually (TESTING.md).
 
 ### 4. Part D: No AI identification
 
@@ -68,7 +63,7 @@ EXTENSION-POINTS.md section 18 specifies).
    `claudeSettings.ts` with `registerPrivateThreadResolver` and the fail-closed resolver; the
    `ext-turn-input` contributor (id `small-extras-private-mode`, order 5).
 5. **Claude seam.** The two marked lines in `ClaudeAdapter.ts` (SEAMS.md), then `vp fmt` on
-   the file. If part A has not shipped, also add the reactor seam from SEAMS.md.
+   the file.
 6. **Commit check.** `commitCheck.ts` reactor with `forkParked`, per-thread serialization,
    concurrency 2, the git commands through `VcsProcess.run`, the `thread.activity.append`
    dispatch, the `PubSub` behind `privateModeWarnings`, skipping threads with no branch;
@@ -185,12 +180,10 @@ that Loom never rewrites history), FORK.md rows for the seams, packet index Stat
 The definition of done in [CONVENTIONS.md](../CONVENTIONS.md#definition-of-done) for each
 shipped part, plus:
 
-- A: a new worktree thread's branch is `loom/<name>` after the first message on a fresh
-  environment; clearing the setting restores `t3code/<name>`.
 - D: in a private scratch project, a new worktree thread's branch is `<type>/<name>`; Claude's
   commit carries no attribution; a commit with a Claude or Codex trailer made in a turn
   produces one timeline row and one toast whose copied command removes the trailer when run
-  by hand; the palette check reports the same; turning the switch off restores `loom/`
+  by hand; the palette check reports the same; turning the switch off restores upstream's
   naming and Claude's default attribution for new sessions; the Codex verification is
   recorded in TECHNICAL.md.
 - B: Follow logs opens one terminal tab per container and focuses the existing tab on a

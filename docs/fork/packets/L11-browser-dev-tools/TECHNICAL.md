@@ -3,6 +3,10 @@
 Upstream citations are to this fork at `a931bd85f3` (upstream v0.0.42), Electron 44.1.0
 (`apps/desktop/package.json:27`).
 
+The Obscura agent page fetch (an `obscura` CLI wrapper, its settings and the
+`loom_browser_dev_tools_fetch` MCP tool) was retired on 2026-10-09, Kyle approved: agents
+already have upstream's browser tools and provider web fetch (README, "Retired parts").
+
 ## Overview
 
 ```
@@ -15,7 +19,6 @@ Upstream citations are to this fork at `a931bd85f3` (upstream v0.0.42), Electron
 |  chrome row / webview / ...            |         |  databases: docker run/start/stop/rm     |
 |  BrowserDevToolsDock (packet seam) ----+--+      |           secrets: ServerSecretStore     |
 +----------------------------------------+  |      |  http lab: fetch on the host, history    |
-                                            |      |  obscura: CLI fetch (agent tool)         |
           window.desktopBridge.fork         |      +------------------------------------------+
           .browserDevTools (ext-desktop)    |
 +----------------------------------------+  |
@@ -86,7 +89,6 @@ export const DevToolStatus = Schema.Struct({
     version: Schema.NullOr(Schema.String),
     schemaPresent: Schema.Boolean,
   }),
-  obscura: Schema.Struct({ installed: Schema.Boolean, version: Schema.NullOr(Schema.String) }),
   packageManager: Schema.NullOr(Schema.Literals(["pnpm", "bun", "yarn", "npm"])),
   composeFiles: Schema.Array(Schema.String), // workspace-relative
 });
@@ -182,10 +184,6 @@ export const CreateDatabaseEvent = Schema.Union([
 ]);
 
 export const DevToolsSettings = Schema.Struct({
-  obscuraPath: Schema.NullOr(Schema.String),
-  obscuraObeyRobots: Schema.Boolean, // default true
-  obscuraAllowPrivateNetwork: Schema.Boolean, // default false; loopback is always allowed
-  agentFetchEnabled: Schema.Boolean, // default true when obscura is installed
   postgresImage: Schema.String, // default "postgres:17-alpine"
   /** The "Redis (Valkey)" option's image; any Redis-protocol image with the docker-library entrypoint works. */
   redisImage: Schema.String, // default "valkey/valkey:8-alpine"
@@ -237,15 +235,14 @@ EnvironmentAuthorizationError])`.
 
 Directory `apps/server/src/fork/browser-dev-tools/`:
 
-| File                                            | Contents                                                                                                                                          |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DevEnvironmentService.ts`                      | `loom/DevEnvironmentService`: status, servers, compose, databases, HTTP lab, settings.                                                            |
-| `servers.ts`                                    | Candidate discovery (pure given file contents), command building, terminal ids.                                                                   |
-| `compose.ts`                                    | `docker compose ps --format json` parsing (a JSON array in older Compose v2, one JSON object per line in newer ones; accept both), argv builders. |
-| `databases.ts`                                  | `docker run` argv, labels, URL building.                                                                                                          |
-| `httpLab.ts`                                    | Request execution with limits, redaction of `Authorization` and `Cookie` values in history.                                                       |
-| `obscura.ts`                                    | Argv, URL policy, output cap.                                                                                                                     |
-| `store.ts`, `migrations.ts`, `rpc.ts`, `mcp.ts` | Storage and transport.                                                                                                                            |
+| File                                  | Contents                                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DevEnvironmentService.ts`            | `loom/DevEnvironmentService`: status, servers, compose, databases, HTTP lab, settings.                                                            |
+| `servers.ts`                          | Candidate discovery (pure given file contents), command building, terminal ids.                                                                   |
+| `compose.ts`                          | `docker compose ps --format json` parsing (a JSON array in older Compose v2, one JSON object per line in newer ones; accept both), argv builders. |
+| `databases.ts`                        | `docker run` argv, labels, URL building.                                                                                                          |
+| `httpLab.ts`                          | Request execution with limits, redaction of `Authorization` and `Cookie` values in history.                                                       |
+| `store.ts`, `migrations.ts`, `rpc.ts` | Storage and transport.                                                                                                                            |
 
 Upstream services from `ForkLayer`: `TerminalManager`, `PortDiscovery`,
 `ServerSettingsService` (project scripts), `ProjectionSnapshotQuery` (+
@@ -390,22 +387,6 @@ not survive a server restart, so rows reset to `stopped`).
 - "Add to composer" formats `METHOD URL`, status, selected headers and the first 4 KB of the body
   as a fenced block.
 
-### Obscura (agent fetch)
-
-- Located via the `obscuraPath` setting or `PATH`. The release archives ship `obscura` and
-  `obscura-worker`; only `fetch` is used, which needs just `obscura`.
-- Command: `obscura [--obey-robots] [--allow-private-network] fetch <url> --dump
-<markdown|text|links> --timeout 30 --quiet`. `--obey-robots` and `--allow-private-network`
-  are top-level flags and go before the subcommand (Obscura CLI reference).
-- URL policy (checked before spawning): `http` and `https` only. Hosts `localhost`,
-  `127.0.0.0/8` and `::1` get `--allow-private-network` automatically (local dev servers);
-  other private or link-local literals, and names that resolve to them, are refused unless
-  `obscuraAllowPrivateNetwork` is on. Obscura also checks at DNS resolution time; Loom's check is
-  a second fence, not the only one.
-- Output capped at 200 KB (truncated with a note). Exit non-zero: the tool returns stderr's last
-  lines.
-- Loom never starts `obscura mcp` or `obscura serve`.
-
 ## Desktop: console and network collector (`ext-desktop`)
 
 `apps/desktop/src/fork/browser-dev-tools/collector.ts`, installed from
@@ -483,36 +464,8 @@ threadRef !== null && loomFeatures.includes("browser-dev-tools") }`; lazy body w
 
 ## Agent-facing tools
 
-One tool, registered through `ext-mcp`:
-
-```ts
-const FetchTool = Tool.make("loom_browser_dev_tools_fetch", {
-  description:
-    "Fetch a web page with the Obscura headless browser and return it as markdown, text or links. " +
-    "Fast and light; obeys robots.txt by default. " +
-    "Use the preview_* tools to interact with pages instead.",
-  parameters: Schema.Struct({
-    url: Schema.String,
-    format: Schema.optional(Schema.Literals(["markdown", "text", "links"])),
-  }),
-  success: Schema.Struct({
-    url: Schema.String,
-    format: Schema.String,
-    content: Schema.String,
-    truncated: Schema.Boolean,
-  }),
-  failure: DevToolsToolError,
-  dependencies: [McpInvocationContext.McpInvocationContext],
-})
-  .annotate(Tool.Title, "Fetch page")
-  .annotate(Tool.Readonly, true);
-```
-
-Enabled when Obscura is found and `agentFetchEnabled` is on; otherwise the call fails with
-"Obscura is not installed on this environment" or "Page fetch is turned off in Loom settings".
-The tool is always listed (EXTENSION-POINTS.md: `tools/list` is not filtered), so the
-description stays short. No dev server or compose tools for agents: they already have
-terminals, and upstream's preview tools cover the browser.
+None. No dev server or compose tools for agents: they already have terminals, and upstream's
+preview tools cover the browser. The Obscura page fetch tool was retired (see above).
 
 ## Storage
 

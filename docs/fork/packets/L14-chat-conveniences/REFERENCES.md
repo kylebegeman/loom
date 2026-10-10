@@ -2,6 +2,9 @@
 
 ## Old Loom
 
+Entries about find in thread and Mermaid served parts A and B, retired on 2026-10-09.
+They are kept as prior art only.
+
 Selection item F8 in [selections.md](../../selections.md). Old Loom is `bagelvault/loom` at
 `a79ec506` (0.13.10).
 

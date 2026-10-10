@@ -3,10 +3,15 @@
 Citations are to this fork at upstream v0.0.42 (`a931bd85f3`). Search for the quoted code
 when a line has moved.
 
+The lane card view was retired on 2026-10-09, Kyle approved: upstream's Thread details panel
+shows the same branch, checkout, thread and PR information (README, "Retired parts"). The
+`lane` facts query below stays; the panel header, Conflicts, Switch and the leak check read
+it.
+
 ## Overview
 
 ```
- Right panel "source-control-cockpit" (ext-panels), views: Lane | Graph | Checks | Conflicts
+ Right panel "source-control-cockpit" (ext-panels), views: Graph | Checks | Conflicts | Switch
    |                                     |
    | upstream, reused as is              | fork RPC loom.source-control-cockpit.* (by thread id)
    v                                     v
@@ -26,12 +31,12 @@ What upstream already has, and what this packet adds (from a survey of the curre
 | Need                           | Upstream today                                                                                                                                                                                                                  | This packet                                    |
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | Branch, ahead/behind, dirty    | `subscribeVcsStatus` (`packages/contracts/src/rpc.ts:975`, schemas `packages/contracts/src/git.ts:214-253`); client atoms `packages/client-runtime/src/state/vcs.ts:243-360`, web `apps/web/src/state/vcs.ts:8`                 | Reused.                                        |
-| PR state, review, mergeability | `thread.pullRequests[].snapshot` on the thread shell (`packages/contracts/src/orchestration.ts:671,718,815-860`); `ThreadPullRequestsPanel.tsx`; `PullRequestDetailPanel.tsx`                                                   | Reused; PR rows open upstream's panel.         |
+| PR state, review, mergeability | `thread.pullRequests[].snapshot` on the thread shell (`packages/contracts/src/orchestration.ts:671,718,815-860`); `ThreadPullRequestsPanel.tsx`; `PullRequestDetailPanel.tsx`                                                   | Upstream's Thread details panel; not repeated. |
 | PR checks list                 | `PullRequestCheck { name, status, description, url }` (`packages/contracts/src/pullRequest.ts:137-154`), shown in `PullRequestSummaryTab.tsx:645-693` and `PullRequestChecksPopover.tsx`, only for PRs                          | Checks for any pushed head, plus logs.         |
 | CI logs                        | None (only workflow approval, `apps/server/src/pullRequest/GitHubPullRequestCli.ts:501,2400`)                                                                                                                                   | Job log tail.                                  |
 | Commit graph                   | None (`git log` only in `readRangeContext`, `GitVcsDriverCore.ts:2218`)                                                                                                                                                         | `git log --topo-order` graph.                  |
 | Local conflicts, op state      | None. Porcelain v2 `u` records count as ordinary changes (`GitVcsDriverCore.ts:1779-1801`); no `MERGE_HEAD` or rebase checks anywhere                                                                                           | Conflicts view.                                |
-| PR-level conflicts             | `mergeability: "conflicting"` and the "Resolve conflicts" handoff (`apps/web/src/components/pullRequest/pullRequestDetail.logic.ts:854`)                                                                                        | Linked from the lane card.                     |
+| PR-level conflicts             | `mergeability: "conflicting"` and the "Resolve conflicts" handoff (`apps/web/src/components/pullRequest/pullRequestDetail.logic.ts:854`)                                                                                        | Left to upstream's PR panel.                   |
 | Branch switch                  | `vcs.switchRef` (`GitVcsDriverCore.ts:3451-3531`) with no dirty pre-check; git's reason is dropped (`executeGit`, `GitVcsDriverCore.ts:940-953`, detail "git checkout failed"); UI in `BranchToolbarBranchSelector.tsx:409-467` | Preflight plus stash; switch still upstream's. |
 | Stash                          | None anywhere in `apps/server/src`                                                                                                                                                                                              | List, push, apply, pop.                        |
 | Threads by branch              | No RPC; `apps/server/src/orchestration/ThreadPullRequestReactor.ts:125` groups internally                                                                                                                                       | Client-side filter of thread shells.           |
@@ -409,7 +414,7 @@ Runs only on an explicit click after the client's confirmation dialog.
 
 The client disables both buttons while any thread whose shell shares this checkout (same
 `worktreePath`, or the project root) has a running session, using the sibling-thread list
-the lane card already derives. That is a courtesy against racing an agent; the server's
+from `useCheckoutThreads`. That is a courtesy against racing an agent; the server's
 HEAD check is the real guard.
 
 ### Switch preflight
@@ -485,15 +490,14 @@ last view is a client preference: `loom:source-control-cockpit:view:v1` in local
     control", icon `GitBranchIcon`, shortcut `G`, `isAvailable` =
     `threadRef !== null && loomFeatures.includes("source-control-cockpit")`,
     `unavailableHint` "Needs a Loom server").
-  - `CockpitPanel.tsx`: view tabs and the shared header (branch, environment).
-  - `LaneView.tsx`: reads upstream status via `vcsEnvironment.status({ environmentId, input: { cwd } })`
-    (the same family `GitActionsControl` uses), the thread shell (`useThreadShell`,
-    `apps/web/src/state/entities.ts:99`), sibling threads (`useThreadShellsForProjectRefs`,
-    `entities.ts:89`, filtered on the same `worktreePath` and `branch`), and the fork `lane`
-    facts, refetched when the status stream's local snapshot changes (debounced 500 ms).
-    PR rows use `useOpenPrLink(threadRef)` (`apps/web/src/lib/openPullRequestLink.ts:278`);
-    "All linked PRs" calls `useRightPanelStore.getState().open(threadRef, "pull-requests")`
-    (`apps/web/src/rightPanelStore.ts:130-133`).
+  - `CockpitPanel.tsx`: view tabs and the shared header (branch, environment, operation
+    banner). The header reads upstream status via
+    `vcsEnvironment.status({ environmentId, input: { cwd } })` (the same family
+    `GitActionsControl` uses) and the fork `lane` facts, refetched when the status stream's
+    local snapshot changes (debounced 500 ms).
+  - `useCheckoutThreads.ts`: sibling threads (`useThreadShellsForProjectRefs`,
+    `apps/web/src/state/entities.ts:89`, filtered on the same `worktreePath` and `branch`),
+    used by Conflicts and Switch.
   - `graphLayout.ts`: pure lane assignment (each commit takes the column reserved by its
     first child, else the first free column; merge parents reserve new columns) returning
     rows with column, edges and color index. Unit tested.
@@ -502,16 +506,18 @@ last view is a client preference: `loom:source-control-cockpit:view:v1` in local
   - `ChecksView.tsx`: list with upstream's check status icons (reuse the icon mapping from
     `PullRequestChecksPopover.tsx` if it is exported; otherwise a local copy of the small
     switch), "Open log" drawer inside the panel (monospace, `whitespace-pre`, no syntax
-    highlighting), "Open on GitHub", "Ask the agent to fix".
+    highlighting), "Open on GitHub", "Ask the agent to fix", and the leak check row when
+    `leakCheck.available`.
   - `ConflictsView.tsx`: file list with kind, marker count, hint, "Open file"
     (`useRightPanelStore.getState().openFile(threadRef, path)`, `rightPanelStore.ts:137`),
     "Ask the agent to resolve", Continue and Abort buttons, command chips with copy. Each
     button opens upstream's `AlertDialog` (`apps/web/src/components/ui/alert-dialog.tsx`)
     with the PRODUCT.md copy; confirming calls the command with the `headSha` and
     `operation` from the last `conflicts` result, then refetches `lane` and `conflicts` and
-    shows the result toast. The lane card's operation banner links to this view.
-  - `SafeSwitch.tsx`: ref picker using upstream's `vcsEnvironment.listRefs`, preflight
-    result, actions.
+    shows the result toast. The header's operation banner links to this view.
+  - `SafeSwitch.tsx` (the Switch view): ref picker using upstream's
+    `vcsEnvironment.listRefs`, preflight result, actions, and the stash list from `lane`
+    facts with Apply and Pop.
   - `prompts.ts`: pure prompt builders for fix and resolve. Pattern after upstream's
     `buildResolveConflictsPrompt` (`pullRequestDetail.logic.ts:854`).
   - `palette.tsx`, `ShortcutHost.tsx` (toggle via `onForkCommand`).
@@ -533,7 +539,7 @@ tool tokens down (EXTENSION-POINTS.md, MCP).
 ## Performance
 
 - No subscriptions. Upstream's status stream is already open for the thread (the composer
-  toolbar subscribes to it), so the lane card adds no stream.
+  toolbar subscribes to it), so the header adds no stream.
 - `lane` is a handful of fast git calls plus file existence checks; refetch is debounced
   and only while the panel is mounted.
 - Graph at most 500 commits, about 150 bytes each on the wire.

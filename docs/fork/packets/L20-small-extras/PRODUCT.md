@@ -2,14 +2,13 @@
 
 ## Problem
 
-Four small frictions, each too small for its own packet:
+Three small frictions, each too small for its own packet. A fourth, a worktree branch
+prefix, was retired on 2026-10-09 because upstream has a branch prefix setting per project
+(README, "Retired parts").
 
-- Every branch a worktree thread creates is named `t3code/...`. On GitHub, next to a
-  maintainer's own branches and other tools' branches, Kyle wants his own namespace (old
-  Loom used `loom/` and made it configurable).
 - Some of Kyle's projects (work repositories) must not show that AI helped: no
-  `Co-Authored-By: Claude` trailer, no "Generated with" line, no `loom/` or `t3code/` branch
-  prefix, no agent named in a commit, a pull request or a code comment. Today each agent
+  `Co-Authored-By: Claude` trailer, no "Generated with" line, no `t3code/` or other tool
+  branch prefix, no agent named in a commit, a pull request or a code comment. Today each agent
   decides this on its own, and Claude adds attribution by default.
 - When a project runs in Docker or Podman, reading a container's logs means leaving Loom
   for a terminal and remembering the container name.
@@ -18,25 +17,16 @@ Four small frictions, each too small for its own packet:
 
 ## What the user can do
 
-### Worktree branch prefix
-
-- In Settings, Loom, Small extras, set "Worktree branch prefix" for the selected
-  environment. It starts as `loom`. Clear it for upstream's `t3code`.
-- New worktree threads on that environment get branches like `loom/add-retry-to-uploader`
-  after the first message. Existing branches keep their names.
-- Invalid values are refused inline with the reason.
-- Projects with "No AI identification" on ignore the prefix (below).
-
 ### No AI identification (private projects)
 
 - Turn "No AI identification" on for a project in Settings, Loom, Small extras (the "No AI
   identification" block), from the command palette in one of the project's threads, or in
   the project's Loom profile when project profiles (L18) are installed.
 - In that project:
-  - New worktree branches are named by change type instead of `loom/`: `feature/`, `fix/`,
-    `hotfix/`, `chore/`, `docs/` or `refactor/`, followed by the generated name, for example
-    `fix/login-redirect`. The type is picked from the generated name and the first message
-    by fixed keyword rules (default `feature/`). When Jev is turned on for the project, Jev
+  - New worktree branches are named by change type instead of upstream's project prefix:
+    `feature/`, `fix/`, `hotfix/`, `chore/`, `docs/` or `refactor/`, followed by the
+    generated name, for example `fix/login-redirect`. The type is picked from the generated
+    name and the first message by fixed keyword rules (default `feature/`). When Jev is turned on for the project, Jev
     may pick the type instead; Jev starts turned off for private projects.
   - Every message the agent receives (every provider) starts with a short instruction: no
     mention of AI, agents, models or tools, and no co-author trailers, in commit messages,
@@ -76,13 +66,12 @@ Four small frictions, each too small for its own packet:
 
 | Part                  | Entry                                                                                                                                                                                                                                                                 |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch prefix         | Settings, Loom, Small extras (environment-scoped like upstream's General page).                                                                                                                                                                                       |
 | No AI identification  | Settings, Loom, Small extras, "No AI identification" (a switch per project on the environment). Command palette: "Turn on No AI identification for this project" / "Turn off ...", "Check this thread's commits for AI markers". L18's project profile, when present. |
 | Private mode warnings | Timeline row in the thread (every client). Web and desktop toast with "Copy fix command" or "Rename branch", and "Open thread".                                                                                                                                       |
 | Containers            | Right panel launcher and "+" menu ("Containers", letter C). Command palette: none (the launcher is enough).                                                                                                                                                           |
 | CLI tools             | Settings, Loom, Small extras. A "CLI tools" link in the Containers panel's missing-runtime state.                                                                                                                                                                     |
 
-Ways out and state: clearing the prefix restores upstream naming; "No AI identification" has
+Ways out and state: "No AI identification" has
 its off switch in every place that has the on switch, and the settings list shows which
 projects have it; the palette toggle toast offers "Undo"; the logs terminal is an ordinary
 terminal tab (close it); the panel closes like any tab; warnings are dismissed like any toast
@@ -90,8 +79,6 @@ and stay visible in the timeline. Settings values have a reset button.
 
 ## States
 
-- Branch prefix: saving, saved, invalid (inline error), environment lacks the feature
-  ("Needs a Loom server").
 - No AI identification:
   - With a project selected in the settings scope, the block lists only that project; with
     all projects in scope, it lists every project of the environment.
@@ -120,11 +107,6 @@ and stay visible in the timeline. Settings values have a reset button.
 
 ## Copy
 
-- Prefix row: "Worktree branch prefix". Description: "New worktree threads rename their
-  branch to <prefix>/<name> after the first message. Leave empty for t3code. Private
-  projects use feature/, fix/ and the like instead." Error: "Use lowercase letters,
-  numbers, '-', '_' and '/'. Start and end with a letter or number." Preview line: "New
-  branches look like <prefix>/fix-login-redirect"
 - Private projects block title: "No AI identification". Description: "In these projects
   Loom asks agents to leave AI out of commits, pull requests and comments, turns off
   Claude's attribution, names branches by change type, and checks new commits after each
@@ -161,8 +143,8 @@ No em dashes in product copy. Nothing in these strings attributes work to AI; th
 
 ## Surfaces and connection modes
 
-- Web and desktop: all four parts.
-- Mobile: no UI. The branch prefix, private branch names, the instruction, Claude's
+- Web and desktop: all three parts.
+- Mobile: no UI. Private branch names, the instruction, Claude's
   attribution setting and the commit check all run on the server, so they apply to threads
   started or messaged from the mobile app too; mobile sees the warning rows in the timeline.
 - Remote: all parts act on the chosen environment. Follow logs runs in that environment's
@@ -172,12 +154,12 @@ No em dashes in product copy. Nothing in these strings attributes work to AI; th
 
 ## Decisions
 
-- Only the final generated branch name uses the prefix; temporary branches stay
-  `t3code/<hex>`. Reason: upstream recognizes temporary branches by that exact pattern on the
-  server, web and mobile; changing it would need seams in shared code and still break
+- Worktree branch prefix (part A): retired by Kyle on 2026-10-09; upstream has a branch
+  prefix setting per project.
+- Only the final generated branch name of a private project changes; temporary branches
+  stay `t3code/<hex>`. Reason: upstream recognizes temporary branches by that exact pattern
+  on the server, web and mobile; changing it would need seams in shared code and still break
   upstream's mobile app. The temporary name lives only until the first-turn rename.
-- The prefix is per environment, stored in a fork table, and defaults to `loom`. Reason:
-  Kyle's answer; `loom/` was old Loom's namespace.
 - PR checkout branches (`t3code/pr-<n>/...`) keep upstream naming. Reason: Kyle's answer; no
   extra seams in `GitManager.ts` and `BitbucketApi.ts`.
 - No AI identification is a per-project switch stored in a fork table. Reason: it is a
@@ -223,7 +205,6 @@ No em dashes in product copy. Nothing in these strings attributes work to AI; th
 
 ## Out of scope
 
-- Follow-up: prefixing temporary branches, per-project prefixes, renaming existing branches.
 - Follow-up: a Codex-side switch (for example a `config` override at thread start) if the
   verification shows Codex adds its trailer despite the instruction. Reason: decided by the
   verification result, not designed here.

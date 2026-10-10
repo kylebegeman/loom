@@ -35,22 +35,21 @@ replacing it.
   page produced; expand to read the console (with levels and source locations) and the network
   list (method, status, type, duration); filter; clear; send the errors to the composer as
   context.
-- Let agents fetch pages as Markdown with Obscura when it is installed; choose whether it obeys
-  robots.txt (on by default) and whether it may reach private network addresses (off by default,
-  loopback always allowed).
+
+The Obscura agent page fetch was retired on 2026-10-09, Kyle approved: agents already have
+upstream's browser tools and their providers' web fetch (README, "Retired parts").
 
 ## Entry points
 
-| Entry                                                             | What it does                                                                                                                                                                                                                                         | Way out / state                                     |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| Right panel launcher and "+" menu: "Dev environment" (letter `V`) | Opens the panel for the active thread's project.                                                                                                                                                                                                     | Close the tab; servers and containers keep running. |
-| Dev dock servers chip (in the preview)                            | Shows "2 servers running"; click opens the panel.                                                                                                                                                                                                    | n/a                                                 |
-| Dev dock bar                                                      | Click or `loom.browser-dev-tools.toggle-dock` expands or collapses the dock; the height is remembered.                                                                                                                                               | Collapse.                                           |
-| Command palette                                                   | "Dev environment: Open", "Start dev server" (submenu of candidates), "Stop all dev servers" (asks first when any belongs to another thread), "Toggle dev dock", "Send console errors to composer".                                                   | The reverse actions are listed next to each.        |
-| Keybinding commands                                               | `loom.browser-dev-tools.open`, `loom.browser-dev-tools.toggle-dock`, unbound by default.                                                                                                                                                             | Same.                                               |
-| Settings, Loom page, "Dev environment" section                    | Obscura path, obey robots, private network fetch, agent fetch tool on or off, database images ("Postgres image", "Redis (Valkey) image"), dev dock on or off, HTTP lab history size, "Clear HTTP history", "Databases of removed projects" (Remove). | Toggle back.                                        |
-| Composer                                                          | "Add to composer" in the HTTP lab and "Send errors to composer" in the dock insert text context.                                                                                                                                                     | Remove from the draft.                              |
-| Agent tool                                                        | `loom_browser_dev_tools_fetch`.                                                                                                                                                                                                                      | Turn off in settings.                               |
+| Entry                                                             | What it does                                                                                                                                                                                       | Way out / state                                     |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Right panel launcher and "+" menu: "Dev environment" (letter `V`) | Opens the panel for the active thread's project.                                                                                                                                                   | Close the tab; servers and containers keep running. |
+| Dev dock servers chip (in the preview)                            | Shows "2 servers running"; click opens the panel.                                                                                                                                                  | n/a                                                 |
+| Dev dock bar                                                      | Click or `loom.browser-dev-tools.toggle-dock` expands or collapses the dock; the height is remembered.                                                                                             | Collapse.                                           |
+| Command palette                                                   | "Dev environment: Open", "Start dev server" (submenu of candidates), "Stop all dev servers" (asks first when any belongs to another thread), "Toggle dev dock", "Send console errors to composer". | The reverse actions are listed next to each.        |
+| Keybinding commands                                               | `loom.browser-dev-tools.open`, `loom.browser-dev-tools.toggle-dock`, unbound by default.                                                                                                           | Same.                                               |
+| Settings, Loom page, "Dev environment" section                    | Database images ("Postgres image", "Redis (Valkey) image"), dev dock on or off, HTTP lab history size, "Clear HTTP history", "Databases of removed projects" (Remove).                             | Toggle back.                                        |
+| Composer                                                          | "Add to composer" in the HTTP lab and "Send errors to composer" in the dock insert text context.                                                                                                   | Remove from the draft.                              |
 
 ## States
 
@@ -103,4 +102,5 @@ from the environment host and its agents, not from this computer"). Mobile shows
 - The dock reads console and network events through Electron APIs that do not attach a debugger
   (`console-message`, `session.webRequest`), so it never conflicts with upstream's agent
   automation, which owns the webview's debugger.
-- Obscura is optional and user-installed; Loom never downloads it.
+- Retired on 2026-10-09 (Kyle approved): the Obscura agent page fetch, covered by upstream's
+  browser tools and provider web fetch.

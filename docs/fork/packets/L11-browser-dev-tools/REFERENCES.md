@@ -47,7 +47,8 @@ all four panels were side panels of
 
 ## External
 
-- Obscura (Apache-2.0), headless browser in Rust: https://github.com/h4ckf0r0day/obscura,
+- Obscura (Apache-2.0), headless browser in Rust. Its fetch tool was retired here on 2026-10-09
+  (README, "Retired parts"); kept as prior art. https://github.com/h4ckf0r0day/obscura,
   reviewed at `1a3169d` (2026-09-20). `fetch --dump html|text|links|markdown|assets|original|cookies`,
   global flags `--obey-robots` (off by default in the engine, `crates/obscura-browser/src/context.rs:131`),
   `--allow-private-network` (private addresses blocked by default), `--stealth`, `--proxy`

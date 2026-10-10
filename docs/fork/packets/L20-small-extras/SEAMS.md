@@ -2,15 +2,15 @@
 
 ## Extension points used
 
-| Extension point  | Parts   | Registration                                                                                                                                                                                                                 |
-| ---------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ext-core`       | all     | `SmallExtrasRpcGroup`, `SmallExtrasService.layer`, cleanup and commit check reactors (D), migration set, handlers, scopes, `"small-extras"` in `LOOM_SERVER_FEATURES`, `privateModeWarnings` in `ForkSubscriptionRpcTag` (D) |
-| `ext-settings`   | A, C, D | `smallExtrasSettings` in `FORK_SETTINGS_SECTIONS`                                                                                                                                                                            |
-| `ext-panels`     | B       | `containersPanel` in `FORK_PANELS` (id `small-extras:containers`, shortcut `C`)                                                                                                                                              |
-| `ext-turn-input` | D       | contributor `small-extras-private-mode`, order 5, registered at runtime by `SmallExtrasService`                                                                                                                              |
-| `ext-palette`    | D       | `smallExtrasPaletteSource` in `FORK_COMMAND_PALETTE_SOURCES`                                                                                                                                                                 |
-| `ext-web-root`   | D       | `{ id: "small-extras-private-warnings", Component: PrivateModeWarningToasts }` in `FORK_ROOT_COMPONENTS`                                                                                                                     |
-| `ext-decide`     | D       | feature `small-extras.branch-type` in the decide feature registry (EXTENSION-POINTS.md, section 18)                                                                                                                          |
+| Extension point  | Parts | Registration                                                                                                                                                                                                                 |
+| ---------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ext-core`       | all   | `SmallExtrasRpcGroup`, `SmallExtrasService.layer`, cleanup and commit check reactors (D), migration set, handlers, scopes, `"small-extras"` in `LOOM_SERVER_FEATURES`, `privateModeWarnings` in `ForkSubscriptionRpcTag` (D) |
+| `ext-settings`   | C, D  | `smallExtrasSettings` in `FORK_SETTINGS_SECTIONS`                                                                                                                                                                            |
+| `ext-panels`     | B     | `containersPanel` in `FORK_PANELS` (id `small-extras:containers`, shortcut `C`)                                                                                                                                              |
+| `ext-turn-input` | D     | contributor `small-extras-private-mode`, order 5, registered at runtime by `SmallExtrasService`                                                                                                                              |
+| `ext-palette`    | D     | `smallExtrasPaletteSource` in `FORK_COMMAND_PALETTE_SOURCES`                                                                                                                                                                 |
+| `ext-web-root`   | D     | `{ id: "small-extras-private-warnings", Component: PrivateModeWarningToasts }` in `FORK_ROOT_COMPONENTS`                                                                                                                     |
+| `ext-decide`     | D     | feature `small-extras.branch-type` in the decide feature registry (EXTENSION-POINTS.md, section 18)                                                                                                                          |
 
 Part D's server pieces that upstream code calls (the branch namer and the private thread
 resolver) are registered at runtime through module-level functions in fork files, the same
@@ -24,13 +24,14 @@ EXTENSION-POINTS.md section 18". Record the commits here, or "None: all existed"
 
 ## Packet seams
 
-| File                                                             | Marker               | Lines                     | Why                                                                                             |
-| ---------------------------------------------------------------- | -------------------- | ------------------------- | ----------------------------------------------------------------------------------------------- |
-| `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` | `fork: small-extras` | 2 (import, one statement) | Parts A and D: name the generated worktree branch (prefix, or change type in private projects). |
-| `apps/server/src/provider/Layers/ClaudeAdapter.ts`               | `fork: small-extras` | 2 (import, one spread)    | Part D: turn off Claude Code's commit and PR attribution for sessions in private projects.      |
+| File                                                             | Marker               | Lines                     | Why                                                                                        |
+| ---------------------------------------------------------------- | -------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
+| `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` | `fork: small-extras` | 2 (import, one statement) | Part D: name the generated worktree branch by change type in private projects.             |
+| `apps/server/src/provider/Layers/ClaudeAdapter.ts`               | `fork: small-extras` | 2 (import, one spread)    | Part D: turn off Claude Code's commit and PR attribution for sessions in private projects. |
 
-Parts B and C add no seams. Part A and part D share the reactor seam; whichever ships first
-adds it.
+Parts B and C add no seams. The reactor seam was shared with part A, retired on 2026-10-09;
+part D still needs it. V2 removed `ProviderCommandReactor.ts`, so this seam's location must
+be chosen again from released source (packets README, planning policy).
 
 ### `ProviderCommandReactor.ts`
 
@@ -60,8 +61,8 @@ is longer than 90 characters after the change, so the marker goes on its own lin
 Run `vp fmt` on the file afterwards; the formatter wraps the call, which is why the marker
 sits on its own line. Expected marker count in the file: 2.
 
-`forkWorktreeBranchName` never fails and needs no service (TECHNICAL.md, "Design: one branch
-namer for parts A and D"): with no namer registered, which is the case in upstream's
+`forkWorktreeBranchName` never fails and needs no service (TECHNICAL.md, "Design: the branch
+namer"): with no namer registered, which is the case in upstream's
 `ProviderCommandReactor.test.ts`, it returns the upstream name unchanged.
 
 Why no extension point covers it: the rename is internal reactor behavior that no extension
@@ -135,7 +136,7 @@ for the adapter, the spread goes first in whatever object upstream now passes as
 
 "Packet seams" table:
 
-| File                                                             | Packet         | Why                                                                                                                                     |
-| ---------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` | `small-extras` | Worktree branch naming on the first-turn rename (prefix, or change type in private projects). See `docs/fork/packets/L20-small-extras`. |
-| `apps/server/src/provider/Layers/ClaudeAdapter.ts`               | `small-extras` | Claude attribution off for sessions in private projects. See `docs/fork/packets/L20-small-extras`.                                      |
+| File                                                             | Packet         | Why                                                                                                              |
+| ---------------------------------------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `apps/server/src/orchestration/Layers/ProviderCommandReactor.ts` | `small-extras` | Change-type branch names in private projects on the first-turn rename. See `docs/fork/packets/L20-small-extras`. |
+| `apps/server/src/provider/Layers/ClaudeAdapter.ts`               | `small-extras` | Claude attribution off for sessions in private projects. See `docs/fork/packets/L20-small-extras`.               |

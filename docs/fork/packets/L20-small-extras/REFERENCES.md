@@ -6,6 +6,9 @@ Selection F23 ("Small extras").
 
 ### Worktree branch prefix
 
+Part A was retired on 2026-10-09 (upstream has a branch prefix setting per project). These
+entries are kept as prior art only.
+
 - Ledger [1362](https://github.com/bagelvault/loom/blob/a79ec506/.ledger/entries/1362-port-configurable-worktree-prefixes-and-codex-runtime-identity.md):
   ported from upstream PRs #3948 and #3954, bundled with an unrelated Codex change; 44 files.
 - [settings.ts](https://github.com/bagelvault/loom/blob/a79ec506/packages/contracts/src/settings.ts)
