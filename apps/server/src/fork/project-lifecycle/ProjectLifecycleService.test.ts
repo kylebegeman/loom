@@ -33,6 +33,7 @@ import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite
 import * as ProcessRunner from "../../processRunner.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ProjectLifecycleMigrations } from "./migrations.ts";
+import { GB } from "./policy.ts";
 import { makeWith } from "./ProjectLifecycleService.ts";
 import { makeStore } from "./store.ts";
 
@@ -182,6 +183,8 @@ const setup = Effect.gen(function* () {
     xcrunPath: NodePath.join(stubs, "xcrun"),
     dockerPath: NodePath.join(stubs, "docker"),
     lsofPath: NodePath.join(stubs, "lsof"),
+    // Growth and reserve steering depend on free space, so the host is pinned well above both.
+    hostSpace: async () => ({ free: 1000 * GB, total: 2000 * GB }),
   }).pipe(
     Effect.provide(context),
     Effect.provideService(ThreadManagementService, threadManagement),

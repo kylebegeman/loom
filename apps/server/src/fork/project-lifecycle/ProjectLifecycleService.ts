@@ -118,7 +118,15 @@ export interface ProjectLifecycleOptions {
   readonly xcrunPath?: string;
   readonly lsofPath?: string;
   readonly dockerPath?: string;
+  /** Free and total bytes on the volume holding `path`. Tests pin it; by default statfs. */
+  readonly hostSpace?: (path: string) => Promise<{ readonly free: number; readonly total: number }>;
 }
+
+const statfsSpace = (path: string) =>
+  NodeFSP.statfs(path).then((stats) => ({
+    free: stats.bavail * stats.bsize,
+    total: stats.blocks * stats.bsize,
+  }));
 
 const error = (reason: ProjectLifecycleError["reason"], message: string) =>
   new ProjectLifecycleError({ reason, message });
@@ -457,11 +465,9 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
     const measureHost = Effect.fn("ProjectLifecycle.measureHost")(function* () {
       let path = rootOf(yield* getSettings);
       while (path !== "/" && !(yield* exists(path))) path = NodePath.dirname(path);
+      const hostSpace = options.hostSpace ?? statfsSpace;
       host = yield* Effect.promise(() =>
-        NodeFSP.statfs(path).then(
-          (stats) => ({ free: stats.bavail * stats.bsize, total: stats.blocks * stats.bsize }),
-          () => ({ free: null, total: null }),
-        ),
+        hostSpace(path).catch(() => ({ free: null, total: null })),
       );
     });
 
