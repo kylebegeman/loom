@@ -541,6 +541,11 @@ function DesignWorkspace({
           png = await captureBase64(blob);
           break;
         }
+        default: {
+          // A newer server can send an action this client does not know yet.
+          const unknown: never = c.action;
+          throw new Error(`This client does not support the "${String(unknown)}" editor action.`);
+        }
       }
       return {
         png,
@@ -1337,9 +1342,11 @@ function DesignWorkspace({
               ? sheets.length > 1
                 ? `Sheet ${sheetIndex + 1} of ${sheets.length}`
                 : "Schematic"
-              : design.kind === "kicad"
-                ? PRESET_LABELS[layers]
-                : "Board"}
+              : design.kind !== "kicad"
+                ? "Board"
+                : customLayers && workbench.inspection
+                  ? `${customLayers.filter((l) => l.visible).length} layers`
+                  : PRESET_LABELS[layers]}
         </span>
         {selected && (
           <button className={styles.statusChip} onClick={() => openTab("Inspect")}>

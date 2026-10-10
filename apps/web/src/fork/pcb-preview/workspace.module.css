@@ -582,7 +582,9 @@
   width: 100%;
   height: 100%;
 }
-.viewport[aria-busy="true"] .drawing {
+/* Dim the whole scene: drawing images carry inline opacity for layer visibility, and captures
+   read each image's own opacity, so the busy state must not live on the images. */
+.viewport[aria-busy="true"] .drawingScene {
   opacity: 0.65;
 }
 :global(.dark) .viewport[data-kind="schematic"] .drawing {

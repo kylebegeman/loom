@@ -20,10 +20,10 @@ const COLORS: Record<string, string> = {
   "B.Courtyard": "#26e9ff",
   "F.Fab": "#afafaf",
   "B.Fab": "#585d84",
-  "Dwgs.User": "#c2c2c2",
-  "Cmts.User": "#5994dc",
-  "Eco1.User": "#b4dbd2",
-  "Eco2.User": "#d8c852",
+  "User.Drawings": "#c2c2c2",
+  "User.Comments": "#5994dc",
+  "User.Eco1": "#b4dbd2",
+  "User.Eco2": "#d8c852",
 };
 export function layerColor(name: string): string {
   const known = COLORS[name];

@@ -1,7 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import { decadeTicks, formatEng, niceTicks, parseEng } from "./units";
 import { diffHunks, lineDiff } from "./diff";
-import { layerGroup } from "./layers";
+import { layerColor, layerGroup } from "./layers";
 
 it("reads SPICE engineering notation and rejects anything else", () => {
   expect(parseEng("10u")).toBeCloseTo(1e-5);
@@ -54,12 +54,12 @@ it("diffs edited literals line by line and inserted lines by LCS", () => {
 });
 
 it("groups KiCad layers the way the layer panel lists them", () => {
-  expect(["F.Cu", "In2.Cu", "B.Mask", "Edge.Cuts", "F.Fab", "Cmts.User"].map(layerGroup)).toEqual([
-    "Copper",
-    "Copper",
-    "Technical",
-    "Board",
-    "Board",
-    "User",
-  ]);
+  expect(
+    ["F.Cu", "In2.Cu", "B.Mask", "Edge.Cuts", "F.Fab", "User.Comments"].map(layerGroup),
+  ).toEqual(["Copper", "Copper", "Technical", "Board", "Board", "User"]);
+});
+
+it("colours the canonical user layer names the server reports with KiCad's defaults", () => {
+  expect(layerColor("User.Drawings")).toBe("#c2c2c2");
+  expect(layerColor("User.Eco2")).toBe("#d8c852");
 });

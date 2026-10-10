@@ -262,7 +262,7 @@ export function InspectTab({
                 />
               )}
               {inspection.mountingHoles.length > 0 && (
-                <Stat label="Holes" value={inspection.mountingHoles.length} />
+                <Stat label="Unplated holes" value={inspection.mountingHoles.length} />
               )}
             </Stats>
           </Section>

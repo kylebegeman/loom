@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { SignedFile } from "./model-preview-3d.ts";
 import { ModelCamera } from "./model-workspace.ts";
@@ -117,10 +118,24 @@ export const PcbVariant = Schema.Struct({
   ).check(Schema.isMaxProperties(100)),
   sourceHash: text(),
 });
+const layerSet = Schema.Struct({ id: text(), name: text(), layers: list(PcbLayerState, 64) });
+// Saved files outlive releases: a collection added later decodes as empty in older files.
+const collection = <S extends Schema.Top>(item: S, max: number) =>
+  list(item, max).pipe(Schema.withDecodingDefault(Effect.succeed([])));
+/** A saved workspace. Saves use `PcbWorkspaceInput`, so leaving a collection out fails instead of erasing it. */
 export const PcbWorkspace = Schema.Struct({
   version: Schema.Int,
+  views: collection(PcbSavedView, 30),
+  layerSets: collection(layerSet, 20),
+  measurements: collection(PcbMeasurement, 100),
+  annotations: collection(PcbAnnotation, 100),
+  simulations: collection(PcbSimulationSetup, 20),
+  variants: collection(PcbVariant, 24),
+});
+export const PcbWorkspaceInput = Schema.Struct({
+  version: Schema.Int,
   views: list(PcbSavedView, 30),
-  layerSets: list(Schema.Struct({ id: text(), name: text(), layers: list(PcbLayerState, 64) }), 20),
+  layerSets: list(layerSet, 20),
   measurements: list(PcbMeasurement, 100),
   annotations: list(PcbAnnotation, 100),
   simulations: list(PcbSimulationSetup, 20),
@@ -131,7 +146,7 @@ export const PcbWorkspaceUpdate = Schema.Struct({
   threadId: ThreadId,
   designId: text(1024),
   expectedVersion: Schema.Int,
-  workspace: PcbWorkspace,
+  workspace: PcbWorkspaceInput,
 });
 export type PcbWorkspaceUpdate = typeof PcbWorkspaceUpdate.Type;
 export const PcbAssetInput = Schema.Struct({
