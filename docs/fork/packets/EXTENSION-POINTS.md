@@ -2263,8 +2263,8 @@ form, icon and a setup section in **Settings > Providers**, without further upst
 ### Current upstream mechanism
 
 - Drivers are plain values (`ProviderDriver<Config, R>`,
-  `apps/server/src/provider/ProviderDriver.ts:134-172`). `create` returns a
-  `ProviderInstance` record (`ProviderDriver.ts:67-89`) with `snapshot`, `adapter`,
+  `packages/provider-core/src/server/driver.ts:175-210`). `create` returns a
+  `ProviderInstance` record (`driver.ts:81-130`) with `snapshot`, `adapter`,
   `textGeneration` and optional `snapshotForCwd`, `refreshModels`, `consumeResetCredit`,
   `auth`.
 - The static list is `BUILT_IN_DRIVERS` (`apps/server/src/provider/builtInDrivers.ts:49-56`),
@@ -2373,7 +2373,7 @@ import {
   BUILT_IN_DRIVERS as UPSTREAM_BUILT_IN_DRIVERS,
   type BuiltInDriversEnv,
 } from "../../provider/builtInDrivers.ts";
-import type { AnyProviderDriver } from "../../provider/ProviderDriver.ts";
+import type { AnyProviderDriver } from "@t3tools/provider-core/server/driver";
 
 /**
  * A fork driver may only require services upstream drivers already require

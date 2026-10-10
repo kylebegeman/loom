@@ -63,7 +63,7 @@ import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import { makeEditorBridge } from "../editorBridge.ts";
-import { writeFileStringAtomically } from "../../atomicWrite.ts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { groupDesigns, innerCopperLayers, DESIGN_SUFFIXES } from "./discovery.ts";
 import {
   hashKey,

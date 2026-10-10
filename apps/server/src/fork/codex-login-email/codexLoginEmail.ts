@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 import type { ServerProvider } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-import { expandHomePath } from "../../pathExpansion.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 
 /**
  * Codex reports no account when `model_provider` points at a custom provider,
