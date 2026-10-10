@@ -37,6 +37,7 @@ import {
   SelectValue,
 } from "~/components/ui/select";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { pcbDesignName } from "./usePcbPreview.logic";
 import { forkPanelSurface } from "../panels/registry";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { pcb } from "./state";
@@ -199,9 +200,10 @@ export function HardwareLibrary({
           result.files.find((f) => f.kind === "pcb") ??
           result.files.find((f) => f.kind === "schematic");
         if (board)
-          useRightPanelStore
-            .getState()
-            .openSurface(threadRef, forkPanelSurface("pcb-preview", board.path));
+          useRightPanelStore.getState().openSurface(threadRef, {
+            ...forkPanelSurface("pcb-preview", board.path),
+            title: pcbDesignName(board.path),
+          });
         else if (model)
           useRightPanelStore.getState().openSurface(threadRef, {
             ...forkPanelSurface("model-preview-3d", model.path),

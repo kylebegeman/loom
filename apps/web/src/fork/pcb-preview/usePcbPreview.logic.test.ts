@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import type { PcbDesign } from "@t3tools/contracts/fork";
-import { initialView, previewAction, reconcileLayers } from "./usePcbPreview.logic";
+import { initialView, pcbDesignName, previewAction, reconcileLayers } from "./usePcbPreview.logic";
 const design: PcbDesign = {
   id: "board.kicad_pro",
   absolutePath: "/workspace/board.kicad_pro",
@@ -57,4 +57,11 @@ it("reconciles removed and added layers without losing current visibility or opa
   ]);
   expect(reconcileLayers(reconciled, ["F.Cu", "B.Cu", "Edge.Cuts"], "front")).toBe(reconciled);
   expect(reconcileLayers(null, ["F.Paste"], "front")[0]?.visible).toBe(true);
+});
+
+it("names tabs like the server names designs", () => {
+  expect(pcbDesignName("boards/sensor/sensor.kicad_pro")).toBe("sensor");
+  expect(pcbDesignName("boards/sensor/sensor.kicad_pcb")).toBe("sensor");
+  expect(pcbDesignName("led.circuit.tsx")).toBe("led");
+  expect(pcbDesignName("src/index.tsx")).toBe("index");
 });

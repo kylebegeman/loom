@@ -4,6 +4,7 @@ import { Atom, AsyncResult } from "effect/reactivity";
 import type { PcbEditorEvent } from "@t3tools/contracts/fork";
 import { pcb } from "./state";
 import { asyncValue } from "./usePcbPreview";
+import { pcbDesignName } from "./usePcbPreview.logic";
 import { runModelCommand as runPcbCommand } from "../model-preview-3d/state";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
@@ -44,7 +45,10 @@ export function PcbPreviewCommandHost() {
     if (!threadRef || !request || handled.current === request.requestId) return;
     handled.current = request.requestId;
     const panels = useRightPanelStore.getState();
-    const surface = forkPanelSurface("pcb-preview", request.designId);
+    const surface = {
+      ...forkPanelSurface("pcb-preview", request.designId),
+      title: pcbDesignName(request.designId),
+    };
     const act = async () => {
       if (request.command.action === "close") {
         for (const item of panels.byThreadKey[`${threadRef.environmentId}:${threadRef.threadId}`]

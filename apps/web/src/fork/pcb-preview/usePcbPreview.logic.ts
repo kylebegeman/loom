@@ -1,5 +1,11 @@
 import type { PcbDesign, PcbView, PcbLayerState, PcbLayerPreset } from "@t3tools/contracts/fork";
 
+/** Tab title for a design id or design file path, matching the server's design name. */
+export const pcbDesignName = (designId: string) => {
+  const base = designId.split("/").at(-1) || designId;
+  return base.replace(/\.(?:kicad_(?:pro|sch|pcb)|circuit\.tsx)$|\.[^.]+$/, "") || base;
+};
+
 /** Keep the job subscribed after completion; its request key provides deduplication. */
 export function previewAction(input: {
   visible: boolean;
