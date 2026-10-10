@@ -203,9 +203,10 @@ export function HardwareLibrary({
             .getState()
             .openSurface(threadRef, forkPanelSurface("pcb-preview", board.path));
         else if (model)
-          useRightPanelStore
-            .getState()
-            .openSurface(threadRef, forkPanelSurface("model-preview-3d", model.path));
+          useRightPanelStore.getState().openSurface(threadRef, {
+            ...forkPanelSurface("model-preview-3d", model.path),
+            title: model.path.split("/").at(-1) ?? model.path,
+          });
       })
       .catch((e) => setError(errorText(e, "Hardware import failed.")))
       .finally(() => setBusy(null));

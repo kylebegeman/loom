@@ -1144,8 +1144,14 @@ export const make = Effect.gen(function* () {
                     const runId = NodeCrypto.randomUUID(),
                       imageStem = path.join(cacheDir, runId);
                     yield* protectStem(imageStem);
+                    // The PNGs stay for the agent to read; the import wrapper and summary do not.
                     yield* Effect.addFinalizer(() =>
-                      fs.remove(imageStem + ".scad", { force: true }).pipe(Effect.ignore),
+                      Effect.forEach(
+                        [".scad", ".summary.json"],
+                        (suffix) =>
+                          fs.remove(imageStem + suffix, { force: true }).pipe(Effect.ignore),
+                        { discard: true },
+                      ),
                     );
                     if (format !== "scad" && Object.keys(overrides).length)
                       return yield* error(
@@ -1205,9 +1211,15 @@ export const make = Effect.gen(function* () {
                           args,
                           cwd: path.dirname(resolved.absolute),
                           timeout: `${settings.renderTimeoutSeconds} seconds`,
+                          timeoutBehavior: "timedOutResult",
                           outputMode: "truncate",
                           maxOutputBytes: 512 * 1024,
                         });
+                        if (result.timedOut)
+                          return yield* error(
+                            "timeout",
+                            `Rendering the ${view} view timed out after ${settings.renderTimeoutSeconds} s.`,
+                          );
                         log = [...log, ...parseLog(result.stderr)].slice(-500);
                         if (
                           result.code !== 0 ||

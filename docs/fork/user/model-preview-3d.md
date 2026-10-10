@@ -70,7 +70,8 @@ from the composer if you no longer need it.
 
 Agents can call `loom_model_preview_3d_render` for SCAD, STL, 3MF and OBJ PNG views, logs and
 geometry summaries. OpenSCAD runs on the environment host. **Let agents render models and propose variants** in
-settings controls rendering and variant proposals independently of the panel. The tool returns host file paths
+settings turns every 3D model agent tool on or off, independently of the panel. While it is off,
+agents also cannot change 3D settings, including turning it back on. The tool returns host file paths
 that the agent can read. It does not render glTF or GLB.
 
 ## Explore and review a design

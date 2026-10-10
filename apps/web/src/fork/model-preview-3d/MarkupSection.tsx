@@ -482,13 +482,13 @@ function MeasurementRow({
                 .join("   ")}
         </div>
       </div>
-      <span className={styles["model-measure-value"]}>{distance.toFixed(2)} mm</span>
+      <span className={styles["model-measure-value"]}>{distance.toFixed(1)} mm</span>
       <RowMenu label={`${measurement.name} actions`}>
         <MenuItem onClick={() => onRename(true)}>
           <PencilIcon />
           Rename
         </MenuItem>
-        <MenuItem onClick={() => onCopy(distance.toFixed(2))}>
+        <MenuItem onClick={() => onCopy(distance.toFixed(1))}>
           <CopyIcon />
           Copy value
         </MenuItem>
