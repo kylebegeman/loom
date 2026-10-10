@@ -1,5 +1,5 @@
 import type { ScadParameter } from "@t3tools/contracts/fork";
-import { validParameterLiteral, rebaseParameterValues } from "./params";
+import { validParameterLiteral, rebaseParameterValues, describeValues } from "./params";
 import { expect, it } from "vite-plus/test";
 import {
   changedOverrides,
@@ -54,4 +54,40 @@ it("validates variant literals and rebases source changes without invalid overri
     label: '"New"',
     enabled: "true",
   });
+});
+
+it("summarises the parameters that differ from a baseline in readable form", () => {
+  const parameter = (
+    name: string,
+    kind: ScadParameter["kind"],
+    defaultValue: string,
+    options: ScadParameter["options"] = null,
+  ): ScadParameter => ({
+    name,
+    kind,
+    defaultValue,
+    options,
+    group: "",
+    description: null,
+    range: null,
+  });
+  const parameters = [
+    parameter("tray_depth", "number", "200"),
+    parameter("label", "string", '"Rack"'),
+    parameter("vents", "boolean", "true"),
+    parameter("style", "string", '"flat"', [
+      { value: '"flat"', label: "Flat" },
+      { value: '"ribbed"', label: "Ribbed" },
+    ]),
+    parameter("size", "vector", "[10, 20]"),
+  ];
+  const defaults = Object.fromEntries(parameters.map((p) => [p.name, p.defaultValue]));
+  expect(describeValues(parameters, defaults, {})).toBe("");
+  expect(
+    describeValues(
+      parameters,
+      { tray_depth: "140", label: '"Shelf"', vents: "false", style: '"ribbed"', size: "[10, 30]" },
+      defaults,
+    ),
+  ).toBe("Tray depth 140, Label Shelf, Vents Off, Style Ribbed, Size 10 × 30");
 });

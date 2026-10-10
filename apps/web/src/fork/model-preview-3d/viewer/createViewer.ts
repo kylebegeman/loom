@@ -15,8 +15,6 @@ import {
   BufferGeometry,
   Line,
   LineBasicMaterial,
-  SphereGeometry,
-  MeshBasicMaterial,
   CanvasTexture,
   Sprite,
   SpriteMaterial,
@@ -39,8 +37,13 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
+import styles from "../workspace.module.css";
 
 export type NavigationMode = "orbit" | "pan";
+/** An annotation with its number in the request list; the overlay falls back to list order. */
+export type OverlayAnnotation = ModelAnnotation & { number?: number };
+type ViewerMark = { kind: "label" | "pin"; text: string; position: Vector3; element: HTMLElement };
+const MARK_BLUE = 0x3984ff;
 
 /** One coalesced frame per interaction. OrbitControls damping stays disabled. */
 export function createViewer(host: HTMLElement) {
@@ -65,11 +68,18 @@ export function createViewer(host: HTMLElement) {
   host.append(renderer.domElement);
   renderer.domElement.setAttribute(
     "aria-label",
-    "3D model. Drag to orbit, right drag to pan, scroll to zoom.",
+    "3D model. Drag to orbit, right or middle drag to pan, scroll to zoom.",
   );
   renderer.domElement.tabIndex = 0;
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false;
+  // Slicer convention (Bambu Studio, Orca): hold the scroll wheel to pan. The wheel still zooms.
+  controls.mouseButtons.MIDDLE = MOUSE.PAN;
+  // Stop Windows and Linux browsers from starting middle-click autoscroll over the canvas.
+  const preventAutoscroll = (event: MouseEvent) => {
+    if (event.button === 1) event.preventDefault();
+  };
+  renderer.domElement.addEventListener("mousedown", preventAutoscroll);
   scene.add(new AmbientLight(0xffffff, 0.3));
   const key = new DirectionalLight(0xffffff, 2);
   key.position.set(200, -300, 500);
@@ -157,82 +167,160 @@ export function createViewer(host: HTMLElement) {
         for (const material of materials) material.dispose();
       }
       if (object instanceof Sprite) {
-        object.material.map?.dispose();
+        if (object.material.map !== dotTexture) object.material.map?.dispose();
         object.material.dispose();
       }
     });
     overlay.clear();
+    marksLayer?.replaceChildren();
+    marks = [];
   };
-  const label = (text: string, position: Vector3, scale: number) => {
-    const bitmap = document.createElement("canvas");
-    bitmap.width = 512;
-    bitmap.height = 56;
-    const context = bitmap.getContext("2d");
-    if (!context) return;
-    context.fillStyle = "#16202c";
-    context.fillRect(0, 0, 512, 56);
-    context.font = "24px sans-serif";
-    context.fillStyle = "white";
-    context.textAlign = "center";
-    context.fillText(text, 256, 36);
-    const sprite = new Sprite(
-      new SpriteMaterial({ map: new CanvasTexture(bitmap), depthTest: false }),
+  // Labels and pins are DOM elements projected after each frame, so text stays crisp at any
+  // zoom. Lines and dots stay in the scene; capture() paints the marks into the image.
+  let marksLayer: HTMLDivElement | null = null,
+    marks: ViewerMark[] = [],
+    dotTexture: CanvasTexture | null = null;
+  const projected = new Vector3();
+  const placeMarks = () => {
+    const width = host.clientWidth,
+      height = host.clientHeight;
+    for (const mark of marks) {
+      projected.copy(mark.position).project(camera);
+      mark.element.hidden = projected.z < -1 || projected.z > 1;
+      const x = ((projected.x + 1) / 2) * width,
+        y = ((1 - projected.y) / 2) * height;
+      mark.element.style.transform = `translate(${x}px, ${y}px)${mark.kind === "label" ? " translate(-50%, -50%)" : ""}`;
+    }
+  };
+  const addMark = (kind: ViewerMark["kind"], text: string, position: Vector3, status?: string) => {
+    if (!marksLayer) {
+      marksLayer = document.createElement("div");
+      marksLayer.className = styles["model-marks"]!;
+      host.append(marksLayer);
+    }
+    const element = document.createElement("div");
+    element.className = styles[kind === "label" ? "model-mark-label" : "model-mark-pin"]!;
+    if (kind === "pin") {
+      const body = document.createElement("span");
+      body.dataset.status = status;
+      body.append(Object.assign(document.createElement("span"), { textContent: text }));
+      element.append(body);
+    } else element.textContent = text;
+    marksLayer.append(element);
+    marks.push({ kind, text, position, element });
+  };
+  const dot = (point: ModelPoint) => {
+    if (!dotTexture) {
+      const bitmap = document.createElement("canvas");
+      bitmap.width = bitmap.height = 64;
+      const context = bitmap.getContext("2d");
+      if (context) {
+        context.arc(32, 32, 24, 0, Math.PI * 2);
+        context.fillStyle = "#fff";
+        context.fill();
+        context.lineWidth = 9;
+        context.strokeStyle = "rgba(0, 0, 0, 0.5)";
+        context.stroke();
+      }
+      dotTexture = new CanvasTexture(bitmap);
+    }
+    const marker = new Sprite(
+      new SpriteMaterial({
+        map: dotTexture,
+        color: MARK_BLUE,
+        depthTest: false,
+        sizeAttenuation: false,
+      }),
     );
-    sprite.position.copy(position);
-    sprite.scale.set(scale * 5, scale * 0.55, 1);
-    sprite.renderOrder = 10;
-    overlay.add(sprite);
+    marker.scale.setScalar(0.015);
+    marker.position.fromArray(point);
+    marker.renderOrder = 10;
+    overlay.add(marker);
   };
   const drawOverlay = (
     measurements: readonly ModelMeasurement[],
-    annotations: readonly ModelAnnotation[],
+    annotations: readonly OverlayAnnotation[],
     pendingPoint: ModelPoint | null,
   ) => {
     clearOverlay();
-    const scale = Math.max(box.getSize(new Vector3()).length() / 30, 0.2);
-    const dot = (point: ModelPoint, color: number) => {
-      const marker = new Mesh(
-        new SphereGeometry(scale / 7, 12, 8),
-        new MeshBasicMaterial({ color, depthTest: false }),
-      );
-      marker.position.fromArray(point);
-      marker.renderOrder = 9;
-      overlay.add(marker);
-    };
     for (const measurement of measurements)
       if (measurement.visible) {
         const start = new Vector3(...measurement.start),
           end = new Vector3(...measurement.end);
         const line = new Line(
           new BufferGeometry().setFromPoints([start, end]),
-          new LineBasicMaterial({ color: 0x3984ff, depthTest: false }),
+          new LineBasicMaterial({ color: MARK_BLUE, depthTest: false }),
         );
         line.renderOrder = 9;
         overlay.add(line);
-        dot(measurement.start, 0x3984ff);
-        dot(measurement.end, 0x3984ff);
-        label(
-          `${measurement.name}: ${start.distanceTo(end).toFixed(2)} mm`,
-          start.clone().lerp(end, 0.5),
-          scale,
+        dot(measurement.start);
+        dot(measurement.end);
+        addMark("label", `${start.distanceTo(end).toFixed(1)} mm`, start.clone().lerp(end, 0.5));
+      }
+    for (const [index, annotation] of annotations.entries()) {
+      const points = annotation.points.map((p) => new Vector3(...p));
+      if (points.length > 1) {
+        const line = new Line(
+          new BufferGeometry().setFromPoints(points),
+          new LineBasicMaterial({ color: 0xf3ab48, depthTest: false }),
         );
+        line.renderOrder = 9;
+        overlay.add(line);
       }
-    for (const annotation of annotations)
-      if (annotation.status !== "accepted") {
-        const points = annotation.points.map((p) => new Vector3(...p));
-        const color = 0xf3ab48;
-        if (points.length > 1)
-          overlay.add(
-            new Line(
-              new BufferGeometry().setFromPoints(points),
-              new LineBasicMaterial({ color, depthTest: false }),
-            ),
-          );
-        dot(annotation.points[0]!, color);
-        label(annotation.name, points[0]!, scale);
-      }
-    if (pendingPoint) dot(pendingPoint, 0x3984ff);
+      addMark("pin", String(annotation.number ?? index + 1), points[0]!, annotation.status);
+    }
+    if (pendingPoint) dot(pendingPoint);
     requestRender();
+  };
+  // Paints the current marks over a captured frame of the given size, using their live styles.
+  const paintMarks = (
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => {
+    const scale = 1.25;
+    for (const mark of marks) {
+      projected.copy(mark.position).project(camera);
+      if (projected.z < -1 || projected.z > 1) continue;
+      const px = x + ((projected.x + 1) / 2) * width,
+        py = y + ((1 - projected.y) / 2) * height;
+      const surface = mark.kind === "pin" ? mark.element.firstElementChild! : mark.element;
+      const style = getComputedStyle(surface);
+      context.save();
+      context.translate(px, py);
+      context.scale(scale, scale);
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      if (mark.kind === "label") {
+        context.font = `600 11.5px ${style.fontFamily}`;
+        const w = context.measureText(mark.text).width + 14;
+        context.beginPath();
+        context.roundRect(-w / 2, -10, w, 20, 6);
+        context.fillStyle = style.backgroundColor;
+        context.fill();
+        context.strokeStyle = style.borderTopColor;
+        context.stroke();
+        context.fillStyle = style.color;
+        context.fillText(mark.text, 0, 0.5);
+      } else {
+        // Teardrop: a round head 16px above the point, tapering to it.
+        context.beginPath();
+        context.arc(0, -16, 11, Math.PI * 0.75, Math.PI * 2.25);
+        context.lineTo(0, 0);
+        context.closePath();
+        context.fillStyle = style.backgroundColor;
+        context.fill();
+        context.lineWidth = 1.5;
+        context.strokeStyle = "rgba(255, 255, 255, 0.9)";
+        context.stroke();
+        context.font = `700 10.5px ${style.fontFamily}`;
+        context.fillStyle = "#fff";
+        context.fillText(mark.text, 0, -15.5);
+      }
+      context.restore();
+    }
   };
   const helpers = new Group();
   scene.add(helpers);
@@ -258,7 +346,9 @@ export function createViewer(host: HTMLElement) {
     renderer.domElement.style.cursor = pickMode ? "crosshair" : mode === "pan" ? "move" : "grab";
   };
   const render = () => {
-    if (!disposed && visible) renderer.render(scene, camera);
+    if (disposed || !visible) return;
+    renderer.render(scene, camera);
+    placeMarks();
   };
   const requestRender = () => {
     if (frame === null && visible && !disposed)
@@ -329,11 +419,22 @@ export function createViewer(host: HTMLElement) {
     grid.rotation.x = Math.PI / 2;
     grid.scale.set(volume[0], 1, volume[1]);
     grid.visible = gridVisible;
+    placeGrid();
     helpers.add(grid);
     axes = new AxesHelper(Math.min(...volume) / 4);
     axes.visible = axesVisible;
     helpers.add(axes);
     requestRender();
+  };
+  // Like a slicer bed, the plate sits under the model's footprint centre at its lowest point.
+  // The model keeps its own coordinates, so measurements, annotations and sections stay valid.
+  const placeGrid = () => {
+    if (!grid) return;
+    if (!model) grid.position.set(0, 0, 0);
+    else {
+      const center = box.getCenter(new Vector3());
+      grid.position.set(center.x, center.y, box.min.z);
+    }
   };
   const snapshot = (): ModelCamera => ({
     position: camera.position.toArray(),
@@ -421,6 +522,7 @@ export function createViewer(host: HTMLElement) {
       }
       model = next;
       box = stats.box;
+      placeGrid();
       scene.add(model);
       applyWireframe();
       applySection();
@@ -495,6 +597,7 @@ export function createViewer(host: HTMLElement) {
           const x = four ? (index % 2) * 800 : 0,
             y = four ? Math.floor(index / 2) * 600 : 0;
           context.drawImage(renderer.domElement, x, y);
+          paintMarks(context, x, y, four ? 800 : 1200, four ? 600 : output.height);
           if (view) {
             context.fillStyle = "#18202b";
             context.fillRect(x + 12, y + 12, 64, 26);
@@ -530,6 +633,8 @@ export function createViewer(host: HTMLElement) {
       themeObserver.disconnect();
       controls.removeEventListener("change", controlsChanged);
       clearOverlay();
+      marksLayer?.remove();
+      dotTexture?.dispose();
       onCamera = null;
       onPick = null;
       controls.removeEventListener("start", navigationStarted);
@@ -538,6 +643,7 @@ export function createViewer(host: HTMLElement) {
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
+      renderer.domElement.removeEventListener("mousedown", preventAutoscroll);
       controls.dispose();
       if (model) disposeModel(model);
       helpers.traverse((object) => {

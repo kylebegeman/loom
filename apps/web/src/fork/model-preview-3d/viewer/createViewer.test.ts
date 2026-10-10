@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  GridHelper,
   Mesh,
   MeshStandardMaterial,
   Texture,
@@ -75,7 +76,7 @@ beforeEach(() => {
   doubles.controls = {
     target: new Vector3(),
     enableDamping: false,
-    mouseButtons: { LEFT: 0, RIGHT: 2 },
+    mouseButtons: { LEFT: 0, MIDDLE: 1, RIGHT: 2 },
     touches: { ONE: 0 },
     addEventListener: (event: string, callback: () => void) => {
       if (event === "change") change = callback;
@@ -153,10 +154,14 @@ it("switches drag tools and zooms around the target without creating an idle fra
   flushFrame();
   viewer.setNavigationMode("pan");
   const controls = doubles.controls as {
-    mouseButtons: { LEFT: number; RIGHT: number };
+    mouseButtons: { LEFT: number; MIDDLE: number; RIGHT: number };
     touches: { ONE: number };
   };
-  expect(controls.mouseButtons).toEqual({ LEFT: MOUSE.PAN, RIGHT: MOUSE.ROTATE });
+  expect(controls.mouseButtons).toEqual({
+    LEFT: MOUSE.PAN,
+    MIDDLE: MOUSE.PAN,
+    RIGHT: MOUSE.ROTATE,
+  });
   expect(controls.touches.ONE).toBe(TOUCH.PAN);
   const before = viewer.snapshot();
   viewer.zoom(0.5);
@@ -251,5 +256,29 @@ it("restores the working camera before asynchronous image encoding finishes", as
   expect((doubles.controls as { enabled: boolean }).enabled).not.toBe(false);
   finish!(new Blob(["png"]));
   await capture;
+  viewer.dispose();
+});
+
+it("places the build plate under the model's footprint without moving the model", () => {
+  const viewer = createViewer(host());
+  viewer.setBuildVolume([350, 320, 325]);
+  const geometry = new BoxGeometry(100, 40, 20);
+  geometry.translate(50, 20, 15);
+  const model = new Mesh(geometry, new MeshStandardMaterial());
+  viewer.setModel(model, false);
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  let grid: GridHelper | undefined;
+  scene.traverse((object) => {
+    if (object instanceof GridHelper) grid = object;
+  });
+  expect(grid!.position.toArray()).toEqual([50, 20, 5]);
+  expect(model.position.toArray()).toEqual([0, 0, 0]);
+  viewer.setBuildVolume([250, 250, 250]);
+  flushFrame();
+  scene.traverse((object) => {
+    if (object instanceof GridHelper) grid = object;
+  });
+  expect(grid!.position.toArray()).toEqual([50, 20, 5]);
   viewer.dispose();
 });

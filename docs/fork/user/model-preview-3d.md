@@ -4,11 +4,16 @@ Open **3D model** from the right-panel launcher or its + menu, then search the w
 for a file. Each selected file gets its own tab. The command palette offers the same file
 list; optional shortcuts for opening the panel and capturing a view are in Keybindings.
 
-Loom previews STL, 3MF, OBJ, glTF and GLB. Use the floating viewport tools to orbit,
-pan, zoom or choose a standard view. Maximize the panel for a larger work area with the
-inspector alongside your part. In a narrow panel, expand the inspector when editing
-long forms, then return to the viewport. While the canvas is focused, **F** fits the
-model, **O** selects orbit, **H** selects pan and **1–4** choose standard views.
+Loom previews STL, 3MF, OBJ, glTF and GLB. Drag to orbit, drag with the middle or right
+button to pan, and scroll to zoom. The floating tools choose a standard or saved view and
+toggle wireframe, the build plate and axes. Maximize the panel for a larger work area with
+the inspector alongside your part. In a narrow panel the inspector opens as a sheet below
+the viewport; expand it for long forms, then return to the viewport.
+
+While the panel has focus, **F** fits the model, **O** and **H** choose orbit or pan,
+**1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, plate and axes,
+and **I** shows or hides the inspector. The help button beside the zoom controls lists every
+shortcut.
 Dimensions are in millimetres: STL and OBJ are treated as mm, 3MF uses its recorded units,
 and glTF is converted from metres. Draco-compressed glTF requires an uncompressed export.
 Files above the environment's size limit need **Load anyway**.
@@ -28,27 +33,35 @@ In **Settings > Loom > 3D model**, set the executable path if automatic detectio
 find it. Save an edited executable path before refreshing detection. Refresh detection after
 installing or changing the executable.
 
-Open the inspector's **Parameters** section to edit customizer inputs or select a saved
-set. Search by name, description or group, and enter precise values beside the sliders.
-Changes preview automatically; turn off **Auto preview** to make several edits, then
-choose **Apply changes**. A newer preview cancels the previous render for that file.
-Reset an individual field or all changes to the selected set; **Restore source defaults**
-returns to the values in the SCAD file. Remembered values are isolated to each workspace;
-source edits discard overrides for removed or incompatible parameters.
+The inspector has five tabs: **Customize** and **Variants** for SCAD files, then **Markup**,
+**Views** and **Part** for every model. A badge on a tab points to something that needs you,
+such as open change requests or a part that is larger than the build plate.
 
-**Save parameter set** opens a naming dialog before updating the JSON sidecar next to
-the SCAD file. Replacing an existing name updates that set and preserves the other sets. The render log shows errors and warnings. A failed render leaves the last
-good mesh visible with a stale label. Changes to included files also trigger a render. If inputs change during rendering, Loom
-discards that output; live reload prepares the new version, or choose Refresh preview.
+**Customize** edits customizer inputs. Pick a saved set from the menu at the top, search by
+name, description or group, and drag a number field sideways to scrub it or click it to type
+a value. A dot marks a changed field; click the dot to reset it. Changes render as you go;
+turn off **Live** to make several edits, then choose **Apply**. A newer preview cancels the
+previous render for that file. **Restore source defaults** returns to the values in the
+SCAD file. Remembered values are isolated to each workspace; source edits discard overrides
+for removed or incompatible parameters.
+
+**Save parameter set** opens a naming dialog before updating the JSON sidecar next to the
+SCAD file. Replacing an existing name updates that set and preserves the other sets. A failed
+render leaves the last good mesh visible with a stale label, and **Part > Render log** shows
+the errors and warnings. Changes to included files also trigger a render. If inputs change
+during rendering, Loom discards that output; live reload prepares the new version, or choose
+Refresh preview.
 
 Settings control the render backend, timeout, color export and file-size limit. Choose the
-Bambu Lab H2D, Bambu Lab H2C, Anycubic Kobra S1, or a custom build volume. Oversized parts
-show a warning; previewing them is still allowed. Clear render cache removes cached outputs.
+Bambu Lab H2D, Bambu Lab H2C, Anycubic Kobra S1, or a custom build volume from the printer
+menu in **Part** or in settings; set the custom size in settings. **Part** shows the dimensions
+against that printer; oversized parts show a warning in the status bar and on the tab, and
+previewing them is still allowed. Clear render cache removes cached outputs.
 
 ## Show the agent your part
 
-**Capture** attaches the current view to the composer. **Capture > Four-view sheet** attaches one sheet
-showing iso, front, top and right. Send the attachment with your next message; remove it
+**Capture** attaches the current view to the composer. Its menu attaches a four-view sheet
+showing iso, front, top and right, or one of your saved review sheets. Send the attachment with your next message; remove it
 from the composer if you no longer need it.
 
 Agents can call `loom_model_preview_3d_render` for SCAD, STL, 3MF and OBJ PNG views, logs and
@@ -58,40 +71,41 @@ that the agent can read. It does not render glTF or GLB.
 
 ## Explore and review a design
 
-**Parameters > History** lets you undo, redo or revisit an edit. Continuous changes to one
-field become one step. History survives switching file tabs during this session; source edits
-establish a new baseline. With Auto preview paused, undo and candidate promotion update the
-form first. Choose Apply changes to update the mesh.
+**⌘Z** and **⇧⌘Z** (Ctrl on Windows and Linux) undo and redo parameter edits; the history
+button in **Customize** lets you revisit any step. Continuous changes to one field become one
+step. History survives switching file tabs during this session; source edits establish a new
+baseline. With Live paused, undo and using a variant update the form first. Choose Apply to
+update the mesh.
 
-Use **Tools** to measure between two surface points or reveal an interior with an X, Y or Z
-section plane. Measurements include the distance and each axis delta. Hide or delete a saved
-measurement when it is no longer needed. A changed mesh marks previous measurements stale;
-re-measure before relying on them. Section planes change the view, not the model file.
+The tool rail on the left of the viewport measures (**M**), annotates (**N**) and adds a section
+plane (**S**). Press **Esc** or **Done** to put a tool down. Measurements appear under
+**Markup** with the distance and each axis delta; hide or delete one when it is no longer
+needed. A changed mesh marks previous measurements stale; re-measure before relying on them.
+The section plane strip chooses the X, Y or Z axis, the offset and which side to keep. Section
+planes change the view, not the model file.
 
-In **Views**, name and save the current camera, display settings and section plane. Select up
-to four views and save a capture preset to repeat a review sheet later. Recalling a view from
-changed geometry refits it. Capture sheets attach to the composer and restore your working
-view afterward.
+To ask for a change, annotate a point or drag over a region, then describe the change. **Save
+draft** keeps it under **Markup**; **Save and add to composer** adds a marked capture and
+context to your existing composer draft without sending it. After the agent changes the model,
+open the request to compare the reference with the current model, move the pin if needed, then
+accept the change or reopen it.
 
-For SCAD, **Variants** stores candidates without changing the active part. Save current
-values, import saved sets, or generate combinations from one or two parameters. Candidate
-edits use OpenSCAD literals, including quotes around strings; **Save values** applies all
-edits together. Candidates from an older source use current defaults for removed or
-incompatible parameters when rendered or promoted. A sweep
-accepts up to six comma-separated values per parameter and twelve combinations per batch.
-Keep up to twenty-four candidates, render selected candidates or the whole batch, and cancel
-when needed. Compare two candidates with linked cameras, dimension differences and parameter
-differences. **Use candidate** moves its values into Parameters; **Save as set** opens a naming
-dialog and explicitly identifies replacements. Agents can propose candidates with
-`loom_model_preview_3d_propose_variants`; you choose whether to use them.
+**Views** stores camera positions with their display settings and section plane. **Save current
+view** in the view menu or the tab saves one; click a row to return to it. Recalling a view from
+changed geometry refits it. A review sheet captures up to four saved views as one image for the
+agent, with or without measurements, and restores your working view afterward.
 
-Choose the annotate tool and click or drag over a model surface, then describe the requested
-change in **Review**. Saving keeps a marked reference image and applied parameters.
-**Prepare agent request** adds a marked capture and context to your existing composer draft;
-it never sends the message. After a change, compare the current model with the reference,
-reselect a changed region if needed, then accept the result or reopen the request.
+For SCAD, **Variants** stores design candidates without changing the active part. Add the current
+values, a saved parameter set, or a parameter sweep that makes every combination of up to two
+parameters (up to six values each and twelve variants per batch). Keep up to twenty-four
+variants. Open a variant to rename it, edit its values, render it or **Use these values** in
+Customize. Select variants to render them together, or select two and **Compare** them with
+linked cameras and dimension and parameter differences. A variant can also be saved as a
+parameter set. Variants from an older source use current defaults for removed or incompatible
+parameters. Agents can propose variants with `loom_model_preview_3d_propose_variants`; you
+choose whether to use them.
 
-Views, measurements, capture presets, variants and annotations are saved for this model in
+Views, measurements, review sheets, variants and change requests are saved for this model in
 this environment and workspace. They survive closing the panel and are shared with other
 clients connected to the same workspace. Print-readiness analysis remains a separate future
 exploration.
