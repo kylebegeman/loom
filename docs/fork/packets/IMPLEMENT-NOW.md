@@ -23,10 +23,10 @@ reasons for selection or deferral; only the selected queue is available for impl
 
 Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
 
-| Order | Packet                                  | Status                                 | Decision                                                                  |
-| ----- | --------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------- |
-| 7     | [L12 Panel picker](./L12-panel-picker/) | Done; on `feat/loom-panel-picker`      | Kyle included the full packet on 2026-10-09.                              |
-| 8     | [L26 Code graph](./L26-code-graph/)     | In progress; on `feat/loom-code-graph` | Kyle included the full packet on 2026-10-09; it was deferred only for V2. |
+| Order | Packet                                  | Status                            | Decision                                                                  |
+| ----- | --------------------------------------- | --------------------------------- | ------------------------------------------------------------------------- |
+| 7     | [L12 Panel picker](./L12-panel-picker/) | Done; on `feat/loom-panel-picker` | Kyle included the full packet on 2026-10-09.                              |
+| 8     | [L26 Code graph](./L26-code-graph/)     | Done; on `feat/loom-code-graph`   | Kyle included the full packet on 2026-10-09; it was deferred only for V2. |
 
 ## Candidates for the queue
 
@@ -82,10 +82,8 @@ implementation readiness. Confirmed deferrals:
   picker covers invocation, not this management UI. Do not build a partial file browser in
   the meantime; there is no deadline.
 - **L26 Code graph: deferred by Kyle on 2026-09-27, included on 2026-10-09** once V2
-  shipped in nightly (selected queue, order 8). The original deferral note: preserve the full
-  code map, change-impact, agent-query and automatic-update scope. Revisit released turn
-  completion, project deletion, checkpoint/diff and MCP contracts after V2 ships. Do not
-  build a temporary manual-only graph or speculative V2 integration. There is no deadline.
+  shipped in nightly (selected queue, order 8), and built on V2 events with the full code
+  map, change-impact, agent-query and automatic-update scope.
 - **L29 Jev hub: confirmed deferred by Kyle on 2026-09-27.** Retain the full log,
   playground, templates, ratings and tuning scope. Revisit released thread/turn/diff/approval
   contracts and the deferred consumers after V2 ships; no partial playground substitute.

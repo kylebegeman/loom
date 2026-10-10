@@ -3,6 +3,7 @@ import type { ModelPreviewService } from "./model-preview-3d/ModelPreviewService
 import type { ProjectLifecycleService } from "./project-lifecycle/ProjectLifecycleService.ts";
 import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.ts";
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
+import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -12,7 +13,8 @@ export type ForkServices =
   | PcbPreviewService
   | ProjectLifecycleService
   | AppleBuildService
-  | DeviceQaService;
+  | DeviceQaService
+  | CodeGraphService;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

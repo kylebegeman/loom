@@ -1,0 +1,6427 @@
+{
+  "directed": false,
+  "multigraph": false,
+  "graph": {
+    "schema_version": 1,
+    "graphify_version": "0.9.83"
+  },
+  "nodes": [
+    {
+      "id": "src_hostdevices_jsonobject",
+      "label": "JsonObject",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L18"
+    },
+    {
+      "id": "src_deviceqaservice_activerecording",
+      "label": "ActiveRecording",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L164"
+    },
+    {
+      "id": "src_deviceqaservice_deviceqaoptions",
+      "label": "DeviceQaOptions",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L110"
+    },
+    {
+      "id": "src_deviceqaservice_deviceqatool",
+      "label": "DeviceQaTool",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L108"
+    },
+    {
+      "id": "src_deviceqaservice_liverun",
+      "label": "LiveRun",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L150"
+    },
+    {
+      "id": "src_process_childprocess",
+      "label": "ChildProcess",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L62"
+    },
+    {
+      "id": "src_process_exec",
+      "label": "Exec",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L22"
+    },
+    {
+      "id": "src_process_execoptions",
+      "label": "ExecOptions",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L14"
+    },
+    {
+      "id": "src_process_execresult",
+      "label": "ExecResult",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L8"
+    },
+    {
+      "id": "src_runstore_storedrun",
+      "label": "StoredRun",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L21"
+    },
+    {
+      "id": "src_evidencestore_deviceqaevidencestore",
+      "label": "DeviceQaEvidenceStore",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L155"
+    },
+    {
+      "id": "src_evidencestore_evidencerow",
+      "label": "EvidenceRow",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L15"
+    },
+    {
+      "id": "src_argent_argentflowreport",
+      "label": "ArgentFlowReport",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L56"
+    },
+    {
+      "id": "src_argent_argentrecord",
+      "label": "ArgentRecord",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L66"
+    },
+    {
+      "id": "src_argent_argentstepreport",
+      "label": "ArgentStepReport",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L54"
+    },
+    {
+      "id": "src_argent_jsonobject",
+      "label": "JsonObject",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L41"
+    },
+    {
+      "id": "src_flows_jsonobject",
+      "label": "JsonObject",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L20"
+    },
+    {
+      "id": "src_runstore_deviceqarunstore",
+      "label": "DeviceQaRunStore",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L175"
+    },
+    {
+      "id": "src_runstore_runrow",
+      "label": "RunRow",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L29"
+    },
+    {
+      "id": "src_deviceqaservice_deviceqaservice",
+      "label": "DeviceQaService",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1536"
+    },
+    {
+      "id": "src_mcp_agentstep",
+      "label": "agentStep()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L211"
+    },
+    {
+      "id": "src_mcp_capturetool",
+      "label": "captureTool()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L291"
+    },
+    {
+      "id": "src_mcp_flowtool",
+      "label": "flowTool()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L233"
+    },
+    {
+      "id": "src_mcp_invalid",
+      "label": "invalid()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L133"
+    },
+    {
+      "id": "src_mcp_normalizeflowref",
+      "label": "normalizeFlowRef()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L148"
+    },
+    {
+      "id": "src_mcp_orfail",
+      "label": "orFail()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L208"
+    },
+    {
+      "id": "src_mcp_pickdevice",
+      "label": "pickDevice()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L223"
+    },
+    {
+      "id": "src_mcp_selectdevice",
+      "label": "selectDevice()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L184"
+    },
+    {
+      "id": "src_mcp_selectflows",
+      "label": "selectFlows()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L156"
+    },
+    {
+      "id": "src_mcp_test_device",
+      "label": "device()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L65"
+    },
+    {
+      "id": "src_mcp_test_flow",
+      "label": "flow()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L5"
+    },
+    {
+      "id": "src_mcp_test_paths",
+      "label": "paths()",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L32"
+    },
+    {
+      "id": "src_hostdevices_adbrecordargs",
+      "label": "adbRecordArgs()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L136"
+    },
+    {
+      "id": "src_hostdevices_adbscreenshotargs",
+      "label": "adbScreenshotArgs()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L143"
+    },
+    {
+      "id": "src_hostdevices_androidrecordingpath",
+      "label": "androidRecordingPath()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L130"
+    },
+    {
+      "id": "src_hostdevices_iosruntimeversion",
+      "label": "iosRuntimeVersion()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L23"
+    },
+    {
+      "id": "src_hostdevices_isobject",
+      "label": "isObject()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L19"
+    },
+    {
+      "id": "src_hostdevices_parseaaptpackage",
+      "label": "parseAaptPackage()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L155"
+    },
+    {
+      "id": "src_hostdevices_parseadbdevices",
+      "label": "parseAdbDevices()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L60"
+    },
+    {
+      "id": "src_hostdevices_parseavddisplayname",
+      "label": "parseAvdDisplayName()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L79"
+    },
+    {
+      "id": "src_hostdevices_parsedevicepid",
+      "label": "parseDevicePid()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L146"
+    },
+    {
+      "id": "src_hostdevices_parseemulatorprops",
+      "label": "parseEmulatorProps()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L73"
+    },
+    {
+      "id": "src_hostdevices_parsesimctlbooted",
+      "label": "parseSimctlBooted()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L30"
+    },
+    {
+      "id": "src_hostdevices_pnginfo",
+      "label": "pngInfo()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L12"
+    },
+    {
+      "id": "src_hostdevices_simctlrecordargs",
+      "label": "simctlRecordArgs()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L120"
+    },
+    {
+      "id": "src_hostdevices_statusbarclearargs",
+      "label": "statusBarClearArgs()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L117"
+    },
+    {
+      "id": "src_hostdevices_statusbaroverrideargs",
+      "label": "statusBarOverrideArgs()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L94"
+    },
+    {
+      "id": "src_hostdevices_test_fixture",
+      "label": "fixture()",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L20"
+    },
+    {
+      "id": "src_process_exectofile",
+      "label": "execToFile()",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L126"
+    },
+    {
+      "id": "src_process_outputof",
+      "label": "outputOf()",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L57"
+    },
+    {
+      "id": "src_process_spawnchild",
+      "label": "spawnChild()",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L74"
+    },
+    {
+      "id": "src_process_stopchild",
+      "label": "stopChild()",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L115"
+    },
+    {
+      "id": "src_process_succeeded",
+      "label": "succeeded()",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L53"
+    },
+    {
+      "id": "src_evidencestore_expirycutoff",
+      "label": "expiryCutoff()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L71"
+    },
+    {
+      "id": "src_evidencestore_numberornull",
+      "label": "numberOrNull()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L39"
+    },
+    {
+      "id": "src_evidencestore_test_evidence",
+      "label": "evidence()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L11"
+    },
+    {
+      "id": "src_evidencestore_test_withstore",
+      "label": "withStore()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L35"
+    },
+    {
+      "id": "src_evidencestore_toevidence",
+      "label": "toEvidence()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L41"
+    },
+    {
+      "id": "src_evidencestore_toevidencelist",
+      "label": "toEvidenceList()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L64"
+    },
+    {
+      "id": "src_runstore_test_stored",
+      "label": "stored()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L11"
+    },
+    {
+      "id": "src_runstore_test_withstore",
+      "label": "withStore()",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L41"
+    },
+    {
+      "id": "src_argent_addedlater",
+      "label": "addedLater()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L215"
+    },
+    {
+      "id": "src_argent_argentenv",
+      "label": "argentEnv()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L15"
+    },
+    {
+      "id": "src_argent_artifactsof",
+      "label": "artifactsOf()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L125"
+    },
+    {
+      "id": "src_argent_flowrunargs",
+      "label": "flowRunArgs()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L21"
+    },
+    {
+      "id": "src_argent_flowstatusof",
+      "label": "flowStatusOf()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L164"
+    },
+    {
+      "id": "src_argent_intof",
+      "label": "intOf()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L48"
+    },
+    {
+      "id": "src_argent_isobject",
+      "label": "isObject()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L43"
+    },
+    {
+      "id": "src_argent_numberof",
+      "label": "numberOf()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L46"
+    },
+    {
+      "id": "src_argent_parseargentline",
+      "label": "parseArgentLine()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L92"
+    },
+    {
+      "id": "src_argent_parseargentversion",
+      "label": "parseArgentVersion()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L181"
+    },
+    {
+      "id": "src_argent_reportof",
+      "label": "reportOf()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L74"
+    },
+    {
+      "id": "src_argent_stepfromreport",
+      "label": "stepFromReport()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L138"
+    },
+    {
+      "id": "src_argent_stepsfromreport",
+      "label": "stepsFromReport()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L160"
+    },
+    {
+      "id": "src_argent_stringof",
+      "label": "stringOf()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L45"
+    },
+    {
+      "id": "src_argent_telemetryfromconfig",
+      "label": "telemetryFromConfig()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L189"
+    },
+    {
+      "id": "src_argent_test_fixture",
+      "label": "fixture()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.test.ts",
+      "source_location": "L18"
+    },
+    {
+      "id": "src_argent_test_records",
+      "label": "records()",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.test.ts",
+      "source_location": "L20"
+    },
+    {
+      "id": "src_flows_classifyflow",
+      "label": "classifyFlow()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L106"
+    },
+    {
+      "id": "src_flows_countsnapshots",
+      "label": "countSnapshots()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L47"
+    },
+    {
+      "id": "src_flows_flowlocation",
+      "label": "flowLocation()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L93"
+    },
+    {
+      "id": "src_flows_isobject",
+      "label": "isObject()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L21"
+    },
+    {
+      "id": "src_flows_kindof",
+      "label": "kindOf()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L44"
+    },
+    {
+      "id": "src_flows_platformsof",
+      "label": "platformsOf()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L58"
+    },
+    {
+      "id": "src_flows_resolveflowpath",
+      "label": "resolveFlowPath()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L207"
+    },
+    {
+      "id": "src_flows_test_classify",
+      "label": "classify()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.test.ts",
+      "source_location": "L10"
+    },
+    {
+      "id": "src_flows_usesanchorsortags",
+      "label": "usesAnchorsOrTags()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L74"
+    },
+    {
+      "id": "src_flows_walkflows",
+      "label": "walkFlows()",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L162"
+    },
+    {
+      "id": "src_runstore_mergesettings",
+      "label": "mergeSettings()",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L62"
+    },
+    {
+      "id": "src_runstore_tostored",
+      "label": "toStored()",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L70"
+    },
+    {
+      "id": "src_deviceqaservice_test_alive",
+      "label": "alive()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L111"
+    },
+    {
+      "id": "src_deviceqaservice_test_calls",
+      "label": "calls()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L108"
+    },
+    {
+      "id": "src_deviceqaservice_test_fixture",
+      "label": "fixture()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L43"
+    },
+    {
+      "id": "src_deviceqaservice_test_partial",
+      "label": "partial()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L30"
+    },
+    {
+      "id": "src_deviceqaservice_test_pngbytes",
+      "label": "pngBytes()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L46"
+    },
+    {
+      "id": "src_deviceqaservice_test_setup",
+      "label": "setup()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L122"
+    },
+    {
+      "id": "src_deviceqaservice_test_writestubs",
+      "label": "writeStubs()",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L60"
+    },
+    {
+      "id": "src_reactor_knownthreads",
+      "label": "knownThreads()",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.ts",
+      "source_location": "L12"
+    },
+    {
+      "id": "src_reactor_test_partial",
+      "label": "partial()",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L10"
+    },
+    {
+      "id": "src_reactor_test_snapshot",
+      "label": "snapshot()",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L19"
+    },
+    {
+      "id": "src_rpc_makedeviceqarpchandlers",
+      "label": "makeDeviceQaRpcHandlers()",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/rpc.ts",
+      "source_location": "L14"
+    },
+    {
+      "id": "src_deviceqaservice_adbshell",
+      "label": "adbShell()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L148"
+    },
+    {
+      "id": "src_deviceqaservice_error",
+      "label": "error()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L121"
+    },
+    {
+      "id": "src_deviceqaservice_exists",
+      "label": "exists()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L124"
+    },
+    {
+      "id": "src_deviceqaservice_makewith",
+      "label": "makeWith()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L175"
+    },
+    {
+      "id": "src_deviceqaservice_readornull",
+      "label": "readOrNull()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L132"
+    },
+    {
+      "id": "src_deviceqaservice_removefile",
+      "label": "removeFile()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L143"
+    },
+    {
+      "id": "src_deviceqaservice_sizeornull",
+      "label": "sizeOrNull()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L135"
+    },
+    {
+      "id": "src_hostdevices_simctlscreenshotargs",
+      "label": "simctlScreenshotArgs()",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L84"
+    },
+    {
+      "id": "src_mcp",
+      "label": "mcp.ts",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_mcp_agent_flow_wait_ms",
+      "label": "AGENT_FLOW_WAIT_MS",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L24"
+    },
+    {
+      "id": "src_mcp_callerthread",
+      "label": "callerThread",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L136"
+    },
+    {
+      "id": "src_mcp_capturetoolresult",
+      "label": "CaptureToolResult",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L74"
+    },
+    {
+      "id": "src_mcp_deviceqahandlers",
+      "label": "deviceQaHandlers",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L315"
+    },
+    {
+      "id": "src_mcp_deviceqatoolkit",
+      "label": "DeviceQaToolkit",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L81"
+    },
+    {
+      "id": "src_mcp_failure",
+      "label": "failure",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L27"
+    },
+    {
+      "id": "src_mcp_flowtoolresult",
+      "label": "FlowToolResult",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L29"
+    },
+    {
+      "id": "src_mcp_iserror",
+      "label": "isError",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.ts",
+      "source_location": "L207"
+    },
+    {
+      "id": "src_mcp_test",
+      "label": "mcp.test.ts",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_mcp_test_flows",
+      "label": "FLOWS",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "file_type": "code",
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L23"
+    },
+    {
+      "id": "src_hostdevices",
+      "label": "hostDevices.ts",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_hostdevices_emulator_props_command",
+      "label": "EMULATOR_PROPS_COMMAND",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L69"
+    },
+    {
+      "id": "src_hostdevices_max_recording_bytes",
+      "label": "MAX_RECORDING_BYTES",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L7"
+    },
+    {
+      "id": "src_hostdevices_max_screenshot_bytes",
+      "label": "MAX_SCREENSHOT_BYTES",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L6"
+    },
+    {
+      "id": "src_hostdevices_png_signature",
+      "label": "PNG_SIGNATURE",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L9"
+    },
+    {
+      "id": "src_hostdevices_simctlbootedargs",
+      "label": "simctlBootedArgs",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L82"
+    },
+    {
+      "id": "src_hostdevices_test",
+      "label": "hostDevices.test.ts",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "file_type": "code",
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_deviceqaservice",
+      "label": "DeviceQaService.ts",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_deviceqaservice_layer",
+      "label": "layer",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1541"
+    },
+    {
+      "id": "src_process",
+      "label": "process.ts",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_process_makeexec",
+      "label": "makeExec",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "file_type": "code",
+      "source_file": "src/process.ts",
+      "source_location": "L28"
+    },
+    {
+      "id": "src_evidencestore",
+      "label": "evidenceStore.ts",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_evidencestore_evidence_listed",
+      "label": "EVIDENCE_LISTED",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L13"
+    },
+    {
+      "id": "src_evidencestore_iskind",
+      "label": "isKind",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L36"
+    },
+    {
+      "id": "src_evidencestore_isplatform",
+      "label": "isPlatform",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L38"
+    },
+    {
+      "id": "src_evidencestore_isstatus",
+      "label": "isStatus",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L37"
+    },
+    {
+      "id": "src_evidencestore_makeevidencestore",
+      "label": "makeEvidenceStore",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L74"
+    },
+    {
+      "id": "src_evidencestore_settled",
+      "label": "SETTLED",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L68"
+    },
+    {
+      "id": "src_evidencestore_test",
+      "label": "evidenceStore.test.ts",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_migrations",
+      "label": "migrations.ts",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/migrations.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_migrations_deviceqamigrations",
+      "label": "DeviceQaMigrations",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/migrations.ts",
+      "source_location": "L5"
+    },
+    {
+      "id": "src_runstore_test",
+      "label": "runStore.test.ts",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_argent",
+      "label": "argent.ts",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_argent_step_statuses",
+      "label": "STEP_STATUSES",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.ts",
+      "source_location": "L72"
+    },
+    {
+      "id": "src_argent_test",
+      "label": "argent.test.ts",
+      "community": 4,
+      "community_name": "argent.ts",
+      "file_type": "code",
+      "source_file": "src/argent.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_flows",
+      "label": "flows.ts",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_flows_flow_walk_limit",
+      "label": "FLOW_WALK_LIMIT",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L14"
+    },
+    {
+      "id": "src_flows_invalid_name_message",
+      "label": "INVALID_NAME_MESSAGE",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L17"
+    },
+    {
+      "id": "src_flows_launch_platforms",
+      "label": "LAUNCH_PLATFORMS",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L56"
+    },
+    {
+      "id": "src_flows_step_kinds",
+      "label": "STEP_KINDS",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.ts",
+      "source_location": "L25"
+    },
+    {
+      "id": "src_flows_test",
+      "label": "flows.test.ts",
+      "community": 5,
+      "community_name": "flows.ts",
+      "file_type": "code",
+      "source_file": "src/flows.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_runstore",
+      "label": "runStore.ts",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_runstore_decodeflows",
+      "label": "decodeFlows",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L50"
+    },
+    {
+      "id": "src_runstore_decodesteps",
+      "label": "decodeSteps",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L51"
+    },
+    {
+      "id": "src_runstore_decodestoredsettings",
+      "label": "decodeStoredSettings",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L55"
+    },
+    {
+      "id": "src_runstore_encodeflows",
+      "label": "encodeFlows",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L52"
+    },
+    {
+      "id": "src_runstore_encodesettings",
+      "label": "encodeSettings",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L54"
+    },
+    {
+      "id": "src_runstore_encodesteps",
+      "label": "encodeSteps",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L53"
+    },
+    {
+      "id": "src_runstore_flowsjson",
+      "label": "flowsJson",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L47"
+    },
+    {
+      "id": "src_runstore_isplatform",
+      "label": "isPlatform",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L59"
+    },
+    {
+      "id": "src_runstore_isstatus",
+      "label": "isStatus",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L58"
+    },
+    {
+      "id": "src_runstore_makerunstore",
+      "label": "makeRunStore",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L94"
+    },
+    {
+      "id": "src_runstore_runs_listed",
+      "label": "RUNS_LISTED",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L18"
+    },
+    {
+      "id": "src_runstore_settingsjson",
+      "label": "settingsJson",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L49"
+    },
+    {
+      "id": "src_runstore_stepsjson",
+      "label": "stepsJson",
+      "community": 6,
+      "community_name": "runStore.ts",
+      "file_type": "code",
+      "source_file": "src/runStore.ts",
+      "source_location": "L48"
+    },
+    {
+      "id": "src_deviceqaservice_test",
+      "label": "DeviceQaService.test.ts",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_deviceqaservice_test_ios",
+      "label": "IOS",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L42"
+    },
+    {
+      "id": "src_deviceqaservice_test_projectid",
+      "label": "projectId",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L39"
+    },
+    {
+      "id": "src_deviceqaservice_test_threadid",
+      "label": "threadId",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L40"
+    },
+    {
+      "id": "src_reactor",
+      "label": "reactor.ts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_reactor_deviceqacleanuplive",
+      "label": "DeviceQaCleanupLive",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.ts",
+      "source_location": "L65"
+    },
+    {
+      "id": "src_reactor_expiry_sweep_interval",
+      "label": "EXPIRY_SWEEP_INTERVAL",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.ts",
+      "source_location": "L9"
+    },
+    {
+      "id": "src_reactor_startdeviceqacleanup",
+      "label": "startDeviceQaCleanup",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.ts",
+      "source_location": "L31"
+    },
+    {
+      "id": "src_reactor_test",
+      "label": "reactor.test.ts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_rpc",
+      "label": "rpc.ts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "file_type": "code",
+      "source_file": "src/rpc.ts",
+      "source_location": "L1"
+    },
+    {
+      "id": "src_deviceqaservice_encodereport",
+      "label": "encodeReport",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L146"
+    },
+    {
+      "id": "src_deviceqaservice_make",
+      "label": "make",
+      "community": 9,
+      "community_name": "makeWith",
+      "file_type": "code",
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1530"
+    },
+    {
+      "id": "ref_effect_vitest",
+      "label": "ref_effect_vitest",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_forkruntime_ts",
+      "label": "ref_forkruntime_ts",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_mcp_mcpinvocationcontext_ts",
+      "label": "ref_mcp_mcpinvocationcontext_ts",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_mcp_mcptoolaccess_ts",
+      "label": "ref_mcp_mcptoolaccess_ts",
+      "community": 0,
+      "community_name": "mcp.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_mcp_toolkits_device_handlers_ts",
+      "label": "ref_mcp_toolkits_device_handlers_ts",
+      "community": 1,
+      "community_name": "hostDevices.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_node_child_process",
+      "label": "ref_node_child_process",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_node_crypto",
+      "label": "ref_node_crypto",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_processrunner_ts",
+      "label": "ref_processrunner_ts",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_t3tools_shared",
+      "label": "ref_t3tools_shared",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "src_argent_argent_pinned_version",
+      "label": "src_argent_argent_pinned_version",
+      "community": 2,
+      "community_name": "DeviceQaService.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_persistence_migrations_ts",
+      "label": "ref_persistence_migrations_ts",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_persistence_sqlite_ts",
+      "label": "ref_persistence_sqlite_ts",
+      "community": 3,
+      "community_name": "evidenceStore.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_node_path",
+      "label": "ref_node_path",
+      "community": 4,
+      "community_name": "argent.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_node_fs",
+      "label": "ref_node_fs",
+      "community": 5,
+      "community_name": "flows.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_node_os",
+      "label": "ref_node_os",
+      "community": 5,
+      "community_name": "flows.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_yaml",
+      "label": "ref_yaml",
+      "community": 5,
+      "community_name": "flows.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_config_ts",
+      "label": "ref_config_ts",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_device_deviceservice_ts",
+      "label": "ref_device_deviceservice_ts",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_effect_platform_node",
+      "label": "ref_effect_platform_node",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_orchestration_v2_projectionstore_ts",
+      "label": "ref_orchestration_v2_projectionstore_ts",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_orchestration_v2_projectstore_ts",
+      "label": "ref_orchestration_v2_projectstore_ts",
+      "community": 7,
+      "community_name": "DeviceQaService.test.ts",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_effect",
+      "label": "ref_effect",
+      "community": 8,
+      "community_name": "ref_effect",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_orchestration_v2_threadmanagementservice_ts",
+      "label": "ref_orchestration_v2_threadmanagementservice_ts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_rpcauthorization_ts",
+      "label": "ref_rpcauthorization_ts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_serveractivation_ts",
+      "label": "ref_serveractivation_ts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    },
+    {
+      "id": "ref_t3tools_contracts",
+      "label": "ref_t3tools_contracts",
+      "community": 8,
+      "community_name": "ref_effect",
+      "external": true,
+      "file_type": "concept",
+      "source_file": "",
+      "type": "external"
+    }
+  ],
+  "links": [
+    {
+      "source": "src_argent_artifactsof",
+      "target": "src_argent_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L126",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_artifactsof",
+      "target": "src_argent_stringof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L128",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_intof",
+      "target": "src_argent_numberof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_parseargentline",
+      "target": "src_argent_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L102",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_parseargentline",
+      "target": "src_argent_reportof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L108",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_parseargentline",
+      "target": "src_argent_stringof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L113",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_reportof",
+      "target": "src_argent_intof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L79",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_reportof",
+      "target": "src_argent_numberof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L83",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_stepfromreport",
+      "target": "src_argent_stringof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L142",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_stepfromreport",
+      "target": "src_argent_intof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_stepfromreport",
+      "target": "src_argent_numberof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L149",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_stepfromreport",
+      "target": "src_argent_artifactsof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L150",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_stepsfromreport",
+      "target": "src_argent_stepfromreport",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L161",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_telemetryfromconfig",
+      "target": "src_argent_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L205",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test_records",
+      "target": "src_argent_test_fixture",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_make",
+      "target": "src_deviceqaservice_makewith",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1533",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_statusbaroverrideargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1003",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_statusbarclearargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1005",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_pnginfo",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1040",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_simctlrecordargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1080",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_androidrecordingpath",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1108",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_adbrecordargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1111",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_parsedevicepid",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1113",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_parseaaptpackage",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1313",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_evidencestore_expirycutoff",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1460",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_runstore_mergesettings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1477",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_exists",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L237",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_error",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L266",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_process_succeeded",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L278",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_argentenv",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L292",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_parseargentversion",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L294",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_readornull",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L305",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_telemetryfromconfig",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L314",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_parseavddisplayname",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L365",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_parseadbdevices",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L379",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_adbshell",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L384",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_parseemulatorprops",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L386",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_parsesimctlbooted",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L402",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_process_outputof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L436",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_flows_walkflows",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L463",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_flows_resolveflowpath",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L468",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_sizeornull",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L471",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_removefile",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L536",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_parseargentline",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L588",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_stepfromreport",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L594",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_process_spawnchild",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L604",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_flowrunargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L606",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_flowstatusof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L626",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_argent_stepsfromreport",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L631",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_flows_flowlocation",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L666",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_deviceqaservice_encodereport",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L689",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_process_stopchild",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L870",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_simctlscreenshotargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L980",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_process_exectofile",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L987",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_makewith",
+      "target": "src_hostdevices_adbscreenshotargs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L989",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test_setup",
+      "target": "src_deviceqaservice_test_writestubs",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test_setup",
+      "target": "src_deviceqaservice_makewith",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L151",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test_setup",
+      "target": "src_deviceqaservice_test_partial",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L161",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test_writestubs",
+      "target": "src_deviceqaservice_test_pngbytes",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test_writestubs",
+      "target": "src_deviceqaservice_test_fixture",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_makeevidencestore",
+      "target": "src_evidencestore_toevidence",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L89",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_makeevidencestore",
+      "target": "src_evidencestore_toevidencelist",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_toevidence",
+      "target": "src_evidencestore_iskind",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_toevidence",
+      "target": "src_evidencestore_isplatform",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_toevidence",
+      "target": "src_evidencestore_isstatus",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_toevidence",
+      "target": "src_evidencestore_numberornull",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_toevidencelist",
+      "target": "src_evidencestore_toevidence",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_classifyflow",
+      "target": "src_flows_flowlocation",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_classifyflow",
+      "target": "src_flows_usesanchorsortags",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L132",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_classifyflow",
+      "target": "src_flows_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L134",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_classifyflow",
+      "target": "src_flows_kindof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L138",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_classifyflow",
+      "target": "src_flows_countsnapshots",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L155",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_classifyflow",
+      "target": "src_flows_platformsof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L156",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_countsnapshots",
+      "target": "src_flows_kindof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_countsnapshots",
+      "target": "src_flows_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_countsnapshots",
+      "target": "src_flows_countsnapshots",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_kindof",
+      "target": "src_flows_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L45",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_platformsof",
+      "target": "src_flows_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_platformsof",
+      "target": "src_flows_kindof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L61",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_platformsof",
+      "target": "src_flows_platformsof",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test_classify",
+      "target": "src_flows_classifyflow",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_walkflows",
+      "target": "src_flows_classifyflow",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L191",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_parsesimctlbooted",
+      "target": "src_hostdevices_isobject",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_parsesimctlbooted",
+      "target": "src_hostdevices_iosruntimeversion",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_capturetool",
+      "target": "src_mcp_pickdevice",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L298",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_deviceqahandlers",
+      "target": "src_mcp_flowtool",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L323",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_deviceqahandlers",
+      "target": "src_mcp_capturetool",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L326",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_flowtool",
+      "target": "src_mcp_invalid",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L253",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_flowtool",
+      "target": "src_mcp_orfail",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L254",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_flowtool",
+      "target": "src_mcp_selectflows",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L254",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_flowtool",
+      "target": "src_mcp_pickdevice",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L255",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_orfail",
+      "target": "src_mcp_iserror",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L209",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_pickdevice",
+      "target": "src_mcp_orfail",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L230",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_pickdevice",
+      "target": "src_mcp_selectdevice",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L230",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_selectflows",
+      "target": "src_mcp_normalizeflowref",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L157",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_selectflows",
+      "target": "src_mcp_invalid",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L164",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_startdeviceqacleanup",
+      "target": "src_reactor_knownthreads",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_makerunstore",
+      "target": "src_runstore_encodeflows",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_makerunstore",
+      "target": "src_runstore_encodesteps",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L100",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_makerunstore",
+      "target": "src_runstore_tostored",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_makerunstore",
+      "target": "src_runstore_decodestoredsettings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L161",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_makerunstore",
+      "target": "src_runstore_mergesettings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L163",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_makerunstore",
+      "target": "src_runstore_encodesettings",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L169",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_tostored",
+      "target": "src_runstore_decodeflows",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L71",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_tostored",
+      "target": "src_runstore_isplatform",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_tostored",
+      "target": "src_runstore_isstatus",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_tostored",
+      "target": "src_runstore_decodesteps",
+      "relation": "calls",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L90",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_test_records",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_calls",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L108",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_alive",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_setup",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L122",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_evidencestore_test_evidence",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_evidencestore_test_withstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L35",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "src_flows_test_classify",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_test_fixture",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp_test_paths",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L32",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp_test_flow",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp_test_device",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "src_reactor_test_partial",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "src_reactor_test_snapshot",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_runstore_test_stored",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_runstore_test_withstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_liverun",
+      "target": "src_runstore_storedrun",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L151",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_liverun",
+      "target": "src_process_childprocess",
+      "relation": "references",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L155",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_argentenv",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_argentrecord",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_flowrunargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_flowstatusof",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_parseargentline",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_parseargentversion",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_stepfromreport",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_stepsfromreport",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_telemetryfromconfig",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_argent_pinned_version",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_argentenv",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_argentrecord",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_flowrunargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_flowstatusof",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_parseargentline",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_parseargentversion",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_stepfromreport",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_stepsfromreport",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent_telemetryfromconfig",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_evidencestore_expirycutoff",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_evidencestore_makeevidencestore",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_flows_flowlocation",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_flows_resolveflowpath",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_flows_walkflows",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_adbrecordargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_adbscreenshotargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_androidrecordingpath",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_emulator_props_command",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_max_recording_bytes",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_max_screenshot_bytes",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_parseaaptpackage",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_parseadbdevices",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_parseavddisplayname",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_parsedevicepid",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_parseemulatorprops",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_parsesimctlbooted",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_pnginfo",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_simctlbootedargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_simctlrecordargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_simctlscreenshotargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_statusbarclearargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices_statusbaroverrideargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_childprocess",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_exectofile",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_makeexec",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_outputof",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_spawnchild",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_stopchild",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process_succeeded",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_runstore_makerunstore",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_runstore_mergesettings",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_runstore_storedrun",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_makewith",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_migrations_deviceqamigrations",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_evidencestore_expirycutoff",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_evidencestore_makeevidencestore",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_migrations_deviceqamigrations",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "src_flows_classifyflow",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "src_flows_invalid_name_message",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "src_flows_resolveflowpath",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "src_flows_walkflows",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_adbrecordargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_parseaaptpackage",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_parseadbdevices",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_parseavddisplayname",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_parsedevicepid",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_parseemulatorprops",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_parsesimctlbooted",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_pnginfo",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_simctlrecordargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_statusbarclearargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices_statusbaroverrideargs",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_deviceqaservice_deviceqaservice",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp_selectdevice",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp_selectflows",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "src_deviceqaservice_deviceqaservice",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "src_deviceqaservice_deviceqaservice",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "src_reactor_startdeviceqacleanup",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_rpc",
+      "target": "src_deviceqaservice_deviceqaservice",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/rpc.ts",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_migrations_deviceqamigrations",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_runstore_makerunstore",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_runstore_storedrun",
+      "relation": "imports",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "ref_node_path",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_node_crypto",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_t3tools_shared",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L33",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L48",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_config_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_node_os",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_device_deviceservice_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_orchestration_v2_projectionstore_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_orchestration_v2_projectstore_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_processrunner_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_argent",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_node_path",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_evidencestore",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_flows",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L67",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_hostdevices",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_process",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L88",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_runstore",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L97",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_config_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_device_deviceservice_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_orchestration_v2_projectionstore_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_orchestration_v2_projectstore_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_persistence_sqlite_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_processrunner_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_persistence_migrations_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L26",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_migrations",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_node_os",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_node_path",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "ref_effect_platform_node",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "ref_persistence_sqlite_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "ref_persistence_migrations_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_evidencestore",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore_test",
+      "target": "src_migrations",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.test.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "ref_yaml",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "ref_node_path",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "ref_node_os",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "ref_node_path",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows_test",
+      "target": "src_flows",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "ref_mcp_toolkits_device_handlers_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "ref_node_path",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices_test",
+      "target": "src_hostdevices",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L16",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "ref_mcp_mcpinvocationcontext_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "ref_mcp_mcptoolaccess_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "ref_orchestration_v2_threadmanagementservice_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "ref_forkruntime_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_deviceqaservice",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_migrations",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/migrations.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_migrations",
+      "target": "ref_persistence_migrations_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/migrations.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "ref_node_child_process",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "ref_node_fs",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "ref_processrunner_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L4",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "ref_orchestration_v2_threadmanagementservice_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "ref_serveractivation_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "src_deviceqaservice",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "ref_orchestration_v2_threadmanagementservice_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "src_deviceqaservice",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor_test",
+      "target": "src_reactor",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_rpc",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/rpc.ts",
+      "source_location": "L10",
+      "weight": 1.0
+    },
+    {
+      "source": "src_rpc",
+      "target": "ref_rpcauthorization_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/rpc.ts",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "src_rpc",
+      "target": "src_deviceqaservice",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/rpc.ts",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "src_rpc",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/rpc.ts",
+      "source_location": "L2",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L11",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "ref_effect_vitest",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L1",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L3",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "ref_effect",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "ref_persistence_sqlite_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "ref_persistence_migrations_ts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_migrations",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore_test",
+      "target": "src_runstore",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.test.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "ref_t3tools_contracts",
+      "relation": "imports_from",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_artifactsof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L125",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_stepfromreport",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L138",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_argentenv",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_stepsfromreport",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L160",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_flowstatusof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L164",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_parseargentversion",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L181",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_telemetryfromconfig",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L189",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_flowrunargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_addedlater",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L215",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_jsonobject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_isobject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_stringof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L45",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_numberof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L46",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_intof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L48",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_argentstepreport",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_argentflowreport",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_argentrecord",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L66",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_step_statuses",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L72",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_reportof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent",
+      "target": "src_argent_parseargentline",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.ts",
+      "source_location": "L92",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test",
+      "target": "src_argent_test_fixture",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_deviceqatool",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L108",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_deviceqaoptions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L110",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_error",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L121",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_exists",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L124",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_readornull",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L132",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_sizeornull",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L135",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_removefile",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L143",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_encodereport",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L146",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_adbshell",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_liverun",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L150",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_make",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1530",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_deviceqaservice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1536",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_layer",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L1541",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_activerecording",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L164",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice",
+      "target": "src_deviceqaservice_makewith",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.ts",
+      "source_location": "L175",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_partial",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L30",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_projectid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_threadid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L40",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_ios",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L42",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_fixture",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L43",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_pngbytes",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L46",
+      "weight": 1.0
+    },
+    {
+      "source": "src_deviceqaservice_test",
+      "target": "src_deviceqaservice_test_writestubs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/DeviceQaService.test.ts",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_evidence_listed",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L13",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_evidencerow",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L15",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_deviceqaevidencestore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L155",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_iskind",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L36",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_isstatus",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L37",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_isplatform",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L38",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_numberornull",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L39",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_toevidence",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L41",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_toevidencelist",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L64",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_settled",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L68",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_expirycutoff",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L71",
+      "weight": 1.0
+    },
+    {
+      "source": "src_evidencestore",
+      "target": "src_evidencestore_makeevidencestore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/evidenceStore.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_classifyflow",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L106",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_flow_walk_limit",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_walkflows",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L162",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_invalid_name_message",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L17",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_jsonobject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L20",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_resolveflowpath",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L207",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_isobject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_step_kinds",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L25",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_kindof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L44",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_countsnapshots",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_launch_platforms",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L56",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_platformsof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L58",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_usesanchorsortags",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_flows",
+      "target": "src_flows_flowlocation",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/flows.ts",
+      "source_location": "L93",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_statusbarclearargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L117",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_pnginfo",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_simctlrecordargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L120",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_androidrecordingpath",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L130",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_adbrecordargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_adbscreenshotargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L143",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_parsedevicepid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L146",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_parseaaptpackage",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L155",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_jsonobject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_isobject",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L19",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_iosruntimeversion",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_parsesimctlbooted",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L30",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_max_screenshot_bytes",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L6",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_parseadbdevices",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L60",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_emulator_props_command",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L69",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_max_recording_bytes",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L7",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_parseemulatorprops",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L73",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_parseavddisplayname",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L79",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_simctlbootedargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L82",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_simctlscreenshotargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L84",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_png_signature",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_hostdevices",
+      "target": "src_hostdevices_statusbaroverrideargs",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/hostDevices.ts",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_invalid",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L133",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_callerthread",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L136",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_normalizeflowref",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L148",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_selectflows",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L156",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_selectdevice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L184",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_iserror",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L207",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_orfail",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L208",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_agentstep",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L211",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_pickdevice",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L223",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_flowtool",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L233",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_agent_flow_wait_ms",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_failure",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L27",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_flowtoolresult",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_capturetool",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L291",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_deviceqahandlers",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L315",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_capturetoolresult",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp",
+      "target": "src_mcp_deviceqatoolkit",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.ts",
+      "source_location": "L81",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_test",
+      "target": "src_mcp_test_flows",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/mcp.test.ts",
+      "source_location": "L23",
+      "weight": 1.0
+    },
+    {
+      "source": "src_migrations",
+      "target": "src_migrations_deviceqamigrations",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/migrations.ts",
+      "source_location": "L5",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_stopchild",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L115",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_exectofile",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L126",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_execoptions",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_exec",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L22",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_makeexec",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L28",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_succeeded",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_outputof",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L57",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_childprocess",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L62",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_spawnchild",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L74",
+      "weight": 1.0
+    },
+    {
+      "source": "src_process",
+      "target": "src_process_execresult",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/process.ts",
+      "source_location": "L8",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "src_reactor_knownthreads",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L12",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "src_reactor_startdeviceqacleanup",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L31",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "src_reactor_deviceqacleanuplive",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L65",
+      "weight": 1.0
+    },
+    {
+      "source": "src_reactor",
+      "target": "src_reactor_expiry_sweep_interval",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/reactor.ts",
+      "source_location": "L9",
+      "weight": 1.0
+    },
+    {
+      "source": "src_rpc",
+      "target": "src_rpc_makedeviceqarpchandlers",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/rpc.ts",
+      "source_location": "L14",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_deviceqarunstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L175",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_runs_listed",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L18",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_storedrun",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L21",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_runrow",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L29",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_flowsjson",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L47",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_stepsjson",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L48",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_settingsjson",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L49",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_decodeflows",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L50",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_decodesteps",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L51",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_encodeflows",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L52",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_encodesteps",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L53",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_encodesettings",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L54",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_decodestoredsettings",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L55",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_isstatus",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L58",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_isplatform",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L59",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_mergesettings",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L62",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_tostored",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L70",
+      "weight": 1.0
+    },
+    {
+      "source": "src_runstore",
+      "target": "src_runstore_makerunstore",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "src/runStore.ts",
+      "source_location": "L94",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_reportof",
+      "target": "src_argent_isobject",
+      "relation": "indirect_call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "src/argent.ts",
+      "source_location": "L75",
+      "weight": 1.0
+    },
+    {
+      "source": "src_argent_test_records",
+      "target": "src_argent_parseargentline",
+      "relation": "indirect_call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "src/argent.test.ts",
+      "source_location": "L24",
+      "weight": 1.0
+    },
+    {
+      "source": "src_mcp_flowtool",
+      "target": "src_mcp_agentstep",
+      "relation": "indirect_call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "src/mcp.ts",
+      "source_location": "L282",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "built_at_commit": "abf134da7916263fcd503a589348dcfe0cb018d6"
+}

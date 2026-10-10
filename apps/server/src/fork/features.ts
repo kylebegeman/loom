@@ -7,4 +7,5 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "project-lifecycle",
   "apple-build-tooling",
   "device-qa",
+  "code-graph",
 ];

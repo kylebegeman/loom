@@ -1,45 +1,56 @@
 # L26 seams
 
-> Historical V1 reference. On 2026-09-27 Kyle deferred L26 until V2 ships.
-> Preserve the full product intent; reassess released contracts before using this design.
-> See [PRODUCT.md](./PRODUCT.md#current-decision).
-
 ## Extension points created by this packet
 
-None specific. It uses `ext-core` (with persistence, reactors), `ext-panels`, `ext-mcp`,
-`ext-settings`, `ext-palette`, `ext-web-root` and `ext-diff-header`
-([EXTENSION-POINTS.md, section 17](../EXTENSION-POINTS.md#17-diff-panel-header-ext-diff-header)). Run each existence check; create any missing
-one exactly as specified in [EXTENSION-POINTS.md](../EXTENSION-POINTS.md), one commit each,
-and record the commits here.
+`ext-diff-header`, in its own commit `13fa404a42`, exactly as
+[EXTENSION-POINTS.md, section 17](../EXTENSION-POINTS.md#17-diff-panel-header-ext-diff-header)
+specifies:
 
-## Registrations (fork-owned files only)
+| File                                                     | Change                                                                                                                                                                                                                                                |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/components/DiffPanel.tsx`                  | Two `fork: ext-diff-header` seams: the `ForkDiffHeaderActions` import, and `<ForkDiffHeaderActions threadRef={routeThreadRef} files={codeViewFiles} scopeLabel={selectedScopeLabel} selection={diffSelection} />` first in the header's action group. |
+| `apps/web/src/fork/diffHeader/registry.ts`               | `ForkDiffHeaderActionProps`, `ForkDiffHeaderAction`, `FORK_DIFF_HEADER_ACTIONS`.                                                                                                                                                                      |
+| `apps/web/src/fork/diffHeader/ForkDiffHeaderActions.tsx` | Renders every registered action.                                                                                                                                                                                                                      |
+| `apps/web/src/fork/diffHeader/registry.test.ts`          | Unique action ids.                                                                                                                                                                                                                                    |
+| `docs/fork/seams.tsv`                                    | Row expecting two `ext-diff-header` markers in `DiffPanel.tsx`.                                                                                                                                                                                       |
+| `FORK.md`                                                | "Extension point seams" row for `DiffPanel.tsx`.                                                                                                                                                                                                      |
 
-| Registry                   | File                                       | Entry                                                                |
-| -------------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
-| `FORK_DIFF_HEADER_ACTIONS` | `apps/web/src/fork/diffHeader/registry.ts` | `codeGraphDiffHeaderAction` (id `code-graph`)                        |
-| `FORK_PANELS`              | `apps/web/src/fork/panels/registry.ts`     | `codeGraphPanel` (id `code-graph`, launcher letter `Y`)              |
-| `FORK_ROOT_COMPONENTS`     | `apps/web/src/fork/ForkRoot.tsx`           | `{ id: "code-graph-open-watcher", Component: CodeGraphOpenWatcher }` |
-
-The other registrations (RPC group, services, migrations, MCP toolkit, settings section,
-palette source) follow EXTENSION-POINTS.md and are listed in TECHNICAL.md.
+The other extension points this packet uses (`ext-core`, `ext-panels`, `ext-mcp`,
+`ext-settings`, `ext-palette`, `ext-web-root`) already existed.
 
 ## Packet seams
 
-None. The "Impact" button in the diff panel header goes through `ext-diff-header`, whose two
-marked lines in `apps/web/src/components/DiffPanel.tsx` belong to the extension point (L15
-may add its own button there too).
+None. `git diff main...HEAD` adds `fork:` markers to upstream files only in `DiffPanel.tsx`
+(the two `ext-diff-header` lines above). The `fork: panel-picker` markers in
+`RightPanelTabs.tsx` on this branch belong to L12.
 
-### The diff header action
+## Registrations (fork-owned files only)
 
-`apps/web/src/fork/code-graph/diffHeaderAction.tsx` exports `codeGraphDiffHeaderAction`
-(`{ id: "code-graph", Component: DiffImpactButton }`), where `DiffImpactButton` takes
-`ForkDiffHeaderActionProps` (`threadRef`, `files`, `scopeLabel`, `selection`).
+Server, in `b188786e4b`:
 
-It renders null when there is no thread, no files, or the thread's environment lacks the
-`code-graph` feature, and otherwise an icon button (`NetworkIcon`, tooltip "Show impact of
-these changes") styled like the neighboring `Button size="icon-sm" variant="ghost"`. On
-click it writes the file list into the fork impact store and opens
-`forkPanelSurface("code-graph", "impact")` with `openSurface`. It makes no request itself.
+| File                                                  | Entry                                                                                      |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `packages/contracts/src/fork/rpc.ts`                  | `CodeGraphRpcGroup` in `ForkRpcGroup`; `subscribeStatus` in `ForkSubscriptionRpcTag`.      |
+| `packages/contracts/src/fork/index.ts`                | `export * from "./code-graph.ts"`.                                                         |
+| `packages/contracts/src/fork/clientRpcPermissions.ts` | Client guards for `build`, `cancel`, `delete`, `setAgentTool`, `updateSettings`.           |
+| `apps/server/src/fork/rpcAuthorization.ts`            | Scopes for all 14 tags (`updateSettings` takes `terminal:operate`).                        |
+| `apps/server/src/fork/rpc.ts`                         | `makeCodeGraphRpcHandlers(auth)` under `withForkRuntime`.                                  |
+| `apps/server/src/fork/ForkLayer.ts`                   | `CodeGraphReactorLive` over `CodeGraph.layer`, given `ProjectionStore` and `ProjectStore`. |
+| `apps/server/src/fork/ForkRuntime.ts`                 | `CodeGraphService` in `ForkServices`.                                                      |
+| `apps/server/src/fork/features.ts`                    | `"code-graph"` in `LOOM_SERVER_FEATURES`.                                                  |
+| `apps/server/src/fork/persistence/migrations.ts`      | `CodeGraphMigrations` in `FORK_MIGRATION_SETS`.                                            |
+| `apps/server/src/fork/mcp/index.ts`                   | `CodeGraphToolkit` entry in `FORK_MCP_TOOLKITS`.                                           |
+
+Clients, in `ee70a90584`:
+
+| File                                           | Entry                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------ |
+| `packages/client-runtime/src/fork/index.ts`    | `export * from "./code-graph.ts"`.                                       |
+| `apps/web/src/fork/panels/registry.ts`         | `codeGraphPanel` in `FORK_PANELS` (id `code-graph`, letter `Y`).         |
+| `apps/web/src/fork/diffHeader/registry.ts`     | `codeGraphDiffHeaderAction` in `FORK_DIFF_HEADER_ACTIONS`.               |
+| `apps/web/src/fork/commandPalette/registry.ts` | `codeGraphPaletteSource` in `FORK_COMMAND_PALETTE_SOURCES`.              |
+| `apps/web/src/fork/settings/registry.ts`       | `{ id: "code-graph", title: "Code graph" }` in `FORK_SETTINGS_SECTIONS`. |
+| `apps/web/src/fork/ForkRoot.tsx`               | `{ id: "code-graph-open-watcher", Component: CodeGraphOpenWatcher }`.    |
 
 ## Merge check
 
@@ -49,14 +60,18 @@ tag=$(git tag -l 'v*-nightly.*' --sort=-creatordate | head -1)
 git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
-Record the tag and result. Conflicts may only touch extension point seams this packet
-created (for example the two `fork: ext-diff-header` lines in `DiffPanel.tsx`).
+Result on 2026-10-09 against the newest local tag `v0.0.46-nightly.20261009.2886` (without
+a fresh fetch): `DiffPanel.tsx` and every L26 file merge cleanly. The preview exits 1 on
+the same three files that conflict on `main` (`DesktopAppIdentity.test.ts`,
+`CodexProvider.ts`, `packages/shared/package.json`), none touched by L26.
+
+On a conflict in `DiffPanel.tsx`, keep upstream's surrounding code and reapply the two marked
+lines; `docs/fork/seams.tsv` expects exactly two.
 
 ## FORK.md rows
 
-No "Packet seams" rows. If this packet creates `ext-diff-header`, add to "Extension point
-seams":
+No "Packet seams" rows. "Extension point seams" (added in `13fa404a42`):
 
-| File                                    | Marker            | Why                                                      |
-| --------------------------------------- | ----------------- | -------------------------------------------------------- |
-| `apps/web/src/components/DiffPanel.tsx` | `ext-diff-header` | Fork buttons in the diff panel header (L26 Impact, L15). |
+| File                                    | Marker            | Why                                                                            |
+| --------------------------------------- | ----------------- | ------------------------------------------------------------------------------ |
+| `apps/web/src/components/DiffPanel.tsx` | `ext-diff-header` | Fork buttons in the diff panel header, such as the code graph's Impact button. |

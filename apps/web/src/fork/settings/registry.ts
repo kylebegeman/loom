@@ -5,6 +5,7 @@ import { ProjectLifecycleSettingsSection } from "../project-lifecycle/SettingsSe
 import { AppleBuildToolingSettingsSection } from "../apple-build-tooling/settings";
 import { DeviceQaSettingsSection } from "../device-qa/settings";
 import { PanelPickerSettingsSection } from "../panel-picker/settings";
+import { CodeGraphSettingsSection } from "../code-graph/settings";
 export interface ForkSettingsSection {
   readonly id: string;
   readonly title: string;
@@ -21,4 +22,5 @@ export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
   },
   { id: "device-qa", title: "Device QA", Component: DeviceQaSettingsSection },
   { id: "panel-picker", title: "Panel picker", Component: PanelPickerSettingsSection },
+  { id: "code-graph", title: "Code graph", Component: CodeGraphSettingsSection },
 ];

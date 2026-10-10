@@ -4,6 +4,7 @@ import { projectLifecyclePaletteSource } from "../project-lifecycle/palette";
 import { appleBuildToolingPaletteSource } from "../apple-build-tooling/palette";
 import { deviceQaPaletteSource } from "../device-qa/palette";
 import { panelPickerPaletteSource } from "../panel-picker/palette";
+import { codeGraphPaletteSource } from "../code-graph/palette";
 import { models } from "../model-preview-3d/state";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
@@ -52,6 +53,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   appleBuildToolingPaletteSource,
   deviceQaPaletteSource,
   panelPickerPaletteSource,
+  codeGraphPaletteSource,
 ];
 
 /** Every source's items. The palette matches search terms only, so a string title joins them. */
