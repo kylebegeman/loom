@@ -6,17 +6,20 @@ Each step leaves the tree compiling. Commit at the end with
 1. **Contracts.** Add `PcbBoardStats` and the optional `stats` field to
    `packages/contracts/src/fork/pcb-workspace.ts` (TECHNICAL.md).
 2. **Geometry helpers.** In `apps/server/src/fork/pcb-preview/boardStats.ts`, write
-   `outlineArea(edges)` (chain, flatten arcs, shoelace, subtract inner loops) and
+   `outlineArea(loops)` (shoelace shared loops and subtract inner loops) and
    `annularRing(pad)` as exported pure functions. Export `parseSexp`, `children`, `child`,
    `atom`, `number` and `localPosition` from `semantics.ts` if they are not already.
-3. **KiCad stats.** Implement the KiCad branch of `boardStats` per the table, including
+3. **KiCad stats.** Create or reuse `outline.ts` with the shared `kicadOutline` and
+   `circuitOutline` signatures in L67 TECHNICAL.md. Implement the KiCad branch of
+   `boardStats` per the table, including
    `.kicad_pro` rules parsing (JSON, tolerate missing keys, zero means unset).
 4. **Circuit JSON stats.** Implement the tscircuit branch. Before relying on a field, check it
    against a real `tsci export -f circuit-json` output in a scratch directory outside the
    worktree, and note any difference from REFERENCES.md in a code comment. Keep the function
    free of I/O and accept Circuit JSON without an inspection (derive it with
    `inspectCircuitJson`), so L70 can call it on unsaved variant builds.
-5. **GLB bounds.** Add `readGlbBounds` to `glb.ts` and the height logic in `boardStats.ts`.
+5. **GLB bounds.** Create or reuse `readGlbBounds` in `glb.ts`, including `nodes` and
+   `materials` as shared with L67, and add the height logic in `boardStats.ts`.
    Validate it against the KiCad 10 `complex_hierarchy` demo GLB used by `realTools.test.ts`
    (heights within 0.5 mm of KiCad's 3D viewer); confirm that node names carry references,
    as the KiCad 10 source indicates (REFERENCES.md).

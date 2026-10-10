@@ -26,8 +26,9 @@ case, never sends anything to a printer and never uploads to a fab.
     board body faces, per-part boxes and sides, outline, holes and edge connectors.
   - A case starter generator (`loom_pcb_enclosure`, `t3 pcb enclosure`): `case.scad` always,
     `case.b3d.py` when the server advertises `model-python-cad`, and the board's assembly file.
-  - An `enclosure` section in L48's assembly file (version 2), two new assembly operations
-    (`place-board`, `swap-board`) and enclosure results in L48's fit check.
+  - An `enclosure` section in L48's assembly file (version 2), four new assembly operations
+    (`set-enclosure`, `clear-enclosure`, `place-board`, `swap-board`) and enclosure
+    results in L48's fit check.
   - An "Enclosure" tab appended to the PCB inspector, and an enclosure section in the model
     panel's Fit tab with pins and "Apply suggested move".
   - Two inspection fixes the checks depend on: plated mounting holes and Edge.Cuts loops
@@ -37,7 +38,8 @@ case, never sends anything to a printer and never uploads to a fab.
     screw bosses; anything else is the user's or agent's edit to the generated source.
   - Panel-mount parts that are not on the board (switches, displays in the lid).
   - Thermal, drop or tolerance-stack analysis. Clearances are geometric.
-  - STEP output of the case (L47's slicer bridge and the Fabrication app own fabrication files).
+  - Dedicated STEP output of the case. L50's existing Python CAD export handles generated
+    build123d cases; the optional Fabrication app remains available for other workflows.
   - Mobile. Mobile has no PCB panel and no 3D model panel.
 
 ## Surfaces

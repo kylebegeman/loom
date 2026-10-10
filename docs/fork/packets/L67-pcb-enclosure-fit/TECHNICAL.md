@@ -385,7 +385,8 @@ export function circuitOutline(json: unknown): OutlineLoops | null;
   bounds read only top-level items (`semantics.ts:92-94`); the loops include footprint edge cuts.
   Arcs and circles flatten to 0.05 mm chord error. Endpoints join within 0.001 mm. The loop with
   the largest absolute area is `outer`, made counter-clockwise in the drawing frame; holes are
-  the others. Open chains are dropped; no closed loop returns null.
+  the others. Any open chain, or no closed loop, returns null, so L55 falls back to bounds
+  and the generator does not mistake a closed cutout for an incomplete outer wall.
 - tscircuit: `pcb_board.outline` when present (a point list, circuit-json), else the rectangle
   from `center`, `width`, `height`, both with Y negated like `semantics.ts:418-424`.
 - L55 computes its area by shoelacing these loops. Whichever of L55 and L67 lands first writes
@@ -401,15 +402,16 @@ export type GlbMesh = {
   nodes: readonly string[]; // ancestor node names, root first
   materials: readonly string[];
   min: Vec3;
-  max: Vec3; // node space after transforms, metres, +Y up
+  max: Vec3; // world-space bounds after node transforms, metres, +Y up
 };
-export function readGlbBounds(json: unknown): { meshes: GlbMesh[] };
+export type GlbBounds = { meshes: GlbMesh[] };
+export function readGlbBounds(json: unknown): GlbBounds;
 ```
 
-`readGlbBounds` is L55's function (`L55-pcb-board-stats/TECHNICAL.md`, "Heights from a cached
-GLB") with two extra fields per mesh, `nodes` and `materials`, which L61's classification rules
-need. If L55 landed first, add the fields; its callers ignore them. The service reads only the
-first 20 bytes and the JSON chunk of the file (cap 16 MiB of JSON), not the binary chunk.
+`readGlbBounds` uses the shared L55 signature (`L55-pcb-board-stats/TECHNICAL.md`, "Heights
+from a cached GLB"), including `nodes` and `materials` for L61's classification rules.
+Whichever of L55 and L67 lands first creates the full signature; the other reuses it. The
+service reads only the first 20 bytes and the JSON chunk of the file (cap 16 MiB of JSON), not the binary chunk.
 
 ### Board features (`enclosure/features.ts`)
 

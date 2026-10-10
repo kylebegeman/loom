@@ -137,10 +137,21 @@ not verified):
 New in `apps/server/src/fork/pcb-preview/glb.ts`, beside `normalizeCircuitGlb`:
 
 ```ts
-export type GlbBounds = { meshes: { name: string | null; min: Vec3; max: Vec3 }[] };
+export type GlbMesh = {
+  name: string | null;
+  nodes: readonly string[]; // ancestor node names, root first
+  materials: readonly string[];
+  min: Vec3;
+  max: Vec3; // world-space bounds after node transforms, metres, +Y up
+};
+export type GlbBounds = { meshes: GlbMesh[] };
 /** World-space boxes of every mesh, from POSITION accessor min/max and node transforms. */
 export function readGlbBounds(json: unknown): GlbBounds;
 ```
+
+This is the shared signature used by L67. Whichever packet lands first creates it, including
+ancestor names and material names; the other imports it. L55 uses the ancestor names to name
+the tallest part, and L67 uses the materials to classify board surfaces.
 
 glTF requires `min` and `max` on every POSITION accessor, so no vertex data is read. The
 function walks each scene's node tree, composes `matrix` or TRS transforms, and transforms the
