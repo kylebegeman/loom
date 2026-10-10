@@ -36,6 +36,8 @@ const shell = (fields: Partial<OrchestrationV2ThreadShell>) =>
     settledAt: null,
     settledOverride: null,
     activeRunId: null,
+    creationSource: "web",
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: "thread-1" },
     ...fields,
   }) as OrchestrationV2ThreadShell;
 
@@ -87,6 +89,23 @@ describe("holders", () => {
     expect(holdsLane(shell({ settledAt: now }))).toBe(false);
     expect(holdsLane(shell({ settledOverride: "settled" }))).toBe(false);
     expect(holdsLane(shell({ settledAt: now, settledOverride: "active" }))).toBe(true);
+  });
+
+  it("lets a provider's own subagent hold a lane only while it runs", () => {
+    const lineage = {
+      parentThreadId: "parent",
+      relationshipToParent: "subagent",
+      rootThreadId: "parent",
+    };
+    const native = { creationSource: "provider", lineage } as Partial<OrchestrationV2ThreadShell>;
+    expect(holdsLane(shell(native))).toBe(false);
+    expect(
+      holdsLane(shell({ ...native, activeRunId: "run-1" } as Partial<OrchestrationV2ThreadShell>)),
+    ).toBe(true);
+    // A delegated child is an ordinary thread that settles on its own.
+    expect(
+      holdsLane(shell({ ...native, creationSource: "mcp" } as Partial<OrchestrationV2ThreadShell>)),
+    ).toBe(true);
   });
 });
 

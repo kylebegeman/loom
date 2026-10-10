@@ -1,4 +1,7 @@
-import type { OrchestrationV2ThreadShell } from "@t3tools/contracts";
+import {
+  isProviderNativeSubagentThread,
+  type OrchestrationV2ThreadShell,
+} from "@t3tools/contracts";
 import type { ProjectLifecycleSettings } from "@t3tools/contracts/fork";
 
 /** Finder and `diskutil` sizes are decimal. */
@@ -71,9 +74,14 @@ export const threadSettled = (thread: OrchestrationV2ThreadShell) =>
   thread.settledOverride === "settled" ||
   (thread.settledAt !== null && thread.settledOverride !== "active");
 
-/** Threads that keep a lane alive: not archived and not settled. */
+/**
+ * Threads that keep a lane alive: not archived and not settled. A provider's own subagent never
+ * settles, so it holds the lane only while it runs; its parent holds it otherwise.
+ */
 export const holdsLane = (thread: OrchestrationV2ThreadShell) =>
-  thread.archivedAt === null && !threadSettled(thread);
+  thread.archivedAt === null &&
+  !threadSettled(thread) &&
+  (!isProviderNativeSubagentThread(thread) || threadRunning(thread));
 
 export const threadRunning = (thread: OrchestrationV2ThreadShell) => thread.activeRunId !== null;
 

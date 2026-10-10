@@ -109,6 +109,29 @@ describe("image backend commands", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("starts an empty image when the lane's image is gone, and reuses one that exists", () =>
+    Effect.gen(function* () {
+      const lane = yield* tempLane;
+      const { calls, runner } = scriptedRunner(() => ({ code: 0 }));
+      const { image } = yield* makeSpaceOps.pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, runner),
+      );
+      const attach = `diskutil image attach --mountPoint ${lane.spacePath} ${lane.imagePath}`;
+
+      // Nothing mounts in the test, so both attempts end in the mount check.
+      yield* image.attach(lane, 2 * GB, "loom-app").pipe(Effect.flip);
+      expect(calls).toEqual([
+        `diskutil image create blank --format ASIF --size 2g --volumeName loom-app ${lane.imagePath}`,
+        attach,
+      ]);
+
+      calls.length = 0;
+      NodeFS.writeFileSync(lane.imagePath, "");
+      yield* image.attach(lane, 2 * GB, "loom-app").pipe(Effect.flip);
+      expect(calls).toEqual([attach]);
+    }).pipe(Effect.scoped),
+  );
+
   it.live("reports diskutil's own error when creating fails", () =>
     Effect.gen(function* () {
       const lane = yield* tempLane;
@@ -176,7 +199,7 @@ describe.runIf(
         expect(yield* image.isMounted(lane)).toBe(false);
         expect(() => NodeFS.writeFileSync(NodePath.join(lane.spacePath, "stray"), "x")).toThrow();
 
-        yield* image.attach(lane);
+        yield* image.attach(lane, GB, `loom-test-${process.pid}`);
         expect(NodeFS.existsSync(NodePath.join(lane.spacePath, "tmp", "blob"))).toBe(true);
         const grown = yield* image.resize(lane, 2 * GB, null);
         expect(grown.device).toMatch(/^\/dev\/disk\d+$/);

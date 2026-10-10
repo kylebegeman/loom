@@ -26,7 +26,9 @@ stops at the cap instead of filling the disk. Elsewhere a lane is a plain folder
 soft cap. Lanes default to 40 GB, and 100 GB for Xcode projects.
 
 When every thread using a checkout is settled or archived, its lane is deleted. The
-checkout itself is never touched.
+checkout itself is never touched. Subagents that a provider starts on its own, such as
+Claude's Agent tool, keep a lane only while they run. If a lane's folder is deleted outside
+Loom, the lane starts again empty the next time a thread needs it.
 
 ## Keeping work going unattended
 
