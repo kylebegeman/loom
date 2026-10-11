@@ -5,7 +5,7 @@ import {
   BuildPlateSetting,
   DEFAULT_MODEL_PREVIEW_SETTINGS,
 } from "@t3tools/contracts/fork";
-import { bedGroups, fitsBuildVolume, resolveBuildVolume } from "./buildPlate";
+import { bedFit, bedGroups, fitsBuildVolume, resolveBuildVolume } from "./buildPlate";
 it("resolves vendor build volumes and uses custom dimensions only for custom", () => {
   const base = DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate;
   expect(resolveBuildVolume(base)).toEqual([350, 320, 325]);
@@ -24,6 +24,13 @@ it("accepts exact boundaries and warns if any axis exceeds them", () => {
     [350, 320, 326],
   ])
     expect(fitsBuildVolume(size, [350, 320, 325])).toBe(false);
+});
+it("tells a part that fits once turned 90° apart from one that does not fit", () => {
+  expect(bedFit([340, 300, 100], [350, 320, 325])).toBe("fits");
+  expect(bedFit([320, 340, 100], [350, 320, 325])).toBe("rotated");
+  expect(bedFit([320, 340, 330], [350, 320, 325])).toBe("too-large");
+  expect(bedFit([360, 360, 10], [350, 320, 325])).toBe("too-large");
+  expect(bedFit([200, 290, 5000], [297, 210, null])).toBe("rotated");
 });
 it("checks only the footprint on a surface", () => {
   expect(fitsBuildVolume([297, 210, 5000], [297, 210, null])).toBe(true);

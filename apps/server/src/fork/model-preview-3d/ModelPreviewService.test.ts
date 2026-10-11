@@ -366,6 +366,14 @@ it.effect(
         expect(result.summary?.facets).toBe(12);
         expect(result.log.some((line) => line.level === "echo")).toBe(true);
       }
+      const renders = t.path.join(t.stateDir, "fork", "model-preview-3d", "renders");
+      expect((yield* t.fs.readDirectory(renders)).filter((name) => !name.endsWith(".png"))).toEqual(
+        [],
+      );
+      t.setTimeout();
+      expect((yield* Effect.flip(service.renderImages(t.file, ["iso"], {}))).reason).toBe(
+        "timeout",
+      );
       yield* service.updateSettings({ ...(yield* service.getSettings()), agentToolEnabled: false });
       expect((yield* Effect.flip(service.renderImages(t.file, ["iso"], {}))).message).toContain(
         "disabled",

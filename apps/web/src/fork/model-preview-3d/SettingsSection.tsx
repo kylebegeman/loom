@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
-  BUILD_PLATE_PRESETS,
   ModelPreviewSettings,
   type BuildPlatePattern,
   type BuildPlatePresetId,
@@ -29,7 +28,13 @@ import {
 import { useServerConfigs } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { OperationStatus } from "./OperationStatus";
-import { BUILD_PLATE_PATTERNS, bedGroups, buildPlateLabel, formatVolume } from "./buildPlate";
+import {
+  BUILD_PLATE_PATTERNS,
+  bedGroups,
+  buildPlateLabel,
+  buildPlateNote,
+  formatVolume,
+} from "./buildPlate";
 import { models, runModelCommand } from "./state";
 
 const validateSettings = Schema.decodeSync(ModelPreviewSettings);
@@ -235,9 +240,9 @@ function SettingsForm({
           ))}
         </div>
       ) : (
-        BUILD_PLATE_PRESETS[settings.buildPlate.preset].note && (
+        buildPlateNote(settings.buildPlate) && (
           <p className="px-3 text-xs text-muted-foreground sm:px-4">
-            {BUILD_PLATE_PRESETS[settings.buildPlate.preset].note}
+            {buildPlateNote(settings.buildPlate)}
           </p>
         )
       )}

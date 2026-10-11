@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { resolveStorage } from "~/lib/storage";
@@ -8,10 +9,13 @@ const Selection = Schema.Struct({
   layers: Schema.Literals(["front", "back", "all"]),
 });
 export type Selection = typeof Selection.Type;
+// Saved preferences outlive releases: a field added later must not reset trust and selections.
 const Preferences = Schema.Struct({
-  selections: Schema.Record(Schema.String, Selection),
-  trusted: Schema.Array(Schema.String),
-  electronicsUrl: Schema.String,
+  selections: Schema.Record(Schema.String, Selection).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  trusted: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  electronicsUrl: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
 const KEY = "loom:pcb-preview:preferences:v1";
 const defaults = {
@@ -19,7 +23,7 @@ const defaults = {
   trusted: [],
   electronicsUrl: "",
 } satisfies typeof Preferences.Type;
-const decodePreferences = Schema.decodeSync(Schema.fromJsonString(Preferences));
+export const decodePreferences = Schema.decodeSync(Schema.fromJsonString(Preferences));
 function load() {
   try {
     const raw = resolveStorage(window.localStorage).getItem(KEY);

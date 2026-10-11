@@ -8,7 +8,11 @@ import * as Stream from "effect/Stream";
 import type { McpCapability } from "../../mcp/McpInvocationContext.ts";
 import * as Layer from "effect/Layer";
 import { EnvironmentId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
-import { ModelPreviewError, EMPTY_MODEL_WORKSPACE } from "@t3tools/contracts/fork";
+import {
+  ModelPreviewError,
+  EMPTY_MODEL_WORKSPACE,
+  DEFAULT_MODEL_PREVIEW_SETTINGS,
+} from "@t3tools/contracts/fork";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
@@ -59,6 +63,7 @@ it.effect(
       const threadId = ThreadId.make("model-thread");
       let reason: ModelPreviewError["reason"] = "openscad-missing";
       const service = {
+        getSettings: () => Effect.succeed(DEFAULT_MODEL_PREVIEW_SETTINGS),
         renderImages: (file: { threadId: ThreadId }) => {
           expect(file.threadId).toBe(threadId);
           return Effect.fail(
@@ -115,6 +120,7 @@ it.effect(
       let enabled = false;
       let calls = 0;
       const service = {
+        getSettings: () => Effect.succeed(DEFAULT_MODEL_PREVIEW_SETTINGS),
         proposeVariants: (
           file: { threadId: ThreadId; path: string },
           variants: readonly { name: string; values: Readonly<Record<string, string>> }[],
@@ -196,4 +202,72 @@ it.effect("rejects MCP clients without a calling project thread", () =>
     expect(result).toMatchObject({ reason: "command-failed" });
     expect(result.message).toContain("project thread");
   }),
+);
+
+it.effect("refuses every tool, including settings, while agent model tools are off", () =>
+  Effect.gen(function* () {
+    const settings = { ...DEFAULT_MODEL_PREVIEW_SETTINGS, agentToolEnabled: false };
+    // Only getSettings is provided: any tool reaching another service method fails the test.
+    const service = partial<ModelPreviewService["Service"]>({
+      getSettings: () => Effect.succeed(settings),
+    });
+    const toolkit = yield* ModelPreview3dToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
+          Layer.provide(callerLayer),
+          Layer.provide(
+            Layer.succeed(
+              ForkRuntime,
+              Context.make(
+                ModelPreviewService,
+                service,
+              ) as unknown as Context.Context<ForkServices>,
+            ),
+          ),
+        ),
+      ),
+    );
+    const invocation = {
+      environmentId: EnvironmentId.make("test"),
+      thread: {
+        threadId: ThreadId.make("disabled-thread"),
+        providerSessionId: "session",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      },
+      client: undefined,
+      requestNamespace: "model-test",
+      // Saving settings is an environment write, which needs the orchestration capability.
+      capabilities: new Set<McpCapability>(["orchestration"]),
+      issuedAt: 0,
+    };
+    const inThread = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(
+        Effect.provideService(McpInvocationContext, invocation),
+        Effect.provide(callerLayer),
+      );
+    const errors = [
+      yield* inThread(
+        toolkit
+          .handle("loom_model_preview_3d_status", {})
+          .pipe(Effect.flatMap(Stream.runCollect), Effect.flip),
+      ),
+      yield* inThread(
+        toolkit
+          .handle("loom_model_preview_3d_settings", {})
+          .pipe(Effect.flatMap(Stream.runCollect), Effect.flip),
+      ),
+      yield* inThread(
+        toolkit
+          .handle("loom_model_preview_3d_save_settings", {
+            settings: { ...settings, agentToolEnabled: true },
+          })
+          .pipe(Effect.flatMap(Stream.runCollect), Effect.flip),
+      ),
+    ];
+    for (const error of errors)
+      expect(error).toMatchObject({
+        reason: "command-failed",
+        message: expect.stringContaining("disabled"),
+      });
+  }).pipe(Effect.scoped),
 );

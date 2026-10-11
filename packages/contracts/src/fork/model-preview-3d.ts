@@ -156,13 +156,13 @@ export const BUILD_PLATE_PRESETS = {
     label: "Bambu Lab H2D",
     kind: "printer",
     volumeMm: [350, 320, 325],
-    note: "One nozzle: 325 x 320 x 325 mm. Both nozzles: 300 x 320 x 325 mm.",
+    note: "Left nozzle: 325 × 320 × 320 mm. Right nozzle: 325 × 320 × 325 mm. Both nozzles: 300 × 320 × 320 mm.",
   },
   "bambu-h2c": {
     label: "Bambu Lab H2C",
     kind: "printer",
     volumeMm: [330, 320, 325],
-    note: "Left nozzle: 325 x 320 x 320 mm. Both nozzles: 300 x 320 x 325 mm.",
+    note: "Left nozzle: 325 × 320 × 320 mm. Right nozzle: 305 × 320 × 325 mm. Both nozzles: 300 × 320 × 320 mm.",
   },
   "bambu-x1-p1-a1": {
     label: "Bambu Lab X1, P1, A1",
@@ -223,7 +223,7 @@ export const BuildPlatePresetId = Schema.Literals([
   "custom",
 ]);
 
-/** The lines drawn on the bed: 10 mm cells, quarter-inch cells, or only the outline. */
+/** The lines drawn on the bed: a 10 mm grid, a 1 in grid with quarter-inch lines, or only the outline. */
 export const BuildPlatePattern = Schema.Literals(["grid-mm", "grid-inch", "plain"]);
 
 export const BuildPlateSetting = Schema.Struct({

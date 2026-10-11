@@ -144,7 +144,7 @@ export const PcbToolkit = Toolkit.make(
     parameters: Schema.Struct({
       ...design,
       expectedVersion: W.PcbWorkspaceUpdate.fields.expectedVersion,
-      workspace: W.PcbWorkspace,
+      workspace: W.PcbWorkspaceInput,
     }),
     success: W.PcbWorkspace,
     failure,

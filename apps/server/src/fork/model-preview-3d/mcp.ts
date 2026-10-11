@@ -209,19 +209,35 @@ const modelThread = Effect.gen(function* () {
     });
   return invocation.thread.threadId;
 });
+/**
+ * Runs one agent tool against the model service. Every tool, including settings, is refused
+ * while the user has turned agent model tools off, so an agent cannot switch them back on.
+ */
+const withAgentTools = <A, E, R>(
+  use: (service: ModelPreviewService["Service"]) => Effect.Effect<A, E, R>,
+) =>
+  withForkRuntime(
+    Effect.gen(function* () {
+      const service = yield* ModelPreviewService;
+      if (!(yield* service.getSettings()).agentToolEnabled)
+        return yield* new ModelPreviewError({
+          reason: "command-failed",
+          message: "Agent model tools are disabled in Loom settings.",
+        });
+      return yield* use(service);
+    }),
+  );
 export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (input: {
   path: string;
   views?: ReadonlyArray<typeof View.Type> | undefined;
   overrides?: Readonly<Record<string, string>> | undefined;
 }) {
   const threadId = yield* modelThread;
-  return yield* withForkRuntime(
-    Effect.flatMap(ModelPreviewService, (service) =>
-      service.renderImages(
-        { threadId, path: input.path },
-        input.views ?? ["iso", "front", "top", "right"],
-        input.overrides ?? {},
-      ),
+  return yield* withAgentTools((service) =>
+    service.renderImages(
+      { threadId, path: input.path },
+      input.views ?? ["iso", "front", "top", "right"],
+      input.overrides ?? {},
     ),
   );
 });
@@ -235,243 +251,105 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
       loom_model_preview_3d_editor: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                if (!(yield* service.getSettings()).agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.editorAction({ ...input, threadId });
-              }),
-            ),
-          );
+          return yield* withAgentTools((service) => service.editorAction({ ...input, threadId }));
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_status: McpToolAccess.readsAsCaller((_input) =>
         Effect.gen(function* () {
           yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                return yield* service.status();
-              }),
-            ),
-          );
+          return yield* withAgentTools((service) => service.status());
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_list: McpToolAccess.readsAsCaller((_input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.listModels(threadId);
-              }),
-            ),
-          );
+          return yield* withAgentTools((service) => service.listModels(threadId));
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_file: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.fileUrl(
-                  { threadId, path: input.path },
-                  input.allowLarge ?? false,
-                );
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.fileUrl({ threadId, path: input.path }, input.allowLarge ?? false),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_parameters: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.parameters({ threadId, path: input.path });
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.parameters({ threadId, path: input.path }),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_workspace: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.getWorkspace({ threadId, path: input.path });
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.getWorkspace({ threadId, path: input.path }),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_save_workspace: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.updateWorkspace(
-                  { threadId, path: input.path },
-                  input.operation,
-                );
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.updateWorkspace({ threadId, path: input.path }, input.operation),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_render_mesh: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.renderScad({
-                  file: { threadId, path: input.path },
-                  overrides: input.overrides,
-                  parameterSet: input.parameterSet,
-                  ...(input.variantId ? { variantId: input.variantId } : {}),
-                });
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.renderScad({
+              file: { threadId, path: input.path },
+              overrides: input.overrides,
+              parameterSet: input.parameterSet,
+              ...(input.variantId ? { variantId: input.variantId } : {}),
+            }),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_save_parameter_set: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.saveParameterSet(
-                  { threadId, path: input.path },
-                  input.name,
-                  input.values,
-                );
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.saveParameterSet({ threadId, path: input.path }, input.name, input.values),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_cancel_variant: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.cancelVariant(
-                  { threadId, path: input.path },
-                  input.variantId,
-                );
-              }),
-            ),
+          return yield* withAgentTools((service) =>
+            service.cancelVariant({ threadId, path: input.path }, input.variantId),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_settings: McpToolAccess.readsAsCaller((_input) =>
         Effect.gen(function* () {
           yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                return yield* service.getSettings();
-              }),
-            ),
-          );
+          return yield* withAgentTools((service) => service.getSettings());
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_save_settings: McpToolAccess.writesEnvironment((input) =>
         Effect.gen(function* () {
           yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                return yield* service.updateSettings(input.settings);
-              }),
-            ),
-          );
+          return yield* withAgentTools((service) => service.updateSettings(input.settings));
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_clear_cache: McpToolAccess.writesEnvironment((_input) =>
         Effect.gen(function* () {
           yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              Effect.gen(function* () {
-                const settings = yield* service.getSettings();
-                if (!settings.agentToolEnabled)
-                  return yield* new ModelPreviewError({
-                    reason: "command-failed",
-                    message: "Agent model tools are disabled in Loom settings.",
-                  });
-                return yield* service.clearCache();
-              }),
-            ),
-          );
+          return yield* withAgentTools((service) => service.clearCache());
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_propose_variants: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withForkRuntime(
-            Effect.flatMap(ModelPreviewService, (service) =>
-              service.proposeVariants({ threadId, path: input.path }, input.variants),
-            ),
+          return yield* withAgentTools((service) =>
+            service.proposeVariants({ threadId, path: input.path }, input.variants),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),

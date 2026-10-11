@@ -35,7 +35,10 @@ export function ModelPreview3dShortcuts() {
     handled.current = request.requestId;
     const act = async () => {
       const panels = useRightPanelStore.getState(),
-        surface = forkPanelSurface("model-preview-3d", request.path);
+        surface = {
+          ...forkPanelSurface("model-preview-3d", request.path),
+          title: request.path.split("/").at(-1) ?? request.path,
+        };
       if (request.command.action === "close") panels.closeSurface(threadRef, surface.id);
       else if (request.command.action === "maximize")
         await requestPanelPresentation(threadRef, request.command.enabled ?? true);

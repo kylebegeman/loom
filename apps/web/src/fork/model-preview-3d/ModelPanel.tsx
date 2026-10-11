@@ -60,7 +60,7 @@ import {
   type InspectorBadge,
   type InspectorTab,
 } from "./ModelInspector";
-import { resolvePlate, fitsBuildVolume } from "./buildPlate";
+import { bedFit, resolvePlate } from "./buildPlate";
 import { BedPicker } from "./BedPicker";
 import { changedParameters } from "./params";
 import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
@@ -692,7 +692,7 @@ function ModelFile({
     );
   const issues =
     render?.log.filter((line) => line.level === "error" || line.level === "warning").length ?? 0;
-  const oversized = stats && !fitsBuildVolume(stats.size, volume);
+  const plateFit = stats ? bedFit(stats.size, volume) : "fits";
   const unapplied =
     session && !session.automatic && session.hasUnapplied
       ? changedParameters(session.data.parameters, session.values, session.applied).length
@@ -701,7 +701,7 @@ function ModelFile({
   const badges: Partial<Record<InspectorTab, InspectorBadge>> = {};
   if (unapplied) badges.customize = { tone: "warning", count: unapplied };
   if (openRequests) badges.markup = { tone: "primary", count: openRequests };
-  if (oversized || issues) badges.part = { tone: "warning", count: null };
+  if (plateFit !== "fits" || issues) badges.part = { tone: "warning", count: null };
   const hint =
     editing.picking === "measure"
       ? editing.pendingPoint
@@ -1143,10 +1143,10 @@ function ModelFile({
             {stats.triangles.toLocaleString()} triangles
           </span>
         )}
-        {oversized && (
+        {plateFit !== "fits" && (
           <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
             <TriangleAlertIcon />
-            Larger than the bed
+            {plateFit === "rotated" ? "Fits if rotated 90°" : "Larger than the bed"}
           </button>
         )}
         <span

@@ -115,8 +115,9 @@ of image references reclaim files only when no persisted workspace still referen
 ## Agent tools and optional integrations
 
 The shared `t3-code` MCP server exposes `loom_model_preview_3d_render` and
-`loom_model_preview_3d_propose_variants`. Both check the feature's `agentToolEnabled` setting
-and derive workspace access from the authenticated invocation thread. The render tool accepts
+`loom_model_preview_3d_propose_variants`. Every `loom_model_preview_3d_*` tool checks the
+feature's `agentToolEnabled` setting (`withAgentTools` in `mcp.ts`), so an agent cannot read,
+change or re-enable anything while the user has agent tools off. Render and propose also derive workspace access from the authenticated invocation thread. The render tool accepts
 SCAD, STL, 3MF and OBJ, returns host PNG paths, logs and geometry summaries, and does not render
 glTF/GLB. The 3MF wrapper normalizes units for the tested OpenSCAD import behavior. Variant
 proposals accept up to 12 named alternatives, use validated OpenSCAD literals and enter the
