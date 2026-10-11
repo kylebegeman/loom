@@ -1,8 +1,14 @@
 # L32: Which beds fit?
 
-Status: Ready to build.
+Status: Implemented locally; focused checks passed (`feat/model-camera-bed-fit`).
 
 Approved by Kyle on 2026-10-10.
+
+Milestones: bed-module extraction `b019e7e9a5`, implementation `0072ca2b49`.
+
+Implementation, focused tests, changed-source lint and consumer typechecks passed on the
+branch above. Browser/desktop interaction and real OpenSCAD rendering were not run in this
+implementation pass; see [TESTING.md](./TESTING.md#results).
 
 The Part tab already says whether the current part fits the active bed. This packet adds a
 compact "Which beds fit?" list below that check: one row per bed (printers, surfaces and any

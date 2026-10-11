@@ -2,6 +2,26 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+## Results
+
+Implementation branch: `feat/model-camera-bed-fit`, 2026-10-10. The focused results below
+were reported during implementation; the commands and manual steps later in this document
+are the validation plan, not additional completed checks.
+
+| Check                                                                              | Result                                                                               |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Shared bed contracts                                                               | Passed: 17 tests                                                                     |
+| Focused model server tests, including bed-fit responses                            | Passed: 31 tests                                                                     |
+| Web bed helper regressions                                                         | Passed: 7 tests                                                                      |
+| Focused lint on changed source                                                     | Passed                                                                               |
+| Consumer typechecks                                                                | Passed: contracts, client-runtime, web and server                                    |
+| Bed selection, permissions, live reload, narrow layout and themes in a real client | Not run; browser/computer-use verification was not authorized for this pass          |
+| Real OpenSCAD geometry summary and fit report                                      | Not run; the optional binary integration test was skipped to keep validation focused |
+
+Server tests use fake process results. They verify the fit response contract and service
+behavior, rather than an installed OpenSCAD binary. No release, merge or remote-client
+verification is recorded here.
+
 ## Automated tests
 
 | File                                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |

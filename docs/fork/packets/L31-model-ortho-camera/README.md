@@ -1,8 +1,14 @@
 # L31: Orthographic camera
 
-Status: Ready to build
+Status: Implemented locally; focused checks passed (`feat/model-camera-bed-fit`).
 
 Approved by Kyle on 2026-10-10.
+
+Implementation milestone: `0072ca2b49`.
+
+Implementation, focused tests, changed-source lint and consumer typechecks passed on the
+branch above. Browser/desktop interaction and real OpenSCAD rendering were not run in this
+implementation pass; see [TESTING.md](./TESTING.md#results).
 
 The 3D model viewport can switch between perspective and orthographic projection. Orthographic
 shows parallel edges as parallel and keeps every part of the model at the same scale, which is

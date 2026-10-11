@@ -6,9 +6,10 @@ list; optional shortcuts for opening the panel and capturing a view are in Keybi
 
 Loom previews STL, 3MF, OBJ, glTF and GLB. Drag to orbit, drag with the middle or right
 button to pan, and scroll to zoom. The floating tools choose a standard or saved view and
-toggle wireframe, the bed and axes. The **Bed** menu in the viewport sets what the part rests
-on: a printer's build plate, a flat surface such as an A4 sheet or a 1 m square, or a custom
-size, with a 10 mm grid, a 1 in grid or a plain surface. Surfaces have no height limit. The
+toggle wireframe, the bed and axes. **Display > Orthographic** switches to a projection where
+parallel edges stay parallel, useful for checking alignment against a drawing. The **Bed** menu
+in the viewport sets what the part rests on: a printer's build plate, a flat surface such as an
+A4 sheet or a 1 m square, or a custom size, with a 10 mm grid, a 1 in grid or a plain surface. Surfaces have no height limit. The
 choice is saved for the environment, so the Part tab, variants and settings follow it.
 Maximize the panel for a larger work area with the inspector alongside your part. In a narrow
 panel the inspector opens as a sheet below the viewport; expand it for long forms, then return
@@ -16,8 +17,8 @@ to the viewport.
 
 While the panel has focus, **F** fits the model, **O** and **H** choose orbit or pan,
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
-and **I** shows or hides the inspector. The help button beside the zoom controls lists every
-shortcut.
+**P** switches perspective and orthographic projection, and **I** shows or hides the inspector.
+The help button beside the zoom controls lists every shortcut.
 Dimensions are in millimetres: STL and OBJ are treated as mm, 3MF uses its recorded units,
 and glTF is converted from metres. Draco-compressed glTF requires an uncompressed export.
 Files above the environment's size limit need **Load anyway**.
@@ -60,19 +61,27 @@ Settings control the render backend, timeout, color export and file-size limit. 
 bed from the **Bed** menu in the viewport, the printer menu in **Part**, or settings; set a
 custom size in the **Bed** menu or settings. **Part** shows the dimensions against that bed;
 oversized parts show a warning in the status bar and on the tab, and previewing them is still
-allowed. Clear render cache removes cached outputs.
+allowed. **Part > Which beds fit?** compares the part with the available printers, surfaces
+and your custom bed. Each row says whether it fits as shown, fits after a 90-degree turn, or exceeds
+the bed by the listed dimensions. Select a row to use that bed. A rotated fit is advice; it does
+not rotate the model. Surfaces check the footprint without a height limit. Clear render cache
+removes cached outputs.
 
 ## Show the agent your part
 
 **Capture** attaches the current view to the composer. Its menu attaches a four-view sheet
-showing iso, front, top and right, or one of your saved review sheets. Send the attachment with your next message; remove it
-from the composer if you no longer need it.
+showing iso, front, top and right, or one of your saved review sheets. The four-view sheet is
+always orthographic; current-view captures and saved review sheets keep their views' projections.
+Capturing restores your working view afterward. Send the attachment with your next message;
+remove it from the composer if you no longer need it.
 
 Agents can call `loom_model_preview_3d_render` for SCAD, STL, 3MF and OBJ PNG views, logs and
 geometry summaries. OpenSCAD runs on the environment host. **Let agents render models and propose variants** in
 settings turns every 3D model agent tool on or off, independently of the panel. While it is off,
 agents also cannot change 3D settings, including turning it back on. The tool returns host file paths
-that the agent can read. It does not render glTF or GLB.
+that the agent can read. It renders orthographic PNGs by default; agents can request
+`projection: "perspective"` for perspective views. The result also compares the part against
+your available beds when OpenSCAD provides geometry dimensions. It does not render glTF or GLB.
 
 ## Explore and review a design
 
@@ -95,10 +104,11 @@ context to your existing composer draft without sending it. After the agent chan
 open the request to compare the reference with the current model, move the pin if needed, then
 accept the change or reopen it.
 
-**Views** stores camera positions with their display settings and section plane. **Save current
-view** in the view menu or the tab saves one; click a row to return to it. Recalling a view from
-changed geometry refits it. A review sheet captures up to four saved views as one image for the
-agent, with or without measurements, and restores your working view afterward.
+**Views** stores camera positions with their projection, display settings and section plane.
+**Save current view** in the view menu or the tab saves one; click a row to return to it. Views
+from earlier Loom versions open in perspective. Recalling a view from changed geometry refits
+it. A review sheet captures up to four saved views as one image for the agent, with or without
+measurements, and restores your working view afterward.
 
 For SCAD, **Variants** stores design candidates without changing the active part. Add the current
 values, a saved parameter set, or a parameter sweep that makes every combination of up to two
@@ -133,7 +143,9 @@ show the panel as unavailable.
 Agents can use `loom_model_preview_3d_*` tools to inspect files, render meshes, save settings,
 parameter sets and workspace tools, propose variants, and operate the visible editor. Camera,
 picking, marked captures, customizer history and draft preparation use the connected client.
-Host rendering and saved state remain available without opening the editor.
+Host rendering and saved state remain available without opening the editor. Agents can change
+projection through the editor's display action; its snapshot reports the current projection
+and bed-fit results for the loaded model.
 
 `t3 model <action> '<json>'` calls the same tools using their MCP suffix. It needs
 `LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION`, or the credentials inherited by an ACP agent

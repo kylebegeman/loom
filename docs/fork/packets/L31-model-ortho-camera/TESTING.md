@@ -2,6 +2,26 @@
 
 Focused tests only, no sleeps, no repo-wide checks.
 
+## Results
+
+Implementation branch: `feat/model-camera-bed-fit`, 2026-10-10. The focused results below
+were reported during implementation; the commands and manual steps later in this document
+are the validation plan, not additional completed checks.
+
+| Check                                                                         | Result                                                                               |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Viewer tests for projection, camera restore and captures                      | Passed: 27 tests                                                                     |
+| Focused model server tests, including render projection and bed-fit responses | Passed: 31 tests                                                                     |
+| Camera schema compatibility tests                                             | Passed: 2 tests                                                                      |
+| Workspace persistence regressions                                             | Passed: 2 tests                                                                      |
+| Focused lint on changed source                                                | Passed                                                                               |
+| Consumer typechecks                                                           | Passed: contracts, client-runtime, web and server                                    |
+| Browser and desktop interaction, picking, framing and idle rendering          | Not run; browser/computer-use verification was not authorized for this pass          |
+| Real OpenSCAD orthographic PNG render                                         | Not run; the optional binary integration test was skipped to keep validation focused |
+
+Automated viewer tests use WebGL stubs. They do not establish visual rendering or interaction
+quality in a real client. No release, merge or remote-client verification is recorded here.
+
 ## Automated tests
 
 | File                                                                 | Covers                                                                                                                                                                                                                                                                                                                                                                                                             |

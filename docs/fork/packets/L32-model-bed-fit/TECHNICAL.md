@@ -27,8 +27,9 @@ web editor snapshot `state.fit`
   `bedFit(size, volume)` in `buildPlate.ts` returns `"fits" | "rotated" | "too-large"`. The
   Part tab chip says "Fits rotated" and its advice "It fits if you rotate it 90° on the plate.",
   the status bar says "Fits if rotated 90°", and variant chips say "Fits rotated". The warning
-  tone and the Part badge stay, because the part does not fit as drawn. This packet replaces
-  the web `bedFit` and its `BedFit` type with `fitOnBed` below and keeps those labels.
+  tone and the Part badge stay, because the part does not fit as drawn. This packet routes
+  fit through `fitOnBed` below. The web `bedFit` wrapper keeps the existing labels for
+  viewport and variant consumers; the Part card and list use the shared result directly.
 - Bed notes are read through `buildPlateNote()` in `buildPlate.ts` (used by `BedPicker.tsx` and
   `SettingsSection.tsx`); only `buildPlate.ts` reads `BUILD_PLATE_PRESETS`. This packet routes
   `buildPlateNote()` through `activeBed()`.

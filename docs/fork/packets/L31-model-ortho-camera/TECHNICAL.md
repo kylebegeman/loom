@@ -71,7 +71,8 @@ projection: Schema.optional(ModelProjection),
 the hard-coded `"--projection=p"` at line 79.
 
 `ModelPreviewService.renderImages` (`ModelPreviewService.ts:1104`) gains a `projection`
-argument after `views` and passes it to `pngArgs` at line 1179. STL, 3MF and OBJ are already
+argument after the existing `overrides` argument and passes it to `pngArgs` at line 1179.
+Keeping the new argument last preserves existing positional callers. STL, 3MF and OBJ are already
 wrapped in an `import()` SCAD there, so ortho works for every format the tool accepts.
 
 No change to the workspace store: it decodes with `Schema.fromJsonString(ModelWorkspace)`
