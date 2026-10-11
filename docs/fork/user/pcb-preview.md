@@ -169,3 +169,22 @@ Open **3D**, press `P` for orthographic projection, and use **Display** to hide 
 Agents can use the PCB editor's `display`, `section`, `measure` and `height` actions. For example, `t3 pcb editor '{"designId":"board.kicad_pcb","command":{"action":"height","reference":"J1"}}'` reads J1's height in a loaded, current 3D view. `snapshot` reports the display settings, measurements and component heights.
 
 The workspace supports screen readers with named drawings and announcements for selections, views, check results and finding navigation. Press `I` to move focus into the tools; close them with `I` or Escape to return to the drawing.
+
+## Make a board enclosure
+
+Open **Enclosure** on a saved board to preview a parametric tray, lid and screw bosses. Set
+clearances and optional connector overrides, then **Generate case**. Loom writes an OpenSCAD
+starter beside the design and opens an assembly containing the board, case and lid. The
+build123d option creates an additional Python CAD source when supported. KiCad boards need
+KiCad 10 or newer for the reference export.
+
+Use **Use an existing case** with a workspace model path to place the board over your own
+case. In the model panel's **Fit** tab, check walls, component clearance, connector openings
+and mounting holes. Tune the case parameters and check again. Missing component models use
+an editable assumed height; the checks use conservative component boxes. Verify the finished
+case against the exact board before fabrication.
+
+**Update board** replaces a stale reference while preserving drawing placement. Edited case
+sources are kept when regenerating unless you choose to overwrite them. The assembly and
+sources are ordinary workspace files; remove them to discard a generated case. Agents can
+use `loom_pcb_enclosure` or `t3 pcb enclosure`; `preview: true` returns sources without writing.

@@ -1,3 +1,5 @@
+import * as Schema from "effect/Schema";
+import { ModelAssembly } from "@t3tools/contracts/fork";
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { beforeEach, afterEach, it, expect, vi } from "vite-plus/test";
@@ -28,13 +30,22 @@ vi.mock("./state", () => ({
   runModelCommand: mocks.run,
 }));
 import { useAssembly, assemblyRestoreOperations, assemblySourceRevision } from "./useAssembly";
+const decodeAssembly = Schema.decodeUnknownSync(ModelAssembly);
 const ref = { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") };
 const snapshot = (revision: string, name = revision): AssemblyReadResult => ({
   path: "case.loom-assembly.json",
   revision,
   readOnly: false,
   parts: [],
-  assembly: { format: "loom-assembly", version: 1, units: "mm", name, parts: [], clearances: [] },
+  assembly: {
+    enclosure: null,
+    format: "loom-assembly",
+    version: 1,
+    units: "mm",
+    name,
+    parts: [],
+    clearances: [],
+  },
 });
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -181,3 +192,36 @@ it("restoring a replaced part also restores its unchanged clearances", () => {
     ...clearance,
   });
 });
+it.each(["board", "case"])(
+  "undoing a %s replacement restores the enclosure requirements and selected case ids",
+  (replacedId) => {
+    const source = decodeAssembly({
+      format: "loom-assembly",
+      version: 2,
+      name: "Case",
+      parts: [
+        { id: "board", name: "Board", path: "board.glb" },
+        { id: "case", name: "Case", path: "case.stl" },
+      ],
+      enclosure: { board: "board", parts: ["case"], requirements: { wallGapMm: 0.8 } },
+    });
+    const target = {
+      ...source,
+      parts: source.parts.map((p) =>
+        p.id === replacedId
+          ? { ...p, path: replacedId === "board" ? "old-board.glb" : "old-case.stl" }
+          : p,
+      ),
+    };
+    expect(assemblyRestoreOperations(source, target, "case.loom-assembly.json").at(-1)).toEqual({
+      op: "set-enclosure",
+      ...target.enclosure,
+    });
+    expect(
+      assemblyRestoreOperations({ ...source, enclosure: null }, source, "case.loom-assembly.json"),
+    ).toContainEqual({ op: "set-enclosure", ...source.enclosure });
+    expect(
+      assemblyRestoreOperations(source, { ...source, enclosure: null }, "case.loom-assembly.json"),
+    ).toContainEqual({ op: "clear-enclosure" });
+  },
+);

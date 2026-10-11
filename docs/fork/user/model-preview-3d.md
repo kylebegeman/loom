@@ -255,6 +255,14 @@ placement mark the report out of date. Assembly placement and requirements are s
 assembly file, so they travel with the workspace. Fit checks, alignment and drop-to-bed require
 terminal permission; viewing and ordinary placement edits use the normal model permissions.
 
+For a PCB case, choose **Fit > Check as an enclosure** and select the exported GLB board
+reference. Configure case parts and clearances, then check fit. Findings identify walls,
+components, connector openings and standoffs; selecting a finding frames its location.
+**Apply suggested move** adjusts the board when mounting holes agree on a correction, and
+**Undo** restores its previous placement. **Stop checking as an enclosure** removes the fit
+requirements while keeping the parts. Generate a starter or update a board reference from
+the PCB panel's **Enclosure** tab.
+
 ## Check a part before printing
 
 Open **Part > Print check** for a report on the mesh, bodies, bed fit, first layer, overhangs,

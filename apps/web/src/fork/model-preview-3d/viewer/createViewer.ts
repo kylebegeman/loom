@@ -904,7 +904,11 @@ export function createViewer(host: HTMLElement) {
       .sub(center.clone().applyQuaternion(orientationRoot.quaternion));
     orientationRoot.updateWorldMatrix(true, true);
   };
-  let findingMarks: { finding: PrintFinding; number: number; element: HTMLButtonElement }[] = [],
+  let findingMarks: {
+      finding: Pick<PrintFinding, "id" | "severity" | "message" | "location">;
+      number: number;
+      element: HTMLButtonElement;
+    }[] = [],
     findingLayer: HTMLDivElement | null = null;
   const clearFindings = () => {
     findingLayer?.remove();
@@ -1231,10 +1235,10 @@ export function createViewer(host: HTMLElement) {
     onWallMeasure(callback: typeof onWall) {
       onWall = callback;
     },
-    setFindings(
-      findings: readonly PrintFinding[],
+    setFindings<F extends Pick<PrintFinding, "id" | "severity" | "message" | "location">>(
+      findings: readonly F[],
       selectedId: string | null,
-      onSelect: ((finding: PrintFinding) => void) | null,
+      onSelect: ((finding: F) => void) | null,
     ) {
       clearFindings();
       if (!findings.some((finding) => finding.location)) return;

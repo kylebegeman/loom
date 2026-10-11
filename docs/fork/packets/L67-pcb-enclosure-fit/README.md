@@ -1,6 +1,10 @@
 # L67: PCB enclosure fit
 
-Status: Needs decision: where case files and fit requirements live, and plated mounting holes.
+Status: Implemented locally on `feat/pcb-units-presets-stats-print-capture` (2026-10-11).
+
+Both phases are implemented. Case files live beside the design, fit requirements live in the
+version 2 assembly, and mounting holes include plated KiCad MountingHole pads. See
+[TESTING.md](./TESTING.md) for verification and remaining real-client/CAD checks.
 
 Approved by Kyle on 2026-10-10.
 

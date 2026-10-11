@@ -19,7 +19,20 @@ it.effect(
         const fs = yield* FileSystem.FileSystem,
           path = yield* Path.Path,
           root = yield* fs.makeTempDirectoryScoped({ prefix: "loom-enclosure-" });
-        let exports = 0;
+        let exports = 0,
+          race = false;
+        const guarded = FileSystem.FileSystem.of({
+          ...fs,
+          exists: (destination) =>
+            Effect.gen(function* () {
+              const exists = yield* fs.exists(destination);
+              if (race && destination.endsWith("board.loom-assembly.json")) {
+                race = false;
+                yield* fs.writeFileString(destination, "concurrent assembly");
+              }
+              return exists;
+            }),
+        });
         const metadata = decodeMetadata({
           designId: "board.kicad_pro",
           sourceHash: "0123456789abcdef",
@@ -56,7 +69,7 @@ it.effect(
               .makeDirectory(path.join(r, p), { recursive: true })
               .pipe(Effect.as(path.join(r, p)), Effect.orDie),
           refresh: () => Effect.void,
-        });
+        }).pipe(Effect.provideService(FileSystem.FileSystem, guarded));
         const input = { threadId: ThreadId.make("enclosure"), designId: metadata.designId };
         const preview = yield* generate({ ...input, preview: true, build123d: true });
         expect(preview.files).toHaveLength(2);
@@ -79,6 +92,13 @@ it.effect(
         const overwritten = yield* generate({ ...input, overwrite: true });
         expect(overwritten.assembly?.created).toBe(false);
         expect(yield* fs.readFileString(file)).not.toBe(edit);
+        const assemblyPath = path.join(root, result.assembly!.path);
+        yield* fs.remove(assemblyPath);
+        race = true;
+        const concurrent = yield* generate(input);
+        expect(concurrent.assembly?.created).toBe(false);
+        expect(yield* fs.readFileString(assemblyPath)).toBe("concurrent assembly");
+        expect(concurrent.warnings.some((w) => w.includes("already exists"))).toBe(true);
         expect(
           (yield* generate({ ...input, outputDir: "../elsewhere", preview: true }).pipe(
             Effect.flip,

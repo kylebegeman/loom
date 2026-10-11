@@ -2,7 +2,9 @@ import type { EnclosurePlan } from "./plan.ts";
 import { facingVector } from "./features.ts";
 import { generatedSource, literal } from "./scad.ts";
 export function writeBuild123d(p: EnclosurePlan) {
-  const v = p.params;
+  const v = p.params,
+    first = p.standoffs[0],
+    common = p.standoffs.every((h) => h.diameter === first?.diameter && h.pilot === first?.pilot);
   return generatedSource(
     `from typing import Annotated, Literal
 from build123d import *
@@ -11,24 +13,24 @@ BOARD_OUTLINE = ${literal(p.outline)}
 BOARD_BOTTOM = ${literal(p.boardBottom)}
 BOARD_TOP = ${literal(p.boardTop)}
 PARTS_ABOVE = ${literal(p.partsAbove)}
-HOLES = ${literal(p.standoffs.map((h) => [h.x, h.y, h.diameter, h.pilot]))}
+HOLES = ${literal(p.standoffs.map((h) => [h.x, h.y, common ? 1 : h.diameter, common ? 1 : h.pilot]))}
 CUTOUTS = ${literal(p.cutouts.map((c) => [...c.box.min, ...c.box.max, ...facingVector(c.facing)]))}
 PROXIES = ${literal(p.proxies.map((b) => [...b.min, ...b.max]))}
 
 def model(
     part: Literal["fit", "base", "lid"] = "fit",
-    wall: Annotated[float, {"min": 0.8, "max": 10, "step": 0.1, "group": "Case"}] = ${v.wallMm},
-    floor_thickness: Annotated[float, {"min": 0.8, "max": 10, "step": 0.1}] = ${v.floorMm},
-    lid_thickness: Annotated[float, {"min": 0.8, "max": 10, "step": 0.1}] = ${v.lidMm},
-    corner_radius: Annotated[float, {"min": 0, "max": 20, "step": 0.5}] = ${v.cornerRadiusMm},
-    side_gap: Annotated[float, {"min": 0, "max": 10, "step": 0.1}] = ${v.sideGapMm},
-    top_gap: Annotated[float, {"min": 0, "max": 30, "step": 0.1}] = ${v.topGapMm},
-    standoff_height: Annotated[float, {"min": 0, "max": 50, "step": 0.5}] = ${v.standoffHeightMm},
-    standoff_diameter: Annotated[float, {"min": 0.1, "max": 20, "step": 0.1}] = 1,
-    pilot_diameter: Annotated[float, {"min": 0, "max": 10, "step": 0.1}] = 1,
-    cutout_margin: Annotated[float, {"min": 0, "max": 5, "step": 0.1}] = ${v.cutoutMarginMm},
-    lid_lip: Annotated[float, {"min": 0, "max": 10, "step": 0.1}] = ${v.lidLipMm},
-    lid_lip_gap: Annotated[float, {"min": 0, "max": 2, "step": 0.05}] = ${v.lidLipGapMm},
+    wall: Annotated[float, {"min": 0.8, "max": 10, "step": 0.1, "group": "Case"}] = ${literal(v.wallMm)},
+    floor_thickness: Annotated[float, {"min": 0.8, "max": 10, "step": 0.1}] = ${literal(v.floorMm)},
+    lid_thickness: Annotated[float, {"min": 0.8, "max": 10, "step": 0.1}] = ${literal(v.lidMm)},
+    corner_radius: Annotated[float, {"min": 0, "max": 20, "step": 0.5}] = ${literal(v.cornerRadiusMm)},
+    side_gap: Annotated[float, {"min": 0, "max": 10, "step": 0.1}] = ${literal(v.sideGapMm)},
+    top_gap: Annotated[float, {"min": 0, "max": 30, "step": 0.1}] = ${literal(v.topGapMm)},
+    standoff_height: Annotated[float, {"min": 0, "max": 50, "step": 0.5}] = ${literal(v.standoffHeightMm)},
+    standoff_diameter: Annotated[float, {"min": 0.1, "max": 20, "step": 0.1}] = ${literal(common ? (first?.diameter ?? 6) : 1)},
+    pilot_diameter: Annotated[float, {"min": 0, "max": 10, "step": 0.1}] = ${literal(common ? (first?.pilot ?? 2.6) : 1)},
+    cutout_margin: Annotated[float, {"min": 0, "max": 5, "step": 0.1}] = ${literal(v.cutoutMarginMm)},
+    lid_lip: Annotated[float, {"min": 0, "max": 10, "step": 0.1}] = ${literal(v.lidLipMm)},
+    lid_lip_gap: Annotated[float, {"min": 0, "max": 2, "step": 0.05}] = ${literal(v.lidLipGapMm)},
 ):
     def shape(grow):
         polygon = Polygon(BOARD_OUTLINE, align=(Align.NONE, Align.NONE))
@@ -50,12 +52,12 @@ def model(
         lid += Pos(0,0,lid_bottom-lid_lip)*extrude(shape(side_gap-lid_lip_gap)-shape(side_gap-lid_lip_gap-wall), amount=lid_lip)
     for x0,y0,z0,x1,y1,z1,dx,dy,dz in CUTOUTS:
         # Axis-aligned extrusion of the connector box through the outward wall.
-        x0 -= cutout_margin-${v.cutoutMarginMm}
-        y0 -= cutout_margin-${v.cutoutMarginMm}
-        z0 -= cutout_margin-${v.cutoutMarginMm}
-        x1 += cutout_margin-${v.cutoutMarginMm}
-        y1 += cutout_margin-${v.cutoutMarginMm}
-        z1 += cutout_margin-${v.cutoutMarginMm}
+        x0 -= cutout_margin-${literal(v.cutoutMarginMm)}
+        y0 -= cutout_margin-${literal(v.cutoutMarginMm)}
+        z0 -= cutout_margin-${literal(v.cutoutMarginMm)}
+        x1 += cutout_margin-${literal(v.cutoutMarginMm)}
+        y1 += cutout_margin-${literal(v.cutoutMarginMm)}
+        z1 += cutout_margin-${literal(v.cutoutMarginMm)}
         cut = Pos(min(x0,x0+25*dx),min(y0,y0+25*dy),z0)*Box(x1-x0+25*abs(dx),y1-y0+25*abs(dy),z1-z0,align=(Align.MIN,Align.MIN,Align.MIN))
         tray -= cut
         lid -= cut

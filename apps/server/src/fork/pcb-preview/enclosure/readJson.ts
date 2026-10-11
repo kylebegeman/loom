@@ -6,7 +6,7 @@ class ReadGlbError extends Schema.TaggedError<ReadGlbError>()("ReadGlbError", {
   message: Schema.String,
 }) {}
 /** Read only the bounded GLB JSON chunk, even for a large board reference. */
-const decodeJson = Schema.decodeUnknownEffect(Schema.UnknownFromJsonString);
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
 export const readGlbDocument = (file: string) =>
   Effect.scoped(

@@ -37,8 +37,8 @@ import { ModelFormat } from "./model-preview-3d.ts";
 import { ModelPoint } from "./model-workspace.ts";
 
 export const ASSEMBLY_SUFFIX = ".loom-assembly.json";
-export const ASSEMBLY_FILE_VERSION = 1;
-export const ASSEMBLY_CHECK_VERSION = 1;
+export const ASSEMBLY_FILE_VERSION = 2;
+export const ASSEMBLY_CHECK_VERSION = 2;
 export const ASSEMBLY_MAX_PARTS = 32;
 export const ASSEMBLY_MAX_CLEARANCES = 32;
 export const ASSEMBLY_MAX_OPERATIONS = 64;
@@ -109,8 +109,7 @@ newer versions are read-only.
 
 L67 (PCB enclosure fit) extends this format: version 2 adds an optional top-level `enclosure`
 section, the operations `set-enclosure`, `clear-enclosure`, `place-board` and `swap-board`, and
-`ASSEMBLY_CHECK_VERSION = 2` for its four board-in-case checks. L48 writes version 1 and needs
-no change for it; see [L67 TECHNICAL.md](../L67-pcb-enclosure-fit/TECHNICAL.md).
+`ASSEMBLY_CHECK_VERSION = 2` for its four board-in-case checks. The writer uses version 2 when enclosure requirements are present and version 1 otherwise; see [L67 TECHNICAL.md](../L67-pcb-enclosure-fit/TECHNICAL.md).
 
 Example, as written by Loom (two-space indent, keys in schema order, trailing newline):
 

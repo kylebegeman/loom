@@ -278,6 +278,43 @@ export default function AssemblyPanel({
     },
     [],
   );
+  const focusEnclosure = useCallback(
+    (finding: import("@t3tools/contracts/fork").EnclosureFinding) => {
+      setExplode(0);
+      setIsolatedId(null);
+      setSelectedId(assembly.snapshot?.assembly.enclosure?.board ?? null);
+      const p = finding.point;
+      viewerRef.current?.frameBounds(
+        p.map((v) => v - 5) as [number, number, number],
+        p.map((v) => v + 5) as [number, number, number],
+      );
+    },
+    [assembly.snapshot],
+  );
+  useEffect(() => {
+    const findings =
+      !explode && !assembly.stale ? (assembly.report?.enclosure?.findings ?? []) : [];
+    viewerRef.current?.setFindings(
+      findings
+        .filter((f) => f.status !== "ok")
+        .map((f) => ({
+          id: f.id,
+          message: `${f.label}: ${f.detail}`,
+          severity:
+            f.status === "interferes"
+              ? ("fail" as const)
+              : f.status === "tight"
+                ? ("warn" as const)
+                : ("info" as const),
+          location: { point: f.point, normal: null, radiusMm: 5 },
+        })),
+      null,
+      (pin) => {
+        const finding = findings.find((f) => f.id === pin.id);
+        if (finding) focusEnclosure(finding);
+      },
+    );
+  }, [assembly.report, assembly.stale, explode, focusEnclosure]);
   const focusPair = useCallback((pair: AssemblyPairResult) => {
     setExplode(0);
     setIsolatedId(null);
@@ -814,6 +851,7 @@ export default function AssemblyPanel({
               onExplode={setExplode}
               isolatedId={isolatedId}
               onIsolate={setIsolatedId}
+              onFocusEnclosure={focusEnclosure}
               onFocusPair={focusPair}
               onPreview={setPreview}
               loadParameters={assembly.loadParameters}

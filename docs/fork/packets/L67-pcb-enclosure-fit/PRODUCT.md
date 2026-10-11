@@ -99,21 +99,13 @@ environment gets the same files and reports.
 - No new keyboard shortcut. The tab and buttons are enough.
 - Loom never orders, prints, slices or uploads. Output is files in the workspace.
 
-## Decisions needed from Kyle
+## Implementation defaults
 
-1. **Where the case files and the assembly live.** Recommend the assembly at
-   `<design dir>/<stem>.loom-assembly.json` and generated files in `<design dir>/<stem>-enclosure/`,
-   so both travel with the design in git and the tab can find them without saved state.
-   Alternative: a top-level `enclosures/` folder.
-2. **Enclosure requirements in the assembly file.** Recommend an optional `enclosure` section in
-   L48's file, which raises the written version to 2 when present, so an older Loom opens it
-   read-only rather than dropping the section. Alternative: a sidecar JSON per assembly.
-3. **Plated mounting holes.** KiCad's `MountingHole_*_Pad` footprints use plated pads that
-   inspection ignores today (`semantics.ts:145-147`), so most real boards report no holes.
-   Recommend counting `thru_hole` pads in footprints whose name contains `MountingHole` with a
-   `plated` flag. This also changes hole counts in L55's stats and the reference JSON.
-4. **Edge connector detection.** Recommend a heuristic (reference prefix `J`, `P`, `CN`, `USB` or
-   a connector-like footprint, and a 3D box within 1 mm of the outline or past it) with
-   per-assembly include and exclude lists. Alternative: only connectors the user lists.
-5. **Starter style for v1.** Recommend one style: a tray that follows the outline, a flat lid
-   with a locating lip, and screw bosses with pilot holes. No snap fits or vents in v1.
+The authorized implementation uses the packet's recommended defaults: the assembly is
+`<design dir>/<stem>.loom-assembly.json`, sources are in `<design dir>/<stem>-enclosure/`, and
+requirements travel in the assembly's optional `enclosure` section. Assemblies without that
+section are written as version 1; those with it are version 2. Standard plated MountingHole
+pads count as mounting holes. Edge connector detection uses the proposed naming/edge heuristic
+with include/exclude lists. The starter has one style: tray, lid with a lip, and screw bosses.
+
+Changing a board or fit requirements participates in the assembly's existing undo flow.

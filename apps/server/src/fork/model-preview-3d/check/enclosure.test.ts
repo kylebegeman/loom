@@ -70,12 +70,16 @@ it("measures wall and lid gaps, seats bosses and detects a moved board", () => {
     measuredMm: expect.closeTo(0.5, 3),
   });
   expect(report.findings.find((v) => v.id === "hole:1")?.hole?.state).toBe("solid");
+  expect(report.findings.find((v) => v.id === "below:summary")?.measuredMm).toBeCloseTo(3, 3);
   expect(check(tray, f, [0.8, 0, 0]).findings.find((v) => v.id === "wall:+x")?.status).toBe(
     "interferes",
   );
   const gap = check(tray, f, [0, 0, 1]);
   expect(gap.findings.find((v) => v.id === "hole:1")?.hole?.state).toBe("gap");
   expect(gap.suggestedMove?.[2]).toBeCloseTo(-1, 5);
+  const inside = check(tray, f, [0, 0, -0.5]);
+  expect(inside.findings.find((v) => v.id === "hole:1")?.hole?.state).toBe("inside");
+  expect(inside.suggestedMove?.[2]).toBeCloseTo(0.5, 3);
 });
 it("distinguishes blocked, margin-limited and clear connector openings", () => {
   const features = {
@@ -119,4 +123,22 @@ it("reports missing and off-centre bosses with a corrective move and treats open
   const open = check(cubeSoup([2, 45, 18], [59.5, -2.5, -4]).slice(0, -9));
   expect(open.findings.find((v) => v.id === "wall:+x")?.status).toBe("unchecked");
   expect(open.findings.some((v) => v.status === "interferes")).toBe(false);
+});
+it("measures a closed hollow case without treating its cavity as solid", () => {
+  const inner = cubeSoup([61, 41, 16], [-0.5, -0.5, -3]);
+  for (let i = 0; i < inner.length; i += 9)
+    for (let a = 0; a < 3; a++) {
+      const tmp = inner[i + 3 + a]!;
+      inner[i + 3 + a] = inner[i + 6 + a]!;
+      inner[i + 6 + a] = tmp;
+    }
+  const mesh = weld(joinSoup(cubeSoup([65, 45, 20], [-2.5, -2.5, -5]), inner));
+  const report = checkEnclosure(
+    { board: "board", caseParts: ["case"], features: { ...f, holes: [] }, requirements },
+    partMatrix([0, 0, 0], [0, 0, 0]),
+    new Map([["case", mesh]]),
+    [],
+  );
+  expect(report.findings.find((v) => v.id === "wall:+x")?.measuredMm).toBeCloseTo(0.5, 3);
+  expect(report.findings.find((v) => v.id === "wall:+x")?.status).toBe("ok");
 });

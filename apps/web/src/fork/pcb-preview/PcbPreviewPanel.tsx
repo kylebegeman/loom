@@ -1,3 +1,4 @@
+import { EnclosureTab } from "./EnclosureTab";
 import { announcement, describeSelection, type PcbAnnounceInput } from "./announce";
 import { usePcbHistory } from "./usePcbHistory";
 import { HistoryStrip } from "./HistoryStrip";
@@ -275,7 +276,11 @@ export function DesignWorkspace({
     const timeout = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timeout);
   }, [notice]);
-  const tabs = inspectorTabs(design);
+  const configs = useServerConfigs();
+  const tabs = inspectorTabs(
+    design,
+    loomFeaturesOf(configs.get(threadRef.environmentId)?.environment.capabilities),
+  );
   const openTab = (next: InspectorTab | null) => {
     if (next) lastTab.current = next;
     else {
@@ -2417,10 +2422,20 @@ export function DesignWorkspace({
               "Simulate",
               "Parameters",
               "Fabrication",
+              "Enclosure",
               "Requests",
               "Library",
             ].includes(tab) ? (
               <p className="p-4 text-sm">These tools work on the current version.</p>
+            ) : tab === "Enclosure" ? (
+              <EnclosureTab
+                key={design.id}
+                threadRef={threadRef}
+                design={design}
+                inspection={workbench.inspection}
+                sourceHash={preview.sourceHash}
+                executionAllowed={executionAllowed}
+              />
             ) : tab === "Fabrication" ? (
               <FabricationTab
                 threadRef={threadRef}

@@ -137,8 +137,7 @@ items from the board and its footprints into closed loops, and `circuitOutline` 
 tscircuit outline in the PCB drawing frame. L55 shoelaces the loops for area; L67 reuses them
 for the case shape. `readGlbJson` in `glb.ts` reads a cached GLB's JSON chunk, and
 `readGlbBounds` derives world-space per-mesh bounds with node names and materials for L67.
-Reuse these helpers when implementing [L67](./L67-pcb-enclosure-fit/TECHNICAL.md). L67 will also
-extend L48's assembly file to version 2 (`enclosure` section).
+L67 reuses these helpers and extends L48's assembly file to version 2 (`enclosure` section).
 
 ### Fab capabilities (created by L64, used by L65)
 
@@ -193,4 +192,4 @@ testing notes retain client, real-tool and physical-print checks.
 
 L52 is also implemented locally, with focused checks and pending real-client/CAD verification.
 The agent loop, L58, L53, L59, L60 and L69, and schematic review L68 are implemented locally.
-L64 fabrication capability checks are implemented locally. L65 fabrication packages are also implemented locally with the documented board-plot fallback. L66 history and L61 3D inspection tools are implemented locally. L63 accessibility is also implemented locally. L67 enclosure fit and L70 variant sweeps remain. The selected scope remains unchanged. L65 uses project rotation rules without a bundled table and leaves `.gitignore` untouched.
+L64 fabrication capability checks are implemented locally. L65 fabrication packages are also implemented locally with the documented board-plot fallback. L66 history and L61 3D inspection tools are implemented locally. L63 accessibility is also implemented locally. L67 enclosure generation and fit checks are implemented locally. L70 variant sweeps remain. The selected scope remains unchanged. L65 uses project rotation rules without a bundled table and leaves `.gitignore` untouched.

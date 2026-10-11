@@ -87,6 +87,15 @@ export function assemblyRestoreOperations(
         JSON.stringify(clearance)
     )
       ops.push({ op: "set-clearance", ...clearance });
+  if (
+    JSON.stringify(current.enclosure) !== JSON.stringify(target.enclosure) ||
+    replacedIds.has(target.enclosure?.board ?? "") ||
+    target.enclosure?.parts.some((id) => replacedIds.has(id))
+  ) {
+    ops.push(
+      target.enclosure ? { op: "set-enclosure", ...target.enclosure } : { op: "clear-enclosure" },
+    );
+  }
   if (current.name !== target.name) ops.push({ op: "set-name", name: target.name });
   return ops;
 }

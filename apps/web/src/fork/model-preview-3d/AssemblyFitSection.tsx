@@ -1,3 +1,4 @@
+import { EnclosureFitSection } from "./EnclosureFitSection";
 import { useState } from "react";
 import { ASSEMBLY_MAX_CLEARANCES, type AssemblyPairResult } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
@@ -119,6 +120,7 @@ export function AssemblyFitSection(props: AssemblyInspectorProps) {
       : null);
   return (
     <>
+      <EnclosureFitSection {...props} />
       <section className={styles.section}>
         <div className={styles.row}>
           <h3>Fit check</h3>

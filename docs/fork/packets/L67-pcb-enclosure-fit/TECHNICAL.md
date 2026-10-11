@@ -730,7 +730,7 @@ Checks (board part frame directions transformed by the board's matrix):
 - **Interference.** L48's pair results between the board and each case part. `intersects` or
   `inside` becomes an `interferes` finding at the pair's first region.
 
-`suggestedMove`: XY is minus the median `offsetMm` when at least half the off-centre holes agree
+`suggestedMove`: XY is the median `offsetMm` (case boss centre minus board hole centre) when at least half the off-centre holes agree
 within 0.3 mm of it and no hole is `missing`; Z is minus the median gap when every hole is `gap`,
 or plus the median depth when every hole is `inside`. Null otherwise. The move is in assembly
 millimetres for `move-part`.

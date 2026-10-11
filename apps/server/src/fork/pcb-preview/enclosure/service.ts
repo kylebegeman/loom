@@ -71,7 +71,8 @@ export const makeEnclosure = (deps: {
         path.isAbsolute(output) ||
         output.includes("\\") ||
         !output ||
-        path.relative(ws.root, path.resolve(ws.root, output)).startsWith("..")
+        path.relative(ws.root, path.resolve(ws.root, output)) === ".." ||
+        path.relative(ws.root, path.resolve(ws.root, output)).startsWith(".." + path.sep)
       )
         return yield* fail("invalid-parameters", "Choose an output folder inside this workspace.");
       const assemblyPath = path
@@ -123,6 +124,26 @@ export const makeEnclosure = (deps: {
       ];
       let assembly: PcbEnclosureResult["assembly"] = null;
       if (canonical && reference) {
+        // Export can take time; check all guards again before replacing any source.
+        if (!input.overwrite)
+          for (const source of sources) {
+            const destination = path.join(canonical, source.name);
+            if (yield* fs.exists(destination)) {
+              if (
+                (yield* fs.realPath(destination)) !== destination ||
+                (yield* fs.stat(destination)).type !== "File"
+              )
+                return yield* fail(
+                  "path-outside-workspace",
+                  "The case destination is not a regular workspace file.",
+                );
+              if (!isUnedited(yield* fs.readFileString(destination)))
+                return yield* fail(
+                  "conflict",
+                  `${source.name} was edited after Loom wrote it. Pass overwrite to replace it.`,
+                );
+            }
+          }
         for (const source of sources)
           yield* writeFileStringAtomically({
             filePath: path.join(canonical, source.name),
@@ -131,7 +152,7 @@ export const makeEnclosure = (deps: {
         const folder = yield* deps.directory(ws.root, path.dirname(assemblyPath)),
           destination = path.join(folder, path.basename(assemblyPath));
         const casePath = path.join(output, "case.scad").split(path.sep).join("/");
-        const created = !(yield* fs.exists(destination));
+        let created = !(yield* fs.exists(destination));
         if (created) {
           const requirements = yield* decodeRequirements({
             wallGapMm: params.sideGapMm,
@@ -164,14 +185,16 @@ export const makeEnclosure = (deps: {
             ],
             enclosure: { board: "board", parts: ["case", "lid"], requirements },
           }).pipe(Effect.mapError(() => fail("invalid-parameters", "Invalid generated assembly.")));
-          yield* fs
+          created = yield* fs
             .writeFileString(destination, encodeAssembly(doc) + "\n", { flag: "wx" })
             .pipe(
+              Effect.as(true),
               Effect.catch((e) =>
-                e.reason._tag === "AlreadyExists" ? Effect.void : Effect.fail(e),
+                e.reason._tag === "AlreadyExists" ? Effect.succeed(false) : Effect.fail(e),
               ),
             );
-        } else
+        }
+        if (!created)
           warnings.push(
             "The board's assembly already exists and was preserved. Add the case or update the board from the 3D panel.",
           );

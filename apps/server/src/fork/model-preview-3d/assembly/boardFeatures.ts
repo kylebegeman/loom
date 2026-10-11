@@ -33,18 +33,15 @@ export const makeBoardFeatures = (
         });
       const source = yield* resolve({ ...file, path: relative }),
         metadataFile = yield* resolve({ ...file, path: relative.replace(/\.glb$/i, ".json") });
-      const metadata = yield* fs.stat(metadataFile.absolute).pipe(
-        Effect.flatMap((info) =>
-          Number(info.size) > 256 * 1024
-            ? Effect.fail(
-                new ModelPreviewError({
-                  reason: "too-large",
-                  message: "The board reference metadata is too large.",
-                }),
-              )
-            : fs.readFileString(metadataFile.absolute),
-        ),
-        Effect.flatMap((text) => decodeMetadata(text)),
+      const metadata = yield* Effect.gen(function* () {
+        const info = yield* fs.stat(metadataFile.absolute);
+        if (Number(info.size) > 256 * 1024)
+          return yield* new ModelPreviewError({
+            reason: "too-large",
+            message: "The board reference metadata is too large.",
+          });
+        return yield* decodeMetadata(yield* fs.readFileString(metadataFile.absolute));
+      }).pipe(
         Effect.mapError(
           () =>
             new ModelPreviewError({
@@ -59,6 +56,7 @@ export const makeBoardFeatures = (
           message: "This board reference needs a newer Loom.",
         });
       const json = yield* readGlbDocument(source.absolute).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
         Effect.mapError(
           () =>
             new ModelPreviewError({

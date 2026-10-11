@@ -661,6 +661,12 @@ export const make = Effect.gen(function* () {
         const canonical = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute));
         if (!contains(resolved.root, canonical, path)) continue;
         if (info.type === "Directory") {
+          const generatedCase =
+            path
+              .basename(resolved.design.id)
+              .split(".")[0]!
+              .replace(/[^a-zA-Z0-9_-]/g, "-") + "-enclosure";
+          if (resolved.design.kind === "tscircuit" && child === generatedCase) continue;
           queue.push(canonical);
           continue;
         }
@@ -2990,6 +2996,11 @@ export const make = Effect.gen(function* () {
         ),
       );
     }
+    if ((yield* sourceSnapshot(resolved)).sourceHash !== exported.sourceHash)
+      return yield* failure(
+        "conflict",
+        "The board changed while preparing its outline. Retry for a consistent reference.",
+      );
     const metadata: W.PcbReferenceMetadata = {
       format: W.PCB_REFERENCE_FORMAT,
       version: W.PCB_REFERENCE_VERSION,

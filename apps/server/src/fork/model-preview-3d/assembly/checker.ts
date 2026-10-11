@@ -168,7 +168,10 @@ export const makeAssemblyChecker = (deps: {
         parts: AssemblyWorkerPart[] = [],
         skipped: AssemblyCheckReport["skipped"][number][] = [];
       const selectedParts = doc.parts.filter(
-        (part) => needed.has(part.id) || (input.pairs === undefined && part.visible),
+        (part) =>
+          needed.has(part.id) ||
+          doc.enclosure?.board === part.id ||
+          (input.pairs === undefined && part.visible),
       );
       if (deps.geometryRevision && !input.force) {
         const revisions = yield* Effect.forEach(

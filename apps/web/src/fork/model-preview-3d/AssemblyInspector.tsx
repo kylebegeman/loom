@@ -44,6 +44,7 @@ export type AssemblyInspectorProps = {
   onExplode: (value: number) => void;
   isolatedId: string | null;
   onIsolate: (id: string | null) => void;
+  onFocusEnclosure?: (finding: import("@t3tools/contracts/fork").EnclosureFinding) => void;
   onFocusPair: (pair: AssemblyPairResult) => void;
   onPreview: (part: AssemblyPart | null) => void;
   loadParameters?: (part: AssemblyPart) => Promise<ScadParameters>;

@@ -738,6 +738,13 @@ it.effect("exports revision-bound references atomically and rejects destination 
       expect((yield* t.fs.stat(ref.path)).type).toBe("File");
       const metadata = JSON.parse(yield* t.fs.readFileString(ref.metadataPath));
       expect(metadata.sourceHash).toBe(ref.sourceHash);
+      expect(metadata).toMatchObject({
+        format: "loom-pcb-reference",
+        version: 2,
+        kind: "kicad",
+        outline: { source: "edge-cuts", outer: 0 },
+      });
+      expect(ref.relativePath).toMatch(/^\.loom\/pcb-references\/.*\.glb$/);
       expect(metadata.bounds.width).toBe(30);
       expect(t.getRefreshes()).toBeGreaterThan(0);
       expect(
@@ -853,6 +860,10 @@ it.effect("keeps generated board references out of circuit revisions and cache i
       yield* t.fs.makeDirectory(references, { recursive: true });
       yield* t.fs.writeFileString(t.path.join(references, "board.glb"), "generated geometry");
       yield* t.fs.writeFileString(t.path.join(references, "board.json"), "{}");
+      yield* t.fs.writeFileString(t.path.join(t.root, "blink.loom-assembly.json"), "{}");
+      const enclosure = t.path.join(t.root, "blink-enclosure");
+      yield* t.fs.makeDirectory(enclosure);
+      yield* t.fs.writeFileString(t.path.join(enclosure, "case.stl"), "exported case mesh");
       const fab = t.path.join(t.root, "fab", "print");
       yield* t.fs.makeDirectory(fab, { recursive: true });
       yield* t.fs.writeFileString(t.path.join(fab, "generated.json"), "{}");

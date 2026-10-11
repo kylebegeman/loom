@@ -36,10 +36,17 @@ export function checkEnclosure(
     const mesh = meshes.get(id);
     if (!mesh) return [];
     const topology = topologyOf(mesh);
-    return [{ id, grid: buildGrid(mesh), closed: topology.watertight, topology }];
+    return [
+      {
+        id,
+        grid: buildGrid(mesh),
+        closed: topology.watertight && (topology.volume ?? 0) > 1e-8,
+        topology,
+      },
+    ];
   });
   let rays = 0,
-    complete = cases.length === input.caseParts.length;
+    complete = cases.length > 0 && cases.length === input.caseParts.length;
   const transform = (p: Vec3, direction = false): [number, number, number] =>
     [0, 1, 2].map(
       (a) =>
@@ -63,16 +70,24 @@ export function checkEnclosure(
     let best: { gap: number; inside: boolean; unchecked: boolean } | null = null;
     for (const part of cases) {
       const hit = raycast(part.grid, o, direction, max);
-      if (!hit || (best && hit.distance >= best.gap)) continue;
-      const n = normal(part.grid.mesh, hit.triangle),
-        shell = part.topology.shells[part.topology.triangleShell[hit.triangle]!]!;
-      // Closed shells may be consistently wound inward. Signed volume determines outward normals.
-      const dot = n.reduce((sum, v, a) => sum + v * direction[a]!, 0) * (shell.volume < 0 ? -1 : 1);
-      best = {
+      if (!hit) continue;
+      const n = normal(part.grid.mesh, hit.triangle);
+      // Inner cavity shells have negative volume but keep normals pointing out of the solid.
+      const dot = n.reduce((sum, v, a) => sum + v * direction[a]!, 0);
+      const candidate = {
         gap: Math.max(0, hit.distance - 0.0001),
         inside: dot > 1e-8,
         unchecked: !part.closed,
       };
+      const provenInside = candidate.inside && !candidate.unchecked,
+        priorInside = best?.inside && !best.unchecked;
+      // A nearer entry into another case part cannot erase that this ray starts inside a solid.
+      if (
+        !best ||
+        (provenInside && !priorInside) ||
+        (provenInside === !!priorInside && candidate.gap < best.gap)
+      )
+        best = candidate;
     }
     return best;
   };
@@ -179,6 +194,12 @@ export function checkEnclosure(
       let nearest: ReturnType<typeof cast> = null,
         at = points[0]!;
       for (const point of points) {
+        // A drilled hole is not board surface. Its intended boss contact is checked separately.
+        if (
+          !p.reference &&
+          f.holes.some((h) => Math.hypot(point[0] - h.x, point[1] - h.y) < h.diameter / 2)
+        )
+          continue;
         const hit = cast(point, dir, 200);
         if (hit && (!nearest || (hit.inside && !hit.unchecked) || hit.gap < nearest.gap)) {
           nearest = hit;
@@ -296,14 +317,33 @@ export function checkEnclosure(
     const unchecked = hits.some((v) => v.unchecked) || central?.unchecked;
     if (hits.some((v) => v.inside) || central?.inside) {
       state = "inside";
-      const up = cast([h.x, h.y, f.body.bottom - 5], [0, 0, 1], 20);
-      depth = up ? Math.max(0, up.gap - 5) : gap;
+      const ringIndex = ring.findIndex((hit) => hit?.inside && !hit.unchecked),
+        angle = (ringIndex * Math.PI) / 6,
+        radius = h.diameter / 2 + 0.6;
+      const x = ringIndex >= 0 ? h.x + Math.cos(angle) * radius : h.x,
+        y = ringIndex >= 0 ? h.y + Math.sin(angle) * radius : h.y;
+      let z = f.body.bottom - 5;
+      // Cross floor entries and shared contact surfaces until the solid containing this hole exits.
+      for (let crossing = 0; crossing < 16 && z < f.body.bottom + 15; crossing++) {
+        const up = cast([x, y, z], [0, 0, 1], f.body.bottom + 15 - z);
+        if (!up || up.unchecked) break;
+        const top = z + up.gap;
+        if (up.inside && top >= f.body.bottom) {
+          depth = Math.max(0, top - f.body.bottom);
+          break;
+        }
+        z = top + 0.001;
+      }
     } else if (!hits.length) state = "missing";
     else if (hits.length < 12 || Math.max(...hits.map((v) => v.gap)) - gap > 0.3) {
       state = "off-centre";
       const points: [number, number][] = [];
       for (let dx = -6; dx <= 6; dx += 0.25)
         for (let dy = -6; dy <= 6; dy += 0.25) {
+          if (rays >= MAX_RAYS) {
+            complete = false;
+            break;
+          }
           if (dx * dx + dy * dy > 36) continue;
           const hit = cast([h.x + dx, h.y + dy, f.body.bottom], [0, 0, -1], 20);
           if (hit && !hit.inside && !hit.unchecked && Math.abs(hit.gap - gap) <= 0.3)
@@ -370,7 +410,11 @@ export function checkEnclosure(
   }
   let move: [number, number, number] = [0, 0, 0],
     hasMove = false;
-  if (holeMoves.length && !holeMoves.some((h) => h.state === "missing")) {
+  if (
+    holeMoves.length &&
+    !findings.some((f) => f.kind === "hole" && f.status === "unchecked") &&
+    !holeMoves.some((h) => h.state === "missing")
+  ) {
     const offsets = holeMoves
       .filter((h) => h.state === "off-centre" && h.offset)
       .map((h) => h.offset!);
@@ -388,7 +432,7 @@ export function checkEnclosure(
     if (holeMoves.every((h) => h.state === "gap")) {
       move[2] = -median(holeMoves.map((h) => h.gap));
       hasMove = true;
-    } else if (holeMoves.every((h) => h.state === "inside")) {
+    } else if (holeMoves.every((h) => h.state === "inside" && h.depth > 0)) {
       move[2] = median(holeMoves.map((h) => h.depth));
       hasMove = true;
     }

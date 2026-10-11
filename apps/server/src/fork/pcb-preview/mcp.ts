@@ -94,7 +94,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_export_reference", {
     description:
-      "Save a real GLB and mechanical revision metadata in this thread workspace or a specified destination thread workspace. Other threads can use these files as enclosure references. Creates files only on request.",
+      "Save a real GLB and mechanical revision metadata in this thread workspace or a specified destination thread workspace. Other threads can use these files as enclosure references. Creates files only on request. Use relativePath with loom_model_preview_3d_assembly_update add-part or swap-board.",
     parameters: Schema.Struct({
       ...design,
       targetThreadId: W.PcbReferenceInput.fields.targetThreadId,

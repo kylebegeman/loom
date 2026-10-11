@@ -51,12 +51,19 @@ export const INSPECTOR_TABS = [
   "Library",
   "Requests",
   "Fabrication",
+  "Enclosure",
 ] as const;
 export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 const TAB_META: Record<
   InspectorTab,
   { icon: typeof LayersIcon; short: string; title: string; detail: string }
 > = {
+  Enclosure: {
+    icon: PackageIcon,
+    short: "Case",
+    title: "Enclosure",
+    detail: "Board case and mechanical fit",
+  },
   Fabrication: {
     icon: PackageIcon,
     short: "Fab",
@@ -124,18 +131,29 @@ const TAB_META: Record<
     detail: "References and owned parts on this environment",
   },
 };
-const NEEDS_EXECUTION: ReadonlySet<InspectorTab> = new Set(["Inspect", "Compare", "Simulate"]);
+const NEEDS_EXECUTION: ReadonlySet<InspectorTab> = new Set([
+  "Inspect",
+  "Compare",
+  "Simulate",
+  "Enclosure",
+]);
 
 /** Only the sections that mean something for this kind of design. */
-export function inspectorTabs(design: PcbDesign): readonly InspectorTab[] {
+export function inspectorTabs(
+  design: PcbDesign,
+  features: readonly string[] = [],
+): readonly InspectorTab[] {
   return INSPECTOR_TABS.filter((tab) =>
-    tab === "Layers"
-      ? design.kind === "kicad" && !!design.boardPath
-      : tab === "Checks"
-        ? true
-        : tab === "Parameters"
-          ? design.kind === "tscircuit"
-          : true,
+    tab === "Enclosure"
+      ? features.includes("pcb-enclosure-fit") &&
+        (design.kind === "tscircuit" || !!design.boardPath)
+      : tab === "Layers"
+        ? design.kind === "kicad" && !!design.boardPath
+        : tab === "Checks"
+          ? true
+          : tab === "Parameters"
+            ? design.kind === "tscircuit"
+            : true,
   );
 }
 export function isInspectorTab(name: string | undefined): name is InspectorTab {
