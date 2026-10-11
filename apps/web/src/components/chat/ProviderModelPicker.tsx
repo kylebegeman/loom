@@ -1,6 +1,7 @@
 import {
   ANTIGRAVITY_DEFAULT_MODEL,
   type ProviderInstanceId,
+  type EnvironmentId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ import { withSwitchboardEntries } from "../../fork/switchboard/switchboardPicker
 
 // fork: switchboard - exported below, wrapped to collapse accounts while Switchboard is on.
 const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
+  environmentId: EnvironmentId | null;
   /**
    * The instance currently selected in the composer. Drives the trigger
    * icon, label and the default-highlighted combobox row.
@@ -293,6 +295,7 @@ const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
       >
         <ModelPickerContent
+          environmentId={props.environmentId}
           activeInstanceId={activeInstanceId}
           model={props.model}
           {...(props.selectedModels !== undefined ? { selectedModels: props.selectedModels } : {})}
