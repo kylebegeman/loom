@@ -46,6 +46,8 @@ function makeViewer() {
     setGrid: vi.fn(),
     setAxes: vi.fn(),
     setProjection: vi.fn(),
+    setReference: vi.fn(),
+    setLengthFormat: vi.fn(),
   };
 }
 const viewerRef = { current: null as ModelViewer | null };

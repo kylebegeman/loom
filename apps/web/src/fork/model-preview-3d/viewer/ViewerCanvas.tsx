@@ -1,5 +1,6 @@
 import type {
   ModelCamera,
+  ScaleReference,
   ModelProjection,
   ModelPoint,
   ModelSection,
@@ -8,6 +9,7 @@ import type {
 } from "@t3tools/contracts/fork";
 import { useEffect, useRef } from "react";
 import type { ModelFormat } from "@t3tools/contracts/fork";
+import { formatLength, useDisplayUnits } from "../units";
 import type { Plate } from "../buildPlate";
 import { createViewer, type ModelViewer, type NavigationMode } from "./createViewer";
 import { disposeModel, loadModel, type meshStats } from "./load";
@@ -34,6 +36,7 @@ export default function ViewerCanvas({
   onPick,
   onCamera,
   camera,
+  reference = "none",
 }: {
   section?: ModelSection;
   measurements?: readonly ModelMeasurement[];
@@ -43,6 +46,7 @@ export default function ViewerCanvas({
   onPick?: (points: ModelPoint[]) => void;
   onCamera?: (camera: ModelCamera) => void;
   camera?: ModelCamera | null;
+  reference?: ScaleReference;
   url: string;
   format: ModelFormat;
   plate: Plate;
@@ -56,6 +60,7 @@ export default function ViewerCanvas({
   display?: { wireframe: boolean; grid: boolean; axes: boolean; projection: ModelProjection };
   onNavigate?: () => void;
 }) {
+  const units = useDisplayUnits();
   const host = useRef<HTMLDivElement>(null),
     loaded = useRef(false);
   const options = useRef({
@@ -66,6 +71,8 @@ export default function ViewerCanvas({
     annotations,
     pendingPoint,
     camera,
+    reference,
+    units,
   });
   useEffect(() => {
     options.current = {
@@ -76,8 +83,20 @@ export default function ViewerCanvas({
       annotations,
       pendingPoint,
       camera,
+      reference,
+      units,
     };
-  }, [navigationMode, display, section, measurements, annotations, pendingPoint, camera]);
+  }, [
+    navigationMode,
+    display,
+    section,
+    measurements,
+    annotations,
+    pendingPoint,
+    camera,
+    reference,
+    units,
+  ]);
   useEffect(() => {
     if (!host.current) return;
     try {
@@ -100,6 +119,12 @@ export default function ViewerCanvas({
   useEffect(() => {
     viewerRef.current?.setBed([plate.volume[0], plate.volume[1]], plate.pattern);
   }, [plate, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.setReference(reference);
+  }, [reference, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units));
+  }, [units, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setVisible(visible);
   }, [visible, viewerRef]);
@@ -130,6 +155,8 @@ export default function ViewerCanvas({
           viewerRef.current.setAxes(options.current.display.axes);
           viewerRef.current.setProjection(options.current.display.projection);
         }
+        viewerRef.current.setReference(options.current.reference);
+        viewerRef.current.setLengthFormat((mm) => formatLength(mm, options.current.units));
         if (options.current.section) viewerRef.current.setSection(options.current.section);
         if (options.current.camera) viewerRef.current.restore(options.current.camera);
         viewerRef.current.setOverlays(

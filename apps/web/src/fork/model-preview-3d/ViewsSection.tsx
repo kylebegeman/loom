@@ -2,6 +2,8 @@ import styles from "./workspace.module.css";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   CameraIcon,
+  CopyIcon,
+  DownloadIcon,
   EllipsisIcon,
   Grid2X2Icon,
   PencilIcon,
@@ -22,6 +24,8 @@ import { Switch } from "~/components/ui/switch";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "~/components/ui/menu";
 import { randomUUID } from "~/lib/utils";
 import { EmptyNote, RenameInput, SectionHead } from "./controls";
+import type { ExportAction } from "./captureExport";
+import { formatLength, useDisplayUnits } from "./units";
 
 type Mutation = (operation: ModelWorkspaceOperation) => Promise<unknown>;
 const SHEET_VIEWS = 4;
@@ -60,6 +64,8 @@ export function ViewsSection({
   onRecall,
   onUpdate,
   onCapture,
+  onExport,
+  canCopy,
   onThumbnail,
 }: {
   data: ModelWorkspace;
@@ -72,8 +78,16 @@ export function ViewsSection({
   onRecall: (view: ModelSavedView) => void;
   onUpdate: (view: ModelSavedView) => void;
   onCapture: (ids: readonly string[], measurements: boolean, name: string) => Promise<void>;
+  onExport: (
+    ids: readonly string[],
+    measurements: boolean,
+    name: string,
+    action: ExportAction,
+  ) => Promise<unknown>;
+  canCopy: boolean;
   onThumbnail: (view: ModelSavedView) => Promise<string | null>;
 }) {
+  const units = useDisplayUnits();
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [renaming, setRenaming] = useState<string | null>(null);
   const [draft, setDraft] = useState<SheetDraft | null>(null);
@@ -230,7 +244,7 @@ export function ViewsSection({
                     view.camera.projection === "orthographic") && (
                     <div className={styles["model-row-detail"]}>
                       {section.enabled
-                        ? `Section ${section.axis.toUpperCase()} at ${section.offset.toFixed(1)} mm`
+                        ? `Section ${section.axis.toUpperCase()} at ${formatLength(section.offset, units)}`
                         : active
                           ? "Current view"
                           : view.sourceRevision !== sourceRevision
@@ -250,6 +264,20 @@ export function ViewsSection({
                     <MenuItem onClick={() => setRenaming(view.id)}>
                       <PencilIcon />
                       Rename
+                    </MenuItem>
+                    <MenuItem
+                      disabled={disabled || capturing !== null || !canCopy}
+                      onClick={() => void onExport([view.id], false, view.name, "copy")}
+                    >
+                      <CopyIcon />
+                      Copy image
+                    </MenuItem>
+                    <MenuItem
+                      disabled={disabled || capturing !== null}
+                      onClick={() => void onExport([view.id], false, view.name, "save")}
+                    >
+                      <DownloadIcon />
+                      Save PNG
                     </MenuItem>
                     <MenuSeparator />
                     <MenuItem variant="destructive" onClick={() => removeView(view)}>
@@ -322,6 +350,24 @@ export function ViewsSection({
                 >
                   <PencilIcon />
                   Edit views
+                </MenuItem>
+                <MenuItem
+                  disabled={disabled || capturing !== null || !canCopy}
+                  onClick={() =>
+                    void onExport(preset.viewIds, preset.includeMeasurements, preset.name, "copy")
+                  }
+                >
+                  <CopyIcon />
+                  Copy image
+                </MenuItem>
+                <MenuItem
+                  disabled={disabled || capturing !== null}
+                  onClick={() =>
+                    void onExport(preset.viewIds, preset.includeMeasurements, preset.name, "save")
+                  }
+                >
+                  <DownloadIcon />
+                  Save PNG
                 </MenuItem>
                 <MenuSeparator />
                 <MenuItem

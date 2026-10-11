@@ -69,6 +69,7 @@ import type { ScadSession } from "./ScadCustomizer";
 import type { meshStats } from "./viewer/load";
 import type { ModelViewer } from "./viewer/createViewer";
 import { models, modelUrl, runModelCommand } from "./state";
+import { formatLength, formatLengths, useDisplayUnits } from "./units";
 import { generateVariants, sweepValues } from "./variants";
 import { thumbnail } from "./viewer/captureSheet";
 import { OperationStatus, type OperationProgress } from "./OperationStatus";
@@ -219,6 +220,7 @@ function VariantDetail({
   onDuplicate: (candidate: SaveCandidate) => void;
   onDelete: () => void;
 }) {
+  const units = useDisplayUnits();
   const parameters = session.data.parameters;
   const saved = useMemo(
     () => rebaseParameterValues(parameters, variant.values),
@@ -324,7 +326,7 @@ function VariantDetail({
             ? `${differ} parameter${differ === 1 ? "" : "s"} differ from source defaults`
             : "Same as source defaults"}
           {variant.dimensions && !dirty
-            ? `, ${variant.dimensions.map((value) => value.toFixed(0)).join(" × ")} mm`
+            ? `, ${formatLengths(variant.dimensions, units, { digits: 0 })}`
             : ""}
           {dirty || fit === "fits"
             ? ""
@@ -557,6 +559,7 @@ export function VariantsInspector({
   path: string;
   plate: Plate;
 }) {
+  const units = useDisplayUnits();
   const [saveCandidate, setSaveCandidate] = useState<SaveCandidate | null>(null);
   const [candidateSetName, setSetName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -943,7 +946,7 @@ export function VariantsInspector({
                         <dt>{label}</dt>
                         <dd>
                           {a && b
-                            ? `${a[index]!.toFixed(1)} → ${b[index]!.toFixed(1)} mm${delta ? ` (${delta > 0 ? "+" : ""}${delta.toFixed(1)})` : ""}`
+                            ? `${formatLength(a[index]!, units, { unit: false })} → ${formatLength(b[index]!, units, { unit: false })} ${units}${delta ? ` (${delta > 0 ? "+" : ""}${formatLength(delta, units, { unit: false })})` : ""}`
                             : "Measuring"}
                         </dd>
                       </Fragment>

@@ -1,5 +1,11 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
-export type ModelAction = "capture" | "capture-four" | "rerender";
+export type ModelAction =
+  | "capture"
+  | "capture-four"
+  | "rerender"
+  | "toggle-units"
+  | "copy-view"
+  | "save-view";
 const listeners = new Set<{ ref: ScopedThreadRef; callback: (action: ModelAction) => void }>();
 export function onModelAction(ref: ScopedThreadRef, callback: (action: ModelAction) => void) {
   const entry = { ref, callback };

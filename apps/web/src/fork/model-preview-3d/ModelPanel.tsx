@@ -8,6 +8,7 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -63,7 +64,16 @@ import {
   type InspectorTab,
 } from "./ModelInspector";
 import { bedFit, resolvePlate } from "./buildPlate";
-import { BedPicker } from "./BedPicker";
+import { BedPicker, useScaleReference } from "./BedPicker";
+import { DisplayUnitsProvider, formatLengths, unitName, useDisplayUnitsSetting } from "./units";
+import {
+  canCopyImages,
+  captureFileName,
+  copyImage,
+  saveImage,
+  type ExportAction,
+} from "./captureExport";
+import { toastManager } from "~/components/ui/toast";
 import { changedParameters } from "./params";
 import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
 import { attachModelImage, captureToComposer, captureBase64 } from "./capture";
@@ -100,6 +110,22 @@ function ModelFile({
   visible: boolean;
   settings: ModelPreviewSettings;
 }) {
+  const latestSettings = useRef(settings);
+  const readSettings = useCallback(() => latestSettings.current, []);
+  const unitsControl = useDisplayUnitsSetting(threadRef.environmentId, settings, readSettings);
+  const referenceControl = useScaleReference(threadRef.environmentId, settings, readSettings);
+  const displaySettings = useMemo(
+    () => ({
+      ...settings,
+      displayUnits: unitsControl.units,
+      scaleReference: referenceControl.reference,
+    }),
+    [settings, unitsControl.units, referenceControl.reference],
+  );
+  useLayoutEffect(() => {
+    latestSettings.current = displaySettings;
+  }, [displaySettings]);
+  const units = unitsControl.units;
   const file = useMemo(() => ({ threadId: threadRef.threadId, path }), [threadRef.threadId, path]);
   const format = (
     /\.(stp|step)$/i.test(path) ? "step" : path.split(".").at(-1)?.toLowerCase()
@@ -123,7 +149,7 @@ function ModelFile({
     [tooLarge, setTooLarge] = useState(false),
     [capturing, setCapturing] = useState(false),
     [success, setSuccess] = useState<string | null>(null),
-    [captureError, setCaptureError] = useState<string | null>(null),
+    [captureError, setCaptureError] = useState<{ title: string; message: string } | null>(null),
     [release, setRelease] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(format === "scad"),
     [inspectorExpanded, setInspectorExpanded] = useState(false),
@@ -227,6 +253,12 @@ function ModelFile({
             break;
           case "display":
             get();
+            if (c.reference !== undefined) {
+              if (!referenceControl.canSave)
+                throw new Error("This connection cannot change model settings.");
+              await referenceControl.save(c.reference);
+              get().setReference(c.reference);
+            }
             setDisplay((d) => ({
               ...d,
               ...(c.wireframe === undefined ? {} : { wireframe: c.wireframe }),
@@ -642,7 +674,10 @@ function ModelFile({
   const capture = useCallback(
     async (four: boolean) => {
       if (!viewer.current || !stats || busy) {
-        setCaptureError("Wait for the model preview to finish loading before capturing it.");
+        setCaptureError({
+          title: "Capture could not be attached",
+          message: "Wait for the model preview to finish loading before capturing it.",
+        });
         return;
       }
       await perform("Capturing and attaching model image", async () => {
@@ -654,7 +689,10 @@ function ModelFile({
           await captureToComposer(viewer.current, threadRef, path, four);
           setSuccess("Capture attached to the composer.");
         } catch (cause) {
-          setCaptureError(failureMessage(cause));
+          setCaptureError({
+            title: "Capture could not be attached",
+            message: failureMessage(cause),
+          });
         } finally {
           setCapturing(false);
         }
@@ -662,13 +700,73 @@ function ModelFile({
     },
     [threadRef, path, perform, stats, busy],
   );
+  const exportCapture = useCallback(
+    async (four: boolean, action: ExportAction) => {
+      const title = action === "copy" ? "Image could not be copied" : "PNG could not be saved";
+      if (!viewer.current || !stats || busy) {
+        setCaptureError({
+          title,
+          message: "Wait for the model preview to finish loading before capturing it.",
+        });
+        return;
+      }
+      await perform(action === "copy" ? "Copying model image" : "Saving model image", async () => {
+        if (!viewer.current) return;
+        setCapturing(true);
+        setSuccess(null);
+        setCaptureError(null);
+        try {
+          const label = four
+            ? "four-views"
+            : (activeView ??
+              editing.data.views.find((view) => view.id === activeViewId)?.name ??
+              "view");
+          const image = viewer.current.capture(four);
+          if (action === "copy") await copyImage(image);
+          else saveImage(await image, captureFileName(path, label, new Date()));
+          setSuccess(action === "copy" ? "Image copied." : "Download started.");
+        } catch (cause) {
+          setCaptureError({ title, message: failureMessage(cause) });
+        } finally {
+          setCapturing(false);
+        }
+      });
+    },
+    [path, perform, stats, busy, activeView, activeViewId, editing.data.views],
+  );
+  const exportViews = async (
+    ids: readonly string[],
+    includeMeasurements: boolean,
+    name: string,
+    action: ExportAction,
+  ) => {
+    if (!viewer.current || !stats || busy) {
+      setCaptureError({
+        title: action === "copy" ? "Image could not be copied" : "PNG could not be saved",
+        message: "Wait for the model preview to finish loading before capturing it.",
+      });
+      return;
+    }
+    setSuccess(null);
+    setCaptureError(null);
+    const result = await editing.exportViews(ids, includeMeasurements, name, action);
+    if (result?.ok) setSuccess(action === "copy" ? "Image copied." : "Download started.");
+    else if (result) setCaptureError({ title: result.title, message: result.message });
+  };
   useEffect(() => {
     if (!visible) return;
     return onModelAction(threadRef, (action) => {
       if (action === "rerender") setRevision((value) => value + 1);
-      else void capture(action === "capture-four");
+      else if (action === "toggle-units") {
+        if (!unitsControl.canSave) return;
+        const next = unitsControl.units === "mm" ? "in" : "mm";
+        unitsControl.setUnits(next);
+        toastManager.add({ type: "success", title: `Lengths in ${unitName(next)}` });
+      } else if (action === "copy-view" || action === "save-view") {
+        void exportCapture(false, action === "copy-view" ? "copy" : "save");
+      } else void capture(action === "capture-four");
     });
-  }, [visible, threadRef, capture]);
+  }, [visible, threadRef, capture, exportCapture, unitsControl]);
   const displayedError =
     watchError ??
     error ??
@@ -725,466 +823,480 @@ function ModelFile({
         ? "Click the part you want changed"
         : null;
   return (
-    <div
-      className={styles["model-workspace"]}
-      tabIndex={-1}
-      aria-label="3D model workspace"
-      onKeyDown={(event) => {
-        const typing =
-          event.target instanceof HTMLElement &&
-          event.target.closest("input, textarea, select, [contenteditable=true]");
-        if (
-          visible &&
-          session &&
-          !typing &&
-          !event.defaultPrevented &&
-          (event.metaKey || event.ctrlKey) &&
-          event.key.toLowerCase() === "z"
-        ) {
-          const index = session.historyCursor + (event.shiftKey ? 1 : -1);
-          if (index >= 0 && index < session.historyLabels.length) session.moveHistory(index);
+    <DisplayUnitsProvider value={unitsControl}>
+      <div
+        className={styles["model-workspace"]}
+        tabIndex={-1}
+        aria-label="3D model workspace"
+        onKeyDown={(event) => {
+          const typing =
+            event.target instanceof HTMLElement &&
+            event.target.closest("input, textarea, select, [contenteditable=true]");
+          if (
+            visible &&
+            session &&
+            !typing &&
+            !event.defaultPrevented &&
+            (event.metaKey || event.ctrlKey) &&
+            event.key.toLowerCase() === "z"
+          ) {
+            const index = session.historyCursor + (event.shiftKey ? 1 : -1);
+            if (index >= 0 && index < session.historyLabels.length) session.moveHistory(index);
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          if (
+            !visible ||
+            event.defaultPrevented ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.altKey ||
+            (event.target instanceof HTMLElement &&
+              event.target.closest(
+                "input, textarea, select, [contenteditable=true], [role=menu], [role=dialog], [role=listbox]",
+              ))
+          )
+            return;
+          const key = event.key.toLowerCase();
+          if (key === "escape" && (editing.picking || editing.pendingRegion)) {
+            if (editing.picking) editing.stopPicking();
+            else editing.cancel();
+          } else if (key === "m" && !editDisabled) startTool("measure");
+          else if (key === "n" && !editDisabled) startTool("annotate");
+          else if (key === "s" && !editDisabled) toggleSection();
+          else if (["1", "2", "3", "4"].includes(key) && stats)
+            setView((["iso", "front", "top", "right"] as const)[Number(key) - 1]!);
+          else if (key === "f" && stats) fit();
+          else if (key === "h") setNavigationMode("pan");
+          else if (key === "o") setNavigationMode("orbit");
+          else if (key === "i") setInspectorOpen((value) => !value);
+          else if (key === "w") setDisplay((value) => ({ ...value, wireframe: !value.wireframe }));
+          else if (key === "p")
+            setDisplay((value) => ({
+              ...value,
+              projection: value.projection === "perspective" ? "orthographic" : "perspective",
+            }));
+          else if (key === "g") setDisplay((value) => ({ ...value, grid: !value.grid }));
+          else if (key === "a") setDisplay((value) => ({ ...value, axes: !value.axes }));
+          else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
+          else if (key === "-" && stats) viewer.current?.zoom(1.2);
+          else return;
           event.preventDefault();
           event.stopPropagation();
-          return;
-        }
-        if (
-          !visible ||
-          event.defaultPrevented ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.altKey ||
-          (event.target instanceof HTMLElement &&
-            event.target.closest(
-              "input, textarea, select, [contenteditable=true], [role=menu], [role=dialog], [role=listbox]",
-            ))
-        )
-          return;
-        const key = event.key.toLowerCase();
-        if (key === "escape" && (editing.picking || editing.pendingRegion)) {
-          if (editing.picking) editing.stopPicking();
-          else editing.cancel();
-        } else if (key === "m" && !editDisabled) startTool("measure");
-        else if (key === "n" && !editDisabled) startTool("annotate");
-        else if (key === "s" && !editDisabled) toggleSection();
-        else if (["1", "2", "3", "4"].includes(key) && stats)
-          setView((["iso", "front", "top", "right"] as const)[Number(key) - 1]!);
-        else if (key === "f" && stats) fit();
-        else if (key === "h") setNavigationMode("pan");
-        else if (key === "o") setNavigationMode("orbit");
-        else if (key === "i") setInspectorOpen((value) => !value);
-        else if (key === "w") setDisplay((value) => ({ ...value, wireframe: !value.wireframe }));
-        else if (key === "p")
-          setDisplay((value) => ({
-            ...value,
-            projection: value.projection === "perspective" ? "orthographic" : "perspective",
-          }));
-        else if (key === "g") setDisplay((value) => ({ ...value, grid: !value.grid }));
-        else if (key === "a") setDisplay((value) => ({ ...value, axes: !value.axes }));
-        else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
-        else if (key === "-" && stats) viewer.current?.zoom(1.2);
-        else return;
-        event.preventDefault();
-        event.stopPropagation();
-      }}
-    >
-      <div className={styles["model-document-bar"]}>
-        {format === "scad" ? (
-          <FileCode2Icon className="size-5 shrink-0 text-muted-foreground" />
-        ) : (
-          <BoxIcon className="size-5 shrink-0 text-muted-foreground" />
-        )}
-        <div className={styles["model-document-name"]}>
-          <strong>{path.split("/").at(-1)}</strong>
-          <small>
-            {path.includes("/")
-              ? path.slice(0, path.lastIndexOf("/"))
-              : format === "scad"
-                ? "OpenSCAD source"
-                : `${format.toUpperCase()} model`}
-          </small>
-        </div>
-        <div className={styles["model-document-actions"]}>
-          <CaptureMenu
-            disabled={editDisabled}
-            capturing={captureBusy}
-            sheets={editing.data.presets}
-            onCapture={(four) => void capture(four)}
-            onSheet={(sheet) =>
-              void editing.captureViews(sheet.viewIds, sheet.includeMeasurements, sheet.name)
-            }
-          />
-          <ModelTool
-            label={inspectorOpen ? "Hide inspector" : "Show inspector"}
-            kbd="I"
-            aria-pressed={inspectorOpen}
-            onClick={() => setInspectorOpen((value) => !value)}
-          >
-            <PanelRightIcon />
-          </ModelTool>
-          <Menu>
-            <MenuTrigger
-              render={<button className={styles["model-tool"]} aria-label="Model actions" />}
-            >
-              <MoreHorizontalIcon />
-            </MenuTrigger>
-            <MenuPopup align="end">
-              <MenuItem onClick={picker}>
-                <FolderOpenIcon />
-                Open another file
-              </MenuItem>
-              <MenuItem onClick={() => setRevision((value) => value + 1)}>
-                <RefreshCwIcon />
-                Reload from disk
-              </MenuItem>
-              <MenuSeparator />
-              <MenuItem render={<Link to="/settings/loom" />}>
-                <Settings2Icon />
-                Printer and preview settings
-              </MenuItem>
-            </MenuPopup>
-          </Menu>
-        </div>
-      </div>
-      <div
-        className={styles["model-work-area"]}
-        data-inspector-open={inspectorOpen}
-        data-inspector-expanded={inspectorExpanded}
+        }}
       >
-        <div className={styles["model-viewport"]}>
-          <div className={styles["model-canvas"]}>
-            <Suspense
-              fallback={
-                <div className={styles["model-loading"]}>
-                  <BoxIcon />
-                  Preparing viewer...
-                </div>
-              }
-            >
-              {mesh && (visible || !release) && (
-                <ViewerCanvas
-                  url={mesh.url}
-                  format={mesh.format}
-                  plate={plate}
-                  visible={visible}
-                  viewerRef={viewer}
-                  savedViewRef={savedView}
-                  onStats={onStats}
-                  onError={onError}
-                  onProgress={setProgress}
-                  navigationMode={navigationMode}
-                  display={display}
-                  onNavigate={onNavigate}
-                  section={editing.section}
-                  measurements={editing.measurements}
-                  annotations={editing.annotations}
-                  pendingPoint={editing.pendingPoint}
-                  pickMode={busy ? null : editing.picking}
-                  onPick={editing.onPick}
-                />
-              )}
-            </Suspense>
+        <div className={styles["model-document-bar"]}>
+          {format === "scad" ? (
+            <FileCode2Icon className="size-5 shrink-0 text-muted-foreground" />
+          ) : (
+            <BoxIcon className="size-5 shrink-0 text-muted-foreground" />
+          )}
+          <div className={styles["model-document-name"]}>
+            <strong>{path.split("/").at(-1)}</strong>
+            <small>
+              {path.includes("/")
+                ? path.slice(0, path.lastIndexOf("/"))
+                : format === "scad"
+                  ? "OpenSCAD source"
+                  : `${format.toUpperCase()} model`}
+            </small>
           </div>
-          {!mesh && !displayedError && (
-            <div className={styles["model-loading"]}>
-              <BoxIcon />
-              <p>{pending ? "Preparing your part..." : "Loading model..."}</p>
-            </div>
-          )}
-          <ViewTools
-            active={activeView}
-            savedViews={editing.data.views}
-            activeViewId={activeViewId}
-            onView={setView}
-            onSavedView={recallView}
-            onSaveView={saveView}
-            disabled={!stats}
-          />
-          <ToolRail
-            tool={editing.picking}
-            section={editing.section.enabled}
-            disabled={editDisabled}
-            onTool={startTool}
-            onSection={toggleSection}
-          />
-          {editing.section.enabled && stats && (
-            <SectionStrip
-              section={editing.section}
-              bounds={sectionBounds(editing.section.axis)}
-              onChange={changeSection}
-              onRemove={toggleSection}
+          <div className={styles["model-document-actions"]}>
+            <CaptureMenu
+              disabled={editDisabled}
+              capturing={captureBusy}
+              sheets={editing.data.presets}
+              canCopy={canCopyImages()}
+              onExport={(action, four) => void exportCapture(four, action)}
+              onCapture={(four) => void capture(four)}
+              onSheet={(sheet) =>
+                void editing.captureViews(sheet.viewIds, sheet.includeMeasurements, sheet.name)
+              }
             />
-          )}
-          {hint && <ToolHint onDone={editing.stopPicking}>{hint}</ToolHint>}
-          <DisplayTools
-            bed={<BedPicker environmentId={threadRef.environmentId} settings={settings} />}
-            {...display}
-            orthographic={display.projection === "orthographic"}
-            onOrthographic={(orthographic) =>
-              setDisplay((value) => ({
-                ...value,
-                projection: orthographic ? "orthographic" : "perspective",
-              }))
-            }
-            onWireframe={(wireframe) => setDisplay((value) => ({ ...value, wireframe }))}
-            onGrid={(grid) => setDisplay((value) => ({ ...value, grid }))}
-            onAxes={(axes) => setDisplay((value) => ({ ...value, axes }))}
-          />
-          <NavigationTools
-            mode={navigationMode}
-            onMode={setNavigationMode}
-            onFit={fit}
-            onZoom={(factor) => viewer.current?.zoom(factor)}
-            disabled={!stats}
-          />
-          <div className={styles["model-status-overlay"]}>
-            {displayedError && (
-              <div className={styles["model-notice"]} role="alert" data-tone="error">
-                <strong className="font-medium">
-                  {stats ? "Preview is out of date" : "Unable to preview this model"}
-                </strong>
-                <p className="mt-1 wrap-anywhere">{displayedError}</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {tooLarge && (
-                    <Button size="sm" variant="outline" onClick={() => setAllowLarge(true)}>
-                      Load anyway
-                    </Button>
-                  )}
-                  {format === "scad" && render && (
-                    <Button size="sm" variant="outline" onClick={showLog}>
-                      View render log
-                    </Button>
-                  )}
-                  {displayedError.includes("OpenSCAD") && (
+            <ModelTool
+              label={inspectorOpen ? "Hide inspector" : "Show inspector"}
+              kbd="I"
+              aria-pressed={inspectorOpen}
+              onClick={() => setInspectorOpen((value) => !value)}
+            >
+              <PanelRightIcon />
+            </ModelTool>
+            <Menu>
+              <MenuTrigger
+                render={<button className={styles["model-tool"]} aria-label="Model actions" />}
+              >
+                <MoreHorizontalIcon />
+              </MenuTrigger>
+              <MenuPopup align="end">
+                <MenuItem onClick={picker}>
+                  <FolderOpenIcon />
+                  Open another file
+                </MenuItem>
+                <MenuItem onClick={() => setRevision((value) => value + 1)}>
+                  <RefreshCwIcon />
+                  Reload from disk
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem render={<Link to="/settings/loom" />}>
+                  <Settings2Icon />
+                  Printer and preview settings
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          </div>
+        </div>
+        <div
+          className={styles["model-work-area"]}
+          data-inspector-open={inspectorOpen}
+          data-inspector-expanded={inspectorExpanded}
+        >
+          <div className={styles["model-viewport"]}>
+            <div className={styles["model-canvas"]}>
+              <Suspense
+                fallback={
+                  <div className={styles["model-loading"]}>
+                    <BoxIcon />
+                    Preparing viewer...
+                  </div>
+                }
+              >
+                {mesh && (visible || !release) && (
+                  <ViewerCanvas
+                    url={mesh.url}
+                    format={mesh.format}
+                    plate={plate}
+                    visible={visible}
+                    viewerRef={viewer}
+                    savedViewRef={savedView}
+                    onStats={onStats}
+                    onError={onError}
+                    onProgress={setProgress}
+                    navigationMode={navigationMode}
+                    display={display}
+                    reference={referenceControl.reference}
+                    onNavigate={onNavigate}
+                    section={editing.section}
+                    measurements={editing.measurements}
+                    annotations={editing.annotations}
+                    pendingPoint={editing.pendingPoint}
+                    pickMode={busy ? null : editing.picking}
+                    onPick={editing.onPick}
+                  />
+                )}
+              </Suspense>
+            </div>
+            {!mesh && !displayedError && (
+              <div className={styles["model-loading"]}>
+                <BoxIcon />
+                <p>{pending ? "Preparing your part..." : "Loading model..."}</p>
+              </div>
+            )}
+            <ViewTools
+              active={activeView}
+              savedViews={editing.data.views}
+              activeViewId={activeViewId}
+              onView={setView}
+              onSavedView={recallView}
+              onSaveView={saveView}
+              disabled={!stats}
+            />
+            <ToolRail
+              tool={editing.picking}
+              section={editing.section.enabled}
+              disabled={editDisabled}
+              onTool={startTool}
+              onSection={toggleSection}
+            />
+            {editing.section.enabled && stats && (
+              <SectionStrip
+                section={editing.section}
+                bounds={sectionBounds(editing.section.axis)}
+                onChange={changeSection}
+                onRemove={toggleSection}
+              />
+            )}
+            {hint && <ToolHint onDone={editing.stopPicking}>{hint}</ToolHint>}
+            <DisplayTools
+              bed={
+                <BedPicker
+                  environmentId={threadRef.environmentId}
+                  settings={displaySettings}
+                  referenceControl={referenceControl}
+                />
+              }
+              {...display}
+              orthographic={display.projection === "orthographic"}
+              onOrthographic={(orthographic) =>
+                setDisplay((value) => ({
+                  ...value,
+                  projection: orthographic ? "orthographic" : "perspective",
+                }))
+              }
+              onWireframe={(wireframe) => setDisplay((value) => ({ ...value, wireframe }))}
+              onGrid={(grid) => setDisplay((value) => ({ ...value, grid }))}
+              onAxes={(axes) => setDisplay((value) => ({ ...value, axes }))}
+            />
+            <NavigationTools
+              mode={navigationMode}
+              onMode={setNavigationMode}
+              onFit={fit}
+              onZoom={(factor) => viewer.current?.zoom(factor)}
+              disabled={!stats}
+            />
+            <div className={styles["model-status-overlay"]}>
+              {displayedError && (
+                <div className={styles["model-notice"]} role="alert" data-tone="error">
+                  <strong className="font-medium">
+                    {stats ? "Preview is out of date" : "Unable to preview this model"}
+                  </strong>
+                  <p className="mt-1 wrap-anywhere">{displayedError}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {tooLarge && (
+                      <Button size="sm" variant="outline" onClick={() => setAllowLarge(true)}>
+                        Load anyway
+                      </Button>
+                    )}
+                    {format === "scad" && render && (
+                      <Button size="sm" variant="outline" onClick={showLog}>
+                        View render log
+                      </Button>
+                    )}
+                    {displayedError.includes("OpenSCAD") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        render={
+                          <a
+                            href="https://openscad.org/downloads.html#snapshots"
+                            target="_blank"
+                            rel="noreferrer"
+                          />
+                        }
+                      >
+                        Get OpenSCAD
+                      </Button>
+                    )}
                     <Button
                       size="sm"
-                      variant="outline"
-                      render={
-                        <a
-                          href="https://openscad.org/downloads.html#snapshots"
-                          target="_blank"
-                          rel="noreferrer"
-                        />
-                      }
+                      variant="ghost"
+                      onClick={() => setRevision((value) => value + 1)}
                     >
-                      Get OpenSCAD
+                      Try again
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setRevision((value) => value + 1)}
-                  >
-                    Try again
-                  </Button>
+                  </div>
                 </div>
-              </div>
-            )}
-            {editing.error && (
-              <div className={styles["model-notice"]} data-tone="error" role="alert">
-                {editing.error}
-              </div>
-            )}
-            {captureError && (
-              <div className={styles["model-notice"]} role="alert" data-tone="error">
-                <div className="flex items-center justify-between gap-2">
-                  <strong className="font-medium">Capture could not be attached</strong>
-                  <ModelTool label="Dismiss capture error" onClick={() => setCaptureError(null)}>
+              )}
+              {editing.error && (
+                <div className={styles["model-notice"]} data-tone="error" role="alert">
+                  {editing.error}
+                </div>
+              )}
+              {captureError && (
+                <div className={styles["model-notice"]} role="alert" data-tone="error">
+                  <div className="flex items-center justify-between gap-2">
+                    <strong className="font-medium">{captureError.title}</strong>
+                    <ModelTool label="Dismiss capture error" onClick={() => setCaptureError(null)}>
+                      <XIcon />
+                    </ModelTool>
+                  </div>
+                  <p>{captureError.message}</p>
+                </div>
+              )}
+              {busy && (
+                <OperationStatus
+                  label={
+                    refreshing
+                      ? "Refreshing model parameters"
+                      : pending
+                        ? "Rendering with OpenSCAD"
+                        : "Loading model"
+                  }
+                  detail={
+                    progress ??
+                    (refreshing
+                      ? "Reading source and saved sets."
+                      : "Your current preview stays visible while the new geometry is prepared.")
+                  }
+                />
+              )}
+              {variantActivity && (!inspectorOpen || inspectorTab !== "variants") && (
+                <OperationStatus {...variantActivity} />
+              )}
+              {editing.operation && (
+                <OperationStatus
+                  label={editing.operation}
+                  detail="Preparing the image and saving your work."
+                />
+              )}
+              {editing.pendingSaves > 0 && (
+                <OperationStatus
+                  label="Saving model workspace"
+                  detail={`${editing.pendingSaves} pending change${editing.pendingSaves === 1 ? "" : "s"}.`}
+                />
+              )}
+              {!editing.ready && !editing.error && (
+                <OperationStatus label="Loading model workspace" />
+              )}
+              {success && (
+                <div
+                  className={styles["model-floating"] + " w-fit gap-2 pl-3 text-xs"}
+                  role="status"
+                >
+                  <CheckIcon className="size-3.5" />
+                  {success}
+                  <ModelTool label="Dismiss capture message" onClick={() => setSuccess(null)}>
                     <XIcon />
                   </ModelTool>
                 </div>
-                <p>{captureError}</p>
-              </div>
-            )}
-            {busy && (
-              <OperationStatus
-                label={
-                  refreshing
-                    ? "Refreshing model parameters"
-                    : pending
-                      ? "Rendering with OpenSCAD"
-                      : "Loading model"
-                }
-                detail={
-                  progress ??
-                  (refreshing
-                    ? "Reading source and saved sets."
-                    : "Your current preview stays visible while the new geometry is prepared.")
-                }
-              />
-            )}
-            {variantActivity && (!inspectorOpen || inspectorTab !== "variants") && (
-              <OperationStatus {...variantActivity} />
-            )}
-            {editing.operation && (
-              <OperationStatus
-                label={editing.operation}
-                detail="Preparing the image and saving your work."
-              />
-            )}
-            {editing.pendingSaves > 0 && (
-              <OperationStatus
-                label="Saving model workspace"
-                detail={`${editing.pendingSaves} pending change${editing.pendingSaves === 1 ? "" : "s"}.`}
-              />
-            )}
-            {!editing.ready && !editing.error && (
-              <OperationStatus label="Loading model workspace" />
-            )}
-            {success && (
-              <div className={styles["model-floating"] + " w-fit gap-2 pl-3 text-xs"} role="status">
-                <CheckIcon className="size-3.5" />
-                {success}
-                <ModelTool label="Dismiss capture message" onClick={() => setSuccess(null)}>
-                  <XIcon />
-                </ModelTool>
-              </div>
-            )}
-          </div>
-        </div>
-        <aside
-          className={styles["model-inspector"]}
-          hidden={!inspectorOpen}
-          aria-label="Model inspector"
-        >
-          <InspectorTabs
-            active={inspectorTab}
-            onTab={setInspectorTab}
-            onClose={() => {
-              setInspectorOpen(false);
-              viewer.current?.focus();
-            }}
-            scad={format === "scad"}
-            badges={badges}
-            expanded={inspectorExpanded}
-            onExpand={() => setInspectorExpanded((value) => !value)}
-          />
-          <div className={styles["model-inspector-content"]}>
-            {format === "scad" && (
-              <div
-                role="tabpanel"
-                aria-labelledby="model-tab-customize"
-                className={styles["model-inspector-tab-panel"]}
-                hidden={inspectorTab !== "customize"}
-              >
-                <ScadFile
-                  threadRef={threadRef}
-                  path={path}
-                  revision={revision}
-                  pending={pending}
-                  onSession={setSession}
-                  onMesh={onMesh}
-                  onResult={onResult}
-                  onPending={onPending}
-                  onRefreshing={setRefreshing}
-                  onError={onError}
-                />
-              </div>
-            )}
-            {format === "scad" && (
-              <fieldset
-                role="tabpanel"
-                aria-labelledby="model-tab-variants"
-                disabled={!editing.canEdit}
-                className={styles["model-inspector-tab-panel"]}
-                hidden={inspectorTab !== "variants"}
-              >
-                <VariantsInspector
-                  data={editing.data}
-                  mutate={editing.mutate}
-                  session={session}
-                  threadRef={threadRef}
-                  path={path}
-                  plate={plate}
-                  onActivity={setVariantActivity}
-                />
-              </fieldset>
-            )}
-            <fieldset
-              role="tabpanel"
-              aria-labelledby="model-tab-markup"
-              disabled={!editing.canEdit}
-              className={styles["model-inspector-tab-panel"]}
-              hidden={inspectorTab !== "markup"}
-            >
-              <MarkupSection
-                data={editing.data}
-                mutate={editing.mutate}
-                sourceRevision={geometryRevision}
-                picking={editing.picking}
-                pendingRegion={editing.pendingRegion}
-                relink={editing.relink}
-                busy={editing.operation !== null}
-                disabled={editDisabled}
-                actions={markupActions}
-              />
-            </fieldset>
-            <fieldset
-              role="tabpanel"
-              aria-labelledby="model-tab-views"
-              disabled={!editing.canEdit}
-              className={styles["model-inspector-tab-panel"]}
-              hidden={inspectorTab !== "views"}
-            >
-              <ViewsSection
-                data={editing.data}
-                mutate={editing.mutate}
-                sourceRevision={geometryRevision}
-                visible={visible && inspectorOpen && inspectorTab === "views"}
-                activeViewId={activeViewId}
-                disabled={editDisabled}
-                onSave={saveView}
-                onRecall={recallView}
-                onUpdate={updateView}
-                onCapture={editing.captureViews}
-                onThumbnail={viewThumbnail}
-              />
-            </fieldset>
-            <div
-              role="tabpanel"
-              aria-labelledby="model-tab-part"
-              className={styles["model-inspector-tab-panel"]}
-              hidden={inspectorTab !== "part"}
-            >
-              <PartSection
-                environmentId={threadRef.environmentId}
-                stats={stats}
-                settings={settings}
-                volume={volume}
-                render={render}
-                format={format}
-                path={path}
-              />
+              )}
             </div>
           </div>
-        </aside>
-      </div>
-      <div className={styles["model-status-bar"]}>
-        <span>
-          {stats
-            ? `${stats.size.map((value) => value.toFixed(1)).join(" × ")} mm`
-            : "Dimensions in millimetres"}
-        </span>
-        {stats && (
-          <span className={styles["model-triangle-count"]}>
-            {stats.triangles.toLocaleString()} triangles
+          <aside
+            className={styles["model-inspector"]}
+            hidden={!inspectorOpen}
+            aria-label="Model inspector"
+          >
+            <InspectorTabs
+              active={inspectorTab}
+              onTab={setInspectorTab}
+              onClose={() => {
+                setInspectorOpen(false);
+                viewer.current?.focus();
+              }}
+              scad={format === "scad"}
+              badges={badges}
+              expanded={inspectorExpanded}
+              onExpand={() => setInspectorExpanded((value) => !value)}
+            />
+            <div className={styles["model-inspector-content"]}>
+              {format === "scad" && (
+                <div
+                  role="tabpanel"
+                  aria-labelledby="model-tab-customize"
+                  className={styles["model-inspector-tab-panel"]}
+                  hidden={inspectorTab !== "customize"}
+                >
+                  <ScadFile
+                    threadRef={threadRef}
+                    path={path}
+                    revision={revision}
+                    pending={pending}
+                    onSession={setSession}
+                    onMesh={onMesh}
+                    onResult={onResult}
+                    onPending={onPending}
+                    onRefreshing={setRefreshing}
+                    onError={onError}
+                  />
+                </div>
+              )}
+              {format === "scad" && (
+                <fieldset
+                  role="tabpanel"
+                  aria-labelledby="model-tab-variants"
+                  disabled={!editing.canEdit}
+                  className={styles["model-inspector-tab-panel"]}
+                  hidden={inspectorTab !== "variants"}
+                >
+                  <VariantsInspector
+                    data={editing.data}
+                    mutate={editing.mutate}
+                    session={session}
+                    threadRef={threadRef}
+                    path={path}
+                    plate={plate}
+                    onActivity={setVariantActivity}
+                  />
+                </fieldset>
+              )}
+              <fieldset
+                role="tabpanel"
+                aria-labelledby="model-tab-markup"
+                disabled={!editing.canEdit}
+                className={styles["model-inspector-tab-panel"]}
+                hidden={inspectorTab !== "markup"}
+              >
+                <MarkupSection
+                  data={editing.data}
+                  mutate={editing.mutate}
+                  sourceRevision={geometryRevision}
+                  picking={editing.picking}
+                  pendingRegion={editing.pendingRegion}
+                  relink={editing.relink}
+                  busy={editing.operation !== null}
+                  disabled={editDisabled}
+                  actions={markupActions}
+                />
+              </fieldset>
+              <fieldset
+                role="tabpanel"
+                aria-labelledby="model-tab-views"
+                disabled={!editing.canEdit}
+                className={styles["model-inspector-tab-panel"]}
+                hidden={inspectorTab !== "views"}
+              >
+                <ViewsSection
+                  data={editing.data}
+                  mutate={editing.mutate}
+                  sourceRevision={geometryRevision}
+                  visible={visible && inspectorOpen && inspectorTab === "views"}
+                  activeViewId={activeViewId}
+                  disabled={editDisabled}
+                  onSave={saveView}
+                  onRecall={recallView}
+                  onUpdate={updateView}
+                  onCapture={editing.captureViews}
+                  onExport={exportViews}
+                  canCopy={canCopyImages()}
+                  onThumbnail={viewThumbnail}
+                />
+              </fieldset>
+              <div
+                role="tabpanel"
+                aria-labelledby="model-tab-part"
+                className={styles["model-inspector-tab-panel"]}
+                hidden={inspectorTab !== "part"}
+              >
+                <PartSection
+                  environmentId={threadRef.environmentId}
+                  stats={stats}
+                  settings={displaySettings}
+                  volume={volume}
+                  render={render}
+                  format={format}
+                  path={path}
+                />
+              </div>
+            </div>
+          </aside>
+        </div>
+        <div className={styles["model-status-bar"]}>
+          <span>
+            {stats ? formatLengths(stats.size, units) : `Dimensions in ${unitName(units)}`}
           </span>
-        )}
-        {plateFit !== "fits" && (
-          <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
-            <TriangleAlertIcon />
-            {plateFit === "rotated" ? "Fits if rotated 90°" : "Larger than the bed"}
-          </button>
-        )}
-        <span
-          className={styles["model-render-state"]}
-          data-busy={busy}
-          data-error={!!displayedError}
-        >
-          <span className={styles["model-state-dot"]} />
-          {displayedError ? (stats ? "Stale" : "Error") : busy ? "Updating" : "Ready"}
-        </span>
+          {stats && (
+            <span className={styles["model-triangle-count"]}>
+              {stats.triangles.toLocaleString()} triangles
+            </span>
+          )}
+          {plateFit !== "fits" && (
+            <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
+              <TriangleAlertIcon />
+              {plateFit === "rotated" ? "Fits if rotated 90°" : "Larger than the bed"}
+            </button>
+          )}
+          <span
+            className={styles["model-render-state"]}
+            data-busy={busy}
+            data-error={!!displayedError}
+          >
+            <span className={styles["model-state-dot"]} />
+            {displayedError ? (stats ? "Stale" : "Error") : busy ? "Updating" : "Ready"}
+          </span>
+        </div>
       </div>
-    </div>
+    </DisplayUnitsProvider>
   );
 }
 

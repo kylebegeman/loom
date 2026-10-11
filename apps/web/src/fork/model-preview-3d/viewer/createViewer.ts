@@ -1,5 +1,6 @@
 import type {
   ModelCamera,
+  ScaleReference,
   ModelProjection,
   ModelPoint,
   ModelSection,
@@ -39,6 +40,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { observeResize } from "~/lib/observeResize";
 import { markerScale, syncOrthographic } from "./projection";
+import { createReference, placeReference } from "./references";
 import { createBed } from "./bed";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
@@ -47,7 +49,13 @@ import styles from "../workspace.module.css";
 export type NavigationMode = "orbit" | "pan";
 /** An annotation with its number in the request list; the overlay falls back to list order. */
 export type OverlayAnnotation = ModelAnnotation & { number?: number };
-type ViewerMark = { kind: "label" | "pin"; text: string; position: Vector3; element: HTMLElement };
+type ViewerMark = {
+  kind: "label" | "pin";
+  text: string;
+  position: Vector3;
+  element: HTMLElement;
+  lengthMm: number | null;
+};
 const MARK_BLUE = 0x3984ff;
 
 /** One coalesced frame per interaction. OrbitControls damping stays disabled. */
@@ -193,6 +201,7 @@ export function createViewer(host: HTMLElement) {
   let marksLayer: HTMLDivElement | null = null,
     marks: ViewerMark[] = [],
     dotTexture: CanvasTexture | null = null;
+  let lengthFormat = (mm: number) => `${mm.toFixed(1)} mm`;
   const projected = new Vector3();
   const placeMarks = () => {
     const width = host.clientWidth,
@@ -206,7 +215,12 @@ export function createViewer(host: HTMLElement) {
       mark.element.style.transform = `translate(${x}px, ${y}px)${mark.kind === "label" ? " translate(-50%, -50%)" : ""}`;
     }
   };
-  const addMark = (kind: ViewerMark["kind"], text: string, position: Vector3, status?: string) => {
+  const addMark = (
+    kind: ViewerMark["kind"],
+    text: string,
+    position: Vector3,
+    options?: { status?: string; lengthMm?: number },
+  ) => {
     if (!marksLayer) {
       marksLayer = document.createElement("div");
       marksLayer.className = styles["model-marks"]!;
@@ -216,12 +230,12 @@ export function createViewer(host: HTMLElement) {
     element.className = styles[kind === "label" ? "model-mark-label" : "model-mark-pin"]!;
     if (kind === "pin") {
       const body = document.createElement("span");
-      body.dataset.status = status;
+      body.dataset.status = options?.status;
       body.append(Object.assign(document.createElement("span"), { textContent: text }));
       element.append(body);
     } else element.textContent = text;
     marksLayer.append(element);
-    marks.push({ kind, text, position, element });
+    marks.push({ kind, text, position, element, lengthMm: options?.lengthMm ?? null });
   };
   const dot = (point: ModelPoint) => {
     if (!dotTexture) {
@@ -269,7 +283,8 @@ export function createViewer(host: HTMLElement) {
         overlay.add(line);
         dot(measurement.start);
         dot(measurement.end);
-        addMark("label", `${start.distanceTo(end).toFixed(1)} mm`, start.clone().lerp(end, 0.5));
+        const lengthMm = start.distanceTo(end);
+        addMark("label", lengthFormat(lengthMm), start.clone().lerp(end, 0.5), { lengthMm });
       }
     for (const [index, annotation] of annotations.entries()) {
       const points = annotation.points.map((p) => new Vector3(...p));
@@ -281,7 +296,9 @@ export function createViewer(host: HTMLElement) {
         line.renderOrder = 9;
         overlay.add(line);
       }
-      addMark("pin", String(annotation.number ?? index + 1), points[0]!, annotation.status);
+      addMark("pin", String(annotation.number ?? index + 1), points[0]!, {
+        status: annotation.status,
+      });
     }
     if (pendingPoint) dot(pendingPoint);
     requestRender();
@@ -343,10 +360,13 @@ export function createViewer(host: HTMLElement) {
     box = new Box3(),
     bed: ReturnType<typeof createBed> | null = null,
     axes: AxesHelper | null = null,
-    sceneRadius = 1;
+    sceneRadius = 1,
+    reference: ReturnType<typeof createReference> = null,
+    referenceKind: ScaleReference = "none";
   const updateSceneRadius = () => {
     const bounds = box.clone();
     if (bed) bounds.union(new Box3().setFromObject(bed.object));
+    if (reference?.object.visible) bounds.union(new Box3().setFromObject(reference.object));
     sceneRadius = Math.max(bounds.getSize(new Vector3()).length() / 2, 0.5);
   };
   const scaleMarkers = () => {
@@ -462,13 +482,20 @@ export function createViewer(host: HTMLElement) {
   };
   // Like a slicer bed, the plate sits under the model's footprint centre at its lowest point.
   // The model keeps its own coordinates, so measurements, annotations and sections stay valid.
+  const placeReferenceObject = () => {
+    if (!reference) return;
+    reference.object.visible = model !== null;
+    if (model) reference.object.position.copy(placeReference(box, reference.size));
+  };
   const placeBed = () => {
-    if (!bed) return;
-    if (!model) bed.object.position.set(0, 0, 0);
-    else {
-      const center = box.getCenter(new Vector3());
-      bed.object.position.set(center.x, center.y, box.min.z);
+    if (bed) {
+      if (!model) bed.object.position.set(0, 0, 0);
+      else {
+        const center = box.getCenter(new Vector3());
+        bed.object.position.set(center.x, center.y, box.min.z);
+      }
     }
+    placeReferenceObject();
   };
   const snapshot = (): ModelCamera => ({
     projection,
@@ -510,6 +537,15 @@ export function createViewer(host: HTMLElement) {
       requestRender();
     },
     setOverlays: drawOverlay,
+    setLengthFormat(format: (mm: number) => string) {
+      lengthFormat = format;
+      for (const mark of marks)
+        if (mark.lengthMm !== null) {
+          mark.text = format(mark.lengthMm);
+          mark.element.textContent = mark.text;
+        }
+      requestRender();
+    },
     focus() {
       renderer.domElement.focus();
     },
@@ -591,6 +627,21 @@ export function createViewer(host: HTMLElement) {
       setView("iso");
     },
     setBed,
+    setReference(kind: ScaleReference) {
+      if (kind === referenceKind) return;
+      if (reference) {
+        helpers.remove(reference.object);
+        reference.dispose();
+      }
+      referenceKind = kind;
+      reference = createReference(kind);
+      if (reference) {
+        helpers.add(reference.object);
+        placeReferenceObject();
+      }
+      updateSceneRadius();
+      requestRender();
+    },
     setWireframe(value: boolean) {
       wireframe = value;
       applyWireframe();
@@ -695,6 +746,7 @@ export function createViewer(host: HTMLElement) {
       controls.dispose();
       if (model) disposeModel(model);
       bed?.dispose();
+      reference?.dispose();
       if (axes) {
         axes.geometry.dispose();
         for (const material of Array.isArray(axes.material) ? axes.material : [axes.material])

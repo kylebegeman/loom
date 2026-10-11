@@ -37,15 +37,10 @@ import {
 } from "~/components/ui/menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { meshStats } from "./viewer/load";
-import {
-  bedGroups,
-  buildPlateLabel,
-  describeFit,
-  formatVolume,
-  type BuildVolume,
-} from "./buildPlate";
+import { bedGroups, buildPlateLabel, describeFit, type BuildVolume } from "./buildPlate";
 import { useBuildPlate } from "./BedPicker";
 import { BedFitList } from "./BedFitList";
+import { formatLength, formatLengths, useDisplayUnits } from "./units";
 import { Chip, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
 
 export type InspectorTab = "customize" | "variants" | "markup" | "views" | "part";
@@ -191,6 +186,7 @@ function PlateFit({
   volume: BuildVolume;
   fits: boolean;
 }) {
+  const units = useDisplayUnits();
   const [bx, by, bz] = volume;
   const pad = 6,
     width = Math.max(bx, size[0]!) + pad * 2,
@@ -209,7 +205,7 @@ function PlateFit({
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
-        aria-label={`Top view of the part on the ${bx} by ${by} mm plate`}
+        aria-label={`Top view of the part on the ${formatLength(bx, units)} by ${formatLength(by, units)} plate`}
       >
         <rect
           x={ox}
@@ -237,14 +233,14 @@ function PlateFit({
           strokeWidth={1.6}
         />
         <text x={ox + 8} y={oy + by - 9} fontSize={13} fill="var(--muted-foreground)">
-          {bx} × {by} mm
+          {formatLengths([bx, by], units, { trim: true })}
         </text>
       </svg>
       {bz !== null && (
         <svg
           viewBox="0 0 38 120"
           role="img"
-          aria-label={`Height ${size[2]!.toFixed(1)} of ${bz} mm`}
+          aria-label={`Height ${formatLength(size[2]!, units)} of ${formatLength(bz, units)}`}
         >
           <rect
             x={11}
@@ -280,6 +276,7 @@ function PrinterMenu({
   environmentId: EnvironmentId;
   settings: ModelPreviewSettings;
 }) {
+  const units = useDisplayUnits();
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const trigger = (
     <MenuTrigger
@@ -315,7 +312,7 @@ function PrinterMenu({
                     </span>
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>
                     <span className="ps-4 text-muted-foreground text-xs tabular-nums">
-                      {formatVolume(option.volumeMm)}
+                      {formatLengths(option.volumeMm, units, { trim: true })}
                     </span>
                   </span>
                 </MenuRadioItem>
@@ -351,6 +348,7 @@ export function PartSection({
   format: string;
   path: string;
 }) {
+  const units = useDisplayUnits();
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const log = render?.log ?? [];
   const warnings = log.filter((line) => line.level === "warning" || line.level === "error").length;
@@ -379,8 +377,8 @@ export function PartSection({
               <span>{"XYZ"[axis]}</span>
             </span>
             <strong>
-              {value.toFixed(1)}
-              <small>mm</small>
+              {formatLength(value, units, { unit: false })}
+              <small>{units}</small>
             </strong>
           </div>
         ))}
@@ -404,13 +402,13 @@ export function PartSection({
         <PlateFit size={stats.size} volume={volume} fits={fits} />
         <p className={styles["model-fit-advice"]}>
           {fits ? (
-            `${Math.min(...over.map((value, axis) => (volume[axis] === null ? Infinity : -value))).toFixed(0)} mm of clearance on the tightest axis.`
+            `${formatLength(Math.min(...over.map((value, axis) => (volume[axis] === null ? Infinity : -value))), units, { digits: 0 })} of clearance on the tightest axis.`
           ) : rotated ? (
             "It fits if you rotate it 90° on the plate."
           ) : (
             <>
-              <strong>{describeFit(fit, (mm) => `${mm.toFixed(1)} mm`)}.</strong> Split the part or
-              choose a larger bed. You can still preview and capture it.
+              <strong>{describeFit(fit, (mm) => formatLength(mm, units))}.</strong> Split the part
+              or choose a larger bed. You can still preview and capture it.
             </>
           )}
         </p>

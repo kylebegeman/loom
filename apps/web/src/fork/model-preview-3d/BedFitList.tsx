@@ -8,7 +8,8 @@ import {
   type ModelPreviewSettings,
 } from "@t3tools/contracts/fork";
 import { useBuildPlate } from "./BedPicker";
-import { describeFit, formatVolume } from "./buildPlate";
+import { describeFit } from "./buildPlate";
+import { formatLength, formatLengths, useDisplayUnits } from "./units";
 import { Chip, SectionHead, Tip } from "./controls";
 import styles from "./workspace.module.css";
 
@@ -28,6 +29,7 @@ export function BedFitList({
   settings: ModelPreviewSettings;
   size: readonly [number, number, number];
 }) {
+  const units = useDisplayUnits();
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const rows = useMemo(
     () => listBeds(plate).map((bed) => ({ bed, fit: fitOnBed(size, bed.volumeMm) })),
@@ -64,18 +66,18 @@ export function BedFitList({
                     <span className={styles["model-bed-fit-name"]}>
                       <span className={styles["model-row-name"]}>{bed.label}</span>
                       <span className={styles["model-row-detail"]}>
-                        {formatVolume(bed.volumeMm)} mm
+                        {formatLengths(bed.volumeMm, units, { trim: true })}
                       </span>
                     </span>
                     <span className={styles["model-bed-fit-status"]}>
                       {active && <Chip>Active</Chip>}
                       {fit.status === "too-big" ? (
                         <span className={styles["model-bed-fit-over"]}>
-                          {describeFit(fit, (mm) => `${mm.toFixed(1)} mm`)}
+                          {describeFit(fit, (mm) => formatLength(mm, units))}
                         </span>
                       ) : (
                         <Chip {...(fit.status === "fits" ? { tone: "success" as const } : {})}>
-                          {describeFit(fit, (mm) => `${mm.toFixed(1)} mm`)}
+                          {describeFit(fit, (mm) => formatLength(mm, units))}
                         </Chip>
                       )}
                     </span>

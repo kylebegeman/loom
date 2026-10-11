@@ -6,6 +6,7 @@ import { randomUUID } from "~/lib/utils";
 import type { ModelViewer, OverlayAnnotation } from "./viewer/createViewer";
 import type { ScadSession } from "./ScadCustomizer";
 import { attachModelImage } from "./capture";
+import { captureFileName, copyImage, saveImage, type ExportAction } from "./captureExport";
 import { useModelWorkspace } from "./useModelWorkspace";
 import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
 
@@ -183,6 +184,22 @@ export function useModelEditing(
       return true;
     });
   };
+  const renderViews = (ids: readonly string[], includeMeasurements: boolean): Promise<Blob> => {
+    if (!viewer.current) throw new Error("Load the model before capturing it.");
+    const views = ids.flatMap((id) => workspace.data.views.filter((view) => view.id === id));
+    if (!views.length) throw new Error("Save a view before capturing a sheet.");
+    viewer.current.setOverlays(includeMeasurements ? measurements : [], annotations, null);
+    try {
+      return captureNamedViews(
+        viewer.current,
+        views,
+        `${path} · ${sourceRevision.slice(0, 12)}`,
+        sourceRevision,
+      );
+    } finally {
+      viewer.current.setOverlays(measurements, annotations, pendingPoint);
+    }
+  };
   const captureViews = async (
     ids: readonly string[],
     includeMeasurements: boolean,
@@ -190,23 +207,29 @@ export function useModelEditing(
   ) => {
     await perform("Capturing named views", async () => {
       if (!viewer.current) return;
-      const views = ids.flatMap((id) => workspace.data.views.filter((view) => view.id === id));
-      if (!views.length) throw new Error("Save a view before capturing a sheet.");
-      viewer.current.setOverlays(includeMeasurements ? measurements : [], annotations, null);
-      let capture: Promise<Blob>;
-      try {
-        capture = captureNamedViews(
-          viewer.current,
-          views,
-          `${path} · ${sourceRevision.slice(0, 12)}`,
-          sourceRevision,
-        );
-      } finally {
-        viewer.current.setOverlays(measurements, annotations, pendingPoint);
-      }
-      await attachModelImage(await capture, threadRef, `${name}.png`);
+      await attachModelImage(await renderViews(ids, includeMeasurements), threadRef, `${name}.png`);
     });
   };
+  const exportViews = (
+    ids: readonly string[],
+    includeMeasurements: boolean,
+    name: string,
+    action: ExportAction,
+  ) =>
+    perform(action === "copy" ? "Copying model image" : "Saving model image", async () => {
+      try {
+        const image = renderViews(ids, includeMeasurements);
+        if (action === "copy") await copyImage(image);
+        else saveImage(await image, captureFileName(path, name, new Date()));
+        return { ok: true } as const;
+      } catch (cause) {
+        return {
+          ok: false,
+          title: action === "copy" ? "Image could not be copied" : "PNG could not be saved",
+          message: cause instanceof Error ? cause.message : String(cause),
+        } as const;
+      }
+    });
   const review = async (annotation: ModelAnnotation) =>
     (await perform("Capturing current model for review", async () => {
       return thumbnail(await markedCapture(annotation));
@@ -240,6 +263,7 @@ export function useModelEditing(
     addAnnotation,
     prepareRequest,
     captureViews,
+    exportViews,
     review,
     captureAnnotation: (annotation: ModelAnnotation) =>
       perform("Capturing marked annotation", () => markedCapture(annotation)),

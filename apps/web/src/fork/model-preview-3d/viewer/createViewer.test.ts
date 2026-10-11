@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  Box3,
   Mesh,
   MeshStandardMaterial,
   Texture,
@@ -273,6 +274,7 @@ it.each(["perspective", "orthographic"] as const)(
     const viewer = createViewer(host());
     viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
     viewer.setView("front");
+    viewer.setReference("card");
     viewer.setProjection(projection);
     const original = viewer.snapshot();
     const onCamera = vi.fn();
@@ -280,8 +282,10 @@ it.each(["perspective", "orthographic"] as const)(
     gpu.render.mockClear();
     const capture = viewer.capture(true);
     expect(gpu.render).toHaveBeenCalledTimes(4);
-    for (const [, viewCamera] of gpu.render.mock.calls)
+    for (const [scene, viewCamera] of gpu.render.mock.calls) {
       expect(viewCamera).toBeInstanceOf(OrthographicCamera);
+      expect(scene.getObjectByName("scale-reference").visible).toBe(true);
+    }
     expect(onCamera).not.toHaveBeenCalled();
     expect(viewer.snapshot()).toEqual(original);
     expect((doubles.controls as { enabled: boolean }).enabled).not.toBe(false);
@@ -425,4 +429,176 @@ it("picks visible orthographic faces behind the eye when zoomed inside the model
   pointerHandlers.pointerup!(event);
   expect(callback).toHaveBeenCalledWith([[0, 0, 10]]);
   viewer.dispose();
+});
+
+it("keeps references hidden without a model and moves them with reloaded geometry", () => {
+  const viewer = createViewer(host());
+  viewer.setReference("coin-euro");
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  const reference = scene.getObjectByName("scale-reference")!;
+  expect(reference.visible).toBe(false);
+  const geometry = new BoxGeometry(40, 20, 10);
+  geometry.translate(30, 50, 10);
+  const model = new Mesh(geometry, new MeshStandardMaterial());
+  const stats = viewer.setModel(model, false);
+  flushFrame();
+  expect(stats.size).toEqual([40, 20, 10]);
+  expect(reference.visible).toBe(true);
+  let bounds = new Box3().setFromObject(reference);
+  expect(bounds.min.x).toBeCloseTo(stats.box.max.x + 10, 4);
+  expect(bounds.getCenter(new Vector3()).y).toBeCloseTo(50, 4);
+  expect(bounds.min.z).toBeCloseTo(stats.box.min.z, 4);
+  viewer.setBed([350, 320], "grid-mm");
+  viewer.setGrid(false);
+  viewer.setWireframe(true);
+  viewer.setSection({ enabled: true, axis: "x", offset: 100, flipped: false });
+  flushFrame();
+  expect(reference.visible).toBe(true);
+  const refMaterial = (reference.children[0] as Mesh).material as MeshStandardMaterial;
+  expect(refMaterial.wireframe).toBe(false);
+  expect(refMaterial.clippingPlanes).toBeNull();
+  const larger = new BoxGeometry(90, 50, 20);
+  larger.translate(40, 75, 30);
+  const next = viewer.setModel(new Mesh(larger, new MeshStandardMaterial()), true);
+  flushFrame();
+  bounds = new Box3().setFromObject(reference);
+  expect(bounds.min.x).toBeCloseTo(next.box.max.x + 10, 4);
+  expect(bounds.getCenter(new Vector3()).y).toBeCloseTo(75, 4);
+  expect(bounds.min.z).toBeCloseTo(next.box.min.z, 4);
+  viewer.setReference("coin-euro");
+  expect(frames.size).toBe(0);
+  expect(scene.getObjectByName("scale-reference")).toBe(reference);
+  viewer.dispose();
+});
+
+it("frames only the part and releases references on replacement and close", () => {
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()), false);
+  const original = viewer.snapshot();
+  viewer.setReference("hand");
+  viewer.fit();
+  expect(viewer.snapshot()).toEqual(original);
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  const hand = scene.getObjectByName("scale-reference")!.children[0] as Mesh;
+  const handGeometry = vi.spyOn(hand.geometry, "dispose");
+  const handMaterial = vi.spyOn(hand.material as MeshStandardMaterial, "dispose");
+  viewer.setReference("card");
+  expect(handGeometry).toHaveBeenCalledOnce();
+  expect(handMaterial).toHaveBeenCalledOnce();
+  const card = scene.getObjectByName("scale-reference")!.children[0] as Mesh;
+  const cardGeometry = vi.spyOn(card.geometry, "dispose");
+  const cardMaterial = vi.spyOn(card.material as MeshStandardMaterial, "dispose");
+  viewer.setReference("none");
+  expect(scene.getObjectByName("scale-reference")).toBeUndefined();
+  expect(cardGeometry).toHaveBeenCalledOnce();
+  expect(cardMaterial).toHaveBeenCalledOnce();
+  viewer.setReference("coin-us");
+  const coin = scene.getObjectByName("scale-reference")!.children[0] as Mesh;
+  const coinGeometry = vi.spyOn(coin.geometry, "dispose");
+  viewer.dispose();
+  expect(coinGeometry).toHaveBeenCalledOnce();
+  vi.restoreAllMocks();
+});
+
+it("cannot pick a reference but still picks the model beside it", () => {
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()), false);
+  viewer.setReference("coin-euro");
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  const reference = scene.getObjectByName("scale-reference")!;
+  const x = reference.position.x;
+  viewer.restore({
+    ...viewer.snapshot(),
+    projection: "orthographic",
+    position: [x, 0, 100],
+    target: [x, 0, 0],
+  });
+  const callback = vi.fn();
+  viewer.setPickMode("measure", callback);
+  const event = { button: 0, clientX: 300, clientY: 200, pointerId: 1 } as PointerEvent;
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(callback).not.toHaveBeenCalled();
+  viewer.restore({ ...viewer.snapshot(), position: [0, 0, 100], target: [0, 0, 0] });
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(callback).toHaveBeenCalledWith([[0, 0, 5]]);
+  viewer.dispose();
+});
+
+it("updates existing measurement labels and captures without rebuilding millimetre geometry", async () => {
+  const context = {
+    arc: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    drawImage: vi.fn(),
+    fillText: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
+    measureText: () => ({ width: 40 }),
+    beginPath: vi.fn(),
+    roundRect: vi.fn(),
+  };
+  const elements: {
+    textContent: string;
+    style: Record<string, string>;
+    append: ReturnType<typeof vi.fn>;
+  }[] = [];
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: (tag: string) => {
+      if (tag === "canvas")
+        return {
+          getContext: () => context,
+          toBlob: (callback: BlobCallback) => callback(new Blob(["png"])),
+        };
+      const element = {
+        textContent: "",
+        style: {},
+        append: vi.fn(),
+        replaceChildren: vi.fn(),
+        remove: vi.fn(),
+      };
+      elements.push(element);
+      return element;
+    },
+  });
+  vi.stubGlobal("getComputedStyle", () => ({ fontFamily: "sans-serif" }));
+  Object.assign(gpu, {
+    getSize: (size: import("three").Vector2) => size.set(600, 400),
+    getPixelRatio: () => 1,
+  });
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(40, 40, 10), new MeshStandardMaterial()), false);
+  viewer.restore({ ...viewer.snapshot(), position: [0, 0, 200], target: [0, 0, 0] });
+  const measurement = {
+    id: "m",
+    name: "Width",
+    sourceRevision: "one",
+    visible: true,
+    start: [0, 0, 0] as const,
+    end: [25.4, 0, 0] as const,
+  };
+  viewer.setOverlays([measurement], [], null);
+  flushFrame();
+  const label = elements.find((element) => element.textContent === "25.4 mm")!;
+  expect(label).toBeDefined();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  const line = scene.getObjectsByProperty("type", "Line")[0] as import("three").Line;
+  const dispose = vi.spyOn(line.geometry, "dispose");
+  viewer.setLengthFormat((mm) => `${(mm / 25.4).toFixed(2)} in`);
+  expect(label.textContent).toBe("1.00 in");
+  expect(dispose).not.toHaveBeenCalled();
+  expect(measurement.end).toEqual([25.4, 0, 0]);
+  flushFrame();
+  expect(frames.size).toBe(0);
+  await viewer.capture(false);
+  expect(context.fillText).toHaveBeenCalledWith("1.00 in", 0, 0.5);
+  viewer.dispose();
+  vi.restoreAllMocks();
 });

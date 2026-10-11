@@ -38,6 +38,8 @@ import { Tooltip, TooltipTrigger, TooltipPopup } from "~/components/ui/tooltip";
 import type { NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
 import { Scrub, Segmented } from "./controls";
+import type { ExportAction } from "./captureExport";
+import { fromMm, toMm, useDisplayUnits } from "./units";
 
 /** Feature-owned controls for the floating 3D tool shelves. */
 export function ModelTool({
@@ -305,12 +307,16 @@ export function CaptureMenu({
   sheets,
   onCapture,
   onSheet,
+  canCopy,
+  onExport,
 }: {
   disabled: boolean;
   capturing: boolean;
   sheets: readonly ModelCapturePreset[];
   onCapture: (four: boolean) => void;
   onSheet: (sheet: ModelCapturePreset) => void;
+  canCopy: boolean;
+  onExport: (action: ExportAction, four: boolean) => void;
 }) {
   return (
     <div className="flex items-center gap-1.5">
@@ -339,11 +345,39 @@ export function CaptureMenu({
         <MenuPopup align="end">
           <MenuGroup>
             <MenuGroupLabel>Attach to the composer</MenuGroupLabel>
-            <MenuItem onClick={() => onCapture(false)}>
+            <MenuItem disabled={disabled || capturing} onClick={() => onCapture(false)}>
               <CameraIcon />
               Current view
             </MenuItem>
-            <MenuItem onClick={() => onCapture(true)}>
+            <MenuItem disabled={disabled || capturing} onClick={() => onCapture(true)}>
+              <Grid2X2Icon />
+              Four-view sheet
+            </MenuItem>
+          </MenuGroup>
+          <MenuGroup>
+            <MenuGroupLabel>Copy image</MenuGroupLabel>
+            <MenuItem
+              disabled={disabled || capturing || !canCopy}
+              onClick={() => onExport("copy", false)}
+            >
+              <CameraIcon />
+              Current view
+            </MenuItem>
+            <MenuItem
+              disabled={disabled || capturing || !canCopy}
+              onClick={() => onExport("copy", true)}
+            >
+              <Grid2X2Icon />
+              Four-view sheet
+            </MenuItem>
+          </MenuGroup>
+          <MenuGroup>
+            <MenuGroupLabel>Save PNG</MenuGroupLabel>
+            <MenuItem disabled={disabled || capturing} onClick={() => onExport("save", false)}>
+              <CameraIcon />
+              Current view
+            </MenuItem>
+            <MenuItem disabled={disabled || capturing} onClick={() => onExport("save", true)}>
               <Grid2X2Icon />
               Four-view sheet
             </MenuItem>
@@ -352,7 +386,11 @@ export function CaptureMenu({
             <MenuGroup>
               <MenuGroupLabel>Review sheets</MenuGroupLabel>
               {sheets.map((sheet) => (
-                <MenuItem key={sheet.id} onClick={() => onSheet(sheet)}>
+                <MenuItem
+                  key={sheet.id}
+                  disabled={disabled || capturing}
+                  onClick={() => onSheet(sheet)}
+                >
                   <Grid2X2Icon />
                   <span className="truncate">{sheet.name}</span>
                 </MenuItem>
@@ -438,7 +476,16 @@ export function SectionStrip({
   onChange: (section: ModelSection) => void;
   onRemove: () => void;
 }) {
+  const units = useDisplayUnits();
   const range = { min: Math.floor(bounds.min), max: Math.ceil(bounds.max), step: 0.5 };
+  const displayRange =
+    units === "in"
+      ? {
+          min: Math.floor(fromMm(bounds.min, units) * 100) / 100,
+          max: Math.ceil(fromMm(bounds.max, units) * 100) / 100,
+          step: 0.02,
+        }
+      : range;
   return (
     <div
       className={styles["model-floating"] + " " + styles["model-section-strip"]}
@@ -464,11 +511,11 @@ export function SectionStrip({
       />
       <div className={styles["model-section-value"]}>
         <Scrub
-          value={section.offset}
-          range={range}
+          value={fromMm(section.offset, units)}
+          range={displayRange}
           label="Section offset"
-          unit="mm"
-          onChange={(offset) => onChange({ ...section, offset })}
+          unit={units}
+          onChange={(offset) => onChange({ ...section, offset: toMm(offset, units) })}
         />
       </div>
       <ModelTool

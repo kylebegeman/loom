@@ -30,6 +30,8 @@ import { Textarea } from "~/components/ui/textarea";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "~/components/ui/menu";
 import { Chip, EmptyNote, RenameInput, SectionHead, TitleInput, Tip } from "./controls";
 
+import { formatLength, useDisplayUnits } from "./units";
+
 type Mutation = (operation: ModelWorkspaceOperation) => Promise<unknown>;
 export type AnnotationStatus = "draft" | "requested" | "changed" | "accepted";
 
@@ -429,6 +431,8 @@ function MeasurementRow({
   onMeasureAgain: () => void;
   onCopy: (text: string) => void;
 }) {
+  const units = useDisplayUnits();
+  const distanceDigits = units === "in" ? 2 : 1;
   const delta = measurement.end.map((value, axis) => value - measurement.start[axis]!);
   const distance = Math.hypot(...delta);
   const save = (patch: Partial<ModelMeasurement>) =>
@@ -478,17 +482,26 @@ function MeasurementRow({
           {stale
             ? "From an earlier version of the file"
             : delta
-                .map((value, axis) => `Δ${"XYZ"[axis]} ${Math.abs(value).toFixed(1)}`)
+                .map(
+                  (value, axis) =>
+                    `Δ${"XYZ"[axis]} ${formatLength(Math.abs(value), units, { unit: false })}`,
+                )
                 .join("   ")}
         </div>
       </div>
-      <span className={styles["model-measure-value"]}>{distance.toFixed(1)} mm</span>
+      <span className={styles["model-measure-value"]}>
+        {formatLength(distance, units, { digits: distanceDigits })}
+      </span>
       <RowMenu label={`${measurement.name} actions`}>
         <MenuItem onClick={() => onRename(true)}>
           <PencilIcon />
           Rename
         </MenuItem>
-        <MenuItem onClick={() => onCopy(distance.toFixed(1))}>
+        <MenuItem
+          onClick={() =>
+            onCopy(formatLength(distance, units, { digits: distanceDigits, unit: false }))
+          }
+        >
           <CopyIcon />
           Copy value
         </MenuItem>

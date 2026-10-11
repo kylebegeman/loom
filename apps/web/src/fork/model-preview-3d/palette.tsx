@@ -51,11 +51,13 @@ export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
           },
         ],
       },
-      ...(["capture", "capture-four", "rerender"] as const).map((action) => ({
+      ...(
+        ["capture", "capture-four", "rerender", "toggle-units", "copy-view", "save-view"] as const
+      ).map((action) => ({
         ...base,
         kind: "action" as const,
         value: `action:loom:model-preview-3d:${action}`,
-        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render" }[action]}`,
+        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG" }[action]}`,
         run: async () => {
           dispatchModelAction(activeThreadRef, action);
         },

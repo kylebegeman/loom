@@ -22,8 +22,6 @@ export const buildPlateLabel = (setting: BuildPlateSetting) =>
 /** Extra limits worth knowing, such as per-nozzle reach on a dual-nozzle printer. */
 export const buildPlateNote = (setting: BuildPlateSetting): string | null =>
   activeBed(setting).note;
-export const formatVolume = (volume: BuildVolume) =>
-  volume.filter((value) => value !== null).join(" × ");
 /** Bed choices grouped for menus: printers, surfaces, then the custom size. */
 export const bedGroups = (setting: BuildPlateSetting) => {
   const beds = listBeds(setting);
