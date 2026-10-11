@@ -1,8 +1,8 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import {
   aiAction,
   aiBin,
@@ -15,6 +15,11 @@ import {
   usageRecords,
 } from "./ai.mjs";
 import { install, paths, uninstall } from "./loom-os.mjs";
+const test = NodeTest.test,
+  assert = NodeAssert;
+const { mkdtemp, mkdir, writeFile, readFile, rm, realpath } = NodeFSP;
+const { tmpdir } = NodeOS;
+const { join } = NodePath;
 async function fixture(t) {
   const home = await realpath(await mkdtemp(join(tmpdir(), "loom-ai-")));
   t.after(() => rm(home, { recursive: true, force: true }));
@@ -46,11 +51,14 @@ test("OS launches use Switchboard with literal prompts and preserve the native t
     f.env,
     f.p,
     run,
+    { connections: async () => ({ aiReady: true }) },
   );
   assert.equal(calls[0][0], f.config.switchboardCli);
   assert.deepEqual(calls[0][1], ["run", "claude", "--", "--settings $(do not execute)"]);
   assert.equal(calls[0][2].env.PATH, aiPath(f.p, f.env.PATH));
-  await aiAction("agent", ["--pick", "--prompt", "literal prompt"], f.config, f.env, f.p, run);
+  await aiAction("agent", ["--pick", "--prompt", "literal prompt"], f.config, f.env, f.p, run, {
+    connections: async () => ({ aiReady: true }),
+  });
   assert.equal(calls[1][0], "omarchy-launch-tui");
   assert.deepEqual(calls[1][1], [
     "--app-id=org.omarchy.agent",
@@ -58,8 +66,12 @@ test("OS launches use Switchboard with literal prompts and preserve the native t
     "--prompt",
     "literal prompt",
   ]);
-  await aiAction("default-agent", ["codex"], f.config, f.env, f.p, run);
-  await aiAction("agent", ["--inline"], f.config, f.env, f.p, run);
+  await aiAction("default-agent", ["codex"], f.config, f.env, f.p, run, {
+    connections: async () => ({ aiReady: true }),
+  });
+  await aiAction("agent", ["--inline"], f.config, f.env, f.p, run, {
+    connections: async () => ({ aiReady: true }),
+  });
   assert.deepEqual(calls[2][1], ["run", "codex"]);
 });
 test("unsupported providers and missing or mismatched hubs never start a CLI", async (t) => {
@@ -224,4 +236,101 @@ test("disabled provider filters are cumulative and a fully disabled panel makes 
     JSON.parse(await readFile(join(f.p.state, "omarchy/agents/usage/codex.json"), "utf8")).id,
     "codex",
   );
+});
+
+test("AI preflight blocks offline routes before launching and a fresh retry retains the literal prompt", async (t) => {
+  const f = await fixture(t),
+    calls = [];
+  let connected = false;
+  const options = {
+    connections: async (config, env, settings) => {
+      assert.equal(config, f.config);
+      assert.equal(env, f.env);
+      assert.equal(settings.includeServer, false);
+      return {
+        aiReady: connected,
+        components: [
+          {
+            id: "tailscale",
+            title: "Tailscale",
+            state: connected ? "ok" : "error",
+            detail: connected ? "Connected" : "Disconnected",
+            repair: connected ? null : "Open Tailscale.",
+          },
+        ],
+      };
+    },
+  };
+  const run = async (...args) => calls.push(args);
+  await assert.rejects(
+    aiAction(
+      "agent",
+      ["--inline", "--prompt", "literal $(prompt)"],
+      f.config,
+      f.env,
+      f.p,
+      run,
+      options,
+    ),
+    /Private AI is unavailable.*[\s\S]*Open Tailscale/,
+  );
+  assert.equal(calls.length, 0);
+  await assert.rejects(
+    aiAction("ai", ["codex", "--version"], f.config, f.env, f.p, run, options),
+    /Private AI is unavailable/,
+  );
+  assert.equal(calls.length, 0);
+  connected = true;
+  await aiAction(
+    "agent",
+    ["--inline", "--prompt", "literal $(prompt)"],
+    f.config,
+    f.env,
+    f.p,
+    run,
+    options,
+  );
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0][1], ["run", "claude", "--", "literal $(prompt)"]);
+});
+
+test("Ask AI recovery retries only by explicit choice and retains the original prompt", async (t) => {
+  const f = await fixture(t);
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const fakeBin = join(f.home, "fake-bin"),
+    calls = join(f.home, "calls.jsonl"),
+    count = join(f.home, "attempts");
+  await mkdir(fakeBin);
+  const launcher = join(fakeBin, "loom-os");
+  await writeFile(
+    launcher,
+    `#!${process.execPath}\nimport fs from 'node:fs';fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(process.argv.slice(2))+'\\n');const count=${JSON.stringify(count)};let n=fs.existsSync(count)?Number(fs.readFileSync(count,'utf8')):0;fs.writeFileSync(count,String(n+1));process.exit(n===0?1:0);\n`,
+    { mode: 0o755 },
+  );
+  await writeFile(join(fakeBin, "gum"), '#!/bin/sh\nprintf "%s\\n" "Retry Ask AI"\n', {
+    mode: 0o755,
+  });
+  const p = { ...f.p, bin: launcher };
+  const script = aiFiles(p).get(join(aiBin(p), "loom-ai-terminal")).content;
+  const terminal = join(fakeBin, "terminal.sh");
+  await writeFile(terminal, script, { mode: 0o755 });
+  await promisify(execFile)("/bin/bash", [terminal, "--prompt", "$(literal prompt)"], {
+    env: { ...f.env, PATH: fakeBin + ":" + f.env.PATH },
+  });
+  assert.deepEqual((await readFile(calls, "utf8")).trim().split("\n").map(JSON.parse), [
+    ["agent", "--inline", "--prompt", "$(literal prompt)"],
+    ["agent", "--inline", "--prompt", "$(literal prompt)"],
+  ]);
+  await rm(count);
+  await rm(calls);
+  await writeFile(join(fakeBin, "gum"), '#!/bin/sh\nprintf "%s\\n" "Close"\n', { mode: 0o755 });
+  await assert.rejects(
+    promisify(execFile)("/bin/bash", [terminal], {
+      env: { ...f.env, PATH: fakeBin + ":" + f.env.PATH },
+    }),
+  );
+  assert.deepEqual((await readFile(calls, "utf8")).trim().split("\n").map(JSON.parse), [
+    ["agent", "--inline"],
+  ]);
 });

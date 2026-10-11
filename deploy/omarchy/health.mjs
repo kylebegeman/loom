@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
-import { usageMaxAgeMs } from "./ai.mjs";
+import * as NodeChildProcess from "node:child_process";
+export const usageMaxAgeMs = 15 * 60_000;
 
 function execute(file, args, env) {
   return new Promise((resolve) =>
-    execFile(
+    NodeChildProcess.execFile(
       file,
       args,
       { env, timeout: 20_000, maxBuffer: 256 * 1024, encoding: "utf8" },
@@ -14,6 +14,7 @@ function execute(file, args, env) {
 }
 const record = (id, title, state, detail, repair = null) => ({ id, title, state, detail, repair });
 const safeText = (value) =>
+  // oxlint-disable-next-line no-control-regex -- Diagnostic fields must remain printable single-line text.
   typeof value === "string" && value.length <= 2048 && !/[\x00-\x1f\x7f]/.test(value);
 
 export async function collectConnections(
@@ -121,58 +122,6 @@ export async function collectConnections(
       );
     }
   };
-  const clientCheck = async () => {
-    if (!config.switchboardUrl && !config.switchboardCli) return [];
-    if (!config.switchboardUrl || !config.switchboardCli)
-      return [
-        record(
-          "switchboard-client",
-          "OS AI routing",
-          "error",
-          "The gateway or client executable is not configured.",
-          "Configure both switchboard-url and switchboard-cli.",
-        ),
-      ];
-    try {
-      const result = await command(
-        config.switchboardCli,
-        ["client", "doctor", "--json", "--expected-url", config.switchboardUrl],
-        env,
-      );
-      const report = JSON.parse(result.stdout);
-      if (
-        !Array.isArray(report.checks) ||
-        !report.checks.length ||
-        !report.checks.every(
-          (check) =>
-            safeText(check.id) &&
-            check.id.startsWith("client-") &&
-            safeText(check.title) &&
-            safeText(check.detail) &&
-            ["ok", "warning", "error"].includes(check.state) &&
-            (check.repair === null || safeText(check.repair)),
-        )
-      )
-        throw new Error();
-      return report.checks.map(({ id, title, state, detail, repair }) => ({
-        id,
-        title,
-        state,
-        detail,
-        repair,
-      }));
-    } catch {
-      return [
-        record(
-          "switchboard-client",
-          "OS AI routing",
-          "error",
-          "The client diagnostic could not be read.",
-          "Run switchboard client doctor; update the installed portable client if this command is unavailable.",
-        ),
-      ];
-    }
-  };
   const serviceCheck = async () => {
     if (config.profile !== "workstation") return null;
     if (!config.serverExecutable || !config.serverBaseDir)
@@ -210,7 +159,7 @@ export async function collectConnections(
   const [apps, cache, clients, service] = await Promise.all([
     Promise.all(appChecks),
     cacheCheck(),
-    clientCheck(),
+    clientConnections(config, env, command),
     serviceCheck(),
   ]);
   diagnostics.push(...apps, ...(cache ? [cache] : []), ...clients, ...(service ? [service] : []));
@@ -230,5 +179,181 @@ export function formatConnections(report) {
       `[${check.state.toUpperCase()}] ${check.title}: ${check.detail}`,
       ...(check.repair ? [`  Next: ${check.repair}`] : []),
     ]),
+  ].join("\n");
+}
+
+async function clientConnections(config, env, command) {
+  if (!config.switchboardUrl && !config.switchboardCli) return [];
+  if (!config.switchboardUrl || !config.switchboardCli)
+    return [
+      record(
+        "switchboard-client",
+        "OS AI routing",
+        "error",
+        "The gateway or client executable is not configured.",
+        "Configure both switchboard-url and switchboard-cli.",
+      ),
+    ];
+  try {
+    const result = await command(
+      config.switchboardCli,
+      ["client", "doctor", "--json", "--expected-url", config.switchboardUrl],
+      env,
+    );
+    const report = JSON.parse(result.stdout);
+    if (
+      !Array.isArray(report.checks) ||
+      !report.checks.length ||
+      !report.checks.every(
+        (check) =>
+          safeText(check.id) &&
+          check.id.startsWith("client-") &&
+          safeText(check.title) &&
+          safeText(check.detail) &&
+          ["ok", "warning", "error"].includes(check.state) &&
+          (check.repair === null || safeText(check.repair)),
+      )
+    )
+      throw new Error();
+    const checks = report.checks.map(({ id, title, state, detail, repair }) => ({
+      id,
+      title,
+      state,
+      detail,
+      repair,
+    }));
+    if (result.exit !== 0 && !checks.some((check) => check.state === "error"))
+      checks.push(
+        record(
+          "switchboard-client",
+          "OS AI routing",
+          "error",
+          "The client check did not complete successfully.",
+          "Check connections again before launching AI.",
+        ),
+      );
+    return checks;
+  } catch {
+    return [
+      record(
+        "switchboard-client",
+        "OS AI routing",
+        "error",
+        "The client diagnostic could not be read.",
+        "Run switchboard client doctor; update the installed portable client if this command is unavailable.",
+      ),
+    ];
+  }
+}
+
+/** Read-only private route checks shared by the bar, recovery console and AI launch preflight. */
+export async function collectPrivateConnections(
+  config,
+  env,
+  { command = execute, request = fetch, now = Date.now(), includeServer = true } = {},
+) {
+  const loomCheck = async () => {
+    if (!includeServer || config.profile !== "workstation") return null;
+    if (!config.serverExecutable || !config.serverBaseDir)
+      return record(
+        "loom",
+        "Loom server",
+        "warning",
+        "Background hosting is not configured.",
+        "Use LoomOS connection status to review this workstation's setup.",
+      );
+    try {
+      const service = await command("systemctl", ["--user", "is-active", "t3code.service"], env);
+      if (service.exit !== 0 || service.stdout.trim() !== "active")
+        return record(
+          "loom",
+          "Loom server",
+          "error",
+          "The background service is stopped.",
+          "Review loom-os service status and active work before starting or restarting it.",
+        );
+      const host = ["0.0.0.0", "::"].includes(config.serverHost)
+        ? "127.0.0.1"
+        : config.serverHost || "127.0.0.1";
+      const address = host.includes(":") ? `[${host}]` : host;
+      const response = await request(`http://${address}:${config.serverPort || 3773}/`, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(3000),
+      });
+      await response.body?.cancel();
+      const ready = response.ok || [301, 302, 303, 307, 308, 401, 403].includes(response.status);
+      return record(
+        "loom",
+        "Loom server",
+        ready ? "ok" : "error",
+        ready
+          ? "Running and reachable."
+          : "The service is running but its interface is unavailable.",
+        ready
+          ? null
+          : "Review loom-os service status and its logs. Active agents are left running.",
+      );
+    } catch {
+      return record(
+        "loom",
+        "Loom server",
+        "error",
+        "The background interface could not be reached.",
+        "Review loom-os service status and its logs. Active agents are left running.",
+      );
+    }
+  };
+  const [clients, loom] = await Promise.all([clientConnections(config, env, command), loomCheck()]);
+  const tailnet = clients.find((check) => check.id === "client-tailnet");
+  const failure = clients.find((check) => check.state === "error");
+  const catalog = clients.find((check) => check.id === "client-catalog");
+  const aiReady = !failure && catalog?.state === "ok";
+  const components = [
+    record(
+      "tailscale",
+      "Tailscale",
+      tailnet?.state || "unknown",
+      tailnet?.state === "ok"
+        ? "Connected to the private network."
+        : tailnet?.state === "error"
+          ? "Disconnected or awaiting sign-in."
+          : "Private network status is not confirmed.",
+      tailnet?.state === "ok" ? null : "Open Tailscale to check this device's private connection.",
+    ),
+    record(
+      "switchboard",
+      "Switchboard",
+      failure ? "error" : aiReady ? "ok" : "warning",
+      aiReady
+        ? "Private AI is available."
+        : failure
+          ? failure.detail
+          : "No usable private model catalog is available.",
+      aiReady
+        ? null
+        : failure?.repair ||
+            catalog?.repair ||
+            "Open Switchboard to review the private gateway and client access.",
+    ),
+    ...(loom ? [loom] : []),
+  ];
+  const state = !aiReady
+    ? "offline"
+    : components.some((check) => check.state !== "ok")
+      ? "attention"
+      : "ok";
+  return { version: 1, generatedAt: new Date(now).toISOString(), state, aiReady, components };
+}
+export function formatPrivateConnections(report) {
+  return [
+    report.aiReady
+      ? "Private AI is ready through Switchboard."
+      : "Private AI is unavailable. Your existing accounts and work are preserved.",
+    ...report.components.flatMap((check) => [
+      `[${check.state.toUpperCase()}] ${check.title}: ${check.detail}`,
+      ...(check.repair ? [`  Next: ${check.repair}`] : []),
+    ]),
+    "Check again after reconnecting. These checks never restart a service or contact a provider for inference.",
   ].join("\n");
 }

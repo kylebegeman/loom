@@ -276,3 +276,28 @@ test("activation generates menus with the reviewed release's installer and rollb
   assert.doesNotMatch(await NodeFSP.readFile(menu, "utf8"), /Updated maintenance/);
   assert.match(await NodeFSP.readFile(menu, "utf8"), /Maintenance/);
 });
+
+test("release integrity includes native status assets and preserves local widget edits", async (t) => {
+  const f = await fixture(t);
+  await activateRelease(f.bundle, f.release.sha256, { env: f.env });
+  const widget = NodePath.join(f.p.config, "omarchy/plugins/loom.status/LoomStatus.qml");
+  assert.equal((await releaseStatus({ env: f.env })).active.matchesInstalled, true);
+  await NodeFSP.writeFile(widget, "// personal widget edits\n");
+  assert.equal((await releaseStatus({ env: f.env })).active.matchesInstalled, false);
+  await assert.rejects(activateRelease(f.bundle, f.release.sha256, { env: f.env }), /local edits/);
+  assert.equal(await NodeFSP.readFile(widget, "utf8"), "// personal widget edits\n");
+});
+test("retained releases without native status members remain verifiable", async (t) => {
+  const f = await fixture(t);
+  const manifestFile = NodePath.join(f.bundle, "release.json");
+  const manifest = JSON.parse(await NodeFSP.readFile(manifestFile, "utf8"));
+  for (const name of Object.keys(manifest.files))
+    if (name.startsWith("pack/status/")) delete manifest.files[name];
+  await NodeFSP.rm(NodePath.join(f.bundle, "pack/status"), { recursive: true });
+  await NodeFSP.chmod(manifestFile, 0o600);
+  const bytes = JSON.stringify(manifest, null, 2) + "\n";
+  await NodeFSP.writeFile(manifestFile, bytes);
+  const { createHash } = await import("node:crypto");
+  const hash = createHash("sha256").update(bytes).digest("hex");
+  assert.equal((await verifyRelease(f.bundle, hash)).version, "test-1");
+});

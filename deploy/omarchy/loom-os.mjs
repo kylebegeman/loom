@@ -8,7 +8,13 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 
 import { aiFiles, aiBindings, aiMenu, aiEnvironment, aiAction } from "./ai.mjs";
-import { collectConnections, connectionSummary, formatConnections } from "./health.mjs";
+import {
+  collectConnections,
+  collectPrivateConnections,
+  connectionSummary,
+  formatConnections,
+  formatPrivateConnections,
+} from "./health.mjs";
 
 const sourceDir = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const begin = "BEGIN LOOM OS";
@@ -277,6 +283,26 @@ export async function installationPlan(config, env = process.env, packDir = sour
     content: `#!/bin/bash\nprintf '\\033]0;Check connections\\007'\n${shellQuote(p.bin)} doctor --human\nstatus=$?\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
     mode: 0o755,
   });
+  writes.set(NodePath.join(p.root, "connections-terminal"), {
+    content: `#!/bin/bash
+printf '\\033]0;Loom connections\\007'
+while true; do
+  ${shellQuote(p.bin)} connections --human
+  if ! command -v gum >/dev/null 2>&1; then
+    printf '\nPress Enter to close. '; read -r _; exit 0
+  fi
+  choice=$(gum choose --header 'Loom connections' 'Check again' 'Open Tailscale' 'Open Switchboard' 'Loom service status' 'Close') || exit 0
+  case "$choice" in
+    'Check again') ;;
+    'Open Tailscale') omarchy-shell omarchy.tailscale open || printf '%s\n' 'Open Tailscale from the system bar.' ;;
+    'Open Switchboard') ${shellQuote(p.bin)} open switchboard ;;
+    'Loom service status') ${shellQuote(p.bin)} service status ;;
+    *) exit 0 ;;
+  esac
+done
+`,
+    mode: 0o755,
+  });
   writes.set(NodePath.join(p.root, "pack-status-terminal"), {
     content: `#!/bin/bash\nprintf '\\033]0;LoomOS integration\\007'\n${shellQuote(p.bin)} pack status --human\nstatus=$?\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
     mode: 0o755,
@@ -340,6 +366,12 @@ export async function installationPlan(config, env = process.env, packDir = sour
   const menuFile = NodePath.join(p.config, "omarchy/extensions/omarchy-menu.jsonc");
   const menu = await read(menuFile);
   if (lua !== null) {
+    for (const name of ["manifest.json", "LoomStatus.qml", "StatusModel.js"]) {
+      writes.set(NodePath.join(p.config, "omarchy/plugins/loom.status", name), {
+        content: await NodeFSP.readFile(NodePath.join(packDir, "status", name), "utf8"),
+        mode: 0o644,
+      });
+    }
     const entries = { loomos: { label: "LoomOS", description: "Your apps and native utilities" } };
     for (const [app, name] of Object.entries(appNames)) {
       if (
@@ -350,6 +382,22 @@ export async function installationPlan(config, env = process.env, packDir = sour
       entries[`loomos.${app}`] = { label: name, action: command(`open ${app}`) };
     }
     entries["about"] = { icon: "", label: "About LoomOS", action: "omarchy-launch-about" };
+    entries["loomos.connections"] = { label: "AI and connections" };
+    entries["loomos.connections.status"] = {
+      label: "Connection status",
+      action: command("connections --terminal"),
+    };
+    entries["loomos.connections.tailscale"] = {
+      label: "Open Tailscale",
+      action: "omarchy-shell omarchy.tailscale open",
+    };
+    if (config.switchboardDashboardUrl)
+      entries["loomos.connections.switchboard"] = {
+        label: "Open Switchboard",
+        action: command("open switchboard"),
+      };
+    if (aiEnabled)
+      entries["loomos.connections.ask-ai"] = { label: "Ask AI", action: command("agent") };
     entries["loomos.appearance"] = {
       label: "Appearance",
       description: "Iris colors with Omarchy's native shell",
@@ -738,7 +786,8 @@ function parseArgs(args) {
       continue;
     }
     const key = args[i].slice(2);
-    if (["dry-run", "clipboard", "help", "terminal", "human"].includes(key)) options[key] = true;
+    if (["dry-run", "clipboard", "help", "terminal", "human", "enable-status"].includes(key))
+      options[key] = true;
     else {
       if (!args[i + 1] || args[i + 1].startsWith("--"))
         throw new Error(`Missing value for --${key}`);
@@ -748,7 +797,7 @@ function parseArgs(args) {
   return { options, positional };
 }
 const print = (value) => console.log(JSON.stringify(value, null, 2));
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -828,6 +877,29 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "connections") {
+    const { options, positional } = parseArgs(rest);
+    if (
+      positional.length ||
+      Object.keys(options).some((key) => !["human", "terminal", "enable-status"].includes(key)) ||
+      Object.keys(options).length > 1
+    )
+      throw new Error("Usage: loom-os connections [--human|--terminal|--enable-status]");
+    if (options["enable-status"]) {
+      await run("omarchy-shell", ["shell", "putBarWidget", "loom.status", "{}"], { env });
+    } else if (options.terminal) {
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-connections", NodePath.join(p.root, "connections-terminal")],
+        { env },
+      );
+    } else {
+      const report = await collectPrivateConnections(config, env);
+      if (options.human) console.log(formatPrivateConnections(report));
+      else print(report);
+    }
+    return;
+  }
   if (["status", "doctor"].includes(action)) {
     const { options, positional } = parseArgs(rest);
     if (

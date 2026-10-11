@@ -90,6 +90,26 @@ Revoke a paired device in the host's **Settings → Connections**. To remove the
 HTTPS route, run `tailscale serve --https=443 off`, replacing `443` with the port
 you selected. This leaves local Loom and the background service running.
 
+## Private AI status and recovery
+
+The Loom status icon checks Tailscale, Switchboard and this workstation's Loom
+server every 30 seconds. Hover for their separate states, or click for
+**AI and connections**. Open **Connection status** to check again, open Tailscale
+or Switchboard, or inspect the Loom service. Checks do not restart agents or
+refresh provider account usage.
+
+Ask AI checks the private route before starting Claude Code or Codex. If the
+connection is unavailable, its terminal explains the failure and offers
+**Retry Ask AI** and the same recovery actions. Retry preserves the original
+prompt and starts only when you choose it. Reconnecting automatically refreshes
+the status icon; it never silently resubmits an interrupted turn or falls back
+to a direct provider account.
+
+Use `loom-os connections` for JSON or `loom-os connections --human` for readable
+status. `loom-os connections --terminal` opens the native recovery console.
+If the status icon is absent, use `loom-os connections --enable-status` to place
+it through Omarchy's plugin controls. It preserves an existing placement.
+
 ## Appearance and integration maintenance
 
 Choose **LoomOS → Appearance → Iris Dark** or **Iris Light** to change the skin

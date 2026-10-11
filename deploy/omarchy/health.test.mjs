@@ -1,7 +1,9 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
-import { collectConnections, formatConnections } from "./health.mjs";
+import * as NodeTest from "node:test";
+import * as NodeAssert from "node:assert/strict";
+import { collectConnections, collectPrivateConnections, formatConnections } from "./health.mjs";
 
+const test = NodeTest.test,
+  assert = NodeAssert;
 const config = {
   profile: "workstation",
   officeUrl: "https://office.test",
@@ -202,4 +204,133 @@ test("doctor CLI preserves JSON and human reports, returns failure for broken ro
   assert.match(broken.stdout, /Connect to your private network/);
   assert.equal(await readFile(join(folder, "config.json"), "utf8"), cfg);
   assert.deepEqual((await readdir(home)).sort(), [".config", "switchboard.mjs"]);
+});
+
+const healthyClientChecks = [
+  { id: "client-endpoint", title: "Gateway", state: "ok", detail: "Configured", repair: null },
+  { id: "client-tailnet", title: "Tailscale", state: "ok", detail: "Connected", repair: null },
+  { id: "client-credential", title: "Credential", state: "ok", detail: "Available", repair: null },
+  { id: "client-catalog", title: "Models", state: "ok", detail: "33 models", repair: null },
+];
+test("private connection status requires a usable catalog and checks the running Loom server", async () => {
+  const urls = [],
+    calls = [];
+  const report = await collectPrivateConnections(
+    { ...config, serverHost: "0.0.0.0", serverPort: 3774 },
+    env,
+    {
+      now,
+      command: async (file, args) => {
+        calls.push([file, args]);
+        return file === config.switchboardCli
+          ? { exit: 0, stdout: JSON.stringify({ checks: healthyClientChecks }) }
+          : { exit: 0, stdout: "active\n" };
+      },
+      request: async (url, options) => {
+        urls.push(url);
+        assert.equal(options.redirect, "manual");
+        return new Response(null, { status: 401 });
+      },
+    },
+  );
+  assert.equal(report.aiReady, true);
+  assert.equal(report.state, "ok");
+  assert.deepEqual(
+    report.components.map((c) => [c.id, c.state]),
+    [
+      ["tailscale", "ok"],
+      ["switchboard", "ok"],
+      ["loom", "ok"],
+    ],
+  );
+  assert.deepEqual(urls, ["http://127.0.0.1:3774/"]);
+  assert.ok(
+    calls.every(
+      ([, args]) => !args.some((arg) => ["run", "restart", "install", "up"].includes(arg)),
+    ),
+  );
+});
+test("private status recovers after an unavailable hub without restarting an agent or service", async () => {
+  let connected = false;
+  const deps = {
+    now,
+    includeServer: false,
+    command: async () => ({
+      exit: connected ? 0 : 1,
+      stdout: JSON.stringify({
+        checks: connected
+          ? healthyClientChecks
+          : [
+              {
+                id: "client-tailnet",
+                title: "Tailscale",
+                state: "error",
+                detail: "Disconnected",
+                repair: "Connect to your private network.",
+              },
+            ],
+      }),
+    }),
+    request: async () => assert.fail("AI-only preflight makes no app/server requests"),
+  };
+  const offline = await collectPrivateConnections(config, env, deps);
+  assert.equal(offline.aiReady, false);
+  assert.equal(offline.state, "offline");
+  assert.equal(offline.components.find((c) => c.id === "tailscale").state, "error");
+  connected = true;
+  const recovered = await collectPrivateConnections(config, env, deps);
+  assert.equal(recovered.aiReady, true);
+  assert.equal(recovered.state, "ok");
+});
+test("no visible models, unreadable diagnostics and endpoint errors never report AI ready", async () => {
+  for (const checks of [
+    healthyClientChecks.map((c) =>
+      c.id === "client-catalog" ? { ...c, state: "warning", detail: "No models" } : c,
+    ),
+    [
+      {
+        id: "client-endpoint",
+        title: "Gateway",
+        state: "error",
+        detail: "Endpoint mismatch",
+        repair: "Restore the commissioned origin.",
+      },
+    ],
+    [
+      {
+        id: "client-catalog",
+        title: "Models",
+        state: "ok",
+        detail: "SYNTHETIC_PRIVATE\nOUTPUT",
+        repair: null,
+      },
+    ],
+  ]) {
+    const report = await collectPrivateConnections(config, env, {
+      includeServer: false,
+      now,
+      command: async () => ({ exit: 1, stdout: JSON.stringify({ checks }) }),
+    });
+    assert.equal(report.aiReady, false);
+    assert.notEqual(report.state, "ok");
+    assert.doesNotMatch(JSON.stringify(report), /SYNTHETIC_PRIVATE/);
+  }
+});
+test("laptop private status omits background service and a stopped workstation service is distinct from AI health", async () => {
+  for (const profile of ["laptop", "workstation"]) {
+    const report = await collectPrivateConnections({ ...config, profile }, env, {
+      now,
+      command: async (file) =>
+        file === config.switchboardCli
+          ? { exit: 0, stdout: JSON.stringify({ checks: healthyClientChecks }) }
+          : { exit: 3, stdout: "inactive" },
+      request: async () => assert.fail("stopped or absent server must not be probed"),
+    });
+    assert.equal(report.aiReady, true);
+    assert.equal(
+      report.components.some((c) => c.id === "loom"),
+      profile === "workstation",
+    );
+    assert.equal(report.state, profile === "workstation" ? "attention" : "ok");
+  }
 });

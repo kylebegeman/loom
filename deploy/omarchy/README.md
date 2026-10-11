@@ -271,3 +271,19 @@ cannot unexpectedly replace your chosen appearance or require sudo. Reuse the
 skin's printed `loom-branding.sh` only when publishing changed protected assets.
 Loom desktop/server and Switchboard artifacts retain their existing release
 workflows; the pack does not silently upgrade their runtimes.
+
+## Native connection status
+
+The pack owns the `loom.status` plugin under the user's Omarchy plugin directory.
+Its native bar presentation reads bounded connection checks every 30 seconds;
+there is no additional daemon. Ask AI uses the same private route check before
+launch and keeps prompts intact through an explicit retry. Provider inference,
+account-usage refresh and service restarts are never diagnostic side effects.
+
+On a new machine, let Omarchy discover the plugin and run
+`loom-os connections --enable-status` in its graphical session to place the
+widget without moving an existing one. The plugin files participate in release
+integrity checks and edited widgets are preserved. A commissioned machine with
+the retired custom Loom widget needs its exact old files reviewed and backed up
+before replacement; the installer deliberately refuses unowned existing files.
+Routine updates retain that widget's placement and personal shell settings.

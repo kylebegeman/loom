@@ -2,6 +2,9 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeFS from "node:fs";
 
+import { collectPrivateConnections, formatPrivateConnections, usageMaxAgeMs } from "./health.mjs";
+export { usageMaxAgeMs } from "./health.mjs";
+
 const providers = ["claude", "codex"];
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 export const aiBin = (p) => NodePath.join(p.root, "ai/bin");
@@ -29,7 +32,28 @@ export function aiFiles(p) {
     mode: 0o644,
   });
   files.set(NodePath.join(aiBin(p), "loom-ai-terminal"), {
-    content: `#!/bin/bash\n${quote(p.bin)} agent --inline "$@"\nstatus=$?\nif (( status != 0 )); then\n  printf '\\nPress Enter to close. '\n  read -r _\nfi\nexit "$status"\n`,
+    content: `#!/bin/bash
+while true; do
+  ${quote(p.bin)} agent --inline "$@"
+  status=$?
+  (( status == 0 )) && exit 0
+  if ! command -v gum >/dev/null 2>&1; then
+    printf '\nRun loom-os connections --human for recovery guidance. Press Enter to close. '
+    read -r _
+    exit "$status"
+  fi
+  while true; do
+    choice=$(gum choose --header 'Ask AI recovery' 'Retry Ask AI' 'Connection status' 'Open Tailscale' 'Open Switchboard' 'Close') || exit "$status"
+    case "$choice" in
+      'Retry Ask AI') break ;;
+      'Connection status') ${quote(p.bin)} connections --human ;;
+      'Open Tailscale') omarchy-shell omarchy.tailscale open || printf '%s\n' 'Open Tailscale from the system bar.' ;;
+      'Open Switchboard') ${quote(p.bin)} open switchboard ;;
+      *) exit "$status" ;;
+    esac
+  done
+done
+`,
     mode: 0o755,
   });
   files.set(NodePath.join(p.config, "uwsm/env.d/90-loom-ai.sh"), {
@@ -159,7 +183,6 @@ export async function routedEnvironment(config, env, p) {
   return { ...env, PATH: aiPath(p, env.PATH) };
 }
 
-export const usageMaxAgeMs = 15 * 60_000;
 export function usageRecords(status, now = Date.now()) {
   const stamp = Date.parse(status?.updatedAt);
   const current =
@@ -269,7 +292,21 @@ export async function updateUsage(config, p, args, fetchStatus = fetch, printRec
     await NodeFSP.rename(temporary, file);
   }
 }
-export async function aiAction(action, args, config, env, p, run) {
+export async function aiAction(
+  action,
+  args,
+  config,
+  env,
+  p,
+  run,
+  { connections = collectPrivateConnections } = {},
+) {
+  const readyEnvironment = async () => {
+    const routed = await routedEnvironment(config, env, p);
+    const report = await connections(config, env, { includeServer: false });
+    if (!report.aiReady) throw new Error(formatPrivateConnections(report));
+    return routed;
+  };
   if (action === "ai-usage-record") {
     if (!providers.includes(args[0])) throw new Error("Choose claude or codex for cached usage.");
     await updateUsage(config, p, [args[0], ...args.slice(1)], fetch, true);
@@ -307,7 +344,7 @@ export async function aiAction(action, args, config, env, p, run) {
         { env: { ...env, PATH: aiPath(p, env.PATH) } },
       );
     } else {
-      const routed = await routedEnvironment(config, env, p);
+      const routed = await readyEnvironment();
       await run(
         config.switchboardCli,
         ["run", await defaultAgent(p), ...(prompt === undefined ? [] : ["--", prompt])],
@@ -318,7 +355,7 @@ export async function aiAction(action, args, config, env, p, run) {
     if (!providers.includes(args[0]))
       throw new Error("Usage: loom-os ai claude|codex [native CLI args]");
     await run(config.switchboardCli, ["run", ...args], {
-      env: await routedEnvironment(config, env, p),
+      env: await readyEnvironment(),
     });
   }
   return true;

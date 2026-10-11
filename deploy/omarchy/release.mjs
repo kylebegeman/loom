@@ -8,6 +8,7 @@ import { paths, validateConfig } from "./loom-os.mjs";
 const source = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const digest = (bytes) => NodeCrypto.createHash("sha256").update(bytes).digest("hex");
 const packFiles = ["loom-os.mjs", "ai.mjs", "health.mjs", "install.sh", "release.mjs"];
+const statusFiles = ["manifest.json", "LoomStatus.qml", "StatusModel.js"];
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 async function ordinary(path, directory = false) {
   const info = await NodeFSP.lstat(path);
@@ -40,8 +41,18 @@ export async function buildRelease(output, version, sourceDir = source) {
   await NodeFSP.mkdir(output, { mode: 0o700 }); // A release is always built into a fresh directory.
   const files = {};
   try {
+    let statusEntries = [];
+    try {
+      statusEntries = (await tree(NodePath.join(sourceDir, "status"))).map((name) => [
+        "pack/status/" + name,
+        NodePath.join(sourceDir, "status", name),
+      ]);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
     const entries = [
       ...packFiles.map((name) => ["pack/" + name, NodePath.join(sourceDir, name)]),
+      ...statusEntries,
       ...(await tree(NodePath.join(sourceDir, "iris"))).map((name) => [
         "iris/" + name,
         NodePath.join(sourceDir, "iris", name),
@@ -93,7 +104,11 @@ export async function verifyRelease(directory, expected) {
       !/^[a-f0-9]{64}$/.test(hash) ||
       name.includes("\\") ||
       name.split("/").some((part) => !part || part === "." || part === "..") ||
-      !(packFiles.some((file) => name === "pack/" + file) || name.startsWith("iris/"))
+      !(
+        packFiles.some((file) => name === "pack/" + file) ||
+        statusFiles.some((file) => name === "pack/status/" + file) ||
+        name.startsWith("iris/")
+      )
     )
       throw new Error("Invalid release member.");
     const file = NodePath.join(directory, name);
@@ -106,7 +121,9 @@ export async function verifyRelease(directory, expected) {
   if (
     JSON.stringify(actual) !== JSON.stringify(expectedFiles) ||
     !packFiles.every((file) => manifest.files["pack/" + file]) ||
-    !manifest.files["iris/manifest.json"]
+    !manifest.files["iris/manifest.json"] ||
+    (statusFiles.some((file) => manifest.files["pack/status/" + file]) &&
+      !statusFiles.every((file) => manifest.files["pack/status/" + file]))
   )
     throw new Error("Release member inventory is incomplete or contains extra files.");
   return manifest;
@@ -152,6 +169,17 @@ export async function releaseStatus({ env = process.env } = {}) {
             manifest.files["pack/" + name]
           )
             matchesInstalled = false;
+        }
+        for (const name of statusFiles) {
+          const expectedAsset = manifest.files["pack/status/" + name];
+          if (!expectedAsset) continue;
+          const file = NodePath.join(p.config, "omarchy/plugins/loom.status", name);
+          try {
+            await ordinary(file);
+            if (digest(await NodeFSP.readFile(file)) !== expectedAsset) matchesInstalled = false;
+          } catch {
+            matchesInstalled = false;
+          }
         }
       }
     } catch {
@@ -258,6 +286,29 @@ async function adoptInstalled(p, directory, releases) {
         bytes = await NodeFSP.readFile(NodePath.join(directory, "pack", name));
       }
       await NodeFSP.writeFile(NodePath.join(snapshot, name), bytes, { mode: 0o600 });
+    }
+    const installedStatus = NodePath.join(p.config, "omarchy/plugins/loom.status");
+    if (
+      (
+        await Promise.all(
+          statusFiles.map(async (name) => {
+            try {
+              await ordinary(NodePath.join(installedStatus, name));
+              return true;
+            } catch (error) {
+              if (error.code === "ENOENT") return false;
+              throw error;
+            }
+          }),
+        )
+      ).every(Boolean)
+    ) {
+      await NodeFSP.mkdir(NodePath.join(snapshot, "status"));
+      for (const name of statusFiles)
+        await NodeFSP.copyFile(
+          NodePath.join(installedStatus, name),
+          NodePath.join(snapshot, "status", name),
+        );
     }
     for (const name of await tree(NodePath.join(directory, "iris"))) {
       const target = NodePath.join(snapshot, "iris", name);
