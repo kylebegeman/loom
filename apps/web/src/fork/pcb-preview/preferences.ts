@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { resolveStorage } from "~/lib/storage";
+import { PcbLengthUnit } from "./length";
 
 const Selection = Schema.Struct({
   designId: Schema.String,
@@ -16,12 +17,20 @@ const Preferences = Schema.Struct({
   ),
   trusted: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   electronicsUrl: Schema.String.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  lengthUnit: PcbLengthUnit.pipe(Schema.withDecodingDefault(Effect.succeed("mm"))),
+  hiddenLayerPresets: Schema.Array(Schema.String).pipe(
+    Schema.withDecodingDefault(Effect.succeed([])),
+  ),
+  pngScale: Schema.Literals([1, 2]).pipe(Schema.withDecodingDefault(Effect.succeed(2))),
 });
 const KEY = "loom:pcb-preview:preferences:v1";
 const defaults = {
   selections: {},
   trusted: [],
   electronicsUrl: "",
+  lengthUnit: "mm",
+  hiddenLayerPresets: [],
+  pngScale: 2,
 } satisfies typeof Preferences.Type;
 export const decodePreferences = Schema.decodeSync(Schema.fromJsonString(Preferences));
 function load() {
@@ -46,6 +55,9 @@ export const usePcbPreferences = create<
     select: (key: string, value: Selection) => void;
     trust: (key: string, trusted: boolean) => void;
     setElectronicsUrl: (value: string) => void;
+    setLengthUnit: (unit: PcbLengthUnit) => void;
+    setHiddenLayerPresets: (ids: readonly string[]) => void;
+    setPngScale: (scale: 1 | 2) => void;
   }
 >((set, get) => ({
   ...load(),
@@ -72,4 +84,19 @@ export const usePcbPreferences = create<
     save(next);
     set({ electronicsUrl });
   },
+  setLengthUnit: (lengthUnit) => {
+    save({ ...get(), lengthUnit });
+    set({ lengthUnit });
+  },
+  setHiddenLayerPresets: (ids) => {
+    const hiddenLayerPresets = [...new Set(ids)];
+    save({ ...get(), hiddenLayerPresets });
+    set({ hiddenLayerPresets });
+  },
+  setPngScale: (pngScale) => {
+    save({ ...get(), pngScale });
+    set({ pngScale });
+  },
 }));
+/** The device's PCB display unit. Geometry and agent tools stay in millimetres. */
+export const useLengthUnit = () => usePcbPreferences((s) => s.lengthUnit);

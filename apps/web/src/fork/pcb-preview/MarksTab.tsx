@@ -5,6 +5,7 @@ import { Badge } from "~/components/ui/badge";
 import { Kbd } from "~/components/ui/kbd";
 import { Bar, EmptyState, Group, revealTool, Scroll, Segmented, useWrite } from "./InspectorKit";
 import { measurementParts } from "./geometry";
+import { useLengthUnit } from "./preferences";
 import { ToolButton } from "./ToolButton";
 import k from "./inspector.module.css";
 
@@ -43,12 +44,13 @@ export function MarksTab({
   mutate: (change: (data: PcbWorkspace) => PcbWorkspace) => Promise<unknown>;
 }) {
   const [filter, setFilter] = useState<"all" | "measurements" | "notes">("all");
+  const unit = useLengthUnit();
   const write = useWrite("The mark could not be removed.");
   const marks: Mark[] = [
     ...data.measurements.map((m) => ({
       id: m.id,
       kind: m.kind,
-      ...measurementParts(m),
+      ...measurementParts(m, unit),
       view: m.view,
       sheet: m.sheet,
       point: m.kind === "angle" ? m.points[1] : m.points[0],

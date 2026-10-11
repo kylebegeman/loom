@@ -44,7 +44,8 @@ import type { ForkPanelProps } from "../panels/types";
 import { runModelCommand as runPcbCommand } from "../model-preview-3d/state";
 import { pcb } from "./state";
 import { usePcbPreview, asyncValue, asyncError } from "./usePcbPreview";
-import { usePcbPreferences, projectPreferenceKey } from "./preferences";
+import { usePcbPreferences, projectPreferenceKey, useLengthUnit } from "./preferences";
+import { unitName } from "./length";
 import { initialView, reconcileLayers } from "./usePcbPreview.logic";
 import { electronicsDesignUrl } from "./summary";
 import { ToolButton } from "./ToolButton";
@@ -117,6 +118,8 @@ function DesignWorkspace({
   onClose: () => void;
 }) {
   const saved = usePcbPreferences((s) => s.selections[preferenceKey]);
+  const unit = useLengthUnit();
+  const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
   const [view, setView] = useState<PcbView>(() => initialView(design, saved?.view));
   const [layers, setLayers] = useState<PcbLayerPreset>(
     design.kind === "tscircuit" ? "front" : (saved?.layers ?? "front"),
@@ -999,6 +1002,7 @@ function DesignWorkspace({
               : []
           }
           pending={points}
+          unit={unit}
         />
       }
     >
@@ -1360,6 +1364,31 @@ function DesignWorkspace({
           </button>
         )}
         <span className={styles.spacer} />
+        <Menu>
+          <MenuTrigger
+            render={
+              <button
+                type="button"
+                className={styles.statusChip}
+                aria-label={`Display units: ${unitName(unit)}`}
+              />
+            }
+          >
+            {unit}
+            <ChevronDownIcon />
+          </MenuTrigger>
+          <MenuPopup align="end">
+            <MenuGroup>
+              <MenuGroupLabel>Display units</MenuGroupLabel>
+              {(["mm", "mil", "in"] as const).map((value) => (
+                <MenuItem key={value} onClick={() => setLengthUnit(value)}>
+                  {value === unit ? <CheckIcon /> : <span className="size-4" aria-hidden="true" />}
+                  {unitName(value)} ({value})
+                </MenuItem>
+              ))}
+            </MenuGroup>
+          </MenuPopup>
+        </Menu>
         {tabs.includes("Checks") &&
           (["erc", "drc"] as const).map((kind) => {
             const result = preview.checks[kind];
@@ -1419,6 +1448,7 @@ function LinkedDrawing({
   workbench: ReturnType<typeof usePcbWorkbench>;
   handle: React.RefObject<PcbViewportHandle | null>;
 }) {
+  const unit = useLengthUnit();
   const preview = usePcbPreview(
     threadRef,
     design,
@@ -1461,6 +1491,7 @@ function LinkedDrawing({
               net={net}
               components={workbench.inspection?.components ?? []}
               pending={[]}
+              unit={unit}
             />
           }
         >

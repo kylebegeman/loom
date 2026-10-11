@@ -5,7 +5,7 @@ Cited lines are from `docs/model-preview-follow-ups` at `8676e099e5`.
 ## Overview
 
 One per-device preference, one pure module, one hook. `length.ts` converts and formats;
-`useLengthUnit()` reads the preference from the existing zustand store; each length site in the
+`useLengthUnit()` in `preferences.ts` reads the preference from the existing zustand store; each length site in the
 inventory swaps its `toFixed(...) mm` for `formatLength`. Check reports are normalized to
 millimetres where they are parsed, so the client only ever handles millimetres plus a fallback
 for reports that predate this packet.
@@ -31,24 +31,16 @@ type. After this packet the server always writes `"mm"` there for new results.
 - `--units mm` is always passed (`PcbPreviewService.ts:1078-1090`), so the unit is mm, but a
   report in `in` or `mils` would still be shown and located as if it were mm elsewhere.
 
-Commit `6ddf84c1aa` on the local `fix/preview-defects` branch already does this (scale for
-8.x, 9.x and 10.0.0 to 10.0.6, `in`/`mils`/`mil` converted, unknown units dropped). If it is on
-your base, keep it and only add `coordinateUnits: "mm"` if missing; otherwise add, in
-`kicadReports.ts`:
+The normalization fix from `6ddf84c1aa` is already present on this branch. L54 keeps it:
+`unitScale` accepts mm, in, mils and mil (missing units default to mm), and
+`ercScaleFactor` corrects 8.x, 9.x and 10.0.0 through 10.0.6 by 100. Development and unknown
+version strings retain the existing factor of 1. Unknown report units have positions dropped;
+new reports always emit `coordinateUnits: "mm"`. The existing `realReports.test.ts` covers
+these policies and the actual KiCad fixtures.
 
-```ts
-/** KiCad < 10.0.7 wrote ERC JSON positions with the PCB scale (issue 25582). */
-export function ercScale(kicadVersion: string): number | null;
-// "8.0.x" | "9.0.x" | "10.0.0".."10.0.6" -> 100; "10.0.7"+ and "11"+ -> 1; unparsable -> null
-const MM_PER = { mm: 1, in: 25.4, mils: 0.0254, mil: 0.0254 } as const;
-```
-
-`parseKicadReport` multiplies each `pos` by `MM_PER[coordinate_units] * (erc ? scale : 1)` and
-writes `coordinateUnits: "mm"`. When the ERC scale is `null` (a development build such as
-"10.99.0") it drops `x` and `y` from items rather than guess, and when the unit is not one of
-the four it leaves the values and the unit untouched. Check results persisted before this
-packet keep their old numbers; the client fallback below handles their units, and their ERC
-positions stay wrong until the check is run again (they are replaced on the next run).
+Persisted reports can still carry old unit names and values. The client converts known units
+for display and location, preserves raw text for unknown units, and disables Locate for those
+rows. A persisted ERC report with uncorrected positions is replaced on the next check run.
 
 ### Tool descriptions (`apps/server/src/fork/pcb-preview/mcp.ts`)
 
@@ -63,10 +55,9 @@ answer, and agents keep one canonical unit.
 ## Storage
 
 `apps/web/src/fork/pcb-preview/preferences.ts` stores PCB preferences in device storage under
-`loom:pcb-preview:preferences:v1` (`:16`). Its schema (`:11-15`) has no decoding defaults, so
-adding a required field would make every saved value fail to decode and fall back to defaults
-(`:22-30`), silently dropping trusted tscircuit designs and remembered views. Step 1 fixes that
-for every field:
+`loom:pcb-preview:preferences:v1` (`:16`). Its schema uses decoding defaults, so
+adding a field does not discard trusted tscircuit designs and remembered views from older
+storage. Each new preference retains that convention:
 
 ```ts
 const Preferences = Schema.Struct({
@@ -121,9 +112,10 @@ export function formatArea(mm2: number, unit: PcbLengthUnit, digits?: number): s
 export function parseLength(text: string, unit: PcbLengthUnit): number | null;
 export const unitName = (unit: PcbLengthUnit) => ({ mm: "millimetres", mil: "mils",
   in: "inches" })[unit];
-/** The current display unit. */
-export const useLengthUnit = () => usePcbPreferences((s) => s.lengthUnit);
 ```
+
+The `useLengthUnit()` hook is exported from `preferences.ts`, keeping `length.ts` pure and avoiding
+a circular dependency between the formatter and its preferences schema.
 
 `formatLength` rounds with `toFixed`, turns `-0` into `0`, and with `trim` strips trailing zeros
 and a bare point. The names and option meanings match L40's `formatLength`
@@ -151,24 +143,24 @@ immediately (no Save button), like a toggle.
 Found with `rg -n 'mm|toFixed|millimet' apps/web/src/fork/pcb-preview`. Each row becomes the
 change shown. `u` is `useLengthUnit()` read in the nearest component.
 
-| Site                                      | Today                                               | After                                                                                                                                                     |
-| ----------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `geometry.ts:25`                          | Angle value `toFixed(1)°`.                          | Unchanged; angles are unitless.                                                                                                                           |
-| `geometry.ts:26`                          | "Vertex x, y" `toFixed(2)`, no unit.                | `` `Vertex ${formatLengths([b.x, b.y], u, ...)}` `` joined with ", ".                                                                                     |
-| `geometry.ts:31`                          | Distance `toFixed(2)` " mm".                        | `formatLength(distance, u)`.                                                                                                                              |
-| `geometry.ts:32`                          | "Δx Δy" `toFixed(2)`, no unit.                      | `formatLength(dx, u, { unit: false })` each.                                                                                                              |
-| `geometry.ts:35-37`                       | `measurementLabel(m)`.                              | `measurementLabel(m, u)`; `measurementParts(m, u)` gains the parameter.                                                                                   |
-| `Overlays.tsx:63`                         | Label drawn on the board, also in PNG captures.     | `measurementLabel(m, unit)`; `Overlays` gets a `unit` prop from the panel.                                                                                |
-| `MarksTab.tsx:51` (shown `:179-183`)      | Measurement rows.                                   | `measurementParts(m, u)`.                                                                                                                                 |
-| `InspectTab.tsx:20`, `:247-248`           | Board size `millimetres()` and " mm".               | `formatLengths([w, h], u, { digits: 1, trim: true })`; helper removed. With L55 this moves into the Board stats card.                                     |
-| `InspectTab.tsx:258-259`                  | Thickness `toFixed(1)` " mm".                       | `formatLength(thickness, u, { digits: 1 })`.                                                                                                              |
-| `ChecksView.tsx:159`                      | `units = coordinateUnits ?? "mm"`.                  | `from = reportUnit(result?.coordinateUnits ?? "mm")`.                                                                                                     |
-| `ChecksView.tsx:356`                      | `toFixed(2)` plus report unit.                      | Convert with `toMm(v, from)`, then `formatLengths([x, y], u)`; when `from` is null show raw numbers plus the raw unit.                                    |
-| `ChecksView.tsx:361`                      | Locate only when `units === "mm"`.                  | Locate whenever `from` is not null, with the point in mm.                                                                                                 |
-| `summary.ts:29`                           | Draft summary in report units.                      | Converted to mm with the same helper; stays mm (agent input).                                                                                             |
-| `HardwareLibrary.tsx:104`                 | Size `${w} × ${h} mm`.                              | `formatLengths([w, h], u, { trim: true })`.                                                                                                               |
-| `HardwareLibrary.tsx:173`                 | Draft context "Size ... mm".                        | Unchanged (agent input, mm).                                                                                                                              |
-| `HardwareLibrary.tsx:468-480`, `:637-638` | Width and height inputs in mm, labels "Width (mm)". | Input shows `fromMm(value, u)`, writes `toMm(value, u)`; label "Width (mil)" and so on; `step` 0.01 mm, 1 mil, 0.001 in; `aria-label` uses `unitName(u)`. |
+| Site                                      | Today                                               | After                                                                                                                                                                                       |
+| ----------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `geometry.ts:25`                          | Angle value `toFixed(1)°`.                          | Unchanged; angles are unitless.                                                                                                                                                             |
+| `geometry.ts:26`                          | "Vertex x, y" `toFixed(2)`, no unit.                | `` `Vertex ${formatLengths([b.x, b.y], u, ...)}` `` joined with ", ".                                                                                                                       |
+| `geometry.ts:31`                          | Distance `toFixed(2)` " mm".                        | `formatLength(distance, u)`.                                                                                                                                                                |
+| `geometry.ts:32`                          | "Δx Δy" `toFixed(2)`, no unit.                      | `formatLength(dx, u, { unit: false })` each.                                                                                                                                                |
+| `geometry.ts:35-37`                       | `measurementLabel(m)`.                              | `measurementLabel(m, u)`; `measurementParts(m, u)` gains the parameter.                                                                                                                     |
+| `Overlays.tsx:63`                         | Label drawn on the board, also in PNG captures.     | `measurementLabel(m, unit)`; `Overlays` gets a `unit` prop from the panel.                                                                                                                  |
+| `MarksTab.tsx:51` (shown `:179-183`)      | Measurement rows.                                   | `measurementParts(m, u)`.                                                                                                                                                                   |
+| `InspectTab.tsx:20`, `:247-248`           | Board size `millimetres()` and " mm".               | `formatLengths([w, h], u, { digits: 1, trim: true })`; helper removed. With L55 this moves into the Board stats card.                                                                       |
+| `InspectTab.tsx:258-259`                  | Thickness `toFixed(1)` " mm".                       | `formatLength(thickness, u, { digits: 1 })`.                                                                                                                                                |
+| `ChecksView.tsx:159`                      | `units = coordinateUnits ?? "mm"`.                  | `from = reportUnit(result?.coordinateUnits ?? "mm")`.                                                                                                                                       |
+| `ChecksView.tsx:356`                      | `toFixed(2)` plus report unit.                      | Convert with `toMm(v, from)`, then `formatLengths([x, y], u)`; when `from` is null show raw numbers plus the raw unit.                                                                      |
+| `ChecksView.tsx:361`                      | Locate only when `units === "mm"`.                  | Locate whenever `from` is not null, with the point in mm.                                                                                                                                   |
+| `summary.ts:29`                           | Draft summary in report units.                      | Converted to mm with the same helper; stays mm (agent input).                                                                                                                               |
+| `HardwareLibrary.tsx:104`                 | Size `${w} × ${h} mm`.                              | `formatLengths([w, h], u, { trim: true })`.                                                                                                                                                 |
+| `HardwareLibrary.tsx:173`                 | Draft context "Size ... mm".                        | Unchanged (agent input, mm).                                                                                                                                                                |
+| `HardwareLibrary.tsx:468-480`, `:637-638` | Width and height inputs in mm, labels "Width (mm)". | Text inputs show the selected unit and parse explicit suffixes with `parseLength`; invalid edits disable Save. Arrow keys step 0.01 mm, 1 mil or 0.001 in. `aria-label` uses `unitName(u)`. |
 
 Not lengths, left alone: zoom and scale percentages (`SvgViewport.tsx:122,487`,
 `ViewsTab.tsx:99`), opacity (`LayersTab.tsx:209`), sheet byte size

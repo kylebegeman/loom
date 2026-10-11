@@ -1,5 +1,6 @@
 import type { PcbComponent, PcbPoint, PcbWorkspace, PcbView } from "@t3tools/contracts/fork";
 import { measurementLabel } from "./geometry";
+import type { PcbLengthUnit } from "./length";
 export function DrawingOverlays({
   data,
   sourceHash,
@@ -9,6 +10,7 @@ export function DrawingOverlays({
   net,
   components,
   pending,
+  unit,
 }: {
   data: PcbWorkspace;
   sourceHash: string;
@@ -18,6 +20,7 @@ export function DrawingOverlays({
   net: string | null;
   components: readonly PcbComponent[];
   pending: readonly PcbPoint[];
+  unit: PcbLengthUnit;
 }) {
   const markers = components.flatMap((c) => {
     const p = view === "pcb" ? c.pcb : c.schematic;
@@ -60,7 +63,7 @@ export function DrawingOverlays({
               fontFamily="sans-serif"
               fontSize="1.8"
             >
-              {measurementLabel(m)}
+              {measurementLabel(m, unit)}
             </text>
           </g>
         ))}

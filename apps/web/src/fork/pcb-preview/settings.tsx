@@ -7,10 +7,17 @@ import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useServerConfigs } from "~/state/entities";
 import { pcb } from "./state";
-import { usePcbPreferences } from "./preferences";
+import { useLengthUnit, usePcbPreferences } from "./preferences";
 import { asyncError, asyncValue } from "./usePcbPreview";
 import { electronicsDesignUrl } from "./summary";
 import { OperationStatus } from "./OperationStatus";
@@ -49,6 +56,8 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
     info = asyncValue(result);
   const saved = usePcbPreferences((s) => s.electronicsUrl),
     save = usePcbPreferences((s) => s.setElectronicsUrl);
+  const unit = useLengthUnit();
+  const setUnit = usePcbPreferences((s) => s.setLengthUnit);
   const [url, setUrl] = useState(saved),
     [message, setMessage] = useState<string | null>(null);
   const valid = !url.trim() || electronicsDesignUrl(url, "/design.kicad_pro") !== null;
@@ -130,6 +139,30 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
           )}
         </div>
       </SettingsRow>
+      <SettingsRow
+        title="Length units"
+        description="Drawing coordinates, marks and board sizes. Saved on this device. Agents always use millimetres."
+        control={
+          <Select
+            value={unit}
+            onValueChange={(value) => value && setUnit(value)}
+            items={[
+              { value: "mm", label: "Millimetres (mm)" },
+              { value: "mil", label: "Mils (mil)" },
+              { value: "in", label: "Inches (in)" },
+            ]}
+          >
+            <SelectTrigger aria-label="PCB length units">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="mm">Millimetres (mm)</SelectItem>
+              <SelectItem value="mil">Mils (mil)</SelectItem>
+              <SelectItem value="in">Inches (in)</SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
     </div>
   );
 }

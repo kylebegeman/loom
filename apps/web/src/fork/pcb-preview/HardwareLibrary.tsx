@@ -47,6 +47,15 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { appendSummary } from "./summary";
 import { OperationStatus } from "./OperationStatus";
 import {
+  formatLength,
+  formatLengths,
+  parseLength,
+  toMm,
+  unitName,
+  type PcbLengthUnit,
+} from "./length";
+import { useLengthUnit } from "./preferences";
+import {
   Bar,
   EmptyState,
   errorText,
@@ -101,8 +110,17 @@ const blank = (change: Partial<PcbHardware>): PcbHardware => ({
   assets: [],
   ...change,
 });
-const size = (i: PcbHardware) =>
-  i.width !== null && i.height !== null ? `${i.width} × ${i.height} mm` : null;
+const size = (i: PcbHardware, unit: PcbLengthUnit) =>
+  i.width !== null && i.height !== null
+    ? formatLengths([i.width, i.height], unit, { trim: true })
+    : null;
+const dimensionText = (value: number | null, unit: PcbLengthUnit) =>
+  value === null ? "" : formatLength(value, unit, { digits: 8, trim: true, unit: false });
+const dimensionValues = (item: PcbHardware, unit: PcbLengthUnit) => ({
+  unit,
+  width: dimensionText(item.width, unit),
+  height: dimensionText(item.height, unit),
+});
 
 export function HardwareLibrary({
   threadRef,
@@ -113,6 +131,7 @@ export function HardwareLibrary({
   design: PcbDesign;
   inspection: PcbInspection | null;
 }) {
+  const unit = useLengthUnit();
   const result = useAtomValue(pcb.library({ environmentId: threadRef.environmentId, input: {} }));
   const remote = asyncValue(result);
   const canEdit = useAtomValue(pcb.updateLibrary.permissionAtom(threadRef.environmentId));
@@ -385,7 +404,7 @@ export function HardwareLibrary({
                         <small>
                           {[
                             i.manufacturer,
-                            size(i),
+                            size(i, unit),
                             i.assets.length ? `${i.assets.length} files` : null,
                           ]
                             .filter(Boolean)
@@ -436,11 +455,18 @@ function HardwareDetail({
   onReuse: (item: PcbHardware) => void;
 }) {
   const id = useId();
+  const unit = useLengthUnit();
   const [draft, setDraft] = useState(item),
     [tags, setTags] = useState(item.tags.join(", ")),
     [assetKind, setAssetKind] = useState<Asset["kind"]>("3d"),
     [assetPath, setAssetPath] = useState(""),
-    [confirm, setConfirm] = useState(false);
+    [confirm, setConfirm] = useState(false),
+    [dimensions, setDimensions] = useState(() => dimensionValues(item, unit));
+  if (dimensions.unit !== unit) setDimensions(dimensionValues(draft, unit));
+  const lengthsValid = ["width", "height"].every((key) => {
+    const text = dimensions[key as "width" | "height"];
+    return !text.trim() || parseLength(text, unit) !== null;
+  });
   const next: PcbHardware = {
     ...draft,
     tags: tags
@@ -448,7 +474,7 @@ function HardwareDetail({
       .map((t) => t.trim())
       .filter(Boolean),
   };
-  const dirty = JSON.stringify(next) !== JSON.stringify(item);
+  const dirty = JSON.stringify(next) !== JSON.stringify(item) || !lengthsValid;
   const disabled = !canEdit || busy !== null;
   const set = <K extends keyof PcbHardware>(key: K, value: PcbHardware[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -468,21 +494,45 @@ function HardwareDetail({
       />
     </Field>
   );
-  const millimetres = (key: "width" | "height", label: string) => (
-    <Field label={label}>
-      <NumberField
-        size="sm"
-        min={0}
-        value={draft[key]}
-        disabled={disabled}
-        onValueChange={(value) => set(key, value !== null && Number.isFinite(value) ? value : null)}
-      >
-        <NumberFieldGroup>
-          <NumberFieldInput aria-label={`${label} in millimetres`} />
-        </NumberFieldGroup>
-      </NumberField>
-    </Field>
-  );
+  const lengthField = (key: "width" | "height", label: string) => {
+    const text = dimensions[key];
+    const value = parseLength(text, unit);
+    const invalid = !!text.trim() && value === null;
+    const step = unit === "mm" ? 0.01 : unit === "mil" ? 1 : 0.001;
+    const change = (input: string) => {
+      setDimensions((current) => ({ ...current, [key]: input }));
+      const mm = parseLength(input, unit);
+      if (!input.trim() || mm !== null) set(key, mm);
+    };
+    return (
+      <Field label={`${label} (${unit})`} htmlFor={`${id}-${key}`}>
+        <Input
+          id={`${id}-${key}`}
+          size="sm"
+          inputMode="decimal"
+          aria-label={`${label} in ${unitName(unit)}`}
+          aria-invalid={invalid || undefined}
+          disabled={disabled}
+          value={text}
+          onChange={(e) => change(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+            e.preventDefault();
+            const mm = Math.max(
+              0,
+              (value ?? 0) + toMm(step * (e.key === "ArrowUp" ? 1 : -1), unit),
+            );
+            change(dimensionText(mm, unit));
+          }}
+        />
+        {invalid && (
+          <p role="alert" className={k.fieldHint}>
+            Enter a nonnegative length, optionally followed by mm, mil or in.
+          </p>
+        )}
+      </Field>
+    );
+  };
   const links = [
     { label: "Docs", url: item.documentationUrl },
     { label: "Buy", url: item.purchaseUrl },
@@ -507,7 +557,7 @@ function HardwareDetail({
             <div className={k.heroTitle}>
               <strong>{item.name}</strong>
               <small>
-                {[item.category, item.manufacturer, size(item)].filter(Boolean).join(" · ")}
+                {[item.category, item.manufacturer, size(item, unit)].filter(Boolean).join(" · ")}
               </small>
             </div>
             {item.owned && (
@@ -517,7 +567,12 @@ function HardwareDetail({
             )}
           </div>
           <div className={k.actions}>
-            <Button size="sm" variant="outline" onClick={() => onDraft(next)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!lengthsValid}
+              onClick={() => onDraft(next)}
+            >
               <MessageSquarePlusIcon />
               Add to draft
             </Button>
@@ -637,8 +692,8 @@ function HardwareDetail({
           }
         >
           <div className={k.fieldRow}>
-            {millimetres("width", "Width (mm)")}
-            {millimetres("height", "Height (mm)")}
+            {lengthField("width", "Width")}
+            {lengthField("height", "Height")}
           </div>
         </Section>
         <Section title="Links">
@@ -785,13 +840,14 @@ function HardwareDetail({
             onClick={() => {
               setDraft(item);
               setTags(item.tags.join(", "));
+              setDimensions(dimensionValues(item, unit));
             }}
           >
             Discard
           </Button>
           <Button
             size="sm"
-            disabled={disabled || !next.name.trim() || !next.category.trim()}
+            disabled={disabled || !next.name.trim() || !next.category.trim() || !lengthsValid}
             onClick={() => void onSave(next)}
           >
             Save

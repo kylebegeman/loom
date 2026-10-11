@@ -73,3 +73,15 @@ it("preserves URL prefixes and encodes host paths", () => {
   ])
     expect(electronicsDesignUrl(invalid, "/hw/board")).toBeNull();
 });
+
+it("normalizes legacy inch and mil reports to millimetres for agent drafts", () => {
+  expect(checkSummary(design, { ...result, coordinateUnits: "in" })).toContain(
+    "R1 pad 1 (25.4, 50.8 mm)",
+  );
+  expect(checkSummary(design, { ...result, coordinateUnits: "mils" })).toContain(
+    "R1 pad 1 (0.0254, 0.0508 mm)",
+  );
+  expect(checkSummary(design, { ...result, coordinateUnits: "cm" })).toContain(
+    "R1 pad 1 (1, 2 cm)",
+  );
+});

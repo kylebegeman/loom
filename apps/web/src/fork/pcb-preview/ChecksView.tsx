@@ -23,6 +23,8 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { appendSummary, checkSummary } from "./summary";
 import { OperationStatus } from "./OperationStatus";
+import { formatLength, reportUnit, toMm } from "./length";
+import { useLengthUnit } from "./preferences";
 import {
   Bar,
   EmptyState,
@@ -157,6 +159,8 @@ export function ChecksView({
   };
   const current = status(result, checking === kind, stale);
   const units = result?.coordinateUnits ?? "mm";
+  const from = reportUnit(units);
+  const unit = useLengthUnit();
   const total = result ? result.counts.errors + result.counts.warnings + result.counts.excluded : 0;
   return (
     <>
@@ -348,23 +352,29 @@ export function ChecksView({
                               item.x !== undefined && item.y !== undefined
                                 ? { x: item.x, y: item.y }
                                 : null;
+                            const pointMm =
+                              located && from
+                                ? { x: toMm(located.x, from), y: toMm(located.y, from) }
+                                : null;
                             const content = (
                               <>
                                 <span>{item.description}</span>
                                 {located && (
                                   <small className={k.mono}>
-                                    {located.x.toFixed(2)}, {located.y.toFixed(2)} {units}
+                                    {pointMm
+                                      ? `${formatLength(pointMm.x, unit, { unit: false })}, ${formatLength(pointMm.y, unit)}`
+                                      : `${located.x.toFixed(2)}, ${located.y.toFixed(2)} ${units}`}
                                   </small>
                                 )}
                               </>
                             );
-                            return onLocate && located && units === "mm" ? (
+                            return onLocate && pointMm ? (
                               <button
                                 key={itemKey}
                                 type="button"
                                 className={k.location}
                                 aria-label={`Go to ${item.description}`}
-                                onClick={() => onLocate(kind, located, v.sheet)}
+                                onClick={() => onLocate(kind, pointMm, v.sheet)}
                               >
                                 <LocateFixedIcon aria-hidden="true" />
                                 {content}

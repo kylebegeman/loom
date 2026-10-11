@@ -1,4 +1,5 @@
 import type { PcbCheckResult, PcbDesign } from "@t3tools/contracts/fork";
+import { reportUnit, toMm } from "./length";
 
 export function checkSummary(
   design: Pick<PcbDesign, "name" | "id">,
@@ -22,11 +23,12 @@ export function checkSummary(
       .filter(Boolean)
       .join("\n");
   const findings = result.violations.filter((v) => !v.excluded);
+  const from = reportUnit(result.coordinateUnits);
   const lines = findings.slice(0, 100).map((v) => {
     const items = v.items
       .map(
         (i) =>
-          `${i.description}${i.x !== undefined && i.y !== undefined ? ` (${i.x}, ${i.y} ${result.coordinateUnits ?? "mm"})` : ""}`,
+          `${i.description}${i.x !== undefined && i.y !== undefined ? ` (${from ? toMm(i.x, from) : i.x}, ${from ? toMm(i.y, from) : i.y} ${from ? "mm" : result.coordinateUnits})` : ""}`,
       )
       .join("; ");
     return `- ${v.severity}: ${v.type}: ${v.description}${v.sheet ? ` [${v.sheet}]` : ""}${items ? `; ${items}` : ""}`;
