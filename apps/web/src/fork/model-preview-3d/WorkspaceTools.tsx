@@ -238,8 +238,8 @@ export function DisplayTools({
   );
 }
 const HELP = [
-  ["Orbit", "Drag, O"],
-  ["Pan", "Middle or right drag, H"],
+  ["Orbit", "Drag, O, arrow keys"],
+  ["Pan", "Middle or right drag, H, Shift and arrows"],
   ["Zoom", "Scroll, + and −"],
   ["Fit model", "F"],
   ["Standard views", "1 to 4"],
@@ -570,7 +570,7 @@ export function SectionStrip({
 /** Instruction shown while a picking tool waits for a click on the model. */
 export function ToolHint({ children, onDone }: { children: ReactNode; onDone: () => void }) {
   return (
-    <div className={styles["model-hint"]} role="status">
+    <div className={styles["model-hint"]}>
       <span>{children}</span>
       <Kbd>Esc</Kbd>
       <Button variant="ghost-muted" size="xs" onClick={onDone}>

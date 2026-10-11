@@ -7,7 +7,7 @@ import type {
   ModelMeasurement,
   ModelAnnotation,
 } from "@t3tools/contracts/fork";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useId } from "react";
 import { singleZoneStrips, type ModelFormat } from "@t3tools/contracts/fork";
 import { formatLength, useDisplayUnits } from "../units";
 import type { Plate } from "../buildPlate";
@@ -18,6 +18,7 @@ import type { SnapStatus } from "./createViewer";
 const EMPTY_MEASUREMENTS: readonly ModelMeasurement[] = [];
 const EMPTY_ANNOTATIONS: readonly ModelAnnotation[] = [];
 export default function ViewerCanvas({
+  label = "3D model",
   url,
   format,
   plate,
@@ -63,6 +64,7 @@ export default function ViewerCanvas({
   keepPrevious?: boolean;
   previousShown?: boolean;
   sourceRevision?: string;
+  label?: string;
   url: string;
   format: ModelFormat;
   plate: Plate;
@@ -83,6 +85,7 @@ export default function ViewerCanvas({
   onNavigate?: () => void;
 }) {
   const units = useDisplayUnits();
+  const descriptionId = useId();
   const host = useRef<HTMLDivElement>(null),
     loaded = useRef(false),
     loadedRevision = useRef<string | undefined>(undefined);
@@ -149,6 +152,9 @@ export default function ViewerCanvas({
       loadedRevision.current = undefined;
     };
   }, [viewerRef, savedViewRef, onError]);
+  useEffect(() => {
+    viewerRef.current?.describe(label, descriptionId);
+  }, [viewerRef, label, descriptionId]);
   useEffect(() => {
     viewerRef.current?.keepPrevious(keepPrevious);
   }, [keepPrevious, viewerRef]);
@@ -283,5 +289,13 @@ export default function ViewerCanvas({
   useEffect(() => {
     if (camera) viewerRef.current?.restore(camera);
   }, [viewerRef, camera]);
-  return <div ref={host} className="h-full min-h-64 w-full" />;
+  return (
+    <>
+      <span id={descriptionId} className="sr-only">
+        Arrow keys orbit. Shift and arrow keys pan. Plus and minus zoom. F fits the model. 1 to 4
+        choose a standard view. Drag to orbit, right or middle drag to pan, scroll to zoom.
+      </span>
+      <div ref={host} className="h-full min-h-64 w-full" />
+    </>
+  );
 }

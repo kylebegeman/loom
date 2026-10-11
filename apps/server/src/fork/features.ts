@@ -13,6 +13,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "model-follow-agent",
   "model-change-ghost",
   "model-measure-snap",
+  "model-viewport-access",
   "pcb-preview",
   "project-lifecycle",
   "apple-build-tooling",

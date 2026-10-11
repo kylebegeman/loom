@@ -92,6 +92,9 @@ import { type ModelViewer, type NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
 import type { meshStats } from "./viewer/load";
 import { onModelAction } from "./actions";
+import { nudgeFor } from "./viewer/keyboard";
+import { announcement, type AnnounceInput } from "./announce";
+import { buildPlateLabel } from "./buildPlate";
 import {
   CaptureMenu,
   DisplayTools,
@@ -915,6 +918,56 @@ function ModelFile({
       : null);
   const picker = () =>
     useRightPanelStore.getState().openSurface(threadRef, forkPanelSurface("model-preview-3d"));
+  const announcePrevious = useRef<AnnounceInput | null>(null);
+  const [announced, setAnnounced] = useState<{ id: number; text: string } | null>(null);
+  const announceHint =
+    editing.picking === "measure"
+      ? editing.measureMode === "hole"
+        ? "Click the rim or wall of the hole"
+        : editing.pendingPoint
+          ? "Click the second point"
+          : "Click the first point to measure from"
+      : editing.picking === "annotate"
+        ? "Click the part you want changed"
+        : null;
+  const announceFit = stats ? fitPlate(stats.size, plate).fit.status === "fits" : null;
+  const bedLabel = buildPlateLabel(settings.buildPlate);
+  useEffect(() => {
+    if (!visible) return;
+    const next: AnnounceInput = {
+      file: path.split("/").at(-1) ?? path,
+      geometryRevision,
+      stats,
+      fits: announceFit,
+      bedLabel,
+      stale: !!displayedError && !!stats,
+      hint: announceHint,
+      tool: editing.picking,
+      navigationMode,
+      view: activeView,
+      projection: display.projection,
+      success,
+      formatSize: (size) => formatLengths(size, units),
+    };
+    const text = announcement(announcePrevious.current, next);
+    announcePrevious.current = next;
+    if (text) setAnnounced((current) => ({ id: (current?.id ?? 0) + 1, text }));
+  }, [
+    visible,
+    path,
+    geometryRevision,
+    stats,
+    announceFit,
+    bedLabel,
+    displayedError,
+    announceHint,
+    editing.picking,
+    navigationMode,
+    activeView,
+    display.projection,
+    success,
+    units,
+  ]);
   if (format === "step")
     return (
       <div className={styles["model-library"]}>
@@ -1001,6 +1054,7 @@ function ModelFile({
           )
             return;
           const key = event.key.toLowerCase();
+          const nudge = nudgeFor(event.key, event.shiftKey);
           if (key === "escape" && (editing.picking || editing.pendingRegion)) {
             if (editing.picking) editing.stopPicking();
             else editing.cancel();
@@ -1025,11 +1079,16 @@ function ModelFile({
           else if (key === "d" && previous) togglePrevious();
           else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
           else if (key === "-" && stats) viewer.current?.zoom(1.2);
+          else if (stats && nudge && viewer.current?.owns(event.target))
+            viewer.current.nudge(nudge);
           else return;
           event.preventDefault();
           event.stopPropagation();
         }}
       >
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announced && <span key={announced.id}>{announced.text}</span>}
+        </div>
         <div className={styles["model-document-bar"]}>
           {format === "scad" ? (
             <FileCode2Icon className="size-5 shrink-0 text-muted-foreground" />
@@ -1107,6 +1166,7 @@ function ModelFile({
               >
                 {mesh && (visible || !release) && (
                   <ViewerCanvas
+                    label={path.split("/").at(-1) ?? path}
                     url={mesh.url}
                     format={mesh.format}
                     plate={plate}
@@ -1346,10 +1406,7 @@ function ModelFile({
                 <OperationStatus label="Loading model workspace" />
               )}
               {success && (
-                <div
-                  className={styles["model-floating"] + " w-fit gap-2 pl-3 text-xs"}
-                  role="status"
-                >
+                <div className={styles["model-floating"] + " w-fit gap-2 pl-3 text-xs"}>
                   <CheckIcon className="size-3.5" />
                   {success}
                   <ModelTool label="Dismiss capture message" onClick={() => setSuccess(null)}>

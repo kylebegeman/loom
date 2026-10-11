@@ -62,6 +62,7 @@ import {
 } from "./snap";
 import { createSnapOverlay } from "./snapOverlay";
 import { createBed } from "./bed";
+import type { Nudge } from "./keyboard";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
 import styles from "../workspace.module.css";
@@ -106,10 +107,8 @@ export function createViewer(host: HTMLElement) {
   renderer.setPixelRatio(pixelRatio);
   shading.setPixelRatio(pixelRatio);
   host.append(renderer.domElement);
-  renderer.domElement.setAttribute(
-    "aria-label",
-    "3D model. Drag to orbit, right or middle drag to pan, scroll to zoom.",
-  );
+  renderer.domElement.setAttribute("role", "application");
+  renderer.domElement.setAttribute("aria-roledescription", "3D viewport");
   renderer.domElement.tabIndex = 0;
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = false;
@@ -785,6 +784,24 @@ export function createViewer(host: HTMLElement) {
     section,
   });
   return {
+    nudge(n: Nudge) {
+      if (!model) return;
+      if (n.kind === "orbit") {
+        controls.rotateLeft(n.left);
+        controls.rotateUp(n.up);
+      } else {
+        const height = renderer.domElement.clientHeight;
+        controls.pan(n.x * height, n.y * height);
+      }
+      navigationStarted();
+    },
+    owns(target: EventTarget | null) {
+      return target === renderer.domElement;
+    },
+    describe(name: string, descriptionId: string) {
+      renderer.domElement.setAttribute("aria-label", `${name}, 3D viewport`);
+      renderer.domElement.setAttribute("aria-describedby", descriptionId);
+    },
     snapshot,
     activeCamera,
     keepPrevious(enabled: boolean) {

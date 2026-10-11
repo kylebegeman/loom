@@ -75,6 +75,7 @@ function renderer() {
       setAttribute: vi.fn(),
       remove: vi.fn(),
       tabIndex: 0,
+      clientHeight: 400,
       style: { cursor: "" },
     },
     setPixelRatio: vi.fn(),
@@ -112,6 +113,9 @@ beforeEach(() => {
     removeEventListener: (event: string) => {
       if (event === "change") change = undefined;
     },
+    rotateLeft: vi.fn(() => change?.()),
+    rotateUp: vi.fn(() => change?.()),
+    pan: vi.fn(() => change?.()),
     update: () => change?.(),
     dispose: vi.fn(),
   };
@@ -1021,5 +1025,32 @@ it("finds circles from model-space points regardless of camera and ignores retai
   viewer.setProjection("orthographic");
   viewer.setView("front");
   expect((await viewer.circleNear([1.7, 0, 4], 1))?.diameter).toBeCloseTo(fit!.diameter, 5);
+  viewer.dispose();
+});
+
+it("nudges only loaded geometry and coalesces keyboard navigation into one frame", () => {
+  const viewer = createViewer(host());
+  const control = doubles.controls as {
+    rotateLeft: ReturnType<typeof vi.fn>;
+    rotateUp: ReturnType<typeof vi.fn>;
+    pan: ReturnType<typeof vi.fn>;
+  };
+  viewer.nudge({ kind: "orbit", left: 0.2, up: 0.1 });
+  expect(control.rotateLeft).not.toHaveBeenCalled();
+  expect(viewer.owns(null)).toBe(false);
+  expect(viewer.owns(gpu.domElement as unknown as EventTarget)).toBe(true);
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), false);
+  flushFrame();
+  const navigate = vi.fn();
+  viewer.onNavigate(navigate);
+  viewer.nudge({ kind: "orbit", left: 0.2, up: 0.1 });
+  expect(control.rotateLeft).toHaveBeenCalledWith(0.2);
+  expect(control.rotateUp).toHaveBeenCalledWith(0.1);
+  viewer.nudge({ kind: "pan", x: 0.1, y: -0.1 });
+  expect(control.pan).toHaveBeenCalledWith(40, -40);
+  expect(navigate).toHaveBeenCalledTimes(2);
+  expect(frames.size).toBe(1);
+  flushFrame();
+  expect(frames.size).toBe(0);
   viewer.dispose();
 });

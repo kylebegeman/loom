@@ -32,6 +32,7 @@ let loads: { signal: AbortSignal; resolve: (model: Group) => void }[];
 function makeViewer() {
   return {
     snapshot: vi.fn(() => camera),
+    describe: vi.fn(),
     dispose: vi.fn(),
     setModel: vi.fn(),
     restore: vi.fn(),
