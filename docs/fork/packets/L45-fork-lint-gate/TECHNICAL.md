@@ -8,9 +8,11 @@ Two parts: make fork code lint-clean, then make `run_checks` keep it that way.
 
 None.
 
-## Current findings
+## Findings fixed
 
-`vp lint apps/web/src/fork` on 2026-10-10 (exit 1, 10 errors, 0 warnings). `apps/server/src/fork`,
+The initial scoped lint on 2026-10-10 reproduced ten errors and zero warnings. The table
+records their original locations; all ten have been fixed. The broader fork-path command used
+`--report-unused-disable-directives --deny-warnings`. `apps/server/src/fork`,
 `packages/contracts/src/fork`, `packages/client-runtime/src/fork`,
 `apps/web/src/routes/settings.loom.tsx` and `scripts/fork` are clean with `--deny-warnings`.
 
@@ -27,7 +29,7 @@ None.
 | `apps/web/src/fork/pcb-preview/SvgViewport.tsx:188`                                 | `t3code/no-raw-resize-observer`         | L24     |
 | `apps/web/src/fork/panel-picker/PanelPicker.tsx:37` (reported at the `<div>` on 33) | `t3code/require-centered-scroll-gutter` | L12     |
 
-The implementing agent reruns the command first; line numbers move.
+These are historical line numbers from the initial reproduction; source links remain in the table.
 
 ## Fix pattern per rule
 
@@ -50,7 +52,8 @@ receives `readonly ResizeObserverEntry[]` (`observeResize.ts:3`).
   `return observeResize(node, ([entry]) => setWidth(Math.round(entry?.contentRect.width ?? 0)));`.
 - `SvgViewport.tsx:186-191,207`: replace `const resize = new ResizeObserver(...)` and
   `resize.observe(node)` with `const stopResize = observeResize(node, ([entry]) => { ... })`
-  with the same body, and `resize.disconnect()` in the cleanup with `stopResize()`.
+  with the same body, and `resize.disconnect()` in the cleanup with its unsubscribe call.
+  The implementation names that function `stopObserving`.
 
 **`require-centered-scroll-gutter`** (`rules/require-centered-scroll-gutter.ts`, `error` in
 `vite.config.ts:176`). A scroller that centres its content shifts sideways when its scrollbar
@@ -75,8 +78,9 @@ fork_lint_paths() {
 
 check_fork_lint() {
   say "Linting fork code"
-  local paths=()
-  while IFS= read -r p; do paths+=("$p"); done < <(fork_lint_paths)
+  local path paths=()
+  while IFS= read -r path; do paths+=("$path"); done < <(fork_lint_paths)
+  [ "${#paths[@]}" -gt 0 ] || return 0
   pnpm exec vp lint --report-unused-disable-directives --deny-warnings "${paths[@]}" ||
     die "fork lint failed; fix the findings above (rules in oxlint-plugin-t3code/rules/)"
 }
@@ -85,11 +89,13 @@ check_fork_lint() {
 `run_checks` calls `check_fork_lint` right after `pnpm install --frozen-lockfile` and before the
 tests. The flags match the root `lint` script (`package.json:29`) plus `--deny-warnings`. The
 globs pick up a future `apps/desktop/src/fork` or `packages/shared/src/fork` with no edit; an
-unmatched glob stays literal and is skipped by the `-e` test. The header comment
+unmatched glob stays literal and is skipped by the `-e` test. If no paths exist, the gate
+returns without running lint, because an empty argument list would lint the whole repository.
+The header comment
 (`loom.sh:22-23`, "check runs the fork's checks") stays accurate.
 
-Because `cmd_integrate` calls `run_checks` (`loom.sh:473`), integration and the loom-upstream
-workflow's `--pr` path are gated too, per the recommendation in PRODUCT.md.
+Because `cmd_integrate` calls the same `run_checks`, integration and the loom-upstream
+workflow's `--pr` path are gated too.
 
 ## Clients
 

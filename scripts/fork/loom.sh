@@ -136,10 +136,31 @@ fork_tests() {
   git ls-files -- '*/fork/*.test.ts' '*/fork/*.test.tsx'
 }
 
+# Lint only fork-owned source. Skip unmatched globs so future fork directories
+# are included automatically without linting upstream source.
+fork_lint_paths() {
+  local path
+  for path in apps/*/src/fork packages/*/src/fork apps/web/src/routes/settings.loom*.tsx \
+    scripts/fork; do
+    if [ -e "$path" ]; then printf '%s\n' "$path"; fi
+  done
+}
+
+check_fork_lint() {
+  say "Linting fork code"
+  local path paths=()
+  while IFS= read -r path; do paths+=("$path"); done < <(fork_lint_paths)
+  # An empty path list would make vp lint the whole repository.
+  [ "${#paths[@]}" -gt 0 ] || return 0
+  pnpm exec vp lint --report-unused-disable-directives --deny-warnings "${paths[@]}" ||
+    die "fork lint failed; fix the findings above (rules in oxlint-plugin-t3code/rules/)"
+}
+
 run_checks() {
   check_seams
   say "Installing dependencies"
   pnpm install --frozen-lockfile
+  check_fork_lint
   say "Running the fork's tests"
   local tests=()
   while IFS= read -r t; do tests+=("$t"); done < <(fork_tests)

@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off - Exercises the maintenance shell script against isolated SQLite fixtures.
+// @effect-diagnostics nodeBuiltinImport:off - Exercises maintenance checks and database backups against isolated fixtures.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -103,4 +103,158 @@ it("removes the newer database when rolling back to a V1-only snapshot", () => {
   expect(history(NodePath.join(f.userdata, "state.sqlite"))).toBe("v1");
   expect(NodeFS.existsSync(NodePath.join(f.userdata, "statev2.sqlite"))).toBe(false);
   expect(history(NodePath.join(f.current, "state/statev2.sqlite"))).toBe("v2");
+});
+
+function lintFixture(paths: string[] = []) {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-fork-check-"));
+  roots.push(root);
+  for (const path of paths) {
+    const absolutePath = NodePath.join(root, path);
+    if (path.endsWith(".tsx")) {
+      NodeFS.mkdirSync(NodePath.dirname(absolutePath), { recursive: true });
+      NodeFS.writeFileSync(absolutePath, "");
+    } else {
+      NodeFS.mkdirSync(absolutePath, { recursive: true });
+    }
+  }
+  const bin = NodePath.join(root, "bin");
+  const log = NodePath.join(root, "calls.log");
+  NodeFS.mkdirSync(bin);
+  NodeFS.writeFileSync(
+    NodePath.join(bin, "pnpm"),
+    `#!/bin/bash
+printf '%s\\t' "$@" >> "$LOOM_TEST_LOG"
+printf '\\n' >> "$LOOM_TEST_LOG"
+if [ "$1" = exec ] && [ "$2" = vp ] && [ "$3" = lint ]; then
+  exit "$LOOM_TEST_LINT_STATUS"
+fi
+`,
+    { mode: 0o755 },
+  );
+  NodeFS.writeFileSync(log, "");
+  return { root, bin, log };
+}
+
+function runLint(f: ReturnType<typeof lintFixture>, command: string, lintStatus = 0) {
+  return NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-c",
+      `
+source "$LOOM_TEST_SCRIPT"
+cd "$LOOM_TEST_ROOT"
+export PATH="$LOOM_TEST_BIN:$PATH"
+check_seams() { printf 'seams\\n' >> "$LOOM_TEST_LOG"; }
+fork_tests() {
+  printf 'discover-tests\\n' >> "$LOOM_TEST_LOG"
+  printf 'apps/web/src/fork/example.test.ts\\n'
+}
+restore_lockfile() { printf 'restore-lockfile\\n' >> "$LOOM_TEST_LOG"; }
+TYPECHECK_DIRS=(packages/contracts)
+${command}
+`,
+    ],
+    {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOOM_TEST_SCRIPT: script,
+        LOOM_TEST_ROOT: f.root,
+        LOOM_TEST_BIN: f.bin,
+        LOOM_TEST_LOG: f.log,
+        LOOM_TEST_LINT_STATUS: String(lintStatus),
+      },
+    },
+  );
+}
+
+function lintCalls(f: ReturnType<typeof lintFixture>) {
+  return NodeFS.readFileSync(f.log, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.trimEnd().split("\t"));
+}
+
+it("discovers existing fork paths, including future surfaces and Loom routes", () => {
+  const paths = [
+    "apps/desktop/src/fork",
+    "apps/server/src/fork",
+    "apps/web/src/fork",
+    "packages/client-runtime/src/fork",
+    "packages/contracts/src/fork",
+    "packages/shared/src/fork",
+    "apps/web/src/routes/settings.loom.tsx",
+    "apps/web/src/routes/settings.loom.models.tsx",
+    "scripts/fork",
+  ];
+  const f = lintFixture([...paths, "apps/web/src/routes/settings.general.tsx", "apps/mobile/src"]);
+  const result = runLint(f, "fork_lint_paths");
+  expect(result.status).toBe(0);
+  expect(result.stdout.trim().split("\n").sort()).toEqual([...paths].sort());
+});
+
+it("passes strict lint flags and only existing paths to vp", () => {
+  const paths = ["apps/web/src/fork", "scripts/fork"];
+  const f = lintFixture(paths);
+  const result = runLint(f, "check_fork_lint");
+  expect(result.status).toBe(0);
+  expect(lintCalls(f)).toEqual([
+    ["exec", "vp", "lint", "--report-unused-disable-directives", "--deny-warnings", ...paths],
+  ]);
+});
+
+it("skips lint when no fork paths exist instead of linting the repository", () => {
+  const f = lintFixture();
+  const result = runLint(f, "check_fork_lint");
+  expect(result.status).toBe(0);
+  expect(lintCalls(f)).toEqual([]);
+});
+
+it("reports lint failure and exits unsuccessfully", () => {
+  const f = lintFixture(["scripts/fork"]);
+  const result = runLint(f, "check_fork_lint", 7);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("loom: fork lint failed; fix the findings above");
+});
+
+it("runs lint after installation and before tests, builds and typechecks", () => {
+  const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
+  const result = runLint(f, "run_checks");
+  expect(result.status).toBe(0);
+  expect(lintCalls(f)).toEqual([
+    ["seams"],
+    ["install", "--frozen-lockfile"],
+    [
+      "exec",
+      "vp",
+      "lint",
+      "--report-unused-disable-directives",
+      "--deny-warnings",
+      "apps/web/src/fork",
+      "scripts/fork",
+    ],
+    ["discover-tests"],
+    [
+      "exec",
+      "vp",
+      "test",
+      "run",
+      "--exclude",
+      "**/.claude/**",
+      "apps/web/src/fork/example.test.ts",
+    ],
+    ["exec", "vp", "build"],
+    ["run", "-s", "typecheck"],
+    ["restore-lockfile"],
+  ]);
+});
+
+it("stops run_checks before discovering or running tests when lint fails", () => {
+  const f = lintFixture(["apps/web/src/fork", "packages/contracts", "scripts/fork"]);
+  const result = runLint(f, "run_checks", 1);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain("loom: fork lint failed");
+  expect(lintCalls(f).map(([first]) => first)).toEqual(["seams", "install", "exec"]);
+  expect(lintCalls(f).at(-1)?.slice(0, 3)).toEqual(["exec", "vp", "lint"]);
 });

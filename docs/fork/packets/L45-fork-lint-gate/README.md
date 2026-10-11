@@ -1,14 +1,18 @@
 # L45: Fork lint gate
 
-Status: Ready to build
+Status: Implemented locally; client verification pending (`feat/model-zones-overhangs-lint`).
 
 Approved by Kyle on 2026-10-10.
 
-`scripts/fork/loom.sh check` lints every fork-owned path, so a lint error stops the check the
-same way a failing test does. Today ten lint errors sit in fork code unnoticed, because nothing
-the fork runs lints it: upstream's CI lint job (`vp check`) does not gate the fork, and
-`loom.sh check` runs seams, tests, the web build and typechecks only
-(`scripts/fork/loom.sh:139-159`). This packet fixes those ten errors and adds the gate.
+`scripts/fork/loom.sh check` now lints existing fork-owned source paths after dependency
+installation and before tests. The ten findings that prompted this packet are fixed without
+changing lint rules or adding suppressions. The shared `run_checks` path also gates upstream
+integration, including its unattended `--pr` workflow.
+
+The maintenance regressions and existing PCB viewport regressions passed: 11 tests across two
+files. Scoped lint on the eight UI files passed. Full `loom.sh check`, real-client interaction
+and upstream integration rehearsals were not run in this pass; see
+[TESTING.md](./TESTING.md#results).
 
 ## Scope
 

@@ -2,19 +2,37 @@
 
 Focused tests only, no repo-wide checks.
 
+## Results
+
+Implementation branch: `feat/model-zones-overhangs-lint`, 2026-10-10.
+
+| Check                                                | Result                                                                                   |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `scripts/fork/loom.test.ts`                          | Passed: 9 tests, including 6 gate fixtures and 3 preserved SQLite backup/rollback tests. |
+| `apps/web/src/fork/pcb-preview/SvgViewport.test.tsx` | Passed: 2 existing viewport regressions.                                                 |
+| Strict lint on the eight fixed web source files      | Passed with `--report-unused-disable-directives --deny-warnings`.                        |
+
+The full `scripts/fork/loom.sh check` was not run: it installs dependencies, runs all fork
+tests, builds the web client and typechecks its configured packages. Fixture tests prove its
+gate ordering and failure behavior without performing those operations. Browser/desktop
+interaction, a real resize observer callback, merge previews and upstream integration
+rehearsals remain unrun. The integrated batch's final lint and consumer typecheck evidence
+will be recorded after those checks complete.
+
 ## Automated tests
 
-`scripts/fork/loom.test.ts` (existing; picked up by `fork_tests` through `*/fork/*.test.ts`).
-Add a small helper beside `run()` that sources the script with `bash -c` and stubs `pnpm`,
+`scripts/fork/loom.test.ts` is picked up by `fork_tests` through `*/fork/*.test.ts`.
+Temporary repository fixtures source the script with `bash -c` and stub `pnpm`,
 `check_seams`, `fork_tests` and `restore_lockfile`, so nothing installs, builds or touches the
 real lockfile. Cases:
 
-| Case                                     | Covers                                                                                                                                                                                                               |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fork_lint_paths`                        | Lists `apps/web/src/fork`, `apps/server/src/fork`, `packages/contracts/src/fork`, `packages/client-runtime/src/fork`, `apps/web/src/routes/settings.loom.tsx` and `scripts/fork`; every listed path exists; exits 0. |
-| `check_fork_lint` passes flags and paths | A stub `pnpm` records its arguments: `exec vp lint --report-unused-disable-directives --deny-warnings` followed by the paths.                                                                                        |
-| `check_fork_lint` fails loudly           | A stub `pnpm` returning 1 makes the function exit 1 with `fork lint failed` on stderr.                                                                                                                               |
-| `run_checks` order                       | With stubs logging each call: install, then lint, then tests; with a failing lint, no test call is logged.                                                                                                           |
+| Case                                     | Covers                                                                                                                                                                              |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fork_lint_paths`                        | Lists only existing fork directories and Loom settings routes, including synthetic future desktop/shared paths and a second Loom route; skips unmatched globs and unrelated source. |
+| Empty path list                          | Does not invoke lint, avoiding an accidental repository-wide check.                                                                                                                 |
+| `check_fork_lint` passes flags and paths | A stub `pnpm` records its arguments: `exec vp lint --report-unused-disable-directives --deny-warnings` followed by the paths.                                                       |
+| `check_fork_lint` fails loudly           | A stub `pnpm` returning 1 makes the function exit 1 with `fork lint failed` on stderr.                                                                                              |
+| `run_checks` order                       | With stubs logging each call: install, then lint, then tests; with a failing lint, no test call is logged.                                                                          |
 
 The lint fixes themselves are proven by the lint command. The observer swap must keep the
 existing PCB tests green, notably `apps/web/src/fork/pcb-preview/SvgViewport.test.tsx` (it does
@@ -25,14 +43,14 @@ not stub `ResizeObserver`; `observeResize` is a no-op where the API is missing,
 
 ```sh
 vp test run scripts/fork/loom.test.ts
-vp test run apps/web/src/fork/pcb-preview
-vp lint --report-unused-disable-directives --deny-warnings apps/web/src/fork \
-  apps/server/src/fork packages/contracts/src/fork packages/client-runtime/src/fork \
-  apps/web/src/routes/settings.loom.tsx scripts/fork
+vp test run apps/web/src/fork/pcb-preview/SvgViewport.test.tsx
+bash -c 'source scripts/fork/loom.sh; check_fork_lint'
 vp run --filter @t3tools/web typecheck
 ```
 
-Then once, at the end: `scripts/fork/loom.sh check`.
+The gate-only command is safe after dependencies are present; it does not install or build.
+The full `scripts/fork/loom.sh check` is the complete integration check for a suitable clean
+checkout, not an additional focused check in this shared implementation pass.
 
 ## Manual check
 

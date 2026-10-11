@@ -174,9 +174,11 @@ Mobile changes also run `vp run lint:mobile`.
 
 A packet is only done if the next upstream merge still applies cleanly.
 
-1. While working on a branch, run `scripts/fork/loom.sh check`: the seam manifest, every
-   fork test (`*/fork/*.test.ts(x)` plus the branding tests) and the typechecks the upstream
-   merge runs. Then preview the merge without touching the worktree:
+1. For the complete integration check, run `scripts/fork/loom.sh check`: the seam manifest,
+   fork lint, every fork test (`*/fork/*.test.ts(x)` plus the branding tests), the web build
+   and the typechecks the upstream merge runs. During implementation, use focused checks
+   appropriate to the changed behavior; do not launch the full check in a shared dirty
+   checkout without reviewing its scope. Then preview the merge without touching the worktree:
 
    ```sh
    git fetch -q upstream --tags
@@ -194,15 +196,15 @@ A packet is only done if the next upstream merge still applies cleanly.
    scripts/fork/loom.sh integrate nightly --dry-run
    ```
 
-   It merges the newest nightly on a throwaway branch, checks the seams, runs the fork
-   tests and typechecks, builds the app, then discards everything. It needs a clean tree
+   It merges the newest nightly on a throwaway branch, checks the seams, lints fork code,
+   runs the fork tests, web build and typechecks, builds the app, then discards everything. It needs a clean tree
    and `main` equal to `origin/main`, so an agent on a packet branch cannot run it.
 
-### What `loom.sh` does not do yet
+### Remaining coverage
 
-- L23 adds a web build in `run_checks`, regenerating `apps/web/src/routeTree.gen.ts`
-  before the web typecheck (EXTENSION-POINTS.md, Settings).
-- `TYPECHECK_DIRS` leaves out `apps/mobile`. The first packet with mobile fork code adds it.
+`TYPECHECK_DIRS` leaves out `apps/mobile`. The first packet with mobile fork code adds it.
+The existing web build regenerates `apps/web/src/routeTree.gen.ts` before the web typecheck
+(EXTENSION-POINTS.md, Settings).
 
 ## Documentation
 
