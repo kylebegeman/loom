@@ -58,6 +58,7 @@ export type ForkSubscriptionRpcTag =
   | typeof PCB_PREVIEW_WS_METHODS.panelEvents
   | typeof PCB_PREVIEW_WS_METHODS.editorEvents
   | typeof PCB_PREVIEW_WS_METHODS.checkEvents
+  | typeof PCB_PREVIEW_WS_METHODS.turnDesignEvents
   | typeof PCB_PREVIEW_WS_METHODS.watch
   | typeof MODEL_PREVIEW_3D_WS_METHODS.panelEvents
   | typeof MODEL_PREVIEW_3D_WS_METHODS.editorEvents

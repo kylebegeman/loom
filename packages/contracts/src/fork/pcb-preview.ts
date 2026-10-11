@@ -8,6 +8,9 @@ import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import { EnvironmentAuthorizationError } from "../auth.ts";
 import {
+  CheckpointId,
+  RunId,
+  PositiveInt,
   IsoDateTime,
   NonNegativeInt,
   ProjectId,
@@ -16,6 +19,8 @@ import {
 } from "../baseSchemas.ts";
 
 export const PCB_PREVIEW_WS_METHODS = {
+  turnDesigns: "loom.pcb-preview.turnDesigns",
+  turnDesignEvents: "loom.pcb-preview.turnDesignEvents",
   pinMap: "loom.pcb-preview.pinMap",
   reuseHardware: "loom.pcb-preview.reuseHardware",
   status: "loom.pcb-preview.status",
@@ -49,6 +54,28 @@ export const PCB_PREVIEW_WS_METHODS = {
   watch: "loom.pcb-preview.watch",
   latestChecks: "loom.pcb-preview.latestChecks",
 } as const;
+
+export const PcbTurnDesign = Schema.Struct({
+  designId: TrimmedNonEmptyString,
+  kind: Schema.Literals(["kicad", "tscircuit"]),
+  name: Schema.String,
+  reason: Schema.Literals(["written", "dependency"]),
+  via: Schema.NullOr(Schema.String),
+});
+export type PcbTurnDesign = typeof PcbTurnDesign.Type;
+export const PcbTurnDesigns = Schema.Struct({
+  runId: Schema.NullOr(RunId),
+  checkpointId: Schema.NullOr(CheckpointId),
+  turn: Schema.NullOr(PositiveInt),
+  designs: Schema.Array(PcbTurnDesign).check(Schema.isMaxLength(20)),
+  truncated: Schema.Boolean,
+});
+export type PcbTurnDesigns = typeof PcbTurnDesigns.Type;
+export const PcbTurnDesignsInput = Schema.Struct({
+  threadId: ThreadId,
+  runId: Schema.NullOr(RunId),
+});
+export type PcbTurnDesignsInput = typeof PcbTurnDesignsInput.Type;
 
 export const PcbToolStatus = Schema.Struct({
   found: Schema.Boolean,
@@ -413,6 +440,17 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
     payload: PcbReadSheetInput,
     success: PcbReadSheetResult,
     error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.turnDesigns, {
+    payload: PcbTurnDesignsInput,
+    success: PcbTurnDesigns,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.turnDesignEvents, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: PcbTurnDesigns,
+    error: errors,
+    stream: true,
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.pinMap, {
     payload: PcbPinMapInput,

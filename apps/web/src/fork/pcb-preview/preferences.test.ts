@@ -9,6 +9,7 @@ it("keeps trust and selections from preferences saved before later fields existe
   const saved = JSON.stringify({ selections, trusted: ['["env","project"]'] });
   expect(decodePreferences(saved)).toEqual({
     selections,
+    agentDesigns: "offer",
     trusted: ['["env","project"]'],
     electronicsUrl: "",
     lengthUnit: "mm",

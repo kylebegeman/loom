@@ -1,3 +1,8 @@
+import type {
+  OrchestrationV2ThreadProjection,
+  OrchestrationV2Checkpoint,
+} from "@t3tools/contracts";
+import { RunId, CheckpointId } from "@t3tools/contracts";
 import { expect, it, describe } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -12,6 +17,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as PcbPreview from "./PcbPreviewService.ts";
 import * as Config from "../../config.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -145,7 +151,10 @@ const setup = Effect.gen(function* () {
   });
   const context = yield* Layer.build(Config.layerTest(root, state));
   const paths = yield* WorkspacePaths.make;
+  let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
+    getThreadRecords: () =>
+      Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
     getThread: () =>
       Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktree })),
   });
@@ -175,6 +184,10 @@ const setup = Effect.gen(function* () {
       Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
       Effect.provideService(WorkspaceEntries, entries),
       Effect.provideService(ProcessRunner, processRunner),
+      Effect.provideService(
+        ThreadManagementService,
+        partial<ThreadManagementService["Service"]>({ streamDomainEvents: Stream.empty }),
+      ),
       Effect.provideService(FileSystem.FileSystem, filesystem),
       Effect.provideService(HostProcess.Environment, {
         PATH: bin,
@@ -205,6 +218,9 @@ const setup = Effect.gen(function* () {
     },
     setBlock: (b: typeof block) => {
       block = b;
+    },
+    setCheckpoints: (values: readonly OrchestrationV2Checkpoint[]) => {
+      checkpointRecords = values;
     },
     setWorktree: (p: string) => {
       worktree = p;
@@ -1367,6 +1383,62 @@ it.effect(
             .pinMap({ ...input, save: { path: "symlink.h", overwrite: true } })
             .pipe(Effect.flip)).reason,
         ).toBe("invalid-parameters");
+      }),
+    ),
+);
+
+it.effect(
+  "turn design lookup uses real repository prefixes and reads the same sub-sheet sources as reload",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          native = yield* NativeProcesses.make().pipe(Effect.provide(NodeServices.layer));
+        const nested = t.path.join(t.root, "electronics");
+        yield* t.fs.makeDirectory(nested);
+        expect(
+          (yield* native.run({ command: "git", args: ["init", "--quiet"], cwd: t.root })).code,
+        ).toBe(0);
+        yield* t.fs.writeFileString(t.path.join(nested, "board.kicad_pro"), "{}");
+        yield* t.fs.writeFileString(t.path.join(nested, "board.kicad_pcb"), validBoard);
+        yield* t.fs.writeFileString(
+          t.path.join(nested, "board.kicad_sch"),
+          '(kicad_sch (sheet (property "Sheetfile" "power.kicad_sch")))',
+        );
+        yield* t.fs.writeFileString(t.path.join(nested, "power.kicad_sch"), "(kicad_sch)");
+        t.names.push("power.kicad_sch");
+        t.setWorktree(nested);
+        const checkpoint = (turn: number, file: string) =>
+          partial<OrchestrationV2Checkpoint>({
+            id: CheckpointId.make(`checkpoint-${turn}`),
+            runId: RunId.make(`run-${turn}`),
+            appRunOrdinal: turn,
+            status: "ready",
+            files: [partial<OrchestrationV2Checkpoint["files"][number]>({ path: file })],
+          });
+        t.setCheckpoints([
+          checkpoint(2, "electronics/README.md"),
+          checkpoint(1, "electronics/power.kicad_sch"),
+        ]);
+        const service = yield* t.create(
+          t.fs,
+          ProcessRunner.of({ run: (i) => (i.command === "git" ? native.run(i) : t.runner.run(i)) }),
+        );
+        const result = yield* service.turnDesigns({ threadId: t.input.threadId, runId: null });
+        expect(result.turn).toBe(1);
+        expect(result.designs).toEqual([
+          {
+            designId: "board.kicad_pro",
+            kind: "kicad",
+            name: "board",
+            reason: "dependency",
+            via: "power.kicad_sch",
+          },
+        ]);
+        expect(
+          (yield* service.turnDesigns({ threadId: t.input.threadId, runId: RunId.make("run-2") }))
+            .designs,
+        ).toEqual([]);
       }),
     ),
 );

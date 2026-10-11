@@ -1,7 +1,6 @@
 # L59: PCB follow agent
 
-Status: Needs decision: create the `ext-changed-files` extension point and the shared
-`turnFiles.ts` server module (both shared with L41).
+Status: Implemented locally. Focused checks pass; real-client and remote checks remain pending.
 
 Approved by Kyle on 2026-10-10.
 

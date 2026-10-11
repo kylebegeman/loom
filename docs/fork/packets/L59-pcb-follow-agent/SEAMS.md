@@ -1,8 +1,10 @@
 # L59 seams
 
-## Extension points created by this packet
+## Shared extension point
 
-`ext-changed-files` (EXTENSION-POINTS.md entry 18, to be added), unless L41 created it first.
+`ext-changed-files` (EXTENSION-POINTS.md entry 18) is implemented and shared with L41.
+`turnFiles.ts` already exists from L41 and is reused. Background tab opening is shared in
+`apps/web/src/fork/panels/backgroundSurfaces.ts`.
 Commit: `feat(fork): add the changed files card extension point`, containing only the files and
 lines below plus the EXTENSION-POINTS.md, FORK.md and `docs/fork/seams.tsv` updates.
 

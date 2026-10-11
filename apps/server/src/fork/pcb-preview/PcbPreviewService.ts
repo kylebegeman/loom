@@ -94,6 +94,9 @@ import {
 } from "./kicadReports.ts";
 import { parseKicadVersion, parseTsciVersion, circuitEnvironment, processLog } from "./tools.ts";
 
+import { makeTurnFiles } from "../turnFiles.ts";
+import { makeTurnDesigns } from "./turnDesigns.ts";
+import { isPcbSource } from "./sourceFiles.ts";
 import { makePinMap } from "./pinMap.ts";
 import { makeProjectSettings } from "./projectSettings.ts";
 import { makeAutoChecks, AUTO_CHECK_TIMEOUT } from "./autoChecks.ts";
@@ -160,6 +163,12 @@ export class PcbPreviewService extends Context.Service<
     readonly readSheet: (
       input: PcbReadSheetInput,
     ) => Effect.Effect<PcbReadSheetResult, PcbPreviewError>;
+    readonly turnDesigns: (
+      input: W.PcbTurnDesignsInput,
+    ) => Effect.Effect<W.PcbTurnDesigns, PcbPreviewError>;
+    readonly turnDesignEvents: (input: {
+      threadId: ThreadId;
+    }) => Stream.Stream<W.PcbTurnDesigns, PcbPreviewError>;
     readonly pinMap: (input: W.PcbPinMapInput) => Effect.Effect<W.PcbPinMapResult, PcbPreviewError>;
     readonly projectSettings: (
       input: PcbProjectSettingsInput,
@@ -528,6 +537,16 @@ export const make = Effect.gen(function* () {
       truncated: found.truncated,
     } satisfies PcbListDesignsResult;
   });
+  const resolveFound = Effect.fn("PcbPreview.resolveFound")(function* (
+    ws: Effect.Success<ReturnType<typeof workspace>>,
+    design: Effect.Success<ReturnType<typeof discover>>["designs"][number],
+    existingAbsolute?: string,
+  ) {
+    const absolute = existingAbsolute ?? (yield* safePath(ws.root, design.id));
+    const cwd =
+      design.kind === "tscircuit" ? yield* packageRoot(ws.root, absolute) : path.dirname(absolute);
+    return { ...ws, design, absolute, cwd };
+  });
   const resolveDesign = Effect.fn("PcbPreview.resolveDesign")(function* (input: {
     threadId: ThreadId;
     designId: string;
@@ -541,16 +560,15 @@ export const make = Effect.gen(function* () {
         "design-not-found",
         "The design is no longer in this workspace. Refresh the design list.",
       );
-    const cwd =
-      design.kind === "tscircuit" ? yield* packageRoot(ws.root, absolute) : path.dirname(absolute);
-    return { ...ws, design, absolute, cwd };
+    return yield* resolveFound(ws, design, absolute);
   });
   type ResolvedDesign = Effect.Success<ReturnType<typeof resolveDesign>>;
   const sourceSnapshot = Effect.fn("PcbPreview.sourceSnapshot")(function* (
     resolved: ResolvedDesign,
   ) {
     const dirs: string[] = [],
-      records: string[] = [];
+      records: string[] = [],
+      files: string[] = [];
     const excludedOutputs = yield* Effect.forEach(
       [path.join(resolved.root, ".loom", "pcb-references"), path.join(resolved.root, "fab")],
       (directory) => fs.realPath(directory).pipe(Effect.orElseSucceed(() => directory)),
@@ -589,14 +607,7 @@ export const make = Effect.gen(function* () {
             "source-limit",
             "This workspace is too large to scan for PCB dependencies. Preview a smaller workspace.",
           );
-        const relevant =
-          resolved.design.kind === "tscircuit"
-            ? /\.(?:[cm]?[jt]sx?|json|svg|dxf|png|jpe?g|csv|txt|obj|stl|3mf|glb|gltf|bin)$/i.test(
-                child,
-              )
-            : /\.(?:kicad_(?:sch|pcb|pro|dru|sym|mod)|lib|dcm|wks)$/.test(child) ||
-              child === "sym-lib-table" ||
-              child === "fp-lib-table";
+        const relevant = isPcbSource(resolved.design.kind, child);
         if (!relevant) continue;
         if (records.length >= SOURCE_LIMIT)
           return yield* failure(
@@ -629,6 +640,7 @@ export const make = Effect.gen(function* () {
             queue.push(target?.type === "Directory" ? candidate : path.dirname(candidate));
           }
         }
+        files.push(path.relative(resolved.root, canonical).split(path.sep).join("/"));
         records.push(
           encodeJson([
             path.relative(resolved.root, canonical),
@@ -639,7 +651,7 @@ export const make = Effect.gen(function* () {
         );
       }
     }
-    return { dirs, sourceHash: hashKey(...records.sort()) };
+    return { dirs, sourceHash: hashKey(...records.sort()), files: [...new Set(files)].sort() };
   });
   const byteSize = Effect.fn("PcbPreview.byteSize")(function* (directory: string) {
     let bytes = 0;
@@ -2834,6 +2846,25 @@ export const make = Effect.gen(function* () {
         );
       }),
     );
+  const turnFiles = yield* makeTurnFiles;
+  const turnDesignMethods = makeTurnDesigns({
+    workspace: (threadId) => checked(workspace(threadId)),
+    discover: (root) =>
+      checked(
+        entries.refresh(root).pipe(
+          Effect.andThen(discover(root)),
+          Effect.map((d) => d.designs),
+        ),
+      ),
+    snapshotFiles: (ws, design) =>
+      checked(
+        resolveFound(ws, design).pipe(
+          Effect.flatMap(sourceSnapshot),
+          Effect.map((snapshot) => snapshot.files),
+        ),
+      ),
+    turnFiles,
+  });
   const pinMap = yield* makePinMap({
     inspect: (i) => checked(inspect(i)),
     root: (i) => checked(workspace(i.threadId)).pipe(Effect.map((w) => w.root)),
@@ -2848,6 +2879,15 @@ export const make = Effect.gen(function* () {
       ),
   });
   return PcbPreviewService.of({
+    ...turnDesignMethods,
+    turnDesignEvents: (i) =>
+      turnDesignMethods
+        .turnDesignEvents(i)
+        .pipe(
+          Stream.mapError(() =>
+            failure("watch-failed", "PCB turn changes could not be followed. Reopen the thread."),
+          ),
+        ),
     pinMap,
     resolveSignedRequest: (token, relative) => checked(resolveSignedRequest(token, relative)),
     workspaceUpdates: (i) =>

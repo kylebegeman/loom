@@ -48,6 +48,20 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
   });
   return {
     pinMap: createEnvironmentRpcCommand(runtime, { label: "loom:pcb-pin-map", tag: M.pinMap }),
+    turnDesigns: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:pcb-turn-designs",
+      tag: M.turnDesigns,
+      staleTimeMs: 0,
+    }),
+    loadTurnDesigns: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-turn-designs-load",
+      tag: M.turnDesigns,
+    }),
+    turnDesignEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:pcb-turn-design-events",
+      tag: M.turnDesignEvents,
+      idleTtlMs: 0,
+    }),
     projectSettings,
     updateProjectSettings: createEnvironmentRpcCommand(runtime, {
       label: "loom:pcb-project-settings-save",

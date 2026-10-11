@@ -4,6 +4,7 @@ import { modelFormatOf, type AgentModelsMode, type TurnModels } from "@t3tools/c
 import { create } from "zustand";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { toastManager } from "~/components/ui/toast";
+import { addBackgroundSurfaces, openAutomaticSurfaces } from "../panels/backgroundSurfaces";
 import { forkPanelSurface } from "../panels/registry";
 import { useAgentModelMarks } from "./agentModelMarks";
 import { models, runModelCommand } from "./state";
@@ -56,24 +57,10 @@ export function hasModelTab(threadRef: ScopedThreadRef): boolean {
 }
 
 export function addBackgroundModelTabs(threadRef: ScopedThreadRef, paths: readonly string[]) {
-  const surfaces = [...new Set(paths)].slice(0, MAX_AGENT_MODEL_TABS).map(modelSurface);
-  // Only an already-open panel can receive tabs without its visibility bookkeeping changing.
-  // Automatic additions must not advance userActionRevision, which protects proactive diff.
-  useRightPanelStore.setState((state) => {
-    const key = scopedThreadKey(threadRef);
-    const current = state.byThreadKey[key];
-    if (!current?.isOpen) return state;
-    const added = surfaces.filter(
-      (surface) => !current.surfaces.some((entry) => entry.id === surface.id),
-    );
-    if (!added.length) return state;
-    return {
-      byThreadKey: {
-        ...state.byThreadKey,
-        [key]: { ...current, surfaces: [...current.surfaces, ...added] },
-      },
-    };
-  });
+  addBackgroundSurfaces(
+    threadRef,
+    [...new Set(paths)].slice(0, MAX_AGENT_MODEL_TABS).map(modelSurface),
+  );
 }
 
 /** Focus opens the first model as a user choice; all remaining models stay in the background. */
@@ -92,35 +79,10 @@ export function openModels(
 
 /** Auto-open is app state, so a later proactive diff remains eligible for this same turn. */
 function openModelsAutomatically(threadRef: ScopedThreadRef, paths: readonly string[]) {
-  const surfaces = [...new Set(paths)].slice(0, MAX_AGENT_MODEL_TABS).map(modelSurface);
-  if (!surfaces.length) return;
-  useRightPanelStore.setState((state) => {
-    const key = scopedThreadKey(threadRef);
-    const current = state.byThreadKey[key];
-    const added = surfaces.filter(
-      (surface) => !current?.surfaces.some((entry) => entry.id === surface.id),
-    );
-    const visibility = state.threadPanelVisibilityByThreadKey[key];
-    let visibilityMap = state.threadPanelVisibilityByThreadKey;
-    // Match the store's closed-to-open transition: close the floating panel, retain inline preference.
-    if (!current?.isOpen && visibility?.popoverOpen) {
-      visibilityMap = { ...visibilityMap };
-      if (visibility.inlineOpen) delete visibilityMap[key];
-      else visibilityMap[key] = { ...visibility, popoverOpen: false };
-    }
-    return {
-      byThreadKey: {
-        ...state.byThreadKey,
-        [key]: {
-          ...current,
-          isOpen: true,
-          activeSurfaceId: surfaces[0]!.id,
-          surfaces: [...(current?.surfaces ?? []), ...added],
-        },
-      },
-      threadPanelVisibilityByThreadKey: visibilityMap,
-    };
-  });
+  openAutomaticSurfaces(
+    threadRef,
+    [...new Set(paths)].slice(0, MAX_AGENT_MODEL_TABS).map(modelSurface),
+  );
 }
 
 export function openTurnModels(threadRef: ScopedThreadRef, result: TurnModels) {

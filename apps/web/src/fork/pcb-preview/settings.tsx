@@ -56,6 +56,8 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
     info = asyncValue(result);
   const saved = usePcbPreferences((s) => s.electronicsUrl),
     save = usePcbPreferences((s) => s.setElectronicsUrl);
+  const mode = usePcbPreferences((s) => s.agentDesigns),
+    setMode = usePcbPreferences((s) => s.setAgentDesigns);
   const unit = useLengthUnit();
   const setUnit = usePcbPreferences((s) => s.setLengthUnit);
   const [url, setUrl] = useState(saved),
@@ -100,6 +102,21 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
           </Button>
         </div>
       </div>
+      <SettingsRow
+        title="When an agent changes a design"
+        description="Offer changed designs or open them in the PCB panel. Saved on this device."
+        control={
+          <select
+            aria-label="When an agent changes a design"
+            value={mode}
+            onChange={(e) => setMode(e.target.value as "offer" | "open" | "off")}
+          >
+            <option value="offer">Offer to open</option>
+            <option value="open">Open automatically</option>
+            <option value="off">Do nothing</option>
+          </select>
+        }
+      />
       <SettingsRow
         title="Electronics app URL"
         description="Optional deep link for opening designs. Saved on this device."

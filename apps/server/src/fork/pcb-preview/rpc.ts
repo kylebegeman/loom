@@ -7,6 +7,8 @@ export const makePcbPreviewRpcHandlers = (auth: ForkRpcAuth) =>
   Effect.gen(function* () {
     const service = yield* PcbPreview.PcbPreviewService;
     return PcbPreviewRpcGroup.of({
+      [M.turnDesigns]: (i) => auth.effect(M.turnDesigns, service.turnDesigns(i)),
+      [M.turnDesignEvents]: (i) => auth.stream(M.turnDesignEvents, service.turnDesignEvents(i)),
       [M.pinMap]: (i) => auth.effect(M.pinMap, service.pinMap(i)),
       [M.reuseHardware]: (i) => auth.effect(M.reuseHardware, service.reuseHardware(i)),
       [M.workspaceUpdates]: (i) => auth.stream(M.workspaceUpdates, service.workspaceUpdates(i)),

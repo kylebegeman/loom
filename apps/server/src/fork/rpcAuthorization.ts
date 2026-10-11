@@ -19,6 +19,8 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [P.turnDesigns]: AuthOrchestrationReadScope,
+  [P.turnDesignEvents]: AuthOrchestrationReadScope,
   [P.pinMap]: AuthOrchestrationOperateScope,
   [P.reuseHardware]: AuthOrchestrationOperateScope,
   [P.inspect]: AuthTerminalOperateScope,

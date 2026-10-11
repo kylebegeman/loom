@@ -8,6 +8,8 @@ import * as Path from "effect/Path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ProjectId, ThreadId, type OrchestrationV2AppThread } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Stream from "effect/Stream";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as PcbPreview from "./PcbPreviewService.ts";
 import * as Config from "../../config.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -49,6 +51,10 @@ realTest(
           Effect.provide(context),
           Effect.provideService(WorkspacePaths.WorkspacePaths, paths),
           Effect.provideService(ProcessRunner.ProcessRunner, runner),
+          Effect.provideService(
+            ThreadManagementService,
+            partial<ThreadManagementService["Service"]>({ streamDomainEvents: Stream.empty }),
+          ),
           Effect.provideService(
             ProjectionStore.ProjectionStoreV2,
             partial<ProjectionStore.ProjectionStoreV2["Service"]>({
