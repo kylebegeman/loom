@@ -11,6 +11,7 @@ import type {
   ModelQuaternion,
   ModelWall,
   PrintFinding,
+  AssemblyRegion,
 } from "@t3tools/contracts/fork";
 import {
   ACESFilmicToneMapping,
@@ -21,6 +22,7 @@ import {
   Raycaster,
   BufferGeometry,
   Line,
+  Points,
   LineLoop,
   Triangle,
   LineBasicMaterial,
@@ -53,6 +55,7 @@ import { markerScale, syncOrthographic } from "./projection";
 import { createReference, placeReference } from "./references";
 import { createOverhangShading } from "./overhangs";
 import { createZoneStrips } from "./zones";
+import { createLayers, type LayerData } from "./layers";
 import { createGhost, GHOST_TRIANGLE_LIMIT } from "./ghost";
 import { buildTopologies } from "./snapTopology";
 import {
@@ -286,6 +289,7 @@ export function createViewer(host: HTMLElement) {
           material.clippingPlanes = section.enabled ? [plane] : [];
     });
     previous?.setClipping(section.enabled ? [plane] : []);
+    comparison?.setClipping(section.enabled ? [plane] : []);
     if (faceHighlight && faceHighlight.material instanceof MeshBasicMaterial)
       faceHighlight.material.clippingPlanes = section.enabled ? [plane] : [];
     sectionGeometry = null;
@@ -328,10 +332,11 @@ export function createViewer(host: HTMLElement) {
       faceIndex: (hit.faceIndex ?? -1) + (hit.instanceId ?? 0) * triangles,
     };
   };
+  let onObjectPick: ((object: Object3D | null) => void) | null = null;
   let picked: ModelPoint[] = [];
   let down: { x: number; y: number } | null = null;
   const pointerDown = (event: PointerEvent) => {
-    if (!pickMode || event.button !== 0) return;
+    if ((!pickMode && !onObjectPick) || event.button !== 0) return;
     renderer.domElement.focus();
     down = { x: event.clientX, y: event.clientY };
     const point = pick(event);
@@ -528,7 +533,14 @@ export function createViewer(host: HTMLElement) {
       picked.push(worldToModel(new Vector3(...point)));
   };
   const pointerUp = (event: PointerEvent) => {
-    if (!down || !pickMode) return;
+    if (!down) return;
+    if (!pickMode) {
+      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5)
+        onObjectPick?.(pick(event)?.mesh ?? null);
+      down = null;
+      picked = [];
+      return;
+    }
     if (pickMode === "annotate") {
       if (picked.length) onPick?.(picked);
     } else if (pickMode === "lay-flat") {
@@ -792,6 +804,13 @@ export function createViewer(host: HTMLElement) {
     ghosts = new Group();
   ghosts.name = "model-ghosts";
   scene.add(helpers, ghosts);
+  const comparisonRoot = new Group();
+  orientationRoot.add(comparisonRoot);
+  const layerPaths = createLayers(() => requestRender());
+  scene.add(layerPaths.object);
+  let layerData: LayerData | null = null,
+    selectedLayer = 0;
+  let comparison: ReturnType<typeof createGhost> | null = null;
   let keep = false,
     previous: ReturnType<typeof createGhost> | null = null,
     previousShown = false,
@@ -807,6 +826,13 @@ export function createViewer(host: HTMLElement) {
     referenceKind: ScaleReference = "none",
     overhangPositions: Float32Array | null = null,
     unsupportedMaterials = false;
+  const placeLayers = () => {
+    if (layerData && model && layerPaths.object.geometry.boundingBox) {
+      const center = box.getCenter(new Vector3()),
+        pathCenter = layerPaths.object.geometry.boundingBox.getCenter(new Vector3());
+      layerPaths.object.position.set(center.x - pathCenter.x, center.y - pathCenter.y, box.min.z);
+    }
+  };
   const updateSceneRadius = () => {
     const bounds = box.clone();
     if (bed) bounds.union(new Box3().setFromObject(bed.object));
@@ -953,6 +979,7 @@ export function createViewer(host: HTMLElement) {
     bed?.setTheme(dark);
     shading.setTheme(dark);
     previous?.setTheme(dark);
+    comparison?.setTheme(dark);
     updateCaps();
     requestRender();
   };
@@ -989,6 +1016,7 @@ export function createViewer(host: HTMLElement) {
     footprint: readonly [number, number],
     pattern: BuildPlatePattern,
     strips: readonly ZoneRect[] = [],
+    shape: "rectangle" | "round" = "rectangle",
   ) => {
     if (bed) {
       helpers.remove(bed.object);
@@ -1000,7 +1028,7 @@ export function createViewer(host: HTMLElement) {
       for (const material of Array.isArray(axes.material) ? axes.material : [axes.material])
         material.dispose();
     }
-    bed = createBed(footprint[0], footprint[1], pattern);
+    bed = createBed(footprint[0], footprint[1], pattern, shape);
     if (strips.length) {
       const zones = createZoneStrips(footprint, strips);
       bed.object.add(zones.object);
@@ -1189,6 +1217,51 @@ export function createViewer(host: HTMLElement) {
         findingMarks.push({ finding, number: index + 1, element });
       }
       placeFindings();
+      requestRender();
+    },
+    setAssemblyPins(
+      regions: readonly AssemblyRegion[],
+      closest: { a: ModelPoint; b: ModelPoint } | null,
+      measurements: readonly ModelMeasurement[] = [],
+      annotations: readonly OverlayAnnotation[] = [],
+      pendingPoint: ModelPoint | null = null,
+    ) {
+      drawOverlay(
+        [
+          ...measurements,
+          ...(closest
+            ? [
+                {
+                  id: "assembly-clearance",
+                  name: "Clearance",
+                  sourceRevision: "",
+                  kind: "distance" as const,
+                  visible: true,
+                  start: closest.a,
+                  end: closest.b,
+                },
+              ]
+            : []),
+        ],
+        annotations,
+        pendingPoint,
+      );
+      for (const [index, region] of regions.entries()) {
+        dot(region.point);
+        addMark("pin", String(index + 1), new Vector3(...region.point), { status: "open" });
+      }
+      requestRender();
+    },
+    frameBounds(min: ModelPoint, max: ModelPoint) {
+      const bounds = new Box3(new Vector3(...min), new Vector3(...max)),
+        center = bounds.getCenter(new Vector3()),
+        direction = camera.position.clone().sub(controls.target).normalize();
+      controls.target.copy(center);
+      camera.position
+        .copy(center)
+        .addScaledVector(direction, fitDistance(bounds, camera.fov, camera.aspect));
+      camera.updateProjectionMatrix();
+      controls.update();
       requestRender();
     },
     frameFinding(finding: PrintFinding) {
@@ -1448,6 +1521,58 @@ export function createViewer(host: HTMLElement) {
       restoring = false;
       requestRender();
     },
+    onObjectPick(callback: ((object: Object3D | null) => void) | null) {
+      onObjectPick = callback;
+    },
+    setLayers(data: LayerData | null) {
+      layerData = data;
+      layerPaths.set(data);
+      layerPaths.showThrough(selectedLayer);
+      if (model) model.visible = data === null;
+      placeLayers();
+      requestRender();
+    },
+    showLayersThrough(index: number) {
+      selectedLayer = index;
+      layerPaths.showThrough(index);
+    },
+    setCompareModel(next: Object3D | null) {
+      comparison ??= createGhost(comparisonRoot, requestRender);
+      comparison.setTheme(dark);
+      if (next) {
+        const clone = next.clone(true);
+        clone.traverse((node) => {
+          if (node instanceof Mesh || node instanceof Line || node instanceof Points) {
+            node.geometry = node.geometry.clone();
+            node.material = new MeshBasicMaterial();
+          }
+        });
+        comparison.set(clone);
+      } else comparison.set(null);
+      comparison.setVisible(next !== null);
+      comparison.setClipping(section.enabled ? [plane] : []);
+    },
+    refreshModel() {
+      if (!model) return null;
+      currentStats = null;
+      authoredBox = new Box3().setFromObject(model, true);
+      orientationIndex = null;
+      resetSnapping();
+      applyOrientationRoot();
+      const stats = orientedStats(true)!;
+      box = stats.box;
+      modelTriangles = stats.triangles;
+      overhangPositions = null;
+      shading.setBedZ(box.min.z);
+      sectionGeometry = null;
+      caps.setModel(model, (mesh) => closedHint === true || closedMeshGeometry(mesh.geometry));
+      applyWireframe();
+      applySection();
+      placeBed();
+      updateSceneRadius();
+      requestRender();
+      return stats;
+    },
     setModel(next: Object3D, keepCamera: boolean) {
       let stats: ReturnType<typeof meshStats>;
       try {
@@ -1480,12 +1605,14 @@ export function createViewer(host: HTMLElement) {
       orientationIndex = null;
       sectionGeometry = null;
       model = next;
+      model.visible = layerData === null;
       currentStats = null;
       authoredBox = new Box3().setFromObject(next, true);
       orientationRoot.add(model);
       applyOrientationRoot();
       modelTriangles = stats.triangles;
       box = orientedStats()!.box;
+      placeLayers();
       overhangPositions = null;
       unsupportedMaterials = false;
       shading.setBedZ(box.min.z);
@@ -1674,6 +1801,8 @@ export function createViewer(host: HTMLElement) {
       orientationIndex = null;
       if (model) disposeModel(model);
       previous?.dispose();
+      comparison?.dispose();
+      layerPaths.dispose();
       previousAvailable = false;
       overhangPositions = null;
       bed?.dispose();

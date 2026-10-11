@@ -1,5 +1,11 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 export type ModelAction =
+  | "toggle-history"
+  | "history-earlier"
+  | "history-later"
+  | "toggle-layers"
+  | "estimate-print"
+  | "toggle-explode"
   | "auto-lay-flat"
   | "reset-orientation"
   | "print-check"

@@ -4,9 +4,6 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import * as Fiber from "effect/Fiber";
-import * as Cause from "effect/Cause";
-import * as Exit from "effect/Exit";
 import * as Semaphore from "effect/Semaphore";
 import * as DateTime from "effect/DateTime";
 import type * as Scope from "effect/Scope";
@@ -20,6 +17,7 @@ import {
   type ModelFileRef,
   type ModelWorkspace,
   type ModelPreviewSettings,
+  type PrinterLibrary,
   type PrintCheckOptions,
   type PrintCheckResult,
   type ScadRenderInput,
@@ -29,6 +27,7 @@ import { makeSharedJobs } from "../../sharedJobs.ts";
 import { isContained } from "../signedFiles.ts";
 import { finalizeReport } from "./report.ts";
 import { read3mfParts } from "./readFiles.ts";
+import { makeCheckCoordinator, type CheckCoordinator } from "./coordinator.ts";
 import { runCheckWorker } from "./workerHost.ts";
 import type { CheckFile, CheckRequest, PrintCheckCore } from "./protocol.ts";
 const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -49,22 +48,22 @@ export const makePrintChecker = (deps: {
   metadata: (info: FileSystem.File.Info) => { revision: string };
   getWorkspace: (file: ModelFileRef) => Effect.Effect<ModelWorkspace, ModelPreviewError>;
   getSettings: () => ModelPreviewSettings;
+  getPrinterLibrary?: () => Effect.Effect<PrinterLibrary, ModelPreviewError>;
   renderScad: (input: ScadRenderInput) => Effect.Effect<ScadRenderResult, ModelPreviewError>;
   protectStem: (stem: string) => Effect.Effect<unknown, never, Scope.Scope>;
   cacheDir: string;
   runWorker?: typeof runCheckWorker;
+  coordinator?: CheckCoordinator;
 }) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem,
       path = yield* Path.Path,
-      scope = yield* Effect.scope,
-      slot = yield* Semaphore.make(1),
+      coordinator = deps.coordinator ?? (yield* makeCheckCoordinator),
       scadSlot = yield* Semaphore.make(1),
       manifestLock = yield* Semaphore.make(1),
       jobs = yield* makeSharedJobs<CompletedCheck, ModelPreviewError>(),
       renders = yield* makeSharedJobs<ScadRenderResult, ModelPreviewError>();
-    const cache = new Map<string, CompletedCheck>(),
-      requests = new Map<string, Fiber.Fiber<PrintCheckResult, ModelPreviewError>>();
+    const cache = new Map<string, CompletedCheck>();
     const manifests = new Map<string, { revision: string; uris: readonly string[] }>();
     const manifestUris = Effect.fn("ModelPrintCheck.manifest")(
       function* (absolute: string, format: CheckRequest["format"], revision: string) {
@@ -191,11 +190,6 @@ export const makePrintChecker = (deps: {
     const work = Effect.fn("ModelPrintCheck.check")(function* (input: Input) {
       const initial = yield* deps.resolveFile(input.file),
         kind = modelFormatOf(input.file.path);
-      if (kind === "step")
-        return yield* failure(
-          "unsupported-format",
-          "Print checks need a mesh. STEP files belong in the Fabrication app.",
-        );
       if (!kind) return yield* failure("unsupported-format", "Choose a printable mesh file.");
       const settings = deps.getSettings(),
         maxBytes = input.allowLarge ? 512 * 1024 * 1024 : settings.maxFileMegabytes * 1024 * 1024;
@@ -207,7 +201,7 @@ export const makePrintChecker = (deps: {
       let revision: string,
         format: CheckRequest["format"],
         renderedPath: string | null = null;
-      if (kind === "scad") {
+      if (kind === "scad" || kind === "build123d" || kind === "step") {
         const renderKey = json([
             initial.absolute,
             input.overrides ?? {},
@@ -237,9 +231,12 @@ export const makePrintChecker = (deps: {
         format = kind;
         revision = deps.metadata(initial.info).revision;
       }
+      const library = deps.getPrinterLibrary ? yield* deps.getPrinterLibrary() : undefined;
+      const selectedBed = activeBed(settings.buildPlate, { library });
+      const printerNozzle = selectedBed.nozzlesMm[0];
       const workspace = yield* deps.getWorkspace(input.file),
         orientation = workspace.orientation?.quaternion ?? null,
-        nozzle = settings.nozzleDiameterMm,
+        nozzle = printerNozzle ?? settings.nozzleDiameterMm,
         dependencies = yield* bufferRevisions(initial.absolute, format, initial.root, revision),
         keyFor = (revision: string, dependencies: readonly (readonly [string, string])[]) =>
           NodeCrypto.createHash("sha256")
@@ -265,7 +262,7 @@ export const makePrintChecker = (deps: {
       } else {
         completed = yield* jobs.run(
           key,
-          slot.withPermit(
+          coordinator.withPermit(
             Effect.gen(function* () {
               // The shared lease owns IO too: concurrent callers never duplicate large buffers.
               let files: CheckFile[] = [],
@@ -342,7 +339,7 @@ export const makePrintChecker = (deps: {
         );
       }
       const core = completed.core;
-      const bed = activeBed(deps.getSettings().buildPlate),
+      const bed = activeBed(deps.getSettings().buildPlate, { library }),
         { fit } = fitBed(core.summary.sizeMm, bed);
       return {
         status: "ok",
@@ -352,7 +349,7 @@ export const makePrintChecker = (deps: {
           cached,
           settings: {
             nozzleMm: nozzle,
-            nozzleSource: "setting",
+            nozzleSource: printerNozzle === undefined ? "setting" : "printer",
             overhangAngleDegrees: settings.overhangAngleDegrees,
             firstLayerMm: settings.firstLayerHeightMm,
             minWallMm: 2 * nozzle,
@@ -366,40 +363,18 @@ export const makePrintChecker = (deps: {
         }),
       } satisfies PrintCheckResult;
     });
-    const checkPrint = Effect.fn("ModelPrintCheck.request")(function* (input: Input) {
-      const fiber = yield* Effect.scoped(work(input)).pipe(
+    const checkPrint = Effect.fn("ModelPrintCheck.request")((input: Input) =>
+      coordinator.request(
+        input,
+        work(input).pipe(
           Effect.mapError((cause) =>
             isModelPreviewError(cause)
               ? cause
               : failure("command-failed", "Could not read this model for print checks."),
           ),
-          Effect.forkIn(scope),
         ),
-        key = `${input.file.threadId}\0${input.file.path}\0${input.requestId ?? NodeCrypto.randomUUID()}`;
-      if (input.requestId) {
-        const previous = requests.get(key);
-        requests.set(key, fiber);
-        if (previous) yield* Fiber.interrupt(previous);
-      }
-      const result = yield* Effect.exit(Fiber.join(fiber)).pipe(
-        Effect.onInterrupt(() => Fiber.interrupt(fiber)),
-        Effect.ensuring(
-          Effect.sync(() => {
-            if (requests.get(key) === fiber) requests.delete(key);
-          }),
-        ),
-      );
-      if (Exit.isSuccess(result)) return result.value;
-      if (Cause.hasInterrupts(result.cause))
-        return { status: "cancelled", report: null } satisfies PrintCheckResult;
-      return yield* Effect.failCause(result.cause);
-    });
-    const cancelPrintCheck = (input: { file: ModelFileRef; requestId: string }) =>
-      Effect.gen(function* () {
-        const fiber = requests.get(
-          `${input.file.threadId}\0${input.file.path}\0${input.requestId}`,
-        );
-        if (fiber) yield* Fiber.interrupt(fiber);
-      });
+      ),
+    );
+    const cancelPrintCheck = coordinator.cancel;
     return { checkPrint, cancelPrintCheck };
   });

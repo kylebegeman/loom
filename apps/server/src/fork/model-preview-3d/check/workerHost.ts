@@ -3,29 +3,28 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeWorkerThreads from "node:worker_threads";
 import * as Effect from "effect/Effect";
 import { ModelPreviewError } from "@t3tools/contracts/fork";
-import type { CheckReply, CheckRequest } from "./protocol.ts";
-let bundledSource: URL | undefined;
-const source = () =>
-  Effect.tryPromise({
-    try: async () => {
-      if (import.meta.url.endsWith(".ts"))
-        return new URL("./model-check-worker.ts", import.meta.url);
-      if (bundledSource) return bundledSource;
-      const bytes = await NodeFSP.readFile(
-        new URL("./fork/model-preview-3d/check/model-check-worker.mjs", import.meta.url),
-      );
-      bundledSource = new URL(`data:text/javascript;base64,${bytes.toString("base64")}`);
-      return bundledSource;
-    },
-    catch: () =>
-      new ModelPreviewError({
-        reason: "unavailable",
-        message: "Print checks are not available in this build.",
-      }),
-  });
+import type {
+  CheckReply,
+  CheckRequest,
+  WorkerRequest,
+  WorkerReply,
+  AssemblyWorkerRequest,
+  AssemblyWorkerReply,
+  BoundsRequest,
+  BoundsReply,
+} from "./protocol.ts";
+/** Keep the bundled worker on disk so its shared chunk imports retain a file base URL. */
+export const checkWorkerUrl = (moduleUrl = import.meta.url) =>
+  new URL(
+    moduleUrl.endsWith(".ts")
+      ? "./model-check-worker.ts"
+      : "./fork/model-preview-3d/check/model-check-worker.mjs",
+    moduleUrl,
+  );
+const source = () => Effect.sync(() => checkWorkerUrl());
 /** One worker owns one check. Termination is awaited on success, timeout and interruption. */
-export const runCheckWorker = (
-  request: CheckRequest,
+const runWorker = (
+  request: WorkerRequest,
   options: {
     timeoutMs?: number;
     workerUrl?: URL;
@@ -58,8 +57,8 @@ export const runCheckWorker = (
       (w) => Effect.promise(() => w.terminate()).pipe(Effect.asVoid),
     );
     options.onWorker?.(worker);
-    const reply = Effect.callback<CheckReply, ModelPreviewError>((resume) => {
-      const message = (value: CheckReply) => resume(Effect.succeed(value)),
+    const reply = Effect.callback<WorkerReply, ModelPreviewError>((resume) => {
+      const message = (value: WorkerReply) => resume(Effect.succeed(value)),
         error = () =>
           resume(
             Effect.fail(
@@ -82,7 +81,13 @@ export const runCheckWorker = (
       worker.once("error", error);
       worker.once("exit", exit);
       try {
-        const buffers = request.files.map((file) => file.bytes.buffer as ArrayBuffer);
+        const files =
+          "kind" in request
+            ? request.kind === "bounds"
+              ? request.part.files
+              : request.parts.flatMap((part) => part.files)
+            : request.files;
+        const buffers = files.map((file) => file.bytes.buffer as ArrayBuffer);
         worker.postMessage(request, [...new Set(buffers)]);
       } catch {
         error();
@@ -106,3 +111,16 @@ export const runCheckWorker = (
       }),
     );
   }).pipe(Effect.scoped);
+
+export const runCheckWorker = (
+  request: CheckRequest,
+  options: Parameters<typeof runWorker>[1] = {},
+) => runWorker(request, options).pipe(Effect.map((reply) => reply as CheckReply));
+export const runAssemblyWorker = (
+  request: AssemblyWorkerRequest,
+  options: Parameters<typeof runWorker>[1] = {},
+) => runWorker(request, options).pipe(Effect.map((reply) => reply as AssemblyWorkerReply));
+export const runBoundsWorker = (
+  request: BoundsRequest,
+  options: Parameters<typeof runWorker>[1] = {},
+) => runWorker(request, options).pipe(Effect.map((reply) => reply as BoundsReply));

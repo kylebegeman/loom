@@ -49,7 +49,28 @@ const setup = Effect.gen(function* () {
         return workspace;
       }),
     getSettings: () => settings,
-    renderScad: () => Effect.die("unexpected SCAD"),
+    renderScad: () =>
+      fs.writeFile(path.join(root, "step-preview.stl"), binaryStl(cubeSoup())).pipe(
+        Effect.mapError(
+          () =>
+            new ModelPreviewError({ reason: "command-failed", message: "Failed to write mesh." }),
+        ),
+        Effect.as({
+          status: "ok" as const,
+          mesh: {
+            revision: "step-preview",
+            relativeUrl: "",
+            sizeBytes: 684,
+            expiresAt: 0,
+            modifiedAt: "",
+          },
+          meshFormat: "stl" as const,
+          cached: false,
+          durationMs: 0,
+          log: [],
+          summary: null,
+        }),
+      ),
     protectStem: () => Effect.void,
     cacheDir: root,
     runWorker: (request) =>
@@ -133,7 +154,11 @@ it.effect("caches geometry, forces reruns and excludes bed choice from the key",
       { overhangAngleDegrees: 50 },
       { firstLayerHeightMm: 0.3 },
     ]) {
-      t.setSettings({ ...DEFAULT_MODEL_PREVIEW_SETTINGS, ...patch });
+      t.setSettings({
+        ...DEFAULT_MODEL_PREVIEW_SETTINGS,
+        buildPlate: { ...DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate, preset: "custom" },
+        ...patch,
+      });
       yield* t.checker.checkPrint({ file: t.file });
     }
     expect(t.count()).toBe(5);
@@ -165,7 +190,7 @@ it.effect("shares a worker and cancelling one caller retains the other lease", (
     expect(t.count()).toBe(1);
   }).pipe(Effect.provide(layer), Effect.scoped),
 );
-it.effect("cancelling the last lease interrupts its worker and STEP is unsupported", () =>
+it.effect("cancelling the last lease interrupts its worker", () =>
   Effect.gen(function* () {
     const t = yield* setup;
     t.block();
@@ -205,7 +230,7 @@ it.effect(
 );
 
 it.effect(
-  "retries source edits during reads, respects allowLarge and rejects STEP/unsafe buffers",
+  "retries source edits during reads, respects allowLarge and renders STEP while rejecting unsafe buffers",
   () =>
     Effect.gen(function* () {
       const t = yield* setup;
@@ -222,10 +247,9 @@ it.effect(
       ).toBe("ok");
       yield* t.fs.writeFileString(t.path.join(t.root, "part.step"), "step");
       expect(
-        (yield* Effect.flip(
-          t.checker.checkPrint({ file: { ...t.file, path: "part.step" }, allowLarge: true }),
-        )).reason,
-      ).toBe("unsupported-format");
+        (yield* t.checker.checkPrint({ file: { ...t.file, path: "part.step" }, allowLarge: true }))
+          .status,
+      ).toBe("ok");
       for (const uri of ["https://example.test/a.bin", "../outside.bin", "%2e%2e/outside.bin"]) {
         yield* t.fs.writeFileString(t.path.join(t.root, "part.gltf"), json({ buffers: [{ uri }] }));
         expect(

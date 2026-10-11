@@ -76,13 +76,20 @@ export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
                 ...(modelOrientationActive(activeThreadRef) ? ["reset-orientation" as const] : []),
               ]
             : []),
+          ...(loomFeatures.includes("model-history")
+            ? ["toggle-history" as const, "history-earlier" as const, "history-later" as const]
+            : []),
+          ...(loomFeatures.includes("model-slicer-bridge")
+            ? ["estimate-print" as const, "toggle-layers" as const]
+            : []),
+          ...(loomFeatures.includes("model-assemblies") ? ["toggle-explode" as const] : []),
           ...(loomFeatures.includes("model-print-check") ? ["print-check" as const] : []),
         ] as const
       ).map((action) => ({
         ...base,
         kind: "action" as const,
         value: `action:loom:model-preview-3d:${action}`,
-        title: `3D model: ${{ "auto-lay-flat": "Auto lay flat", "reset-orientation": "Reset orientation", "print-check": "Check part for printing", capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs", "toggle-previous": "Show or hide previous version" }[action]}`,
+        title: `3D model: ${{ "toggle-history": "Toggle history", "history-earlier": "Previous version", "history-later": "Next version", "toggle-layers": "Show or hide sliced layers", "estimate-print": "Estimate print", "toggle-explode": "Toggle exploded view", "auto-lay-flat": "Auto lay flat", "reset-orientation": "Reset orientation", "print-check": "Check part for printing", capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs", "toggle-previous": "Show or hide previous version" }[action]}`,
         run: async () => {
           dispatchModelAction(activeThreadRef, action);
         },

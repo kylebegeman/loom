@@ -248,6 +248,10 @@ export function DisplayTools({
   );
 }
 const HELP = [
+  ["History", "T"],
+  ["Older / newer version", "[ / ]"],
+  ["Exploded view", "E"],
+  ["Sliced layers", "Y"],
   ["Orbit", "Drag, O, arrow keys"],
   ["Pan", "Middle or right drag, H, Shift and arrows"],
   ["Zoom", "Scroll, + and −"],

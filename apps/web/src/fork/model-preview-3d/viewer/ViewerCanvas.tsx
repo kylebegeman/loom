@@ -17,6 +17,8 @@ import { createViewer, type ModelViewer, type NavigationMode } from "./createVie
 import { disposeModel, loadModel, type meshStats } from "./load";
 import type { CircleFit } from "./snap";
 import type { SnapStatus } from "./createViewer";
+import type { LayerData } from "./layers";
+import type { Object3D } from "three";
 import type { SectionCapState } from "./sectionCaps";
 const EMPTY_MEASUREMENTS: readonly ModelMeasurement[] = [];
 const EMPTY_ANNOTATIONS: readonly ModelAnnotation[] = [];
@@ -59,7 +61,13 @@ export default function ViewerCanvas({
   findings = EMPTY_FINDINGS,
   selectedFindingId = null,
   onFinding,
+  compareModel = null,
+  layers = null,
+  layer = 0,
 }: {
+  compareModel?: Object3D | null;
+  layers?: LayerData | null;
+  layer?: number;
   section?: ModelSection;
   measurements?: readonly ModelMeasurement[];
   annotations?: readonly ModelAnnotation[];
@@ -192,8 +200,18 @@ export default function ViewerCanvas({
       [plate.volume[0], plate.volume[1]],
       plate.pattern,
       plate.showZones ? singleZoneStrips(plate.zones) : [],
+      plate.shape,
     );
   }, [plate, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.setCompareModel(compareModel);
+  }, [compareModel, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.setLayers(layers);
+  }, [layers, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.showLayersThrough(layer);
+  }, [layer, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setOverhangAngle(overhangAngleDegrees);
   }, [overhangAngleDegrees, viewerRef]);
