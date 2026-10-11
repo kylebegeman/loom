@@ -188,8 +188,9 @@ never loads the up to 128 MiB binary chunk (`MAX_MODEL_BYTES`, `PcbPreviewServic
     `boardStats`. tscircuit: pass the parsed Circuit JSON already in hand (`:1824-1832`).
   - Wrap the call in `Effect.try`; on failure append "Board stats are incomplete: <reason>" to
     `warnings` and omit `stats`, so a stats bug never breaks Inspect.
-- Inspection cache: a `Map` keyed by `hashKey(workspaceKey, designId, sourceHash,
-glbCachedFlag)` holding the last 16 decoded inspections. `inspect` returns a hit directly.
+- Inspection cache: a `Map` keyed by `hashKey(workspaceKey, designId, sourceHash, toolVersion,
+glbSizeAndMtime)` holding the last 16 decoded inspections. The GLB size and modification time invalidate
+  cached heights after a forced export even when the source revision is unchanged. `inspect` returns a hit directly.
   Today every `inspect` call for a KiCad design runs `kicad-cli sch export netlist` again
   (`:1837-1851`, through `schematicConnectivity`, `:1788-1817`), and the panel calls it per
   revision key (`usePcbWorkbench.ts`), so the cache removes repeated tool runs as well as the
@@ -231,7 +232,8 @@ States. Without `inspection.stats` (older server, schematic-only) it falls back 
   same job is reused (`assetJobs`, `PcbPreviewService.ts:1786`).
 - "Run DRC to measure" on the Clearance row: `openTab("Checks")`.
 - "Add to draft": plain text block, millimetres, built by `boardStatsText(stats)` in
-  `summary.ts` and appended with `appendSummary`, like `ChecksView.tsx:150-157`.
+  the pure `boardStatsText.ts` leaf module, imported directly by the card, and appended with
+  `appendSummary`, like `ChecksView.tsx:150-157`.
 
 ### `InspectTab.tsx`
 

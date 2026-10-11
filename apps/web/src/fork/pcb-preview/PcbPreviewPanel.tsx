@@ -130,6 +130,8 @@ function DesignWorkspace({
   const unit = useLengthUnit();
   const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
   const hiddenLayerPresets = usePcbPreferences((s) => s.hiddenLayerPresets);
+  const canBuild3d = useAtomValue(pcb.asset.permissionAtom(threadRef.environmentId));
+  const canReadInspection = useAtomValue(pcb.inspect.permissionAtom(threadRef.environmentId));
   const [view, setView] = useState<PcbView>(() => initialView(design, saved?.view));
   const [layers, setLayers] = useState<PcbLayerPreset>(
     design.kind === "tscircuit" ? "front" : (saved?.layers ?? "front"),
@@ -153,7 +155,8 @@ function DesignWorkspace({
     [notice, setNotice] = useState<Notice | null>(null),
     [captureBusy, setCaptureBusy] = useState(false),
     [exportOpen, setExportOpen] = useState(false),
-    [exportBusy, setExportBusy] = useState(false);
+    [exportBusy, setExportBusy] = useState(false),
+    [measuringHeights, setMeasuringHeights] = useState(false);
   const lastTab = useRef<InspectorTab>("Inspect");
   const board3d = useRef<Pcb3dHandle | null>(null);
   const viewport = useRef<PcbViewportHandle | null>(null),
@@ -197,6 +200,65 @@ function DesignWorkspace({
       : null;
   const customLayerLabel =
     activeLayerSet?.name ?? `${customLayers?.filter((layer) => layer.visible).length ?? 0} layers`;
+  const supportsGlb =
+    design.kind !== "kicad" || Number(design.toolStatus.version?.match(/^\d+/)?.[0] ?? 0) >= 10;
+  const canMeasureHeights =
+    supportsGlb &&
+    !!design.boardPath &&
+    design.toolAvailable &&
+    executionAllowed &&
+    canBuild3d &&
+    canReadInspection;
+  const measureDisabledReason = !design.boardPath
+    ? "This design has no board"
+    : !executionAllowed
+      ? "Allow circuit code rendering to measure component heights"
+      : !design.toolAvailable
+        ? "Install this design's CAD tool on the environment host"
+        : !supportsGlb
+          ? "KiCad 10 or newer is required to measure component heights"
+          : !canBuild3d || !canReadInspection
+            ? "Rendering permission is required to measure component heights"
+            : undefined;
+  const refreshInspection = () =>
+    appAtomRegistry.refresh(
+      pcb.inspect.resultAtom({
+        environmentId: threadRef.environmentId,
+        input: {
+          threadId: threadRef.threadId,
+          designId: design.id,
+          revision: preview.sourceHash ?? "initial",
+        },
+      }),
+    );
+  const measureHeights = async () => {
+    if (!canMeasureHeights)
+      throw new Error(measureDisabledReason ?? "Component heights cannot be measured.");
+    if (measuringHeights) return;
+    setMeasuringHeights(true);
+    try {
+      await runPcbCommand(pcb.asset, {
+        environmentId: threadRef.environmentId,
+        input: {
+          threadId: threadRef.threadId,
+          designId: design.id,
+          format: "glb",
+          transport: "url",
+        },
+      });
+      refreshInspection();
+    } finally {
+      setMeasuringHeights(false);
+    }
+  };
+  const draftBoardStats = (text: string) => {
+    const store = useComposerDraftStore.getState();
+    store.setPrompt(
+      threadRef,
+      appendSummary(store.getComposerDraft(threadRef)?.prompt ?? "", text),
+    );
+    setNotice({ tone: "info", text: "Board stats added to your draft." });
+  };
   const drawingCurrent =
     !!preview.display &&
     preview.display.view === view &&
@@ -599,6 +661,7 @@ function DesignWorkspace({
                   preview.rendering ||
                   !!preview.checking ||
                   captureBusy ||
+                  measuringHeights ||
                   workbench.pending > 0 ||
                   (three && (!board3d.current || board3d.current.isLoading())),
               }
@@ -1250,6 +1313,9 @@ function DesignWorkspace({
                 sourceHash={preview.sourceHash}
                 handle={board3d}
                 onCancel={() => setThree(false)}
+                onBuilt={(hash) => {
+                  if (hash === preview.sourceHash || !preview.sourceHash) refreshInspection();
+                }}
               >
                 {statusCards}
               </Board3D>
@@ -1309,6 +1375,12 @@ function DesignWorkspace({
                 design={design}
                 inspection={workbench.inspection}
                 executionAllowed={executionAllowed}
+                canMeasure={canMeasureHeights}
+                measureDisabledReason={measureDisabledReason}
+                measuring={measuringHeights}
+                onMeasure={measureHeights}
+                onOpenChecks={tabs.includes("Checks") ? () => openTab("Checks") : undefined}
+                onDraft={draftBoardStats}
                 canSave={workbench.ready && workbench.canEdit && workbench.pending === 0}
                 canSaveView={!three && drawingCurrent}
                 canMark={canMark && !blocked}

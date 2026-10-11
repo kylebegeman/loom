@@ -28,11 +28,47 @@ export const PcbComponent = Schema.Struct({
   footprint: Schema.String,
   pcb: Schema.optional(PcbLocation),
   schematic: Schema.optional(PcbLocation),
+  side: Schema.optional(Schema.Literals(["front", "back"])),
+  rotation: Schema.optional(finite),
+  heightMm: Schema.optional(finite),
+  heightSource: Schema.optional(Schema.Literals(["glb", "circuit-json"])),
   pins: list(PcbPin, 2048),
 });
 export type PcbComponent = typeof PcbComponent.Type;
 export const PcbBounds = Schema.Struct({ x: finite, y: finite, width: finite, height: finite });
 export type PcbBounds = typeof PcbBounds.Type;
+const mm = Schema.NullOr(finite);
+export const PcbBoardStats = Schema.Struct({
+  size: Schema.NullOr(Schema.Struct({ width: finite, height: finite })),
+  areaMm2: mm,
+  areaSource: Schema.Literals(["outline", "bounds", "none"]),
+  copperLayers: Schema.Int,
+  components: Schema.Struct({ front: Schema.Int, back: Schema.Int }),
+  holes: Schema.Struct({ plated: Schema.Int, nonPlated: Schema.Int }),
+  vias: Schema.Struct({ through: Schema.Int, blindOrMicro: Schema.Int }),
+  measured: Schema.Struct({ drill: mm, track: mm, annularRing: mm, viaDiameter: mm }),
+  rules: Schema.NullOr(
+    Schema.Struct({
+      clearance: mm,
+      track: mm,
+      drill: mm,
+      viaDiameter: mm,
+      annularRing: mm,
+      holeClearance: mm,
+      edgeClearance: mm,
+    }),
+  ),
+  tallest: Schema.NullOr(
+    Schema.Struct({
+      heightMm: finite,
+      side: Schema.Literals(["front", "back"]),
+      reference: Schema.NullOr(text()),
+      source: Schema.Literals(["glb", "circuit-json"]),
+    }),
+  ),
+  heights: Schema.Literals(["measured", "needs-3d", "no-models", "unsupported"]),
+});
+export type PcbBoardStats = typeof PcbBoardStats.Type;
 export const PcbInspection = Schema.Struct({
   sourceHash: text(),
   components: list(PcbComponent, 5000),
@@ -48,10 +84,18 @@ export const PcbInspection = Schema.Struct({
   bounds: Schema.NullOr(PcbBounds),
   thickness: finite,
   mountingHoles: list(
-    Schema.Struct({ x: finite, y: finite, diameter: finite, slotLength: finite }),
+    Schema.Struct({
+      x: finite,
+      y: finite,
+      diameter: finite,
+      slotLength: finite,
+      plated: Schema.optional(Schema.Boolean),
+      footprint: Schema.optional(Schema.String),
+    }),
     500,
   ),
   warnings: list(Schema.String, 100),
+  stats: Schema.optional(PcbBoardStats),
 });
 export type PcbInspection = typeof PcbInspection.Type;
 export const PcbInspectInput = Schema.Struct({ threadId: ThreadId, designId: text(1024) });

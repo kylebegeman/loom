@@ -30,6 +30,7 @@ import { RevisionCompare } from "./RevisionCompare";
 import { HardwareLibrary } from "./HardwareLibrary";
 import { InspectTab } from "./InspectTab";
 import { LayersTab } from "./LayersTab";
+import type { BoardStatsCardProps } from "./BoardStatsCard";
 import { MarksTab, type MarkTool } from "./MarksTab";
 import { ViewsTab } from "./ViewsTab";
 import { EmptyState, Scroll } from "./InspectorKit";
@@ -240,6 +241,13 @@ export function ToolPanel({
   mutate,
   onSaveView,
   onLoadView,
+  canMeasure,
+  measureDisabledReason,
+  measuring,
+  measureError,
+  onMeasure,
+  onOpenChecks,
+  onDraft,
 }: {
   tab: Exclude<InspectorTab, "Checks">;
   threadRef: ScopedThreadRef;
@@ -266,7 +274,7 @@ export function ToolPanel({
   mutate: (change: (data: PcbWorkspace) => PcbWorkspace) => Promise<unknown>;
   onSaveView: (name: string) => Promise<unknown>;
   onLoadView: (id: string) => void;
-}) {
+} & Omit<BoardStatsCardProps, "inspection" | "design">) {
   if (!executionAllowed && NEEDS_EXECUTION.has(tab))
     return (
       <Scroll>
@@ -286,6 +294,14 @@ export function ToolPanel({
           onSelect={onSelect}
           onPin={onPin}
           onNet={onNet}
+          design={design}
+          canMeasure={canMeasure}
+          measureDisabledReason={measureDisabledReason}
+          measuring={measuring}
+          measureError={measureError}
+          onMeasure={onMeasure}
+          onOpenChecks={onOpenChecks}
+          onDraft={onDraft}
         />
       );
     case "Layers":

@@ -53,3 +53,68 @@ it("rejects truncated, unsupported and malformed board exports", () => {
   expect(() => normalizeCircuitGlb(encode({ scenes: [{ nodes: [9] }], nodes: [{}] }))).toThrow();
   expect(() => normalizeCircuitGlb(encode({ scenes: [], nodes: [] }))).toThrow();
 });
+
+it("reads the JSON chunk and UTF-8 glTF without reading mesh buffers", async () => {
+  const { readGlbJson } = await import("./glb.ts");
+  const document = { asset: { version: "2.0" } };
+  expect(readGlbJson(encode(document))).toEqual(document);
+  expect(readGlbJson(new TextEncoder().encode(JSON.stringify(document)))).toEqual(document);
+  expect(() => readGlbJson(encode(document).subarray(0, 20))).toThrow();
+});
+it("composes node TRS transforms and keeps ancestor/material metadata", async () => {
+  const { readGlbBounds } = await import("./glb.ts");
+  const bounds = readGlbBounds({
+    scenes: [{ nodes: [0] }],
+    nodes: [
+      { name: "Board", scale: [0.001, 0.001, 0.001], children: [1] },
+      { name: "J3", mesh: 0, translation: [3, 10, 4] },
+    ],
+    meshes: [{ name: "Connector", primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
+    accessors: [{ min: [-1, -2, -3], max: [1, 2, 3] }],
+    materials: [{ name: "Connector plastic" }],
+  });
+  expect(bounds.meshes).toEqual([
+    {
+      name: "Connector",
+      nodes: ["Board", "J3"],
+      materials: ["Connector plastic"],
+      min: [0.002, 0.008, 0.001],
+      max: [0.004, 0.012, 0.007],
+    },
+  ]);
+});
+it("transforms all corners for quaternion rotations and explicit matrices", async () => {
+  const { readGlbBounds } = await import("./glb.ts");
+  const document = {
+    nodes: [{ mesh: 0, rotation: [0, 0, Math.SQRT1_2, Math.SQRT1_2] }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+    accessors: [{ min: [0, 0, 0], max: [1, 2, 3] }],
+  };
+  const rotated = readGlbBounds(document).meshes[0]!;
+  expect(rotated.min[0]).toBeCloseTo(-2);
+  expect(rotated.max[1]).toBeCloseTo(1);
+  const matrix = readGlbBounds({
+    ...document,
+    nodes: [{ mesh: 0, matrix: [2, 0, 0, 0, 0, 3, 0, 0, 0, 0, 4, 0, 5, 6, 7, 1] }],
+  }).meshes[0]!;
+  expect(matrix.min).toEqual([5, 6, 7]);
+  expect(matrix.max).toEqual([7, 12, 19]);
+});
+it("rejects cyclic graphs and malformed POSITION bounds", async () => {
+  const { readGlbBounds } = await import("./glb.ts");
+  expect(() =>
+    readGlbBounds({
+      nodes: [{ children: [0] }],
+      scenes: [{ nodes: [0] }],
+      meshes: [],
+      accessors: [],
+    }),
+  ).toThrow();
+  expect(() =>
+    readGlbBounds({
+      nodes: [{ mesh: 0 }],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      accessors: [{ min: [0, 0, 0], max: [NaN, 1, 1] }],
+    }),
+  ).toThrow();
+});

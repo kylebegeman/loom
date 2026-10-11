@@ -103,6 +103,7 @@ const setup = Effect.gen(function* () {
             target,
             JSON.stringify([{ type: "pcb_board", center: { x: 0, y: 0 }, width: 20, height: 20 }]),
           );
+        else if (input.args.includes("pdf")) yield* fs.writeFileString(target, "%PDF-1.7\nfixture");
         else if (input.args.includes("glb")) yield* fs.writeFileString(target, "glTFtest");
         else if (input.args.includes("netlist"))
           yield* fs.writeFileString(target, "(export (nets))");
@@ -732,6 +733,10 @@ it.effect("keeps generated board references out of circuit revisions and cache i
       yield* t.fs.makeDirectory(references, { recursive: true });
       yield* t.fs.writeFileString(t.path.join(references, "board.glb"), "generated geometry");
       yield* t.fs.writeFileString(t.path.join(references, "board.json"), "{}");
+      const fab = t.path.join(t.root, "fab", "print");
+      yield* t.fs.makeDirectory(fab, { recursive: true });
+      yield* t.fs.writeFileString(t.path.join(fab, "generated.json"), "{}");
+      yield* t.fs.writeFileString(t.path.join(fab, "print.pdf"), "%PDF-1.7");
       const after = yield* service.render(input);
       expect(after.sourceHash).toBe(before.sourceHash);
       expect(after.cached).toBe(true);
@@ -1002,6 +1007,153 @@ it.effect("returns a failed drawing result when the shared circuit build fails",
       expect(
         (yield* service.render({ ...t.input, designId: "blink.circuit.tsx", force: true })).outcome,
       ).toBe("timed-out");
+    }),
+  ),
+);
+
+it.effect(
+  "caches board stats/netlists and reads only cached GLB JSON for explicit height measurement",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup;
+        const input = { threadId: t.input.threadId, designId: t.input.designId };
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pcb"),
+          validBoard.replace(
+            "(gr_rect",
+            '(footprint "Connector" (property "Reference" "J3") (model "connector.step")) (gr_rect',
+          ),
+        );
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_pro"), "{}");
+        const guarded = FileSystem.FileSystem.of({
+          ...t.fs,
+          readFile: (file) =>
+            file.endsWith("board.glb")
+              ? Effect.die(new Error("Inspection must not read the binary GLB chunk"))
+              : t.fs.readFile(file),
+        });
+        const service = yield* t.create(guarded);
+        const first = yield* service.inspect(input);
+        expect(first.stats).toMatchObject({
+          areaMm2: 1200,
+          areaSource: "outline",
+          heights: "needs-3d",
+        });
+        expect(yield* service.inspect(input)).toEqual(first);
+        expect(t.calls.filter((call) => call.args.includes("netlist"))).toHaveLength(1);
+        expect(t.calls.some((call) => call.args.includes("glb"))).toBe(false);
+        const exported = yield* service.asset({ ...input, format: "glb", transport: "url" });
+        const file = yield* service.resolveSignedRequest(
+          exported.file!.relativeUrl.split("/").at(-2)!,
+          "board.glb",
+        );
+        const document = {
+          nodes: [
+            { name: "Board", mesh: 0 },
+            { name: "J3", mesh: 1 },
+          ],
+          meshes: [
+            { primitives: [{ attributes: { POSITION: 0 } }] },
+            { primitives: [{ attributes: { POSITION: 1 } }] },
+          ],
+          accessors: [
+            { min: [-0.015, -0.0008, -0.02], max: [0.015, 0.0008, 0.02] },
+            { min: [-0.004, 0.0008, -0.004], max: [0.004, 0.012, 0.004] },
+          ],
+        };
+        const json = new TextEncoder().encode(JSON.stringify(document)),
+          padded = Math.ceil(json.length / 4) * 4;
+        const bytes = new Uint8Array(20 + padded + 8 + 1024 * 1024),
+          header = new DataView(bytes.buffer);
+        header.setUint32(0, 0x46546c67, true);
+        header.setUint32(4, 2, true);
+        header.setUint32(8, bytes.length, true);
+        header.setUint32(12, padded, true);
+        header.setUint32(16, 0x4e4f534a, true);
+        bytes.fill(32, 20, 20 + padded);
+        bytes.set(json, 20);
+        header.setUint32(20 + padded, 1024 * 1024, true);
+        header.setUint32(24 + padded, 0x004e4942, true);
+        yield* t.fs.writeFile(file, bytes);
+        const measured = yield* service.inspect(input);
+        expect(measured.sourceHash).toBe(first.sourceHash);
+        expect(measured.stats?.tallest).toEqual({
+          heightMm: 11.2,
+          side: "front",
+          reference: "J3",
+          source: "glb",
+        });
+        expect(yield* service.inspect(input)).toEqual(measured);
+        expect(t.calls.filter((call) => call.args.includes("netlist"))).toHaveLength(2);
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pro"),
+          JSON.stringify({ board: { design_settings: { rules: { min_clearance: 0.2 } } } }),
+        );
+        const changed = yield* service.inspect(input);
+        expect(changed.sourceHash).not.toBe(first.sourceHash);
+        expect(changed.stats).toMatchObject({
+          tallest: null,
+          heights: "needs-3d",
+          rules: { clearance: 0.2 },
+        });
+      }),
+    ),
+);
+it.effect("retains inspection when board stats cannot parse project rules", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup;
+      yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
+      const service = yield* t.create();
+      const inspection = yield* service.inspect({
+        threadId: t.input.threadId,
+        designId: t.input.designId,
+      });
+      expect(inspection.bounds).toEqual({ x: 0, y: 0, width: 20, height: 20 });
+      expect(inspection.stats).toBeUndefined();
+      expect(
+        inspection.warnings.some((warning) => warning.startsWith("Board stats are incomplete:")),
+      ).toBe(true);
+    }),
+  ),
+);
+
+it.effect("excludes canonical fabrication output folders from circuit revisions", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create();
+      const outputDirectory = t.path.join(t.root, "generated-output");
+      yield* t.fs.makeDirectory(outputDirectory);
+      yield* t.fs.symlink(outputDirectory, t.path.join(t.root, "fab"));
+      const input = { ...t.input, designId: "blink.circuit.tsx" };
+      const before = yield* service.render(input);
+      yield* t.fs.writeFileString(t.path.join(outputDirectory, "board.json"), "{}");
+      const after = yield* service.render(input);
+      expect(after.sourceHash).toBe(before.sourceHash);
+      expect(after.cached).toBe(true);
+    }),
+  ),
+);
+
+it.effect("keeps board inspection when optional project rules exceed the read limit", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup;
+      yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
+      yield* t.fs.truncate(t.path.join(t.root, "board.kicad_pro"), 16 * 1024 * 1024 + 1);
+      const service = yield* t.create();
+      const inspection = yield* service.inspect({
+        threadId: t.input.threadId,
+        designId: t.input.designId,
+      });
+      expect(inspection.bounds).toEqual({ x: 0, y: 0, width: 20, height: 20 });
+      expect(inspection.stats?.areaMm2).toBe(400);
+      expect(inspection.warnings).toContain(
+        "Board stats are incomplete: project rules could not be read.",
+      );
     }),
   ),
 );

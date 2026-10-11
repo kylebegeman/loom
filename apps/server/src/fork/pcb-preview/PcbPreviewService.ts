@@ -53,7 +53,8 @@ import { ParameterFile, readCircuitParameterValues, applyCircuitParameters } fro
 import { simulationNetlist, parseSpiceRaw } from "./simulation.ts";
 import { cropPhysicalSvg, normalizeCircuitSvg } from "./svg.ts";
 import { starterHardware } from "./hardware.ts";
-import { normalizeCircuitGlb } from "./glb.ts";
+import { normalizeCircuitGlb, readGlbBounds, type GlbBounds } from "./glb.ts";
+import { boardStats, type BoardStatsDesign } from "./boardStats.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import { ServerConfig } from "../../config.ts";
@@ -520,6 +521,10 @@ export const make = Effect.gen(function* () {
   ) {
     const dirs: string[] = [],
       records: string[] = [];
+    const excludedOutputs = yield* Effect.forEach(
+      [path.join(resolved.root, ".loom", "pcb-references"), path.join(resolved.root, "fab")],
+      (directory) => fs.realPath(directory).pipe(Effect.orElseSucceed(() => directory)),
+    );
     const queue = [resolved.cwd];
     let visited = 0;
     while (queue.length) {
@@ -528,7 +533,7 @@ export const make = Effect.gen(function* () {
       if (!contains(resolved.root, real, path) || dirs.includes(real)) continue;
       // Exported references are outputs, not inputs. Otherwise every export changes its
       // own source hash and creates another revision/cached mesh on the next export.
-      if (real === path.join(resolved.root, ".loom", "pcb-references")) continue;
+      if (real !== resolved.root && excludedOutputs.includes(real)) continue;
       dirs.push(real);
       if (dirs.length > DIRECTORY_LIMIT)
         return yield* failure(
@@ -1557,6 +1562,102 @@ export const make = Effect.gen(function* () {
   const decodeModelManifest = Schema.decodeUnknownEffect(
     Schema.Struct({ sourceHash: Schema.String, log: Schema.String }),
   );
+  const modelLocation = (
+    resolved: ResolvedDesign,
+    snapshot: { sourceHash: string },
+    tool: PcbToolStatus,
+    format: W.PcbAssetInput["format"],
+  ) => {
+    const modelKey = hashKey(
+      resolved.workspaceKey,
+      resolved.design.id,
+      snapshot.sourceHash,
+      tool.version ?? "",
+      format === "circuit-json" ? "circuit-json-v1" : "board-model-v2-metres",
+    );
+    const modelDir = path.join(cacheDir, modelKey);
+    return {
+      modelKey,
+      modelDir,
+      modelFile: path.join(modelDir, format === "glb" ? "board.glb" : "circuit.json"),
+    };
+  };
+  // Called while holding cacheLock, so pruning cannot remove a model during its lookup/read.
+  const cachedModel = Effect.fn("PcbPreview.cachedModel")(function* (
+    resolved: ResolvedDesign,
+    snapshot: { sourceHash: string },
+    tool: PcbToolStatus,
+    format: "glb" | "circuit-json",
+  ) {
+    const location = modelLocation(resolved, snapshot, tool, format);
+    if (!(yield* fs.exists(location.modelFile))) return null;
+    const manifestPath = path.join(location.modelDir, "manifest.json");
+    const manifest = yield* decodeModelManifest(
+      yield* decodeJson(yield* fs.readFileString(manifestPath)),
+    );
+    const info = yield* fs.stat(location.modelFile);
+    if (
+      manifest.sourceHash !== snapshot.sourceHash ||
+      info.type !== "File" ||
+      (yield* fs.realPath(location.modelFile)) !== location.modelFile ||
+      Number(info.size) > MAX_MODEL_BYTES
+    )
+      return null;
+    return { ...location, manifestPath, manifest, info };
+  });
+  const cachedGlb = Effect.fn("PcbPreview.cachedGlb")(function* (
+    resolved: ResolvedDesign,
+    snapshot: { sourceHash: string },
+    tool: PcbToolStatus,
+  ) {
+    return yield* cacheLock.withPermit(
+      cachedModel(resolved, snapshot, tool, "glb").pipe(Effect.orElseSucceed(() => null)),
+    );
+  });
+  const modelBounds = Effect.fn("PcbPreview.modelBounds")(function* (file: string) {
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const handle = yield* fs.open(file, { flag: "r" });
+        const info = yield* handle.stat;
+        const readExact = Effect.fn("PcbPreview.readGlbChunk")(function* (length: number) {
+          const bytes = new Uint8Array(length);
+          let offset = 0;
+          while (offset < length) {
+            const chunk = yield* handle.readAlloc(length - offset);
+            if (Option.isNone(chunk) || chunk.value.length === 0)
+              return yield* failure("invalid-report", "The cached 3D board is truncated.");
+            bytes.set(chunk.value, offset);
+            offset += chunk.value.length;
+          }
+          return bytes;
+        });
+        const header = yield* readExact(20);
+        const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+        const length = view.getUint32(12, true);
+        if (
+          view.getUint32(0, true) !== 0x46546c67 ||
+          view.getUint32(4, true) !== 2 ||
+          view.getUint32(8, true) !== Number(info.size) ||
+          view.getUint32(16, true) !== 0x4e4f534a ||
+          length % 4 !== 0 ||
+          length > 16 * 1024 * 1024 ||
+          length + 20 > Number(info.size)
+        )
+          return yield* failure("invalid-report", "The cached 3D board has an invalid GLB header.");
+        const json = yield* readExact(length);
+        const jsonText = yield* Effect.try({
+          try: () => new TextDecoder("utf-8", { fatal: true }).decode(json),
+          catch: () => failure("invalid-report", "The cached 3D board has invalid JSON text."),
+        });
+        const document = yield* decodeJson(jsonText);
+        return yield* Effect.try({
+          try: () => readGlbBounds(document),
+          catch: () =>
+            failure("invalid-report", "The cached 3D board has invalid geometry bounds."),
+        });
+      }),
+    );
+  });
   const runAsset = Effect.fn("PcbPreview.runAsset")(function* (
     input: W.PcbAssetInput,
     resolved: ResolvedDesign,
@@ -1566,33 +1667,20 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const tool = yield* requiredTool(resolved);
         const streamed = input.format === "glb" && input.transport !== "inline";
-        const modelKey = hashKey(
-          resolved.workspaceKey,
-          input.designId,
-          snapshot.sourceHash,
-          tool.version ?? "",
-          input.format === "circuit-json" ? "circuit-json-v1" : "board-model-v2-metres",
-        );
+        const { modelDir, modelFile } = modelLocation(resolved, snapshot, tool, input.format);
         const reusable = input.format === "glb" || input.format === "circuit-json";
-        const modelDir = path.join(cacheDir, modelKey),
-          modelFile = path.join(modelDir, input.format === "glb" ? "board.glb" : "circuit.json");
         if (reusable && !input.force) {
           const cached = yield* cacheLock
             .withPermit(
               Effect.gen(function* () {
-                if (!(yield* fs.exists(modelFile))) return null;
-                const manifestPath = path.join(modelDir, "manifest.json");
-                const manifest = yield* decodeModelManifest(
-                  yield* decodeJson(yield* fs.readFileString(manifestPath)),
+                const found = yield* cachedModel(
+                  resolved,
+                  snapshot,
+                  tool,
+                  input.format as "glb" | "circuit-json",
                 );
-                const info = yield* fs.stat(modelFile);
-                if (
-                  manifest.sourceHash !== snapshot.sourceHash ||
-                  info.type !== "File" ||
-                  (yield* fs.realPath(modelFile)) !== modelFile ||
-                  Number(info.size) > MAX_MODEL_BYTES
-                )
-                  return null;
+                if (!found) return null;
+                const { manifest, manifestPath, info } = found;
                 if (!streamed && Number(info.size) > 16 * 1024 * 1024)
                   return yield* failure(
                     "source-limit",
@@ -1815,45 +1903,127 @@ export const make = Effect.gen(function* () {
       };
     return { inspection: result, log: processLog(exported) };
   });
+  const inspectionCache = new Map<string, W.PcbInspection>();
   const inspect = Effect.fn("PcbPreview.inspect")(function* (input: W.PcbInspectInput) {
     return yield* Effect.scoped(
       Effect.gen(function* () {
         const resolved = yield* resolveDesign(input),
           snapshot = yield* sourceSnapshot(resolved);
+        const tool: PcbToolStatus =
+          resolved.design.kind === "kicad"
+            ? (yield* status()).kicad
+            : yield* requiredTool(resolved);
+        const cached = yield* cachedGlb(resolved, snapshot, tool);
+        const cacheKey = hashKey(
+          resolved.workspaceKey,
+          input.designId,
+          snapshot.sourceHash,
+          tool.version ?? "",
+          cached
+            ? `${Number(cached.info.size)}:${Option.getOrNull(cached.info.mtime)?.getTime() ?? 0}`
+            : "no-glb",
+        );
+        const existing = inspectionCache.get(cacheKey);
+        if (existing) {
+          inspectionCache.delete(cacheKey);
+          inspectionCache.set(cacheKey, existing);
+          return existing;
+        }
+        let result: W.PcbInspection;
+        let statsDesign: BoardStatsDesign | null = null;
         if (resolved.design.kind === "tscircuit") {
           const json = yield* asset({ ...input, format: "circuit-json" });
           const parsed = yield* decodeJson(json.data).pipe(
             Effect.mapError(() => failure("invalid-report", "Invalid Circuit JSON.")),
           );
-          return yield* Effect.try({
+          result = yield* Effect.try({
             try: () => inspectCircuitJson(parsed, json.sourceHash),
             catch: () =>
               failure("invalid-report", "The circuit build produced invalid inspection data."),
           });
-        }
-        let result = yield* sourceInspection(resolved, snapshot.sourceHash, (relative) =>
-          safePath(resolved.root, relative).pipe(Effect.flatMap(smallSource)),
-        );
-        if (resolved.design.schematicPath) {
-          const tool = yield* requiredTool(resolved),
-            directory = yield* fs.makeTempDirectoryScoped({
+          statsDesign = {
+            kind: "circuit-json",
+            elements: parsed as unknown[],
+            inspection: result,
+            glb: null,
+          };
+        } else {
+          const sources = new Map<string, string>();
+          const read = Effect.fn("PcbPreview.inspectSource")(function* (relative: string) {
+            const source = yield* safePath(resolved.root, relative).pipe(
+              Effect.flatMap(smallSource),
+            );
+            sources.set(relative, source);
+            return source;
+          });
+          result = yield* sourceInspection(resolved, snapshot.sourceHash, read);
+          if (resolved.design.schematicPath) {
+            const required = yield* requiredTool(resolved);
+            const directory = yield* fs.makeTempDirectoryScoped({
               directory: cacheDir,
               prefix: "pending-netlist-",
-            }),
-            output = path.join(directory, "nets.net");
-          result = (yield* schematicConnectivity(
-            result,
-            tool,
-            yield* safePath(resolved.root, resolved.design.schematicPath),
-            output,
-            resolved.cwd,
-          )).inspection;
+            });
+            result = (yield* schematicConnectivity(
+              result,
+              required,
+              yield* safePath(resolved.root, resolved.design.schematicPath),
+              path.join(directory, "nets.net"),
+              resolved.cwd,
+            )).inspection;
+          }
+          if (resolved.design.boardPath) {
+            const board = sources.get(resolved.design.boardPath)!;
+            const projectPath = resolved.design.boardPath.replace(/\.kicad_pcb$/i, ".kicad_pro");
+            const project = yield* fs.exists(path.join(resolved.root, projectPath)).pipe(
+              Effect.flatMap((exists) => (exists ? read(projectPath) : Effect.succeed(null))),
+              Effect.catch(() =>
+                Effect.sync(() => {
+                  result = {
+                    ...result,
+                    warnings: [
+                      ...result.warnings,
+                      "Board stats are incomplete: project rules could not be read.",
+                    ],
+                  };
+                  return null;
+                }),
+              ),
+            );
+            statsDesign = { kind: "kicad", board, project, inspection: result, glb: null };
+          }
         }
-        return yield* decodeInspection(result).pipe(
+        if (statsDesign) {
+          const enriched = yield* Effect.gen(function* () {
+            const glb: GlbBounds | null = cached
+              ? yield* cacheLock.withPermit(modelBounds(cached.modelFile))
+              : null;
+            return yield* Effect.try({
+              try: () => boardStats({ ...statsDesign!, glb }),
+              catch: (cause) =>
+                failure(
+                  "invalid-report",
+                  cause instanceof Error ? cause.message : "Unknown board statistics error",
+                ),
+            });
+          }).pipe(
+            Effect.match({
+              onFailure: (cause) => ({
+                ...result,
+                warnings: [...result.warnings, `Board stats are incomplete: ${cause.message}`],
+              }),
+              onSuccess: (stats) => ({ ...result, stats }),
+            }),
+          );
+          result = enriched;
+        }
+        const decoded = yield* decodeInspection(result).pipe(
           Effect.mapError(() =>
             failure("source-limit", "This design exceeds semantic inspection limits."),
           ),
         );
+        inspectionCache.set(cacheKey, decoded);
+        if (inspectionCache.size > 16) inspectionCache.delete(inspectionCache.keys().next().value!);
+        return decoded;
       }),
     );
   });

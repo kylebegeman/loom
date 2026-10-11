@@ -110,7 +110,9 @@ it("includes circle extrema and mounting drill dimensions", () => {
     "a",
   );
   expect(d.bounds).toEqual({ x: 7, y: 17, width: 6, height: 6 });
-  expect(d.mountingHoles).toEqual([{ x: 6, y: 6, diameter: 3.2, slotLength: 3.2 }]);
+  expect(d.mountingHoles).toEqual([
+    { x: 6, y: 6, diameter: 3.2, slotLength: 3.2, plated: false, footprint: "Hole" },
+  ]);
 });
 it("includes only arc extrema that lie on the curved edge", () => {
   const d = inspectBoard(
@@ -211,7 +213,7 @@ it("includes circuit mounting holes and slot dimensions in enclosure metadata", 
     "holes",
   );
   expect(inspection.mountingHoles).toEqual([
-    { x: 5, y: -8, diameter: 3.2, slotLength: 3.2 },
-    { x: 10, y: 4, diameter: 2, slotLength: 6 },
+    { x: 5, y: -8, diameter: 3.2, slotLength: 3.2, plated: false, footprint: "" },
+    { x: 10, y: 4, diameter: 2, slotLength: 6, plated: false, footprint: "" },
   ]);
 });

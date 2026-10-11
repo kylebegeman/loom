@@ -1,23 +1,11 @@
 import { useState } from "react";
 import { CpuIcon, LocateFixedIcon, SearchXIcon, SplineIcon, XIcon } from "lucide-react";
 import type { PcbInspection } from "@t3tools/contracts/fork";
-import {
-  Bar,
-  EmptyState,
-  Group,
-  Notice,
-  Scroll,
-  SearchField,
-  Section,
-  Segmented,
-  Stat,
-  Stats,
-} from "./InspectorKit";
+import { Bar, EmptyState, Group, Notice, Scroll, SearchField, Segmented } from "./InspectorKit";
 import { ToolButton } from "./ToolButton";
+import { BoardStatsCard, type BoardStatsCardProps } from "./BoardStatsCard";
 import k from "./inspector.module.css";
 
-/** Board outlines read best rounded to the millimetre once they pass a centimetre. */
-const millimetres = (value: number) => (value >= 10 ? Math.round(value) : value.toFixed(1));
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 const FAMILIES: readonly [RegExp, string][] = [
   [/^(U|IC)$/, "Integrated circuits"],
@@ -60,6 +48,14 @@ export function InspectTab({
   onSelect,
   onPin,
   onNet,
+  design,
+  canMeasure,
+  measureDisabledReason,
+  measuring,
+  measureError,
+  onMeasure,
+  onOpenChecks,
+  onDraft,
 }: {
   inspection: PcbInspection | null;
   selected: string | null;
@@ -67,7 +63,7 @@ export function InspectTab({
   onSelect: (reference: string | null) => void;
   onPin: (reference: string, pin: string) => void;
   onNet: (net: string | null) => void;
-}) {
+} & Omit<BoardStatsCardProps, "inspection">) {
   const [query, setQuery] = useState(""),
     [list, setList] = useState<"parts" | "nets">("parts");
   if (!inspection)
@@ -100,7 +96,6 @@ export function InspectTab({
     group.parts.push(c);
     groups.set(name, group);
   }
-  const copper = inspection.layers.filter((l) => l.endsWith(".Cu")).length;
   return (
     <>
       <Bar>
@@ -234,38 +229,17 @@ export function InspectTab({
           />
         )}
         {!component && !net && !needle && (
-          <Section title="Board">
-            <Stats>
-              <Stat label="Parts" value={inspection.components.length} />
-              <Stat label="Nets" value={inspection.nets.length} />
-              {copper > 0 && <Stat label="Copper layers" value={copper} />}
-              {inspection.bounds && (
-                <Stat
-                  label="Size"
-                  value={
-                    <>
-                      {millimetres(inspection.bounds.width)}×{millimetres(inspection.bounds.height)}
-                      <small> mm</small>
-                    </>
-                  }
-                />
-              )}
-              {inspection.thickness > 0 && (
-                <Stat
-                  label="Thickness"
-                  value={
-                    <>
-                      {inspection.thickness.toFixed(1)}
-                      <small> mm</small>
-                    </>
-                  }
-                />
-              )}
-              {inspection.mountingHoles.length > 0 && (
-                <Stat label="Unplated holes" value={inspection.mountingHoles.length} />
-              )}
-            </Stats>
-          </Section>
+          <BoardStatsCard
+            inspection={inspection}
+            design={design}
+            canMeasure={canMeasure}
+            measureDisabledReason={measureDisabledReason}
+            measuring={measuring}
+            measureError={measureError}
+            onMeasure={onMeasure}
+            onOpenChecks={onOpenChecks}
+            onDraft={onDraft}
+          />
         )}
         {list === "parts" ? (
           components.length ? (

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { modelUrl } from "../model-preview-3d/state";
@@ -40,6 +47,7 @@ export function Board3D({
   sourceHash,
   handle,
   onCancel,
+  onBuilt,
   children,
 }: {
   threadRef: ScopedThreadRef;
@@ -47,6 +55,8 @@ export function Board3D({
   sourceHash: string | null;
   handle: React.Ref<Pcb3dHandle>;
   onCancel: () => void;
+  /** The host has cached this revision, so Inspect can read component heights. */
+  onBuilt?: (sourceHash: string) => void;
   /** Workspace status cards that share the 3D overlay stack. */
   children?: React.ReactNode;
 }) {
@@ -67,6 +77,13 @@ export function Board3D({
   const asset = asyncValue(result),
     host = useRef<HTMLDivElement>(null),
     viewer = useRef<ModelViewer | null>(null);
+  const notified = useRef<typeof asset>(null);
+  const notifyBuilt = useEffectEvent((hash: string) => onBuilt?.(hash));
+  useEffect(() => {
+    if (!asset?.file || result.waiting || notified.current === asset) return;
+    notified.current = asset;
+    notifyBuilt(asset.sourceHash);
+  }, [asset, result.waiting]);
   const [loaded, setLoaded] = useState<typeof asset>(null);
   const [failure, setFailure] = useState<{ asset: typeof asset; message: string } | null>(null),
     [camera, setCamera] = useState<View | null>("iso");

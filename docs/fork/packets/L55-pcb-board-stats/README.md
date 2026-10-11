@@ -1,6 +1,9 @@
 # L55: Board stats
 
-Status: Ready to build.
+Status: Implemented locally on `feat/pcb-units-presets-stats-print-capture`.
+
+Focused validation passed. Real KiCad/tscircuit tool and client checks remain unverified;
+see [TESTING.md](./TESTING.md).
 
 Approved by Kyle on 2026-10-10.
 
