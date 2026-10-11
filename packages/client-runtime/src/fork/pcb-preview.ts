@@ -47,6 +47,7 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     staleTimeMs: 0,
   });
   return {
+    pinMap: createEnvironmentRpcCommand(runtime, { label: "loom:pcb-pin-map", tag: M.pinMap }),
     projectSettings,
     updateProjectSettings: createEnvironmentRpcCommand(runtime, {
       label: "loom:pcb-project-settings-save",

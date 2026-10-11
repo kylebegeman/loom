@@ -456,3 +456,46 @@ it.effect("agent latest checks default to fresh and project settings use the cal
     }),
   ),
 );
+it.effect("pin map tools apply defaults and scope generation to the caller", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let received: unknown;
+      const { toolkit, threads } = yield* fixture({
+        pinMap: (input) =>
+          Effect.sync(() => {
+            received = input;
+            return {
+              sourceHash: "source",
+              map: {
+                reference: "J1",
+                value: "Connector",
+                family: "pins" as const,
+                detectedFrom: "default" as const,
+                formats: [],
+                rows: [],
+                warnings: [],
+              },
+              format: input.format,
+              text: "pins",
+              saved: null,
+            };
+          }),
+      });
+      yield* toolkit
+        .handle("loom_pcb_pin_map", { designId: "board.kicad_pro", reference: "J1" })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      expect(received).toEqual({
+        threadId,
+        designId: "board.kicad_pro",
+        reference: "J1",
+        format: "markdown",
+        includePower: false,
+        includeNoConnect: false,
+      });
+    }),
+  ),
+);

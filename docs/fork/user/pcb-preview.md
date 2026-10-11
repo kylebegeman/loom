@@ -124,3 +124,5 @@ credentials automatically. Editor camera, selection and capture actions require 
 open on a connected Loom client; rendering, persistence and exports run on the host.
 
 Enable **Check after each save** in Checks to run ERC, DRC, or both for this project while a design is open or an agent reads fresh checks. Reports show new and resolved findings. Slow checks pause until a fast manual run; failed automatic checks preserve the last report and retry after the next save.
+
+Select a part in Inspect and open **Pin map** to copy its connections or generate firmware constants for C, Rust, MicroPython, CircuitPython or Arduino. GPIO identities come from pin names; verify them against the datasheet and your board core. Save requires a workspace write grant and confirmation before replacing an existing file.

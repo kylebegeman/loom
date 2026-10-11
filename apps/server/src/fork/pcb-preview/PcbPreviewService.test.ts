@@ -1294,3 +1294,79 @@ it.effect("check activity emits agent results with subscribe-before-read orderin
     }),
   ),
 );
+
+it.effect(
+  "pin maps save current source, require explicit replacement and reject unsafe destinations",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup;
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pcb"),
+          '(kicad_pcb (footprint "QFN" (property "Reference" "U1") (property "Value" "RP2040") (pad "27" smd rect (pinfunction "GPIO25") (net 1 "LED"))))',
+        );
+        const service = yield* t.create();
+        const input = {
+          threadId: t.input.threadId,
+          designId: t.input.designId,
+          reference: "U1",
+          format: "c" as const,
+          includePower: false,
+          includeNoConnect: false,
+        };
+        const first = yield* service.pinMap(input);
+        expect(first.text).toContain("#define LED 25");
+        const saved = yield* service.pinMap({
+          ...input,
+          expectedSourceHash: first.sourceHash,
+          save: { path: "pins.h", overwrite: false },
+        });
+        expect(saved.saved?.path).toBe("pins.h");
+        expect(yield* t.fs.readFileString(t.path.join(t.root, "pins.h"))).toBe(first.text);
+        expect((yield* service.inspect(input)).sourceHash).toBe(first.sourceHash);
+        expect(
+          (yield* service
+            .pinMap({ ...input, save: { path: "pins.h", overwrite: false } })
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        yield* service.pinMap({
+          ...input,
+          names: { "27": "STATUS" },
+          save: { path: "pins.h", overwrite: true },
+        });
+        expect(yield* t.fs.readFileString(t.path.join(t.root, "pins.h"))).toContain(
+          "#define STATUS 25",
+        );
+        for (const name of ["../bad.h", "missing/pins.h", "pins.rs"])
+          yield* service
+            .pinMap({ ...input, save: { path: name, overwrite: false } })
+            .pipe(Effect.flip);
+        yield* service
+          .pinMap({ ...input, format: "markdown", save: { path: "pins.md", overwrite: false } })
+          .pipe(Effect.flip);
+        yield* service.pinMap({ ...input, reference: "gone" }).pipe(Effect.flip);
+        yield* service.pinMap({ ...input, names: { "27": "int" } }).pipe(Effect.flip);
+        yield* service
+          .pinMap({
+            ...input,
+            expectedSourceHash: "old",
+            save: { path: "other.h", overwrite: false },
+          })
+          .pipe(Effect.flip);
+        const outside = yield* t.fs.makeTempDirectoryScoped();
+        yield* t.fs.symlink(outside, t.path.join(t.root, "link"));
+        expect(
+          (yield* service
+            .pinMap({ ...input, save: { path: "link/pins.h", overwrite: false } })
+            .pipe(Effect.flip)).reason,
+        ).toBe("path-outside-workspace");
+        yield* t.fs.symlink(t.path.join(outside, "missing.h"), t.path.join(t.root, "symlink.h"));
+        expect(
+          (yield* service
+            .pinMap({ ...input, save: { path: "symlink.h", overwrite: true } })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-parameters");
+      }),
+    ),
+);

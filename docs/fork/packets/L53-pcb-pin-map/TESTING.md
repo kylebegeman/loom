@@ -59,3 +59,7 @@ With Kyle's permission, in a dev client against a worktree `.t3` seeded with
 
 Run `scripts/fork/loom.sh check` and the merge check in SEAMS.md; expect no conflicts. After
 merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.
+
+## Local implementation results
+
+Implemented on `feat/pcb-units-presets-stats-print-capture`. Focused generator, semantic parsing, service save and MCP/default/permission checks passed, with contracts, client-runtime, server and web typechecks and scoped lint. Real KiCad alternate-function export, firmware compilation and real-client/remote/clipboard checks remain pending. KiCad was unavailable at the standard installed path; no browser or live state was used.

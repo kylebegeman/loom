@@ -1,5 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import {
+  mergeNetlist,
   inspectBoard,
   inspectSchematic,
   inspectCircuitJson,
@@ -216,4 +217,25 @@ it("includes circuit mounting holes and slot dimensions in enclosure metadata", 
     { x: 5, y: -8, diameter: 3.2, slotLength: 3.2, plated: false, footprint: "" },
     { x: 10, y: 4, diameter: 2, slotLength: 6, plated: false, footprint: "" },
   ]);
+});
+
+it("recovers library pin names and types alongside netlist alternates", () => {
+  const base = inspectBoard(
+    '(kicad_pcb (footprint "QFN" (property "Reference" "U1") (pad "5" smd rect (pintype "bidirectional") (pinfunction "PA0"))))',
+    "source",
+  );
+  expect(base.components[0]?.pins[0]?.type).toBe("bidirectional");
+  const netlist =
+    '(export (components (comp (ref "U1") (libsource (lib "MCU_ST") (part "STM32F103")))) (libparts (libpart (lib "MCU_ST") (part "STM32F103") (pins (pin (num "5") (name "PA0") (type "bidirectional"))))) (nets (net (name "PWM") (node (ref "U1") (pin "5") (pinfunction "TIM2_CH1") (pintype "bidirectional+no_connect")))))';
+  const result = mergeNetlist(base, netlist);
+  expect(result.components[0]).toMatchObject({
+    symbol: "MCU_ST:STM32F103",
+    pins: [{ name: "TIM2_CH1", baseName: "PA0", type: "bidirectional+no_connect", net: "PWM" }],
+  });
+  expect(
+    mergeNetlist(
+      base,
+      '(export (nets (net (name "PWM") (node (ref "U1") (pin "5") (pinfunction "PA0")))))',
+    ).components[0]?.pins[0]?.baseName,
+  ).toBeUndefined();
 });

@@ -1,3 +1,4 @@
+import { PcbPinMapInput, PcbPinMapResult } from "./pcb-pin-map.ts";
 import * as W from "./pcb-workspace.ts";
 import { PcbPrintInput, PcbPrintResult } from "./pcb-print.ts";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,7 @@ import {
 } from "../baseSchemas.ts";
 
 export const PCB_PREVIEW_WS_METHODS = {
+  pinMap: "loom.pcb-preview.pinMap",
   reuseHardware: "loom.pcb-preview.reuseHardware",
   status: "loom.pcb-preview.status",
   exportReference: "loom.pcb-preview.exportReference",
@@ -410,6 +412,11 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
   Rpc.make(PCB_PREVIEW_WS_METHODS.readSheet, {
     payload: PcbReadSheetInput,
     success: PcbReadSheetResult,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.pinMap, {
+    payload: PcbPinMapInput,
+    success: PcbPinMapResult,
     error: errors,
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.projectSettings, {

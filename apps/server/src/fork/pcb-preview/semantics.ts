@@ -42,6 +42,7 @@ export function inspectBoard(source: string, sourceHash: string): PcbInspection 
       pins: children(f, "pad")
         .filter((p) => atom(p))
         .map((p) => ({
+          ...(atom(child(p, "pintype")) ? { type: atom(child(p, "pintype")) } : {}),
           number: atom(p),
           name: atom(child(p, "pinfunction")),
           net: atom(child(p, "net"), 2),
@@ -140,6 +141,7 @@ export function inspectSchematic(
       id: `${atom(child(s, "uuid")) || r}:${r}`,
       reference: r,
       value: property(s, "Value"),
+      ...(atom(child(s, "lib_id")) ? { symbol: atom(child(s, "lib_id")) } : {}),
       footprint: property(s, "Footprint"),
       schematic: { x: number(at), y: number(at, 2), sheet },
       pins: (() => {
@@ -176,6 +178,7 @@ export function inspectSchematic(
                 x = number(pos) * (mirror === "y" ? -1 : 1),
                 y = -number(pos, 2) * (mirror === "x" ? -1 : 1);
               return {
+                ...(atom(pin) ? { type: atom(pin) } : {}),
                 number: atom(child(pin, "number")),
                 name: atom(child(pin, "name")),
                 net: "",
@@ -194,28 +197,62 @@ export function inspectSchematic(
 export function mergeNetlist(inspection: PcbInspection, source: string): PcbInspection {
   const root = parseSexp(source)[0];
   if (!Array.isArray(root)) throw new Error("Invalid netlist.");
+  const symbols = new Map(
+    children(child(root, "components"), "comp").map((comp) => {
+      const lib = child(comp, "libsource");
+      return [atom(child(comp, "ref")), `${atom(child(lib, "lib"))}:${atom(child(lib, "part"))}`];
+    }),
+  );
+  const definitions = new Map(
+    children(child(root, "libparts"), "libpart").map((lib) => [
+      `${atom(child(lib, "lib"))}:${atom(child(lib, "part"))}`,
+      children(child(lib, "pins"), "pin"),
+    ]),
+  );
   const connections = children(child(root, "nets"), "net").map((n) => ({
     name: atom(child(n, "name")),
     members: children(n, "node").map((p) => ({
       reference: atom(child(p, "ref")),
       pin: atom(child(p, "pin")),
       name: atom(child(p, "pinfunction")),
+      type: atom(child(p, "pintype")),
     })),
   }));
   return {
     ...inspection,
-    nets: connections.filter((n) => n.name),
+    nets: connections
+      .filter((n) => n.name)
+      .map((n) => ({
+        name: n.name,
+        members: n.members.map((m) => ({ reference: m.reference, pin: m.pin })),
+      })),
     components: inspection.components.map((c) => {
+      const symbol = symbols.get(c.reference) ?? c.symbol;
+      const definitionsForPart = definitions.get(symbol ?? "") ?? [];
       const pins = [...c.pins];
       for (const net of connections)
         for (const p of net.members)
           if (p.reference === c.reference) {
-            const i = pins.findIndex((v) => v.number === p.pin);
-            const pin = { ...(i >= 0 ? pins[i] : {}), number: p.pin, name: p.name, net: net.name };
+            const i = pins.findIndex((v) => v.number === p.pin),
+              existing = i >= 0 ? pins[i] : undefined;
+            const base = definitionsForPart.find((pin) => atom(child(pin, "num")) === p.pin);
+            const baseName = base
+              ? atom(child(base, "name"))
+              : (existing?.baseName ?? existing?.name);
+            const name = p.name || existing?.name || baseName || "";
+            // Netlists may report assigned alternates. Keep the library name to recover port identity.
+            const pin = {
+              ...existing,
+              number: p.pin,
+              name,
+              net: net.name,
+              ...(p.type ? { type: p.type } : {}),
+              ...(baseName && baseName !== name ? { baseName } : {}),
+            };
             if (i >= 0) pins[i] = pin;
             else pins.push(pin);
           }
-      return { ...c, pins };
+      return { ...c, ...(symbol && symbol !== ":" ? { symbol } : {}), pins };
     }),
   };
 }
@@ -292,6 +329,7 @@ export function inspectCircuitJson(json: unknown, sourceHash: string): PcbInspec
       id,
       reference: str(c.name) || id,
       value: str(c.display_value) || str(c.ftype),
+      ...(str(c.ftype) ? { symbol: str(c.ftype) } : {}),
       footprint: str(pcb?.footprint),
       ...(pcb
         ? {

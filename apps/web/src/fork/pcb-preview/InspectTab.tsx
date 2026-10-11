@@ -1,5 +1,12 @@
 import { useState } from "react";
-import { CpuIcon, LocateFixedIcon, SearchXIcon, SplineIcon, XIcon } from "lucide-react";
+import {
+  CpuIcon,
+  ListOrderedIcon,
+  LocateFixedIcon,
+  SearchXIcon,
+  SplineIcon,
+  XIcon,
+} from "lucide-react";
 import type { PcbInspection } from "@t3tools/contracts/fork";
 import { Bar, EmptyState, Group, Notice, Scroll, SearchField, Segmented } from "./InspectorKit";
 import { ToolButton } from "./ToolButton";
@@ -45,6 +52,7 @@ export function InspectTab({
   inspection,
   selected,
   net,
+  onPinMap,
   onSelect,
   onPin,
   onNet,
@@ -60,6 +68,7 @@ export function InspectTab({
   inspection: PcbInspection | null;
   selected: string | null;
   net: string | null;
+  onPinMap?: ((reference: string) => void) | undefined;
   onSelect: (reference: string | null) => void;
   onPin: (reference: string, pin: string) => void;
   onNet: (net: string | null) => void;
@@ -138,6 +147,13 @@ export function InspectTab({
                 <strong>{component.value || "No value"}</strong>
                 <small>{family(component.reference).name}</small>
               </div>
+              <ToolButton
+                label="Pin map"
+                disabled={!onPinMap}
+                onClick={() => onPinMap?.(component.reference)}
+              >
+                <ListOrderedIcon />
+              </ToolButton>
               <ToolButton label="Center in drawing" onClick={() => onSelect(component.reference)}>
                 <LocateFixedIcon />
               </ToolButton>

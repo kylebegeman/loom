@@ -1731,3 +1731,28 @@ button.location > svg {
   background: var(--muted);
   outline: 1px solid var(--pcb-line);
 }
+
+.pinMapTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+.pinMapTable th,
+.pinMapTable td {
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+.pinMapTable th {
+  color: var(--color-muted-foreground);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.pinMapTable td:last-child {
+  min-width: 180px;
+}
+.pinMapTable small {
+  display: block;
+  color: var(--color-muted-foreground);
+}

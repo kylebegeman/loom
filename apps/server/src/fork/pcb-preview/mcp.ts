@@ -70,7 +70,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_inspect", {
     description:
-      "Inspect components, pins, nets, layers and physical board coordinates. Runs CAD exporters when needed. Lengths and coordinates are in millimetres.",
+      "Inspect components, pins, nets, layers and physical board coordinates. Runs CAD exporters when needed. Lengths and coordinates are in millimetres. For firmware constants use loom_pcb_pin_map.",
     parameters: Schema.Struct(design),
     success: W.PcbInspection,
     failure,
@@ -136,6 +136,27 @@ export const PcbToolkit = Toolkit.make(
     dependencies: [McpInvocationContext, ThreadManagementService],
   })
     .annotate(Tool.Title, "PCB: check")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_pin_map", {
+    description:
+      "Generate a part's pin table and firmware constants from saved source. Formats: markdown, c, rust, micropython, circuitpython, arduino. GPIO comes from pin names. Pass save.path to write; save.overwrite confirms replacement.",
+    parameters: Schema.Struct({
+      ...design,
+      reference: W.PcbPinMapInput.fields.reference,
+      family: W.PcbPinMapInput.fields.family,
+      format: W.PcbPinMapInput.fields.format,
+      names: W.PcbPinMapInput.fields.names,
+      includePower: W.PcbPinMapInput.fields.includePower,
+      includeNoConnect: W.PcbPinMapInput.fields.includeNoConnect,
+      save: W.PcbPinMapInput.fields.save,
+      expectedSourceHash: W.PcbPinMapInput.fields.expectedSourceHash,
+    }),
+    success: W.PcbPinMapResult,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: pin map")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_check_settings", {
@@ -406,6 +427,14 @@ export const pcbHandlers = McpToolAccess.toLayer(
           const threadId = yield* thread;
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) => service.check({ ...input, threadId })),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_pin_map: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) => service.pinMap({ ...input, threadId })),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),

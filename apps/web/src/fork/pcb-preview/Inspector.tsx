@@ -230,6 +230,7 @@ export function ToolPanel({
   layers,
   selected,
   net,
+  onPinMap,
   onSelect,
   onPin,
   onNet,
@@ -263,6 +264,7 @@ export function ToolPanel({
   layers: readonly PcbLayerState[];
   selected: string | null;
   net: string | null;
+  onPinMap?: ((reference: string) => void) | undefined;
   onSelect: (reference: string | null) => void;
   onPin: (reference: string, pin: string) => void;
   onNet: (net: string | null) => void;
@@ -291,6 +293,7 @@ export function ToolPanel({
           inspection={inspection}
           selected={selected}
           net={net}
+          onPinMap={onPinMap}
           onSelect={onSelect}
           onPin={onPin}
           onNet={onNet}

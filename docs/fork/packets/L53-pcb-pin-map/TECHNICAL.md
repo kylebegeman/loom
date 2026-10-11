@@ -290,7 +290,7 @@ const pinMap = Effect.fn("PcbPreview.pinMap")(function* (input: PcbPinMapInput) 
    creating directory trees.
 3. If the file exists and `overwrite` is false, fail with `conflict` ("A file already exists at
    hw/pins.h."). If it exists and is a directory or symlink, fail with `invalid-parameters`.
-4. `writeFileStringAtomically({ filePath, contents: text })` (`:66`, used at `:965`).
+4. Exclusive creation for a new file; sibling temporary contents and rename for confirmed replacement. The shared atomic helper follows symlinks, so pin-map exports use a rename that replaces the entry itself.
 
 Saving does not change the design's source hash: generated `.h`, `.rs` and `.py` files are not
 design sources for either kind (`PcbPreviewService.ts:557-564`), so the panel does not reload.

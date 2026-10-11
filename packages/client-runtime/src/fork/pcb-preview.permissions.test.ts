@@ -38,8 +38,8 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect.each(["print", "updateProjectSettings"] as const)(
-  "PCB %s availability and authorization use its destination terminal grant",
+it.effect.each(["print", "updateProjectSettings", "pinMap"] as const)(
+  "PCB %s availability and authorization use its destination grant",
   (method) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -48,12 +48,15 @@ it.effect.each(["print", "updateProjectSettings"] as const)(
         yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
         const command = createPcbPreviewAtoms(runtime)[method];
         const policy = createCommandPermissions(runtime, PCB_PREVIEW_WS_METHODS[method]);
-        expect(policy.requiredScopes()).toEqual([AuthTerminalOperateScope]);
-        registry.set(sessions(env), AsyncResult.success(grant(false)));
+        const scope =
+          method === "pinMap" ? AuthOrchestrationOperateScope : AuthTerminalOperateScope;
+        const granted = method !== "pinMap";
+        expect(policy.requiredScopes()).toEqual([scope]);
+        registry.set(sessions(env), AsyncResult.success(grant(!granted)));
         expect(registry.get(command.permissionAtom(env))).toBe(false);
         const denied = yield* policy.authorize(registry, env).pipe(Effect.flip);
-        expect(denied.requiredScope).toBe(AuthTerminalOperateScope);
-        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(denied.requiredScope).toBe(scope);
+        registry.set(sessions(env), AsyncResult.success(grant(granted)));
         expect(registry.get(command.permissionAtom(env))).toBe(true);
         yield* policy.authorize(registry, env);
         expect(registry.get(command.permissionAtom(EnvironmentId.make("other-host")))).toBe(false);

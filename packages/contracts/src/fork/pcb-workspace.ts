@@ -28,6 +28,8 @@ export const PcbLocation = Schema.Struct({
   sheet: Schema.optional(text(1024)),
 });
 export const PcbPin = Schema.Struct({
+  type: Schema.optional(text(64)),
+  baseName: Schema.optional(text(200)),
   number: text(),
   name: Schema.String,
   net: Schema.String,
@@ -39,6 +41,7 @@ export const PcbComponent = Schema.Struct({
   reference: text(),
   value: Schema.String,
   footprint: Schema.String,
+  symbol: Schema.optional(text(400)),
   pcb: Schema.optional(PcbLocation),
   schematic: Schema.optional(PcbLocation),
   side: Schema.optional(Schema.Literals(["front", "back"])),

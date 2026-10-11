@@ -100,6 +100,7 @@ import type { Pcb3dHandle } from "./Board3D";
 import type { PcbViewportHandle } from "./SvgViewport";
 const Board3D = lazy(() => import("./Board3D").then((m) => ({ default: m.Board3D })));
 import { SvgViewport } from "./SvgViewport";
+import { PinMapDialog } from "./PinMapDialog";
 import { ChecksView } from "./ChecksView";
 import { OperationStatus } from "./OperationStatus";
 import styles from "./workspace.module.css";
@@ -179,6 +180,7 @@ export function DesignWorkspace({
     [printOpen, setPrintOpen] = useState(false),
     [exportBusy, setExportBusy] = useState(false),
     [measuringHeights, setMeasuringHeights] = useState(false);
+  const [pinMapFor, setPinMapFor] = useState<string | null>(null);
   const lastTab = useRef<InspectorTab>("Inspect");
   const board3d = useRef<Pcb3dHandle | null>(null);
   const viewport = useRef<PcbViewportHandle | null>(null),
@@ -1642,6 +1644,7 @@ export function DesignWorkspace({
                 }}
                 selected={selected}
                 net={net}
+                onPinMap={setPinMapFor}
                 onSelect={selectComponent}
                 onPin={(reference, pin) => {
                   try {
@@ -1817,6 +1820,16 @@ export function DesignWorkspace({
           {preview.cancelled ? "Paused" : preview.watchError ? "Manual refresh" : "Live"}
         </span>
       </footer>
+      {pinMapFor && (
+        <PinMapDialog
+          key={pinMapFor}
+          threadRef={threadRef}
+          designId={design.id}
+          reference={pinMapFor}
+          inspection={workbench.inspection}
+          onClose={() => setPinMapFor(null)}
+        />
+      )}
       <TrueScalePrintDialog
         open={printOpen}
         onOpenChange={setPrintOpen}

@@ -94,6 +94,7 @@ import {
 } from "./kicadReports.ts";
 import { parseKicadVersion, parseTsciVersion, circuitEnvironment, processLog } from "./tools.ts";
 
+import { makePinMap } from "./pinMap.ts";
 import { makeProjectSettings } from "./projectSettings.ts";
 import { makeAutoChecks, AUTO_CHECK_TIMEOUT } from "./autoChecks.ts";
 
@@ -159,6 +160,7 @@ export class PcbPreviewService extends Context.Service<
     readonly readSheet: (
       input: PcbReadSheetInput,
     ) => Effect.Effect<PcbReadSheetResult, PcbPreviewError>;
+    readonly pinMap: (input: W.PcbPinMapInput) => Effect.Effect<W.PcbPinMapResult, PcbPreviewError>;
     readonly projectSettings: (
       input: PcbProjectSettingsInput,
     ) => Effect.Effect<PcbProjectSettings, PcbPreviewError>;
@@ -2832,7 +2834,21 @@ export const make = Effect.gen(function* () {
         );
       }),
     );
+  const pinMap = yield* makePinMap({
+    inspect: (i) => checked(inspect(i)),
+    root: (i) => checked(workspace(i.threadId)).pipe(Effect.map((w) => w.root)),
+    hash: (i) =>
+      checked(resolveDesign(i).pipe(Effect.flatMap(sourceSnapshot))).pipe(
+        Effect.map((s) => s.sourceHash),
+      ),
+    refresh: (root) =>
+      entries.refresh(root).pipe(
+        Effect.asVoid,
+        Effect.catch(() => Effect.void),
+      ),
+  });
   return PcbPreviewService.of({
+    pinMap,
     resolveSignedRequest: (token, relative) => checked(resolveSignedRequest(token, relative)),
     workspaceUpdates: (i) =>
       workspaceUpdates(i).pipe(

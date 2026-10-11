@@ -31,3 +31,5 @@ export * from "./model-slicer.ts";
 export * from "./model-python-cad.ts";
 export * from "./model-assembly.ts";
 export * from "./model-history.ts";
+
+export * from "./pcb-pin-map.ts";
