@@ -397,3 +397,62 @@ it.effect("decodes and forwards finding and marker editor actions through caller
     }),
   ),
 );
+
+it.effect("agent latest checks default to fresh and project settings use the caller thread", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const calls: unknown[] = [];
+      const { toolkit, threads } = yield* fixture({
+        latestChecks: (input) =>
+          Effect.sync(() => {
+            calls.push(input);
+            return [];
+          }),
+        projectSettings: (input) =>
+          Effect.sync(() => {
+            calls.push(input);
+            return { autoChecks: { erc: false, drc: false } };
+          }),
+        updateProjectSettings: (input) =>
+          Effect.sync(() => {
+            calls.push(input);
+            return { autoChecks: { erc: false, drc: true } };
+          }),
+      });
+      yield* toolkit
+        .handle("loom_pcb_latest_checks", { designId: "board.kicad_pro" })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      yield* toolkit
+        .handle("loom_pcb_latest_checks", { designId: "board.kicad_pro", ensureFresh: false })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      yield* toolkit
+        .handle("loom_pcb_check_settings", {})
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      yield* toolkit
+        .handle("loom_pcb_check_settings", { autoChecks: { drc: true } })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      expect(calls).toEqual([
+        { threadId, designId: "board.kicad_pro", ensureFresh: true },
+        { threadId, designId: "board.kicad_pro", ensureFresh: false },
+        { threadId },
+        { threadId, autoChecks: { drc: true } },
+      ]);
+    }),
+  ),
+);

@@ -32,17 +32,17 @@ Kyle added two packets on 2026-10-09, after V2 shipped in nightly:
 Kyle selected the 3D and PCB follow-ups on 2026-10-10, leaving out goal-driven exploration,
 mobile 3D, a new viewer core, simulation results on the schematic and parts sourcing:
 
-| Order | Packets                                               | Status                                 | Decision                                                                |
-| ----- | ----------------------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------- |
-| 9     | [3D follow-ups](./MODEL-3D-FOLLOW-UPS.md), L31 to L51 | Documented; see the index for each one | Kyle selected all 21 on 2026-10-10. Build in the suggested order there. |
-| 10    | [PCB follow-ups](./PCB-FOLLOW-UPS.md), L52 to L70     | Six implemented locally; see the index | Kyle selected all 19 on 2026-10-10. Build in the suggested order there. |
+| Order | Packets                                               | Status                                   | Decision                                                                |
+| ----- | ----------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------- |
+| 9     | [3D follow-ups](./MODEL-3D-FOLLOW-UPS.md), L31 to L51 | Documented; see the index for each one   | Kyle selected all 21 on 2026-10-10. Build in the suggested order there. |
+| 10    | [PCB follow-ups](./PCB-FOLLOW-UPS.md), L52 to L70     | Seven implemented locally; see the index | Kyle selected all 19 on 2026-10-10. Build in the suggested order there. |
 
 The first PCB batch, L54, L56, L55, L57 and L62, is implemented locally on
 `feat/pcb-units-presets-stats-print-capture`. Focused checks passed; client, real-tool and
 physical-print verification remain in each packet's testing notes. The rest of the selection
 is unchanged. L52 is also implemented locally on the same branch, with focused report,
 marker/navigation, capture and agent tests. Real-client and CAD verification remain pending;
-L58 is next in the suggested PCB order.
+L58 is implemented locally with host scheduling, project settings and agent/client result refresh. Real-client and CAD checks remain pending. L53 is next in this batch.
 
 Each follow-up is an independent packet. One marked "Needs decision" in the
 [packet index](./README.md#packet-index) waits for Kyle's answer to the question in its

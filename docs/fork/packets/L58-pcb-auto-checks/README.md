@@ -1,6 +1,6 @@
 # L58: Checks after every save
 
-Status: Ready to build
+Status: Implemented locally; real-client and CAD verification pending
 
 Approved by Kyle on 2026-10-10.
 

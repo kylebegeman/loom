@@ -1243,3 +1243,54 @@ it.effect("keeps board inspection when optional project rules exceed the read li
     }),
   ),
 );
+
+it.effect(
+  "agent fresh reads run enabled checks, persist deltas, and preserve reports after automatic failures",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          service = yield* t.create();
+        const input = { threadId: t.input.threadId, designId: t.input.designId };
+        expect((yield* service.projectSettings(input)).autoChecks.drc).toBe(false);
+        yield* service.updateProjectSettings({ ...input, autoChecks: { drc: true } });
+        t.setResult(5);
+        const first = (yield* service.latestChecks({ ...input, ensureFresh: true }))[0]!;
+        expect(first.trigger).toBe("auto");
+        expect(first.outcome).toBe("violations");
+        t.setResult(0);
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_pcb"), "updated");
+        const second = (yield* service.latestChecks({ ...input, ensureFresh: true }))[0]!;
+        expect(second.delta?.resolvedCount).toBe(1);
+        expect(second.delta?.newCount).toBe(0);
+        t.setResult(1);
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_pcb"), "failed update");
+        expect((yield* service.latestChecks({ ...input, ensureFresh: true }))[0]?.sourceHash).toBe(
+          second.sourceHash,
+        );
+        const manual = yield* service.check({ ...input, kind: "drc" });
+        expect(manual.trigger).toBe("manual");
+        expect(manual.outcome).toBe("failed");
+      }),
+    ),
+);
+it.effect("check activity emits agent results with subscribe-before-read ordering", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create();
+      const input = { threadId: t.input.threadId, designId: t.input.designId };
+      const subscribed = yield* Deferred.make<void>();
+      const event = yield* service.checkEvents(input).pipe(
+        Stream.tap(() => Deferred.succeed(subscribed, undefined)),
+        Stream.filter((e) => !!e.ranAt.drc),
+        Stream.take(1),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* Deferred.await(subscribed);
+      const result = yield* service.check({ ...input, kind: "drc" });
+      expect((yield* Fiber.join(event))[0]?.ranAt.drc).toBe(result.ranAt);
+    }),
+  ),
+);

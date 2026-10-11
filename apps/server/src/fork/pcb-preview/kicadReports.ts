@@ -244,3 +244,26 @@ export function parseKicadReport(
     pointsInMm: true,
   };
 }
+
+/** Compare actionable identities, preserving bounded details for agent and client feedback. */
+export function checkDelta(previous: PcbCheckResult, next: PcbCheckResult) {
+  const good = (r: PcbCheckResult) => r.outcome === "clean" || r.outcome === "violations";
+  if (!good(previous) || !good(next)) return undefined;
+  const before = identify(previous.violations, previous.kind).filter((v) => !v.excluded);
+  const after = identify(next.violations, next.kind).filter((v) => !v.excluded);
+  const oldIds = new Set(before.map((v) => v.id));
+  const newIds = new Set(after.map((v) => v.id));
+  const added = after.filter((v) => !oldIds.has(v.id));
+  const resolved = before.filter((v) => !newIds.has(v.id));
+  return {
+    previousRanAt: previous.ranAt,
+    previousSourceHash: previous.sourceHash,
+    newCount: added.length,
+    resolvedCount: resolved.length,
+    added: added.slice(0, 200).map((v) => v.id),
+    resolved: resolved
+      .slice(0, 50)
+      .map((v) => ({ id: v.id, type: v.type, description: v.description.trim().slice(0, 200) })),
+    approximate: previous.truncated || next.truncated,
+  };
+}

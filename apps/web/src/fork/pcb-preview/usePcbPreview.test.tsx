@@ -9,6 +9,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vite-plus/test";
 import { usePcbPreview } from "./usePcbPreview";
 const mocked = vi.hoisted(() => ({
   watch: vi.fn(),
+  checkEvents: vi.fn(),
   latestChecks: vi.fn(),
   render: { permissionAtom: vi.fn(), resultAtom: vi.fn() },
   readSheet: { resultAtom: vi.fn() },
@@ -44,6 +45,9 @@ const render = Atom.make<AsyncResult.AsyncResult<PcbRenderResult, Error>>(AsyncR
 const check = Atom.make<AsyncResult.AsyncResult<PcbCheckResult, Error>>(AsyncResult.initial());
 const sheet = Atom.make<AsyncResult.AsyncResult<{ svg: string }, Error>>(
   AsyncResult.success({ svg: "<svg/>" }),
+);
+const activity = Atom.make(
+  AsyncResult.success({ running: null, paused: [], ranAt: {} as { drc?: string } }),
 );
 const latest = Atom.make(AsyncResult.success<readonly PcbCheckResult[]>([]));
 function Harness({
@@ -87,6 +91,8 @@ beforeEach(() => {
   renderer = null;
   const permitted = Atom.make(true);
   mocked.watch.mockReturnValue(watch);
+  mocked.checkEvents.mockReturnValue(activity);
+  registry.set(activity, AsyncResult.success({ running: null, paused: [], ranAt: {} }));
   mocked.render.permissionAtom.mockReturnValue(permitted);
   mocked.check.permissionAtom.mockReturnValue(permitted);
   mocked.render.resultAtom.mockReturnValue(render);
@@ -186,4 +192,23 @@ it("keeps capture metadata tied to decoded bytes while a new sheet read is refre
   await act(async () => registry.set(sheet, AsyncResult.success({ svg: "<svg><new/></svg>" })));
   expect(preview.display?.renderKey).toBe("second");
   expect(preview.display?.sourceHash).toBe("two");
+});
+
+it("refreshes stored checks once when an agent result advances the activity timestamp", async () => {
+  await mount();
+  const refresh = vi.spyOn(registry, "refresh");
+  await act(async () =>
+    registry.set(
+      activity,
+      AsyncResult.success({
+        running: null,
+        paused: [],
+        ranAt: { drc: "2026-10-11T12:00:00.000Z" },
+      }),
+    ),
+  );
+  expect(refresh).toHaveBeenCalledWith(latest);
+  refresh.mockClear();
+  await act(async () => registry.set(latest, AsyncResult.success([])));
+  expect(refresh).not.toHaveBeenCalled();
 });

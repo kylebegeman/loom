@@ -1,5 +1,5 @@
-import { useAtomValue } from "@effect/atom-react";
-import { useMemo, useState } from "react";
+import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
@@ -12,6 +12,7 @@ import type {
   PcbReadSheetResult,
   PcbCheckKind,
   PcbCheckResult,
+  PcbCheckActivity,
 } from "@t3tools/contracts/fork";
 import { pcb } from "./state";
 import { previewAction } from "./usePcbPreview.logic";
@@ -19,6 +20,7 @@ import { previewAction } from "./usePcbPreview.logic";
 const idleRender = Atom.make(AsyncResult.initial<PcbRenderResult, never>());
 const idleSheet = Atom.make(AsyncResult.initial<PcbReadSheetResult, never>());
 const idleChecks = Atom.make(AsyncResult.success<readonly PcbCheckResult[]>([]));
+const idleActivity = Atom.make(AsyncResult.initial<PcbCheckActivity, never>());
 const idleCheck = Atom.make(AsyncResult.initial<PcbCheckResult, never>());
 export const asyncValue = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
   Option.getOrNull(AsyncResult.value(result));
@@ -142,6 +144,33 @@ export function usePcbPreview(
       ? pcb.latestChecks({ environmentId, input: { threadId, designId: design.id } })
       : idleChecks,
   );
+  const activityState = useAtomValue(
+    design.kind === "kicad" && visible
+      ? pcb.checkEvents({ environmentId, input: { threadId, designId: design.id } })
+      : idleActivity,
+  );
+  const activity = asyncValue(activityState);
+  const refreshChecks = useAtomRefresh(
+    design.kind === "kicad"
+      ? pcb.latestChecks({ environmentId, input: { threadId, designId: design.id } })
+      : idleChecks,
+  );
+  const loaded = asyncValue(latestState);
+  const observedChecks = useRef("");
+  useEffect(() => {
+    const stamp = JSON.stringify(activity?.ranAt);
+    if (observedChecks.current === stamp) return;
+    observedChecks.current = stamp;
+    if (
+      (["erc", "drc"] as const).some(
+        (kind) =>
+          activity?.ranAt[kind] &&
+          (!loaded?.find((r) => r.kind === kind) ||
+            activity.ranAt[kind]! > loaded.find((r) => r.kind === kind)!.ranAt),
+      )
+    )
+      refreshChecks();
+  }, [activity, loaded, refreshChecks]);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkRevision, setCheckRevision] = useState(0);
   const [job, setJob] = useState<{ kind: PcbCheckKind; revision: number } | null>(null);
@@ -200,6 +229,7 @@ export function usePcbPreview(
     watching: !sourceHash && asyncError(watched) === null,
     error: asyncError(renderState),
     sheetError: asyncError(sheetState),
+    activity,
     checks: results,
     checksLoading: latestState.waiting || latestState._tag === "Initial",
     checksError: asyncError(latestState),

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
 vi.mock("~/state/entities", () => ({ useServerConfigs: () => [] }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: vi.fn() } }));
+vi.mock("./AutoCheckSettings", () => ({ AutoCheckSettings: () => null }));
 vi.mock("./TrueScalePrintDialog", () => ({ TrueScalePrintDialog: () => null }));
 vi.mock("./HardwareLibrary", () => ({ HardwareLibrary: () => null }));
 vi.mock("./SimulationEditor", () => ({ SimulationEditor: () => null }));

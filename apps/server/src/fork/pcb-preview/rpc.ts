@@ -32,6 +32,10 @@ export const makePcbPreviewRpcHandlers = (auth: ForkRpcAuth) =>
       [M.listDesigns]: (input) => auth.effect(M.listDesigns, service.listDesigns(input)),
       [M.render]: (input) => auth.effect(M.render, service.render(input)),
       [M.readSheet]: (input) => auth.effect(M.readSheet, service.readSheet(input)),
+      [M.projectSettings]: (i) => auth.effect(M.projectSettings, service.projectSettings(i)),
+      [M.updateProjectSettings]: (i) =>
+        auth.effect(M.updateProjectSettings, service.updateProjectSettings(i)),
+      [M.checkEvents]: (i) => auth.stream(M.checkEvents, service.checkEvents(i)),
       [M.check]: (input) => auth.effect(M.check, service.check(input)),
       [M.print]: (input) => auth.effect(M.print, service.print(input)),
       [M.latestChecks]: (input) => auth.effect(M.latestChecks, service.latestChecks(input)),

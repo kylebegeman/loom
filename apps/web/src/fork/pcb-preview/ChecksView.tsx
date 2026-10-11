@@ -12,12 +12,14 @@ import {
 } from "lucide-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type {
+  PcbCheckActivity,
   PcbCheckKind,
   PcbCheckResult,
   PcbDesign,
   PcbViolation,
   PcbFinding,
 } from "@t3tools/contracts/fork";
+import { AutoCheckSettings } from "./AutoCheckSettings";
 import { Switch } from "~/components/ui/switch";
 import { orderFindings, checkFindings } from "./findings";
 import { Badge } from "~/components/ui/badge";
@@ -87,6 +89,7 @@ function status(
 /** KiCad ERC/DRC reports, rendered as the inspector's Checks section. */
 export function ChecksView({
   threadRef,
+  activity,
   design,
   results,
   sourceHash,
@@ -97,6 +100,7 @@ export function ChecksView({
   loading,
   onRun,
   onCancel,
+  canCancel = true,
   onLocate,
   showExcluded = false,
   onShowExcluded,
@@ -109,6 +113,7 @@ export function ChecksView({
   drawingSourceHash,
 }: {
   threadRef: ScopedThreadRef;
+  activity?: PcbCheckActivity | null;
   design: PcbDesign;
   results: Partial<Record<PcbCheckKind, PcbCheckResult>>;
   sourceHash: string | null;
@@ -128,6 +133,7 @@ export function ChecksView({
   loading: boolean;
   onRun: (kind: PcbCheckKind) => void;
   onCancel: () => void;
+  canCancel?: boolean;
   onLocate?: (kind: PcbCheckKind, point: { x: number; y: number }, sheet?: string) => void;
 }) {
   const [kind, setKind] = useState<PcbCheckKind>(design.schematicPath ? "erc" : "drc"),
@@ -231,6 +237,14 @@ export function ChecksView({
         </div>
       </Bar>
       <Scroll>
+        <AutoCheckSettings threadRef={threadRef} design={design} />
+        {activity?.paused.map((pause) => (
+          <Notice key={pause.kind} tone="warning">
+            {pause.reason === "slow"
+              ? `Automatic ${pause.kind.toUpperCase()} is paused because the last run took ${Math.round((pause.durationMs ?? 0) / 1000)} seconds. Run it from Checks to resume.`
+              : `Automatic ${pause.kind.toUpperCase()} stopped after a failed run. It resumes after the next save.`}
+          </Notice>
+        ))}
         <label className={k.markerToggle}>
           <Switch
             checked={markers}
@@ -251,8 +265,12 @@ export function ChecksView({
           <OperationStatus
             key={`${checking}:${jobRevision}`}
             label={`Checking ${checking === "erc" ? "schematic" : "board"}`}
-            detail="KiCad processes one task at a time. A preview may finish first."
-            onCancel={onCancel}
+            detail={
+              activity?.running?.trigger === "auto"
+                ? "Started after a save."
+                : "KiCad processes one task at a time. A preview may finish first."
+            }
+            {...(canCancel ? { onCancel } : {})}
           />
         )}
         {loading && !result && <OperationStatus label="Loading previous checks" />}
@@ -276,6 +294,21 @@ export function ChecksView({
               ? "Checks electrical connections and schematic rules on the saved design."
               : "Checks clearances, connections and schematic parity. Zones are used as saved and nothing is refilled."}
           </EmptyState>
+        )}
+        {result?.delta && (
+          <>
+            <p className={k.hint}>
+              {result.delta.newCount} new, {result.delta.resolvedCount} resolved since the last run
+              {result.delta.approximate ? " (approximate)" : ""}.
+            </p>
+            {result.delta.resolved.length > 0 && (
+              <Group title="Resolved" meta={result.delta.resolvedCount} defaultOpen={false}>
+                {result.delta.resolved.map((finding) => (
+                  <p key={finding.id}>{finding.description}</p>
+                ))}
+              </Group>
+            )}
+          </>
         )}
         {result && (
           <>
@@ -386,7 +419,14 @@ export function ChecksView({
                           className={k.finding}
                           data-excluded={v.excluded || undefined}
                         >
-                          <p>{v.description}</p>
+                          <p>
+                            {v.description}{" "}
+                            {result.delta?.added.includes(findingId(v)) && (
+                              <Badge variant="secondary" size="sm">
+                                New
+                              </Badge>
+                            )}
+                          </p>
                           {(v.group !== "violation" ||
                             v.excluded ||
                             v.sheet ||

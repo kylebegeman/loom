@@ -62,3 +62,7 @@ Upstream server: no PCB panel. tscircuit design: no ERC or DRC, no settings row.
 Run `scripts/fork/loom.sh check` and the merge check in SEAMS.md; expect a clean merge since no
 upstream file changes. After merge to `main`, Kyle runs
 `scripts/fork/loom.sh integrate nightly --dry-run`.
+
+## Local implementation results
+
+Implemented on `feat/pcb-units-presets-stats-print-capture`. Focused scheduler, settings, report, service, MCP, hook and command-permission checks passed. The scheduler tests use TestClock and Deferred milestones, including cancellation of in-flight work. Contracts, client-runtime, server and web typechecks and scoped lint passed. Real KiCad/client, multi-client remote and pause timing checks remain unverified; no browser or live state was used.

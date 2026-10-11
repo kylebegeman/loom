@@ -15,12 +15,14 @@ export const CheckMarkers = memo(function CheckMarkers({
   activePoints,
   stale,
   excludedIds,
+  addedIds,
 }: {
   findings: readonly PcbFinding[];
   activeId: string | null;
   activePoints: readonly PcbPoint[];
   stale: boolean;
   excludedIds?: ReadonlySet<string>;
+  addedIds?: readonly string[] | undefined;
 }) {
   const size = markerSize(useOverlayScale());
   const active = findings.find((f) => f.id === activeId);
@@ -36,6 +38,18 @@ export const CheckMarkers = memo(function CheckMarkers({
             r={size.radius}
             fill={excludedIds?.has(f.id) ? "none" : colors[f.severity]}
             stroke={excludedIds?.has(f.id) ? colors[f.severity] : "var(--color-background)"}
+          />
+        ))}
+      {findings
+        .filter((f) => addedIds?.includes(f.id))
+        .map((f) => (
+          <circle
+            key={`new-${f.id}`}
+            cx={f.pointMm.x}
+            cy={f.pointMm.y}
+            r={size.ring}
+            fill="none"
+            stroke={colors[f.severity]}
           />
         ))}
       {active && (

@@ -129,7 +129,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_check", {
     description:
-      "Run KiCad ERC or DRC on saved source. Item coordinates are in millimetres; findings have stable ids.",
+      "Run KiCad ERC or DRC on saved source. The delta lists findings added and resolved since the previous run. Coordinates are millimetres.",
     parameters: Schema.Struct({ ...design, kind: W.PcbCheckInput.fields.kind }),
     success: W.PcbCheckResult,
     failure,
@@ -138,10 +138,21 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "PCB: check")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_check_settings", {
+    description:
+      "Read or update project checks after each save. Runs while a design is open or an agent requests fresh checks.",
+    parameters: Schema.Struct({ autoChecks: W.PcbUpdateProjectSettingsInput.fields.autoChecks }),
+    success: W.PcbProjectSettings,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: check settings")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_latest_checks", {
     description:
-      "Read latest persisted rule checks. Item coordinates are in millimetres; findings have stable ids.",
-    parameters: Schema.Struct(design),
+      "Read latest ERC and DRC results. With project automatic checks on, waits for saved files by default. The delta lists added and resolved findings; with checks off, use loom_pcb_check to refresh.",
+    parameters: Schema.Struct({ ...design, ensureFresh: Schema.optional(Schema.Boolean) }),
     success: W.PcbLatestChecksResult,
     failure,
     dependencies: [McpInvocationContext],
@@ -398,12 +409,24 @@ export const pcbHandlers = McpToolAccess.toLayer(
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
+      loom_pcb_check_settings: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              input.autoChecks
+                ? service.updateProjectSettings({ ...input, threadId })
+                : service.projectSettings({ threadId }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       loom_pcb_latest_checks: McpToolAccess.readsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* thread;
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) =>
-              service.latestChecks({ ...input, threadId }),
+              service.latestChecks({ ...input, threadId, ensureFresh: input.ensureFresh ?? true }),
             ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),

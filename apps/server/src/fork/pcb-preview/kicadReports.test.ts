@@ -1,3 +1,4 @@
+import { checkDelta } from "./kicadReports.ts";
 import { expect, it } from "vite-plus/test";
 import type { PcbCheckResult } from "@t3tools/contracts/fork";
 import {
@@ -95,4 +96,41 @@ it("bounds enriched findings and keeps duplicate identities distinct", () => {
   expect(result.violations[1]?.id).toBe(`${result.violations[0]?.id}-2`);
   expect(result.truncated).toBe(true);
   expect(Buffer.byteLength(JSON.stringify(result.violations))).toBeLessThan(1024 * 1024);
+});
+
+it("deltas ignore excluded findings and bound added and resolved details", () => {
+  const base = {
+    kind: "drc" as const,
+    sourceHash: "old",
+    outcome: "violations" as const,
+    counts: { errors: 1, warnings: 0, excluded: 0 },
+    ranAt: "2026-10-11T00:00:00.000Z",
+    log: "",
+    truncated: true,
+  };
+  const violations = Array.from({ length: 300 }, (_, i) => ({
+    id: `id-${i}`,
+    group: "violation" as const,
+    type: "clearance",
+    description: "d".repeat(250),
+    severity: "error" as const,
+    excluded: false,
+    items: [],
+  }));
+  const before = { ...base, violations },
+    after = {
+      ...base,
+      sourceHash: "new",
+      violations: violations
+        .map((v) => ({ ...v, id: `new-${v.id}` }))
+        .concat([{ ...violations[0]!, id: "excluded", excluded: true }]),
+    };
+  const delta = checkDelta(before, after)!;
+  expect(delta.newCount).toBe(300);
+  expect(delta.resolvedCount).toBe(300);
+  expect(delta.added).toHaveLength(200);
+  expect(delta.resolved).toHaveLength(50);
+  expect(delta.resolved[0]?.description).toHaveLength(200);
+  expect(delta.approximate).toBe(true);
+  expect(checkDelta(before, { ...after, outcome: "failed" })).toBeUndefined();
 });

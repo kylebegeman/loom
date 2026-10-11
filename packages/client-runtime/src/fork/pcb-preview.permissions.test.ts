@@ -38,16 +38,16 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect(
-  "PCB print command availability and authorization use its destination terminal grant",
-  () =>
+it.effect.each(["print", "updateProjectSettings"] as const)(
+  "PCB %s availability and authorization use its destination terminal grant",
+  (method) =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = AtomRegistry.make();
         registry.mount(sessions(env));
         yield* Effect.addFinalizer(() => Effect.sync(() => registry.dispose()));
-        const command = createPcbPreviewAtoms(runtime).print;
-        const policy = createCommandPermissions(runtime, PCB_PREVIEW_WS_METHODS.print);
+        const command = createPcbPreviewAtoms(runtime)[method];
+        const policy = createCommandPermissions(runtime, PCB_PREVIEW_WS_METHODS[method]);
         expect(policy.requiredScopes()).toEqual([AuthTerminalOperateScope]);
         registry.set(sessions(env), AsyncResult.success(grant(false)));
         expect(registry.get(command.permissionAtom(env))).toBe(false);

@@ -1,5 +1,6 @@
 import * as W from "./pcb-workspace.ts";
 import { PcbPrintInput, PcbPrintResult } from "./pcb-print.ts";
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -38,6 +39,9 @@ export const PCB_PREVIEW_WS_METHODS = {
   listDesigns: "loom.pcb-preview.listDesigns",
   render: "loom.pcb-preview.render",
   readSheet: "loom.pcb-preview.readSheet",
+  projectSettings: "loom.pcb-preview.projectSettings",
+  updateProjectSettings: "loom.pcb-preview.updateProjectSettings",
+  checkEvents: "loom.pcb-preview.checkEvents",
   check: "loom.pcb-preview.check",
   print: "loom.pcb-preview.print",
   watch: "loom.pcb-preview.watch",
@@ -168,7 +172,65 @@ export const PcbCheckCounts = Schema.Struct({
 });
 export type PcbCheckCounts = typeof PcbCheckCounts.Type;
 
+export const PcbCheckTrigger = Schema.Literals(["manual", "auto"]);
+export type PcbCheckTrigger = typeof PcbCheckTrigger.Type;
+export const PcbCheckDelta = Schema.Struct({
+  previousRanAt: IsoDateTime,
+  previousSourceHash: TrimmedNonEmptyString,
+  newCount: NonNegativeInt,
+  resolvedCount: NonNegativeInt,
+  added: Schema.Array(TrimmedNonEmptyString),
+  resolved: Schema.Array(
+    Schema.Struct({ id: TrimmedNonEmptyString, type: Schema.String, description: Schema.String }),
+  ),
+  approximate: Schema.Boolean,
+});
+export type PcbCheckDelta = typeof PcbCheckDelta.Type;
+export const PcbAutoChecks = Schema.Struct({
+  erc: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  drc: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+export const PcbProjectSettings = Schema.Struct({
+  autoChecks: PcbAutoChecks.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+export type PcbProjectSettings = typeof PcbProjectSettings.Type;
+export const PcbProjectSettingsInput = Schema.Struct({ threadId: ThreadId });
+export type PcbProjectSettingsInput = typeof PcbProjectSettingsInput.Type;
+export const PcbUpdateProjectSettingsInput = Schema.Struct({
+  threadId: ThreadId,
+  autoChecks: Schema.optional(
+    Schema.Struct({ erc: Schema.optional(Schema.Boolean), drc: Schema.optional(Schema.Boolean) }),
+  ),
+});
+export type PcbUpdateProjectSettingsInput = typeof PcbUpdateProjectSettingsInput.Type;
+export const PcbCheckEventsInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: TrimmedNonEmptyString,
+});
+export type PcbCheckEventsInput = typeof PcbCheckEventsInput.Type;
+export const PcbCheckActivity = Schema.Struct({
+  running: Schema.NullOr(
+    Schema.Struct({
+      kind: PcbCheckKind,
+      trigger: PcbCheckTrigger,
+      sourceHash: TrimmedNonEmptyString,
+    }),
+  ),
+  paused: Schema.Array(
+    Schema.Struct({
+      kind: PcbCheckKind,
+      reason: Schema.Literals(["slow", "failed"]),
+      durationMs: Schema.optional(NonNegativeInt),
+    }),
+  ),
+  ranAt: Schema.Struct({ erc: Schema.optional(IsoDateTime), drc: Schema.optional(IsoDateTime) }),
+});
+export type PcbCheckActivity = typeof PcbCheckActivity.Type;
+
 export const PcbCheckResult = Schema.Struct({
+  trigger: Schema.optional(PcbCheckTrigger),
+  durationMs: Schema.optional(NonNegativeInt),
+  delta: Schema.optional(PcbCheckDelta),
   counts: PcbCheckCounts,
   kind: PcbCheckKind,
   outcome: Schema.Literals(["clean", "violations", "failed", "timed-out"]),
@@ -219,6 +281,7 @@ export class PcbPreviewError extends Schema.TaggedError<PcbPreviewError>()("PcbP
 }) {}
 
 export const PcbLatestChecksInput = Schema.Struct({
+  ensureFresh: Schema.optional(Schema.Boolean),
   threadId: ThreadId,
   designId: TrimmedNonEmptyString,
 });
@@ -348,6 +411,22 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
     payload: PcbReadSheetInput,
     success: PcbReadSheetResult,
     error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.projectSettings, {
+    payload: PcbProjectSettingsInput,
+    success: PcbProjectSettings,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.updateProjectSettings, {
+    payload: PcbUpdateProjectSettingsInput,
+    success: PcbProjectSettings,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.checkEvents, {
+    payload: PcbCheckEventsInput,
+    success: PcbCheckActivity,
+    error: errors,
+    stream: true,
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.check, {
     payload: PcbCheckInput,

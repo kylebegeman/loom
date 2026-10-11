@@ -10,6 +10,12 @@ import {
   type PcbReadSheetInput,
   type PcbReadSheetResult,
   type PcbCheckInput,
+  type PcbCheckKind,
+  type PcbProjectSettingsInput,
+  type PcbUpdateProjectSettingsInput,
+  type PcbProjectSettings,
+  type PcbCheckEventsInput,
+  type PcbCheckActivity,
   type PcbLatestChecksInput,
   type PcbLatestChecksResult,
   type PcbWatchInput,
@@ -80,12 +86,16 @@ import {
   signedFileType,
 } from "./cache.ts";
 import {
+  checkDelta,
   parseKicadReport,
   normalizeCheckResult,
   legacyErcScale,
   ercScaleFactor,
 } from "./kicadReports.ts";
 import { parseKicadVersion, parseTsciVersion, circuitEnvironment, processLog } from "./tools.ts";
+
+import { makeProjectSettings } from "./projectSettings.ts";
+import { makeAutoChecks, AUTO_CHECK_TIMEOUT } from "./autoChecks.ts";
 
 const CIRCUIT_VERSION_TIMEOUT = "15 seconds";
 
@@ -149,6 +159,15 @@ export class PcbPreviewService extends Context.Service<
     readonly readSheet: (
       input: PcbReadSheetInput,
     ) => Effect.Effect<PcbReadSheetResult, PcbPreviewError>;
+    readonly projectSettings: (
+      input: PcbProjectSettingsInput,
+    ) => Effect.Effect<PcbProjectSettings, PcbPreviewError>;
+    readonly updateProjectSettings: (
+      input: PcbUpdateProjectSettingsInput,
+    ) => Effect.Effect<PcbProjectSettings, PcbPreviewError>;
+    readonly checkEvents: (
+      input: PcbCheckEventsInput,
+    ) => Stream.Stream<PcbCheckActivity, PcbPreviewError>;
     readonly check: (input: PcbCheckInput) => Effect.Effect<PcbCheckResult, PcbPreviewError>;
     readonly latestChecks: (
       input: PcbLatestChecksInput,
@@ -1069,12 +1088,24 @@ export const make = Effect.gen(function* () {
   });
   const checkPath = (resolved: ResolvedDesign, kind: string) =>
     path.join(checksDir, hashKey(resolved.workspaceKey, resolved.design.id, kind) + ".json");
-  const check = Effect.fn("PcbPreview.check")(function* (input: PcbCheckInput) {
-    const resolved = yield* resolveDesign(input);
+  const readStoredCheck = (resolved: ResolvedDesign, kind: PcbCheckKind) =>
+    Effect.gen(function* () {
+      const file = checkPath(resolved, kind);
+      if (Number((yield* fs.stat(file)).size) > SAVED_STATE_LIMIT) return null;
+      return yield* decodeCheck(yield* fs.readFileString(file));
+    }).pipe(Effect.orElseSucceed(() => null));
+  const runCheck = Effect.fn("PcbPreview.runCheck")(function* (
+    resolved: ResolvedDesign,
+    kind: PcbCheckKind,
+    trigger: "manual" | "auto",
+  ): Effect.fn.Return<
+    PcbCheckResult,
+    PcbPreviewError | PlatformError,
+    FileSystem.FileSystem | Path.Path
+  > {
     if (resolved.design.kind !== "kicad")
       return yield* failure("unsupported-view", "ERC and DRC are available for KiCad designs.");
-    const relative =
-      input.kind === "erc" ? resolved.design.schematicPath : resolved.design.boardPath;
+    const relative = kind === "erc" ? resolved.design.schematicPath : resolved.design.boardPath;
     if (!relative)
       return yield* failure(
         "unsupported-view",
@@ -1090,8 +1121,8 @@ export const make = Effect.gen(function* () {
           .pipe(Effect.mapError(ioFailure));
         const report = path.join(temporary, "report.json");
         const args = [
-          input.kind === "erc" ? "sch" : "pcb",
-          input.kind,
+          kind === "erc" ? "sch" : "pcb",
+          kind,
           "--format",
           "json",
           "--severity-all",
@@ -1100,13 +1131,21 @@ export const make = Effect.gen(function* () {
           "--exit-code-violations",
           "--output",
           report,
-          ...(input.kind === "drc" && resolved.design.schematicPath ? ["--schematic-parity"] : []),
+          ...(kind === "drc" && resolved.design.schematicPath ? ["--schematic-parity"] : []),
           source,
         ];
-        const result = yield* run(tool, args, resolved.cwd, "180 seconds");
+        const started = yield* now;
+        const result = yield* run(
+          tool,
+          args,
+          resolved.cwd,
+          trigger === "auto" ? AUTO_CHECK_TIMEOUT : "180 seconds",
+        );
         const base = {
+          trigger,
+          durationMs: Math.max(0, (yield* now) - started),
           counts: { errors: 0, warnings: 0, excluded: 0 },
-          kind: input.kind,
+          kind,
           sourceHash: snapshot.sourceHash,
           violations: [],
           truncated: false,
@@ -1139,7 +1178,7 @@ export const make = Effect.gen(function* () {
           );
           const parsed = yield* Effect.try({
             try: () =>
-              parseKicadReport(raw, input.kind, {
+              parseKicadReport(raw, kind, {
                 rootSheet: resolved.design.schematicPath
                   ? path.basename(resolved.design.schematicPath, ".kicad_sch")
                   : undefined,
@@ -1155,15 +1194,21 @@ export const make = Effect.gen(function* () {
                 : "clean",
           };
         }
+        if (trigger === "auto" && (value.outcome === "failed" || value.outcome === "timed-out"))
+          return value;
         yield* cacheLock
           .withPermit(
             Effect.gen(function* () {
-              const file = checkPath(resolved, input.kind);
+              const file = checkPath(resolved, kind);
               const previous = yield* decodeCheck(
                 yield* fs.readFileString(file).pipe(Effect.orElseSucceed(() => "")),
               ).pipe(Effect.orElseSucceed(() => null));
-              if (!previous || previous.ranAt <= value.ranAt)
+              if (!previous || previous.ranAt <= value.ranAt) {
+                const delta = previous ? checkDelta(previous, value) : undefined;
+                if (delta) value = { ...value, delta };
                 yield* writeFileStringAtomically({ filePath: file, contents: encodeJson(value) });
+                yield* scheduler.changed(hashKey(resolved.workspaceKey, resolved.design.id));
+              }
             }),
           )
           .pipe(Effect.mapError(ioFailure));
@@ -1172,10 +1217,45 @@ export const make = Effect.gen(function* () {
       }),
     );
   });
+  const settings = yield* makeProjectSettings(
+    path.join(config.stateDir, "fork", "pcb-preview", "project-settings.json"),
+  );
+  const scheduler = yield* makeAutoChecks<ResolvedDesign>({
+    key: (r) => hashKey(r.workspaceKey, r.design.id),
+    project: (r) => r.projectId,
+    available: (r, kind) =>
+      r.design.kind === "kicad" && !!(kind === "erc" ? r.design.schematicPath : r.design.boardPath),
+    settings: settings.get,
+    snapshot: (r) => checked(sourceSnapshot(r)).pipe(Effect.map((s) => s.sourceHash)),
+    stored: readStoredCheck,
+    run: (r, kind, trigger) => checked(runCheck(r, kind, trigger)),
+  });
+  const projectSettings = Effect.fn("PcbPreview.projectSettings")(function* (
+    input: PcbProjectSettingsInput,
+  ) {
+    return yield* settings.get((yield* workspace(input.threadId)).projectId);
+  });
+  const updateProjectSettings = Effect.fn("PcbPreview.updateProjectSettings")(function* (
+    input: PcbUpdateProjectSettingsInput,
+  ) {
+    const resolved = yield* workspace(input.threadId);
+    const value = yield* settings
+      .update(resolved.projectId, input)
+      .pipe(Effect.mapError(ioFailure));
+    yield* scheduler.settingsChanged(resolved.projectId);
+    return value;
+  });
+  const check = Effect.fn("PcbPreview.check")(function* (input: PcbCheckInput) {
+    return yield* scheduler.manual(yield* resolveDesign(input), input.kind);
+  });
+  const checkEvents = (input: PcbCheckEventsInput) =>
+    Stream.unwrap(checked(resolveDesign(input)).pipe(Effect.map((r) => scheduler.events(r))));
   const latestChecks = Effect.fn("PcbPreview.latestChecks")(function* (
     input: PcbLatestChecksInput,
   ) {
     const resolved = yield* resolveDesign(input);
+    if (input.ensureFresh && resolved.design.kind === "kicad")
+      yield* scheduler.ensureFresh(resolved);
     const results = yield* Effect.forEach(["erc", "drc"], (kind) =>
       Effect.gen(function* () {
         const file = checkPath(resolved, kind);
@@ -1203,6 +1283,7 @@ export const make = Effect.gen(function* () {
     Stream.unwrap(
       Effect.gen(function* () {
         const resolved = yield* resolveDesign(input);
+        yield* scheduler.watching(resolved);
         // Keep existing subscriptions alive while scanning and adding folders, so
         // edits during reconciliation remain queued. One dirty signal bounds bursts.
         const watchScope = yield* Effect.scope;
@@ -1254,6 +1335,7 @@ export const make = Effect.gen(function* () {
         );
         return Stream.concat(Stream.succeed({ sourceHash: current.sourceHash }), changes).pipe(
           Stream.changesWith((a, b) => a.sourceHash === b.sourceHash),
+          Stream.tap((event) => scheduler.notify(resolved, event.sourceHash)),
         );
       }),
     );
@@ -2783,6 +2865,9 @@ export const make = Effect.gen(function* () {
     listDesigns: (i) => checked(listDesigns(i)),
     render: (i) => checked(render(i)),
     readSheet: (i) => checked(readSheet(i)),
+    projectSettings: (i) => checked(projectSettings(i)),
+    updateProjectSettings: (i) => checked(updateProjectSettings(i)),
+    checkEvents,
     check: (i) => checked(check(i)),
     latestChecks: (i) => checked(latestChecks(i)),
     watch: (i) =>

@@ -1341,6 +1341,7 @@ export function DesignWorkspace({
           />
           {checkMarkers && preview.display.view === view && (
             <CheckMarkers
+              addedIds={markerReport?.delta?.added}
               findings={drawingFindings}
               activeId={visibleActiveFinding}
               activePoints={activePoints}
@@ -1588,6 +1589,7 @@ export function DesignWorkspace({
               <ChecksView
                 threadRef={threadRef}
                 design={design}
+                activity={preview.activity}
                 results={preview.checks}
                 jobRevision={preview.checkRevision}
                 sourceHash={preview.sourceHash}
@@ -1601,10 +1603,11 @@ export function DesignWorkspace({
                 findingStatus={findingStatus}
                 orderedFindings={surfaceFindings}
                 canCheck={preview.canCheck}
-                checking={preview.checking}
+                checking={preview.checking ?? preview.activity?.running?.kind ?? null}
                 error={preview.checkError ?? preview.checksError}
                 loading={preview.checksLoading}
                 onRun={preview.runCheck}
+                canCancel={preview.checking !== null}
                 onCancel={preview.cancelCheck}
                 onLocate={(kind, point, sheet) =>
                   focusPoint(kind === "drc" ? "pcb" : "schematic", point, sheet)
@@ -1767,16 +1770,26 @@ export function DesignWorkspace({
         {tabs.includes("Checks") &&
           (["erc", "drc"] as const).map((kind) => {
             const result = preview.checks[kind];
-            if (!result) return null;
-            const issues = result.counts.errors + result.counts.warnings;
+            const running = preview.activity?.running?.kind === kind;
+            const paused = preview.activity?.paused.some((p) => p.kind === kind);
+            if (!result && !running && !paused) return null;
+            const issues = result ? result?.counts.errors + result.counts.warnings : 0;
             return (
-              <button
+              <ToolButton
                 key={kind}
+                label={`${kind.toUpperCase()} findings`}
+                hint={
+                  running
+                    ? `${kind.toUpperCase()} is checking saved files.`
+                    : paused
+                      ? `Automatic ${kind.toUpperCase()} is paused. Open Checks for details.`
+                      : `${kind.toUpperCase()}: ${issues} findings${result?.delta ? `, ${result.delta.newCount} new, ${result.delta.resolvedCount} resolved` : ""}. Ran ${result?.ranAt ?? ""}.`
+                }
                 className={styles.statusChip}
                 data-tone={
-                  result.sourceHash !== preview.sourceHash
+                  result?.sourceHash !== preview.sourceHash
                     ? "stale"
-                    : result.counts.errors
+                    : result?.counts.errors
                       ? "error"
                       : issues
                         ? "warning"
@@ -1784,8 +1797,17 @@ export function DesignWorkspace({
                 }
                 onClick={() => openTab("Checks")}
               >
-                {kind.toUpperCase()} {result.outcome === "clean" ? "clean" : issues || "!"}
-              </button>
+                {kind.toUpperCase()}
+                {running
+                  ? ": checking"
+                  : paused
+                    ? ": paused"
+                    : result?.delta &&
+                        result.sourceHash === preview.sourceHash &&
+                        (result.delta.newCount || result.delta.resolvedCount)
+                      ? `: ${[result.delta.newCount ? `${result.delta.newCount} new` : "", result.delta.resolvedCount ? `${result.delta.resolvedCount} resolved` : ""].filter(Boolean).join(", ")}`
+                      : ` ${result?.outcome === "clean" ? "clean" : issues || "!"}`}
+              </ToolButton>
             );
           })}
         <span className={styles.statusItem}>

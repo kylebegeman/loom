@@ -122,3 +122,5 @@ CLI calls need an authenticated Loom MCP endpoint and authorization header in
 `LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION`. ACP agent terminals inherit equivalent
 credentials automatically. Editor camera, selection and capture actions require the thread
 open on a connected Loom client; rendering, persistence and exports run on the host.
+
+Enable **Check after each save** in Checks to run ERC, DRC, or both for this project while a design is open or an agent reads fresh checks. Reports show new and resolved findings. Slow checks pause until a fast manual run; failed automatic checks preserve the last report and retry after the next save.

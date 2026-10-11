@@ -41,7 +41,26 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     tag: M.library,
     staleTimeMs: 0,
   });
+  const projectSettings = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:pcb-project-settings",
+    tag: M.projectSettings,
+    staleTimeMs: 0,
+  });
   return {
+    projectSettings,
+    updateProjectSettings: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-project-settings-save",
+      tag: M.updateProjectSettings,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(projectSettings({ environmentId, input: { threadId: input.threadId } })),
+        ),
+    }),
+    checkEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:pcb-check-events",
+      tag: M.checkEvents,
+      idleTtlMs: 0,
+    }),
     reuseHardware: createEnvironmentRpcCommand(runtime, {
       label: "loom:pcb-reuse",
       tag: M.reuseHardware,
