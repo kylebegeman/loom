@@ -9,7 +9,9 @@ Mail and Notes. The pack installs no database, container runtime or local model.
 
 Use Linux and Node 24 or newer. Supply your custom Loom AppImage or executable;
 the pack does not substitute a public upstream release. The portable Office and
-Atlas clients are optional and use each app's existing device login.
+Atlas clients are optional and use each server's existing authorization. Native
+search setup discovers device sign-in support; servers without it use their
+existing API-key interface and the desktop's Secret Service through `secret-tool`.
 
 ```sh
 ./deploy/omarchy/install.sh \

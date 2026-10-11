@@ -25,9 +25,15 @@ login. It does not fetch the supplied link.
 
 ## Search and authenticate
 
-If the app's portable CLI is configured, sign in with `loom-os login office` or
-`loom-os login atlas`. Each opens the app's existing device authorization flow;
-browser and CLI access use their respective app sessions.
+If the app's portable CLI is configured, choose **AI and connections → Connect
+Office search** or **Connect Atlas search** in the LoomOS menu. You can also run
+`loom-os connect office` or `loom-os connect atlas`. Setup checks the installed
+server: device sign-in opens its approval page in the shared app browser, while
+servers without device sign-in use their existing API-key settings. Paste a key
+only into the native masked prompt. Setup checks its search access before saving
+it in this desktop's secret store. **Forget saved search key** removes the local
+key; revoke it in the app to remove its server access. Browser and CLI access use
+their respective app sessions.
 
 Office and Atlas share a browser profile while keeping separate website sessions.
 An Atlas sign-in email opened from Office therefore signs in the installed Atlas
@@ -49,7 +55,7 @@ excerpt or metadata, then copy it or copy its title and open the app. Opening
 focuses the existing app window; use the copied text in the app's own search to
 open an item. Search again refines the query. Escape or Close cancels without
 opening an app or copying anything. Search requires a reachable server and a
-separate CLI sign-in; browser login alone does not authorize the CLI.
+separate search connection; browser login alone does not authorize the CLI.
 
 The terminal `loom-os search` command returns the app's JSON results. Atlas capture saves a private source tagged
 `omarchy`. Its server must be reachable from this machine.

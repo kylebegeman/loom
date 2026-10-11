@@ -6,6 +6,10 @@ import * as NodeTest from "node:test";
 
 import {
   appCommand,
+  appCliEnvironment,
+  connectSearch,
+  searchBrowserCommand,
+  searchLoginMode,
   focusExistingApp,
   finderResults,
   nativeFinder,
@@ -1119,7 +1123,7 @@ test("empty finder results can refine the query and return the literal query to 
 
 test("finder errors require explicit retry or sign-in and clipboard failure prevents launch", async (t) => {
   const f = await fixture(t);
-  const flow = finderFixture(["Sign in to CLI", "Close"], ["x", "x"]);
+  const flow = finderFixture(["Connect search", "Close"], ["x", "x"]);
   flow.dependencies.search = async () => {
     throw new Error("Unavailable");
   };
@@ -1186,4 +1190,181 @@ test("finder installation supplies launcher, native menu and a matching removabl
     NodeFSP.readFile(NodePath.join(f.p.data, "applications/loom-os-find.desktop")),
     { code: "ENOENT" },
   );
+});
+
+test("search setup discovers deployed device support and refuses invalid authority", async () => {
+  const origin = "https://app.example.test";
+  NodeAssert.equal(await searchLoginMode(origin, async () => ({ status: 404 })), "key");
+  NodeAssert.equal(
+    await searchLoginMode(origin, async () => ({
+      ok: true,
+      json: async () => ({ issuer: origin }),
+    })),
+    "key",
+  );
+  const metadata = {
+    issuer: origin,
+    device_authorization_endpoint: origin + "/oauth/device",
+    token_endpoint: origin + "/oauth/token",
+  };
+  NodeAssert.equal(
+    await searchLoginMode(origin, async () => ({ ok: true, json: async () => metadata })),
+    "device",
+  );
+  await NodeAssert.rejects(
+    searchLoginMode(origin, async () => ({ status: 503, ok: false })),
+    /unavailable/,
+  );
+  await NodeAssert.rejects(
+    searchLoginMode(origin, async () => ({
+      ok: true,
+      json: async () => ({ ...metadata, token_endpoint: "https://other.test/token" }),
+    })),
+    /unsupported/,
+  );
+});
+
+test("search approval opens only the configured origin in the retained shared profile", async (t) => {
+  const f = await fixture(t);
+  const spec = searchBrowserCommand(
+    "office",
+    f.config,
+    f.env,
+    f.config.officeUrl + "/app/?view=connections",
+  );
+  NodeAssert.equal(spec.args[0], appCommand("office", f.config, f.env).args[0]);
+  NodeAssert.equal(spec.args[2], f.config.officeUrl + "/app/?view=connections");
+  NodeAssert.ok(!spec.args.some((arg) => arg.startsWith("--app=")));
+  for (const url of [
+    "https://other.test/approve",
+    "javascript:evil",
+    f.config.officeUrl.replace("https://", "https://user:password@"),
+  ])
+    NodeAssert.throws(() => searchBrowserCommand("office", f.config, f.env, url));
+});
+
+test("search keys are looked up by app and exact origin without replacing explicit CLI credentials", async () => {
+  const calls = [];
+  const lookup = async (...args) => {
+    calls.push(args);
+    return "fixture-key";
+  };
+  const env = { API_URL: "https://office.example.test" };
+  NodeAssert.equal(
+    (await appCliEnvironment("office", env.API_URL, env, lookup)).API_TOKEN,
+    "fixture-key",
+  );
+  NodeAssert.deepEqual(calls[0], ["lookup", "office", env.API_URL, env]);
+  const explicit = { ...env, API_TOKEN: "explicit" };
+  NodeAssert.equal(await appCliEnvironment("office", env.API_URL, explicit, lookup), explicit);
+  NodeAssert.equal(calls.length, 1);
+  NodeAssert.equal(
+    await appCliEnvironment("office", env.API_URL, env, async () => {
+      throw new Error("Unavailable");
+    }),
+    env,
+  );
+});
+
+test("Office key setup validates before saving and never prints or opens a URL containing the key", async (t) => {
+  const f = await fixture(t);
+  const events = [];
+  const choices = ["Open access settings", "Paste search key"];
+  const key = "fixture-only-key";
+  await connectSearch("office", f.config, f.env, {
+    mode: async () => "key",
+    choose: async () => choices.shift(),
+    password: async () => key,
+    openPage: async (url) => events.push(["page", url]),
+    show: (text) => events.push(["show", text]),
+    validate: async (spec) => {
+      NodeAssert.equal(spec.env.API_TOKEN, key);
+      NodeAssert.ok(!spec.args.includes(key));
+      events.push(["validate"]);
+      return { items: [] };
+    },
+    secret: async (operation, app, origin, env, value) => {
+      NodeAssert.equal(value, key);
+      events.push([operation, app, origin]);
+    },
+  });
+  NodeAssert.ok(!JSON.stringify(events).includes(key));
+  NodeAssert.deepEqual(
+    events.filter(([type]) => ["validate", "store"].includes(type)),
+    [["validate"], ["store", "office", f.config.officeUrl]],
+  );
+  NodeAssert.equal(
+    events.find(([type]) => type === "page")[1],
+    f.config.officeUrl + "/app/?view=connections",
+  );
+});
+
+test("search setup cancellation, invalid keys and failed validation do not save credentials", async (t) => {
+  const f = await fixture(t);
+  for (const value of [null, "bad key", "candidate-key"]) {
+    const choices = ["Paste search key", "Close"];
+    let stored = false;
+    await connectSearch("office", f.config, f.env, {
+      mode: async () => "key",
+      choose: async () => choices.shift(),
+      password: async () => value,
+      show: () => {},
+      validate: async () => {
+        throw new Error("Rejected");
+      },
+      secret: async () => {
+        stored = true;
+      },
+    });
+    NodeAssert.equal(stored, false);
+  }
+});
+
+test("Atlas device setup delegates its login and key removal is restricted to the selected app origin", async (t) => {
+  const f = await fixture(t);
+  let device = false;
+  let secret = false;
+  await connectSearch("atlas", f.config, f.env, {
+    mode: async () => "device",
+    show: () => {},
+    deviceLogin: async (app) => {
+      NodeAssert.equal(app, "atlas");
+      device = true;
+    },
+    secret: async () => {
+      secret = true;
+    },
+  });
+  NodeAssert.ok(device);
+  NodeAssert.ok(!secret);
+  const choices = ["Forget saved search key", "Close"];
+  const calls = [];
+  await connectSearch("office", f.config, f.env, {
+    mode: async () => "key",
+    choose: async () => choices.shift(),
+    show: () => {},
+    secret: async (...args) => calls.push(args),
+  });
+  NodeAssert.deepEqual(calls, [["clear", "office", f.config.officeUrl, f.env]]);
+});
+
+test("device connection opens the actual CLI approval URL once and blocks other origins", async (t) => {
+  const f = await fixture(t);
+  for (const link of [
+    f.config.atlasUrl + "/approve?user_code=synthetic",
+    "https://untrusted.test/approve",
+  ]) {
+    await NodeFSP.writeFile(
+      f.config.atlasCli,
+      `#!${process.execPath}\nconsole.log(${JSON.stringify(link)});console.log('Signed in');\n`,
+      { mode: 0o755 },
+    );
+    const opened = [];
+    await connectSearch("atlas", f.config, f.env, {
+      mode: async () => "device",
+      show: () => {},
+      openPage: async (url) => opened.push(url),
+    });
+    NodeAssert.deepEqual(opened, link.startsWith(f.config.atlasUrl) ? [link] : []);
+  }
 });

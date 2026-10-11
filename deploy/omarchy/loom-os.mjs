@@ -6,6 +6,7 @@ import * as NodeOS from "node:os";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
+import * as NodeReadline from "node:readline";
 
 import { aiFiles, aiBindings, aiMenu, aiEnvironment, aiAction } from "./ai.mjs";
 import {
@@ -332,6 +333,10 @@ done
       content: `#!/bin/bash\nprintf '\\033]0;Find in apps\\007'\n${shellQuote(p.bin)} find --inline "$@"\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
       mode: 0o755,
     });
+    writes.set(NodePath.join(p.root, "connect-search-terminal"), {
+      content: `#!/bin/bash\nprintf '\\033]0;Connect app search\\007'\n${shellQuote(p.bin)} connect "$@" --inline\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
+      mode: 0o755,
+    });
     writes.set(NodePath.join(p.data, "applications/loom-os-find.desktop"), {
       content: `[Desktop Entry]\nType=Application\nName=Find in apps\nComment=Search Office and Atlas\nExec=${desktopArg(p.bin)} find\nIcon=system-search\nTerminal=false\nCategories=Utility;\n`,
       mode: 0o644,
@@ -442,11 +447,16 @@ done
     if (finderEnabled) {
       entries["loomos.find"] = { label: "Find in apps", action: command("find") };
       for (const app of ["office", "atlas"])
-        if (config[`${app}Cli`] && config[`${app}Url`])
+        if (config[`${app}Cli`] && config[`${app}Url`]) {
+          entries[`loomos.connections.${app}-search`] = {
+            label: `Connect ${appNames[app]} search`,
+            action: command(`connect ${app}`),
+          };
           entries[`loomos.find-${app}`] = {
             label: `Search ${appNames[app]}`,
             action: command(`find ${app}`),
           };
+        }
     }
     entries["loomos.capture"] = {
       label: "Capture in Office",
@@ -856,12 +866,13 @@ export function finderResults(app, page) {
   };
 }
 async function readSearch(spec) {
+  const cliEnv = await appCliEnvironment(spec.args[0], spec.env.API_URL, spec.env);
   return new Promise((resolve, reject) => {
     NodeChildProcess.execFile(
       spec.command,
       spec.args,
       {
-        env: spec.env,
+        env: cliEnv,
         timeout: 15000,
         maxBuffer: 2 * 1024 * 1024,
         encoding: "utf8",
@@ -941,7 +952,7 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
   const copy = dependencies.copy ?? ((text) => copyFinderText(text, env));
   const show = dependencies.show ?? console.log;
   const open = dependencies.open ?? ((app) => main(["open", app], env));
-  const login = dependencies.login ?? ((app) => main(["login", app], env));
+  const login = dependencies.login ?? ((app) => main(["connect", app, "--inline"], env));
   const apps = ["office", "atlas"].filter((app) => config[`${app}Cli`] && config[`${app}Url`]);
   if (!apps.length || (initialApp && !apps.includes(initialApp)))
     throw new Error("Configure the app CLI and reachable origin first.");
@@ -960,15 +971,15 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
       show(terminalText(error.message));
       const recovery = await choose(`Search ${appNames[app]}`, [
         "Search again",
-        "Sign in to CLI",
+        "Connect search",
         "Connection status",
         "Close",
       ]);
-      if (recovery === "Sign in to CLI") {
+      if (recovery === "Connect search") {
         try {
           await login(app);
         } catch {
-          show("CLI sign-in did not finish. Try again when the app is reachable.");
+          show("Search setup did not finish. Try again when the app is reachable.");
         }
       } else if (recovery === "Connection status") {
         try {
@@ -1033,6 +1044,217 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
   }
 }
 
+function searchSecretArgs(app, origin) {
+  return ["application", "loom-os-search", "app", app, "origin", origin];
+}
+async function searchSecret(operation, app, origin, env, key) {
+  return new Promise((resolve, reject) => {
+    const child = NodeChildProcess.spawn(
+      "secret-tool",
+      [
+        operation,
+        ...(operation === "store" ? ["--label", `${appNames[app]} search on LoomOS`] : []),
+        ...searchSecretArgs(app, origin),
+      ],
+      { env, stdio: ["pipe", "pipe", "ignore"] },
+    );
+    let value = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      value += chunk;
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("The desktop secret store did not respond."));
+    }, 5000);
+    child.once("error", () => {
+      clearTimeout(timer);
+      reject(new Error("The desktop secret store is unavailable."));
+    });
+    child.stdin.once("error", () => {});
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(value.replace(/\r?\n$/, ""));
+      else if (operation === "lookup") resolve("");
+      else reject(new Error("The desktop secret store could not save this connection."));
+    });
+    child.stdin.end(key ?? "");
+  });
+}
+export async function appCliEnvironment(app, origin, env, lookup = searchSecret) {
+  if (env.API_TOKEN) return env;
+  let token = "";
+  try {
+    token = await lookup("lookup", app, origin, env);
+  } catch {
+    /* Existing CLI device credentials still work without Secret Service. */
+  }
+  return token ? { ...env, API_TOKEN: token } : env;
+}
+export function searchBrowserCommand(app, config, env, url) {
+  const candidate = new URL(url),
+    expected = new URL(config[`${app}Url`]);
+  if (
+    candidate.origin !== expected.origin ||
+    candidate.username ||
+    candidate.password ||
+    hasControl(url)
+  )
+    throw new Error("The approval page must belong to the configured app.");
+  const spec = appCommand(app, config, env);
+  return { ...spec, args: [spec.args[0], "--no-first-run", candidate.href] };
+}
+export async function searchLoginMode(origin, request = fetch) {
+  const response = await request(new URL("/.well-known/oauth-authorization-server", origin), {
+    signal: AbortSignal.timeout(8000),
+    redirect: "error",
+  });
+  if (response.status === 404) return "key";
+  if (!response.ok)
+    throw new Error("The app's connection setup is unavailable. Check connections and retry.");
+  const metadata = await response.json();
+  if (!metadata.device_authorization_endpoint) return "key";
+  if (
+    typeof metadata.issuer !== "string" ||
+    metadata.issuer.replace(/\/$/, "") !== origin ||
+    !metadata.token_endpoint ||
+    [metadata.device_authorization_endpoint, metadata.token_endpoint].some(
+      (url) => typeof url !== "string" || new URL(url).origin !== origin,
+    )
+  )
+    throw new Error("The app returned unsupported sign-in metadata.");
+  return "device";
+}
+async function searchDeviceLogin(app, config, env, openPage, show) {
+  const child = NodeChildProcess.spawn(config[`${app}Cli`], ["login"], {
+    env: { ...env, API_URL: config[`${app}Url`] },
+    stdio: ["inherit", "pipe", "inherit"],
+  });
+  let opened = false;
+  const launches = [];
+  const lines = NodeReadline.createInterface({ input: child.stdout });
+  lines.on("line", (line) => {
+    show(line);
+    const url = line.trim();
+    if (!opened && /^https?:\/\//.test(url)) {
+      try {
+        searchBrowserCommand(app, config, env, url);
+      } catch {
+        show("The returned approval page is outside the configured app and was not opened.");
+        return;
+      }
+      opened = true;
+      launches.push(
+        openPage(url).catch(() => show("The browser did not open. Use the approval link above.")),
+      );
+    }
+  });
+  const forward = (signal) => child.kill(signal);
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"];
+  const handlers = signals.map((signal) => () => forward(signal));
+  signals.forEach((signal, i) => process.on(signal, handlers[i]));
+  try {
+    await new Promise((resolve, reject) => {
+      child.once("error", () =>
+        reject(new Error("The app's command-line client could not start.")),
+      );
+      child.once("close", (code) =>
+        code === 0 ? resolve() : reject(new Error("The app connection was not completed.")),
+      );
+    });
+    await Promise.all(launches);
+  } finally {
+    lines.close();
+    signals.forEach((signal, i) => process.removeListener(signal, handlers[i]));
+  }
+}
+export async function connectSearch(app, config, env, dependencies = {}) {
+  if (!["office", "atlas"].includes(app) || !config[`${app}Cli`] || !config[`${app}Url`])
+    throw new Error("Configure the app CLI and reachable origin first.");
+  const origin = config[`${app}Url`];
+  const choose =
+    dependencies.choose ??
+    ((header, choices) => finderChoice(["choose", "--header", header, "--", ...choices], env));
+  const show = dependencies.show ?? console.log;
+  const secret = dependencies.secret ?? searchSecret;
+  const openPage =
+    dependencies.openPage ??
+    (async (url) => {
+      const spec = searchBrowserCommand(app, config, env, url);
+      await run(spec.command, spec.args, { env, detached: true });
+    });
+  const mode = await (dependencies.mode ?? searchLoginMode)(origin);
+  if (mode === "device") {
+    show(
+      `Connect ${appNames[app]} search. Review and approve the connection in the browser that opens.`,
+    );
+    await (dependencies.deviceLogin ?? searchDeviceLogin)(app, config, env, openPage, show);
+    show("Search is connected. Return to Find in apps.");
+    return;
+  }
+  show(
+    `${appNames[app]} uses an API key for search access on this server. Create a key in the app, copy it, then choose Paste search key here.`,
+  );
+  if (app === "office")
+    show(
+      "In API keys & agents, give it Search and the app/mailbox permissions you want to search. The app decides which records it can access.",
+    );
+  while (true) {
+    const choice = await choose(`Connect ${appNames[app]} search`, [
+      "Open access settings",
+      "Paste search key",
+      "Forget saved search key",
+      "Close",
+    ]);
+    if (!choice || choice === "Close") return;
+    if (choice === "Open access settings")
+      await openPage(
+        new URL(app === "office" ? "/app/?view=connections" : "/account/api-keys", origin).href,
+      );
+    else if (choice === "Forget saved search key") {
+      await secret("clear", app, origin, env);
+      show("Saved search key removed. Revoke it in the app to remove its server access.");
+    } else if (choice === "Paste search key") {
+      const key = await (
+        dependencies.password ??
+        (() =>
+          finderChoice(
+            [
+              "input",
+              "--password",
+              "--header",
+              `Paste ${appNames[app]} search key`,
+              "--placeholder",
+              "Key stays in this desktop's secret store",
+              "--char-limit",
+              "4096",
+            ],
+            env,
+          ))
+      )();
+      if (key === null) return;
+      if (!key || key.length > 4096 || /[\p{Cc}\p{Cf}\s]/u.test(key)) {
+        show("Paste the key without whitespace or control characters.");
+        continue;
+      }
+      try {
+        const spec = searchCommand(app, "loom-search-connection-check", config, {
+          ...env,
+          API_TOKEN: key,
+        });
+        finderResults(app, await (dependencies.validate ?? readSearch)(spec));
+        await secret("store", app, origin, env, key);
+        show("Search is connected. Return to Find in apps.");
+        return;
+      } catch {
+        show(
+          "This key could not connect search. Check its permissions and the app connection, then try again.",
+        );
+      }
+    }
+  }
+}
+
 function parseArgs(args) {
   const options = {},
     positional = [];
@@ -1053,7 +1275,7 @@ function parseArgs(args) {
   return { options, positional };
 }
 const print = (value) => console.log(JSON.stringify(value, null, 2));
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -1133,6 +1355,29 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "connect") {
+    const app = rest[0];
+    if (
+      !["office", "atlas"].includes(app) ||
+      rest.slice(1).some((arg) => arg !== "--inline") ||
+      rest.length > 2
+    )
+      throw new Error("Usage: loom-os connect office|atlas");
+    if (rest[1] === "--inline") {
+      if (!process.stdin.isTTY) throw new Error("Search setup needs an interactive terminal.");
+      await connectSearch(app, config, env);
+    } else
+      await run(
+        "omarchy-launch-tui",
+        [
+          "--app-id=org.omarchy.loom-search-connect",
+          NodePath.join(p.root, "connect-search-terminal"),
+          app,
+        ],
+        { env },
+      );
+    return;
+  }
   if (action === "find") {
     const inline = rest.includes("--inline");
     const apps = rest.filter((arg) => arg !== "--inline");
@@ -1430,7 +1675,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       await run(config[`${app}Cli`], ["login"], { env: { ...env, API_URL: config[`${app}Url`] } });
     else {
       const spec = searchCommand(app, query.join(" "), config, env);
-      await run(spec.command, spec.args, { env: spec.env });
+      await run(spec.command, spec.args, {
+        env: await appCliEnvironment(app, config[`${app}Url`], spec.env),
+      });
     }
     return;
   }
