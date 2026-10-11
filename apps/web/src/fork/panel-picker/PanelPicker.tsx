@@ -34,7 +34,7 @@ export function LoomPanelPickerLauncher(
       ref={rootRef}
       // Matches upstream's launcher: the bottom padding centers the list against the
       // full panel, not the space left under its topbar.
-      className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pb-(--workspace-topbar-height)"
+      className="scrollbar-gutter-both flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pb-(--workspace-topbar-height)"
     >
       <div className="w-full max-w-xs py-6">
         <PanelPickerList

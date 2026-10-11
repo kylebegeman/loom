@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { MinusIcon, PlusIcon, ScanIcon, ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
+import { observeResize } from "~/lib/observeResize";
 import { svgFrame } from "./geometry";
 import { ToolButton } from "./ToolButton";
 import styles from "./workspace.module.css";
@@ -185,12 +186,11 @@ export function SvgViewport({
     const node = container.current;
     if (!node) return;
     let wheelTimer: ReturnType<typeof setTimeout> | undefined;
-    const resize = new ResizeObserver(([entry]) => {
+    const stopObserving = observeResize(node, ([entry]) => {
       if (!entry) return;
       size.current = { width: entry.contentRect.width, height: entry.contentRect.height };
       if (fitted.current) fit();
     });
-    resize.observe(node);
     const wheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = node.getBoundingClientRect();
@@ -204,7 +204,7 @@ export function SvgViewport({
     };
     node.addEventListener("wheel", wheel, { passive: false });
     return () => {
-      resize.disconnect();
+      stopObserving();
       node.removeEventListener("wheel", wheel);
       clearTimeout(wheelTimer);
       if (frame.current !== null) cancelAnimationFrame(frame.current);

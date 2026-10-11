@@ -249,7 +249,7 @@ export function InspectorRow({
         onClick={onClick}
         className={cn(
           className,
-          "hover:bg-accent/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+          "hover:bg-accent/40 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         )}
       >
         {content}

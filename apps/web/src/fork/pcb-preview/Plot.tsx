@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { observeResize } from "~/lib/observeResize";
 import { decadeTicks, formatEng, niceTicks } from "./units";
 import k from "./inspector.module.css";
 
@@ -41,11 +42,7 @@ export function Plot({
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(Math.round(entry?.contentRect.width ?? 0)),
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
+    return observeResize(node, ([entry]) => setWidth(Math.round(entry?.contentRect.width ?? 0)));
   }, []);
   const xs = log ? x.filter((v) => v > 0) : x;
   const xMin = Math.min(...xs),

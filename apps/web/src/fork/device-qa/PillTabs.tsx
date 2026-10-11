@@ -44,7 +44,7 @@ export function PillTabs<T extends string>({
             <Tabs.Tab
               key={tab.value}
               value={tab.value}
-              className="relative z-10 flex h-7 flex-1 cursor-pointer select-none items-center justify-center gap-1.5 rounded-full px-3 font-medium text-muted-foreground text-xs outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-active:text-foreground"
+              className="relative z-10 flex h-7 flex-1 cursor-pointer select-none items-center justify-center gap-1.5 rounded-full px-3 font-medium text-muted-foreground text-xs outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-active:text-foreground"
             >
               {tab.label}
               {tab.adornment}

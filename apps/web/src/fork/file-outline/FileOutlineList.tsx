@@ -98,7 +98,7 @@ export function FileOutlineList(props: {
                 symbol.name + (symbol.detail ? " " + symbol.detail : "") + ", line " + symbol.line
               }
               className={cn(
-                "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-sm pe-2 text-start text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "flex h-7 w-full min-w-0 items-center gap-1.5 rounded-sm pe-2 text-start text-xs hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                 symbol.id === selected?.id && "bg-muted",
                 !row.matched && "text-muted-foreground",
               )}

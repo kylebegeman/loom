@@ -116,7 +116,7 @@ function NodeRow({
     <li className="flex min-w-0 items-center gap-1">
       <button
         type="button"
-        className="flex min-w-0 flex-1 cursor-pointer flex-col rounded-md px-2 py-1 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-w-0 flex-1 cursor-pointer flex-col rounded-md px-2 py-1 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         onClick={() => (onFocus ? onFocus(node.id) : openFile(threadRef, node.file, node.line))}
       >
         <span className="flex min-w-0 items-baseline gap-1.5 text-sm">
@@ -491,7 +491,7 @@ function Overview({
                       <button
                         key={file}
                         type="button"
-                        className="cursor-pointer truncate text-left text-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                        className="cursor-pointer truncate text-left text-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                         onClick={() => openFile(threadRef, file, null)}
                       >
                         {file}
@@ -792,7 +792,7 @@ function Impact({
                 <li key={entry.file}>
                   <button
                     type="button"
-                    className="flex w-full min-w-0 cursor-pointer items-baseline justify-between gap-2 rounded-md px-2 py-1 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                    className="flex w-full min-w-0 cursor-pointer items-baseline justify-between gap-2 rounded-md px-2 py-1 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                     onClick={() => openFile(threadRef, entry.file, line)}
                   >
                     <span className="truncate text-sm">{entry.file}</span>
