@@ -1,4 +1,5 @@
 import * as W from "./pcb-workspace.ts";
+import { PcbPrintInput, PcbPrintResult } from "./pcb-print.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -38,6 +39,7 @@ export const PCB_PREVIEW_WS_METHODS = {
   render: "loom.pcb-preview.render",
   readSheet: "loom.pcb-preview.readSheet",
   check: "loom.pcb-preview.check",
+  print: "loom.pcb-preview.print",
   watch: "loom.pcb-preview.watch",
   latestChecks: "loom.pcb-preview.latestChecks",
 } as const;
@@ -223,6 +225,11 @@ export type PcbLatestChecksResult = typeof PcbLatestChecksResult.Type;
 const errors = Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]);
 
 export const PcbPreviewRpcGroup = RpcGroup.make(
+  Rpc.make(PCB_PREVIEW_WS_METHODS.print, {
+    payload: PcbPrintInput,
+    success: PcbPrintResult,
+    error: errors,
+  }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.reuseHardware, {
     payload: W.PcbReuseHardwareInput,
     success: W.PcbReuseHardwareResult,

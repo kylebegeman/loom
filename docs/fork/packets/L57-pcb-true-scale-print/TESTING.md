@@ -1,65 +1,58 @@
 # L57 testing
 
-Focused tests, no repo-wide checks, no sleeps.
+The owned focused run passed **15 tests across four files** on 2026-10-10. Strict lint passed
+for the print contracts, helper, signed HTTP route, dialog and their focused tests. The primary
+agent runs the shared RPC/MCP, permission and service integration checks and scoped package
+typechecks after integration. Shared transport validation also passed 18 tests across MCP,
+server authorization, client permission behavior and the print contract (the contract suite
+is included in both runs). It verifies caller thread/default save, explicit options and save
+false, typed failures, restricted-agent rejection, and destination terminal grants. No
+repo-wide suite or browser was launched for this packet.
 
-## Automated tests
-
-| File                                                                  | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/server/src/fork/pcb-preview/printPdf.test.ts` (new)             | `defaultPrintLayers` for both sides. `validatePrintLayers` drops unknown names with a warning, keeps `Edge.Cuts`, fails when nothing remains. `rewritePaper` replaces an existing `(paper "A3")`, inserts one when missing, leaves the rest byte-identical, and is a no-op for `"board"`. `scaleSheet` contains the 50 mm rectangle, six ticks, the hint text and the outline size, and omits the size when bounds are null. `printFileName` uses the title block revision, else 8 hex characters, and sanitises the stem. `pageWarnings` warns when bounds cross the page margin. `printArgs`: KiCad 10 adds `--scale 1` and `--check-zones`; KiCad 9 does not; `--mirror` and `--black-and-white` follow the options; `--mode-single` and `--drawing-sheet` are always present. |
-| `apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts` (update) | `print` with a fake `run`: second call is a cache hit with no run; `save` writes `fab/print/<name>.pdf` and returns `workspacePath`; a design without a board fails `unsupported-view`; a failed run removes the temporary directory and surfaces the log; a tscircuit design without KiCad fails `tool-missing`; `sourceSnapshot` for a tscircuit design ignores files under `fab/`.                                                                                                                                                                                                                                                                                                                                                                                             |
-| `apps/server/src/fork/pcb-preview/http.test.ts` (update)              | Signed `print.pdf` returns `application/pdf`; `board.glb` still `model/gltf-binary`; another basename in the cache directory is 404; an oversized PDF is 404.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `apps/server/src/fork/pcb-preview/mcp.test.ts` (update)               | `loom_pcb_print` passes `save: true` by default and the caller's thread id.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `apps/server/src/fork/pcb-preview/realTools.test.ts` (update, opt-in) | With `LOOM_TEST_PCB_FIXTURES` set and KiCad installed: a fixture board prints to a PDF whose first bytes are `%PDF-`, on both sides.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `packages/contracts/src/fork/pcb-workspace.test.ts` (new or update)   | `PcbPrintInput` decodes `{ threadId, designId }` to side top, paper board, black and white, no save; rejects 17 layers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `apps/web/src/fork/pcb-preview/printDialog.logic.test.ts` (new)       | `initialPrintOptions` checks the side's defaults present on the board and turns mirror on for bottom; `isPrintStale`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-
-The permission maps are covered by the existing `commandPermissions.test.ts` loop. No component
-markup tests.
-
-## Commands
+| Test file                                                    | Verified behavior                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/fork/pcb-print.test.ts`              | Input defaults, presets, all 64 board layers, bounded inputs and invalid paper/side rejection.                                                                                                                                                                                                                                                                            |
+| `apps/server/src/fork/pcb-preview/trueScalePrint.test.ts`    | Byte-preserving paper replacement/insertion, metric drawing sheet, paper orientation and fit warning, sanitized filenames, KiCad 9/10 flags, PDF caching and atomic save, source/project preservation, bottom mirroring, presets, staged tscircuit conversion, tool failures, PDF header rejection, cancellation cleanup, missing boards/layers and destination symlinks. |
+| `apps/server/src/fork/pcb-preview/http.test.ts`              | PDF and GLB MIME types, no forced download disposition, and plain 404 responses for invalid tokens, traversal and unknown files.                                                                                                                                                                                                                                          |
+| `apps/web/src/fork/pcb-preview/trueScalePrint.logic.test.ts` | Side defaults with absent layers, bottom mirror default and stale-source detection.                                                                                                                                                                                                                                                                                       |
 
 ```sh
-vp test run apps/server/src/fork/pcb-preview/printPdf.test.ts \
-  apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts \
+./node_modules/.bin/vp test run packages/contracts/src/fork/pcb-print.test.ts \
+  apps/server/src/fork/pcb-preview/trueScalePrint.test.ts \
   apps/server/src/fork/pcb-preview/http.test.ts \
-  apps/server/src/fork/pcb-preview/mcp.test.ts \
-  packages/contracts/src/fork/pcb-workspace.test.ts \
-  apps/web/src/fork/pcb-preview/printDialog.logic.test.ts
-LOOM_TEST_PCB_FIXTURES=1 vp test run apps/server/src/fork/pcb-preview/realTools.test.ts
-vp lint packages/contracts/src/fork packages/client-runtime/src/fork \
-  apps/server/src/fork/pcb-preview apps/web/src/fork/pcb-preview
-vp run --filter @t3tools/contracts typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web typecheck
-vp run --filter t3 typecheck
+  apps/web/src/fork/pcb-preview/trueScalePrint.logic.test.ts
 ```
 
-The opt-in real-tool run needs KiCad on the machine; skip it and say so when absent.
+KiCad is absent from PATH and the standard macOS application location. A real CLI PDF export,
+PDF page dimensions and physical 50 mm bar calibration were therefore **not run**. No tool
+installation was attempted. KiCad 9's serializer, worksheet file version and PDF job creation
+were checked against the official source mirror, as recorded in REFERENCES.md. The fake tool
+writes a small PDF fixture; this proves host flow and validation, not rendering accuracy.
 
-## Manual checks for Kyle
+## Remaining manual checks
 
-With Kyle's permission, in a dev client against a worktree `.t3` seeded with
-`vp run migrate-dev-db`, on a machine with KiCad 9 and, if possible, KiCad 10:
+With Kyle's authorization in an isolated dev client, on a host with KiCad:
 
-1. Open a KiCad board. **…** > "Print at 1:1…", Top, defaults, "Create PDF". Print at 100%.
-   The bar measures 50 mm with a ruler and the board outline matches the printed size label.
-   Lay a real part (a USB connector or header) on its footprint.
-2. Bottom: the text on the bottom silkscreen reads correctly (mirrored view), and the outline
-   matches the top printout when held up to a light.
-3. Paper A4 on a board whose page is A3: the board is inside the page, or the warning appears.
-4. Print the same PDF with "Fit to page": the bar is visibly short of 50 mm, so the check works.
-5. "Save to workspace": the file appears under `fab/print/`, the design does not show as changed,
-   and "Open" and "Show in folder" work on desktop. From a remote browser over Tailscale,
-   only Download is offered and it works.
-6. KiCad 9 only: the zone warning shows; the result otherwise matches.
-7. A tscircuit board: disabled without trust; with trust, prints.
-8. Ask an agent to "print the bottom of the board at 1:1"; it returns a `fab/print/` path.
-9. Cancel while running: the dialog returns to the form and no file is written.
+1. Print Top at 100%. Measure the 50 mm bar and board outline; lay a real connector or header
+   on its footprint. Check bottom mirroring and matching top/bottom outlines.
+2. Check A4, Letter, A3 and Ledger page dimensions, board-page orientation, and clipping warnings.
+   Load the generated drawing sheet in KiCad and confirm its contents remain visible.
+3. Confirm a fit-to-page print changes the reference bar's physical length.
+4. Save into `fab/print/`, verify the source revision stays unchanged, and open/reveal the PDF on
+   the local desktop. Remote clients should offer Download, without local host actions.
+5. Check Electron's Blob download save flow and remote downloads over LAN, Tailscale and tunnel.
+6. On KiCad 9, verify the zone warning and 1:1 output. On KiCad 10, verify in-memory zone refill.
+7. Check trusted tscircuit source conversion, missing-tool errors and untrusted disabling.
+8. Make a PDF through MCP and `t3 pcb print`, and check the saved workspace path.
+9. Cancel or close during PDF creation and confirm no saved output or staging folder remains.
 
-Upstream server: no PCB panel, nothing to check. Mobile: no PCB panel.
+Browser/GPU interaction, physical printing and actual tscircuit-to-KiCad export remain
+unverified. Mobile and upstream servers have no PCB panel. Full fork checks and nightly merge
+rehearsal were not run for this focused implementation.
 
-## Merge safety
+## Integrated verification
 
-Run `scripts/fork/loom.sh check` and the merge check in SEAMS.md; expect no conflicts. After
-merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.
+The integrating agent completed strict scoped lint and typechecks for contracts,
+client-runtime, server and web after wiring all five PCB packets. The focused service
+suite passes 31 regressions, including signed PDF limits, canonical output exclusions and
+optional project-rule read failures. No repo-wide suite or browser was run.

@@ -5,6 +5,7 @@ import { Tool, Toolkit } from "effect/ai";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import { assertFullAccess, loadCaller } from "../../mcp/threadAccess.ts";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { PcbPreviewService } from "./PcbPreviewService.ts";
@@ -24,7 +25,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_editor", {
     description:
-      "Control the visible PCB editor: fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG. Returns an acknowledgement and host PNG path for captures.",
+      "Control the visible PCB editor: fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
     parameters: Schema.Struct({ ...design, command: W.PcbEditorAction }),
     success: W.PcbEditorResult,
     failure,
@@ -69,7 +70,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_inspect", {
     description:
-      "Inspect components, pins, nets, layers and physical board coordinates. Runs CAD exporters when needed.",
+      "Inspect components, pins, nets, layers and physical board coordinates. Runs CAD exporters when needed. Lengths and coordinates are in millimetres.",
     parameters: Schema.Struct(design),
     success: W.PcbInspection,
     failure,
@@ -107,8 +108,27 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "PCB: read sheet")
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_print", {
+    description:
+      "Create a true-scale PDF of the top or bottom board layers with a 50 mm scale bar. layers accepts board layer names or a built-in preset id or name. Saves under fab/print/ by default and returns the saved path; save=false returns a signed PDF URL. Ask the user to print at 100%. Lengths are in millimetres.",
+    parameters: Schema.Struct({
+      ...design,
+      side: Schema.optional(W.PcbPrintSide),
+      layers: W.PcbPrintInput.fields.layers,
+      mirror: W.PcbPrintInput.fields.mirror,
+      paper: Schema.optional(W.PcbPrintPaper),
+      blackAndWhite: Schema.optional(Schema.Boolean),
+      save: Schema.optional(Schema.Boolean),
+    }),
+    success: W.PcbPrintResult,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: print")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_check", {
-    description: "Run KiCad ERC or DRC on saved source.",
+    description: "Run KiCad ERC or DRC on saved source. Item coordinates are in millimetres.",
     parameters: Schema.Struct({ ...design, kind: W.PcbCheckInput.fields.kind }),
     success: W.PcbCheckResult,
     failure,
@@ -118,7 +138,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_latest_checks", {
-    description: "Read latest persisted rule checks.",
+    description: "Read latest persisted rule checks. Item coordinates are in millimetres.",
     parameters: Schema.Struct(design),
     success: W.PcbLatestChecksResult,
     failure,
@@ -342,6 +362,28 @@ export const pcbHandlers = McpToolAccess.toLayer(
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) =>
               service.readSheet({ ...input, threadId }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_print: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const caller = yield* loadCaller();
+          yield* assertFullAccess(
+            caller,
+            "Printing boards needs a full-access caller in default mode.",
+          );
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.print({
+                ...input,
+                threadId,
+                side: input.side ?? "top",
+                paper: input.paper ?? "board",
+                blackAndWhite: input.blackAndWhite ?? true,
+                save: input.save ?? true,
+              }),
             ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),

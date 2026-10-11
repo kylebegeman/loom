@@ -1,10 +1,16 @@
 import {
   WsRpcGroup,
   AuthOrchestrationReadScope,
+  AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
   AuthSessionId,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
-import { ForkRpcGroup, MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
+import {
+  ForkRpcGroup,
+  MODEL_PREVIEW_3D_WS_METHODS as M,
+  PCB_PREVIEW_WS_METHODS as P,
+} from "@t3tools/contracts/fork";
 import { describe, expect, it } from "@effect/vitest";
 
 import * as Effect from "effect/Effect";
@@ -83,5 +89,29 @@ it.effect("print checks and cancellation require the operate grant before work s
       expect(denied.requiredScope).toBe("orchestration:operate");
     }
     expect(started).toBe(false);
+  }),
+);
+
+it.effect("PCB printing requires the terminal grant before host work or workspace saves", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("pcb-print-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    let started = false;
+    const work = Effect.sync(() => {
+      started = true;
+      return "printed";
+    });
+    const denied = yield* auth([AuthOrchestrationReadScope, AuthOrchestrationOperateScope])
+      .effect(P.print, work)
+      .pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(AuthTerminalOperateScope);
+    expect(started).toBe(false);
+    expect(yield* auth([AuthTerminalOperateScope]).effect(P.print, work)).toBe("printed");
+    expect(started).toBe(true);
   }),
 );

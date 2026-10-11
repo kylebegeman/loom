@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   BoxIcon,
   CameraIcon,
+  PrinterIcon,
   CheckIcon,
   ChevronDownIcon,
   CircleHelpIcon,
@@ -200,17 +201,21 @@ export function WorkspaceMenu({
   canRefresh,
   electronicsUrl,
   canExport,
+  canPrint,
   trusted,
   onRefresh,
   onExport,
+  onPrint,
   onRevokeTrust,
 }: {
   canRefresh: boolean;
   electronicsUrl: string | null;
   canExport: boolean;
+  canPrint: boolean;
   trusted: boolean;
   onRefresh: () => void;
   onExport: () => void;
+  onPrint: () => void;
   onRevokeTrust: () => void;
 }) {
   return (
@@ -232,6 +237,10 @@ export function WorkspaceMenu({
         <MenuItem disabled={!canExport} onClick={onExport}>
           <PackageOpenIcon />
           Export board reference…
+        </MenuItem>
+        <MenuItem disabled={!canPrint} onClick={onPrint}>
+          <PrinterIcon />
+          Print at 1:1…
         </MenuItem>
         <MenuSeparator />
         {trusted && (

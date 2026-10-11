@@ -12,7 +12,7 @@ quick picks. Commits use `feat(fork-pcb-true-scale-print): ...`.
 
 ## Steps
 
-1. **Contracts.** In `packages/contracts/src/fork/pcb-workspace.ts` add `PcbPrintSide`,
+1. **Contracts.** In `packages/contracts/src/fork/pcb-print.ts` add `PcbPrintSide`,
    `PcbPrintPaper`, `PcbPrintInput` and `PcbPrintResult` as in TECHNICAL.md. In
    `packages/contracts/src/fork/pcb-preview.ts` add `print` to `PCB_PREVIEW_WS_METHODS` and an
    `Rpc.make(PCB_PREVIEW_WS_METHODS.print, { payload: PcbPrintInput, success: PcbPrintResult,
@@ -29,11 +29,11 @@ error: errors })` to `PcbPreviewRpcGroup`. Add `print` to
 3. **Source scan.** In `sourceSnapshot` (`PcbPreviewService.ts:529-531`) skip `<root>/fab` beside
    `.loom/pcb-references`. Test that a tscircuit design's hash ignores `fab/print/x.pdf` and
    `fab/a/b.csv`.
-4. **Print helpers.** Create `apps/server/src/fork/pcb-preview/printPdf.ts` with
+4. **Print helpers.** Create `apps/server/src/fork/pcb-preview/trueScalePrint.ts` with
    `defaultPrintLayers`, `validatePrintLayers`, `rewritePaper`, `scaleSheet`, `printFileName`,
    `pageWarnings` and `printArgs(kicadMajor, options)`. Pure; unit-test each in
-   `printPdf.test.ts`.
-5. **Service method.** Add `runPrint(deps, input)` to `printPdf.ts` following TECHNICAL.md
+   `trueScalePrint.test.ts`.
+5. **Service method.** Construct `makeTrueScalePrint(deps)` to `trueScalePrint.ts` following TECHNICAL.md
    "Procedure", and `print` to the service interface (`PcbPreviewService.ts:83-148`), the
    implementation (one call into `runPrint` with the closure's helpers) and
    `PcbPreviewService.of` (`:2568-2606`). Wire `rpc.ts`. Add service tests with a fake `run`
@@ -43,8 +43,8 @@ error: errors })` to `PcbPreviewRpcGroup`. Add `print` to
 6. **MCP.** Add `loom_pcb_print` to `mcp.ts` with `save` defaulting to true. Extend
    `mcp.test.ts`. Confirm `t3 pcb print` resolves (no `cli.ts` change expected).
 7. **Client runtime and web.** Add the `print` command to
-   `packages/client-runtime/src/fork/pcb-preview.ts`. Create `PrintDialog.tsx` with the form,
-   running and result states from TECHNICAL.md, and a small pure `printDialog.logic.ts`
+   `packages/client-runtime/src/fork/pcb-preview.ts`. Create `TrueScalePrintDialog.tsx` with the form,
+   running and result states from TECHNICAL.md, and a small pure `trueScalePrint.logic.ts`
    (`initialPrintOptions(side, boardLayers)`, `isPrintStale(result, sourceHash)`). Add the menu
    item to `WorkspaceMenu` and the open state to `PcbPreviewPanel.tsx`. With L56 present, add
    the Assembly front and back presets as quick picks.

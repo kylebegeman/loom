@@ -81,6 +81,7 @@ import { LayerSheet } from "./LayerSheet";
 import { DrawingOverlays } from "./Overlays";
 import { snapPoint } from "./geometry";
 import { attachModelImage, captureBase64 } from "../model-preview-3d/capture";
+import { TrueScalePrintDialog } from "./TrueScalePrintDialog";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { appendSummary, checkSummary } from "./summary";
 import type { Pcb3dHandle } from "./Board3D";
@@ -130,6 +131,7 @@ function DesignWorkspace({
   const unit = useLengthUnit();
   const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
   const hiddenLayerPresets = usePcbPreferences((s) => s.hiddenLayerPresets);
+  const printPermission = useAtomValue(pcb.print.permissionAtom(threadRef.environmentId));
   const canBuild3d = useAtomValue(pcb.asset.permissionAtom(threadRef.environmentId));
   const canReadInspection = useAtomValue(pcb.inspect.permissionAtom(threadRef.environmentId));
   const [view, setView] = useState<PcbView>(() => initialView(design, saved?.view));
@@ -155,6 +157,7 @@ function DesignWorkspace({
     [notice, setNotice] = useState<Notice | null>(null),
     [captureBusy, setCaptureBusy] = useState(false),
     [exportOpen, setExportOpen] = useState(false),
+    [printOpen, setPrintOpen] = useState(false),
     [exportBusy, setExportBusy] = useState(false),
     [measuringHeights, setMeasuringHeights] = useState(false);
   const lastTab = useRef<InspectorTab>("Inspect");
@@ -1217,9 +1220,11 @@ function DesignWorkspace({
             canExport={
               !!design.boardPath && executionAllowed && preview.canRender && design.toolAvailable
             }
+            canPrint={!!design.boardPath && executionAllowed && printPermission}
             trusted={design.kind === "tscircuit" && trusted}
             onRefresh={refreshPreview}
             onExport={() => setExportOpen(true)}
+            onPrint={() => setPrintOpen(true)}
             onRevokeTrust={() => {
               trust(preferenceKey, false);
               setThree(false);
@@ -1552,6 +1557,16 @@ function DesignWorkspace({
           {preview.cancelled ? "Paused" : preview.watchError ? "Manual refresh" : "Live"}
         </span>
       </footer>
+      <TrueScalePrintDialog
+        open={printOpen}
+        onOpenChange={setPrintOpen}
+        threadRef={threadRef}
+        design={design}
+        inspection={workbench.inspection}
+        currentSourceHash={preview.sourceHash}
+        trusted={trusted}
+        canPrint={!!design.boardPath && executionAllowed && printPermission}
+      />
       <ExportDialog
         open={exportOpen}
         busy={exportBusy}

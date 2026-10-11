@@ -21,6 +21,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [P.completeEditorAction]: AuthOrchestrationOperateScope,
   [P.render]: AuthTerminalOperateScope,
   [P.check]: AuthTerminalOperateScope,
+  [P.print]: AuthTerminalOperateScope,
   [M.editorAction]: AuthOrchestrationOperateScope,
   [M.completeEditorAction]: AuthOrchestrationOperateScope,
   [M.updateWorkspace]: AuthOrchestrationOperateScope,

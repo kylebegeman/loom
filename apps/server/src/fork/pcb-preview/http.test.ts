@@ -16,12 +16,14 @@ it.effect("serves mesh bytes and returns plain 404 for invalid credentials and t
     const fs = yield* FileSystem.FileSystem,
       path = yield* Path.Path,
       dir = yield* fs.makeTempDirectoryScoped({ prefix: "loom-http-test-" }),
-      target = path.join(dir, "board.glb");
+      target = path.join(dir, "board.glb"),
+      pdf = path.join(dir, "print.pdf");
     yield* fs.writeFileString(target, "mesh bytes");
+    yield* fs.writeFileString(pdf, "%PDF-1.7 bytes");
     const service = {
       resolveSignedRequest: (token: string, relative: string) =>
-        token === "valid" && relative === "board.glb"
-          ? Effect.succeed(target)
+        token === "valid" && (relative === "board.glb" || relative === "print.pdf")
+          ? Effect.succeed(relative === "print.pdf" ? pdf : target)
           : Effect.fail(
               new PcbPreviewError({ reason: "render-not-found", message: "private detail" }),
             ),
@@ -46,6 +48,13 @@ it.effect("serves mesh bytes and returns plain 404 for invalid credentials and t
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("model/gltf-binary");
     expect(yield* Effect.promise(() => response.text())).toBe("mesh bytes");
+    const printed = yield* Effect.promise(() =>
+      web.handler(new Request("http://localhost/api/loom/pcb-preview/f/valid/print.pdf")),
+    );
+    expect(printed.status).toBe(200);
+    expect(printed.headers.get("content-type")).toBe("application/pdf");
+    expect(printed.headers.get("content-disposition")).toBeNull();
+    expect(yield* Effect.promise(() => printed.text())).toBe("%PDF-1.7 bytes");
     for (const url of ["invalid/board.glb", "valid/%2e%2e%2fsecret", "valid/other.glb"]) {
       const rejected = yield* Effect.promise(() =>
         web.handler(new Request(`http://localhost/api/loom/pcb-preview/f/${url}`)),

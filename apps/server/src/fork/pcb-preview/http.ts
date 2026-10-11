@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import { signedFileType } from "./cache.ts";
 import { PcbPreviewService } from "./PcbPreviewService.ts";
 const PREFIX = "/api/loom/pcb-preview/f/";
 export const PcbPreviewHttpRoutes = Layer.unwrap(
@@ -22,9 +23,11 @@ export const PcbPreviewHttpRoutes = Layer.unwrap(
             suffix.slice(0, slash),
             suffix.slice(slash + 1),
           );
+          const type = signedFileType(file.split(/[\\/]/).at(-1) ?? "");
+          if (!type) return HttpServerResponse.text("Not found", { status: 404 });
           return yield* HttpServerResponse.file(file, {
             headers: {
-              "Content-Type": "model/gltf-binary",
+              "Content-Type": type.contentType,
               "Cache-Control": "private, max-age=3600",
               "X-Content-Type-Options": "nosniff",
             },

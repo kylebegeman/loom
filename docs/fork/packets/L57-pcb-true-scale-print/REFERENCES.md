@@ -10,8 +10,11 @@
 
 ## Verified facts
 
-kicad-cli flags below are from the official reference. KiCad is not installed on the machine
-where this packet was written, so none were executed locally.
+kicad-cli flags below are from the official reference. KiCad is not installed on this host,
+so CLI export and physical PDF dimensions have not been verified locally. The KiCad 9 source
+was inspected during implementation: its PDF job creates fresh `PCB_PLOT_PARAMS`, instead of
+using saved project plot scaling. The generated sheet uses the version and coordinate,
+rectangle, line and text forms emitted by KiCad's drawing-sheet serializer.
 
 - `kicad-cli pcb export pdf` in KiCad 10.0 (docs built from 10.0.7):
   `-o/--output`, `-l/--layers` (at least one), `--cl/--common-layers`, `--drawing-sheet`,
@@ -35,8 +38,9 @@ where this packet was written, so none were executed locally.
 
 ## Unverified, check during implementation
 
-- The exact `.kicad_wks` S-expression grammar for `rect`, `line` and `tbtext` with `lbcorner`.
-  Save a sheet from the Drawing Sheet Editor and copy its form.
+- The generated `.kicad_wks` has not been loaded by an installed CLI. Its version and forms
+  match KiCad 9's `common/drawing_sheet/ds_data_model_io.cpp` and
+  `include/drawing_sheet/ds_file_versions.h` in the official source mirror.
 - Whether `pcb export pdf --mode-single --scale 1` keeps the board at its editor position on
   the page or centres it. `pageWarnings` assumes editor coordinates.
 - KiCad 9's PDF scale when the project has never been plotted (expected 1:1 by default).

@@ -3,6 +3,7 @@ import {
   PCB_PREVIEW_WS_METHODS as M,
   type PcbRenderInput,
   type PcbCheckInput,
+  type PcbPrintInput,
   type PcbReadSheetInput,
   type PcbInspectInput,
   type PcbWorkspaceUpdate,
@@ -178,6 +179,10 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
           ),
       },
     ),
+    print: createEnvironmentRpcCommand<R, E, typeof M.print, PcbPrintInput>(runtime, {
+      label: "loom:pcb-print",
+      tag: M.print,
+    }),
     readSheet: createEnvironmentRpcCommand<
       R,
       E,

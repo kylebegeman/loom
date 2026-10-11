@@ -41,3 +41,13 @@ export function pickPruneVictims(
   }
   return victims;
 }
+
+/** Only generated files in this table can be served by the signed PCB route. */
+export const SIGNED_FILE_TYPES = {
+  "board.glb": { contentType: "model/gltf-binary", maxBytes: 128 * 1024 * 1024 },
+  "print.pdf": { contentType: "application/pdf", maxBytes: 64 * 1024 * 1024 },
+} as const;
+export const signedFileType = (name: string) =>
+  Object.hasOwn(SIGNED_FILE_TYPES, name)
+    ? SIGNED_FILE_TYPES[name as keyof typeof SIGNED_FILE_TYPES]
+    : null;

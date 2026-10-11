@@ -1120,6 +1120,43 @@ it.effect("retains inspection when board stats cannot parse project rules", () =
   ),
 );
 
+it.effect("prints through the shared service, saves outside sources and limits signed PDFs", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create();
+      const input = {
+        threadId: t.input.threadId,
+        designId: "board.kicad_pro",
+        side: "bottom" as const,
+        paper: "A4" as const,
+        blackAndWhite: true,
+        save: true,
+      };
+      const result = yield* service.print(input);
+      expect(result.mirrored).toBe(true);
+      expect(result.workspacePath).toMatch(/^fab\/print\/.*\.pdf$/);
+      expect(yield* t.fs.readFileString(result.path!)).toBe("%PDF-1.7\nfixture");
+      expect(t.getRefreshes()).toBeGreaterThan(0);
+      const parts = result.file.relativeUrl.split("/");
+      expect(parts.at(-1)).toBe("print.pdf");
+      const signedPath = yield* service.resolveSignedRequest(parts.at(-2)!, parts.at(-1)!);
+      expect(yield* t.fs.readFileString(signedPath)).toBe("%PDF-1.7\nfixture");
+      const again = yield* service.print({ ...input, save: false });
+      expect(again.sourceHash).toBe(result.sourceHash);
+      expect(t.calls.filter((call) => call.args.includes("pdf"))).toHaveLength(1);
+      yield* t.fs.writeFileString(t.path.join(t.path.dirname(signedPath), "other.pdf"), "%PDF-1.7");
+      expect(
+        (yield* service.resolveSignedRequest(parts.at(-2)!, "other.pdf").pipe(Effect.flip)).reason,
+      ).toBe("render-not-found");
+      yield* t.fs.truncate(signedPath, 64 * 1024 * 1024 + 1);
+      expect(
+        (yield* service.resolveSignedRequest(parts.at(-2)!, "print.pdf").pipe(Effect.flip)).reason,
+      ).toBe("render-not-found");
+    }),
+  ),
+);
+
 it.effect("excludes canonical fabrication output folders from circuit revisions", () =>
   test(
     Effect.gen(function* () {

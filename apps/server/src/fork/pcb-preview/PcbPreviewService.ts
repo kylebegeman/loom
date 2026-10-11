@@ -55,6 +55,7 @@ import { cropPhysicalSvg, normalizeCircuitSvg } from "./svg.ts";
 import { starterHardware } from "./hardware.ts";
 import { normalizeCircuitGlb, readGlbBounds, type GlbBounds } from "./glb.ts";
 import { boardStats, type BoardStatsDesign } from "./boardStats.ts";
+import { makeTrueScalePrint } from "./trueScalePrint.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import { ServerConfig } from "../../config.ts";
@@ -75,6 +76,7 @@ import {
   MAX_SVG_BYTES,
   CACHE_LIMITS,
   CHECK_LIMITS,
+  signedFileType,
 } from "./cache.ts";
 import { parseKicadReport } from "./kicadReports.ts";
 import { parseKicadVersion, parseTsciVersion, circuitEnvironment, processLog } from "./tools.ts";
@@ -87,6 +89,7 @@ export class PcbPreviewService extends Context.Service<
     readonly reuseHardware: (
       input: typeof W.PcbReuseHardwareInput.Type,
     ) => Effect.Effect<typeof W.PcbReuseHardwareResult.Type, PcbPreviewError>;
+    readonly print: (input: W.PcbPrintInput) => Effect.Effect<W.PcbPrintResult, PcbPreviewError>;
     readonly inspect: (input: W.PcbInspectInput) => Effect.Effect<W.PcbInspection, PcbPreviewError>;
     readonly getWorkspace: (
       input: W.PcbInspectInput,
@@ -1520,7 +1523,7 @@ export const make = Effect.gen(function* () {
   });
   const modelSigningKey = NodeCrypto.randomBytes(32);
   const MAX_MODEL_BYTES = 128 * 1024 * 1024;
-  const signBoard = Effect.fn("PcbPreview.signBoard")(function* (file: string) {
+  const signCacheFile = Effect.fn("PcbPreview.signCacheFile")(function* (file: string) {
     const info = yield* fs.stat(file),
       expiresAt = (yield* now) + 3600000;
     const token = mintToken(
@@ -1528,7 +1531,7 @@ export const make = Effect.gen(function* () {
       modelSigningKey,
     );
     return {
-      relativeUrl: `/api/loom/pcb-preview/f/${token}/board.glb`,
+      relativeUrl: `/api/loom/pcb-preview/f/${token}/${path.basename(file)}`,
       expiresAt,
       sizeBytes: Number(info.size),
       modifiedAt: Option.getOrNull(info.mtime)?.toISOString() ?? "1970-01-01T00:00:00.000Z",
@@ -1542,22 +1545,35 @@ export const make = Effect.gen(function* () {
     const at = yield* now;
     const candidate = yield* Effect.try({
       try: () => resolveTokenPath(verifyToken(token, modelSigningKey, at), relative),
-      catch: () => failure("render-not-found", "That board model URL is unavailable."),
+      catch: () => failure("render-not-found", "That PCB file URL is unavailable."),
     });
     const real = yield* fs.realPath(candidate).pipe(Effect.mapError(ioFailure));
     const info = yield* fs.stat(real).pipe(Effect.mapError(ioFailure));
+    const type = signedFileType(path.basename(real));
     if (
       !contains(cacheDir, real, path) ||
       real !== candidate ||
-      path.basename(real) !== "board.glb" ||
+      !type ||
       info.type !== "File" ||
-      Number(info.size) > MAX_MODEL_BYTES
+      Number(info.size) > type.maxBytes
     )
-      return yield* failure(
-        "render-not-found",
-        "That board model is unavailable. Retry its export.",
-      );
+      return yield* failure("render-not-found", "That PCB file is unavailable. Retry its export.");
     return real;
+  });
+  const print = yield* makeTrueScalePrint({
+    cacheDir,
+    resolveDesign,
+    sourceSnapshot,
+    requiredTool,
+    requiredKicadTool: (resolved) =>
+      requiredTool({ ...resolved, design: { ...resolved.design, kind: "kicad" } }),
+    run,
+    temporaryCircuitCwd,
+    signCacheFile,
+    ensureWorkspaceDirectory,
+    refreshEntries: (root) => entries.refresh(root),
+    prune,
+    safePath,
   });
   const decodeModelManifest = Schema.decodeUnknownEffect(
     Schema.Struct({ sourceHash: Schema.String, log: Schema.String }),
@@ -1686,7 +1702,7 @@ export const make = Effect.gen(function* () {
                     "source-limit",
                     "The inline asset exceeds 16 MiB. Use URL transport for this board.",
                   );
-                const file = streamed ? yield* signBoard(modelFile) : undefined;
+                const file = streamed ? yield* signCacheFile(modelFile) : undefined;
                 yield* fs.utimes(manifestPath, (yield* now) / 1000, (yield* now) / 1000);
                 return {
                   format: input.format,
@@ -1839,7 +1855,7 @@ export const make = Effect.gen(function* () {
                 filePath: path.join(modelDir, "manifest.json"),
                 contents: encodeJson({ sourceHash: snapshot.sourceHash, log: processLog(result) }),
               });
-              return streamed ? yield* signBoard(modelFile) : undefined;
+              return streamed ? yield* signCacheFile(modelFile) : undefined;
             }),
           );
           yield* prune();
@@ -2751,6 +2767,7 @@ export const make = Effect.gen(function* () {
       ),
     editorAction: (i) => checked(editorAction(i)),
     completeEditorAction: (i) => checked(completeEditorAction(i)),
+    print: (i) => checked(print(i)),
     inspect: (i) => checked(inspect(i)),
     getWorkspace: (i) => checked(getWorkspace(i)),
     updateWorkspace: (i) => checked(updateWorkspace(i)),

@@ -1,6 +1,9 @@
 # L57: True-scale printout
 
-Status: Ready to build
+Status: Implemented locally on `feat/pcb-units-presets-stats-print-capture`.
+
+Focused automated checks pass. Physical print calibration and browser/desktop verification
+remain in [TESTING.md](./TESTING.md).
 
 Approved by Kyle on 2026-10-10.
 

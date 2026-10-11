@@ -199,3 +199,129 @@ it.effect("rejects editor actions from an external read-only client", () =>
     }),
   ),
 );
+
+it.effect("prints in the caller workspace and defaults agent requests to saving", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { toolkit, threads } = yield* fixture({
+        print: (input) => {
+          expect(input).toEqual({
+            threadId,
+            designId: "board.kicad_pcb",
+            side: "top",
+            paper: "board",
+            blackAndWhite: true,
+            save: true,
+          });
+          return Effect.succeed({
+            file: {
+              relativeUrl: "/api/loom/pcb-preview/f/test/print.pdf",
+              expiresAt: 1,
+              sizeBytes: 100,
+              modifiedAt: "2026-10-10T00:00:00Z",
+              revision: "revision",
+            },
+            fileName: "board-top-revision.pdf",
+            workspacePath: "fab/print/board-top-revision.pdf",
+            path: "/workspace/fab/print/board-top-revision.pdf",
+            sourceHash: "revision",
+            side: "top",
+            layers: ["F.Cu", "Edge.Cuts"],
+            mirrored: false,
+            paper: "board",
+            boardMm: { width: 50, height: 30 },
+            warnings: [],
+            log: "",
+          });
+        },
+      });
+      const results = yield* toolkit
+        .handle("loom_pcb_print", { designId: "board.kicad_pcb" })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      expect(results.length).toBeGreaterThan(0);
+    }),
+  ),
+);
+it.effect("honors print options and explicit no-save while retaining typed tool failures", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { toolkit, threads } = yield* fixture({
+        print: (input) => {
+          expect(input).toEqual({
+            threadId,
+            designId: "board.kicad_pcb",
+            side: "bottom",
+            layers: "assembly-back",
+            mirror: false,
+            paper: "A3",
+            blackAndWhite: false,
+            save: false,
+          });
+          return Effect.fail(
+            new PcbPreviewError({ reason: "tool-missing", message: "Install KiCad" }),
+          );
+        },
+      });
+      const error = yield* toolkit
+        .handle("loom_pcb_print", {
+          designId: "board.kicad_pcb",
+          side: "bottom",
+          layers: "assembly-back",
+          mirror: false,
+          paper: "A3",
+          blackAndWhite: false,
+          save: false,
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+          Effect.flip,
+        );
+      expect(error).toMatchObject({ reason: "tool-missing" });
+    }),
+  ),
+);
+it.effect(
+  "refuses printing before host execution for a caller without full environment authority",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { toolkit, threads } = yield* fixture({}, "auto");
+        const error = yield* toolkit
+          .handle("loom_pcb_print", {
+            designId: "board.tsx",
+            save: false,
+          })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provideService(McpInvocationContext, scope),
+            Effect.provideService(ThreadManagementService, threads),
+            Effect.flip,
+          );
+        expect(error).toMatchObject({ code: "capability_denied" });
+      }),
+    ),
+);
+it.effect("requires a calling thread to print rather than an external client", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { toolkit, threads } = yield* fixture({});
+      const error = yield* toolkit.handle("loom_pcb_print", { designId: "board.kicad_pcb" }).pipe(
+        Effect.flatMap(Stream.runCollect),
+        Effect.provideService(ThreadManagementService, threads),
+        Effect.provideService(McpInvocationContext, {
+          ...scope,
+          thread: undefined,
+          client: { sessionId: "external", label: "External", access: "full-access" },
+        }),
+        Effect.flip,
+      );
+      expect(error).toMatchObject({ code: "thread_credential_required" });
+    }),
+  ),
+);
