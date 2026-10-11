@@ -131,6 +131,7 @@ const agent = (id: string, status: RuntimeSubagent["status"]): RuntimeSubagent =
   workflowName: null,
   phases: [],
   runHandles: null,
+  childThreadId: null,
   recentActivity: [],
   firstSeenAt: "2026-09-25T10:00:00.000Z",
   startedAt: "2026-09-25T10:00:00.000Z",
