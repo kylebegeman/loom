@@ -17,13 +17,18 @@ it.effect("serves mesh bytes and returns plain 404 for invalid credentials and t
       path = yield* Path.Path,
       dir = yield* fs.makeTempDirectoryScoped({ prefix: "loom-http-test-" }),
       target = path.join(dir, "board.glb"),
-      pdf = path.join(dir, "print.pdf");
+      pdf = path.join(dir, "print.pdf"),
+      zip = path.join(dir, "package.zip");
     yield* fs.writeFileString(target, "mesh bytes");
     yield* fs.writeFileString(pdf, "%PDF-1.7 bytes");
+    yield* fs.writeFileString(zip, "PK bytes");
     const service = {
       resolveSignedRequest: (token: string, relative: string) =>
-        token === "valid" && (relative === "board.glb" || relative === "print.pdf")
-          ? Effect.succeed(relative === "print.pdf" ? pdf : target)
+        token === "valid" &&
+        (relative === "board.glb" || relative === "print.pdf" || relative === "package.zip")
+          ? Effect.succeed(
+              relative === "package.zip" ? zip : relative === "print.pdf" ? pdf : target,
+            )
           : Effect.fail(
               new PcbPreviewError({ reason: "render-not-found", message: "private detail" }),
             ),
@@ -55,6 +60,12 @@ it.effect("serves mesh bytes and returns plain 404 for invalid credentials and t
     expect(printed.headers.get("content-type")).toBe("application/pdf");
     expect(printed.headers.get("content-disposition")).toBeNull();
     expect(yield* Effect.promise(() => printed.text())).toBe("%PDF-1.7 bytes");
+    const packaged = yield* Effect.promise(() =>
+      web.handler(new Request("http://localhost/api/loom/pcb-preview/f/valid/package.zip")),
+    );
+    expect(packaged.status).toBe(200);
+    expect(packaged.headers.get("content-type")).toBe("application/zip");
+    expect(yield* Effect.promise(() => packaged.text())).toBe("PK bytes");
     for (const url of ["invalid/board.glb", "valid/%2e%2e%2fsecret", "valid/other.glb"]) {
       const rejected = yield* Effect.promise(() =>
         web.handler(new Request(`http://localhost/api/loom/pcb-preview/f/${url}`)),

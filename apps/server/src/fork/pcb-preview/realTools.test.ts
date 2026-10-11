@@ -307,6 +307,40 @@ realTest(
         const revisions = yield* service.revisions({ threadId, designId: kicad.id });
         expect(revisions.map((r) => r.ref)).toEqual(expect.arrayContaining([commit, checkpoint]));
         const boardPath = path.join(root, kicad.boardPath!);
+        const packageResult = yield* service.fabPackage({
+          threadId,
+          designId: kicad.id,
+          profile: "jlcpcb",
+          assembly: true,
+          force: false,
+        });
+        expect(packageResult.outputs.some((file) => file.kind === "gerber")).toBe(true);
+        expect(packageResult.outputs.some((file) => file.kind === "drill")).toBe(true);
+        expect(packageResult.outputs.some((file) => file.path === "assembly/positions.csv")).toBe(
+          true,
+        );
+        expect(packageResult.outputs.some((file) => file.path === "jlcpcb/cpl.csv")).toBe(true);
+        expect(packageResult.previewLayers.some((layer) => layer.layer === "Edge.Cuts")).toBe(true);
+        expect(
+          (yield* service.fabPackage({
+            threadId,
+            designId: kicad.id,
+            profile: "jlcpcb",
+            assembly: true,
+            force: false,
+          })).reused,
+        ).toBe(true);
+        const circuitPackage = yield* service.fabPackage({
+          threadId,
+          designId: circuit.id,
+          profile: "generic",
+          assembly: true,
+          force: false,
+        });
+        expect(circuitPackage.checklist.find((item) => item.id === "drc")?.status).toBe("skipped");
+        expect(circuitPackage.outputs.some((file) => file.path === "assembly/assembly.svg")).toBe(
+          true,
+        );
         const originalBoard = yield* fs.readFileString(boardPath);
         const first = inspection.components[0]!;
         const changedBoard = originalBoard.replace(

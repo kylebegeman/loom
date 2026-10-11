@@ -27,6 +27,10 @@ import {
 } from "../baseSchemas.ts";
 
 export const PCB_PREVIEW_WS_METHODS = {
+  fabPackage: "loom.pcb-preview.fabPackage",
+  fabPackages: "loom.pcb-preview.fabPackages",
+  fabPackageZip: "loom.pcb-preview.fabPackageZip",
+  deleteFabPackage: "loom.pcb-preview.deleteFabPackage",
   fabCapabilities: "loom.pcb-preview.fabCapabilities",
   updateFabCapabilities: "loom.pcb-preview.updateFabCapabilities",
   fabCheck: "loom.pcb-preview.fabCheck",
@@ -485,6 +489,26 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
     success: PcbTurnDesigns,
     error: errors,
     stream: true,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.fabPackage, {
+    payload: Fab.PcbFabPackageInput,
+    success: Fab.PcbFabPackageResult,
+    error: Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.fabPackages, {
+    payload: Fab.PcbFabPackagesInput,
+    success: Schema.Array(Fab.PcbFabPackageSummary),
+    error: Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.fabPackageZip, {
+    payload: Fab.PcbFabPackageRef,
+    success: Fab.PcbFabPackageZip,
+    error: Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]),
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.deleteFabPackage, {
+    payload: Fab.PcbFabPackageRef,
+    success: Schema.Void,
+    error: Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]),
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.fabCapabilities, {
     payload: Schema.Struct({}),

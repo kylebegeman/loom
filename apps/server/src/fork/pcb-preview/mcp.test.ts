@@ -680,3 +680,83 @@ it.effect("fab tools preserve the caller and catalog save needs environment writ
     }),
   ),
 );
+
+it.effect(
+  "fabrication tools preserve defaults, list packages and omit signed URLs for agents",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const manifest = {
+          id: "board-A-2026-10-10",
+          workspacePath: "fab/board-A-2026-10-10",
+          designId: "board.kicad_pro",
+          sourceHash: "one",
+          inputHash: "one",
+          profile: "generic" as const,
+          fabId: null,
+          verdict: "ready" as const,
+          createdAt: "2026-10-10T12:00:00Z",
+          assembly: true,
+          outputs: [],
+          checklist: [],
+          previewLayers: [],
+          warnings: [],
+          log: "",
+        };
+        const { toolkit, threads } = yield* fixture({
+          fabPackage: (input) => {
+            expect(input).toEqual({
+              threadId,
+              designId: manifest.designId,
+              profile: "generic",
+              assembly: true,
+              force: false,
+            });
+            return Effect.succeed({
+              ...manifest,
+              path: "/workspace/" + manifest.workspacePath,
+              reused: false,
+              zip: {
+                relativeUrl: "private-url",
+                expiresAt: 1,
+                sizeBytes: 1,
+                modifiedAt: manifest.createdAt,
+                revision: "one",
+              },
+            });
+          },
+          fabPackages: (input) => {
+            expect(input.threadId).toBe(threadId);
+            return Effect.succeed([manifest]);
+          },
+          deleteFabPackage: (input) => {
+            expect(input).toEqual({
+              threadId,
+              designId: manifest.designId,
+              packageId: manifest.id,
+            });
+            return Effect.void;
+          },
+        });
+        const invoke = (
+          name: Parameters<typeof toolkit.handle>[0],
+          input: Record<string, unknown>,
+        ) =>
+          toolkit
+            .handle(name, input)
+            .pipe(
+              Effect.flatMap(Stream.runCollect),
+              Effect.provideService(McpInvocationContext, scope),
+              Effect.provideService(ThreadManagementService, threads),
+            );
+        const built = yield* invoke("loom_pcb_fab_package", { designId: manifest.designId });
+        expect(JSON.stringify(built)).not.toContain("private-url");
+        expect(JSON.stringify(built)).toContain(manifest.workspacePath);
+        yield* invoke("loom_pcb_fab_packages", { designId: manifest.designId });
+        yield* invoke("loom_pcb_delete_fab_package", {
+          designId: manifest.designId,
+          packageId: manifest.id,
+        });
+      }),
+    ),
+);

@@ -278,6 +278,7 @@ export function WorkspaceMenu({
   onRefresh,
   onExport,
   onPrint,
+  onFabrication,
   onRevokeTrust,
 }: {
   canRefresh: boolean;
@@ -288,6 +289,7 @@ export function WorkspaceMenu({
   onRefresh: () => void;
   onExport: () => void;
   onPrint: () => void;
+  onFabrication: () => void;
   onRevokeTrust: () => void;
 }) {
   return (
@@ -309,6 +311,10 @@ export function WorkspaceMenu({
         <MenuItem disabled={!canExport} onClick={onExport}>
           <PackageOpenIcon />
           Export board reference…
+        </MenuItem>
+        <MenuItem onClick={onFabrication}>
+          <PackageOpenIcon />
+          Create fab package…
         </MenuItem>
         <MenuItem disabled={!canPrint} onClick={onPrint}>
           <PrinterIcon />

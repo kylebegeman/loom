@@ -19,13 +19,11 @@ Fabrication tab / loom_pcb_fab_package / t3 pcb fab_package
        copy the zip into the cache and sign it
   <- PcbFabPackageResult { checklist, outputs, zip: SignedFile, ... }
 
-Preview: client fetches the signed zip -> gerberPreview.worker.ts (jszip + pcb-stackup)
-         -> SVG strings -> SvgViewport in the canvas "Outputs" mode
+Preview: GerberPreview -> existing PCB render RPC with packaged layer names
+         -> SvgViewport in canvas "Outputs" mode, labelled as a board plot
 ```
 
-The output preview runs in a web worker so Gerber parsing never blocks the T3 server or the UI
-thread. Without the approved renderer, it falls back to the existing `render` RPC with
-`layerNames` set to the packaged layers.
+The implemented preview uses the documented fallback through the existing `render` RPC with `layerNames` set to the packaged layers. It warns when the saved board changed since the package. The optional renderer design below is not implemented.
 
 ## Contracts
 

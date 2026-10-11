@@ -1,6 +1,11 @@
 import { it, expect } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { PcbFabCapabilities, PcbFabCapability, PcbFabCheckInput } from "./pcb-fab.ts";
+import {
+  PcbFabCapabilities,
+  PcbFabCapability,
+  PcbFabCheckInput,
+  PcbFabPackageInput,
+} from "./pcb-fab.ts";
 const decodeCapabilities = Schema.decodeUnknownSync(PcbFabCapabilities);
 const decodeCapability = Schema.decodeUnknownSync(PcbFabCapability);
 const decodeCheck = Schema.decodeUnknownSync(PcbFabCheckInput);
@@ -53,4 +58,15 @@ it("rejects unit mistakes, IDs, excess profiles and malformed dates", () => {
       defaultId: null,
     }),
   ).toBe(false);
+});
+
+const decodePackage = Schema.decodeUnknownSync(PcbFabPackageInput);
+it("fabrication package requests default to generic assembly without forcing", () => {
+  expect(decodePackage({ threadId: "one", designId: "board" })).toEqual({
+    threadId: "one",
+    designId: "board",
+    profile: "generic",
+    assembly: true,
+    force: false,
+  });
 });

@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { SignedFile } from "./model-preview-3d.ts";
 import { IsoDateTime, NonNegativeInt, ThreadId } from "../baseSchemas.ts";
 
 const text = (max = 200) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
@@ -166,3 +167,109 @@ export type PcbFabBoardFinding = typeof PcbFabBoardFinding.Type;
 export type PcbFabCostDriver = typeof PcbFabCostDriver.Type;
 
 export type PcbFabRule = typeof PcbFabRule.Type;
+
+export const PcbFabProfile = Schema.Literals(["generic", "jlcpcb"]);
+export const PcbFabPackageInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: text(1024),
+  profile: PcbFabProfile.pipe(Schema.withDecodingDefault(Effect.succeed("generic" as const))),
+  fabId: Schema.optional(PcbFabId),
+  assembly: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  force: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+});
+export type PcbFabPackageInput = typeof PcbFabPackageInput.Type;
+export const PcbFabOutput = Schema.Struct({
+  path: text(300),
+  kind: Schema.Literals([
+    "gerber",
+    "drill",
+    "zip",
+    "bom",
+    "positions",
+    "cpl",
+    "assembly",
+    "report",
+    "checklist",
+    "manifest",
+  ]),
+  layer: Schema.optional(text(64)),
+  bytes: NonNegativeInt,
+});
+export type PcbFabOutput = typeof PcbFabOutput.Type;
+export const PcbFabChecklistItem = Schema.Struct({
+  id: Schema.Literals([
+    "outline",
+    "copper-layers",
+    "drill",
+    "drc",
+    "erc",
+    "zones",
+    "fab-check",
+    "bom-cpl",
+    "lcsc",
+    "rotations",
+    "polarity",
+  ]),
+  status: Schema.Literals(["pass", "fail", "warning", "manual", "skipped"]),
+  title: text(120),
+  detail: Schema.String.check(Schema.isMaxLength(2000)),
+});
+export type PcbFabChecklistItem = typeof PcbFabChecklistItem.Type;
+export const PcbFabVerdict = Schema.Literals(["ready", "needs-review", "not-ready"]);
+export const PcbFabPackageSummary = Schema.Struct({
+  unreadable: Schema.optional(Schema.Boolean),
+  id: text(200),
+  workspacePath: text(4096),
+  designId: text(1024),
+  sourceHash: text(200),
+  profile: PcbFabProfile,
+  fabId: Schema.NullOr(PcbFabId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  verdict: PcbFabVerdict,
+  createdAt: IsoDateTime,
+});
+export type PcbFabPackageSummary = typeof PcbFabPackageSummary.Type;
+export const PcbFabPreviewLayer = Schema.Struct({
+  path: text(300),
+  layer: text(64),
+  side: Schema.Literals(["top", "bottom", "inner", "all"]),
+  type: Schema.Literals(["copper", "soldermask", "silkscreen", "solderpaste", "drill", "outline"]),
+});
+export type PcbFabPreviewLayer = typeof PcbFabPreviewLayer.Type;
+export const PcbFabPackageManifest = Schema.Struct({
+  ...PcbFabPackageSummary.fields,
+  assembly: Schema.Boolean,
+  outputs: list(PcbFabOutput, 200),
+  checklist: list(PcbFabChecklistItem, 16),
+  previewLayers: list(PcbFabPreviewLayer, 64),
+  warnings: list(text(400), 16),
+  toolVersion: Schema.optional(text(100)),
+  log: Schema.String.check(Schema.isMaxLength(64000)),
+  inputHash: text(200),
+});
+export type PcbFabPackageManifest = typeof PcbFabPackageManifest.Type;
+export const PcbFabPackageResult = Schema.Struct({
+  ...PcbFabPackageManifest.fields,
+  path: text(4096),
+  zip: SignedFile,
+  reused: Schema.Boolean,
+});
+export type PcbFabPackageResult = typeof PcbFabPackageResult.Type;
+export const PcbFabPackagesInput = Schema.Struct({ threadId: ThreadId, designId: text(1024) });
+export type PcbFabPackagesInput = typeof PcbFabPackagesInput.Type;
+export const PcbFabPackageRef = Schema.Struct({
+  ...PcbFabPackagesInput.fields,
+  packageId: text(200),
+});
+export type PcbFabPackageRef = typeof PcbFabPackageRef.Type;
+export const PcbFabPackageZip = Schema.Struct({
+  zip: SignedFile,
+  previewLayers: PcbFabPackageManifest.fields.previewLayers,
+  manifest: PcbFabPackageManifest,
+});
+export type PcbFabPackageZip = typeof PcbFabPackageZip.Type;
+
+export const PcbFabPackageAgentResult = Schema.Struct({
+  ...PcbFabPackageManifest.fields,
+  path: text(4096),
+  reused: Schema.Boolean,
+});

@@ -1,6 +1,8 @@
 # L65: Fabrication package with output preview
 
-Status: Needs decision: approve a Gerber renderer for the output preview
+Status: Implemented locally
+
+Implemented on `feat/pcb-units-presets-stats-print-capture` with the documented board-plot fallback, no renderer dependency, project rotation corrections and no `.gitignore` writes. Focused host, ZIP, output, checklist, MCP, HTTP and permission checks cover both data paths. Real-client, real-CAD and fab-uploader verification remain pending.
 
 Approved by Kyle on 2026-10-10.
 
@@ -11,8 +13,7 @@ Gerbers and drill files, runs DRC (and the L64 fab check when a fab is chosen), 
 to `fab/<design>-<revision>-<date>/` in the workspace with a checklist that says what passed,
 what failed and what still needs his eyes. An optional JLCPCB profile adds JLCPCB's BOM and CPL
 column layout and applies rotation corrections. The new Fabrication tab lists packages, and
-"Preview outputs" draws the produced Gerbers, not the design, so a missing layer or wrong outline
-shows before the order. Loom never uploads or orders. Agents create packages with
+"Preview outputs" shows the labelled board plot of the packaged layers for KiCad. It plots the current saved board, with a warning when its revision differs from the package. Inspect the exported Gerber zip in the fab's viewer before ordering. Loom never uploads or orders. Agents create packages with
 `loom_pcb_fab_package` and read the checklist.
 
 ## Scope
@@ -26,8 +27,7 @@ shows before the order. Loom never uploads or orders. Agents create packages wit
     `jlcpcb/cpl.csv` (Designator, Mid X, Mid Y, Layer, Rotation) with rotation corrections from
     per-part fields and an optional `fab/rotations.csv`.
   - Checklist with a verdict: ready, needs review, or not ready.
-  - Output preview: the packaged Gerbers rendered to SVG in a web worker, top and bottom
-    composites and single layers, view only.
+  - Output preview: the documented KiCad board-plot fallback, with top, bottom and single-layer controls. A tscircuit package explains that preview needs a Gerber renderer.
   - tscircuit boards through `tsci export -f gerbers`, with BOM and CPL built from Circuit JSON
     and the assembly drawing from `tsci export -f assembly-svg`. No DRC.
   - A new Fabrication inspector tab, a **…** menu item, MCP tools `loom_pcb_fab_package` and
@@ -40,7 +40,7 @@ shows before the order. Loom never uploads or orders. Agents create packages wit
 
 ## Surfaces
 
-- Web and desktop: supported. The preview worker runs in the browser or desktop renderer.
+- Web and desktop: supported. The fallback plot uses the existing host render service.
 - Mobile: not supported. Mobile has no PCB panel.
 - Remote: works over LAN, Tailscale and T3 Connect. KiCad runs on the environment host, the
   package is written to the host's workspace, and the zip reaches the client over the signed
@@ -57,9 +57,7 @@ None. Every file is fork-owned. See [SEAMS.md](./SEAMS.md).
 
 ## New dependencies
 
-Pending Kyle's approval: `pcb-stackup` 4.2.8 (MIT, tracespace) in `apps/web` only, for the
-Gerber preview. Without it, everything else ships and the preview falls back to KiCad's board
-SVG of the packaged layers, labelled as a board plot rather than a Gerber render. See PRODUCT.md.
+None for this implementation. The documented fallback avoids a renderer dependency. A future Gerber renderer remains an optional upgrade.
 
 ## Relationship to other follow-up packets
 

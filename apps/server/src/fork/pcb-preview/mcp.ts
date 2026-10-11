@@ -127,6 +127,44 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "PCB: print")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+
+  Tool.make("loom_pcb_fab_package", {
+    description:
+      "Create Gerbers, drill, BOM, placements and assembly drawings under fab/, run checks and return a checklist. Never uploads or orders. Rotation corrections come from part fields and fab/rotations.csv.",
+    parameters: Schema.Struct({
+      ...design,
+      profile: W.PcbFabPackageInput.fields.profile,
+      fabId: W.PcbFabPackageInput.fields.fabId,
+      assembly: W.PcbFabPackageInput.fields.assembly,
+      force: W.PcbFabPackageInput.fields.force,
+    }),
+    success: W.PcbFabPackageAgentResult,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: fab package")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_fab_packages", {
+    description: "List fabrication packages for this design.",
+    parameters: Schema.Struct(design),
+    success: Schema.Array(W.PcbFabPackageSummary),
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: fab packages")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_delete_fab_package", {
+    description: "Delete a fabrication package and its outputs from fab/.",
+    parameters: Schema.Struct({ ...design, packageId: W.PcbFabPackageRef.fields.packageId }),
+    success: Schema.Void,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: delete fab package")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
   Tool.make("loom_pcb_fab_capabilities", {
     description: "List built-in and user fab capabilities, their checked dates and the default.",
     parameters: Tool.EmptyParams,
@@ -527,6 +565,39 @@ export const pcbHandlers = McpToolAccess.toLayer(
           const threadId = yield* thread;
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) => service.pinMap({ ...input, threadId })),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+
+      loom_pcb_fab_package: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service
+                .fabPackage({ ...input, threadId })
+                .pipe(Effect.map(({ zip: _zip, ...manifest }) => manifest)),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_fab_packages: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.fabPackages({ ...input, threadId }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_delete_fab_package: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.deleteFabPackage({ ...input, threadId }),
+            ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),

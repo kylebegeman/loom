@@ -101,6 +101,7 @@ import { makeTurnDesigns } from "./turnDesigns.ts";
 import { isPcbSource } from "./sourceFiles.ts";
 import { makePinMap } from "./pinMap.ts";
 import { makeFabCatalog, isPlainHttpUrl } from "./fabData.ts";
+import { makeFabPackages } from "./fabPackage.ts";
 import { makeFabChecks } from "./fabCheckRunner.ts";
 import { makeProjectSettings } from "./projectSettings.ts";
 import { kicadReviewModel, circuitJsonReviewModel } from "./reviewModel.ts";
@@ -191,6 +192,16 @@ export class PcbPreviewService extends Context.Service<
     readonly turnDesignEvents: (input: {
       threadId: ThreadId;
     }) => Stream.Stream<W.PcbTurnDesigns, PcbPreviewError>;
+    readonly fabPackage: (
+      i: W.PcbFabPackageInput,
+    ) => Effect.Effect<W.PcbFabPackageResult, PcbPreviewError>;
+    readonly fabPackages: (
+      i: W.PcbFabPackagesInput,
+    ) => Effect.Effect<readonly W.PcbFabPackageSummary[], PcbPreviewError>;
+    readonly fabPackageZip: (
+      i: W.PcbFabPackageRef,
+    ) => Effect.Effect<W.PcbFabPackageZip, PcbPreviewError>;
+    readonly deleteFabPackage: (i: W.PcbFabPackageRef) => Effect.Effect<void, PcbPreviewError>;
     readonly fabCapabilities: () => Effect.Effect<W.PcbFabCatalog, PcbPreviewError>;
     readonly updateFabCapabilities: (
       input: W.PcbFabCapabilitiesUpdate,
@@ -2093,6 +2104,23 @@ export const make = Effect.gen(function* () {
     );
     return yield* assetJobs.run(jobKey, checked(runAsset(input, resolved, snapshot)));
   });
+  const fabPackages = yield* makeFabPackages<ResolvedDesign>({
+    cacheDir,
+    cacheLock,
+    resolve: resolveDesign,
+    snapshot: sourceSnapshot,
+    tool: requiredTool,
+    safePath,
+    ensureDirectory: ensureWorkspaceDirectory,
+    run,
+    check: (i) => checked(check(i)).pipe(Effect.map((value) => value as PcbCheckResult)),
+    fabCheck: (i) => checked(fabChecks.run(i)),
+    catalog: () => fabCatalog.read,
+    asset,
+    circuitCwd: temporaryCircuitCwd,
+    sign: signCacheFile,
+    refresh: (root) => entries.refresh(root).pipe(Effect.mapError(ioFailure)),
+  });
   const schematicConnectivity = Effect.fn("PcbPreview.schematicConnectivity")(function* (
     inspection: W.PcbInspection,
     tool: PcbToolStatus,
@@ -3140,6 +3168,10 @@ export const make = Effect.gen(function* () {
     projectSettings: (i) => checked(projectSettings(i)),
     updateProjectSettings: (i) => checked(updateProjectSettings(i)),
     checkEvents,
+    fabPackage: (i) => checked(fabPackages.build(i)),
+    fabPackages: (i) => checked(fabPackages.list(i)),
+    fabPackageZip: (i) => checked(fabPackages.zip(i)),
+    deleteFabPackage: (i) => checked(fabPackages.remove(i)),
     fabCapabilities: () => checked(fabCatalog.read),
     updateFabCapabilities: (i) => checked(fabCatalog.update(i)),
     fabCheck: (i) => checked(fabChecks.run(i)),

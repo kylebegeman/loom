@@ -2,6 +2,8 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+Local verification covers deterministic ZIP round trips, output conversion and checklists, package reuse including rotations, forced rebuilds, deletion, corrupt manifest recovery, interruption and failure cleanup, concurrent source changes, tscircuit staging, signed ZIP HTTP, MCP and guarded permissions. Scoped strict lint and contracts, client-runtime, server and web typechecks are used. The real-tool harness now exercises both package paths but was not run because CAD tools and fixtures are absent. Real-client, remote and fab-uploader checks remain pending. Preview uses the documented board-plot fallback; no worker or renderer dependency was added.
+
 ## Automated tests
 
 | File                                                                  | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

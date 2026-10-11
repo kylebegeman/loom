@@ -50,12 +50,19 @@ export const INSPECTOR_TABS = [
   "Parameters",
   "Library",
   "Requests",
+  "Fabrication",
 ] as const;
 export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 const TAB_META: Record<
   InspectorTab,
   { icon: typeof LayersIcon; short: string; title: string; detail: string }
 > = {
+  Fabrication: {
+    icon: PackageIcon,
+    short: "Fab",
+    title: "Fabrication",
+    detail: "Manufacturing files and readiness checklist",
+  },
   Requests: {
     icon: MessageSquareDotIcon,
     short: "Requests",

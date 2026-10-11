@@ -1,3 +1,5 @@
+import { FabricationTab, type FabOutputPreview } from "./FabricationTab";
+import { GerberPreview } from "./GerberPreview";
 import { RequestPins } from "./RequestPins";
 import { RequestForm, RequestsTab } from "./RequestsTab";
 import { anchorPoint, describeAnchor, requestPrompt } from "./requests";
@@ -200,6 +202,7 @@ export function DesignWorkspace({
     [tab, setTab] = useState<InspectorTab | null>(null),
     [expanded, setExpanded] = useState(false),
     [three, setThree] = useState(false),
+    [outputs, setOutputs] = useState<FabOutputPreview | null>(null),
     [linked, setLinked] = useState(false),
     [selected, setSelected] = useState<string | null>(null),
     [net, setNet] = useState<string | null>(null),
@@ -1289,6 +1292,7 @@ export function DesignWorkspace({
     }
   };
   const chooseView = (next: PcbView) => {
+    setOutputs(null);
     setView(next);
     setThree(false);
     setPoints([]);
@@ -1305,6 +1309,7 @@ export function DesignWorkspace({
     "3d": !!design.boardPath && preview.canRender && executionAllowed,
   };
   const chooseSurface = (next: Surface) => {
+    setOutputs(null);
     if (!surfaces[next]) return;
     if (next === "3d") {
       setThree(true);
@@ -1841,6 +1846,7 @@ export function DesignWorkspace({
             onRefresh={refreshPreview}
             onExport={() => setExportOpen(true)}
             onPrint={() => setPrintOpen(true)}
+            onFabrication={() => openTab("Fabrication")}
             onRevokeTrust={() => {
               trust(preferenceKey, false);
               setThree(false);
@@ -1926,6 +1932,13 @@ export function DesignWorkspace({
                 device.
               </p>
             </CanvasState>
+          ) : outputs ? (
+            <GerberPreview
+              threadRef={threadRef}
+              design={design}
+              output={outputs}
+              onClose={() => setOutputs(null)}
+            />
           ) : three ? (
             <Suspense fallback={<OperationStatus label="Opening 3D viewer" />}>
               <Board3D
@@ -1964,7 +1977,7 @@ export function DesignWorkspace({
               )}
             </div>
           )}
-          {!three && <div className={styles.overlayStack}>{statusCards}</div>}
+          {!three && !outputs && <div className={styles.overlayStack}>{statusCards}</div>}
         </main>
         {tab && (
           <InspectorFrame
@@ -1973,7 +1986,19 @@ export function DesignWorkspace({
             onExpand={() => setExpanded((v) => !v)}
             onClose={() => openTab(null)}
           >
-            {tab === "Checks" ? (
+            {tab === "Fabrication" ? (
+              <FabricationTab
+                threadRef={threadRef}
+                design={design}
+                sourceHash={preview.sourceHash}
+                executionAllowed={executionAllowed}
+                onPreview={(value) => {
+                  setThree(false);
+                  setOutputs(value);
+                  setMode("select");
+                }}
+              />
+            ) : tab === "Checks" ? (
               <ChecksSection
                 boardStats={workbench.inspection?.stats}
                 fabResult={preview.fabCheck}

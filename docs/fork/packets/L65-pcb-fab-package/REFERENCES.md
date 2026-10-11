@@ -104,3 +104,12 @@ was written, so no command was executed locally; every flag below is from offici
 - Fabrication Toolkit: Apache-2.0; only field names are reused, which are facts. Bundling its
   `rotations.cf` would need its notice.
 - KiCad (GPL-3.0) and tscircuit (MIT) run as separate host processes.
+
+## Circuit JSON source check, 2026-10-11
+
+Official source confirms `source_component.name`, `display_value`, and `supplier_part_numbers.jlcpcb`, plus `pcb_component.center`, `rotation` and `layer`. KiCad footprint names, when available, are in `pcb_component.metadata.kicad_footprint.footprintName`; `ftype` is a component type, not a footprint. Missing assembly metadata is reported for review. `pcb_board.num_layers` defaults to four in the current schema. A real CLI export remains unverified.
+
+- <https://github.com/tscircuit/circuit-json/blob/main/src/source/base/source_component_base.ts>
+- <https://github.com/tscircuit/circuit-json/blob/main/src/pcb/pcb_component.ts>
+- <https://github.com/tscircuit/circuit-json/blob/main/src/common/kicadFootprintMetadata.ts>
+- <https://github.com/tscircuit/circuit-json/blob/main/src/pcb/pcb_board.ts>

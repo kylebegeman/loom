@@ -1,3 +1,5 @@
+import * as DateTime from "effect/DateTime";
+import { writeZip } from "./zipWriter.ts";
 import { VcsUnsupportedOperationError } from "@t3tools/contracts";
 import { CheckpointStore } from "../../checkpointing/CheckpointStore.ts";
 import type {
@@ -1829,6 +1831,270 @@ it.effect("fab check on KiCad 9 leaves zones as saved and interruption removes i
       yield* Fiber.interrupt(fiber);
       yield* Deferred.await(stopped);
       expect(yield* t.fs.exists(directory)).toBe(false);
+    }),
+  ),
+);
+
+const fabExportRunner = (
+  t: Effect.Success<typeof setup>,
+  options: {
+    missingOutline?: boolean;
+    failGerbers?: boolean;
+    circuit?: boolean;
+    interrupt?: Deferred.Deferred<void>;
+  } = {},
+) =>
+  ProcessRunner.of({
+    run: (input) =>
+      Effect.gen(function* () {
+        const target =
+          input.args[input.args.indexOf(input.args.includes("-o") ? "-o" : "--output") + 1]!;
+        if (input.args.includes("gerbers")) {
+          if (options.interrupt)
+            return yield* Deferred.succeed(options.interrupt, undefined).pipe(
+              Effect.andThen(Effect.never),
+            );
+          if (options.failGerbers) return output(1, "export failed");
+          const files = [
+            {
+              name: "board-F_Cu.gtl",
+              bytes: Buffer.from("%TF.FileFunction,Copper,L1,Top*%\nX10Y10D01*"),
+            },
+            {
+              name: "board-B_Cu.gbl",
+              bytes: Buffer.from("%TF.FileFunction,Copper,L2,Bot*%\nX10Y10D01*"),
+            },
+            ...(options.missingOutline
+              ? []
+              : [
+                  {
+                    name: "board-Edge_Cuts.gm1",
+                    bytes: Buffer.from("%TF.FileFunction,Profile,NP*%\nX10Y10D01*"),
+                  },
+                ]),
+          ];
+          if (input.args[0] === "export")
+            yield* t.fs.writeFile(
+              target,
+              writeZip(files, DateTime.toDateUtc(DateTime.makeUnsafe("2026-10-10T12:00:00Z"))),
+            );
+          else
+            for (const file of files)
+              yield* t.fs.writeFile(t.path.join(target, file.name), file.bytes);
+          return output();
+        }
+        if (input.args.includes("drill")) {
+          yield* t.fs.writeFileString(
+            t.path.join(target, "board-PTH.drl"),
+            "; #@! TF.FileFunction,Plated,1,2,PTH\nT1C0.8",
+          );
+          return output();
+        }
+        if (input.args.includes("pos")) {
+          expect(input.args).toContain("mm");
+          yield* t.fs.writeFileString(
+            target,
+            "Ref,Val,Package,PosX,PosY,Rot,Side\nU1,Chip,SOIC-8,1,2,350,back\n",
+          );
+          return output();
+        }
+        if (input.args.includes("bom")) {
+          expect(input.args).toContain('"');
+          yield* t.fs.writeFileString(
+            target,
+            "Reference,Value,Footprint,Qty,DNP,LCSC\nU1,Chip,Lib:SOIC-8,1,,C123\n",
+          );
+          return output();
+        }
+        if (options.circuit && input.args.includes("circuit-json")) {
+          yield* t.fs.writeFileString(
+            target,
+            JSON.stringify([
+              { type: "pcb_board", num_layers: 2 },
+              {
+                type: "source_component",
+                source_component_id: "a",
+                name: "U1",
+                display_value: "Chip",
+                supplier_part_numbers: { jlcpcb: ["C123"] },
+              },
+              {
+                type: "pcb_component",
+                source_component_id: "a",
+                center: { x: 1, y: 2 },
+                rotation: 90,
+                layer: "top",
+                metadata: { kicad_footprint: { footprintName: "SOIC-8" } },
+              },
+            ]),
+          );
+          return output();
+        }
+        return yield* t.runner.run(input);
+      }).pipe(Effect.orDie),
+  });
+it.effect(
+  "fab packages publish complete immutable outputs, reuse inputs, sign downloads and isolate designs",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup;
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_sch"),
+          '(kicad_sch (symbol(property "LCSC Part #" "C123")))',
+        );
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pcb"),
+          '(kicad_pcb (general(thickness 1.6))(layers(0 "F.Cu" signal)(31 "B.Cu" signal)(44 "Edge.Cuts" user))(gr_rect(start 0 0)(end 10 10)(layer "Edge.Cuts"))(footprint "Lib:SOIC-8"(layer "B.Cu")(property "Reference" "U1")(property "Value" "Chip")(property "LCSC Part #" "C123")(property "JLCPCB Rotation Offset" "30")))',
+        );
+        const original = yield* t.fs.readFileString(t.path.join(t.root, "board.kicad_pcb")),
+          service = yield* t.create(t.fs, fabExportRunner(t)),
+          input = {
+            threadId: t.input.threadId,
+            designId: t.input.designId,
+            profile: "jlcpcb" as const,
+            assembly: true,
+            force: false,
+          };
+        const first = yield* service.fabPackage(input);
+        expect(first.verdict).toBe("ready");
+        expect(first.outputs.some((f) => f.path === "assembly/assembly-bottom.pdf")).toBe(true);
+        expect(yield* t.fs.readFileString(t.path.join(first.path, "jlcpcb/cpl.csv"))).toContain(
+          '"Bottom","20.0000"',
+        );
+        expect(first.zip.relativeUrl).toContain("package.zip");
+        expect(
+          yield* service.resolveSignedRequest(
+            first.zip.relativeUrl.split("/").at(-2)!,
+            "package.zip",
+          ),
+        ).toContain("package.zip");
+        const again = yield* service.fabPackage(input);
+        expect(again.reused).toBe(true);
+        expect(again.id).toBe(first.id);
+        expect(again.sourceHash).toBe(first.sourceHash);
+        const forced = yield* service.fabPackage({ ...input, force: true });
+        expect(forced.id).toBe(first.id + "-2");
+        expect(yield* service.fabPackages(input)).toHaveLength(2);
+        expect(yield* t.fs.readFileString(t.path.join(t.root, "board.kicad_pcb"))).toBe(original);
+        expect(yield* service.fabPackages({ ...input, designId: "blink.circuit.tsx" })).toEqual([]);
+        const fresh = yield* service.fabPackageZip({ ...input, packageId: first.id });
+        expect(fresh.manifest.id).toBe(first.id);
+        expect(
+          (yield* service.fabPackageZip({ ...input, packageId: "../x" }).pipe(Effect.flip)).reason,
+        ).toBe("path-outside-workspace");
+        yield* service.deleteFabPackage({ ...input, packageId: first.id });
+        expect(yield* t.fs.exists(first.path)).toBe(false);
+        expect(yield* service.fabPackages(input)).toHaveLength(1);
+        yield* t.fs.writeFileString(t.path.join(forced.path, "loom-fab-package.json"), "broken");
+        expect((yield* service.fabPackages(input))[0]?.unreadable).toBe(true);
+        yield* service.deleteFabPackage({ ...input, packageId: forced.id });
+        expect(yield* t.fs.exists(forced.path)).toBe(false);
+        yield* t.fs.makeDirectory(t.path.join(t.root, "fab", "keep"));
+        yield* t.fs.writeFileString(t.path.join(t.root, "fab", "keep", "user.txt"), "user");
+        yield* service.deleteFabPackage({ ...input, packageId: "keep" }).pipe(Effect.flip);
+        expect(yield* t.fs.exists(t.path.join(t.root, "fab", "keep"))).toBe(true);
+      }),
+    ),
+);
+it.effect(
+  "failed and interrupted package builds remove pending files; missing outputs and DRC errors are not ready",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          input = {
+            threadId: t.input.threadId,
+            designId: t.input.designId,
+            profile: "generic" as const,
+            assembly: false,
+            force: true,
+          };
+        const failed = yield* t.create(t.fs, fabExportRunner(t, { failGerbers: true }));
+        expect((yield* failed.fabPackage(input).pipe(Effect.flip)).reason).toBe("io-failed");
+        expect(yield* t.fs.readDirectory(t.path.join(t.root, "fab"))).toEqual([]);
+        const started = yield* Deferred.make<void>(),
+          cancelled = yield* t.create(t.fs, fabExportRunner(t, { interrupt: started }));
+        const fiber = yield* cancelled.fabPackage(input).pipe(Effect.forkChild);
+        yield* Deferred.await(started);
+        yield* Fiber.interrupt(fiber);
+        expect(yield* t.fs.readDirectory(t.path.join(t.root, "fab"))).toEqual([]);
+        const missing = yield* t.create(t.fs, fabExportRunner(t, { missingOutline: true }));
+        expect((yield* missing.fabPackage(input)).verdict).toBe("not-ready");
+        t.setResult(5);
+        const errors = yield* t.create(t.fs, fabExportRunner(t));
+        expect(
+          (yield* errors.fabPackage(input)).checklist.find((i) => i.id === "drc")?.status,
+        ).toBe("fail");
+      }),
+    ),
+);
+it.effect("circuit fabrication extracts its archive and keeps code execution staged", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create(t.fs, fabExportRunner(t, { circuit: true }));
+      const result = yield* service.fabPackage({
+        threadId: t.input.threadId,
+        designId: "blink.circuit.tsx",
+        profile: "jlcpcb",
+        assembly: true,
+        force: false,
+      });
+      expect(result.verdict).toBe("ready");
+      expect(result.checklist.find((i) => i.id === "drc")?.status).toBe("skipped");
+      expect(result.outputs.some((f) => f.path === "assembly/assembly.svg")).toBe(true);
+      expect(result.outputs.some((f) => f.path === "jlcpcb/cpl.csv")).toBe(true);
+      expect((yield* t.fs.readDirectory(t.root)).includes(".tscircuit")).toBe(false);
+    }),
+  ),
+);
+
+it.effect("fabrication reuse includes rotation rules and rejects concurrent source edits", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        input = {
+          threadId: t.input.threadId,
+          designId: t.input.designId,
+          profile: "generic" as const,
+          assembly: false,
+          force: false,
+        },
+        base = fabExportRunner(t),
+        service = yield* t.create(t.fs, base);
+      const first = yield* service.fabPackage(input);
+      yield* t.fs.writeFileString(t.path.join(t.root, "fab", "rotations.csv"), "SOIC.*,90");
+      const next = yield* service.fabPackage(input);
+      expect(next.reused).toBe(false);
+      expect(next.id).not.toBe(first.id);
+      expect(next.sourceHash).toBe(first.sourceHash);
+      const runner = ProcessRunner.of({
+        run: (args) =>
+          base
+            .run(args)
+            .pipe(
+              Effect.tap(() =>
+                args.args.includes("gerbers")
+                  ? t.fs
+                      .writeFileString(
+                        t.path.join(t.root, "board.kicad_pcb"),
+                        '(kicad_pcb(general(thickness 2))(layers(0 "F.Cu" signal)(31 "B.Cu" signal)))',
+                      )
+                      .pipe(Effect.orDie)
+                  : Effect.void,
+              ),
+            ),
+      });
+      const edited = yield* t.create(t.fs, runner);
+      expect((yield* edited.fabPackage({ ...input, force: true }).pipe(Effect.flip)).reason).toBe(
+        "conflict",
+      );
+      expect(
+        (yield* t.fs.readDirectory(t.path.join(t.root, "fab"))).filter((n) =>
+          n.startsWith(".pending"),
+        ),
+      ).toEqual([]);
     }),
   ),
 );

@@ -83,7 +83,9 @@ Web and desktop, local and remote. Mobile has no PCB panel. Upstream servers hav
 - Preview in a web worker: Gerber parsing is CPU heavy and the T3 server must stay responsive.
 - Never uploads or orders: PCB-FOLLOW-UPS.md rules out network calls to fabs.
 
-## Decisions needed from Kyle
+## Local implementation choices
+
+The authorized implementation uses the documented fallback with no renderer dependency, no bundled rotation table, and no `.gitignore` edits. The alternatives below remain available for a later upgrade.
 
 1. **Gerber renderer for the preview.** Recommendation: approve `pcb-stackup` 4.2.8 (MIT,
    tracespace; about 24,000 downloads a month) as an `apps/web` dependency, loaded only inside

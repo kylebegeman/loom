@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import {
   PCB_PREVIEW_WS_METHODS as M,
+  type PcbFabPackageInput,
   type PcbFabCheckInput,
   type PcbReviewInput,
   type PcbRenderInput,
@@ -28,6 +29,11 @@ import type { Atom } from "effect/reactivity";
 
 /** Document-lived jobs cancel when their result atom loses its last subscriber. */
 export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
+  const fabPackages = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:pcb-packages",
+    tag: M.fabPackages,
+    staleTimeMs: 0,
+  });
   const fabCapabilities = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "loom:pcb-fabs",
     tag: M.fabCapabilities,
@@ -64,6 +70,60 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     staleTimeMs: 0,
   });
   return {
+    fabPackages,
+    loadFabPackages: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-packages-load",
+      tag: M.fabPackages,
+    }),
+    fabPackage: createEnvironmentRpcCommand<
+      R,
+      E,
+      typeof M.fabPackage,
+      PcbFabPackageInput & { revision?: number }
+    >(runtime, {
+      label: "loom:pcb-package-build",
+      tag: M.fabPackage,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(
+            fabPackages({
+              environmentId,
+              input: { threadId: input.threadId, designId: input.designId },
+            }),
+          );
+          registry.refresh(
+            latestChecks({
+              environmentId,
+              input: { threadId: input.threadId, designId: input.designId },
+            }),
+          );
+          if (input.fabId)
+            registry.refresh(
+              latestFabCheck({
+                environmentId,
+                input: { threadId: input.threadId, designId: input.designId, fabId: input.fabId },
+              }),
+            );
+        }),
+    }),
+    fabPackageZip: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-package-zip",
+      tag: M.fabPackageZip,
+    }),
+    deleteFabPackage: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-package-delete",
+      tag: M.deleteFabPackage,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(
+            fabPackages({
+              environmentId,
+              input: { threadId: input.threadId, designId: input.designId },
+            }),
+          ),
+        ),
+    }),
+
     changeRequest: createEnvironmentRpcCommand(runtime, {
       label: "loom:pcb-change-request",
       tag: M.changeRequest,

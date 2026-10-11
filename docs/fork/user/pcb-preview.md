@@ -145,3 +145,11 @@ Select a component or net and press **R** to request a change. With nothing sele
 In **Checks**, choose **Fab**, select a manufacturer profile and run the check. Findings show features below its limits and possible cost drivers. Limits include their sources and checked dates. Cost drivers are estimates to review when ordering.
 
 Use **Fab capabilities** there or in PCB settings to duplicate a built-in profile, edit your own limits and choose a default. Profiles belong to the connected environment. Changing a board or profile marks previous results out of date. Fab checks currently need a KiCad board and run on a temporary copy.
+
+## Fabrication packages
+
+Choose **…**, **Create fab package…**, or open **Fabrication**. Select Generic or JLCPCB, choose a fab check for a KiCad board, and include assembly files when needed. Loom writes a new folder under `fab/` with Gerbers, drill files, assembly files and a readiness checklist. Identical inputs reuse a package; **Rebuild identical inputs** creates another. Download the Gerber zip for your fab, then use the separate BOM and CPL files for assembly.
+
+For JLCPCB rotation corrections, add a `JLCPCB Rotation Offset` field to a part, or add lines such as `SOIC.*,90` to `fab/rotations.csv`. Part fields take precedence. Check rotations, polarity and pin 1 in the fab's placement preview. Missing part numbers or assembly metadata appear in the checklist.
+
+The preview currently shows a **board plot of the packaged layers** for KiCad. It warns if the saved board has changed; inspect the exported zip in your fab's viewer before ordering. Loom does not upload or order. To ignore generated folders in Git while keeping your rotation rules, add `/fab/*/` to `.gitignore` yourself.
