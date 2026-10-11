@@ -47,7 +47,7 @@ export function FabCheckView({
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
-  onLocate: (point: { x: number; y: number }) => void;
+  onLocate: (point: { x: number; y: number }, description?: string) => void;
   onDrc: () => void;
   boardStats?: PcbBoardStats | null | undefined;
   showExcluded?: boolean | undefined;
@@ -238,7 +238,7 @@ export function FabCheckView({
                     size="xs"
                     onClick={() => {
                       const point = v.items.find((i) => i.x !== undefined && i.y !== undefined)!;
-                      onLocate({ x: point.x!, y: point.y! });
+                      onLocate({ x: point.x!, y: point.y! }, v.description);
                     }}
                   >
                     Locate

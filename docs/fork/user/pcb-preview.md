@@ -167,3 +167,5 @@ Agents can use `loom_pcb_history` and `loom_pcb_restore_version`, or `t3 pcb his
 Open **3D**, press `P` for orthographic projection, and use **Display** to hide board layers or component sides. Open **Section plane** to cut through the board and its parts. **Measure** (`M`) measures two points; switch to **Height** for clearance above or below the board. Hold Alt while clicking for a free point. **Heights** lists component heights, including leads below the board, and selecting a row draws that height. Measurements clear when the board reloads or you leave 3D; display settings stay while the workspace is open.
 
 Agents can use the PCB editor's `display`, `section`, `measure` and `height` actions. For example, `t3 pcb editor '{"designId":"board.kicad_pcb","command":{"action":"height","reference":"J1"}}'` reads J1's height in a loaded, current 3D view. `snapshot` reports the display settings, measurements and component heights.
+
+The workspace supports screen readers with named drawings and announcements for selections, views, check results and finding navigation. Press `I` to move focus into the tools; close them with `I` or Escape to return to the drawing.

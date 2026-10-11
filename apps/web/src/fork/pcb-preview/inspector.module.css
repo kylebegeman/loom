@@ -1756,3 +1756,11 @@ button.location > svg {
   display: block;
   color: var(--color-muted-foreground);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .groupChevron,
+  .disclosure > summary::before,
+  .revealTool {
+    transition: none;
+  }
+}

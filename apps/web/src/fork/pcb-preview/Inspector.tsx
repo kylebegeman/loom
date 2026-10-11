@@ -167,7 +167,11 @@ export function InspectorRail({
             <ToolButton
               className={styles.railButton}
               side="left"
-              label={title}
+              label={
+                badge && badge.count > 0
+                  ? `${title}, ${badge.count} ${badge.count === 1 ? "issue" : "issues"}`
+                  : title
+              }
               hint={locked ? `${title} needs circuit code rendering` : title}
               aria-pressed={active === tab}
               disabled={locked}
@@ -194,7 +198,9 @@ export function InspectorFrame({
   onExpand,
   onClose,
   children,
+  focusRef,
 }: {
+  focusRef?: React.Ref<HTMLElement>;
   tab: InspectorTab;
   expanded: boolean;
   onExpand: () => void;
@@ -203,7 +209,7 @@ export function InspectorFrame({
 }) {
   const { icon: Icon, title, detail } = TAB_META[tab];
   return (
-    <section className={styles.inspector} aria-label={title}>
+    <section ref={focusRef} className={styles.inspector} aria-label={title} tabIndex={-1}>
       <header className={styles.inspectorHeader}>
         <span className={styles.inspectorIcon} aria-hidden="true">
           <Icon />

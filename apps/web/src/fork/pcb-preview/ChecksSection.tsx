@@ -20,12 +20,17 @@ type Props = ComponentProps<typeof ChecksView> & {
   fabLoading: boolean;
   fabError: string | null;
   onFabRefresh: () => void;
-  onFabLocate: (point: { x: number; y: number }) => void;
+  onFabLocate: (point: { x: number; y: number }, description?: string) => void;
   review: PcbReviewResult | null;
   reviewLoading: boolean;
   reviewError: string | null;
   onReviewRefresh: () => void;
-  onReviewLocate: (surface: "schematic" | "pcb", point: PcbReviewLocation, sheet?: string) => void;
+  onReviewLocate: (
+    surface: "schematic" | "pcb",
+    point: PcbReviewLocation,
+    sheet?: string,
+    description?: string,
+  ) => void;
 };
 /** Separate result contracts keep ERC/DRC clients compatible with richer review findings. */
 export function ChecksSection(props: Props) {

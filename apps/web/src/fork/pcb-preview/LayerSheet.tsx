@@ -49,7 +49,7 @@ export function LayerSheet({
     <>
       <img
         src={error ? undefined : url}
-        alt={sheetId}
+        alt=""
         aria-hidden={opacity <= 0 || undefined}
         data-layer-image
         data-layer-loading={loading && !error ? "true" : undefined}

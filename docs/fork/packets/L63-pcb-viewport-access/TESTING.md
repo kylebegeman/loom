@@ -10,9 +10,7 @@ Focused tests only, no sleeps, no repo-wide checks.
 | `apps/web/src/fork/pcb-preview/workspace.interactions.test.tsx` | `SvgViewport`: the focusable element is `role="application"` named by its `label` and described by the instruction text; images are decorative; with `restoreFocus`, a remount while `document.body` has focus moves focus to the new viewport, and without it focus is left alone. `OperationStatus` with `silent` has no `role`. `ChecksView`: a "Go to" button passes its description to `onLocate`.                                                                                                                                                                                                                                                                                                                                                                                |
 | `apps/web/src/fork/pcb-preview/Board3D.test.tsx`                | With the existing viewer mock, `describe` is called with the given name and an id that resolves to the instruction text, and `onStatus` reports `loading` then `ready`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
-Whole-panel focus moves (`I`, `Escape`, close button) are not covered by an automated test: the
-existing harness renders parts, not `DesignWorkspace`, and rendering it needs the full atom
-setup. The manual check covers them.
+The marker interaction harness now renders `DesignWorkspace` and covers opening and closing with `I` and focus retention through a surface change. Browser and screen-reader checks still cover real-client behavior.
 
 ## Commands
 
@@ -51,3 +49,11 @@ in Safari with VoiceOver, and in Chrome with NVDA if available:
 
 No upstream files. Run the merge preview from CONVENTIONS.md against the newest nightly before
 merging, and `scripts/fork/loom.sh check` after.
+
+## Local implementation verification
+
+Focused announcer and interaction checks passed. The workspace harness covers inspector opening and closing with `I`, focus restoration after a surface change, and finding announcements across sheets. Viewport tests cover remount focus, instructions and respect for another focused control. The 3D harness covers names, loading and readiness, focus restoration and inspection metadata arriving after geometry. Web typecheck and scoped lint passed.
+
+Browser, VoiceOver, NVDA and remote checks remain unverified. No browser or development server was started. Whole-panel focus is now covered in the marker interaction harness in addition to the manual checklist above.
+
+The L66/L61/L63 batch merge preview against `v0.0.46-nightly.20261011.2980` reports conflicts in `apps/web/src/components/chat/ProviderModelPicker.tsx`, `apps/web/src/routes/__root.tsx` and `packages/client-runtime/src/state/runtime.ts`. Previewing the pre-batch commit `78d98a32cc` reports the same three paths, and this batch changes none of them. These existing seams need reconciliation during upstream integration. No merge or full integration check ran.

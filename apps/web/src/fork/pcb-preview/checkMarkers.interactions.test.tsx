@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
   sourceHash: "hash",
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
-vi.mock("~/state/entities", () => ({ useServerConfigs: () => [] }));
+vi.mock("~/state/entities", () => ({
+  useServerConfigs: () => [],
+  useThreadProjection: () => undefined,
+}));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: vi.fn() } }));
 vi.mock("./AutoCheckSettings", () => ({ AutoCheckSettings: () => null }));
 vi.mock("./TrueScalePrintDialog", () => ({ TrueScalePrintDialog: () => null }));
@@ -24,6 +27,7 @@ vi.mock("./RevisionCompare", () => ({ RevisionCompare: () => null }));
 vi.mock("../model-preview-3d/state", () => ({ runModelCommand: mocks.run }));
 vi.mock("./state", () => ({
   pcb: {
+    historyRestore: { permissionAtom: () => false },
     print: { permissionAtom: () => false },
     asset: { permissionAtom: () => false },
     inspect: { permissionAtom: () => false },
@@ -228,7 +232,7 @@ async function ready() {
 async function key(key: string) {
   await act(async () =>
     host
-      .querySelector<HTMLElement>('[aria-label="PCB workspace"]')!
+      .querySelector<HTMLElement>('[role="region"][aria-label^="PCB workspace,"]')!
       .dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
   );
 }
@@ -252,7 +256,7 @@ it("steps across sheets, wraps, re-enables hidden markers and clears the active 
   expect(host.querySelectorAll("svg[data-overlays] circle")).toHaveLength(3);
   await key(".");
   await ready();
-  expect(host.querySelector("img")?.getAttribute("alt")).toBe("board-sub.svg");
+  expect(host.querySelector("[data-pcb-drawing]")?.getAttribute("aria-label")).toContain("Sub");
   expect(host.textContent).toContain("Finding 2 of 2");
   await key(".");
   await ready();
@@ -279,7 +283,7 @@ it("shares excluded visibility, keeps pins stale against the drawing and preserv
   );
   const pin = () => host.querySelector('svg[data-overlays] circle[cx="2"]')!;
   const radius = Number(pin().getAttribute("r"));
-  const canvas = host.querySelector<HTMLElement>('[aria-label^="board.svg. Drag"]')!;
+  const canvas = host.querySelector<HTMLElement>("[data-pcb-drawing]")!;
   await act(async () =>
     canvas.dispatchEvent(
       new KeyboardEvent("keydown", { key: "+", bubbles: true, cancelable: true }),
@@ -342,7 +346,7 @@ it("agent commands select findings across surfaces and return bounded marker sna
 it("picks a pin before components in Select mode and clears it on empty drawing", async () => {
   await act(async () => root.render(render()));
   await ready();
-  const canvas = host.querySelector<HTMLElement>('[aria-label^="board.svg. Drag"]')!;
+  const canvas = host.querySelector<HTMLElement>("[data-pcb-drawing]")!;
   canvas.setPointerCapture = vi.fn();
   const click = async (x: number, y: number) =>
     act(async () => {
@@ -356,4 +360,32 @@ it("picks a pin before components in Select mode and clears it on empty drawing"
   expect(host.querySelector("[data-active]")?.textContent).toContain("erc-root");
   await click(0, 0);
   expect(host.querySelector("[data-active]")).toBeNull();
+});
+it("moves focus into tools with I, returns on close, and retains drawing focus across surface changes", async () => {
+  await act(async () => root.render(render()));
+  await ready();
+  const drawing = host.querySelector<HTMLElement>("[data-pcb-drawing]")!;
+  await act(async () => drawing.focus());
+  await key("i");
+  expect(document.activeElement?.getAttribute("tabindex")).toBe("-1");
+  expect(document.activeElement?.tagName).toBe("SECTION");
+  await key("i");
+  expect(document.activeElement).toBe(drawing);
+  await key("2");
+  await ready();
+  const board = host.querySelector<HTMLElement>("[data-pcb-drawing]")!;
+  expect(board).not.toBe(drawing);
+  expect(document.activeElement).toBe(board);
+  expect(host.querySelector("main")).toBeNull();
+});
+it("announces explicit finding steps ahead of the sheet change they cause", async () => {
+  await act(async () => root.render(render()));
+  await ready();
+  const live = () => host.querySelector('[aria-live="polite"]')!;
+  expect(live().textContent).toBe("");
+  await key(".");
+  expect(live().textContent).toContain("Finding 1 of 2. Error, ERC: erc-root");
+  await key(".");
+  expect(live().textContent).toContain("Finding 2 of 2. Error, ERC: erc-sub");
+  expect(live().textContent).toContain("On sheet Sub");
 });

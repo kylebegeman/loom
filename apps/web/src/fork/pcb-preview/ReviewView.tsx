@@ -46,7 +46,12 @@ export function ReviewView({
   error: string | null;
   sourceHash: string | null;
   onRefresh: () => void;
-  onLocate: (surface: "schematic" | "pcb", point: PcbReviewLocation, sheet?: string) => void;
+  onLocate: (
+    surface: "schematic" | "pcb",
+    point: PcbReviewLocation,
+    sheet?: string,
+    description?: string,
+  ) => void;
 }) {
   const target = {
     environmentId: threadRef.environmentId,
@@ -232,7 +237,12 @@ export function ReviewView({
                           size="xs"
                           onClick={() => {
                             const point = f.schematic ?? f.board!;
-                            onLocate(f.schematic ? "schematic" : "pcb", point, point.sheet);
+                            onLocate(
+                              f.schematic ? "schematic" : "pcb",
+                              point,
+                              point.sheet,
+                              f.message,
+                            );
                           }}
                         >
                           Locate

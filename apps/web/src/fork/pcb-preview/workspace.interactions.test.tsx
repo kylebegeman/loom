@@ -469,3 +469,34 @@ it("area drags report millimetres while ordinary drags pan and clicks still pick
   expect(img.parentElement!.style.transform).toContain("translate(124px, 74px)");
   expect(box).toHaveBeenCalledTimes(1);
 });
+it("restores focus only for a drawing remount and exposes drawing instructions", async () => {
+  await act(async () => root.render(<SvgViewport key="one" svg="<svg/>" label="Power, Board" />));
+  const old = host.querySelector<HTMLElement>("[data-pcb-drawing]")!;
+  old.focus();
+  await act(async () =>
+    root.render(<SvgViewport key="two" svg="<svg/>" label="Power, Schematic" restoreFocus />),
+  );
+  const next = host.querySelector<HTMLElement>("[data-pcb-drawing]")!;
+  expect(document.activeElement).toBe(next);
+  expect(next.getAttribute("role")).toBe("application");
+  expect(next.getAttribute("aria-label")).toBe("Power, Schematic");
+  expect(document.getElementById(next.getAttribute("aria-describedby")!)!.textContent).toContain(
+    "arrow keys",
+  );
+  expect(host.querySelector("img")!.getAttribute("alt")).toBe("");
+  await act(async () => root.render(<SvgViewport key="three" svg="<svg/>" label="Power, Board" />));
+  expect(document.activeElement).toBe(document.body);
+  const control = document.createElement("button");
+  document.body.append(control);
+  control.focus();
+  await act(async () =>
+    root.render(<SvgViewport key="four" svg="<svg/>" label="Power, Board" restoreFocus />),
+  );
+  expect(document.activeElement).toBe(control);
+  control.remove();
+});
+it("keeps centrally announced operations visible without another live region", async () => {
+  await act(async () => root.render(<OperationStatus label="Building board" silent />));
+  expect(host.textContent).toContain("Building board");
+  expect(host.querySelector('[role="status"]')).toBeNull();
+});

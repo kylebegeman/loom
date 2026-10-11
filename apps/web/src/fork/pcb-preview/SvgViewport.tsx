@@ -4,6 +4,8 @@ import {
   useContext,
   useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -82,7 +84,9 @@ export function SvgViewport({
   onCamera,
   onReady,
   extra,
+  restoreFocus = false,
 }: {
+  restoreFocus?: boolean;
   svg: string;
   label: string;
   busy?: boolean;
@@ -99,6 +103,7 @@ export function SvgViewport({
   extra?: React.ReactNode;
 }) {
   const [dragBox, setDragBox] = useState<PcbBounds | null>(null);
+  const descriptionId = useId();
   const container = useRef<HTMLDivElement>(null),
     image = useRef<HTMLImageElement>(null),
     imageLoaded = useRef(false),
@@ -320,6 +325,10 @@ export function SvgViewport({
       ),
     );
   };
+  useLayoutEffect(() => {
+    if (restoreFocus && (!document.activeElement || document.activeElement === document.body))
+      container.current?.focus({ preventScroll: true });
+  }, [restoreFocus]);
   useImperativeHandle(
     handle,
     () => ({
@@ -440,8 +449,11 @@ export function SvgViewport({
       tabIndex={0}
       data-kind={kind}
       data-loom-canvas
-      role="group"
-      aria-label={`${label}. Drag to pan, scroll to zoom, F to fit.`}
+      data-pcb-drawing
+      role="application"
+      aria-roledescription="drawing"
+      aria-label={label}
+      aria-describedby={descriptionId}
       aria-busy={busy}
       onLoad={() => onReady?.()}
       onDoubleClick={(e) => {
@@ -527,6 +539,10 @@ export function SvgViewport({
         event.stopPropagation();
       }}
     >
+      <span id={descriptionId} className="sr-only">
+        Drag or use the arrow keys to pan, Shift for larger steps. Scroll or plus and minus to zoom.
+        F fits the drawing.
+      </span>
       <div
         ref={scene}
         className={styles.drawingScene}
@@ -535,7 +551,7 @@ export function SvgViewport({
         {url && (
           <img
             ref={image}
-            alt={label}
+            alt=""
             src={url}
             draggable={false}
             className={styles.drawing}

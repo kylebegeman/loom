@@ -3,6 +3,7 @@ import {
   useEffect,
   useEffectEvent,
   useImperativeHandle,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -105,7 +106,15 @@ export function Board3D({
   inspection,
   onSelect,
   readOnly = false,
+  name = designId,
+  onStatus,
+  onToolStatus,
+  restoreFocus = false,
 }: {
+  name?: string;
+  onStatus?: (status: "loading" | "ready" | null) => void;
+  onToolStatus?: (hint: string | null) => void;
+  restoreFocus?: boolean;
   display?: Board3dDisplay;
   onDisplay?: (display: Board3dDisplay) => void;
   inspection?: PcbInspection | null;
@@ -122,18 +131,30 @@ export function Board3D({
   /** Workspace status cards that share the 3D overlay stack. */
   children?: React.ReactNode;
 }) {
-  const unit = useLengthUnit();
+  const unit = useLengthUnit(),
+    descriptionId = useId();
   const [tool, setTool] = useState<Board3dTool>("none"),
     [measurements, setMeasurements] = useState<readonly Pcb3dMeasurement[]>([]),
     [pending, setPending] = useState<{
       point: ModelPoint;
       snap: NonNullable<Pcb3dMeasurement["snaps"]>[0];
     } | null>(null),
-    [geometry, setGeometry] = useState<{ parts: BoardParts; box: Box3 } | null>(null),
+    [geometry, setGeometry] = useState<{ parts: BoardParts; box: Box3; references: string } | null>(
+      null,
+    ),
     [snap, setSnap] = useState<ReturnType<ModelViewer["snapStatus"]>>("idle"),
     [caps, setCaps] = useState<ReturnType<ModelViewer["sectionCapsStatus"]>>("none");
-  const loadedModel = useRef<Object3D | null>(null);
-  const inputs = useEffectEvent(() => ({ display, inspection, onSelect, readOnly }));
+  const loadedModel = useRef<Object3D | null>(null),
+    loadedParts = useRef<BoardParts | null>(null);
+  const referenceKey = JSON.stringify(inspection?.components.map((part) => part.reference) ?? []);
+  const inputs = useEffectEvent(() => ({
+    display,
+    inspection,
+    onSelect,
+    readOnly,
+    name,
+    restoreFocus,
+  }));
   const heights = useMemo(() => (geometry ? partHeights(geometry.parts) : null), [geometry]);
   const append = useCallback((measurement: Pcb3dMeasurement) => {
     setMeasurements((current) => [...current, measurement].slice(-20));
@@ -181,6 +202,7 @@ export function Board3D({
     viewer.current?.dispose();
     viewer.current = null;
     loadedModel.current = null;
+    loadedParts.current = null;
   }, []);
   useEffect(() => {
     if (!host.current || !asset) return;
@@ -196,6 +218,14 @@ export function Board3D({
         const previousCamera = retainedCamera.current;
         const created = createViewer(host.current);
         viewer.current = created;
+        created.describe(inputs().name, descriptionId);
+        const canvas = host.current.querySelector("canvas");
+        canvas?.setAttribute("data-pcb-drawing", "");
+        if (
+          inputs().restoreFocus &&
+          (!document.activeElement || document.activeElement === document.body)
+        )
+          canvas?.focus({ preventScroll: true });
         created.setGrid(false);
         created.setAxes(false);
         created.onNavigate(() => setCamera(null));
@@ -210,7 +240,14 @@ export function Board3D({
           model,
           new Set(inputs().inspection?.components.map((part) => part.reference) ?? []),
         );
-        setGeometry({ parts, box: new Box3().setFromObject(model, true) });
+        loadedParts.current = parts;
+        setGeometry({
+          parts,
+          box: new Box3().setFromObject(model, true),
+          references: JSON.stringify(
+            inputs().inspection?.components.map((part) => part.reference) ?? [],
+          ),
+        });
         setMeasurements([]);
         setPending(null);
         setTool("none");
@@ -218,7 +255,7 @@ export function Board3D({
         created.onSectionCapsStatus(setCaps);
         created.onObjectPick((object) => {
           if (!object || inputs().readOnly) return;
-          const part = parts.components.find((part) => {
+          const part = loadedParts.current?.components.find((part) => {
             for (let node: Object3D | null = object; node; node = node.parent)
               if (node === part.node) return true;
             return false;
@@ -243,10 +280,32 @@ export function Board3D({
       abort.abort();
       clear();
     };
-  }, [asset, clear, threadRef.environmentId]);
+  }, [asset, clear, threadRef.environmentId, descriptionId]);
   const loading =
     result.waiting || result._tag === "Initial" || (!!asset && loaded !== asset && !error);
   const ready = !!asset && loaded === asset && !loading && !error && !asyncError(result);
+  useEffect(() => {
+    if (!ready || !loadedModel.current || !geometry || geometry.references === referenceKey) return;
+    const model = loadedModel.current;
+    const parts = classifyBoard(
+      model,
+      new Set(inputs().inspection?.components.map((part) => part.reference) ?? []),
+    );
+    loadedParts.current = parts;
+    setGeometry({ parts, box: new Box3().setFromObject(model, true), references: referenceKey });
+  }, [ready, geometry, referenceKey]);
+  const reportStatus = useEffectEvent((status: "loading" | "ready" | null) => onStatus?.(status));
+  const reportTool = useEffectEvent((hint: string | null) => onToolStatus?.(hint));
+  const lastMeasurement = measurements.at(-1);
+  const toolText =
+    !ready || tool === "none"
+      ? null
+      : `${tool === "height" ? "Height. Click a point for its height" : `Distance, point ${pending ? 2 : 1} of 2. Click two points`}${lastMeasurement ? `. ${lastMeasurement.kind === "height" ? (lastMeasurement.side === "back" ? "Below board" : "Above board") : "Distance"}: ${formatLength(lastMeasurement.lengthMm, unit)}` : ""}`;
+  useEffect(() => reportStatus(loading ? "loading" : ready ? "ready" : null), [loading, ready]);
+  useEffect(() => reportTool(toolText), [toolText]);
+  useEffect(() => {
+    viewer.current?.describe(name, descriptionId);
+  }, [name, descriptionId]);
   useEffect(() => {
     if (ready) viewer.current?.setLengthFormat((mm) => formatLength(mm, unit));
   }, [ready, unit]);
@@ -436,6 +495,10 @@ export function Board3D({
   const busy = loading || !!error || !!asyncError(result);
   return (
     <div className={styles.board3d}>
+      <span id={descriptionId} className="sr-only">
+        Drag to orbit, right or middle drag to pan, scroll to zoom. The 3D navigation toolbar fits
+        the board and chooses a view.
+      </span>
       <div ref={host} className={styles.threeHost} />
       <div className={`${styles.shelf} ${styles.shelfTopLeft}`}>
         <Menu>
@@ -502,6 +565,7 @@ export function Board3D({
         {children}
         {loading && (
           <OperationStatus
+            silent
             label={asset && !result.waiting ? "Loading board geometry" : "Exporting 3D board"}
             onCancel={onCancel}
             detail="Components need their installed CAD models. The exporter uses the saved board."

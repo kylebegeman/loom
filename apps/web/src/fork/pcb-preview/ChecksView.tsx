@@ -134,7 +134,12 @@ export function ChecksView({
   onRun: (kind: PcbCheckKind) => void;
   onCancel: () => void;
   canCancel?: boolean;
-  onLocate?: (kind: PcbCheckKind, point: { x: number; y: number }, sheet?: string) => void;
+  onLocate?: (
+    kind: PcbCheckKind,
+    point: { x: number; y: number },
+    sheet?: string,
+    description?: string,
+  ) => void;
 }) {
   const [kind, setKind] = useState<PcbCheckKind>(design.schematicPath ? "erc" : "drc"),
     [severity, setSeverity] = useState<PcbViolation["severity"] | null>(null),
@@ -253,7 +258,7 @@ export function ChecksView({
           />
           Show on drawing
         </label>
-        <p role="status" className={k.hint}>
+        <p className={k.hint}>
           {activeIndex >= 0
             ? findingStatus || `Finding ${activeIndex + 1} of ${located.length}`
             : ""}
@@ -263,6 +268,7 @@ export function ChecksView({
         )}
         {checking && (
           <OperationStatus
+            silent
             key={`${checking}:${jobRevision}`}
             label={`Checking ${checking === "erc" ? "schematic" : "board"}`}
             detail={
@@ -479,7 +485,7 @@ export function ChecksView({
                                 aria-label={`Go to ${item.description}`}
                                 onClick={() => {
                                   onActivate?.(kind, v);
-                                  onLocate(kind, pointMm, v.sheetId);
+                                  onLocate(kind, pointMm, v.sheetId, v.description);
                                 }}
                               >
                                 <LocateFixedIcon aria-hidden="true" />

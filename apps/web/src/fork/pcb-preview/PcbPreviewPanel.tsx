@@ -1,3 +1,4 @@
+import { announcement, describeSelection, type PcbAnnounceInput } from "./announce";
 import { usePcbHistory } from "./usePcbHistory";
 import { HistoryStrip } from "./HistoryStrip";
 import { RestoreDesignDialog } from "./RestoreDesignDialog";
@@ -222,6 +223,7 @@ export function DesignWorkspace({
     [linked, setLinked] = useState(false),
     [selected, setSelected] = useState<string | null>(null),
     [net, setNet] = useState<string | null>(null),
+    [pin, setPin] = useState<string | null>(null),
     [mode, setMode] = useState<Tool>("select"),
     [points, setPoints] = useState<readonly PcbPoint[]>([]),
     [note, setNote] = useState(""),
@@ -231,6 +233,16 @@ export function DesignWorkspace({
     [printOpen, setPrintOpen] = useState(false),
     [exportBusy, setExportBusy] = useState(false),
     [measuringHeights, setMeasuringHeights] = useState(false);
+  const workspace = useRef<HTMLDivElement>(null),
+    inspector = useRef<HTMLElement>(null),
+    returnFocus = useRef<HTMLElement | null>(null),
+    focusInspector = useRef(false);
+  const [drawingFocused, setDrawingFocused] = useState(false);
+  const [threeStatus, setThreeStatus] = useState<"loading" | "ready" | null>(null),
+    [threeToolHint, setThreeToolHint] = useState<string | null>(null);
+  const [announceStep, setAnnounceStep] = useState<{ id: number; text: string } | null>(null);
+  const [message, setMessage] = useState<{ id: number; text: string } | null>(null);
+  const previousAnnouncement = useRef<PcbAnnounceInput | null>(null);
   const [display3d, setDisplay3d] = useState(defaultBoardDisplay);
   const [pinMapFor, setPinMapFor] = useState<string | null>(null);
   const [requestForm, setRequestForm] = useState<{
@@ -266,9 +278,26 @@ export function DesignWorkspace({
   const tabs = inspectorTabs(design);
   const openTab = (next: InspectorTab | null) => {
     if (next) lastTab.current = next;
-    else setExpanded(false);
+    else {
+      setExpanded(false);
+      const active = document.activeElement;
+      if (inspector.current?.contains(active) || active === document.body) {
+        const destination = returnFocus.current?.isConnected
+          ? returnFocus.current
+          : (workspace.current?.querySelector<HTMLElement>("[data-pcb-drawing]") ??
+            workspace.current);
+        destination?.focus({ preventScroll: true });
+      }
+      returnFocus.current = null;
+    }
     setTab(next);
   };
+  useLayoutEffect(() => {
+    if (tab && focusInspector.current) {
+      inspector.current?.focus({ preventScroll: true });
+      focusInspector.current = false;
+    }
+  }, [tab]);
   const layerNames =
     design.kind === "kicad" && view === "pcb" && customLayers
       ? customLayers.map((l) => l.name)
@@ -298,6 +327,7 @@ export function DesignWorkspace({
     setLinked(false);
     setOutputs(null);
     setSelected(null);
+    setPin(null);
     setNet(null);
     setActiveFinding(null);
     setViewing(
@@ -526,6 +556,22 @@ export function DesignWorkspace({
     ? activeFinding
     : null;
   const goToFinding = (finding: PcbFinding) => {
+    const index = surfaceFindings.findIndex((item) => item.id === finding.id),
+      severity =
+        finding.severity === "error"
+          ? "Error"
+          : finding.severity === "warning"
+            ? "Warning"
+            : "Info";
+    const sheet =
+      finding.sheet && finding.sheet !== preview.selectedSheet
+        ? (preview.good?.result.sheets.find((sheet) => sheet.id === finding.sheet)?.label ??
+          finding.sheet)
+        : null;
+    setAnnounceStep((current) => ({
+      id: (current?.id ?? 0) + 1,
+      text: `${index >= 0 ? `Finding ${index + 1} of ${surfaceFindings.length}. ` : "Showing "}${severity}, ${finding.source.toUpperCase()}: ${finding.message}${sheet ? `. On sheet ${sheet}` : ""}`,
+    }));
     setActiveFinding(finding.id);
     openTab("Checks");
     focusPoint(
@@ -562,6 +608,7 @@ export function DesignWorkspace({
   };
   const selectComponent = (reference: string | null) => {
     setSelected(reference);
+    setPin(null);
     setNet(null);
     if (!reference) return;
     const c = workbench.inspection?.components.find((c) => c.reference === reference),
@@ -577,6 +624,7 @@ export function DesignWorkspace({
   };
   const selectNet = (name: string | null) => {
     setSelected(null);
+    setPin(null);
     setNet(name);
   };
   const selectPin = (reference: string, number: string) => {
@@ -584,6 +632,7 @@ export function DesignWorkspace({
       pin = component?.pins.find((p) => p.number === number);
     if (!pin) throw new Error("Unknown component pin.");
     selectComponent(reference);
+    setPin(number);
     setNet(pin.net || null);
     const point = view === "pcb" ? pin.pcb : pin.schematic;
     if (point) {
@@ -1296,6 +1345,10 @@ export function DesignWorkspace({
             throw new Error("This design has no board to render in 3D.");
           if (c.enabled !== false && !executionAllowed)
             throw new Error("Allow circuit code rendering before opening 3D.");
+          if (c.enabled !== false) {
+            setThreeStatus("loading");
+            setThreeToolHint(null);
+          }
           setThree(c.enabled ?? true);
           setLinked(false);
           break;
@@ -1521,6 +1574,8 @@ export function DesignWorkspace({
     setOutputs(null);
     if (!surfaces[next]) return;
     if (next === "3d") {
+      setThreeStatus("loading");
+      setThreeToolHint(null);
       setThree(true);
       setLinked(false);
       setMode("select");
@@ -1566,7 +1621,55 @@ export function DesignWorkspace({
   const sheets = preview.good?.view === "schematic" ? preview.good.result.sheets : [];
   const sheetIndex = sheets.findIndex((s) => s.id === preview.selectedSheet);
   const surface: Surface = three ? "3d" : view;
-  const toggleTools = () => openTab(tab ? null : lastTab.current);
+  const toggleTools = () => {
+    if (!tab) {
+      returnFocus.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      focusInspector.current = true;
+    }
+    openTab(tab ? null : lastTab.current);
+  };
+  const placeText = three
+    ? `3D board${display3d.projection === "orthographic" ? ", Orthographic" : ""}${display3d.hidden.size ? `, ${display3d.hidden.size} groups hidden` : ""}`
+    : view === "schematic"
+      ? `Schematic${sheets.length > 1 ? `, sheet ${sheetIndex + 1} of ${sheets.length}` : ""}${sheets[sheetIndex]?.label ? `, ${sheets[sheetIndex]!.label}` : ""}`
+      : `Board${design.kind === "kicad" ? `, ${customLayers && workbench.inspection ? customLayerLabel : PRESET_LABELS[layers]}` : ""}`;
+  const toolTitle =
+    mode === "annotate"
+      ? "Place a note"
+      : mode === "request"
+        ? "Request a change"
+        : `${mode === "angle" ? "Angle" : "Distance"}, point ${points.length + 1} of ${mode === "angle" ? 3 : 2}`;
+  const toolInstructions =
+    mode === "annotate"
+      ? "Write the note, then click where it belongs."
+      : mode === "request"
+        ? "Drag an area to request a change, or click for a small area."
+        : mode === "angle"
+          ? "The middle point is the vertex. Alt skips pad snapping."
+          : "Click two points. Alt skips pad snapping.";
+  const runningCheck = preview.checking ?? preview.activity?.running?.kind;
+  const announceInput: PcbAnnounceInput = {
+    place: `${placeText}${viewing ? `, ${viewingLabel(viewing.turn, history.latestTurn)}` : ""}`,
+    selection: describeSelection(workbench.inspection?.components ?? [], selected, pin, net),
+    tool: three ? threeToolHint : mode === "select" ? null : `${toolTitle}. ${toolInstructions}`,
+    checking: runningCheck === "erc" || runningCheck === "drc" ? runningCheck : null,
+    checks: preview.checks,
+    building: !blocked && !three && preview.rendering && !drawingCurrent,
+    shown:
+      !three && preview.display?.view === view && preview.display.sheetId === preview.selectedSheet
+        ? { surface: view, sheet: preview.display.sheetId, sourceHash: preview.display.sourceHash }
+        : null,
+    three: three ? threeStatus : null,
+    notice: notice?.tone === "info" ? notice.text : null,
+    step: announceStep,
+  };
+  useEffect(() => {
+    const text = announcement(previousAnnouncement.current, announceInput);
+    previousAnnouncement.current = announceInput;
+    // Publish an assistive-technology announcement only when an observed fact changes.
+    if (text) setMessage((current) => ({ id: (current?.id ?? 0) + 1, text }));
+  }, [announceInput]);
   const cancelTool = () => {
     setMode("select");
     setPoints([]);
@@ -1581,22 +1684,10 @@ export function DesignWorkspace({
       )}
       {listingBusy && <OperationStatus label="Refreshing design list" />}
       {!three && mode !== "select" && (
-        <div className={styles.toolHint} role="status">
+        <div className={styles.toolHint}>
           <div>
-            <strong>
-              {mode === "annotate"
-                ? "Place a note"
-                : `${mode === "angle" ? "Angle" : "Distance"} · point ${points.length + 1} of ${mode === "angle" ? 3 : 2}`}
-            </strong>
-            <span>
-              {mode === "annotate"
-                ? "Write the note, then click where it belongs."
-                : mode === "request"
-                  ? "Drag an area to request a change, or click for a small area."
-                  : mode === "angle"
-                    ? "The middle point is the vertex. Alt skips pad snapping."
-                    : "Click two points. Alt skips pad snapping."}
-            </span>
+            <strong>{toolTitle}</strong>
+            <span>{toolInstructions}</span>
           </div>
           {mode === "annotate" && (
             <input
@@ -1633,6 +1724,7 @@ export function DesignWorkspace({
       )}
       {!three && preview.rendering && (
         <OperationStatus
+          silent
           key={preview.requestKey}
           label={
             viewing
@@ -1711,7 +1803,7 @@ export function DesignWorkspace({
         <div
           className={styles.notice}
           data-tone={notice.tone === "error" ? "error" : undefined}
-          role={notice.tone === "error" ? "alert" : "status"}
+          role={notice.tone === "error" ? "alert" : undefined}
         >
           <div className={styles.noticeRow}>
             {notice.tone === "info" && <CheckIcon aria-hidden="true" />}
@@ -1900,7 +1992,8 @@ export function DesignWorkspace({
       <SvgViewport
         key={`${preview.display.view}:${preview.display.layers}:${preview.display.sheetId}`}
         svg={preview.display.svg}
-        label={preview.display.label}
+        label={`${design.name}, ${placeText}`}
+        restoreFocus={drawingFocused}
         busy={preview.rendering || preview.loadingSheet}
         kind={preview.display.view}
         handle={viewport}
@@ -2024,11 +2117,13 @@ export function DesignWorkspace({
     );
   return (
     <div
+      ref={workspace}
       className={styles.workspace}
       // Opts the workspace out of chat type-to-focus so its single-key shortcuts work.
       data-loom-canvas
       tabIndex={-1}
-      aria-label="PCB workspace"
+      role="region"
+      aria-label={`PCB workspace, ${design.name}`}
       onKeyDown={(event) => {
         if (
           !event.defaultPrevented &&
@@ -2105,6 +2200,9 @@ export function DesignWorkspace({
         event.stopPropagation();
       }}
     >
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {message && <span key={message.id}>{message.text}</span>}
+      </div>
       <header className={styles.docBar}>
         <DesignMenu design={design} listing={listing} onSelect={onSelect} onDiscover={onDiscover} />
         <div className={styles.docActions}>
@@ -2156,7 +2254,21 @@ export function DesignWorkspace({
         </div>
       </header>
       <div className={styles.body} data-tools={!!tab} data-expanded={!!tab && expanded}>
-        <main className={styles.canvas} aria-label="Drawing">
+        <section
+          className={styles.canvas}
+          aria-label="Drawing"
+          onFocus={(event) => {
+            if (event.target instanceof HTMLElement && event.target.closest("[data-pcb-drawing]"))
+              setDrawingFocused(true);
+          }}
+          onBlur={(event) => {
+            if (
+              event.relatedTarget instanceof HTMLElement &&
+              !event.relatedTarget.closest("[data-pcb-drawing]")
+            )
+              setDrawingFocused(false);
+          }}
+        >
           {blocked === "no-drawing" ? (
             <CanvasState
               icon={<CircuitBoardIcon />}
@@ -2241,13 +2353,17 @@ export function DesignWorkspace({
               onClose={() => setOutputs(null)}
             />
           ) : three ? (
-            <Suspense fallback={<OperationStatus label="Opening 3D viewer" />}>
+            <Suspense fallback={<OperationStatus label="Opening 3D viewer" silent />}>
               <Board3D
                 threadRef={threadRef}
                 designId={design.id}
                 checkpointId={viewing?.checkpointId}
                 sourceHash={preview.sourceHash}
                 handle={board3d}
+                name={`${design.name}, 3D board`}
+                onStatus={setThreeStatus}
+                onToolStatus={setThreeToolHint}
+                restoreFocus={drawingFocused}
                 display={display3d}
                 onDisplay={setDisplay3d}
                 inspection={workbench.inspection}
@@ -2285,9 +2401,10 @@ export function DesignWorkspace({
             </div>
           )}
           {!three && !outputs && <div className={styles.overlayStack}>{statusCards}</div>}
-        </main>
+        </section>
         {tab && (
           <InspectorFrame
+            focusRef={inspector}
             tab={tab}
             expanded={expanded}
             onExpand={() => setExpanded((v) => !v)}
@@ -2326,12 +2443,26 @@ export function DesignWorkspace({
                 fabLoading={preview.fabLoading}
                 fabError={preview.fabError}
                 onFabRefresh={preview.refreshFab}
-                onFabLocate={(point) => focusPoint("pcb", point)}
+                onFabLocate={(point, description) => {
+                  focusPoint("pcb", point);
+                  if (description)
+                    setAnnounceStep((current) => ({
+                      id: (current?.id ?? 0) + 1,
+                      text: `Showing ${description}`,
+                    }));
+                }}
                 review={preview.review}
                 reviewLoading={preview.reviewLoading}
                 reviewError={preview.reviewError}
                 onReviewRefresh={preview.refreshReview}
-                onReviewLocate={(surface, point, sheet) => focusPoint(surface, point, sheet)}
+                onReviewLocate={(surface, point, sheet, description) => {
+                  focusPoint(surface, point, sheet);
+                  if (description)
+                    setAnnounceStep((current) => ({
+                      id: (current?.id ?? 0) + 1,
+                      text: `Showing ${description}`,
+                    }));
+                }}
                 threadRef={threadRef}
                 design={design}
                 activity={preview.activity}
@@ -2360,9 +2491,14 @@ export function DesignWorkspace({
                 onRun={preview.runCheck}
                 canCancel={preview.checking !== null}
                 onCancel={preview.cancelCheck}
-                onLocate={(kind, point, sheet) =>
-                  focusPoint(kind === "drc" ? "pcb" : "schematic", point, sheet)
-                }
+                onLocate={(kind, point, sheet, description) => {
+                  focusPoint(kind === "drc" ? "pcb" : "schematic", point, sheet);
+                  if (description)
+                    setAnnounceStep((current) => ({
+                      id: (current?.id ?? 0) + 1,
+                      text: `Showing ${description}`,
+                    }));
+                }}
               />
             ) : (
               <ToolPanel
@@ -2567,19 +2703,7 @@ export function DesignWorkspace({
                   ? "Idle"
                   : "Ready"}
         </span>
-        <span className={styles.statusItem}>
-          {three
-            ? "3D board"
-            : view === "schematic"
-              ? sheets.length > 1
-                ? `Sheet ${sheetIndex + 1} of ${sheets.length}`
-                : "Schematic"
-              : design.kind !== "kicad"
-                ? "Board"
-                : customLayers && workbench.inspection
-                  ? customLayerLabel
-                  : PRESET_LABELS[layers]}
-        </span>
+        <span className={styles.statusItem}>{placeText}</span>
         {selected && (
           <button className={styles.statusChip} onClick={() => openTab("Inspect")}>
             {selected}
@@ -2652,7 +2776,7 @@ export function DesignWorkspace({
             return (
               <ToolButton
                 key={kind}
-                label={`${kind.toUpperCase()} findings`}
+                label={`${kind.toUpperCase()}${running ? " checking" : paused ? " automatic checks paused" : issues ? `: ${issues} ${issues === 1 ? "issue" : "issues"}` : result?.outcome === "clean" ? " clean" : " could not run"}${result && result.sourceHash !== preview.sourceHash ? ", out of date" : ""}`}
                 hint={
                   running
                     ? `${kind.toUpperCase()} is checking saved files.`
@@ -2769,7 +2893,7 @@ function LinkedDrawing({
       {preview.display && (
         <SvgViewport
           svg={preview.display.svg}
-          label={`Linked ${view}`}
+          label={`${design.name}, linked ${view === "pcb" ? "Board" : `Schematic, ${preview.display.label}`}`}
           kind={view}
           handle={handle}
           layered={view === "pcb" && design.kind === "kicad"}

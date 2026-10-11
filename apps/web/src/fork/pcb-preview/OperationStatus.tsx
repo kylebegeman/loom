@@ -7,7 +7,9 @@ export function OperationStatus({
   label,
   detail,
   onCancel,
+  silent = false,
 }: {
+  silent?: boolean;
   label: string;
   detail?: string;
   onCancel?: () => void;
@@ -19,7 +21,7 @@ export function OperationStatus({
     return () => clearInterval(timer);
   }, [started]);
   return (
-    <div className={styles.operation} role="status">
+    <div className={styles.operation} role={silent ? undefined : "status"}>
       <HourglassIcon aria-hidden="true" />
       <div>
         <strong>{label}</strong>

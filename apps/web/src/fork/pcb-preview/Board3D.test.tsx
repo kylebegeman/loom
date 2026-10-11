@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   dispose: vi.fn(),
   viewer: {
+    describe: vi.fn(),
     setLengthFormat: vi.fn(),
     setProjection: vi.fn(),
     setSection: vi.fn(),
@@ -39,7 +40,12 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./state", () => ({ pcb: { asset: { resultAtom: mocks.asset } } }));
 vi.mock("../model-preview-3d/state", () => ({ modelUrl: () => "/board.glb" }));
 vi.mock("../model-preview-3d/viewer/createViewer", () => ({
-  createViewer: () => mocks.viewer,
+  createViewer: (host: HTMLElement) => {
+    const canvas = document.createElement("canvas");
+    canvas.tabIndex = 0;
+    host.append(canvas);
+    return mocks.viewer;
+  },
   shownIn: () => true,
 }));
 vi.mock("../model-preview-3d/viewer/load", () => ({
@@ -190,4 +196,104 @@ it("keeps measurement tools read-only in historical boards", async () => {
       [1, 0, 0],
     ]),
   ).rejects.toThrow("current version");
+});
+it("names the 3D board, supplies instructions and reports loading then ready", async () => {
+  const status = vi.fn();
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D
+          threadRef={{
+            environmentId: EnvironmentId.make("env"),
+            threadId: ThreadId.make("thread"),
+          }}
+          designId="board"
+          name="Power, 3D board"
+          sourceHash="one"
+          handle={handle}
+          onCancel={vi.fn()}
+          onStatus={status}
+        />
+      </RegistryContext.Provider>,
+    ),
+  );
+  expect(mocks.viewer.describe).toHaveBeenCalledWith("Power, 3D board", expect.any(String));
+  const id = mocks.viewer.describe.mock.lastCall![1];
+  expect(document.getElementById(id)!.textContent).toContain("Drag to orbit");
+  expect(status.mock.calls.map(([value]) => value)).toEqual(["loading", "ready"]);
+});
+it("restores drawing focus to the 3D canvas without taking focus from another control", async () => {
+  const props = {
+    threadRef: { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") },
+    designId: "board",
+    sourceHash: "one",
+    handle,
+    onCancel: vi.fn(),
+    restoreFocus: true,
+  };
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D key="one" {...props} />
+      </RegistryContext.Provider>,
+    ),
+  );
+  expect(document.activeElement).toBe(host.querySelector("canvas"));
+  expect(host.querySelector("canvas")!.hasAttribute("data-pcb-drawing")).toBe(true);
+  const other = document.createElement("button");
+  document.body.append(other);
+  other.focus();
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D key="two" {...props} />
+      </RegistryContext.Provider>,
+    ),
+  );
+  expect(document.activeElement).toBe(other);
+  other.remove();
+});
+it("matches component heights when inspection arrives after geometry", async () => {
+  const model = new Group(),
+    material = new MeshStandardMaterial();
+  material.name = "board";
+  model.add(new Mesh(new BoxGeometry(20, 10, 1.6), material));
+  const component = new Mesh(new BoxGeometry(2, 2, 4), new MeshStandardMaterial());
+  component.name = "U1";
+  component.position.z = 2.8;
+  model.add(component);
+  mocks.load.mockResolvedValue(model);
+  const props = {
+    threadRef: { environmentId: EnvironmentId.make("env"), threadId: ThreadId.make("thread") },
+    designId: "board",
+    sourceHash: "one",
+    handle,
+    onCancel: vi.fn(),
+  };
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D {...props} />
+      </RegistryContext.Provider>,
+    ),
+  );
+  expect(handle.current!.state().heights!.parts).toHaveLength(0);
+  const inspection = {
+    sourceHash: "one",
+    components: [{ id: "U1", reference: "U1", value: "Chip", footprint: "", pins: [] }],
+    nets: [],
+    layers: [],
+    bounds: null,
+    thickness: 1.6,
+    mountingHoles: [],
+    warnings: [],
+  };
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D {...props} inspection={inspection} />
+      </RegistryContext.Provider>,
+    ),
+  );
+  expect(handle.current!.state().heights!.parts[0]?.reference).toBe("U1");
 });

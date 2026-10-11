@@ -1,6 +1,6 @@
 # L63: PCB keyboard and screen reader pass
 
-Status: Ready to build
+Status: Implemented locally (`feat/pcb-units-presets-stats-print-capture`); real-client and screen-reader verification pending.
 
 Approved by Kyle on 2026-10-10.
 
