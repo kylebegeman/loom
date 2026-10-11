@@ -26,8 +26,12 @@ Other PCB follow-up packets edit these too. Keep each change additive and in its
 | `apps/web/src/fork/pcb-preview/preferences.ts`          | `checkMarkers` with a decoding default.                                                                             | Any packet with a device preference                   |
 | `docs/fork/user/pcb-preview.md`                         | Two sentences in the Checks paragraph.                                                                              | Every packet                                          |
 
+The existing `InspectorKit.tsx` stat now accepts an accessible label for Show excluded;
+`inspector.module.css` adds neutral active-row styling. No upstream seams were added.
+
 New files: `apps/web/src/fork/pcb-preview/findings.ts`, `findings.test.ts`, `CheckMarkers.tsx`,
-`apps/server/src/fork/pcb-preview/kicadReports.test.ts`.
+`apps/server/src/fork/pcb-preview/kicadReports.test.ts`, and
+`apps/web/src/fork/pcb-preview/checkMarkers.interactions.test.tsx`.
 
 ## Merge check
 

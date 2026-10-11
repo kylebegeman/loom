@@ -1,6 +1,6 @@
 import type { PcbEditorEvent } from "@t3tools/contracts/fork";
 import { randomUUID } from "~/lib/utils";
-import { useState, useRef, useEffect, useEffectEvent, lazy, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, useEffectEvent, lazy, Suspense } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   CheckIcon,
@@ -28,6 +28,9 @@ import {
   type PcbLayerPreset,
   type PcbLayerState,
   type PcbPoint,
+  type PcbViolation,
+  type PcbCheckKind,
+  type PcbFinding,
 } from "@t3tools/contracts/fork";
 import { useServerConfigs } from "~/state/entities";
 import { Button } from "~/components/ui/button";
@@ -79,6 +82,8 @@ import {
 } from "./WorkspaceChrome";
 import { usePcbWorkbench } from "./usePcbWorkbench";
 import { LayerSheet } from "./LayerSheet";
+import { CheckMarkers } from "./CheckMarkers";
+import { checkFindings, orderFindings, stepFinding, hitFinding, snapshotFinding } from "./findings";
 import { DrawingOverlays } from "./Overlays";
 import { snapPoint } from "./geometry";
 import { attachModelImage, captureBase64 } from "../model-preview-3d/capture";
@@ -113,7 +118,7 @@ const PRESET_LABELS: Record<PcbLayerPreset, string> = {
 };
 type Notice = { tone: "info" | "error"; text: string };
 
-function DesignWorkspace({
+export function DesignWorkspace({
   threadRef,
   design,
   listing,
@@ -138,6 +143,11 @@ function DesignWorkspace({
   const unit = useLengthUnit();
   const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
   const hiddenLayerPresets = usePcbPreferences((s) => s.hiddenLayerPresets);
+  const checkMarkers = usePcbPreferences((s) => s.checkMarkers);
+  const setCheckMarkers = usePcbPreferences((s) => s.setCheckMarkers);
+  const [activeFinding, setActiveFinding] = useState<string | null>(null);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [findingStatus, setFindingStatus] = useState("");
   const pngScale = usePcbPreferences((s) => s.pngScale);
   const setPngScale = usePcbPreferences((s) => s.setPngScale);
   const printPermission = useAtomValue(pcb.print.permissionAtom(threadRef.environmentId));
@@ -279,21 +289,92 @@ function DesignWorkspace({
     !preview.rendering &&
     !preview.loadingSheet;
   const canMark = workbench.canEdit && workbench.ready;
-  const pendingFocus = useRef<PcbPoint | null>(null);
+  const pendingFocus = useRef<{ point: PcbPoint; view: PcbView; sheet?: string } | null>(null);
   const focusPoint = (target: PcbView, point: PcbPoint, sheet?: string) => {
     setThree(false);
     setView(target);
-    if (target === view && (!sheet || sheet === preview.selectedSheet))
+    if (
+      target === preview.display?.view &&
+      viewport.current?.isReady() &&
+      (!sheet || sheet === preview.display?.sheetId)
+    )
       viewport.current?.focus(point);
     else {
-      pendingFocus.current = point;
+      pendingFocus.current = { point, view: target, ...(sheet ? { sheet } : {}) };
       if (sheet && target === "schematic") {
         const candidate = preview.good?.result.sheets.find(
           (s) => s.id === sheet || s.label === sheet,
         );
-        if (candidate) preview.selectSheet(candidate.id);
+        preview.selectSheet(candidate?.id ?? sheet);
       }
     }
+  };
+  const allFindings = useMemo(
+    () => [
+      ...checkFindings(preview.checks.erc, "erc", { showExcluded }),
+      ...checkFindings(preview.checks.drc, "drc", { showExcluded }),
+    ],
+    [preview.checks, showExcluded],
+  );
+  const surfaceFindings = useMemo(
+    () =>
+      orderFindings(
+        allFindings.filter((f) => f.source === (view === "schematic" ? "erc" : "drc")),
+        view === "schematic"
+          ? preview.good?.view === "schematic"
+            ? preview.good.result.sheets.map((s) => s.id)
+            : [...new Set(allFindings.flatMap((f) => (f.sheet ? [f.sheet] : [])))]
+          : [],
+      ),
+    [allFindings, view, preview.good],
+  );
+  const drawingFindings = useMemo(
+    () => surfaceFindings.filter((f) => view === "pcb" || f.sheet === preview.display?.sheetId),
+    [surfaceFindings, view, preview.display?.sheetId],
+  );
+  const excludedFindingIds = useMemo(
+    () => new Set(drawingFindings.filter((f) => f.excluded).map((f) => f.id)),
+    [drawingFindings],
+  );
+  const activePoints = useMemo(
+    () => drawingFindings.find((f) => f.id === activeFinding)?.otherPoints ?? [],
+    [drawingFindings, activeFinding],
+  );
+  const markerReport = preview.checks[view === "schematic" ? "erc" : "drc"];
+  const markersStale = !!markerReport && markerReport.sourceHash !== preview.display?.sourceHash;
+  const visibleActiveFinding = surfaceFindings.some((f) => f.id === activeFinding)
+    ? activeFinding
+    : null;
+  const goToFinding = (finding: PcbFinding) => {
+    setActiveFinding(finding.id);
+    openTab("Checks");
+    focusPoint(finding.source === "erc" ? "schematic" : "pcb", finding.pointMm, finding.sheet);
+  };
+  const stepFindings = (direction: 1 | -1) => {
+    const next = stepFinding(surfaceFindings, activeFinding, direction);
+    if (!next) {
+      const hasFindings = markerReport?.violations.some((v) => showExcluded || !v.excluded);
+      const text = hasFindings
+        ? "These findings have no position on the drawing."
+        : "No findings on this drawing.";
+      setNotice({ tone: "info", text });
+      return;
+    }
+    setCheckMarkers(true);
+    goToFinding(next.finding);
+    setFindingStatus(
+      next.wrapped
+        ? direction === 1
+          ? "Back to the first finding"
+          : "Back to the last finding"
+        : `Finding ${next.index + 1} of ${surfaceFindings.length}`,
+    );
+  };
+  const activateViolation = (kind: PcbCheckKind, violation: PcbViolation) => {
+    const report = preview.checks[kind];
+    const index = report?.violations.indexOf(violation) ?? -1;
+    setActiveFinding(violation.id ?? `${kind}-${index}`);
+    setFindingStatus("");
   };
   const selectComponent = (reference: string | null) => {
     setSelected(reference);
@@ -303,7 +384,7 @@ function DesignWorkspace({
       p = view === "pcb" ? c?.pcb : c?.schematic;
     if (p) {
       if (view === "schematic" && p.sheet && p.sheet !== preview.selectedSheet) {
-        pendingFocus.current = p;
+        pendingFocus.current = { point: p, view, sheet: p.sheet };
         preview.selectSheet(p.sheet);
       } else viewport.current?.focus(p);
     }
@@ -319,7 +400,7 @@ function DesignWorkspace({
     const point = view === "pcb" ? pin.pcb : pin.schematic;
     if (point) {
       if (view === "schematic" && point.sheet && point.sheet !== preview.selectedSheet) {
-        pendingFocus.current = point;
+        pendingFocus.current = { point, view, sheet: point.sheet };
         preview.selectSheet(point.sheet);
       } else viewport.current?.focus(point);
     }
@@ -341,6 +422,15 @@ function DesignWorkspace({
       ) ?? [];
     const p = view === "pcb" && snap ? snapPoint(point, candidates, 1) : point;
     if (mode === "select") {
+      const finding = checkMarkers
+        ? hitFinding(drawingFindings, point, viewport.current.unitsPerPixel())
+        : null;
+      if (finding) {
+        goToFinding(finding);
+        setFindingStatus("");
+        return true;
+      }
+      setActiveFinding(null);
       const nearest = workbench.inspection?.components
         .filter((c) => (view === "pcb" ? c.pcb : c.schematic?.sheet === preview.selectedSheet))
         .toSorted((a, b) => {
@@ -551,6 +641,22 @@ function DesignWorkspace({
             throw new Error("ERC and DRC are available for KiCad designs.");
           else openTab("Checks");
           break;
+        case "finding": {
+          drawing();
+          if (c.name === "next" || c.name === "previous") stepFindings(c.name === "next" ? 1 : -1);
+          else {
+            const finding = allFindings.find((f) => f.id === c.name);
+            if (!finding)
+              throw new Error("No finding with that id. Read the snapshot for current ids.");
+            setCheckMarkers(true);
+            goToFinding(finding);
+            setFindingStatus("");
+          }
+          break;
+        }
+        case "markers":
+          setCheckMarkers(c.enabled ?? !checkMarkers);
+          break;
         case "trust":
           trust(preferenceKey, c.enabled ?? false);
           break;
@@ -748,6 +854,13 @@ function DesignWorkspace({
                     }
                   : {}),
                 sourceHash: preview.sourceHash ?? "",
+                findings: {
+                  visible: checkMarkers && !three && preview.display?.view === view,
+                  showExcluded,
+                  active: !three ? visibleActiveFinding : null,
+                  total: three ? 0 : surfaceFindings.length,
+                  items: three ? [] : surfaceFindings.slice(0, 50).map(snapshotFinding),
+                },
                 tool: mode,
                 dock: tab,
                 loading:
@@ -1193,8 +1306,12 @@ function DesignWorkspace({
         if (restoreView.current && preview.display?.sheetId === restoreView.current.sheet) {
           viewport.current?.restore(restoreView.current.camera);
           restoreView.current = null;
-        } else if (pendingFocus.current) {
-          viewport.current?.focus(pendingFocus.current);
+        } else if (
+          pendingFocus.current &&
+          preview.display?.view === pendingFocus.current.view &&
+          (!pendingFocus.current.sheet || preview.display?.sheetId === pendingFocus.current.sheet)
+        ) {
+          viewport.current?.focus(pendingFocus.current.point);
           pendingFocus.current = null;
         }
       }}
@@ -1206,21 +1323,32 @@ function DesignWorkspace({
       }
       layered={preview.display.view === "pcb" && !!preview.display.result.sheets[0]?.layer}
       overlays={
-        <DrawingOverlays
-          data={workbench.data}
-          sourceHash={preview.display.sourceHash}
-          view={preview.display.view}
-          sheet={preview.display.sheetId}
-          selected={selected}
-          net={net}
-          components={
-            workbench.inspection?.sourceHash === preview.display.sourceHash
-              ? workbench.inspection.components
-              : []
-          }
-          pending={points}
-          unit={unit}
-        />
+        <>
+          <DrawingOverlays
+            data={workbench.data}
+            sourceHash={preview.display.sourceHash}
+            view={preview.display.view}
+            sheet={preview.display.sheetId}
+            selected={selected}
+            net={net}
+            components={
+              workbench.inspection?.sourceHash === preview.display.sourceHash
+                ? workbench.inspection.components
+                : []
+            }
+            pending={points}
+            unit={unit}
+          />
+          {checkMarkers && preview.display.view === view && (
+            <CheckMarkers
+              findings={drawingFindings}
+              activeId={visibleActiveFinding}
+              activePoints={activePoints}
+              stale={markersStale}
+              excludedIds={excludedFindingIds}
+            />
+          )}
+        </>
       }
     >
       {preview.display.view === "pcb" &&
@@ -1279,11 +1407,17 @@ function DesignWorkspace({
         const key = event.key.toLowerCase();
         const drawingTools = !three && !blocked;
         if (key === "escape" && mode !== "select") cancelTool();
-        else if (key === "escape" && tab) openTab(null);
+        else if (key === "escape" && activeFinding) {
+          setActiveFinding(null);
+          setFindingStatus("");
+        } else if (key === "escape" && tab) openTab(null);
         else if (key === "1" && surfaces.schematic) chooseSurface("schematic");
         else if (key === "2" && surfaces.pcb) chooseSurface("pcb");
         else if (key === "3" && surfaces["3d"]) chooseSurface("3d");
         else if (key === "i") toggleTools();
+        else if (key === "." && drawingTools) stepFindings(1);
+        else if (key === "," && drawingTools) stepFindings(-1);
+        else if (key === "c" && drawingTools) setCheckMarkers(!checkMarkers);
         else if (key === "v" && drawingTools) chooseTool("select");
         else if (key === "m" && drawingTools && canMark) chooseTool("distance");
         else if (key === "a" && drawingTools && canMark) chooseTool("angle");
@@ -1457,6 +1591,15 @@ function DesignWorkspace({
                 results={preview.checks}
                 jobRevision={preview.checkRevision}
                 sourceHash={preview.sourceHash}
+                drawingSourceHash={preview.display?.sourceHash}
+                showExcluded={showExcluded}
+                onShowExcluded={setShowExcluded}
+                activeId={activeFinding}
+                onActivate={activateViolation}
+                markers={checkMarkers}
+                onMarkers={setCheckMarkers}
+                findingStatus={findingStatus}
+                orderedFindings={surfaceFindings}
                 canCheck={preview.canCheck}
                 checking={preview.checking}
                 error={preview.checkError ?? preview.checksError}

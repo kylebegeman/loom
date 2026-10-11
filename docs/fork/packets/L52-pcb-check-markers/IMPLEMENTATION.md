@@ -1,6 +1,10 @@
 # L52 implementation plan
 
-Ordered steps for one agent. Each step leaves the tree compiling. Commits use
+Implemented locally on `feat/pcb-units-presets-stats-print-capture`. The existing ERC
+normalization fix was reused; unflagged reports from that fix are verified against saved
+symbol positions before any further scaling. Focused validation is recorded in TESTING.md.
+
+The steps below retain the approved implementation scope. Ordered steps for one agent. Each step leaves the tree compiling. Commits use
 `feat(fork-pcb-check-markers): ...`; the ERC fix in step 2 is its own
 `fix(fork-pcb-check-markers): place ERC findings at their real position`. Commit `6ddf84c1aa`
 on the local `fix/preview-defects` branch already adds `unitScale` and `ercScaleFactor` with

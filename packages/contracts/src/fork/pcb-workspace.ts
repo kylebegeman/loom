@@ -2,13 +2,26 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { SignedFile } from "./model-preview-3d.ts";
 import { ModelCamera } from "./model-workspace.ts";
-import { ThreadId } from "../baseSchemas.ts";
+import { NonNegativeInt, ThreadId } from "../baseSchemas.ts";
 const text = (max = 200) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
 const finite = Schema.Number.check(Schema.isFinite());
 const list = <S extends Schema.Top>(item: S, max: number) =>
   Schema.Array(item).check(Schema.isMaxLength(max));
 export const PcbPoint = Schema.Struct({ x: finite, y: finite });
 export type PcbPoint = typeof PcbPoint.Type;
+export const PcbFindingSource = Schema.Literals(["erc", "drc", "fab", "review"]);
+export const PcbFindingSeverity = Schema.Literals(["error", "warning", "info"]);
+/** One finding on a drawing, in millimetres. */
+export const PcbFinding = Schema.Struct({
+  id: Schema.String,
+  source: PcbFindingSource,
+  severity: PcbFindingSeverity,
+  message: Schema.String,
+  sheet: Schema.optional(Schema.String),
+  layer: Schema.optional(Schema.String),
+  pointMm: PcbPoint,
+});
+export type PcbFinding = typeof PcbFinding.Type;
 export const PcbLocation = Schema.Struct({
   x: finite,
   y: finite,
@@ -361,6 +374,8 @@ export const PcbEditorAction = Schema.Struct({
     "refresh",
     "cancel",
     "checks",
+    "finding",
+    "markers",
     "prepare-summary",
     "trust",
     "pick",
@@ -435,6 +450,15 @@ export const PcbEditorResult = Schema.Struct({
       sourceHash: Schema.optional(Schema.String),
       tool: Schema.optional(Schema.Literals(["select", "distance", "angle", "annotate"])),
       dock: Schema.optional(Schema.NullOr(Schema.String)),
+      findings: Schema.optional(
+        Schema.Struct({
+          visible: Schema.Boolean,
+          showExcluded: Schema.Boolean,
+          active: Schema.NullOr(Schema.String),
+          total: NonNegativeInt,
+          items: list(PcbFinding, 50),
+        }),
+      ),
       loading: Schema.optional(Schema.Boolean),
     }),
   ),

@@ -1720,3 +1720,14 @@ button.location > svg {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.markerToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.finding[data-active] {
+  background: var(--muted);
+  outline: 1px solid var(--pcb-line);
+}

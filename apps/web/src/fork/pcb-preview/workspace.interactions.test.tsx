@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, useState, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -13,6 +13,10 @@ vi.mock("./HardwareLibrary", () => ({ HardwareLibrary: () => null }));
 vi.mock("./SimulationEditor", () => ({ SimulationEditor: () => null }));
 vi.mock("./ParameterEditor", () => ({ ParameterEditor: () => null }));
 vi.mock("./RevisionCompare", () => ({ RevisionCompare: () => null }));
+function ChecksHarness(props: ComponentProps<typeof ChecksView>) {
+  const [showExcluded, setShowExcluded] = useState(false);
+  return <ChecksView {...props} showExcluded={showExcluded} onShowExcluded={setShowExcluded} />;
+}
 let root: Root, host: HTMLDivElement;
 let frames: Map<number, FrameRequestCallback>, nextFrame: number;
 const revoke = vi.fn(),
@@ -178,7 +182,7 @@ it("prepares a report in the existing draft, filters exclusions, and copies over
     [...host.querySelectorAll("button")].find((node) => node.textContent?.includes(text))!;
   await act(async () =>
     root.render(
-      <ChecksView
+      <ChecksHarness
         threadRef={threadRef}
         design={design}
         results={{ erc: result }}

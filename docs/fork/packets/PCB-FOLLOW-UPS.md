@@ -191,6 +191,7 @@ Order is a suggestion, not a dependency. The first five quick wins, L54, L56, L5
 L62, are implemented locally on `feat/pcb-units-presets-stats-print-capture`. Their packet
 testing notes retain client, real-tool and physical-print checks.
 
-Next is L52, then the agent loop: L58, L53, L59, L60, L69. The larger systems follow: L68,
+L52 is also implemented locally, with focused checks and pending real-client/CAD verification.
+Next is the agent loop: L58, L53, L59, L60, L69. The larger systems follow: L68,
 L64, L65, L66, L61, L67, L70, with L63 alongside whichever touches the same UI. The selected
 scope and outstanding packet decisions are unchanged.

@@ -1,6 +1,7 @@
 # L52 technical design
 
-Line references are against `8676e099e5` on `docs/model-preview-follow-ups`.
+Implemented against `7973b7fdef` on `feat/pcb-units-presets-stats-print-capture`.
+Older line references below describe the original design; current source owns exact locations.
 
 ## Overview
 
@@ -14,7 +15,12 @@ kicad-cli report.json
 
 The server owns the meaning of a position: it converts to millimetres, fixes KiCad's ERC scale
 bug, maps an ERC sheet path to the drawing's sheet id and gives each finding a stable `id`.
-Old persisted results are upgraded by the same function when read. The web turns a check
+Old persisted results are upgraded by the same function when read. The earlier local fix
+`6ddf84c1aa` is already on the base and stored corrected positions without a provenance flag.
+For unflagged ERC from affected releases, `latestChecks` uses saved symbol positions to verify
+whether the old report needs the factor of 100. It preserves already-corrected coordinates.
+If neither scale matches, it keeps findings but removes uncertain positions and adds a rerun
+notice to the log. It never guesses from coordinate magnitude or rewrites saved reports. The web turns a check
 result into the shared `PcbFinding` list, draws it, and steps through it. Agents reach the same
 stepping through two new `loom_pcb_editor` actions.
 
@@ -147,8 +153,8 @@ Only `kicadReports.ts` changes in substance; the service gets two call-site edit
   for ERC with a `rootSheet`, `sheetId`. Return `coordinateUnits: "mm"` and `pointsInMm: true`
   (`:80`), so `summary.ts:29` and the list keep printing "mm" correctly.
 - `normalizeCheckResult(result, rootSheet?)`: upgrades a stored result without `pointsInMm`
-  using its `coordinateUnits` and `kicadVersion`, fills missing `id` (description-based, since
-  uuids were not stored) and `sheetId`. Idempotent: returns the input when `pointsInMm` is true.
+  using its `coordinateUnits` and `kicadVersion` (with verified legacy ERC scale from the service), fills missing `id` (description-based, since
+  uuids were not stored) and `sheetId`. Idempotent: complete results with `pointsInMm` retain their identity and coordinates.
 
 The existing byte bound (`:63-70`) still applies after the new fields are added, so the payload
 cap is unchanged.
@@ -158,7 +164,7 @@ cap is unchanged.
 - `check` (`:1126-1129`): pass `{ rootSheet }`, where `rootSheet` is
   `path.basename(resolved.design.schematicPath, ".kicad_sch")` when the design has a schematic.
 - `latestChecks` (`:1165`): map the decoded result through `normalizeCheckResult` with the same
-  root name, so reports run before this packet place pins correctly without a re-run.
+  root name and verified legacy ERC scale. Ambiguous unflagged ERC requires a re-run.
 
 ## Storage
 
@@ -211,7 +217,8 @@ captures include the pins.
 - Export `OverlayScaleContext` (default 1) and `useOverlayScale()`. Provide
   `physical.width / (extent.width * zoom / 100)` around `{overlays}` (`:441`). `zoom` is already
   state updated by `paint` (`:116-124`), so consumers re-render only when the rounded zoom
-  percent changes. `DrawingOverlays` does not read the context, so it does not re-render.
+  value changes. The displayed percentage is rounded, but overlay scale uses precise zoom
+  so pins remain constant even at minimum zoom. `DrawingOverlays` does not read the context, so it does not re-render.
 - `PcbViewportHandle` (`:38-49`) gains `unitsPerPixel(): number` for hit testing.
 
 ### `apps/web/src/fork/pcb-preview/PcbPreviewPanel.tsx`
@@ -292,9 +299,9 @@ L68 adds review findings.
 
 - No new RPC, stream or bytes route. The 500-finding and 1 MiB bounds still apply.
 - At most 500 pins, three SVG elements each. `CheckMarkers` is memoized and re-renders on a
-  zoom percent change, a new report or a new active finding; nothing repaints while idle and
+  zoom change, a new report or a new active finding; nothing repaints while idle and
   there is no animation.
-- During a wheel zoom the overlay re-renders once per changed percent, at most once per frame
+- During a wheel zoom the overlay re-renders once per changed zoom value, at most once per frame
   through the existing `paint` rAF. If a profile of 500 pins shows more than 2 ms per frame,
   quantize the provided scale to 10 percent steps.
 - Hit testing is a linear scan of at most 500 points per click.

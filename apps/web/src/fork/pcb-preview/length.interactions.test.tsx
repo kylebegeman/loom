@@ -59,7 +59,7 @@ async function type(input: HTMLInputElement, text: string) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
-it("locates legacy inch reports in millimetres and updates their labels live", async () => {
+it("locates normalized report positions and updates their labels live", async () => {
   const onLocate = vi.fn();
   const result: PcbCheckResult = {
     kind: "drc",
@@ -73,13 +73,14 @@ it("locates legacy inch reports in millimetres and updates their labels live", a
         severity: "error",
         excluded: false,
         group: "violation",
-        items: [{ description: "R1 pad 1", x: 0.5, y: -0.25 }],
+        items: [{ description: "R1 pad 1", x: 12.7, y: -6.35 }],
       },
     ],
     log: "",
     truncated: false,
     ranAt: "2026-10-10T00:00:00Z",
-    coordinateUnits: "in",
+    coordinateUnits: "mm",
+    pointsInMm: true,
   };
   const render = (report: PcbCheckResult) => (
     <ChecksView
@@ -105,8 +106,8 @@ it("locates legacy inch reports in millimetres and updates their labels live", a
   await act(async () => usePcbPreferences.getState().setLengthUnit("mm"));
   expect(host.textContent).toContain("12.70, -6.35 mm");
   await act(async () => root.render(render({ ...result, coordinateUnits: "cm" })));
-  expect(host.textContent).toContain("0.50, -0.25 cm");
-  expect(host.querySelector('button[aria-label="Go to R1 pad 1"]')).toBeNull();
+  expect(host.textContent).toContain("12.70, -6.35 mm");
+  expect(host.querySelector('button[aria-label="Go to R1 pad 1"]')).not.toBeNull();
 });
 it("parses hardware suffixes, rejects invalid edits and saves canonical millimetres", async () => {
   const entry: PcbHardware = {

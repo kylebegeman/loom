@@ -1,9 +1,10 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PcbWorkspace, PcbWorkspaceInput } from "./pcb-workspace.ts";
+import { PcbWorkspace, PcbWorkspaceInput, PcbEditorResult } from "./pcb-workspace.ts";
 
 const decode = Schema.decodeUnknownSync(Schema.fromJsonString(PcbWorkspace));
+const decodeEditorResult = Schema.decodeUnknownSync(PcbEditorResult);
 const encode = Schema.encodeSync(PcbWorkspace);
 
 describe("PcbWorkspace", () => {
@@ -80,4 +81,48 @@ it("decodes inspections from older servers and round-trips optional board statis
     heights: "measured",
   };
   expect(read({ ...older, stats }).stats).toEqual(stats);
+});
+
+it("retains old editor snapshots and bounds new finding metadata", () => {
+  const state = {
+    view: "pcb",
+    sheet: "board",
+    three: false,
+    linked: false,
+    selected: null,
+    net: null,
+    camera: null,
+    drawingCamera: null,
+    layers: [],
+  };
+  expect(decodeEditorResult({ message: "done", state })).toEqual({ message: "done", state });
+  const finding = {
+    id: "drc-one",
+    source: "drc",
+    severity: "error",
+    message: "Too close",
+    pointMm: { x: 1, y: 2 },
+  };
+  const findings = {
+    visible: true,
+    showExcluded: false,
+    active: finding.id,
+    total: 51,
+    items: Array.from({ length: 50 }, () => finding),
+  };
+  expect(
+    decodeEditorResult({ message: "done", state: { ...state, findings } }).state?.findings?.items,
+  ).toHaveLength(50);
+  expect(() =>
+    decodeEditorResult({
+      message: "done",
+      state: { ...state, findings: { ...findings, items: [...findings.items, finding] } },
+    }),
+  ).toThrow();
+  expect(() =>
+    decodeEditorResult({
+      message: "done",
+      state: { ...state, findings: { ...findings, total: -1 } },
+    }),
+  ).toThrow();
 });

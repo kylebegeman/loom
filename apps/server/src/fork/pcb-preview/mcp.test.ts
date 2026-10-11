@@ -7,7 +7,8 @@ import {
   type OrchestrationV2ThreadShell,
   type RuntimeMode,
 } from "@t3tools/contracts";
-import { PcbPreviewError } from "@t3tools/contracts/fork";
+import { PcbPreviewError, PcbEditorAction } from "@t3tools/contracts/fork";
+import * as Schema from "effect/Schema";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,6 +19,7 @@ import { ThreadManagementService } from "../../orchestration-v2/ThreadManagement
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { PcbPreviewService } from "./PcbPreviewService.ts";
 import { PcbToolkit, pcbHandlers } from "./mcp.ts";
+const decodeEditorAction = Schema.decodeUnknownSync(PcbEditorAction);
 const partial = <A extends object>(methods: Partial<A>): A =>
   new Proxy(methods as A, {
     get(target, key) {
@@ -358,6 +360,40 @@ it.effect("forwards SVG and scaled PNG capture commands in the calling thread", 
         expect(results.length).toBeGreaterThan(0);
       }
       expect(calls).toBe(2);
+    }),
+  ),
+);
+
+it.effect("decodes and forwards finding and marker editor actions through caller access", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const commands = [
+        { action: "finding", name: "next" },
+        { action: "markers", enabled: false },
+      ] as const;
+      let calls = 0;
+      const { toolkit, threads } = yield* fixture({
+        editorAction: (input) => {
+          expect(input).toMatchObject({
+            threadId,
+            designId: "board.kicad_pcb",
+            command: commands[calls++],
+          });
+          return Effect.succeed({ message: "done" });
+        },
+      });
+      for (const command of commands) {
+        expect(decodeEditorAction(command)).toEqual(command);
+        yield* toolkit
+          .handle("loom_pcb_editor", { designId: "board.kicad_pcb", command })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provideService(McpInvocationContext, scope),
+            Effect.provideService(ThreadManagementService, threads),
+          );
+      }
+      expect(calls).toBe(2);
+      expect(() => decodeEditorAction({ action: "unknown" })).toThrow();
     }),
   ),
 );

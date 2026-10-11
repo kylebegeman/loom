@@ -26,7 +26,14 @@ For KiCad, open **Checks** from the tool buttons, or select a check count in the
 bar, and run ERC for electrical rules or DRC for board rules. Reports
 include errors, warnings and an option to show excluded findings. They persist across
 reopening and are marked stale after a saved change. Checks use saved zones and do not
-refill or modify the design.
+refill or modify the design. Findings also appear as pins on their board or schematic sheet.
+Press `.` or `,` to step through them, including across sheets, and `C` to show or hide pins.
+**Show excluded** applies to both the list and drawing. Select a pin or use Locate to open its
+detail; Escape clears the selection before closing Checks. Captures include visible pins.
+
+ERC locations are corrected for KiCad 9 and early 10.0 releases. If an older report's scale
+cannot be verified against the saved schematic, its list remains available and the log asks
+you to run ERC again to restore locations.
 
 **Add summary to draft** appends the report to your existing composer draft for review.
 Nothing is sent automatically. **Copy summary** prepares the same text for another app.

@@ -138,11 +138,14 @@ export const PcbCheckKind = Schema.Literals(["erc", "drc"]);
 export type PcbCheckKind = typeof PcbCheckKind.Type;
 export const PcbViolationItem = Schema.Struct({
   description: Schema.String,
+  uuid: Schema.optional(Schema.String),
   x: Schema.optional(Schema.Number),
   y: Schema.optional(Schema.Number),
 });
 export type PcbViolationItem = typeof PcbViolationItem.Type;
 export const PcbViolation = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  sheetId: Schema.optional(Schema.String),
   type: Schema.String,
   description: Schema.String,
   severity: Schema.Literals(["error", "warning"]),
@@ -173,6 +176,7 @@ export const PcbCheckResult = Schema.Struct({
   violations: Schema.Array(PcbViolation), // capped at 500, sorted errors first
   truncated: Schema.Boolean,
   coordinateUnits: Schema.optional(Schema.String),
+  pointsInMm: Schema.optional(Schema.Boolean),
   kicadVersion: Schema.optional(Schema.String),
   exitCode: Schema.optional(Schema.Int),
   log: Schema.String,

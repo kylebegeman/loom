@@ -286,7 +286,10 @@ describe("PCB preview service", () => {
           input = { ...t.input, kind: "drc" as const };
         expect((yield* service.check(input)).outcome).toBe("clean");
         t.setResult(5);
-        expect((yield* service.check(input)).outcome).toBe("violations");
+        const fresh = yield* service.check(input);
+        expect(fresh.outcome).toBe("violations");
+        expect(fresh.pointsInMm).toBe(true);
+        expect(fresh.violations[0]?.id).toMatch(/^drc-/);
         const reopened = yield* t.create();
         expect((yield* reopened.latestChecks(input))[0]?.violations).toHaveLength(1);
         t.setResult(1);
@@ -294,6 +297,52 @@ describe("PCB preview service", () => {
         t.setResult(0, true);
         expect((yield* service.check(input)).outcome).toBe("timed-out");
         expect(t.calls.find((c) => c.args.includes("drc"))?.args).toContain("--schematic-parity");
+      }),
+    ),
+  );
+  it.effect("upgrades raw and already corrected legacy ERC using saved schematic evidence", () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          service = yield* t.create();
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_sch"),
+          '(kicad_sch (uuid root) (symbol (uuid r1) (at 40 40 0) (property "Reference" "R1") (property "Value" "R")))',
+        );
+        t.setResult(5);
+        const fresh = yield* service.check({ ...t.input, kind: "erc" });
+        const directory = t.path.join(t.stateDir, "fork", "pcb-preview", "checks");
+        const name = (yield* t.fs.readDirectory(directory)).find((name) => name.endsWith(".json"))!;
+        const file = t.path.join(directory, name);
+        for (const x of [0.4, 40]) {
+          const { pointsInMm: _flag, ...legacy } = fresh;
+          yield* t.fs.writeFileString(
+            file,
+            JSON.stringify({
+              ...legacy,
+              coordinateUnits: "mm",
+              violations: [
+                {
+                  type: "rule",
+                  description: "legacy",
+                  severity: "error",
+                  excluded: false,
+                  group: "violation",
+                  sheet: "/",
+                  items: [{ description: "Symbol R1 [R]", x, y: x }],
+                },
+              ],
+            }),
+          );
+          const result = (yield* service.latestChecks(t.input))[0]!;
+          expect(result.pointsInMm).toBe(true);
+          expect(result.violations[0]).toMatchObject({
+            sheetId: "board.svg",
+            items: [{ description: "Symbol R1 [R]", x: 40, y: 40 }],
+          });
+          expect(result.violations[0]?.id).toMatch(/^erc-/);
+          expect(JSON.parse(yield* t.fs.readFileString(file))).not.toHaveProperty("pointsInMm");
+        }
       }),
     ),
   );

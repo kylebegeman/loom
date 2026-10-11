@@ -1,10 +1,22 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { MinusIcon, PlusIcon, ScanIcon, ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { observeResize } from "~/lib/observeResize";
 import { svgFrame } from "./geometry";
 import { composeSvg, exportFactor, visibleArea, LIGHT_CANVAS } from "./svgExport";
 import { ToolButton } from "./ToolButton";
 import styles from "./workspace.module.css";
+
+export const OverlayScaleContext = createContext(1);
+export const useOverlayScale = () => useContext(OverlayScaleContext);
 
 export type ViewTransform = { x: number; y: number; scale: number };
 export function zoomAround(
@@ -39,6 +51,7 @@ export function fitDrawing(
 
 export type PcbViewportHandle = {
   isReady: () => boolean;
+  unitsPerPixel: () => number;
   snapshot: () => ViewTransform;
   restore: (view: ViewTransform) => void;
   focus: (point: { x: number; y: number }) => void;
@@ -126,7 +139,7 @@ export function SvgViewport({
       frame.current = null;
       if (scene.current)
         scene.current.style.transform = `translate(${view.current.x}px, ${view.current.y}px) scale(${view.current.scale})`;
-      setZoom(Math.round(view.current.scale * 100));
+      setZoom(view.current.scale * 100);
     });
   }, []);
   const fit = useCallback(() => {
@@ -159,6 +172,10 @@ export function SvgViewport({
     [paint],
   );
   const physical = useMemo(() => svgFrame(svg), [svg]);
+  const overlayScale = useMemo(
+    () => (physical ? physical.width / ((extent.width * Math.max(1, zoom)) / 100) : 1),
+    [physical, extent.width, zoom],
+  );
   const focus = useCallback(
     (point: { x: number; y: number }) => {
       if (!physical) return;
@@ -301,6 +318,8 @@ export function SvgViewport({
     handle,
     () => ({
       isReady: () => imageLoaded.current && !loadError && visibleLayersReady(),
+      unitsPerPixel: () =>
+        physical ? physical.width / (drawing.current.width * view.current.scale) : 1,
       snapshot: () => ({ ...view.current }),
       restore,
       fit,
@@ -492,7 +511,7 @@ export function SvgViewport({
             height={extent.height}
             viewBox={`${physical.x} ${physical.y} ${physical.width} ${physical.height}`}
           >
-            {overlays}
+            <OverlayScaleContext value={overlayScale}>{overlays}</OverlayScaleContext>
           </svg>
         )}
       </div>
@@ -538,8 +557,8 @@ export function SvgViewport({
         >
           <MinusIcon />
         </ToolButton>
-        <span className={styles.zoomReadout} aria-label={`Zoom ${zoom} percent`}>
-          {zoom}%
+        <span className={styles.zoomReadout} aria-label={`Zoom ${Math.round(zoom)} percent`}>
+          {Math.round(zoom)}%
         </span>
         <ToolButton
           onClick={() => {

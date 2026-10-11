@@ -21,6 +21,7 @@ const Preferences = Schema.Struct({
   hiddenLayerPresets: Schema.Array(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+  checkMarkers: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   pngScale: Schema.Literals([1, 2]).pipe(Schema.withDecodingDefault(Effect.succeed(2))),
 });
 const KEY = "loom:pcb-preview:preferences:v1";
@@ -31,6 +32,7 @@ const defaults = {
   lengthUnit: "mm",
   hiddenLayerPresets: [],
   pngScale: 2,
+  checkMarkers: true,
 } satisfies typeof Preferences.Type;
 export const decodePreferences = Schema.decodeSync(Schema.fromJsonString(Preferences));
 function load() {
@@ -58,6 +60,7 @@ export const usePcbPreferences = create<
     setLengthUnit: (unit: PcbLengthUnit) => void;
     setHiddenLayerPresets: (ids: readonly string[]) => void;
     setPngScale: (scale: 1 | 2) => void;
+    setCheckMarkers: (enabled: boolean) => void;
   }
 >((set, get) => ({
   ...load(),
@@ -92,6 +95,10 @@ export const usePcbPreferences = create<
     const hiddenLayerPresets = [...new Set(ids)];
     save({ ...get(), hiddenLayerPresets });
     set({ hiddenLayerPresets });
+  },
+  setCheckMarkers: (checkMarkers) => {
+    save({ ...get(), checkMarkers });
+    set({ checkMarkers });
   },
   setPngScale: (pngScale) => {
     save({ ...get(), pngScale });

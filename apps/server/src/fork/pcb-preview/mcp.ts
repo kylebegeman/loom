@@ -25,7 +25,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_editor", {
     description:
-      "Control the visible PCB editor: fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
+      "Control the visible PCB editor: fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. finding steps next/previous or selects a finding id; markers shows/hides pins; snapshot lists current surface findings. layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
     parameters: Schema.Struct({ ...design, command: W.PcbEditorAction }),
     success: W.PcbEditorResult,
     failure,
@@ -128,7 +128,8 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_check", {
-    description: "Run KiCad ERC or DRC on saved source. Item coordinates are in millimetres.",
+    description:
+      "Run KiCad ERC or DRC on saved source. Item coordinates are in millimetres; findings have stable ids.",
     parameters: Schema.Struct({ ...design, kind: W.PcbCheckInput.fields.kind }),
     success: W.PcbCheckResult,
     failure,
@@ -138,7 +139,8 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_latest_checks", {
-    description: "Read latest persisted rule checks. Item coordinates are in millimetres.",
+    description:
+      "Read latest persisted rule checks. Item coordinates are in millimetres; findings have stable ids.",
     parameters: Schema.Struct(design),
     success: W.PcbLatestChecksResult,
     failure,

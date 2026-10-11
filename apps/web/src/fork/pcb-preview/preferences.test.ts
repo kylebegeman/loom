@@ -14,6 +14,7 @@ it("keeps trust and selections from preferences saved before later fields existe
     lengthUnit: "mm",
     hiddenLayerPresets: [],
     pngScale: 2,
+    checkMarkers: true,
   });
 });
 it("rejects invalid units and PNG scales so load can use its existing defaults", () => {
@@ -26,10 +27,12 @@ it("round trips changed preferences without dropping trust, selections or unknow
   store.setLengthUnit("mil");
   store.setHiddenLayerPresets(["assembly-front", "future-preset", "future-preset"]);
   store.setPngScale(1);
+  store.setCheckMarkers(false);
   let next = decodePreferences(JSON.stringify(usePcbPreferences.getState()));
   expect(next.lengthUnit).toBe("mil");
   expect(next.hiddenLayerPresets).toEqual(["assembly-front", "future-preset"]);
   expect(next.pngScale).toBe(1);
+  expect(next.checkMarkers).toBe(false);
   expect(next.trusted).toEqual(["trusted-design"]);
   expect(next.selections).toEqual(previous.selections);
   store.setHiddenLayerPresets(["future-preset"]);

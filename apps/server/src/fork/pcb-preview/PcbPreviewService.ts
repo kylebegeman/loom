@@ -79,7 +79,12 @@ import {
   CHECK_LIMITS,
   signedFileType,
 } from "./cache.ts";
-import { parseKicadReport } from "./kicadReports.ts";
+import {
+  parseKicadReport,
+  normalizeCheckResult,
+  legacyErcScale,
+  ercScaleFactor,
+} from "./kicadReports.ts";
 import { parseKicadVersion, parseTsciVersion, circuitEnvironment, processLog } from "./tools.ts";
 
 const CIRCUIT_VERSION_TIMEOUT = "15 seconds";
@@ -1133,7 +1138,12 @@ export const make = Effect.gen(function* () {
             ),
           );
           const parsed = yield* Effect.try({
-            try: () => parseKicadReport(raw, input.kind),
+            try: () =>
+              parseKicadReport(raw, input.kind, {
+                rootSheet: resolved.design.schematicPath
+                  ? path.basename(resolved.design.schematicPath, ".kicad_sch")
+                  : undefined,
+              }),
             catch: () => failure("invalid-report", "KiCad returned an unsupported check report."),
           });
           value = {
@@ -1171,7 +1181,20 @@ export const make = Effect.gen(function* () {
         const file = checkPath(resolved, kind);
         if (!(yield* fs.exists(file))) return null;
         if (Number((yield* fs.stat(file)).size) > 4 * 1024 * 1024) return null;
-        return yield* decodeCheck(yield* fs.readFileString(file));
+        const result = yield* decodeCheck(yield* fs.readFileString(file));
+        const rootSheet = resolved.design.schematicPath
+          ? path.basename(resolved.design.schematicPath, ".kicad_sch")
+          : undefined;
+        let scale: number | null = ercScaleFactor(result.kind, result.kicadVersion ?? "");
+        if (!result.pointsInMm && result.kind === "erc" && scale !== 1 && rootSheet) {
+          const inspection = yield* sourceInspection(resolved, result.sourceHash, (relative) =>
+            safePath(resolved.root, relative).pipe(
+              Effect.flatMap((file) => fs.readFileString(file)),
+            ),
+          ).pipe(Effect.orElseSucceed(() => null));
+          scale = inspection ? legacyErcScale(result, rootSheet, inspection.components) : null;
+        }
+        return normalizeCheckResult(result, rootSheet, scale);
       }).pipe(Effect.orElseSucceed(() => null)),
     );
     return results.filter((r) => r !== null);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   CheckCircle2Icon,
   CopyIcon,
@@ -16,14 +16,17 @@ import type {
   PcbCheckResult,
   PcbDesign,
   PcbViolation,
+  PcbFinding,
 } from "@t3tools/contracts/fork";
+import { Switch } from "~/components/ui/switch";
+import { orderFindings, checkFindings } from "./findings";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { appendSummary, checkSummary } from "./summary";
 import { OperationStatus } from "./OperationStatus";
-import { formatLength, reportUnit, toMm } from "./length";
+import { formatLength } from "./length";
 import { useLengthUnit } from "./preferences";
 import {
   Bar,
@@ -95,11 +98,29 @@ export function ChecksView({
   onRun,
   onCancel,
   onLocate,
+  showExcluded = false,
+  onShowExcluded,
+  activeId = null,
+  onActivate,
+  markers = true,
+  onMarkers,
+  findingStatus = "",
+  orderedFindings,
+  drawingSourceHash,
 }: {
   threadRef: ScopedThreadRef;
   design: PcbDesign;
   results: Partial<Record<PcbCheckKind, PcbCheckResult>>;
   sourceHash: string | null;
+  drawingSourceHash?: string | undefined;
+  showExcluded?: boolean;
+  onShowExcluded?: (enabled: boolean) => void;
+  activeId?: string | null;
+  onActivate?: (kind: PcbCheckKind, violation: PcbViolation) => void;
+  markers?: boolean;
+  onMarkers?: (enabled: boolean) => void;
+  findingStatus?: string;
+  orderedFindings?: readonly PcbFinding[];
   canCheck: boolean;
   checking: PcbCheckKind | null;
   jobRevision: number;
@@ -110,10 +131,25 @@ export function ChecksView({
   onLocate?: (kind: PcbCheckKind, point: { x: number; y: number }, sheet?: string) => void;
 }) {
   const [kind, setKind] = useState<PcbCheckKind>(design.schematicPath ? "erc" : "drc"),
-    [excluded, setExcluded] = useState(false),
     [severity, setSeverity] = useState<PcbViolation["severity"] | null>(null),
     [query, setQuery] = useState(""),
     [notice, setNotice] = useState<string | null>(null);
+  const activeRow = useRef<HTMLDivElement>(null);
+  const [previousActive, setPreviousActive] = useState<string | null>(null);
+  if (activeId !== previousActive) {
+    setPreviousActive(activeId);
+    const target = (["erc", "drc"] as const).find((next) =>
+      results[next]?.violations.some((v, index) => (v.id ?? `${next}-${index}`) === activeId),
+    );
+    if (target) {
+      setKind(target);
+      setQuery("");
+      setSeverity(null);
+    }
+  }
+  useEffect(() => {
+    if (activeId) activeRow.current?.scrollIntoView?.({ block: "nearest" });
+  }, [activeId]);
   const { isCopied, copyToClipboard } = useCopyToClipboard({
     target: "PCB check summary",
     onError: (error) => setNotice(error.message),
@@ -128,7 +164,7 @@ export function ChecksView({
   const findings =
     result?.violations.filter(
       (v) =>
-        (excluded || !v.excluded) &&
+        (showExcluded || !v.excluded) &&
         (!severity || v.severity === severity) &&
         (!needle ||
           `${v.type} ${v.description} ${v.sheet ?? ""} ${v.items.map((i) => i.description).join(" ")}`
@@ -158,8 +194,12 @@ export function ChecksView({
     setNotice("Added to your draft.");
   };
   const current = status(result, checking === kind, stale);
-  const units = result?.coordinateUnits ?? "mm";
-  const from = reportUnit(units);
+  const findingId = (v: PcbViolation) => v.id ?? `${kind}-${result?.violations.indexOf(v) ?? -1}`;
+  const located = orderedFindings?.some((f) => f.source === kind)
+    ? orderedFindings
+    : orderFindings(checkFindings(result, kind, { showExcluded }), []);
+  const activeIndex = located.findIndex((f) => f.id === activeId);
+  const activeStale = !!result && result.sourceHash !== (drawingSourceHash ?? sourceHash);
   const unit = useLengthUnit();
   const total = result ? result.counts.errors + result.counts.warnings + result.counts.excluded : 0;
   return (
@@ -191,6 +231,19 @@ export function ChecksView({
         </div>
       </Bar>
       <Scroll>
+        <label className={k.markerToggle}>
+          <Switch
+            checked={markers}
+            onCheckedChange={(enabled) => onMarkers?.(enabled)}
+            aria-label="Show on drawing"
+          />
+          Show on drawing
+        </label>
+        <p role="status" className={k.hint}>
+          {activeIndex >= 0
+            ? findingStatus || `Finding ${activeIndex + 1} of ${located.length}`
+            : ""}
+        </p>
         {!canCheck && (
           <Notice tone="warning">This connection needs permission to run terminal commands.</Notice>
         )}
@@ -289,10 +342,11 @@ export function ChecksView({
                   />
                   <Stat
                     label="Excluded"
+                    ariaLabel="Show excluded"
                     value={result.counts.excluded}
-                    pressed={excluded}
+                    pressed={showExcluded}
                     disabled={!result.counts.excluded}
-                    onClick={() => setExcluded(!excluded)}
+                    onClick={() => onShowExcluded?.(!showExcluded)}
                   />
                 </Stats>
                 <SearchField
@@ -317,17 +371,26 @@ export function ChecksView({
                       key={type}
                       title={ruleName(type)}
                       meta={group.length}
-                      defaultOpen={rules.size <= 4 || findings.length <= 20}
+                      defaultOpen={
+                        group.some((v) => findingId(v) === activeId) ||
+                        rules.size <= 4 ||
+                        findings.length <= 20
+                      }
                       lead={<span className={k.dot} data-tone={worst} aria-hidden="true" />}
                     >
                       {keyedRecords(group).map(({ value: v, key }) => (
                         <div
                           key={key}
+                          ref={findingId(v) === activeId ? activeRow : undefined}
+                          data-active={findingId(v) === activeId || undefined}
                           className={k.finding}
                           data-excluded={v.excluded || undefined}
                         >
                           <p>{v.description}</p>
-                          {(v.group !== "violation" || v.excluded || v.sheet) && (
+                          {(v.group !== "violation" ||
+                            v.excluded ||
+                            v.sheet ||
+                            (findingId(v) === activeId && activeStale)) && (
                             <div className={k.findingTags}>
                               {v.group === "parity" && (
                                 <Badge variant="outline" size="sm">
@@ -344,6 +407,11 @@ export function ChecksView({
                                   Excluded
                                 </Badge>
                               )}
+                              {findingId(v) === activeId && activeStale && (
+                                <Badge variant="outline" size="sm">
+                                  Stale
+                                </Badge>
+                              )}
                               {v.sheet && <span>Sheet {v.sheet}</span>}
                             </div>
                           )}
@@ -352,18 +420,13 @@ export function ChecksView({
                               item.x !== undefined && item.y !== undefined
                                 ? { x: item.x, y: item.y }
                                 : null;
-                            const pointMm =
-                              located && from
-                                ? { x: toMm(located.x, from), y: toMm(located.y, from) }
-                                : null;
+                            const pointMm = located;
                             const content = (
                               <>
                                 <span>{item.description}</span>
                                 {located && (
                                   <small className={k.mono}>
-                                    {pointMm
-                                      ? `${formatLength(pointMm.x, unit, { unit: false })}, ${formatLength(pointMm.y, unit)}`
-                                      : `${located.x.toFixed(2)}, ${located.y.toFixed(2)} ${units}`}
+                                    {`${formatLength(located.x, unit, { unit: false })}, ${formatLength(located.y, unit)}`}
                                   </small>
                                 )}
                               </>
@@ -374,7 +437,10 @@ export function ChecksView({
                                 type="button"
                                 className={k.location}
                                 aria-label={`Go to ${item.description}`}
-                                onClick={() => onLocate(kind, pointMm, v.sheet)}
+                                onClick={() => {
+                                  onActivate?.(kind, v);
+                                  onLocate(kind, pointMm, v.sheetId);
+                                }}
                               >
                                 <LocateFixedIcon aria-hidden="true" />
                                 {content}

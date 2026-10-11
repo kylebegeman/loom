@@ -1,6 +1,6 @@
 # L52: Check markers on the drawing
 
-Status: Ready to build
+Status: Implemented locally (`feat/pcb-units-presets-stats-print-capture`); real-client and CAD verification pending.
 
 Approved by Kyle on 2026-10-10.
 

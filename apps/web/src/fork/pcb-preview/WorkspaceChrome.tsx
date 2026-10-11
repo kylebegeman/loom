@@ -331,6 +331,8 @@ export function WorkspaceMenu({
 }
 
 const SHORTCUTS = [
+  ["Next, previous finding", ". / ,"],
+  ["Show or hide finding markers", "C"],
   ["Schematic, Board, 3D", "1 / 2 / 3"],
   ["Select, Distance, Angle, Note", "V / M / A / N"],
   ["Free point without snapping", "Alt + click"],

@@ -127,6 +127,7 @@ export function Stats({ children }: { children: ReactNode }) {
 /** A number with its label. With `onClick` it is a filter, pressed while applied. */
 export function Stat({
   label,
+  ariaLabel,
   value,
   tone = "neutral",
   pressed,
@@ -134,6 +135,7 @@ export function Stat({
   onClick,
 }: {
   label: string;
+  ariaLabel?: string;
   value: ReactNode;
   tone?: Tone;
   pressed?: boolean;
@@ -154,6 +156,7 @@ export function Stat({
       type="button"
       className={k.stat}
       data-tone={tone}
+      aria-label={ariaLabel}
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
