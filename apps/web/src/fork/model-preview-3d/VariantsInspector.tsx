@@ -1,3 +1,8 @@
+import { useAtomValue } from "@effect/atom-react";
+import { activeBed, type ModelPreviewSettings, type SliceResult } from "@t3tools/contracts/fork";
+import { usePrinterLibrary } from "./printers";
+import { startSliceRequest } from "./useSlicing";
+import { formatEstimate } from "./slicing";
 import {
   Fragment,
   lazy,
@@ -201,6 +206,12 @@ function VariantDetail({
   plate,
   mutate,
   rendering,
+  printEstimate,
+  estimating,
+  canEstimate,
+  estimateError,
+  onCancelEstimate,
+  onEstimate,
   onBack,
   onRender,
   onUse,
@@ -213,6 +224,12 @@ function VariantDetail({
   plate: Plate;
   mutate: Mutation;
   rendering: boolean;
+  printEstimate: string | null;
+  estimating: boolean;
+  canEstimate: boolean;
+  estimateError: string | null;
+  onCancelEstimate: () => void;
+  onEstimate: (variant: ModelVariant) => void;
   onBack: () => void;
   onRender: (variant: ModelVariant) => void;
   onUse: (values: Readonly<Record<string, string>>) => void;
@@ -334,6 +351,27 @@ function VariantDetail({
               ? ", fits the plate if rotated 90°"
               : ", too large for the plate"}
         </div>
+        <div className="flex items-center gap-2 px-3 py-2 text-xs">
+          {!dirty && printEstimate && <span>{printEstimate}</span>}
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={!canEstimate || estimating || dirty}
+            onClick={() => onEstimate(variant)}
+          >
+            {estimating ? "Estimating..." : "Estimate print"}
+          </Button>
+          {estimating && (
+            <Button variant="ghost-muted" size="xs" onClick={onCancelEstimate}>
+              Cancel
+            </Button>
+          )}
+        </div>
+        {estimateError && (
+          <p role="alert" className="px-3 text-xs text-warning">
+            {estimateError}
+          </p>
+        )}
         {error && (
           <p role="alert" className={styles["model-help"]} data-tone="error">
             {error}
@@ -550,8 +588,14 @@ export function VariantsInspector({
   path,
   plate,
   onActivity,
+  settings,
+  active = true,
+  slicingEnabled = false,
 }: {
   onActivity: (activity: OperationProgress | null) => void;
+  settings: ModelPreviewSettings;
+  active?: boolean;
+  slicingEnabled?: boolean;
   data: ModelWorkspace;
   mutate: Mutation;
   session: ScadSession | null;
@@ -560,6 +604,102 @@ export function VariantsInspector({
   plate: Plate;
 }) {
   const units = useDisplayUnits();
+  const [error, setError] = useState<string | null>(null);
+  const library = usePrinterLibrary(threadRef.environmentId);
+  const bedId = activeBed(settings.buildPlate, { library }).id;
+  const canSlice = useAtomValue(models.slice.permissionAtom(threadRef.environmentId));
+  const [printResults, setPrintResults] = useState<
+    Record<string, { key: string; result: SliceResult }>
+  >({});
+  const [sliceBatch, setSliceBatch] = useState<{
+    name: string;
+    completed: number;
+    total: number;
+  } | null>(null);
+  const sliceLease = useRef<ReturnType<typeof startSliceRequest> | null>(null),
+    sliceGeneration = useRef(0);
+  const printKey = (variant: ModelVariant) =>
+    JSON.stringify([
+      threadRef.environmentId,
+      threadRef.threadId,
+      path,
+      variant.values,
+      session?.data.sourceRevision,
+      data.orientation?.quaternion,
+      bedId,
+      settings.slicer.mappings[bedId],
+      settings.slicer.paths,
+      settings.slicer.currency,
+      library?.materials,
+      library?.printers.find((printer) => printer.id === bedId)?.defaultMaterialId,
+    ]);
+  const cancelSlicing = useCallback(() => {
+    sliceGeneration.current++;
+    sliceLease.current?.cancel();
+    sliceLease.current = null;
+    setSliceBatch(null);
+  }, []);
+  const estimateVariants = useEffectEvent(
+    async (candidates: readonly ModelVariant[], cachedOnly = false) => {
+      if (!slicingEnabled || !canSlice || !session) return;
+      cancelSlicing();
+      const token = sliceGeneration.current;
+      try {
+        for (const [index, variant] of (cachedOnly
+          ? candidates
+          : candidates.slice(0, 12)
+        ).entries()) {
+          if (token !== sliceGeneration.current) break;
+          if (!cachedOnly)
+            setSliceBatch({
+              name: variant.name,
+              completed: index,
+              total: Math.min(candidates.length, 12),
+            });
+          const key = printKey(variant);
+          const lease = startSliceRequest(threadRef.environmentId, {
+            file: { threadId: threadRef.threadId, path },
+            overrides: rebaseParameterValues(session.data.parameters, variant.values),
+            parameterSet: null,
+            variantId: variant.id,
+            bedId,
+            cachedOnly,
+          });
+          sliceLease.current = lease;
+          const result = await lease.promise;
+          if (token !== sliceGeneration.current) break;
+          if (result.status === "ok")
+            setPrintResults((current) => ({ ...current, [variant.id]: { key, result } }));
+          else if (!cachedOnly)
+            throw new Error(
+              `${variant.name}: ${result.warnings[0] ?? "Slicing did not produce an estimate."}`,
+            );
+        }
+      } catch (cause) {
+        if (token === sliceGeneration.current && !cachedOnly)
+          setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        if (token === sliceGeneration.current) {
+          sliceLease.current = null;
+          setSliceBatch(null);
+        }
+      }
+    },
+  );
+  const variantsKey = JSON.stringify(data.variants.map(printKey));
+  /* oxlint-disable react/exhaustive-effect-dependencies, react/set-state-in-effect -- Source, values and profiles invalidate cached estimates and release their RPC leases. */
+  useEffect(() => {
+    cancelSlicing();
+    if (active && slicingEnabled && session) void estimateVariants(data.variants, true);
+    return cancelSlicing;
+  }, [variantsKey, active, slicingEnabled, canSlice, session?.data.sourceRevision, cancelSlicing]);
+  /* oxlint-enable react/exhaustive-effect-dependencies, react/set-state-in-effect */
+  const estimateLabel = (variant: ModelVariant) => {
+    const saved = printResults[variant.id];
+    return saved?.result.estimate
+      ? `${saved.key !== printKey(variant) ? "Out of date: " : ""}${formatEstimate(saved.result.estimate)}`
+      : null;
+  };
   const [saveCandidate, setSaveCandidate] = useState<SaveCandidate | null>(null);
   const [candidateSetName, setSetName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -580,15 +720,25 @@ export function VariantsInspector({
         })),
     [data.variants, selection, parameters],
   );
-  const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [queue, setQueue] = useState<readonly string[]>([]);
   const [batchProgress, setBatchProgress] = useState({ completed: 0, total: 0, detail: "" });
   const [adding, setAdding] = useState(false);
   useEffect(() => {
-    onActivity(running ? { label: running, ...batchProgress } : null);
+    onActivity(
+      running
+        ? { label: running, ...batchProgress }
+        : sliceBatch
+          ? {
+              label: "Estimating prints",
+              completed: sliceBatch.completed,
+              total: sliceBatch.total,
+              detail: sliceBatch.name,
+            }
+          : null,
+    );
     return () => onActivity(null);
-  }, [running, batchProgress, onActivity]);
+  }, [running, batchProgress, sliceBatch, onActivity]);
   const [compare, setCompare] = useState(false);
   const [compareDimensions, setCompareDimensions] = useState<
     Record<string, readonly [number, number, number]>
@@ -984,6 +1134,12 @@ export function VariantsInspector({
           plate={plate}
           mutate={mutate}
           rendering={queue.includes(detail.id)}
+          printEstimate={estimateLabel(detail)}
+          estimating={sliceBatch !== null}
+          canEstimate={slicingEnabled && canSlice}
+          estimateError={error}
+          onCancelEstimate={cancelSlicing}
+          onEstimate={(variant) => void estimateVariants([variant])}
           onBack={() => setDetailId(null)}
           onRender={(variant) => void render([variant.id], variant)}
           onUse={(values) => use(detail.name, values)}
@@ -1064,6 +1220,34 @@ export function VariantsInspector({
             </MenuPopup>
           </Menu>
         </SectionHead>
+        {slicingEnabled && (
+          <div className="flex items-center gap-2 px-3 py-2">
+            <Button
+              variant="outline"
+              size="xs"
+              disabled={!canSlice || sliceBatch !== null || !data.variants.length}
+              onClick={() => void estimateVariants(chosen.length ? chosen : data.variants)}
+            >
+              Estimate {chosen.length ? "selected" : "visible"} prints
+            </Button>
+            <span className="text-xs text-muted-foreground">Up to 12 at a time</span>
+          </div>
+        )}
+        {sliceBatch && (
+          <div className={styles["model-batch"]} role="status">
+            <span>
+              Estimating {sliceBatch.name} ({sliceBatch.completed + 1} of {sliceBatch.total})
+            </span>
+            <progress
+              aria-label="Estimating variants"
+              max={sliceBatch.total}
+              value={sliceBatch.completed}
+            />
+            <Button variant="ghost-muted" size="xs" onClick={cancelSlicing}>
+              Cancel
+            </Button>
+          </div>
+        )}
         {running && (
           <div className={styles["model-batch"]} role="status">
             <span>
@@ -1233,6 +1417,9 @@ export function VariantsInspector({
                         )}
                         <span className="truncate">{variant.name}</span>
                       </div>
+                    )}
+                    {estimateLabel(variant) && (
+                      <div className={styles["model-variant-diff"]}>{estimateLabel(variant)}</div>
                     )}
                     <div className={styles["model-variant-diff"]}>
                       {describeValues(session.data.parameters, values, defaults) ||

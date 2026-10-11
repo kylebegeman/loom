@@ -17,7 +17,13 @@ import {
   TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { usePrinterLibrary } from "./printers";
+import { PrintInspector } from "./PrintInspector";
+import type { SlicingControl } from "./useSlicing";
+import { ExportStep } from "./ExportStep";
+import { models, modelUrl, runModelCommand } from "./state";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import {
   singleZoneStrips,
   type ZoneRect,
@@ -304,12 +310,13 @@ function PrinterMenu({
 }) {
   const units = useDisplayUnits();
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
+  const library = usePrinterLibrary(environmentId);
   const trigger = (
     <MenuTrigger
       disabled={!canSave}
       render={<Button variant="ghost-muted" size="xs" className="min-w-0" />}
     >
-      <span className="truncate">{buildPlateLabel(plate)}</span>
+      <span className="truncate">{buildPlateLabel(plate, library)}</span>
       <ChevronsUpDownIcon />
     </MenuTrigger>
   );
@@ -324,10 +331,10 @@ function PrinterMenu({
       )}
       <MenuPopup align="end">
         <MenuRadioGroup
-          value={activeBed(plate).id}
-          onValueChange={(next: string) => void save(selectBed(plate, next))}
+          value={activeBed(plate, { library }).id}
+          onValueChange={(next: string) => void save(selectBed(plate, next, { library }))}
         >
-          {bedGroups(plate).map((group) => (
+          {bedGroups(plate, library).map((group) => (
             <MenuGroup key={group.label}>
               <MenuGroupLabel>{group.label}</MenuGroupLabel>
               {group.options.map((option) => (
@@ -377,6 +384,8 @@ export function PartSection({
   previousSize,
   orientation,
   printCheck,
+  slicing,
+  threadRef,
   selectedFindingId,
   onFinding,
 }: {
@@ -384,6 +393,8 @@ export function PartSection({
   previousSize?: readonly [number, number, number] | null;
   orientation?: OrientationControls;
   printCheck?: PrintCheckView;
+  slicing?: SlicingControl;
+  threadRef?: ScopedThreadRef;
   selectedFindingId?: string | null;
   onFinding?: (finding: PrintFinding) => void;
   stats: ReturnType<typeof meshStats> | null;
@@ -394,6 +405,8 @@ export function PartSection({
   path: string;
 }) {
   const units = useDisplayUnits();
+  const library = usePrinterLibrary(environmentId);
+  const canExport = useAtomValue(models.exportStep.permissionAtom(environmentId));
   const { copyToClipboard, isCopied } = useCopyToClipboard();
   const log = render?.log ?? [];
   const warnings = log.filter((line) => line.level === "warning" || line.level === "error").length;
@@ -404,7 +417,7 @@ export function PartSection({
         <EmptyNote>Dimensions appear when the model loads.</EmptyNote>
       </div>
     );
-  const plate = resolvePlate(settings.buildPlate);
+  const plate = resolvePlate(settings.buildPlate, library);
   const result = fitPlate(stats.size, plate);
   const { fit, withinMm } = result;
   const zone = describeZoneFit(result, plate.zones, (mm) => formatLength(mm, units));
@@ -504,7 +517,13 @@ export function PartSection({
           </>
         )}
         <dt>Format</dt>
-        <dd>{format === "scad" ? "OpenSCAD source" : format.toUpperCase()}</dd>
+        <dd>
+          {format === "scad"
+            ? "OpenSCAD source"
+            : format === "build123d"
+              ? "build123d source"
+              : format.toUpperCase()}
+        </dd>
         {render && (
           <>
             <dt>Last render</dt>
@@ -518,7 +537,29 @@ export function PartSection({
           <dd className="truncate">{path.split("/").at(-1)}</dd>
         </Tip>
       </dl>
-      {format === "scad" && (
+      {slicing && (
+        <PrintInspector environmentId={environmentId} slicing={slicing} format={format} />
+      )}
+      {format === "build123d" && threadRef && (
+        <div className="px-3 py-2">
+          <ExportStep
+            canExport={canExport}
+            filename={path.split("/").at(-1) ?? "model.b3d.py"}
+            urlOf={(url) => modelUrl(environmentId, url)}
+            onExport={() =>
+              runModelCommand(models.exportStep, {
+                environmentId,
+                input: {
+                  file: { threadId: threadRef.threadId, path },
+                  overrides: {},
+                  parameterSet: null,
+                },
+              })
+            }
+          />
+        </div>
+      )}
+      {(format === "scad" || format === "build123d" || format === "step") && (
         <>
           <SectionHead title="Render log">
             {warnings > 0 && (
