@@ -1,11 +1,17 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { PcbWorkspace, PcbWorkspaceInput, PcbEditorResult } from "./pcb-workspace.ts";
+import {
+  PcbWorkspace,
+  PcbWorkspaceInput,
+  PcbEditorResult,
+  PcbChangeRequest,
+} from "./pcb-workspace.ts";
 
 const decode = Schema.decodeUnknownSync(Schema.fromJsonString(PcbWorkspace));
 const decodeEditorResult = Schema.decodeUnknownSync(PcbEditorResult);
 const encode = Schema.encodeSync(PcbWorkspace);
+const decodeRequest = Schema.decodeUnknownSync(PcbChangeRequest);
 
 describe("PcbWorkspace", () => {
   it("decodes a workspace saved before later collections existed", () => {
@@ -27,6 +33,7 @@ describe("PcbWorkspace", () => {
       annotations: [],
       simulations: [],
       variants: [],
+      requests: [],
     });
     // Defaults fill missing keys on read only; the written shape still carries every collection.
     expect(Object.keys(encode(saved))).toEqual(Object.keys(saved));
@@ -125,4 +132,29 @@ it("retains old editor snapshots and bounds new finding metadata", () => {
       state: { ...state, findings: { ...findings, total: -1 } },
     }),
   ).toThrow();
+});
+
+it("decodes requests saved without optional metadata", () => {
+  const request = decodeRequest({
+    id: "r",
+    title: "Move",
+    request: "Move the part",
+    anchor: { kind: "component", reference: "R1" },
+    view: "pcb",
+    sheet: "board",
+    point: { x: 1, y: 2 },
+    sourceHash: "hash",
+    createdAt: "now",
+  });
+  expect(request).toMatchObject({
+    status: "open",
+    baseRef: null,
+    referenceImage: null,
+    sentAt: null,
+    response: null,
+    reviewRevision: null,
+    resolvedRevision: null,
+    resolvedRef: null,
+    resolvedAt: null,
+  });
 });

@@ -15,6 +15,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [P.compare]: AuthTerminalOperateScope,
   [P.simulate]: AuthTerminalOperateScope,
   [P.updateWorkspace]: AuthOrchestrationOperateScope,
+  [P.changeRequest]: AuthOrchestrationOperateScope,
   [P.updateLibrary]: AuthOrchestrationOperateScope,
   [P.applyParameters]: AuthOrchestrationOperateScope,
   [P.exportReference]: AuthOrchestrationOperateScope,

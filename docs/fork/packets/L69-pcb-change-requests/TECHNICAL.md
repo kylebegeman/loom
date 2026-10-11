@@ -136,7 +136,7 @@ New file `apps/server/src/fork/pcb-preview/changeRequests.ts`:
     `resolvedRef` and `resolvedAt`; `open` from `accepted` clears the resolved fields and keeps
     `response`.
 - `requestRefs(id)`: `{ base: "refs/loom/pcb-requests/<id>/base", resolved: ".../resolved" }`.
-  Two leaf names under one directory avoid Git's file-versus-directory ref conflict.
+  Two leaf names under one directory avoid Git's file-versus-directory ref conflict. The service uses a hash of workspace key, design ID and request ID for the directory, so two designs cannot overwrite each other's baselines.
 - `makeChangeRequests(deps)`: the effectful part, built inside `PcbPreviewService.make` with the
   service's own helpers (`resolveDesign`, `sourceSnapshot`, `storageLock`, `readState`,
   `writeState`, `workspaceFile`, `workspaceBus`) plus upstream `CheckpointStore`. It returns

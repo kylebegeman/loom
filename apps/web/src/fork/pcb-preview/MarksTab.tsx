@@ -1,5 +1,11 @@
 import { useState } from "react";
-import { RulerIcon, StickyNoteIcon, Trash2Icon, TriangleRightIcon } from "lucide-react";
+import {
+  RulerIcon,
+  MessageSquarePlusIcon,
+  StickyNoteIcon,
+  Trash2Icon,
+  TriangleRightIcon,
+} from "lucide-react";
 import type { PcbPoint, PcbView, PcbWorkspace } from "@t3tools/contracts/fork";
 import { Badge } from "~/components/ui/badge";
 import { Kbd } from "~/components/ui/kbd";
@@ -9,8 +15,9 @@ import { useLengthUnit } from "./preferences";
 import { ToolButton } from "./ToolButton";
 import k from "./inspector.module.css";
 
-export type MarkTool = "distance" | "angle" | "annotate";
+export type MarkTool = "distance" | "angle" | "annotate" | "request";
 const TOOLS = [
+  { id: "request", label: "Request", key: "R", icon: MessageSquarePlusIcon },
   { id: "distance", label: "Distance", key: "M", icon: RulerIcon },
   { id: "angle", label: "Angle", key: "A", icon: TriangleRightIcon },
   { id: "annotate", label: "Note", key: "N", icon: StickyNoteIcon },
@@ -27,6 +34,7 @@ type Mark = {
 };
 
 export function MarksTab({
+  onConvertNote,
   data,
   sourceHash,
   canSave,
@@ -35,6 +43,7 @@ export function MarksTab({
   onFocusMark,
   mutate,
 }: {
+  onConvertNote?: ((id: string) => void) | undefined;
   data: PcbWorkspace;
   sourceHash: string | null;
   canSave: boolean;
@@ -192,6 +201,16 @@ export function MarksTab({
                           )}
                         </span>
                       </button>
+                      {m.kind === "note" && onConvertNote && (
+                        <ToolButton
+                          label="Turn into change request"
+                          hint="The note becomes a request when saved. Deleting the request does not restore it."
+                          disabled={!canSave || write.busy}
+                          onClick={() => onConvertNote(m.id)}
+                        >
+                          <MessageSquarePlusIcon />
+                        </ToolButton>
+                      )}
                       <ToolButton
                         className={revealTool}
                         label={m.kind === "note" ? "Remove note" : "Remove measurement"}

@@ -1,3 +1,4 @@
+import { requestPcbChange } from "./requestCommands";
 import { CircuitBoardIcon } from "lucide-react";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
@@ -13,6 +14,19 @@ export const pcbPreviewPaletteSource: ForkCommandPaletteSource = {
     );
     const open = active?.kind === "fork" && active.panelId === "pcb-preview";
     return [
+      ...(open
+        ? [
+            {
+              kind: "action" as const,
+              value: "action:loom:pcb-preview:request",
+              title: "PCB preview: Request a change",
+              description: "Ask for a change to the selected component, net or area",
+              icon: <CircuitBoardIcon className="size-4" />,
+              searchTerms: ["pcb", "request", "change"],
+              run: async () => requestPcbChange(activeThreadRef),
+            },
+          ]
+        : []),
       {
         kind: "action",
         value: "action:loom:pcb-preview:last-turn",

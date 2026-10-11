@@ -1,6 +1,6 @@
 import type { ModelSavedView } from "@t3tools/contracts/fork";
 import type { ModelViewer } from "./createViewer";
-export async function thumbnail(blob: Blob) {
+export async function thumbnail(blob: Blob, limit = 50000) {
   const bitmap = await createImageBitmap(blob);
   try {
     const canvas = document.createElement("canvas");
@@ -12,11 +12,11 @@ export async function thumbnail(blob: Blob) {
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     let quality = 0.65;
     let url = canvas.toDataURL("image/jpeg", quality);
-    while (url.length > 50000 && quality > 0.15) {
+    while (url.length > limit && quality > 0.15) {
       quality -= 0.1;
       url = canvas.toDataURL("image/jpeg", quality);
     }
-    if (url.length > 50000) throw new Error("Thumbnail is too large. Try a simpler view.");
+    if (url.length > limit) throw new Error("Thumbnail is too large. Try a simpler view.");
     return url;
   } finally {
     bitmap.close();

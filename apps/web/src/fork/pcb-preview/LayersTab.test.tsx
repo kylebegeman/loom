@@ -31,6 +31,7 @@ const empty: PcbWorkspace = {
   annotations: [],
   simulations: [],
   variants: [],
+  requests: [],
 };
 let host: HTMLDivElement, root: Root;
 beforeEach(() => {

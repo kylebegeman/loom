@@ -20,6 +20,8 @@ export const makePcbPreviewRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(M.completeEditorAction, service.completeEditorAction(i)),
       [M.inspect]: (input) => auth.effect(M.inspect, service.inspect(input)),
       [M.workspace]: (input) => auth.effect(M.workspace, service.getWorkspace(input)),
+      [M.changeRequest]: (input) =>
+        auth.effect(M.changeRequest, service.changeRequest(input, "user")),
       [M.updateWorkspace]: (input) =>
         auth.effect(M.updateWorkspace, service.updateWorkspace(input)),
       [M.asset]: (input) => auth.effect(M.asset, service.asset(input)),

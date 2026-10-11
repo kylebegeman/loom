@@ -499,3 +499,66 @@ it.effect("pin map tools apply defaults and scope generation to the caller", () 
     }),
   ),
 );
+
+it.effect(
+  "lists bounded request context without images and enforces agent status permissions",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { toolkit, threads } = yield* fixture({
+          listRequests: (input, status) => {
+            expect(input.threadId).toBe(threadId);
+            expect(status).toBe("review");
+            return Effect.succeed([]);
+          },
+          getWorkspace: () =>
+            Effect.succeed({
+              version: 4,
+              views: [],
+              layerSets: [],
+              measurements: [],
+              annotations: [],
+              simulations: [],
+              variants: [],
+              requests: [],
+            }),
+          changeRequest: (input, actor) => {
+            expect(actor).toBe("agent");
+            expect(input.expectedVersion).toBe(4);
+            expect(input.operation).toMatchObject({ op: "status", id: "one", status: "accepted" });
+            return Effect.fail(
+              new PcbPreviewError({
+                reason: "invalid-parameters",
+                message: "Only the user can accept.",
+              }),
+            );
+          },
+        });
+        const provide = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+          effect.pipe(
+            Effect.provideService(McpInvocationContext, scope),
+            Effect.provideService(ThreadManagementService, threads),
+          );
+        expect(
+          (yield* provide(
+            toolkit
+              .handle("loom_pcb_change_requests", { designId: "board.kicad_pcb", status: "review" })
+              .pipe(Effect.flatMap(Stream.runCollect)),
+          )).length,
+        ).toBeGreaterThan(0);
+        const error = yield* provide(
+          toolkit
+            .handle("loom_pcb_update_change_request", {
+              designId: "board.kicad_pcb",
+              requestId: "one",
+              status: "accepted",
+            })
+            .pipe(Effect.flatMap(Stream.runCollect), Effect.flip),
+        );
+        expect(error).toMatchObject({
+          reason: "invalid-parameters",
+          message: "Only the user can accept.",
+        });
+      }),
+    ),
+);

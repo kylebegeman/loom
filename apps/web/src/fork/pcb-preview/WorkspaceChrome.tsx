@@ -331,6 +331,7 @@ export function WorkspaceMenu({
 }
 
 const SHORTCUTS = [
+  ["Request a change", "R"],
   ["Show changes since the last reload", "D"],
   ["Next, previous finding", ". / ,"],
   ["Show or hide finding markers", "C"],

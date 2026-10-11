@@ -88,3 +88,9 @@ Use a KiCad project in a Git repository and a tscircuit design, in a dev server 
   integration, confirm with
   `git merge-tree --write-tree --name-only --no-messages HEAD "$tag"` that no L69 file appears,
   and rerun `changeRequests.test.ts` and the service test if `CheckpointStore` changed upstream.
+
+## Local verification
+
+Focused tests cover actor transitions, limits, note conversion, baseline/accept capture and cleanup, version conflicts, workspace preservation, image-free agent listing, status refusal, legacy decoding, semantic anchors, area dragging, single and batch draft captures, full-draft errors and review/accept/reopen comparisons. Contracts, client-runtime, server and web typechecks and scoped strict lint pass.
+
+Real client, KiCad/tscircuit rendering and remote multi-client checks remain pending. Captures wait on drawing readiness events, with a failure timeout; no polling or sleeps are used. Ref directory names use the workspace/design/request hash to prevent collisions. Accepted comparisons with a failed resolved capture show an explicit unavailable state.

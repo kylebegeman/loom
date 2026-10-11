@@ -34,6 +34,7 @@ export const PCB_PREVIEW_WS_METHODS = {
   inspect: "loom.pcb-preview.inspect",
   workspace: "loom.pcb-preview.workspace",
   updateWorkspace: "loom.pcb-preview.updateWorkspace",
+  changeRequest: "loom.pcb-preview.changeRequest",
   asset: "loom.pcb-preview.asset",
   compare: "loom.pcb-preview.compare",
   revisions: "loom.pcb-preview.revisions",
@@ -372,6 +373,11 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.workspace, {
     payload: W.PcbInspectInput,
+    success: W.PcbWorkspace,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.changeRequest, {
+    payload: W.PcbChangeRequestInput,
     success: W.PcbWorkspace,
     error: errors,
   }),

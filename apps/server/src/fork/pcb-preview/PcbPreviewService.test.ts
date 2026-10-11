@@ -1,3 +1,5 @@
+import { VcsUnsupportedOperationError } from "@t3tools/contracts";
+import { CheckpointStore } from "../../checkpointing/CheckpointStore.ts";
 import type {
   OrchestrationV2ThreadProjection,
   OrchestrationV2Checkpoint,
@@ -176,9 +178,35 @@ const setup = Effect.gen(function* () {
         truncated: false,
       }),
   });
+  const capturedRefs: string[] = [],
+    deletedRefs: string[] = [];
+  let gitRequests = false,
+    failedCapture = false;
   const create = (filesystem = fs, processRunner = runner) =>
     PcbPreview.make.pipe(
       Effect.provide(context),
+      Effect.provideService(
+        CheckpointStore,
+        partial<CheckpointStore["Service"]>({
+          isGitRepository: () => Effect.succeed(gitRequests),
+          captureCheckpoint: ({ checkpointRef }) =>
+            failedCapture
+              ? Effect.fail(
+                  new VcsUnsupportedOperationError({
+                    kind: "git",
+                    operation: "capture",
+                    detail: "unavailable",
+                  }),
+                )
+              : Effect.sync(() => {
+                  capturedRefs.push(checkpointRef);
+                }),
+          deleteCheckpointRefs: ({ checkpointRefs }) =>
+            Effect.sync(() => {
+              deletedRefs.push(...checkpointRefs);
+            }),
+        }),
+      ),
       Effect.provideService(WorkspacePaths.WorkspacePaths, paths),
       Effect.provideService(ProjectionStore.ProjectionStoreV2, queries),
       Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
@@ -207,6 +235,12 @@ const setup = Effect.gen(function* () {
     calls,
     runner,
     getRefreshes: () => refreshes,
+    capturedRefs,
+    deletedRefs,
+    requestGit: (enabled: boolean, fail = false) => {
+      gitRequests = enabled;
+      failedCapture = fail;
+    },
     names,
     setInvalidSheet: () => {
       invalidSheet = true;
@@ -1049,7 +1083,7 @@ it.effect("compares schematic-only connectivity from each isolated Git revision"
       const comparison = yield* service.compare({ ...t.input, from: "HEAD", to: "" });
       expect(comparison.before.nets[0]?.name).toBe("VCC");
       expect(comparison.after.nets[0]?.name).toBe("GND");
-      expect(comparison.changes).toEqual([{ kind: "changed", reference: "R1", detail: "pins" }]);
+      expect(comparison.changes).toEqual([{ kind: "changed", reference: "R1", detail: "nets" }]);
       expect(comparison.beforeSvg).toContain("<svg");
       expect(comparison.afterSvg).toContain("<svg");
       expect(exports).toHaveLength(2);
@@ -1439,6 +1473,143 @@ it.effect(
           (yield* service.turnDesigns({ threadId: t.input.threadId, runId: RunId.make("run-2") }))
             .designs,
         ).toEqual([]);
+      }),
+    ),
+);
+
+it.effect(
+  "captures request baselines, preserves them during ordinary saves, and cleans accepted refs",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          service = yield* t.create();
+        t.requestGit(true);
+        const hash = (yield* service.render(t.input)).sourceHash;
+        const draft = {
+          id: "request-one",
+          title: "Move R1",
+          request: "Move it left",
+          anchor: { kind: "component" as const, reference: "R1" },
+          view: "pcb" as const,
+          sheet: "board",
+          point: { x: 0, y: 0 },
+          sourceHash: hash,
+          referenceImage: null,
+        };
+        let data = yield* service.changeRequest(
+          {
+            ...t.input,
+            expectedVersion: 0,
+            operation: { op: "create", request: draft, sent: false },
+          },
+          "user",
+        );
+        expect(data.requests[0]?.baseRef).toMatch(/^refs\/loom\/pcb-requests\/[^/]+\/base$/);
+        expect(t.capturedRefs).toEqual([data.requests[0]?.baseRef]);
+        const conflict = yield* Effect.flip(
+          service.changeRequest(
+            { ...t.input, expectedVersion: 0, operation: { op: "remove", id: draft.id } },
+            "user",
+          ),
+        );
+        expect(conflict.reason).toBe("conflict");
+        const denied = yield* Effect.flip(
+          service.changeRequest(
+            {
+              ...t.input,
+              expectedVersion: data.version,
+              operation: { op: "status", id: draft.id, status: "accepted" },
+            },
+            "agent",
+          ),
+        );
+        expect(denied.message).toContain("Only the user");
+        expect(t.capturedRefs).toHaveLength(1);
+        data = yield* service.updateWorkspace({
+          ...t.input,
+          expectedVersion: data.version,
+          workspace: { ...data, requests: [] },
+        });
+        expect(data.requests).toHaveLength(1);
+        data = yield* service.changeRequest(
+          {
+            ...t.input,
+            expectedVersion: data.version,
+            operation: { op: "status", id: draft.id, status: "review", response: "Moved" },
+          },
+          "agent",
+        );
+        data = yield* service.changeRequest(
+          {
+            ...t.input,
+            expectedVersion: data.version,
+            operation: { op: "status", id: draft.id, status: "accepted" },
+          },
+          "user",
+        );
+        const resolved = data.requests[0]!.resolvedRef!;
+        expect(resolved).toMatch(/\/resolved$/);
+        expect(data.requests[0]?.resolvedRevision).toBe(hash);
+        data = yield* service.changeRequest(
+          {
+            ...t.input,
+            expectedVersion: data.version,
+            operation: { op: "status", id: draft.id, status: "open" },
+          },
+          "user",
+        );
+        expect(t.deletedRefs).toEqual([resolved]);
+        expect(data.requests[0]?.response).toBe("Moved");
+        const listed = yield* service.listRequests(t.input, "all");
+        expect(listed[0]).toMatchObject({ designChanged: false, anchorDescription: "R1" });
+        expect(listed[0]).not.toHaveProperty("referenceImage");
+        data = yield* service.changeRequest(
+          { ...t.input, expectedVersion: data.version, operation: { op: "remove", id: draft.id } },
+          "user",
+        );
+        expect(data.requests).toEqual([]);
+        expect(t.deletedRefs).toContain(t.capturedRefs[0]);
+      }),
+    ),
+);
+it.effect.each([false, true])(
+  "saves requests without refs when Git capture is unavailable (%s)",
+  (fail) =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          service = yield* t.create();
+        t.requestGit(fail, fail);
+        const hash = (yield* service.render(t.input)).sourceHash;
+        const data = yield* service.changeRequest(
+          {
+            ...t.input,
+            expectedVersion: 0,
+            operation: {
+              op: "create",
+              request: {
+                id: "one",
+                title: "Ask",
+                request: "Move it",
+                anchor: { kind: "area", box: { x: 0, y: 0, width: 2, height: 2 } },
+                view: "pcb",
+                sheet: "board",
+                point: { x: 1, y: 1 },
+                sourceHash: hash,
+                referenceImage: null,
+              },
+              sent: false,
+            },
+          },
+          "user",
+        );
+        expect(data.requests[0]?.baseRef).toBeNull();
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pcb"),
+          "(kicad_pcb (general (thickness 2)))",
+        );
+        expect((yield* service.listRequests(t.input, "all"))[0]?.designChanged).toBe(true);
       }),
     ),
 );

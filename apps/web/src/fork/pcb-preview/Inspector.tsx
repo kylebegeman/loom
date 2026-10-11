@@ -4,6 +4,7 @@ import {
   BookmarkIcon,
   GitCompareArrowsIcon,
   LayersIcon,
+  MessageSquareDotIcon,
   Maximize2Icon,
   Minimize2Icon,
   PackageIcon,
@@ -48,12 +49,19 @@ export const INSPECTOR_TABS = [
   "Simulate",
   "Parameters",
   "Library",
+  "Requests",
 ] as const;
 export type InspectorTab = (typeof INSPECTOR_TABS)[number];
 const TAB_META: Record<
   InspectorTab,
   { icon: typeof LayersIcon; short: string; title: string; detail: string }
 > = {
+  Requests: {
+    icon: MessageSquareDotIcon,
+    short: "Requests",
+    title: "Change requests",
+    detail: "Asks for the agent, pinned to parts",
+  },
   Inspect: {
     icon: ScanSearchIcon,
     short: "Inspect",
@@ -217,6 +225,8 @@ export function InspectorFrame({
 
 export function ToolPanel({
   tab,
+  requestPanel,
+  onConvertNote,
   threadRef,
   design,
   inspection,
@@ -251,6 +261,8 @@ export function ToolPanel({
   onDraft,
 }: {
   tab: Exclude<InspectorTab, "Checks">;
+  requestPanel?: ReactNode;
+  onConvertNote?: ((id: string) => void) | undefined;
   threadRef: ScopedThreadRef;
   design: PcbDesign;
   inspection: PcbInspection | null;
@@ -287,6 +299,8 @@ export function ToolPanel({
       </Scroll>
     );
   switch (tab) {
+    case "Requests":
+      return requestPanel ?? null;
     case "Inspect":
       return (
         <InspectTab
@@ -324,6 +338,7 @@ export function ToolPanel({
     case "Marks":
       return (
         <MarksTab
+          onConvertNote={onConvertNote}
           data={data}
           sourceHash={sourceHash}
           canSave={canSave}

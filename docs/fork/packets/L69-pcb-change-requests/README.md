@@ -1,6 +1,6 @@
 # L69: Change requests on the board
 
-Status: Ready to build.
+Status: Implemented locally; focused checks pass. Real-client, CAD and remote checks remain pending.
 
 Approved by Kyle on 2026-10-10.
 

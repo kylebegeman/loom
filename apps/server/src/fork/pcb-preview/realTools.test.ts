@@ -1,3 +1,4 @@
+import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Opt-in real tool verification is a framework boundary.
 import * as NodeProcess from "node:process";
 import { expect, it } from "@effect/vitest";
@@ -49,6 +50,12 @@ realTest(
         );
         const service = yield* PcbPreview.make.pipe(
           Effect.provide(context),
+          Effect.provideService(
+            CheckpointStore.CheckpointStore,
+            partial<CheckpointStore.CheckpointStore["Service"]>({
+              isGitRepository: () => Effect.succeed(false),
+            }),
+          ),
           Effect.provideService(WorkspacePaths.WorkspacePaths, paths),
           Effect.provideService(ProcessRunner.ProcessRunner, runner),
           Effect.provideService(

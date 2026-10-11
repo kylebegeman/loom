@@ -270,6 +270,7 @@ it("keeps a named view after save failure and disables workspace writes without 
       annotations: [],
       simulations: [],
       variants: [],
+      requests: [],
     },
     view: "pcb" as const,
     sourceHash: "hash",
@@ -428,4 +429,43 @@ it("keeps legacy capture size and reports bounded PNG export dimensions", async 
   expect(Math.max(huge.width, huge.height)).toBeLessThanOrEqual(8192);
   expect(huge.width * huge.height).toBeLessThanOrEqual(16_777_216);
   await huge.image;
+});
+
+it("area drags report millimetres while ordinary drags pan and clicks still pick", async () => {
+  const box = vi.fn(),
+    pick = vi.fn();
+  await act(async () =>
+    root.render(
+      <SvgViewport svg='<svg viewBox="0 0 100 50"/>' label="Area" onBox={box} onPick={pick} />,
+    ),
+  );
+  const img = host.querySelector("img")!;
+  Object.defineProperties(img, { naturalWidth: { value: 1000 }, naturalHeight: { value: 500 } });
+  await act(async () => img.dispatchEvent(new Event("load")));
+  await flushFrames();
+  const canvas = host.querySelector<HTMLElement>("[data-loom-canvas]")!;
+  canvas.setPointerCapture = vi.fn();
+  const pointer = async (type: string, x: number, y: number) =>
+    act(async () =>
+      canvas.dispatchEvent(
+        new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true }),
+      ),
+    );
+  await pointer("pointerdown", 44, 44);
+  await pointer("pointermove", 144, 94);
+  await pointer("pointerup", 144, 94);
+  expect(box).toHaveBeenCalledWith({ x: 2, y: 2, width: 10, height: 5 });
+  expect(pick).not.toHaveBeenCalled();
+  await pointer("pointerdown", 44, 44);
+  await pointer("pointerup", 44, 44);
+  expect(pick).toHaveBeenCalledWith({ x: 2, y: 2 }, true);
+  await act(async () =>
+    root.render(<SvgViewport svg='<svg viewBox="0 0 100 50"/>' label="Area" onPick={pick} />),
+  );
+  await pointer("pointerdown", 44, 44);
+  await pointer("pointermove", 144, 94);
+  await pointer("pointerup", 144, 94);
+  await flushFrames();
+  expect(img.parentElement!.style.transform).toContain("translate(124px, 74px)");
+  expect(box).toHaveBeenCalledTimes(1);
 });

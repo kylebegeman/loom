@@ -178,6 +178,74 @@ export const PcbVariant = Schema.Struct({
   ).check(Schema.isMaxProperties(100)),
   sourceHash: text(),
 });
+export const PcbRequestAnchor = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("component"), reference: text() }),
+  Schema.Struct({ kind: Schema.Literal("net"), name: text() }),
+  Schema.Struct({ kind: Schema.Literal("area"), box: PcbBounds }),
+]);
+export type PcbRequestAnchor = typeof PcbRequestAnchor.Type;
+export const PcbRequestStatus = Schema.Literals(["open", "review", "accepted"]);
+const nullable = <S extends Schema.Top>(s: S) =>
+  Schema.NullOr(s).pipe(Schema.withDecodingDefault(Effect.succeed(null)));
+export const PcbChangeRequestDraft = Schema.Struct({
+  id: text(),
+  title: text(120),
+  request: text(4000),
+  anchor: PcbRequestAnchor,
+  view: Schema.Literals(["pcb", "schematic"]),
+  sheet: Schema.String,
+  point: PcbPoint,
+  sourceHash: text(),
+  referenceImage: nullable(Schema.String.check(Schema.isMaxLength(24000))),
+});
+export type PcbChangeRequestDraft = typeof PcbChangeRequestDraft.Type;
+export const PcbChangeRequest = Schema.Struct({
+  ...PcbChangeRequestDraft.fields,
+  createdAt: text(40),
+  status: PcbRequestStatus.pipe(Schema.withDecodingDefault(Effect.succeed("open" as const))),
+  baseRef: nullable(text(200)),
+  sentAt: nullable(text(40)),
+  response: nullable(text(2000)),
+  reviewRevision: nullable(text()),
+  resolvedRevision: nullable(text()),
+  resolvedRef: nullable(text(200)),
+  resolvedAt: nullable(text(40)),
+});
+export type PcbChangeRequest = typeof PcbChangeRequest.Type;
+export const PcbChangeRequestOperation = Schema.Union([
+  Schema.Struct({
+    op: Schema.Literal("create"),
+    request: PcbChangeRequestDraft,
+    sent: Schema.Boolean,
+  }),
+  Schema.Struct({
+    op: Schema.Literal("convert-note"),
+    noteId: text(),
+    request: PcbChangeRequestDraft,
+  }),
+  Schema.Struct({
+    op: Schema.Literal("edit"),
+    id: text(),
+    title: Schema.optional(text(120)),
+    request: Schema.optional(text(4000)),
+  }),
+  Schema.Struct({
+    op: Schema.Literal("status"),
+    id: text(),
+    status: PcbRequestStatus,
+    response: Schema.optional(Schema.NullOr(text(2000))),
+  }),
+  Schema.Struct({ op: Schema.Literal("sent"), ids: list(text(), 10).check(Schema.isMinLength(1)) }),
+  Schema.Struct({ op: Schema.Literal("remove"), id: text() }),
+]);
+export type PcbChangeRequestOperation = typeof PcbChangeRequestOperation.Type;
+export const PcbChangeRequestInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: text(1024),
+  expectedVersion: Schema.Int,
+  operation: PcbChangeRequestOperation,
+});
+export type PcbChangeRequestInput = typeof PcbChangeRequestInput.Type;
 const layerSet = Schema.Struct({ id: text(), name: text(), layers: list(PcbLayerState, 64) });
 // Saved files outlive releases: a collection added later decodes as empty in older files.
 const collection = <S extends Schema.Top>(item: S, max: number) =>
@@ -191,6 +259,7 @@ export const PcbWorkspace = Schema.Struct({
   annotations: collection(PcbAnnotation, 100),
   simulations: collection(PcbSimulationSetup, 20),
   variants: collection(PcbVariant, 24),
+  requests: collection(PcbChangeRequest, 30),
 });
 export const PcbWorkspaceInput = Schema.Struct({
   version: Schema.Int,
@@ -200,6 +269,7 @@ export const PcbWorkspaceInput = Schema.Struct({
   annotations: list(PcbAnnotation, 100),
   simulations: list(PcbSimulationSetup, 20),
   variants: list(PcbVariant, 24),
+  requests: Schema.optional(list(PcbChangeRequest, 30)),
 });
 export type PcbWorkspace = typeof PcbWorkspace.Type;
 export const PcbWorkspaceUpdate = Schema.Struct({
@@ -415,6 +485,7 @@ export const PcbReferenceResult = Schema.Struct({
 });
 export type PcbReferenceResult = typeof PcbReferenceResult.Type;
 export const PcbEditorAction = Schema.Struct({
+  requestId: Schema.optional(text()),
   action: Schema.Literals([
     "refresh",
     "cancel",
@@ -494,7 +565,9 @@ export const PcbEditorResult = Schema.Struct({
       layers: list(PcbLayerState, 64),
       layerPreset: Schema.optional(Schema.String),
       sourceHash: Schema.optional(Schema.String),
-      tool: Schema.optional(Schema.Literals(["select", "distance", "angle", "annotate"])),
+      tool: Schema.optional(
+        Schema.Literals(["select", "distance", "angle", "annotate", "request"]),
+      ),
       dock: Schema.optional(Schema.NullOr(Schema.String)),
       findings: Schema.optional(
         Schema.Struct({

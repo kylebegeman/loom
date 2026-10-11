@@ -294,7 +294,7 @@ export function RevisionCompare({
     </>
   );
 }
-function ComparisonImages({
+export function ComparisonImages({
   before,
   after,
   mode,

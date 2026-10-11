@@ -47,6 +47,10 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     staleTimeMs: 0,
   });
   return {
+    changeRequest: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-change-request",
+      tag: M.changeRequest,
+    }),
     pinMap: createEnvironmentRpcCommand(runtime, { label: "loom:pcb-pin-map", tag: M.pinMap }),
     turnDesigns: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:pcb-turn-designs",

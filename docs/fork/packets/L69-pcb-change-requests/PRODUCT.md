@@ -98,12 +98,12 @@ and Git refs are host operations, so they behave the same everywhere.
 - At most 30 requests per design, matching L23's annotation limit and keeping the workspace small.
 - Batch add is capped at 10 so the prepared text and captures stay readable.
 
-## Decisions needed from Kyle
+## Implementation decisions
 
-1. Writing hidden Git refs into the user's repository. Recommended: yes, under
-   `refs/loom/pcb-requests/<id>/base` and `.../resolved`, deleted with the request. T3 already
-   writes `refs/t3/` checkpoints each turn, refs are never pushed by default, and without them
+1. The end-to-end implementation uses hidden Git refs in the repository, under
+   `refs/loom/pcb-requests/<request-key>/base` and `.../resolved`, deleted with the request. T3 already
+   writes `refs/t3/` checkpoints each turn. The request key includes the workspace and design,
+   preventing collisions between boards. These refs are never pushed by default, and without them
    "compare with when I asked" is not possible.
-2. L23 uses `review` to mean "added to the composer". Recommended: keep L23 as it is for now and
-   use the PCB meaning here. If agents later get a 3D update tool, align L23 to the PCB meaning in
+2. L23 keeps `review` meaning "added to the composer". PCB uses "waiting for user review". If agents later get a 3D update tool, align L23 to the PCB meaning in
    that packet.

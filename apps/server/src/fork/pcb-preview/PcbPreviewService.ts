@@ -1,3 +1,5 @@
+import { CheckpointStore } from "../../checkpointing/CheckpointStore.ts";
+import { makeChangeRequests, type RequestActor } from "./changeRequests.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Crypto identities belong to the environment adapter.
 import {
   PcbPreviewError,
@@ -114,6 +116,22 @@ export class PcbPreviewService extends Context.Service<
     readonly getWorkspace: (
       input: W.PcbInspectInput,
     ) => Effect.Effect<W.PcbWorkspace, PcbPreviewError>;
+    readonly changeRequest: (
+      input: W.PcbChangeRequestInput,
+      actor: RequestActor,
+    ) => Effect.Effect<W.PcbWorkspace, PcbPreviewError>;
+    readonly listRequests: (
+      input: W.PcbInspectInput,
+      status?: string,
+    ) => Effect.Effect<
+      ReadonlyArray<
+        Omit<W.PcbChangeRequest, "referenceImage"> & {
+          designChanged: boolean;
+          anchorDescription: string;
+        }
+      >,
+      PcbPreviewError
+    >;
     readonly updateWorkspace: (
       input: W.PcbWorkspaceUpdate,
     ) => Effect.Effect<W.PcbWorkspace, PcbPreviewError>;
@@ -233,6 +251,7 @@ const contains = (root: string, absolute: string, path: Path.Path) => {
 
 /** Exported for service tests with real filesystem and injected process/store boundaries. */
 export const make = Effect.gen(function* () {
+  const checkpoints = yield* CheckpointStore;
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path;
   const config = yield* ServerConfig,
@@ -1365,6 +1384,7 @@ export const make = Effect.gen(function* () {
     annotations: [],
     simulations: [],
     variants: [],
+    requests: [],
   });
   const readState = <A>(
     file: string,
@@ -1419,6 +1439,7 @@ export const make = Effect.gen(function* () {
           );
         const next = yield* decodeWorkspace({
           ...input.workspace,
+          requests: current.requests,
           version: current.version + 1,
         }).pipe(
           Effect.mapError(() =>
@@ -1435,6 +1456,7 @@ export const make = Effect.gen(function* () {
           next.annotations,
           next.simulations,
           next.variants,
+          next.requests,
         ])
           if (new Set(collection.map((item) => item.id)).size !== collection.length)
             return yield* failure("invalid-parameters", "Saved PCB collection IDs must be unique.");
@@ -1443,6 +1465,18 @@ export const make = Effect.gen(function* () {
         return next;
       }),
     );
+  });
+  const requests = makeChangeRequests({
+    resolve: (i: W.PcbInspectInput) => checked(resolveDesign(i)),
+    hash: (r: ResolvedDesign) => checked(sourceSnapshot(r).pipe(Effect.map((s) => s.sourceHash))),
+    read: (r: ResolvedDesign) =>
+      checked(readState(workspaceFile(r), decodeWorkspaceJson, freshWorkspace)),
+    write: (r: ResolvedDesign, w: W.PcbWorkspace) => checked(writeState(workspaceFile(r), w)),
+    publish: (r: ResolvedDesign, w: W.PcbWorkspace) =>
+      PubSub.publish(workspaceBus, { key: workspaceFile(r), data: w }),
+    refKey: (r: ResolvedDesign, id: string) => hashKey(r.workspaceKey, r.design.id, id),
+    lock: storageLock,
+    checkpoints,
   });
   const libraryFile = path.join(workbenchDir, "hardware-library.json");
   const library = () =>
@@ -2908,6 +2942,8 @@ export const make = Effect.gen(function* () {
     inspect: (i) => checked(inspect(i)),
     getWorkspace: (i) => checked(getWorkspace(i)),
     updateWorkspace: (i) => checked(updateWorkspace(i)),
+    changeRequest: requests.changeRequest,
+    listRequests: requests.listRequests,
     asset: (i) => checked(asset(i)),
     compare: (i) => checked(compare(i)),
     revisions: (i) => checked(revisions(i)),

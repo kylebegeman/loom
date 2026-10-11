@@ -47,6 +47,7 @@ vi.mock("./usePcbWorkbench", () => ({
       annotations: [],
       simulations: [],
       variants: [],
+      requests: [],
     },
     mutate: vi.fn(),
   }),

@@ -2,7 +2,11 @@ import { useAtomValue } from "@effect/atom-react";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import type { PcbInspection, PcbWorkspace } from "@t3tools/contracts/fork";
+import type {
+  PcbInspection,
+  PcbWorkspace,
+  PcbChangeRequestOperation,
+} from "@t3tools/contracts/fork";
 import { pcb } from "./state";
 import { asyncValue, asyncError, errorMessage } from "./usePcbPreview";
 import { runModelCommand as runPcbCommand } from "../model-preview-3d/state";
@@ -15,6 +19,7 @@ const EMPTY: PcbWorkspace = {
   annotations: [],
   simulations: [],
   variants: [],
+  requests: [],
 };
 export function usePcbWorkbench(
   threadRef: ScopedThreadRef,
@@ -24,6 +29,7 @@ export function usePcbWorkbench(
 ) {
   const canInspect = useAtomValue(pcb.inspect.permissionAtom(threadRef.environmentId));
   const canEdit = useAtomValue(pcb.updateWorkspace.permissionAtom(threadRef.environmentId));
+  const canRequest = useAtomValue(pcb.changeRequest.permissionAtom(threadRef.environmentId));
   const target = {
     environmentId: threadRef.environmentId,
     input: { threadId: threadRef.threadId, designId },
@@ -42,14 +48,14 @@ export function usePcbWorkbench(
     [pending, setPending] = useState(0),
     [error, setError] = useState<string | null>(null);
   const latest = useRef<PcbWorkspace>(EMPTY),
-    queue = useRef(Promise.resolve());
+    queue = useRef<Promise<unknown>>(Promise.resolve());
   const data = local && (!value || local.version >= value.version) ? local : (value ?? EMPTY);
   useLayoutEffect(() => {
     latest.current = data;
   }, [data]);
-  const mutate = (change: (current: PcbWorkspace) => PcbWorkspace) => {
-    if (!canEdit || !value) {
-      const reason = !canEdit
+  const enqueue = (permission: boolean, save: (current: PcbWorkspace) => Promise<PcbWorkspace>) => {
+    if (!permission || !value) {
+      const reason = !permission
         ? "Workspace write permission is required to save editor changes."
         : "Wait for the saved workspace to load before editing.";
       setError(reason);
@@ -62,13 +68,11 @@ export function usePcbWorkbench(
       .catch(() => undefined)
       .then(async () => {
         const current = latest.current;
-        const updated = await runPcbCommand(pcb.updateWorkspace, {
-          ...target,
-          input: { ...target.input, expectedVersion: current.version, workspace: change(current) },
-        });
+        const updated = await save(current);
         latest.current = updated;
         setLocal(updated);
         setError(null);
+        return updated;
       });
     queue.current = next;
     void next.catch((e) => setError(errorMessage(e))).finally(() => setPending((n) => n - 1));
@@ -83,6 +87,24 @@ export function usePcbWorkbench(
     canEdit,
     pending,
     error: error ?? asyncError(saved),
-    mutate,
+    canRequest,
+    mutate: (change: (current: PcbWorkspace) => PcbWorkspace) =>
+      enqueue(canEdit, (current) =>
+        runPcbCommand(pcb.updateWorkspace, {
+          ...target,
+          input: {
+            ...target.input,
+            expectedVersion: current.version,
+            workspace: { ...change(current), requests: [] },
+          },
+        }),
+      ),
+    changeRequest: (operation: PcbChangeRequestOperation) =>
+      enqueue(canRequest, (current) =>
+        runPcbCommand(pcb.changeRequest, {
+          ...target,
+          input: { ...target.input, expectedVersion: current.version, operation },
+        }),
+      ),
   };
 }

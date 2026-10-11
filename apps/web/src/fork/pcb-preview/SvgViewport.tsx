@@ -1,3 +1,4 @@
+import type { PcbBounds } from "@t3tools/contracts/fork";
 import {
   createContext,
   useContext,
@@ -76,6 +77,7 @@ export function SvgViewport({
   layered = false,
   handle,
   onPick,
+  onBox,
   overlays,
   onCamera,
   onReady,
@@ -88,6 +90,7 @@ export function SvgViewport({
   children?: React.ReactNode;
   layered?: boolean;
   handle?: React.RefObject<PcbViewportHandle | null>;
+  onBox?: ((box: PcbBounds) => void) | undefined;
   onPick?: ((point: { x: number; y: number }, snap: boolean) => void) | undefined;
   overlays?: React.ReactNode;
   onCamera?: (camera: ViewTransform) => void;
@@ -95,6 +98,7 @@ export function SvgViewport({
   /** Extra controls appended to the floating navigation shelf. */
   extra?: React.ReactNode;
 }) {
+  const [dragBox, setDragBox] = useState<PcbBounds | null>(null);
   const container = useRef<HTMLDivElement>(null),
     image = useRef<HTMLImageElement>(null),
     imageLoaded = useRef(false),
@@ -116,6 +120,8 @@ export function SvgViewport({
     startX: number;
     startY: number;
     moved: boolean;
+    box: boolean;
+    primary: boolean;
   } | null>(null);
   const history = useRef<ViewTransform[]>([]),
     position = useRef(-1),
@@ -375,9 +381,39 @@ export function SvgViewport({
     }),
     [navigate, restore, fit, focus, zoomBy, remember, loadError, physical, label],
   );
+  const pointAt = (
+    event: React.PointerEvent<HTMLDivElement>,
+    x = event.clientX,
+    y = event.clientY,
+  ) => {
+    if (!physical) return null;
+    const rect = event.currentTarget.getBoundingClientRect();
+    return {
+      x:
+        physical.x +
+        (((x - rect.left - view.current.x) / view.current.scale) * physical.width) /
+          drawing.current.width,
+      y:
+        physical.y +
+        (((y - rect.top - view.current.y) / view.current.scale) * physical.height) /
+          drawing.current.height,
+    };
+  };
   const finish = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragging.current;
-    if (drag && !drag.moved && onPick && physical) {
+    if (drag?.box && drag.moved && onBox) {
+      const a = pointAt(event, drag.startX, drag.startY),
+        b = pointAt(event);
+      if (a && b)
+        onBox({
+          x: Math.min(a.x, b.x),
+          y: Math.min(a.y, b.y),
+          width: Math.abs(a.x - b.x),
+          height: Math.abs(a.y - b.y),
+        });
+    }
+    setDragBox(null);
+    if (drag?.primary && !drag.moved && onPick && physical) {
       const rect = event.currentTarget.getBoundingClientRect();
       onPick(
         {
@@ -407,11 +443,15 @@ export function SvgViewport({
       role="group"
       aria-label={`${label}. Drag to pan, scroll to zoom, F to fit.`}
       aria-busy={busy}
+      onLoad={() => onReady?.()}
       onDoubleClick={(e) => {
         if (!(e.target as HTMLElement).closest("button")) fit();
       }}
       onPointerDown={(event) => {
-        if (event.button !== 0 || (event.target as HTMLElement).closest("button,input,select"))
+        if (
+          (event.button !== 0 && event.button !== 1) ||
+          (event.target as HTMLElement).closest("button,input,select")
+        )
           return;
         event.currentTarget.focus({ preventScroll: true });
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -422,6 +462,8 @@ export function SvgViewport({
           startX: event.clientX,
           startY: event.clientY,
           moved: false,
+          box: event.button === 0 && !!onBox,
+          primary: event.button === 0,
         };
         event.currentTarget.dataset.dragging = "true";
       }}
@@ -430,7 +472,17 @@ export function SvgViewport({
         if (!drag || drag.id !== event.pointerId) return;
         const moved =
           drag.moved || Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 4;
-        if (moved) {
+        if (moved && drag.box) {
+          const a = pointAt(event, drag.startX, drag.startY),
+            b = pointAt(event);
+          if (a && b)
+            setDragBox({
+              x: Math.min(a.x, b.x),
+              y: Math.min(a.y, b.y),
+              width: Math.abs(a.x - b.x),
+              height: Math.abs(a.y - b.y),
+            });
+        } else if (moved) {
           fitted.current = false;
           view.current = {
             ...view.current,
@@ -443,9 +495,11 @@ export function SvgViewport({
       }}
       onPointerUp={finish}
       onPointerCancel={() => {
+        setDragBox(null);
         dragging.current = null;
       }}
       onLostPointerCapture={() => {
+        setDragBox(null);
         dragging.current = null;
       }}
       onKeyDown={(event) => {
@@ -511,7 +565,19 @@ export function SvgViewport({
             height={extent.height}
             viewBox={`${physical.x} ${physical.y} ${physical.width} ${physical.height}`}
           >
-            <OverlayScaleContext value={overlayScale}>{overlays}</OverlayScaleContext>
+            <OverlayScaleContext value={overlayScale}>
+              {overlays}
+              {dragBox && (
+                <rect
+                  {...dragBox}
+                  fill="none"
+                  stroke="var(--color-primary)"
+                  strokeWidth={overlayScale * 1.5}
+                  strokeDasharray={`${overlayScale * 4} ${overlayScale * 3}`}
+                  pointerEvents="none"
+                />
+              )}
+            </OverlayScaleContext>
           </svg>
         )}
       </div>

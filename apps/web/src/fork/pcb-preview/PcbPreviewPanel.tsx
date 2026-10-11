@@ -1,9 +1,29 @@
+import { RequestPins } from "./RequestPins";
+import { RequestForm, RequestsTab } from "./RequestsTab";
+import { anchorPoint, describeAnchor, requestPrompt } from "./requests";
+import { thumbnail } from "../model-preview-3d/viewer/captureSheet";
+import { onRequestPcbChange } from "./requestCommands";
+import type {
+  PcbBounds,
+  PcbChangeRequest,
+  PcbChangeRequestDraft,
+  PcbRequestAnchor,
+} from "@t3tools/contracts/fork";
 import { useChangeHighlights } from "./useChangeHighlights";
 import { ChangeHighlights } from "./ChangeHighlights";
 import { ChangesChip } from "./ChangesChip";
 import type { PcbEditorEvent } from "@t3tools/contracts/fork";
 import { randomUUID } from "~/lib/utils";
-import { useState, useRef, useEffect, useMemo, useEffectEvent, lazy, Suspense } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useEffectEvent,
+  lazy,
+  Suspense,
+} from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   CheckIcon,
@@ -14,6 +34,7 @@ import {
   FolderSearchIcon,
   LayersIcon,
   MousePointer2Icon,
+  MessageSquarePlusIcon,
   RulerIcon,
   ShieldCheckIcon,
   StickyNoteIcon,
@@ -108,11 +129,12 @@ import { ChecksView } from "./ChecksView";
 import { OperationStatus } from "./OperationStatus";
 import styles from "./workspace.module.css";
 
-type Tool = "select" | "distance" | "angle" | "annotate";
+type Tool = "select" | "distance" | "angle" | "annotate" | "request";
 const TOOLS = [
   { id: "select", label: "Select", key: "V", icon: MousePointer2Icon },
   { id: "distance", label: "Distance", key: "M", icon: RulerIcon },
   { id: "angle", label: "Angle", key: "A", icon: TriangleRightIcon },
+  { id: "request", label: "Request", key: "R", icon: MessageSquarePlusIcon },
   { id: "annotate", label: "Note", key: "N", icon: StickyNoteIcon },
 ] as const;
 const PRESET_LABELS: Record<PcbLayerPreset, string> = {
@@ -184,6 +206,24 @@ export function DesignWorkspace({
     [exportBusy, setExportBusy] = useState(false),
     [measuringHeights, setMeasuringHeights] = useState(false);
   const [pinMapFor, setPinMapFor] = useState<string | null>(null);
+  const [requestForm, setRequestForm] = useState<{
+    id: string;
+    anchor: PcbRequestAnchor;
+    view: PcbView;
+    sheet: string;
+    point: PcbPoint;
+    initialText?: string;
+    noteId?: string;
+  } | null>(null);
+  const [pendingRequest, setPendingRequest] = useState<PcbChangeRequest | null>(null);
+  const [captureOnly, setCaptureOnly] = useState<readonly string[] | null>(null);
+  const drawingWaiter = useRef<{
+    view: PcbView;
+    sheet: string;
+    ids: readonly string[];
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } | null>(null);
   const lastTab = useRef<InspectorTab>("Inspect");
   const board3d = useRef<Pcb3dHandle | null>(null);
   const viewport = useRef<PcbViewportHandle | null>(null),
@@ -403,6 +443,10 @@ export function DesignWorkspace({
     const other = view === "pcb" ? c?.schematic : c?.pcb;
     if (other) linkedViewport.current?.focus(other);
   };
+  const selectNet = (name: string | null) => {
+    setSelected(null);
+    setNet(name);
+  };
   const selectPin = (reference: string, number: string) => {
     const component = workbench.inspection?.components.find((c) => c.reference === reference),
       pin = component?.pins.find((p) => p.number === number);
@@ -419,7 +463,246 @@ export function DesignWorkspace({
     const other = view === "pcb" ? pin.schematic : pin.pcb;
     if (other) linkedViewport.current?.focus(other);
   };
+  const beginRequest = (
+    anchor: PcbRequestAnchor,
+    targetView = view,
+    sheet = preview.selectedSheet,
+    initialText?: string,
+    noteId?: string,
+  ) => {
+    const point = anchorPoint(anchor, workbench.inspection, targetView, sheet);
+    if (!point) {
+      setNotice({ tone: "error", text: "That component or net is no longer on this drawing." });
+      return;
+    }
+    setRequestForm({
+      id: randomUUID(),
+      anchor,
+      view: targetView,
+      sheet,
+      point,
+      ...(initialText ? { initialText } : {}),
+      ...(noteId ? { noteId } : {}),
+    });
+    openTab("Requests");
+    setExpanded(false);
+    setMode("select");
+  };
+  const startRequest = () => {
+    if (!canMark || !workbench.canRequest || !drawingCurrent) {
+      setNotice({
+        tone: "error",
+        text: "Wait for workspace write permission and the current drawing before requesting a change.",
+      });
+      return;
+    }
+    if (selected) beginRequest({ kind: "component", reference: selected });
+    else if (net) beginRequest({ kind: "net", name: net });
+    else {
+      setRequestForm(null);
+      setMode("request");
+      setPoints([]);
+    }
+  };
+  const notifyDrawing = () => {
+    const waiter = drawingWaiter.current;
+    if (
+      waiter &&
+      preview.display?.view === waiter.view &&
+      (waiter.view === "pcb" || preview.display.sheetId === waiter.sheet) &&
+      drawingCurrent &&
+      viewport.current?.isReady() &&
+      JSON.stringify(captureOnly) === JSON.stringify(waiter.ids)
+    ) {
+      drawingWaiter.current = null;
+      waiter.resolve();
+    }
+  };
+  useLayoutEffect(() => {
+    notifyDrawing();
+  });
+  useEffect(
+    () => () => {
+      drawingWaiter.current?.reject(new Error("The PCB drawing closed before capture."));
+      drawingWaiter.current = null;
+    },
+    [],
+  );
+  const requestCommand = useEffectEvent(() => startRequest());
+  useEffect(() => onRequestPcbChange(threadRef, () => requestCommand()), [threadRef]);
+  const waitForDrawing = (targetView: PcbView, sheet: string, ids: readonly string[]) =>
+    new Promise<void>((resolve, reject) => {
+      if (drawingWaiter.current) {
+        reject(new Error("Another request capture is in progress."));
+        return;
+      }
+      const timeout = setTimeout(() => {
+        drawingWaiter.current = null;
+        reject(new Error("The requested drawing did not become ready for capture."));
+      }, 180000);
+      drawingWaiter.current = {
+        view: targetView,
+        sheet,
+        ids,
+        resolve: () => {
+          clearTimeout(timeout);
+          resolve();
+        },
+        reject: (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      };
+      setThree(false);
+      setView(targetView);
+      if (targetView === "schematic") preview.selectSheet(sheet);
+      setCaptureOnly(ids);
+    });
+  const focusRequest = (r: PcbChangeRequest) => {
+    const point = anchorPoint(r.anchor, workbench.inspection, r.view, r.sheet);
+    if (!point) {
+      setNotice({ tone: "info", text: `${describeAnchor(r.anchor)} is no longer in the design.` });
+      return;
+    }
+    setSelected(r.anchor.kind === "component" ? r.anchor.reference : null);
+    setNet(r.anchor.kind === "net" ? r.anchor.name : null);
+    focusPoint(r.view, point, r.sheet);
+  };
+  const withRequestDrawing = async <A,>(
+    r: PcbChangeRequest,
+    capture: (handle: PcbViewportHandle) => Promise<A>,
+  ) => {
+    const original = {
+      view,
+      sheet: preview.selectedSheet,
+      camera: viewport.current?.snapshot(),
+      three,
+    };
+    try {
+      await waitForDrawing(r.view, r.sheet, [r.id]);
+      return await capture(viewport.current!);
+    } finally {
+      setCaptureOnly(null);
+      setView(original.view);
+      if (original.view === "schematic") preview.selectSheet(original.sheet);
+      setThree(original.three);
+      if (original.camera) restoreView.current = { sheet: original.sheet, camera: original.camera };
+    }
+  };
+  const captureRequest = (r: PcbChangeRequest) =>
+    withRequestDrawing(r, (handle) => handle.capture(true));
+  const addRequestsToDraft = async (ids: readonly string[], requests = workbench.data.requests) => {
+    const chosen = ids
+      .map((id) => requests.find((r) => r.id === id))
+      .filter((r): r is PcbChangeRequest => !!r);
+    if (!chosen.length || chosen.length > 10)
+      throw new Error("Choose between one and ten requests.");
+    if (captureBusy) throw new Error("Another capture is in progress.");
+    const original = {
+      view,
+      sheet: preview.selectedSheet,
+      camera: viewport.current?.snapshot(),
+      three,
+    };
+    setCaptureBusy(true);
+    try {
+      const groups = new Map<string, PcbChangeRequest[]>();
+      for (const r of chosen) {
+        if (!anchorPoint(r.anchor, workbench.inspection, r.view, r.sheet)) {
+          if (!r.referenceImage)
+            throw new Error(
+              `${describeAnchor(r.anchor)} is no longer in the design and has no reference capture.`,
+            );
+          const blob = await (await fetch(r.referenceImage)).blob();
+          await attachModelImage(blob, threadRef, `${design.name}-request.png`);
+          continue;
+        }
+        const key = JSON.stringify([r.view, r.sheet]);
+        groups.set(key, [...(groups.get(key) ?? []), r]);
+      }
+      for (const group of groups.values()) {
+        await waitForDrawing(
+          group[0]!.view,
+          group[0]!.sheet,
+          chosen.map((r) => r.id),
+        );
+        await attachModelImage(
+          await viewport.current!.capture(true),
+          threadRef,
+          `${design.name}-${group[0]!.view}-requests.png`,
+        );
+      }
+      const store = useComposerDraftStore.getState();
+      store.setPrompt(
+        threadRef,
+        appendSummary(
+          store.getComposerDraft(threadRef)?.prompt ?? "",
+          requestPrompt(chosen, design.id, preview.sourceHash ?? "unknown"),
+        ),
+      );
+      await workbench.changeRequest({ op: "sent", ids: chosen.map((r) => r.id) });
+    } finally {
+      setCaptureBusy(false);
+      setCaptureOnly(null);
+      setView(original.view);
+      if (original.view === "schematic") preview.selectSheet(original.sheet);
+      setThree(original.three);
+      if (original.camera) restoreView.current = { sheet: original.sheet, camera: original.camera };
+    }
+  };
+  const saveRequest = async (title: string, text: string, add: boolean) => {
+    if (!requestForm || !preview.sourceHash)
+      throw new Error("Choose a request anchor on the current drawing.");
+    const draft: PcbChangeRequestDraft = {
+      id: requestForm.id,
+      title,
+      request: text,
+      anchor: requestForm.anchor,
+      view: requestForm.view,
+      sheet: requestForm.sheet,
+      point: requestForm.point,
+      sourceHash: preview.sourceHash,
+      referenceImage: null,
+    };
+    const pending: PcbChangeRequest = {
+      ...draft,
+      createdAt: "",
+      status: "open",
+      baseRef: null,
+      sentAt: null,
+      response: null,
+      reviewRevision: null,
+      resolvedRevision: null,
+      resolvedRef: null,
+      resolvedAt: null,
+    };
+    setPendingRequest(pending);
+    try {
+      const image = await captureRequest(pending);
+      const savedDraft = { ...draft, referenceImage: await thumbnail(image, 24000) };
+      const result = await workbench.changeRequest(
+        requestForm.noteId
+          ? { op: "convert-note", noteId: requestForm.noteId, request: savedDraft }
+          : { op: "create", request: savedDraft, sent: false },
+      );
+      setRequestForm(null);
+      setPendingRequest(null);
+      if (add) await addRequestsToDraft([draft.id], result.requests);
+    } catch (cause) {
+      setNotice({
+        tone: "error",
+        text: cause instanceof Error ? cause.message : "The request could not be saved.",
+      });
+      throw cause;
+    } finally {
+      setPendingRequest(null);
+    }
+  };
   const chooseTool = (next: Tool) => {
+    if (next === "request") {
+      startRequest();
+      return;
+    }
     setMode(next);
     setPoints([]);
   };
@@ -455,6 +738,10 @@ export function DesignWorkspace({
         })[0];
       if (nearest) selectComponent(nearest.reference);
       return !!nearest;
+    }
+    if (mode === "request") {
+      beginRequest({ kind: "area", box: { x: p.x - 1, y: p.y - 1, width: 2, height: 2 } });
+      return true;
     }
     if (mode === "annotate") {
       if (!note.trim()) {
@@ -722,6 +1009,12 @@ export function DesignWorkspace({
           drawing().forward();
           break;
         case "focus":
+          if (c.requestId) {
+            const r = workbench.data.requests.find((r) => r.id === c.requestId);
+            if (!r) throw new Error("Unknown change request.");
+            focusRequest(r);
+            break;
+          }
           if (!c.point) throw new Error("Provide a point to focus.");
           drawing().focus(c.point);
           break;
@@ -761,7 +1054,7 @@ export function DesignWorkspace({
         case "net":
           if (c.net && !workbench.inspection?.nets.some((v) => v.name === c.net))
             throw new Error("Unknown net.");
-          setNet(c.net ?? null);
+          selectNet(c.net ?? null);
           break;
         case "layers": {
           const next = resolveEditorLayers(
@@ -790,7 +1083,7 @@ export function DesignWorkspace({
           if (TOOLS.some((t) => t.id === c.name)) {
             chooseTool(c.name as Tool);
             if (c.text !== undefined) setNote(c.text);
-          } else throw new Error("Choose select, distance, angle or annotate.");
+          } else throw new Error("Choose select, distance, angle, annotate or request.");
           break;
         case "open-tools":
           if (c.enabled === false) openTab(null);
@@ -822,7 +1115,18 @@ export function DesignWorkspace({
             );
           setCaptureBusy(true);
           try {
-            if (c.format === "svg") svg = await drawing().exportSvg(c.full ?? false);
+            if (c.requestId) {
+              const r = workbench.data.requests.find((r) => r.id === c.requestId);
+              if (!r) throw new Error("Unknown change request.");
+              if (c.format === "svg")
+                svg = await withRequestDrawing(r, (handle) => handle.exportSvg(c.full ?? true));
+              else {
+                const blob = await captureRequest(r);
+                if (c.attachToDraft)
+                  await attachModelImage(blob, threadRef, `${design.name}-request.png`);
+                png = await captureBase64(blob);
+              }
+            } else if (c.format === "svg") svg = await drawing().exportSvg(c.full ?? false);
             else {
               const blob = three
                 ? await model().capture()
@@ -1050,9 +1354,11 @@ export function DesignWorkspace({
             <span>
               {mode === "annotate"
                 ? "Write the note, then click where it belongs."
-                : mode === "angle"
-                  ? "The middle point is the vertex. Alt skips pad snapping."
-                  : "Click two points. Alt skips pad snapping."}
+                : mode === "request"
+                  ? "Drag an area to request a change, or click for a small area."
+                  : mode === "angle"
+                    ? "The middle point is the vertex. Alt skips pad snapping."
+                    : "Click two points. Alt skips pad snapping."}
             </span>
           </div>
           {mode === "annotate" && (
@@ -1325,6 +1631,7 @@ export function DesignWorkspace({
       handle={viewport}
       extra={<ShortcutHelp />}
       onReady={() => {
+        notifyDrawing();
         if (restoreView.current && preview.display?.sheetId === restoreView.current.sheet) {
           viewport.current?.restore(restoreView.current.camera);
           restoreView.current = null;
@@ -1337,6 +1644,11 @@ export function DesignWorkspace({
           pendingFocus.current = null;
         }
       }}
+      onBox={
+        mode === "request" && canMark
+          ? (box: PcbBounds) => beginRequest({ kind: "area", box })
+          : undefined
+      }
       onPick={
         drawingCurrent &&
         (mode === "select" || (workbench.canEdit && workbench.ready && workbench.pending === 0))
@@ -1358,6 +1670,17 @@ export function DesignWorkspace({
                 after={changes.pair.after}
               />
             )}
+          <RequestPins
+            requests={
+              pendingRequest
+                ? [...workbench.data.requests, pendingRequest]
+                : workbench.data.requests
+            }
+            inspection={workbench.inspection}
+            view={view}
+            sheet={preview.selectedSheet}
+            only={captureOnly}
+          />
           <DrawingOverlays
             data={workbench.data}
             sourceHash={preview.display.sourceHash}
@@ -1458,6 +1781,7 @@ export function DesignWorkspace({
         else if (key === "m" && drawingTools && canMark) chooseTool("distance");
         else if (key === "a" && drawingTools && canMark) chooseTool("angle");
         else if (key === "d" && drawingTools && changes.pair) changes.show(!changes.shown);
+        else if (key === "r" && drawingTools && canMark) startRequest();
         else if (key === "n" && drawingTools && canMark) chooseTool("annotate");
         else return;
         event.preventDefault();
@@ -1468,7 +1792,7 @@ export function DesignWorkspace({
         <DesignMenu design={design} listing={listing} onSelect={onSelect} onDiscover={onDiscover} />
         <div className={styles.docActions}>
           {changes.chip && (
-            <ChangesChip changes={changes} onComponent={selectComponent} onNet={setNet} />
+            <ChangesChip changes={changes} onComponent={selectComponent} onNet={selectNet} />
           )}
           {!blocked && (
             <SurfaceSwitch active={surface} available={surfaces} onChoose={chooseSurface} />
@@ -1603,6 +1927,7 @@ export function DesignWorkspace({
               </div>
               {linked && (
                 <LinkedDrawing
+                  captureOnly={captureOnly}
                   changes={changes}
                   threadRef={threadRef}
                   design={design}
@@ -1657,6 +1982,52 @@ export function DesignWorkspace({
               <ToolPanel
                 key={tab}
                 tab={tab}
+                requestPanel={
+                  <RequestsTab
+                    data={workbench.data}
+                    ready={workbench.ready}
+                    sourceHash={preview.sourceHash}
+                    canSave={
+                      workbench.canRequest &&
+                      workbench.ready &&
+                      workbench.pending === 0 &&
+                      !captureBusy
+                    }
+                    executionAllowed={executionAllowed}
+                    threadRef={threadRef}
+                    designId={design.id}
+                    onOperation={workbench.changeRequest}
+                    onDraft={addRequestsToDraft}
+                    onFocus={focusRequest}
+                    onCapture={captureRequest}
+                    form={
+                      requestForm ? (
+                        <RequestForm
+                          key={requestForm.id}
+                          anchor={describeAnchor(requestForm.anchor)}
+                          initialText={requestForm.initialText}
+                          canSave={canMark && workbench.canRequest}
+                          onSave={saveRequest}
+                          onCancel={() => setRequestForm(null)}
+                        />
+                      ) : undefined
+                    }
+                  />
+                }
+                onConvertNote={(id) => {
+                  const n = workbench.data.annotations.find((n) => n.id === id);
+                  if (n)
+                    beginRequest(
+                      {
+                        kind: "area",
+                        box: { x: n.point.x - 1, y: n.point.y - 1, width: 2, height: 2 },
+                      },
+                      n.view,
+                      n.sheet,
+                      n.text,
+                      n.id,
+                    );
+                }}
                 threadRef={threadRef}
                 design={design}
                 inspection={workbench.inspection}
@@ -1691,7 +2062,7 @@ export function DesignWorkspace({
                     selectComponent(reference);
                   }
                 }}
-                onNet={setNet}
+                onNet={selectNet}
                 onLayers={setCustomLayers}
                 onShowBoard={() => chooseView("pcb")}
                 onFocusMark={(target, sheet, point) => focusPoint(target, point, sheet)}
@@ -1741,7 +2112,13 @@ export function DesignWorkspace({
           tabs={tabs}
           active={tab}
           executionAllowed={executionAllowed}
-          badges={{ Checks: checkBadge }}
+          badges={{
+            Checks: checkBadge,
+            Requests: {
+              count: workbench.data.requests.filter((r) => r.status === "review").length,
+              tone: "warning",
+            },
+          }}
           onTab={openTab}
         />
       </div>
@@ -1897,6 +2274,7 @@ function LinkedDrawing({
   workbench,
   handle,
   changes,
+  captureOnly,
 }: {
   threadRef: ScopedThreadRef;
   design: PcbDesign;
@@ -1907,6 +2285,7 @@ function LinkedDrawing({
   workbench: ReturnType<typeof usePcbWorkbench>;
   handle: React.RefObject<PcbViewportHandle | null>;
   changes: ReturnType<typeof useChangeHighlights>;
+  captureOnly: readonly string[] | null;
 }) {
   const unit = useLengthUnit();
   const preview = usePcbPreview(
@@ -1955,6 +2334,13 @@ function LinkedDrawing({
                     after={changes.pair.after}
                   />
                 )}
+              <RequestPins
+                requests={workbench.data.requests}
+                inspection={workbench.inspection}
+                view={view}
+                sheet={preview.selectedSheet}
+                only={captureOnly}
+              />
               <DrawingOverlays
                 data={workbench.data}
                 sourceHash={preview.display.sourceHash}

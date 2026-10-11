@@ -181,6 +181,42 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "PCB: latest checks")
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_change_requests", {
+    description:
+      "List change requests pinned to this design. Use baseRef with loom_pcb_compare to see changes since the request. Images are omitted.",
+    parameters: Schema.Struct({
+      ...design,
+      status: Schema.optional(Schema.Literals(["open", "review", "accepted", "all"])),
+    }),
+    success: Schema.Array(
+      Schema.Struct({
+        ...W.PcbChangeRequest.fields,
+        referenceImage: Schema.optional(Schema.String),
+        designChanged: Schema.Boolean,
+        anchorDescription: Schema.String,
+      }),
+    ),
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: change requests")
+    .annotate(Tool.Readonly, true),
+  Tool.make("loom_pcb_update_change_request", {
+    description:
+      "Mark a change request ready for review or back to open with a short note. Only the user can accept or reopen.",
+    parameters: Schema.Struct({
+      ...design,
+      requestId: W.PcbChangeRequest.fields.id,
+      status: W.PcbRequestStatus,
+      response: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))),
+    }),
+    success: W.PcbWorkspace,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: update change request")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_workspace", {
     description:
       "Read saved views, layers, measurements, annotations, variants and simulation setups.",
@@ -194,7 +230,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_save_workspace", {
     description:
-      "Save editor tools with optimistic concurrency. Supports creating and removing every saved view, layer combination, measurement, annotation, setup and variant.",
+      "Change requests are preserved; use loom_pcb_update_change_request. Save editor tools with optimistic concurrency. Supports creating and removing every saved view, layer combination, measurement, annotation, setup and variant.",
     parameters: Schema.Struct({
       ...design,
       expectedVersion: W.PcbWorkspaceUpdate.fields.expectedVersion,
@@ -456,6 +492,42 @@ export const pcbHandlers = McpToolAccess.toLayer(
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) =>
               service.latestChecks({ ...input, threadId, ensureFresh: input.ensureFresh ?? true }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_change_requests: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.listRequests({ ...input, threadId }, input.status ?? "open"),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_update_change_request: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              Effect.gen(function* () {
+                const current = yield* service.getWorkspace({ ...input, threadId });
+                return yield* service.changeRequest(
+                  {
+                    ...input,
+                    threadId,
+                    expectedVersion: current.version,
+                    operation: {
+                      op: "status",
+                      id: input.requestId,
+                      status: input.status,
+                      ...(input.response !== undefined ? { response: input.response } : {}),
+                    },
+                  },
+                  "agent",
+                );
+              }),
             ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
