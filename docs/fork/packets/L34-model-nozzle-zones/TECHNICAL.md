@@ -10,7 +10,7 @@ zone-aware fit. The viewer draws the strips as extra flat meshes inside the exis
 so placement, visibility, theme and captures follow the bed with no new render path. One
 boolean setting turns the tint off.
 
-## Today
+## Before this batch
 
 - The H2D and H2C presets have an outer `volumeMm` and a free-text `note`
   (`packages/contracts/src/fork/model-preview-3d.ts:155-168`). The notes were corrected to the
@@ -55,8 +55,8 @@ a 323 mm part would be told it fits with both nozzles. It is optional, so the sh
 valid and L51 can add it to its schema as an optional field. MODEL-3D-FOLLOW-UPS.md is updated
 to list it.
 
-`BuildPlatePreset` gains `zones?: readonly BedZone[]`, and L32's `Bed` gains the same optional
-field, filled by `listBeds` from the preset. Data, from Bambu Studio's machine profiles
+`BuildPlatePreset` and `Bed` in the existing `model-beds.ts` gain `zones?: readonly BedZone[]`,
+filled by `listBeds` from the preset. Data, from Bambu Studio's machine profiles
 (REFERENCES.md):
 
 ```ts
@@ -146,7 +146,8 @@ zone: Schema.optionalKey(Schema.NullOr(Schema.Struct({
 }))),
 ```
 
-set only for beds with zones. The render tool description (`apps/server/src/fork/model-preview-3d/
+set only for beds with zones. Editor snapshots and host render summaries both use the same
+`bedFitSummary` helper. Hiding zone tint leaves the fit answer unchanged. The render tool description (`apps/server/src/fork/model-preview-3d/
 mcp.ts:182-183`, as extended by L32) appends: "For printers with two nozzles, zone.reach says
 whether the part fits where both nozzles reach, only one nozzle's reach (zoneIds), or only
 across the whole bed with the same filament in both nozzles."
@@ -219,7 +220,8 @@ variant thumbnails stay plain.
 - The fit card uses `fitPlate`. Its clearance sentence measures against `withinMm`. When
   `describeZoneFit` returns text, its long form follows the existing sentence.
 - L32's list rows show the short form in place of "Fits" for the H2D and H2C.
-- `ModelPanel.tsx:695` (status bar and badge) uses `fitPlate(...).fit.status !== "too-big"`.
+- The status bar and badge use `fitPlate(...).fit.status !== "fits"`, so rotated fits show
+  the existing placement warning as well as parts that exceed the bed.
 
 ### Bed menu (`BedPicker.tsx`)
 

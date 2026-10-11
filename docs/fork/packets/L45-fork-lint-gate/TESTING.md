@@ -4,7 +4,9 @@ Focused tests only, no repo-wide checks.
 
 ## Results
 
-Implementation branch: `feat/model-zones-overhangs-lint`, 2026-10-10.
+Implementation branch: `feat/model-zones-overhangs-lint`, 2026-10-10. Milestones:
+`6e1d3c668f` fixes the ten UI findings; `432ccf0511` adds the gate, isolated fixtures and
+maintenance documentation.
 
 | Check                                                | Result                                                                                   |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -16,8 +18,10 @@ The full `scripts/fork/loom.sh check` was not run: it installs dependencies, run
 tests, builds the web client and typechecks its configured packages. Fixture tests prove its
 gate ordering and failure behavior without performing those operations. Browser/desktop
 interaction, a real resize observer callback, merge previews and upstream integration
-rehearsals remain unrun. The integrated batch's final lint and consumer typecheck evidence
-will be recorded after those checks complete.
+rehearsals remain unrun. The integrated L34/L36/L45 batch passed 157 focused tests across
+17 files, plus one isolated real OpenSCAD T-shape test (two older real tests skipped by name
+filter). The new gate itself passed on all discovered fork paths, and contracts, web, server
+and client-runtime package typechecks passed. Existing Effect suggestions are informational.
 
 ## Automated tests
 

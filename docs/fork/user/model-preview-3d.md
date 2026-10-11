@@ -18,7 +18,8 @@ to the viewport.
 
 While the panel has focus, **F** fits the model, **O** and **H** choose orbit or pan,
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
-**P** switches perspective and orthographic projection, and **I** shows or hides the inspector.
+**P** switches perspective and orthographic projection, **V** toggles overhang shading,
+and **I** shows or hides the inspector.
 The help button beside the zoom controls lists every shortcut.
 Choose **Units** in the Bed menu or **Settings > Loom > 3D model** to display lengths in
 millimetres or decimal inches. The command palette's **3D model: Switch units** changes the
@@ -78,8 +79,13 @@ oversized parts show a warning in the status bar and on the tab, and previewing 
 allowed. **Part > Which beds fit?** compares the part with the available printers, surfaces
 and your custom bed. Each row says whether it fits as shown, fits after a 90-degree turn, or exceeds
 the bed by the listed dimensions. Select a row to use that bed. A rotated fit is advice; it does
-not rotate the model. Surfaces check the footprint without a height limit. Clear render cache
-removes cached outputs.
+not rotate the model. Surfaces check the footprint without a height limit.
+
+On the Bambu Lab H2D and H2C, tinted strips show where only one nozzle can reach. The Bed menu
+shows the shared reach, and Part's fit results distinguish both nozzles, a single nozzle and
+prints that need the same filament in both nozzles. **Show nozzle zones** in the Bed menu or
+Loom settings hides the tint while keeping those fit checks. Position the part in your slicer;
+Loom centres the plate under the model. Clear render cache removes cached outputs.
 
 ## Show the agent your part
 
@@ -103,7 +109,11 @@ settings turns every 3D model agent tool on or off, independently of the panel. 
 agents also cannot change 3D settings, including turning it back on. The tool returns host file paths
 that the agent can read. It renders orthographic PNGs by default; agents can request
 `projection: "perspective"` for perspective views. The result also compares the part against
-your available beds when OpenSCAD provides geometry dimensions. It does not render glTF or GLB.
+your available beds when OpenSCAD provides geometry dimensions, including nozzle reach on the
+H2D and H2C. Request `overhangs: true` for overhang area, the share of the surface and the largest
+regions, with an optional `overhangAngle` from 30 to 70 degrees. These PNG views keep their
+usual appearance; editor captures show the live overhang shading. The render tool does not
+render glTF or GLB.
 
 ## Explore and review a design
 
@@ -112,6 +122,14 @@ button in **Customize** lets you revisit any step. Continuous changes to one fie
 step. History survives switching file tabs during this session; source edits establish a new
 baseline. With Live paused, undo and using a variant update the form first. Choose Apply to
 update the mesh.
+
+Choose **Display > Overhangs**, press **V**, or use the command palette's overhang action to
+check where a part may need support. Downward faces beyond the angle appear orange with a
+diagonal hatch; the first 0.2 mm above the part's base is excluded. Open the overhang chip to
+change the threshold from 30° to 70°; it starts at 45° and is saved for the environment. The
+chip's tooltip shows the affected area and share of the surface. Wireframe hides the shading,
+and unlit materials cannot show it. Saved views and captures keep the mode; choose **Hide
+overhangs** or press **V** to turn it off.
 
 The tool rail on the left of the viewport measures (**M**), annotates (**N**) and adds a section
 plane (**S**). Press **Esc** or **Done** to put a tool down. Measurements appear under
@@ -144,8 +162,8 @@ choose whether to use them.
 
 Views, measurements, review sheets, variants and change requests are saved for this model in
 this environment and workspace. They survive closing the panel and are shared with other
-clients connected to the same workspace. Print-readiness analysis remains a separate future
-exploration.
+clients connected to the same workspace. Support generation and broader print checks remain
+separate future work.
 
 ## Blender and remote work
 
@@ -166,9 +184,10 @@ Agents can use `loom_model_preview_3d_*` tools to inspect files, render meshes, 
 parameter sets and workspace tools, propose variants, and operate the visible editor. Camera,
 picking, marked captures, customizer history and draft preparation use the connected client.
 Host rendering and saved state remain available without opening the editor. Agents can change
-projection or show and hide a scale reference through the editor's display action; its
-snapshot reports the current projection and bed-fit results for the loaded model. Settings
-tools can change the display unit, while tool inputs and outputs keep lengths in millimetres.
+projection, overhang shading or a scale reference through the editor's display action; its
+snapshot reports the current camera and bed-fit results for the loaded model. Settings tools
+can change the display unit and overhang threshold, while tool inputs and outputs keep lengths
+in millimetres and areas in square millimetres.
 
 `t3 model <action> '<json>'` calls the same tools using their MCP suffix. It needs
 `LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION`, or the credentials inherited by an ACP agent

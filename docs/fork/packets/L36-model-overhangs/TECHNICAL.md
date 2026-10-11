@@ -15,7 +15,8 @@ Definition. Let `n` be the unit face normal in world space and `up = (0, 0, 1)`.
 overhang when it faces down and its tilt from vertical exceeds the threshold `t`:
 `-n.z > sin(t)`. A vertical wall (`n.z = 0`) is 0° and a flat ceiling (`n.z = -1`) is 90°. Faces
 whose height is within `BED_BAND_MM = 0.2` of the part's lowest point are excluded: they print on
-the plate. With L35, world space is the oriented pose, so the definition follows it.
+the plate. A future L35 orientation integration must update bed height and invalidate the
+viewer's cached world-space positions; the host helper already accepts the oriented up vector.
 
 ## Contracts
 
@@ -29,9 +30,9 @@ overhangAngleDegrees: Schema.Int.check(Schema.isBetween({ minimum: 30, maximum: 
 ),
 ```
 
-following `BuildPlateSetting.pattern` (`model-preview-3d.ts:237`). `DEFAULT_MODEL_PREVIEW_SETTINGS`
-(`model-preview-3d.ts:297-306`) gains `overhangAngleDegrees: 45`. Settings saved before this
-packet load as 45.
+This is an environment-wide setting beside `displayUnits` and `scaleReference`, not a bed
+field. `DEFAULT_MODEL_PREVIEW_SETTINGS` has `overhangAngleDegrees: 45`. Settings saved before
+this packet load as 45.
 
 `packages/contracts/src/fork/model-workspace.ts`, `ModelCamera` (`model-workspace.ts:11-21`):
 
@@ -50,19 +51,23 @@ Saved views and annotation cameras recorded before this packet recall with overh
 ```ts
 export const OVERHANG_ANGLE = { minimum: 30, maximum: 70, default: 45 } as const;
 export const BED_BAND_MM = 0.2;
+const area = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThanOrEqualTo(0));
 export const OverhangRegion = Schema.Struct({
-  areaMm2: Schema.Number,
+  areaMm2: area,
   /** Area-weighted centre in model (file) coordinates. */
   centre: ModelPoint,
   /** Height above the part's lowest point, in the current orientation. */
-  heightMm: Schema.Tuple([Schema.Number, Schema.Number]),
+  heightMm: Schema.Tuple([area, area]),
 });
 export const OverhangStats = Schema.Struct({
-  thresholdDegrees: Schema.Int,
-  totalAreaMm2: Schema.Number,
-  overhangAreaMm2: Schema.Number,
-  overhangPercent: Schema.Number,
-  facets: Schema.Int,
+  thresholdDegrees: Schema.Int.check(Schema.isBetween(OVERHANG_ANGLE)),
+  totalAreaMm2: area,
+  overhangAreaMm2: area,
+  overhangPercent: Schema.Number.check(
+    Schema.isFinite(),
+    Schema.isBetween({ minimum: 0, maximum: 100 }),
+  ),
+  facets: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   /** The largest regions, at most ten. */
   regions: Schema.Array(OverhangRegion).check(Schema.isMaxLength(10)),
   oriented: Schema.Boolean,
@@ -78,8 +83,10 @@ export function overhangStats(
 region centres in file coordinates, which is what an agent editing the source needs (and matches
 L35's model-space anchors). Regions: overhang triangles are joined when they share a vertex,
 after quantising positions to 1 µm, with a union-find; the ten largest by area are returned. The
-helper is pure arithmetic over a `Float32Array` (about 100 lines), the same kind of shared helper
-L32 puts in `model-beds.ts`.
+helper is pure arithmetic over a `Float32Array`. It rejects incomplete triangles, nonfinite
+positions, invalid angles and a zero or nonfinite up vector. Faces crossing the bed band are
+clipped to that band before their area and centres are measured, matching fragment shading.
+Schemas reject nonfinite or negative areas and percentages outside 0 to 100.
 
 ## Server
 
@@ -92,7 +99,7 @@ L32 puts in `model-beds.ts`.
   and the largest regions with their centres in model coordinates." `renderModelTool`
   (`mcp.ts:212-227`) passes both through.
 - `ModelPreviewService.renderImages` (`ModelPreviewService.ts:1104`) options object (L35 creates
-  it; create it here if L35 has not landed) gains `overhangs?: { angle: number }`. When set:
+  it; create it here if L35 has not landed) gains `overhangs?: { angle?: number }`. An omitted angle uses the environment setting. When set:
   1. Get a binary STL of the part in model space. SCAD: export once with the same overrides,
      backend and timeout using `meshArgs` (`openscad.ts`, created by L35; create it here
      otherwise), `--export-format binstl` as `renderArgs` does (`openscad.ts:54`). STL, OBJ and
@@ -102,8 +109,9 @@ L32 puts in `model-beds.ts`.
   2. Parse it with `parseBinaryStl(bytes): Float32Array` (new, `overhangMesh.ts`): 80-byte
      header, `uint32` count, then 50 bytes per triangle (normal, three vertices, attribute).
      Reject a size that does not match `84 + 50 * count`.
-  3. Read the saved orientation (L35) from `getWorkspace(file)` (`ModelPreviewService.ts:793`)
-     unless the caller passed `orientation: "none"`, and call `overhangStats` with its `up`.
+  3. Call `overhangStats` on those vertices with the requested or saved threshold. L35 has not
+     landed in this batch, so host statistics use the file's original up direction. The pure
+     helper already accepts `up` for the future orientation integration.
   4. Delete the temporary STL with the existing finalizer pattern.
      Run the export inside the same scoped render job, so cancellation, the render slot and the
      timeout apply as they do for PNGs.
@@ -111,8 +119,8 @@ L32 puts in `model-beds.ts`.
 
 ## Storage
 
-No new storage. The angle lives in the settings file with the other model preview settings; the
-toggle lives in saved cameras inside the existing workspace JSON.
+No new storage. The angle is persisted in the existing model-preview settings JSON in
+SQLite; the toggle is carried by saved cameras in the existing workspace JSON.
 
 ## Clients
 
@@ -126,14 +134,16 @@ export function createOverhangShading(): {
   setAngle(degrees: number): void;
   setBedZ(z: number): void;
   setTheme(dark: boolean): void;
+  setPixelRatio(ratio: number): void;
 };
 ```
 
 `patch` accepts `MeshStandardMaterial`, `MeshPhysicalMaterial`, `MeshPhongMaterial` and
 `MeshLambertMaterial`, which cover the STL material (`viewer/load.ts:85`), OBJLoader's Phong
 materials and ThreeMFLoader's materials. It records patched materials in a `WeakSet`, chains any
-existing `onBeforeCompile`, and sets `customProgramCacheKey = () => "loom-overhangs"` so every
-patched material of a kind shares one program. In three r186 these fragment shaders run
+existing `onBeforeCompile`, and appends `loom-overhangs-v1` to the original custom program
+cache key. This preserves distinct prior material patches instead of making their programs
+collide. In three r186 these fragment shaders run
 `#include <clipping_planes_fragment>`, then the colour chunks, then
 `#include <normal_fragment_maps>` before lighting (for example
 `src/renderers/shaders/ShaderLib/meshphysical.glsl.js:169` and `:183`,
@@ -144,6 +154,9 @@ Vertex shader, after `#include <project_vertex>`:
 
 ```glsl
 vec4 loomOverhangPosition = vec4( transformed, 1.0 );
+#ifdef USE_BATCHING
+  loomOverhangPosition = batchingMatrix * loomOverhangPosition;
+#endif
 #ifdef USE_INSTANCING
   loomOverhangPosition = instanceMatrix * loomOverhangPosition;
 #endif
@@ -186,8 +199,12 @@ if ( loomOverhangEnabled ) {
   carry `overhangs`.
 - `capture` (`createViewer.ts:572-627`) renders the scene, so captures include the shading with
   no change.
-- `overhangInput()` returns the model's non-indexed positions in model space (merging meshes with
-  their matrices relative to the model root) for the chip's CPU pass. Cached per model.
+- `overhangInput()` caches non-indexed world-space positions for the chip's CPU pass, including
+  nested transforms, indices and instances. Mirrored transforms reverse vertex winding so
+  the CPU pass preserves the same outward facets that Three renders. Host STL statistics stay
+  in model coordinates.
+- Wireframe disables the shader effect while keeping the mode selected; turning solid faces
+  back on restores it. Unsupported materials are reported by the legend.
 
 ### Panel
 
@@ -200,15 +217,18 @@ if ( loomOverhangEnabled ) {
   with `<MenuShortcut>V</MenuShortcut>`. MODEL-3D-FOLLOW-UPS.md names `controls.tsx` for the
   display menu, but it lives in `WorkspaceTools.tsx`. `HELP` (`WorkspaceTools.tsx:197-207`) gains
   `["Overhangs", "V"]`.
-- Legend chip: a new `OverhangLegend` in `WorkspaceTools.tsx`, shown over the viewport while the
-  mode is on, using `Chip` (`controls.tsx:58`) as a `PopoverTrigger` (the `Popover` pattern from
-  `BedPicker.tsx:128-136`). The popover holds `Scrub` (`controls.tsx:242`) with unit "°", range
-  30 to 70, step 1, a matching range input, the explanatory line and "Hide overhangs". Saving uses
-  `models.updateSettings` with `canSave` from its permission atom, as `BedPicker.tsx:45-54` does.
-  Slider drags update the uniform live and save once on release.
-- Chip text: "Overhangs over 45°", or "No overhangs over 45°" when `overhangStats` finds none.
-  Tooltip: "N mm² of the surface (P%)". The CPU pass runs in an idle callback after the mode,
-  angle, model or orientation changes, never per frame.
+- Legend chip: `OverhangLegend.tsx`, rendered by `WorkspaceTools.tsx` while the mode is on,
+  wraps the existing `Chip` in a tooltip and popover. The popover holds `Scrub` with unit "°",
+  range 30 to 70, step 1, a matching range input, the explanatory line and "Hide overhangs".
+  The slider appears only when the host advertises `model-overhangs`, and is disabled without
+  the settings permission.
+- `overhangSettings.ts` previews drags locally, then commits through `models.updateSettings`
+  on pointer/key release or blur. It deduplicates matching commits, preserves the latest other
+  settings, refreshes the settings atom after success and restores the saved angle on failure.
+- Chip text: "Overhangs over 45°", or "No overhangs over 45°" when the affected area is zero.
+  Its tooltip reports the area in mm² or in² and the percentage. The CPU pass runs on model or
+  threshold changes through `requestIdleCallback`, with a cancellable timeout fallback, never
+  per frame. Stale results are hidden while the new area is pending.
 - Palette (`palette.tsx:54-60`, `actions.ts:2`): `"toggle-overhangs"`, titled "3D model: Show
   overhangs" or "3D model: Hide overhangs".
 - Editor `display` case (`ModelPanel.tsx:216-224`) spreads `c.overhangs` like the other flags.
@@ -228,8 +248,8 @@ if ( loomOverhangEnabled ) {
 - When the mode is off the shader evaluates one uniform branch per fragment. When on, a
   cross product, a normalize and a few comparisons: negligible next to PBR lighting.
 - No recompile on toggle: the patch is compiled with the model's first draw.
-- The chip's CPU pass walks positions once per change (about 30 ms for 1M triangles; measure),
-  scheduled with `requestIdleCallback` and skipped while the mode is off.
+- The chip's CPU pass walks positions once per change, scheduled with `requestIdleCallback`
+  and skipped while the mode is off. Large-mesh runtime has not been profiled in this batch.
 - Server: one extra OpenSCAD export only when `overhangs` is requested. Importing a mesh is
   fast; a SCAD costs one CSG evaluation. The response grows by under 2 KB.
 

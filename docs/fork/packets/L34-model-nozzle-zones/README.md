@@ -1,6 +1,6 @@
 # L34: Nozzle zones on the H2D and H2C
 
-Status: Ready to build.
+Status: Implemented locally; client verification pending (`feat/model-zones-overhangs-lint`).
 
 Approved by Kyle on 2026-10-10.
 
@@ -11,6 +11,12 @@ in the slicer. This packet adds the per-nozzle reach to those two presets (numbe
 Studio's machine profiles, which match Bambu's current spec pages), tints the single-nozzle
 strips on the plate and in Part's top view, adds a legend to the Bed menu, and makes the fit
 check say which nozzles can print the part. Agents get the same answer in the fit summary.
+
+The integrated L34/L36/L45 batch passed 157 focused tests across 17 files, the strict fork
+lint gate and contracts/web/server/client-runtime typechecks. One additional isolated real
+OpenSCAD T-shape test passed; its two older real tests were skipped by the name filter.
+Real-client interaction, live GPU shader output and large-mesh performance remain unverified;
+see [TESTING.md](./TESTING.md#results).
 
 ## Scope
 
