@@ -1,10 +1,10 @@
-import { readFile, mkdir, writeFile, rename, access } from "node:fs/promises";
-import { join } from "node:path";
-import { constants } from "node:fs";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+import * as NodeFS from "node:fs";
 
 const providers = ["claude", "codex"];
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
-export const aiBin = (p) => join(p.root, "ai/bin");
+export const aiBin = (p) => NodePath.join(p.root, "ai/bin");
 export const aiPath = (p, path = "/usr/local/bin:/usr/bin:/bin") =>
   [aiBin(p), ...path.split(":").filter((entry) => entry && entry !== aiBin(p))].join(":");
 
@@ -15,28 +15,28 @@ export function aiFiles(p) {
     "omarchy-default-agent": "default-agent",
     "omarchy-agent-usage-update": "ai-usage",
   }))
-    files.set(join(aiBin(p), name), {
+    files.set(NodePath.join(aiBin(p), name), {
       content: `#!/bin/sh\nexec ${quote(p.bin)} ${action} "$@"\n`,
       mode: 0o755,
     });
-  files.set(join(aiBin(p), "omarchy"), {
+  files.set(NodePath.join(aiBin(p), "omarchy"), {
     content: `#!/bin/bash\n# Omarchy's dispatcher resolves package scripts absolutely; intercept AI routes.\nif [[ \${1:-} == agent ]]; then\n  shift\n  case "\${1:-}" in\n    prompt|crash) operation="$1"; shift; exec "/usr/bin/omarchy-agent-$operation" "$@" ;;\n    usage-update) shift; exec ${quote(p.bin)} ai-usage "$@" ;;\n    usage-claude|usage-codex) operation="\${1#usage-}"; shift; exec ${quote(p.bin)} ai-usage-record "$operation" "$@" ;;\n    --help|-h|help) exec /usr/bin/omarchy agent "$@" ;;\n    ""|--inline|--pick|--prompt) exec ${quote(p.bin)} agent "$@" ;;\n    *) echo "This OS AI action needs a Switchboard adapter." >&2; exit 1 ;;\n  esac\nelif [[ \${1:-} == default && \${2:-} == agent ]]; then\n  shift 2\n  exec ${quote(p.bin)} default-agent "$@"\nelse\n  exec /usr/bin/omarchy "$@"\nfi\n`,
     mode: 0o755,
   });
   // Shadow the bundled direct-provider desktop entry without changing its package.
-  files.set(join(p.data, "applications/chatgpt.desktop"), {
+  files.set(NodePath.join(p.data, "applications/chatgpt.desktop"), {
     content: "[Desktop Entry]\nType=Application\nName=ChatGPT\nHidden=true\n",
     mode: 0o644,
   });
-  files.set(join(aiBin(p), "loom-ai-terminal"), {
+  files.set(NodePath.join(aiBin(p), "loom-ai-terminal"), {
     content: `#!/bin/bash\n${quote(p.bin)} agent --inline "$@"\nstatus=$?\nif (( status != 0 )); then\n  printf '\\nPress Enter to close. '\n  read -r _\nfi\nexit "$status"\n`,
     mode: 0o755,
   });
-  files.set(join(p.config, "uwsm/env.d/90-loom-ai.sh"), {
+  files.set(NodePath.join(p.config, "uwsm/env.d/90-loom-ai.sh"), {
     content: aiEnvironment(p),
     mode: 0o600,
   });
-  files.set(join(p.data, "applications/loom-os-ask-ai.desktop"), {
+  files.set(NodePath.join(p.data, "applications/loom-os-ask-ai.desktop"), {
     content: `[Desktop Entry]\nType=Application\nName=Ask AI\nComment=Private AI through Switchboard\nExec="${p.bin.replaceAll("%", "%%").replaceAll('"', '\\"')}" agent\nIcon=utilities-terminal\nTerminal=false\nCategories=Utility;\n`,
     mode: 0o644,
   });
@@ -68,6 +68,8 @@ export function aiMenu(p) {
     },
     "loomos.ai-usage": { label: "AI usage", action: command("open switchboard") },
     "setup.default.agent": {
+      icon: "󰚩",
+      label: "Agent",
       title: "Switchboard Agent",
       description: "Choose the CLI for private OS AI",
     },
@@ -113,7 +115,9 @@ export function aiMenu(p) {
 export async function defaultAgent(p) {
   let value = "claude";
   try {
-    value = (await readFile(join(p.config, "omarchy/defaults/agent"), "utf8")).trim();
+    value = (
+      await NodeFSP.readFile(NodePath.join(p.config, "omarchy/defaults/agent"), "utf8")
+    ).trim();
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
@@ -138,10 +142,10 @@ export function agentArgs(args) {
 export async function routedEnvironment(config, env, p) {
   if (!config.switchboardCli || !config.switchboardUrl)
     throw new Error("Configure Switchboard's private gateway and CLI before using AI.");
-  const state = env.SWITCHBOARD_STATE_DIR || join(p.home, ".config/switchboard");
+  const state = env.SWITCHBOARD_STATE_DIR || NodePath.join(p.home, ".config/switchboard");
   let client;
   try {
-    client = JSON.parse(await readFile(join(state, "client.json"), "utf8"));
+    client = JSON.parse(await NodeFSP.readFile(NodePath.join(state, "client.json"), "utf8"));
   } catch {
     throw new Error(
       "Switchboard's endpoint is unavailable. Run switchboard client configure with the private gateway origin.",
@@ -151,7 +155,7 @@ export async function routedEnvironment(config, env, p) {
     throw new Error(
       "Loom and Switchboard disagree on the AI gateway. Review their private endpoint configuration.",
     );
-  await access(config.switchboardCli, constants.X_OK);
+  await NodeFSP.access(config.switchboardCli, NodeFS.constants.X_OK);
   return { ...env, PATH: aiPath(p, env.PATH) };
 }
 
@@ -251,18 +255,18 @@ export async function updateUsage(config, p, args, fetchStatus = fetch, printRec
     } catch {
       /* Publish unavailable records rather than retaining misleading limits. */
     }
-  const directory = join(p.state, "omarchy/agents/usage");
-  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const directory = NodePath.join(p.state, "omarchy/agents/usage");
+  await NodeFSP.mkdir(directory, { recursive: true, mode: 0o700 });
   for (const record of usageRecords(status)) {
     if (excluded.has(record.id) || (only.length && !only.includes(record.id))) continue;
     if (printRecord) {
       console.log(JSON.stringify(record));
       continue;
     }
-    const file = join(directory, `${record.id}.json`),
+    const file = NodePath.join(directory, `${record.id}.json`),
       temporary = `${file}.${process.pid}.tmp`;
-    await writeFile(temporary, JSON.stringify(record) + "\n", { mode: 0o600 });
-    await rename(temporary, file);
+    await NodeFSP.writeFile(temporary, JSON.stringify(record) + "\n", { mode: 0o600 });
+    await NodeFSP.rename(temporary, file);
   }
 }
 export async function aiAction(action, args, config, env, p, run) {
@@ -284,9 +288,9 @@ export async function aiAction(action, args, config, env, p, run) {
       throw new Error(
         "Loom AI supports Claude Code and Codex through Switchboard. Other agents need an approved routing adapter.",
       );
-    const file = join(p.config, "omarchy/defaults/agent");
-    await mkdir(join(p.config, "omarchy/defaults"), { recursive: true });
-    await writeFile(file, args[0] + "\n", { mode: 0o600 });
+    const file = NodePath.join(p.config, "omarchy/defaults/agent");
+    await NodeFSP.mkdir(NodePath.join(p.config, "omarchy/defaults"), { recursive: true });
+    await NodeFSP.writeFile(file, args[0] + "\n", { mode: 0o600 });
     return true;
   }
   if (action !== "agent" && action !== "ai") return false;
@@ -297,7 +301,7 @@ export async function aiAction(action, args, config, env, p, run) {
         "omarchy-launch-tui",
         [
           "--app-id=org.omarchy.agent",
-          join(aiBin(p), "loom-ai-terminal"),
+          NodePath.join(aiBin(p), "loom-ai-terminal"),
           ...(prompt === undefined ? [] : ["--prompt", prompt]),
         ],
         { env: { ...env, PATH: aiPath(p, env.PATH) } },

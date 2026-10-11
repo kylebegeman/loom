@@ -349,7 +349,7 @@ export async function installationPlan(config, env = process.env, packDir = sour
         continue;
       entries[`loomos.${app}`] = { label: name, action: command(`open ${app}`) };
     }
-    entries["about"] = { label: "About LoomOS" };
+    entries["about"] = { icon: "", label: "About LoomOS", action: "omarchy-launch-about" };
     entries["loomos.appearance"] = {
       label: "Appearance",
       description: "Iris colors with Omarchy's native shell",
