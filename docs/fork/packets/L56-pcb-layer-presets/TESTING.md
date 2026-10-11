@@ -2,32 +2,42 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
-## Automated tests
+## Local verification
 
-| File                                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                           |
-| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/contracts/src/fork/pcb-layer-presets.test.ts` (new)                | Every preset's non-copper names are canonical (none of `F.SilkS`, `F.CrtYd`, `Dwgs.User`); `resolveLayerPreset` keeps board order, hides everything else, sets opacity 1, expands "copper" to F.Cu, In1.Cu, In2.Cu, B.Cu, skips missing layers, returns null when only Edge.Cuts would show; `findLayerPreset` by id, by name in any case, unknown is undefined; ids are unique. |
-| `apps/web/src/fork/pcb-preview/usePcbPreview.logic.test.ts` (update)         | `matchLayerSet` prefers a built-in, then a saved set, then null after one eye toggle; `reconcileSaved` drops removed layers, adds new ones hidden, keeps opacity.                                                                                                                                                                                                                |
-| `apps/web/src/fork/pcb-preview/preferences.test.ts` (new or update from L54) | A stored value without `hiddenLayerPresets` keeps `trusted`; hide then show round trips; an unknown id survives decode.                                                                                                                                                                                                                                                          |
-| `apps/web/src/fork/pcb-preview/workspace.interactions.test.tsx` (update)     | One interaction: the editor `layers` command with `name: "assembly-front"` sets the expected visible layers and the snapshot reports `layerPreset`; an unknown name rejects with "Unknown layer preset."                                                                                                                                                                         |
+Passed 24 focused behavior tests across four files:
 
-No markup snapshots for the chips or menus.
+| File                                                    | Covers                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/contracts/src/fork/pcb-layer-presets.test.ts` | All five presets on canonical board names, two-layer and four-layer copper expansion, board ordering, opacity, unavailable presets, name lookup and unique ids.                                                                                                                    |
+| `apps/web/src/fork/pcb-preview/layers.test.ts`          | Named visibility matching independent of array order, built-in precedence, saved-set labels, custom changes, stale saved-set reconciliation, duplicate name suffixes, strict named editor commands, snapshot identities and preserving inner copper visibility after board reload. |
+| `apps/web/src/fork/pcb-preview/LayersTab.test.tsx`      | Apply, hide and show without a write grant; duplicates with unique ids and names; the 20-set limit; disabled writes; applying an older saved set; unavailable presets and missing KiCad layers.                                                                                    |
+| `apps/web/src/fork/pcb-preview/LayerSheet.test.tsx`     | Preset visibility changes reuse decoded drawings and Blob URLs; hidden layers do not report canvas errors or enter the accessibility tree.                                                                                                                                         |
 
-## Commands
+Strict lint passed on these tests, their implementation files and `InspectorKit.tsx`. No
+browsers, dev servers or repo-wide checks ran. Root integration owns package typechecks and client verification. The editor resolver is
+tested directly through its state and failure contracts. Preferences compatibility coverage is shared
+with L54 in `preferences.test.ts`.
 
 ```sh
-vp test run packages/contracts/src/fork/pcb-layer-presets.test.ts \
-  apps/web/src/fork/pcb-preview/usePcbPreview.logic.test.ts \
-  apps/web/src/fork/pcb-preview/preferences.test.ts \
-  apps/web/src/fork/pcb-preview/workspace.interactions.test.tsx
-vp lint packages/contracts/src/fork apps/web/src/fork/pcb-preview \
-  apps/server/src/fork/pcb-preview/mcp.ts
-vp run --filter @t3tools/contracts typecheck
-vp run --filter @t3tools/web typecheck
-vp run --filter t3 typecheck
+./node_modules/.bin/vp test run packages/contracts/src/fork/pcb-layer-presets.test.ts \
+  apps/web/src/fork/pcb-preview/layers.test.ts \
+  apps/web/src/fork/pcb-preview/LayersTab.test.tsx \
+  apps/web/src/fork/pcb-preview/LayerSheet.test.tsx
+./node_modules/.bin/vp lint --deny-warnings \
+  packages/contracts/src/fork/pcb-layer-presets.ts \
+  packages/contracts/src/fork/pcb-layer-presets.test.ts \
+  apps/web/src/fork/pcb-preview/layers.ts \
+  apps/web/src/fork/pcb-preview/layers.test.ts \
+  apps/web/src/fork/pcb-preview/LayersTab.tsx \
+  apps/web/src/fork/pcb-preview/LayersTab.test.tsx \
+  apps/web/src/fork/pcb-preview/LayerSheet.tsx \
+  apps/web/src/fork/pcb-preview/LayerSheet.test.tsx \
+  apps/web/src/fork/pcb-preview/InspectorKit.tsx
 ```
 
 ## Manual check
+
+Pending; no client or KiCad visual comparison has been performed.
 
 With Kyle's permission, in a dev client against a worktree `.t3` seeded with
 `vp run migrate-dev-db`:
@@ -47,3 +57,10 @@ With Kyle's permission, in a dev client against a worktree `.t3` seeded with
 
 Run `scripts/fork/loom.sh check` and the merge check in SEAMS.md; expect no conflicts. After
 merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.
+
+## Integrated verification
+
+The integrating agent completed strict scoped lint and typechecks for contracts,
+client-runtime, server and web after wiring all five PCB packets. The focused service
+suite passes 31 regressions, including signed PDF limits, canonical output exclusions and
+optional project-rule read failures. No repo-wide suite or browser was run.

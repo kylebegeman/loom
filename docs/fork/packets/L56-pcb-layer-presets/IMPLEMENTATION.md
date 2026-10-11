@@ -8,9 +8,9 @@ Each step leaves the tree compiling. Commit at the end with
    re-export it from `packages/contracts/src/fork/index.ts`. Add the optional `layerPreset` to
    `PcbEditorResult.state` in `pcb-workspace.ts`.
 2. **Preferences.** In `apps/web/src/fork/pcb-preview/preferences.ts`, add decoding defaults to
-   every field if neither L54 nor `6ddf84c1aa` (local `fix/preview-defects`) has, then `hiddenLayerPresets` and `setPresetHidden`.
+   every field if neither L54 nor `6ddf84c1aa` (local `fix/preview-defects`) has, then `hiddenLayerPresets` and `setHiddenLayerPresets`.
 3. **Active set.** Add `matchLayerSet(layers, boardLayers, savedSets)` to
-   `apps/web/src/fork/pcb-preview/usePcbPreview.logic.ts`, returning
+   `apps/web/src/fork/pcb-preview/layers.ts`, returning
    `{ kind: "built-in", id, name } | { kind: "saved", id, name } | null`. Use it in
    `PcbPreviewPanel.tsx` for the shelf label (`:888-892`) and the status bar (`:1334-1342`),
    and move `sameVisibility` from `LayersTab.tsx:36` into the same file so both use one test.

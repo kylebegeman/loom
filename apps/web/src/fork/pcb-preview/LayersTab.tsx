@@ -1,16 +1,34 @@
 import { randomUUID } from "~/lib/utils";
 import { useState } from "react";
-import { CircuitBoardIcon, CrosshairIcon, EyeIcon, EyeOffIcon, LayersIcon } from "lucide-react";
-import type {
-  PcbInspection,
-  PcbLayerPreset,
-  PcbLayerState,
-  PcbView,
-  PcbWorkspace,
+import {
+  CircuitBoardIcon,
+  CrosshairIcon,
+  EyeIcon,
+  EyeOffIcon,
+  LayersIcon,
+  MoreHorizontalIcon,
+} from "lucide-react";
+import {
+  PCB_LAYER_PRESETS,
+  resolveLayerPreset,
+  type PcbBuiltInLayerPreset,
+  type PcbInspection,
+  type PcbLayerPreset,
+  type PcbLayerState,
+  type PcbView,
+  type PcbWorkspace,
 } from "@t3tools/contracts/fork";
 import { Badge } from "~/components/ui/badge";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+} from "~/components/ui/menu";
 import {
   Bar,
   Chip,
@@ -23,7 +41,16 @@ import {
   revealTool,
   useWrite,
 } from "./InspectorKit";
-import { LAYER_GROUPS, layerColor, layerGroup } from "./layers";
+import {
+  LAYER_GROUPS,
+  layerColor,
+  layerGroup,
+  matchLayerSet,
+  reconcileSaved,
+  sameVisibility,
+  uniqueLayerSetName,
+} from "./layers";
+import { usePcbPreferences } from "./preferences";
 import { reconcileLayers } from "./usePcbPreview.logic";
 import { ToolButton } from "./ToolButton";
 import k from "./inspector.module.css";
@@ -33,9 +60,7 @@ const PRESETS = [
   { value: "back", label: "Back" },
   { value: "all", label: "All copper" },
 ] as const;
-const sameVisibility = (a: readonly PcbLayerState[], b: readonly PcbLayerState[]) =>
-  a.length === b.length &&
-  a.every((layer, i) => layer.visible === b[i]?.visible && layer.opacity === b[i]?.opacity);
+const SAVED_SET_LIMIT = 20;
 
 export function LayersTab({
   inspection,
@@ -63,6 +88,8 @@ export function LayersTab({
     ),
     [name, setName] = useState("");
   const write = useWrite("The layer set could not be saved.");
+  const hiddenPresets = usePcbPreferences((preferences) => preferences.hiddenLayerPresets);
+  const setHiddenPresets = usePcbPreferences((preferences) => preferences.setHiddenLayerPresets);
   if (view !== "pcb")
     return (
       <Scroll>
@@ -88,7 +115,37 @@ export function LayersTab({
         </EmptyState>
       </Scroll>
     );
-  const names = layers.map((l) => l.name);
+  const names = inspection?.layers ?? layers.map((l) => l.name);
+  const active = matchLayerSet(layers, names, data.layerSets);
+  const presets = PCB_LAYER_PRESETS.filter((preset) => !hiddenPresets.includes(preset.id));
+  const full = data.layerSets.length >= SAVED_SET_LIMIT;
+  const saveDisabled = !canSave || full || write.busy;
+  const saveHint = full
+    ? "Saved sets are full (20)"
+    : !canSave
+      ? "Workspace write permission is required"
+      : undefined;
+  const duplicate = (preset: PcbBuiltInLayerPreset) => {
+    const resolved = resolveLayerPreset(preset, names);
+    if (!resolved || saveDisabled) return;
+    void write.run(() =>
+      mutate((current) => {
+        if (current.layerSets.length >= SAVED_SET_LIMIT)
+          throw new Error("Saved sets are full (20).");
+        return {
+          ...current,
+          layerSets: [
+            ...current.layerSets,
+            {
+              id: randomUUID(),
+              name: uniqueLayerSetName(preset.name, current.layerSets),
+              layers: resolved,
+            },
+          ],
+        };
+      }),
+    );
+  };
   const matched =
     PRESETS.find((p) => sameVisibility(layers, reconcileLayers(null, names, p.value)))?.value ??
     null;
@@ -99,15 +156,21 @@ export function LayersTab({
   const patch = (layerName: string, change: Partial<PcbLayerState>) =>
     set(layers.map((l) => (l.name === layerName ? { ...l, ...change } : l)));
   const label = (layerName: string) => inspection?.layerLabels?.[layerName] ?? layerName;
-  const save = () =>
+  const save = () => {
+    if (saveDisabled || !name.trim()) return;
     void write
       .run(() =>
-        mutate((d) => ({
-          ...d,
-          layerSets: [...d.layerSets, { id: randomUUID(), name: name.trim(), layers }],
-        })),
+        mutate((current) => {
+          if (current.layerSets.length >= SAVED_SET_LIMIT)
+            throw new Error("Saved sets are full (20).");
+          return {
+            ...current,
+            layerSets: [...current.layerSets, { id: randomUUID(), name: name.trim(), layers }],
+          };
+        }),
       )
       .then((saved) => saved && setName(""));
+  };
   const visible = layers.filter((l) => l.visible).length;
   return (
     <>
@@ -122,7 +185,7 @@ export function LayersTab({
             }}
             options={PRESETS}
           />
-          {!matched && (
+          {!matched && !active && (
             <Badge variant="outline" size="sm">
               Custom
             </Badge>
@@ -225,14 +288,96 @@ export function LayersTab({
             </Section>
           );
         })}
+        {names.length > 0 && (
+          <Section
+            title="Presets"
+            count={
+              presets.length === PCB_LAYER_PRESETS.length
+                ? presets.length
+                : `${presets.length} of ${PCB_LAYER_PRESETS.length}`
+            }
+            action={
+              <Menu>
+                <MenuTrigger
+                  render={
+                    <button type="button" className={revealTool} aria-label="Preset options" />
+                  }
+                >
+                  <MoreHorizontalIcon />
+                </MenuTrigger>
+                <MenuPopup align="end">
+                  <MenuGroup>
+                    <MenuGroupLabel>Duplicate as saved set</MenuGroupLabel>
+                    {PCB_LAYER_PRESETS.map((preset) => {
+                      const resolved = resolveLayerPreset(preset, names);
+                      return (
+                        <MenuItem
+                          key={preset.id}
+                          disabled={saveDisabled || !resolved}
+                          aria-description={
+                            resolved ? saveHint : "This board has none of these layers"
+                          }
+                          onClick={() => duplicate(preset)}
+                        >
+                          {preset.name}
+                        </MenuItem>
+                      );
+                    })}
+                  </MenuGroup>
+                  {PCB_LAYER_PRESETS.some((preset) => hiddenPresets.includes(preset.id)) && (
+                    <MenuGroup>
+                      <MenuGroupLabel>Hidden</MenuGroupLabel>
+                      {PCB_LAYER_PRESETS.filter((preset) => hiddenPresets.includes(preset.id)).map(
+                        (preset) => (
+                          <MenuItem
+                            key={preset.id}
+                            onClick={() =>
+                              setHiddenPresets(hiddenPresets.filter((id) => id !== preset.id))
+                            }
+                          >
+                            Show {preset.name}
+                          </MenuItem>
+                        ),
+                      )}
+                    </MenuGroup>
+                  )}
+                </MenuPopup>
+              </Menu>
+            }
+          >
+            {presets.length ? (
+              <div className={k.chips}>
+                {presets.map((preset) => {
+                  const resolved = resolveLayerPreset(preset, names);
+                  return (
+                    <Chip
+                      key={preset.id}
+                      pressed={active?.kind === "built-in" && active.id === preset.id}
+                      applyDisabled={!resolved}
+                      title={resolved ? undefined : "This board has none of these layers"}
+                      onClick={() => resolved && set(resolved)}
+                      onRemove={() => setHiddenPresets([...hiddenPresets, preset.id])}
+                      removeLabel={`Hide ${preset.name}`}
+                    >
+                      {preset.name}
+                    </Chip>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className={k.barCaption}>All presets are hidden.</p>
+            )}
+          </Section>
+        )}
         <Section title="Saved sets" count={data.layerSets.length || undefined}>
+          {full && <p className={k.barCaption}>Saved sets are full (20).</p>}
           {data.layerSets.length > 0 && (
             <div className={k.chips}>
               {data.layerSets.map((s) => (
                 <Chip
                   key={s.id}
-                  pressed={sameVisibility(layers, s.layers)}
-                  onClick={() => set(s.layers)}
+                  pressed={active?.kind === "saved" && active.id === s.id}
+                  onClick={() => set(reconcileSaved(s.layers, names))}
                   onRemove={() =>
                     void write.run(() =>
                       mutate((d) => ({
@@ -245,7 +390,9 @@ export function LayersTab({
                   disabled={!canSave || write.busy}
                 >
                   {s.name}
-                  <span className={k.chipMeta}>{s.layers.filter((l) => l.visible).length}</span>
+                  <span className={k.chipMeta}>
+                    {reconcileSaved(s.layers, names).filter((layer) => layer.visible).length}
+                  </span>
                 </Chip>
               ))}
             </div>
@@ -254,7 +401,7 @@ export function LayersTab({
             className={k.inlineForm}
             onSubmit={(e) => {
               e.preventDefault();
-              if (canSave && name.trim()) save();
+              if (!saveDisabled && name.trim()) save();
             }}
           >
             <Input
@@ -269,7 +416,8 @@ export function LayersTab({
               type="submit"
               size="sm"
               variant="outline"
-              disabled={!canSave || !name.trim() || write.busy}
+              disabled={saveDisabled || !name.trim()}
+              aria-description={saveHint}
             >
               Save set
             </Button>

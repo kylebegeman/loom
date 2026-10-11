@@ -45,6 +45,7 @@ export function LayerSheet({
       <img
         src={error ? undefined : url}
         alt={sheetId}
+        aria-hidden={opacity <= 0 || undefined}
         data-layer-image
         data-layer-loading={loading && !error ? "true" : undefined}
         data-layer-visible={opacity > 0 ? "true" : undefined}
@@ -54,7 +55,7 @@ export function LayerSheet({
         onLoad={() => setDecoded(url ?? null)}
         onError={() => setFailed(url ?? null)}
       />
-      {error && (
+      {error && opacity > 0 && (
         <span role="alert" className={styles.canvasError}>
           {error}
         </span>

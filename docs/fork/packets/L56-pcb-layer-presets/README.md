@@ -1,6 +1,6 @@
 # L56: Built-in layer presets
 
-Status: Ready to build.
+Status: Implemented locally (`feat/pcb-units-presets-stats-print-capture`); client verification pending.
 
 Approved by Kyle on 2026-10-10.
 

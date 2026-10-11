@@ -1,6 +1,7 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronRightIcon, SearchIcon, XIcon } from "lucide-react";
 import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import k from "./inspector.module.css";
 import ws from "./workspace.module.css";
 
@@ -268,20 +269,34 @@ export function Chip({
   onClick,
   onRemove,
   removeLabel,
+  applyDisabled,
+  title,
 }: {
   children: ReactNode;
   pressed?: boolean;
   disabled?: boolean;
+  applyDisabled?: boolean;
+  title?: string | undefined;
   onClick?: () => void;
   onRemove?: () => void;
   removeLabel?: string;
 }) {
+  const apply = (
+    <button type="button" aria-pressed={pressed} disabled={applyDisabled} onClick={onClick}>
+      {children}
+    </button>
+  );
   return (
     <span className={k.chip} data-pressed={pressed || undefined}>
       {onClick ? (
-        <button type="button" aria-pressed={pressed} onClick={onClick}>
-          {children}
-        </button>
+        title ? (
+          <Tooltip>
+            <TooltipTrigger render={apply} />
+            <TooltipPopup>{title}</TooltipPopup>
+          </Tooltip>
+        ) : (
+          apply
+        )
       ) : (
         <span>{children}</span>
       )}

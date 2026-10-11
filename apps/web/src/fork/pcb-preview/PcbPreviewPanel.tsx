@@ -19,13 +19,15 @@ import {
 } from "lucide-react";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import type {
-  PcbDesign,
-  PcbListDesignsResult,
-  PcbView,
-  PcbLayerPreset,
-  PcbLayerState,
-  PcbPoint,
+import {
+  PCB_LAYER_PRESETS,
+  resolveLayerPreset,
+  type PcbDesign,
+  type PcbListDesignsResult,
+  type PcbView,
+  type PcbLayerPreset,
+  type PcbLayerState,
+  type PcbPoint,
 } from "@t3tools/contracts/fork";
 import { useServerConfigs } from "~/state/entities";
 import { Button } from "~/components/ui/button";
@@ -46,6 +48,13 @@ import { pcb } from "./state";
 import { usePcbPreview, asyncValue, asyncError } from "./usePcbPreview";
 import { usePcbPreferences, projectPreferenceKey, useLengthUnit } from "./preferences";
 import { unitName } from "./length";
+import {
+  matchLayerSet,
+  reconcileLayerChoice,
+  reconcileSaved,
+  sameVisibility,
+  resolveEditorLayers,
+} from "./layers";
 import { initialView, reconcileLayers } from "./usePcbPreview.logic";
 import { electronicsDesignUrl } from "./summary";
 import { ToolButton } from "./ToolButton";
@@ -120,6 +129,7 @@ function DesignWorkspace({
   const saved = usePcbPreferences((s) => s.selections[preferenceKey]);
   const unit = useLengthUnit();
   const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
+  const hiddenLayerPresets = usePcbPreferences((s) => s.hiddenLayerPresets);
   const [view, setView] = useState<PcbView>(() => initialView(design, saved?.view));
   const [layers, setLayers] = useState<PcbLayerPreset>(
     design.kind === "tscircuit" ? "front" : (saved?.layers ?? "front"),
@@ -178,9 +188,15 @@ function DesignWorkspace({
     design.toolAvailable && (design.kind === "kicad" || trusted),
   );
   if (workbench.inspection && design.kind === "kicad") {
-    const reconciled = reconcileLayers(customLayers, workbench.inspection.layers, layers);
+    const reconciled = reconcileLayerChoice(customLayers, workbench.inspection.layers, layers);
     if (reconciled !== customLayers) setCustomLayers(reconciled);
   }
+  const activeLayerSet =
+    design.kind === "kicad"
+      ? matchLayerSet(customLayers, workbench.inspection?.layers ?? [], workbench.data.layerSets)
+      : null;
+  const customLayerLabel =
+    activeLayerSet?.name ?? `${customLayers?.filter((layer) => layer.visible).length ?? 0} layers`;
   const drawingCurrent =
     !!preview.display &&
     preview.display.view === view &&
@@ -492,11 +508,15 @@ function DesignWorkspace({
             throw new Error("Unknown net.");
           setNet(c.net ?? null);
           break;
-        case "layers":
-          if (c.layers?.some((l) => !workbench.inspection?.layers.includes(l.name)))
-            throw new Error("Unknown layer.");
-          if (c.layers) setCustomLayers(c.layers);
+        case "layers": {
+          const next = resolveEditorLayers(
+            c,
+            workbench.inspection?.layers ?? [],
+            workbench.data.layerSets,
+          );
+          if (next !== undefined) setCustomLayers(next);
           break;
+        }
         case "split":
           if (c.enabled !== false && (!design.boardPath || !design.schematicPath))
             throw new Error("Linked drawings require both a board and schematic.");
@@ -531,7 +551,7 @@ function DesignWorkspace({
             throw new Error("The saved drawing is unavailable for this design.");
           setView(saved.view);
           setThree(false);
-          setCustomLayers(saved.layers);
+          setCustomLayers(reconcileSaved(saved.layers, workbench.inspection?.layers ?? []));
           preview.selectSheet(saved.sheet);
           restoreView.current = { sheet: saved.sheet, camera: saved.camera };
           viewport.current?.restore(saved.camera);
@@ -564,6 +584,14 @@ function DesignWorkspace({
                 camera: three && board3d.current?.isReady() ? model().snapshot() : null,
                 drawingCamera: !three && viewport.current ? viewport.current.snapshot() : null,
                 layers: customLayers ?? [],
+                ...(activeLayerSet
+                  ? {
+                      layerPreset:
+                        activeLayerSet.kind === "built-in"
+                          ? activeLayerSet.id
+                          : activeLayerSet.name,
+                    }
+                  : {}),
                 sourceHash: preview.sourceHash ?? "",
                 tool: mode,
                 dock: tab,
@@ -894,9 +922,7 @@ function DesignWorkspace({
           <MenuTrigger render={<button className={styles.tool} aria-label="Board layers" />}>
             <LayersIcon />
             <span className={styles.shelfLabel}>
-              {customLayers && workbench.inspection
-                ? `${customLayers.filter((l) => l.visible).length} layers`
-                : PRESET_LABELS[layers]}
+              {customLayers && workbench.inspection ? customLayerLabel : PRESET_LABELS[layers]}
             </span>
             <ChevronDownIcon />
           </MenuTrigger>
@@ -905,7 +931,14 @@ function DesignWorkspace({
               <MenuGroupLabel>Copper</MenuGroupLabel>
               {(["front", "back", "all"] as const).map((preset) => (
                 <MenuItem key={preset} onClick={() => chooseLayers(preset)}>
-                  {layers === preset ? (
+                  {(
+                    customLayers
+                      ? sameVisibility(
+                          customLayers,
+                          reconcileLayers(null, workbench.inspection?.layers ?? [], preset),
+                        )
+                      : layers === preset
+                  ) ? (
                     <CheckIcon />
                   ) : (
                     <span className="size-4" aria-hidden="true" />
@@ -914,6 +947,33 @@ function DesignWorkspace({
                 </MenuItem>
               ))}
             </MenuGroup>
+            {workbench.inspection?.layers.length ? (
+              <MenuGroup>
+                <MenuGroupLabel>Presets</MenuGroupLabel>
+                {PCB_LAYER_PRESETS.filter((preset) => !hiddenLayerPresets.includes(preset.id)).map(
+                  (preset) => {
+                    const resolved = resolveLayerPreset(preset, workbench.inspection!.layers);
+                    return (
+                      <MenuItem
+                        key={preset.id}
+                        disabled={!resolved}
+                        aria-description={
+                          resolved ? undefined : "This board has none of these layers"
+                        }
+                        onClick={() => resolved && setCustomLayers(resolved)}
+                      >
+                        {activeLayerSet?.kind === "built-in" && activeLayerSet.id === preset.id ? (
+                          <CheckIcon />
+                        ) : (
+                          <span className="size-4" aria-hidden="true" />
+                        )}
+                        {preset.name}
+                      </MenuItem>
+                    );
+                  },
+                )}
+              </MenuGroup>
+            ) : null}
             <MenuSeparator />
             <MenuItem onClick={() => openTab("Layers")}>
               <LayersIcon />
@@ -1308,7 +1368,7 @@ function DesignWorkspace({
                     return;
                   }
                   chooseView(saved.view);
-                  setCustomLayers(saved.layers);
+                  setCustomLayers(reconcileSaved(saved.layers, workbench.inspection?.layers ?? []));
                   preview.selectSheet(saved.sheet);
                   restoreView.current = { sheet: saved.sheet, camera: saved.camera };
                   if (preview.display?.sheetId === saved.sheet)
@@ -1349,7 +1409,7 @@ function DesignWorkspace({
               : design.kind !== "kicad"
                 ? "Board"
                 : customLayers && workbench.inspection
-                  ? `${customLayers.filter((l) => l.visible).length} layers`
+                  ? customLayerLabel
                   : PRESET_LABELS[layers]}
         </span>
         {selected && (

@@ -385,6 +385,7 @@ export const PcbEditorResult = Schema.Struct({
       camera: Schema.NullOr(ModelCamera),
       drawingCamera: Schema.NullOr(PcbCamera),
       layers: list(PcbLayerState, 64),
+      layerPreset: Schema.optional(Schema.String),
       sourceHash: Schema.optional(Schema.String),
       tool: Schema.optional(Schema.Literals(["select", "distance", "angle", "annotate"])),
       dock: Schema.optional(Schema.NullOr(Schema.String)),

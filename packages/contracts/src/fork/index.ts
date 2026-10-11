@@ -11,6 +11,7 @@ export * from "./clientRpcPermissions.ts";
 export * from "./pcb-preview.ts";
 
 export * from "./pcb-workspace.ts";
+export * from "./pcb-layer-presets.ts";
 
 export * from "./model-editor.ts";
 

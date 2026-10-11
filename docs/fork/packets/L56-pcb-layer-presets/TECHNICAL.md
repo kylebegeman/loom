@@ -6,8 +6,9 @@ Cited lines are from `docs/model-preview-follow-ups` at `8676e099e5`.
 
 Built-ins are constant data plus one pure resolver. Applying a preset produces the same
 `PcbLayerState[]` the Layers tab already applies for saved sets (`LayersTab.tsx:236`), so the
-render path, Solo, opacity and saving are unchanged. Matching reuses `sameVisibility`
-(`LayersTab.tsx:36-38`). The only persisted additions are a per-device list of hidden ids and,
+render path, Solo, opacity and saving are unchanged. Matching uses `sameVisibility` in
+`apps/web/src/fork/pcb-preview/layers.ts`, comparing layer identities, visibility and opacity
+independently of array order. The only persisted additions are a per-device list of hidden ids and,
 on demand, an ordinary saved set.
 
 ## Contracts
@@ -84,7 +85,7 @@ editor commands to the connected panel as today.
 - Hidden ids: `hiddenLayerPresets: Schema.Array(Schema.String)` with
   `Schema.withDecodingDefault(Effect.succeed([]))` in
   `apps/web/src/fork/pcb-preview/preferences.ts` (schema at `:11-15`), plus
-  `setPresetHidden(id, hidden)`. Unknown ids are kept and ignored, so a future preset rename
+  `setHiddenLayerPresets(ids)`. Unknown ids are kept and ignored, so a future preset rename
   cannot crash decoding. The rest of the schema needs decoding defaults first, because on
   `main` a new required field would reset trusted designs on decode failure
   (`preferences.ts:22-30`). Commit `6ddf84c1aa` (local `fix/preview-defects`) adds them; if it
@@ -107,17 +108,18 @@ Add a `Section` titled "Presets" immediately before "Saved sets" (`:228`):
 - Body: one `Chip` per visible built-in. `pressed` when
   `sameVisibility(layers, resolveLayerPreset(p, names))`; `onClick` applies it through the
   existing `set()` (`:95-98`), which clears Solo; `onRemove` hides it with
-  `removeLabel="Hide <name>"`; `disabled` with a `title` hint when `resolveLayerPreset` returns
-  null.
+  `removeLabel="Hide <name>"`; `applyDisabled` with a shared tooltip hint when
+  `resolveLayerPreset` returns null. Hiding remains available for an unavailable preset.
 - Duplicate: `mutate((d) => ({ ...d, layerSets: [...d.layerSets, { id: randomUUID(), name,
 layers: resolved }] }))` through the tab's `write` helper, as "Save set" does (`:100-107`).
   `name` is the preset name, or "<name> 2", "<name> 3" when taken. Disabled when `!canSave`,
   when 20 sets exist, or while writing.
 - The "Custom" badge (`:125-129`) also hides when a built-in or saved set matches.
 
-Saved set chips keep applying `s.layers` directly (`:236`). Step 4 reconciles them against the
-current layer list first, because a set saved before a layer was added or removed currently
-sends stale names into the render request (`PcbPreviewPanel.tsx:162-165`).
+Saved set chips apply `reconcileSaved(s.layers, names)` from `layers.ts`. Removed layers are
+dropped and new layers start hidden, preserving existing opacities. `matchLayerSet` names the
+active built-in first, otherwise the matching saved set. Read-only clients can apply either;
+only duplicating, saving and removing require workspace write permission.
 
 ### Drawing layer menu and labels (`PcbPreviewPanel.tsx`)
 
