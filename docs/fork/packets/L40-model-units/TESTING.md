@@ -2,6 +2,28 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+## Results
+
+Implementation branch: `feat/model-units-scale-capture`, 2026-10-10. Milestones:
+`11bc13a743` adds the unit and scale-reference settings; `357f419b46` adds the display,
+reference geometry and capture-export behavior.
+
+| Focused file set                                                                                                                                                  | Result                                            |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `packages/contracts/src/fork/model-preview-3d.test.ts`, `apps/server/src/fork/model-preview-3d/store.test.ts`, `apps/web/src/fork/model-preview-3d/units.test.ts` | Passed: 16 tests (shared foundation for L40/L39)  |
+| `viewer/references.test.ts`, `viewer/createViewer.test.ts`, `viewer/ViewerCanvas.test.tsx`                                                                        | Passed: 34 tests (shared L39/L40 viewer coverage) |
+| `viewer/captureSheet.test.ts`, `buildPlate.test.ts`                                                                                                               | Passed: 8 existing regression tests               |
+
+The integrated batch passed **70 tests across 10 files**, counted once: 16 foundation tests,
+34 viewer tests, 12 export tests and 8 existing capture-sheet/bed-helper regressions.
+Changed TS/TSX lint passed. Contracts, web, server and client-runtime typechecks all exited 0;
+the existing Effect suggestions remain informational. No repo-wide suite was run.
+
+The commands and manual steps below remain the validation plan; they do not imply additional
+completed checks. No browser, desktop, remote-client, real clipboard/download or real OpenSCAD
+verification was run in this implementation pass. Those checks remain open; no release or
+merge verification is claimed here.
+
 ## Automated tests
 
 | File                                                                                      | Covers                                                                                                                                                                                                                                                       |

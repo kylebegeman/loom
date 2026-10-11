@@ -2,6 +2,27 @@
 
 Focused tests only, no sleeps, no repo-wide checks.
 
+## Results
+
+Implementation branch: `feat/model-units-scale-capture`, 2026-10-10. Milestones:
+`11bc13a743` adds the unit and scale-reference settings; `357f419b46` adds the display,
+reference geometry and capture-export behavior.
+
+| Focused file set                                                                       | Result                                               |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `apps/web/src/fork/model-preview-3d/captureExport.test.ts`, `useModelEditing.test.tsx` | Passed: 12 tests                                     |
+| `viewer/captureSheet.test.ts`, `buildPlate.test.ts`                                    | Passed: 8 existing regression tests across the batch |
+
+The integrated batch passed **70 tests across 10 files**, counted once: 16 foundation tests,
+34 viewer tests, 12 export tests and 8 existing capture-sheet/bed-helper regressions.
+Changed TS/TSX lint passed. Contracts, web, server and client-runtime typechecks all exited 0;
+the existing Effect suggestions remain informational. No repo-wide suite was run.
+
+The commands and manual steps below remain the validation plan; they do not imply additional
+completed checks. No browser, desktop, remote-client, real clipboard/download or real OpenSCAD
+verification was run in this implementation pass. Those checks remain open; no release or
+merge verification is claimed here.
+
 ## Automated tests
 
 | File                                                             | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |

@@ -95,6 +95,7 @@ export const useDisplayUnitsControl = () => useContext(DisplayUnitsContext);
 export function useDisplayUnitsSetting(
   environmentId: EnvironmentId,
   settings: ModelPreviewSettings,
+  getSettings?: () => ModelPreviewSettings,
 ): DisplayUnitsControl;
 ```
 
@@ -102,6 +103,11 @@ export function useDisplayUnitsSetting(
 value shown at once, `runModelCommand(models.updateSettings, ...)` with
 `{ ...settings, displayUnits }`, a settings refresh, and a "Units not changed" toast that
 reverts on failure. It uses the same permission check as `useBuildPlate` for `canSave`.
+
+When units and scale references are implemented together, `ModelFile` provides `getSettings`
+with both optimistic display choices. Saves spread that current snapshot before replacing
+their own field, so changing one display preference retains the other pending choice without
+introducing L33's settings schema change.
 
 Providers:
 
@@ -138,8 +144,8 @@ Every place the 3D panel shows or accepts a length, found with
 | `SettingsSection.tsx:217-236`        | Custom size inputs, labels "`axis` mm" (`:221`).                                                         | Inputs in the form's unit; labels "`axis` `units`".                                     |
 | `viewer/createViewer.ts:260`         | Measurement label in the viewport and in captures (painted by `paintMarks`, `:278`), `toFixed(1)` " mm". | The viewer's length formatter (see "Viewer").                                           |
 | `MarkupSection.tsx:481`              | Measurement deltas, `toFixed(1)`, no unit.                                                               | `formatLength(Math.abs(value), units, { unit: false })`.                                |
-| `MarkupSection.tsx:485`              | Measurement distance, `toFixed(2)` " mm".                                                                | `formatLength(distance, units, { digits: 2 })`.                                         |
-| `MarkupSection.tsx:491`              | "Copy value", `toFixed(2)`.                                                                              | `formatLength(distance, units, { digits: 2, unit: false })`.                            |
+| `MarkupSection.tsx:485`              | Measurement distance, currently `toFixed(1)` " mm".                                                      | `formatLength(distance, units, { digits: units === "in" ? 2 : 1 })`.                    |
+| `MarkupSection.tsx:491`              | "Copy value", currently `toFixed(1)`.                                                                    | `formatLength(distance, units, { digits: units === "in" ? 2 : 1, unit: false })`.       |
 | `ViewsSection.tsx:230`               | Saved view section offset, `toFixed(1)` " mm".                                                           | `formatLength(section.offset, units)`.                                                  |
 | `WorkspaceTools.tsx:432`, `:455-463` | Section offset `Scrub`, range in whole mm, step 0.5, `unit="mm"`.                                        | Scrub in the display unit (see "Inputs"). The native range input beside it stays in mm. |
 | `VariantsInspector.tsx:327`          | Variant size, `toFixed(0)` " mm".                                                                        | `formatLengths(dimensions, units, { digits: 0 })`.                                      |
@@ -159,11 +165,16 @@ Not converted, on purpose:
 
 `formatVolume` (`buildPlate.ts:19-20`) is replaced by `formatLengths` and removed.
 
+The reviewed source for this batch shows measurement rows and "Copy value" with one decimal
+in millimetres, rather than the two-decimal baseline cited in the original packet. Keep that
+existing precision in mm and use three decimals in inches for those two sites. The viewer's
+measurement labels retain the formatter's ordinary one-decimal mm / two-decimal inch display.
+
 ### Inputs
 
 - **Custom bed size** (`BedPicker.tsx` `CustomSize`, `SettingsSection.tsx:217-236`, and L33's
   Manage beds rows). The field shows `fromMm(value, units)` rounded to 2 decimals in inches,
-  0 in mm as today. On commit, `Math.round(toMm(typed, units) * 10) / 10`. Validation stays
+  1 in mm, retaining the stored 0.1 mm precision. On commit, `Math.round(toMm(typed, units) * 10) / 10`. Validation stays
   10 to 2000 mm, checked after conversion; the invalid hint gives the range in the display unit.
   Field `step` is 0.01 in inches and unchanged in millimetres.
 - **Section offset** (`WorkspaceTools.tsx:455-463`). `Scrub` gets `value={fromMm(offset)}`,

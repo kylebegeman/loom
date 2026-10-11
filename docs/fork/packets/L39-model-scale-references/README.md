@@ -1,8 +1,13 @@
 # L39: Everyday objects for scale
 
-Status: Ready to build.
+Status: Implemented locally; client verification pending (`feat/model-units-scale-capture`).
 
 Approved by Kyle on 2026-10-10.
+
+Implemented in the L40/L39/L44 batch on the branch above. All 70 focused tests, changed-source
+lint and contracts/web/server/client-runtime typechecks passed. Real-client interaction,
+clipboard/download behavior and real OpenSCAD checks were not run; see
+[TESTING.md](./TESTING.md#results) for the evidence and remaining checks.
 
 Millimetres on a status bar do not tell you how big a part feels. This packet adds an optional
 everyday object beside the part on the bed: a credit card, a US quarter or a 1 euro coin, an AA

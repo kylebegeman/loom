@@ -62,9 +62,18 @@ as `renderViews` plus `attachModelImage`. Add
 
 ```ts
 perform(action === "copy" ? "Copying model image" : "Saving model image", async () => {
-  const image = renderViews(ids, includeMeasurements); // no await before this line
-  if (action === "copy") await copyImage(image);
-  else saveImage(await image, captureFileName(path, name, new Date()));
+  try {
+    const image = renderViews(ids, includeMeasurements); // no await before this line
+    if (action === "copy") await copyImage(image);
+    else saveImage(await image, captureFileName(path, name, new Date()));
+    return { ok: true } as const;
+  } catch (cause) {
+    return {
+      ok: false,
+      title: action === "copy" ? "Image could not be copied" : "PNG could not be saved",
+      message: cause instanceof Error ? cause.message : String(cause),
+    } as const;
+  }
 });
 ```
 
@@ -82,13 +91,19 @@ runs inside the click. It also gives export the same single-operation lock as at
   (174-177) already applies.
 - Change `captureError` from a string to `{ title, message }` so the notice (961-971) can say
   "Capture could not be attached", "Image could not be copied" or "PNG could not be saved".
-- Pass `canCopy={canCopyImages()}`, `onCopy` and `onSave` to `CaptureMenu` (788-796) and
-  `onExport={editing.exportViews}` and `canCopy` to `ViewsSection` (1112).
+- Pass `canCopy={canCopyImages()}` and `onExport(action, four)` to `CaptureMenu`; the callback
+  calls `exportCapture(four, action)`.
+- Pass the panel's `exportViews` wrapper and `canCopy` to `ViewsSection`. The hook returns
+  `{ ok: true }` or `{ ok: false, title, message }`; the wrapper maps that result to the
+  existing success/capture-error notice. The hook owns the operation lock, so the wrapper
+  must not call `perform` around `editing.exportViews`.
 - Listen for the new model actions in the existing `onModelAction` effect (651-657).
 
 `WorkspaceTools.tsx` `CaptureMenu` (293-357): after the "Attach to the composer" group, add a
 "Copy image" group and a "Save PNG" group, each with "Current view" and "Four-view sheet", using
-the same icons. Copy items take `disabled={!canCopy}`. Do not reorder existing groups.
+the same icons. `onExport` takes `(action, four)`. Copy items take
+`disabled={disabled || capturing || !canCopy}`, and save items take
+`disabled={disabled || capturing}`. Do not reorder existing groups.
 
 `ViewsSection.tsx`: in the saved view `RowMenu` (240-254) and the review sheet `RowMenu`
 (307-331), add "Copy image" (`CopyIcon`) and "Save PNG" (`DownloadIcon`) before the separator.

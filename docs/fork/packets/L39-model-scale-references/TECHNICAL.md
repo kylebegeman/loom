@@ -16,6 +16,10 @@ because it only looks at `model`:
 Captures render the whole scene (`capture` at line 572 calls `renderer.render(scene, camera)`),
 so the reference appears in captures exactly when it is visible. No capture code changes.
 
+The scene's clipping radius includes a visible reference so projection near/far planes do
+not clip it unnecessarily. Model fit distance, dimensions and pick targets still use the
+model's own bounds.
+
 ## Contracts
 
 A new file `packages/contracts/src/fork/model-scale.ts` (see the import note below), exported
@@ -35,6 +39,10 @@ export const ScaleReference = Schema.Literals([
 ]);
 export type ScaleReference = typeof ScaleReference.Type;
 ```
+
+The same contracts module exports `SCALE_REFERENCE_LABELS`, including "Nothing" and
+"Hand (average adult)". Menus and Settings read that table directly, so they do not import
+the viewer's Three.js geometry just to obtain labels. `REFERENCE_SPECS` reuses the table.
 
 In `packages/contracts/src/fork/model-preview-3d.ts`, `ModelPreviewSettings` (line 240) gains,
 after `buildPlate`:
@@ -124,10 +132,12 @@ unchanged.
   lists only mesh-affecting settings, so changing the reference never reloads the model.
 - `BedPicker.tsx`: add `useScaleReference(environmentId, settings)` beside `useBuildPlate`
   (line 44), with the same optimistic pending value, save through `models.updateSettings`,
-  settings refresh and error toast ("Scale reference not changed"). Append a labelled `Select`
+  settings refresh and error toast ("Scale reference not changed"). When L40 is present, the
+  panel supplies its shared current settings snapshot, including both optimistic preferences,
+  so saving a reference retains a pending unit change. A repeated editor command for the same
+  pending reference waits for that save before reporting success. Append a labelled `Select`
   "Show for scale" inside the existing `fieldset` (after the pattern `Segmented`, line 173), so
-  it is disabled on connections that cannot save. Options come from `REFERENCE_SPECS` labels
-  plus "Nothing". Do not reorder existing items.
+  it is disabled on connections that cannot save. Options come from the shared `SCALE_REFERENCE_LABELS` table. Do not reorder existing items.
 - `SettingsSection.tsx`: a "Show for scale" `SettingsRow` after "Bed pattern" (line 245) using
   the same `set` helper.
 - `ModelPanel.tsx:216` `display` case: if `c.reference !== undefined`, save the setting through
@@ -135,7 +145,7 @@ unchanged.
   "This connection cannot change model settings." when not permitted.
 
 Labels: "Credit card", "US quarter", "1 euro coin", "AA battery", "LEGO 2×4 brick",
-"M3×10 screw", "Hand".
+"M3×10 screw", "Hand (average adult)".
 
 ## Agent-facing tools
 

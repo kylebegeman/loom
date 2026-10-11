@@ -9,8 +9,9 @@ button to pan, and scroll to zoom. The floating tools choose a standard or saved
 toggle wireframe, the bed and axes. **Display > Orthographic** switches to a projection where
 parallel edges stay parallel, useful for checking alignment against a drawing. The **Bed** menu
 in the viewport sets what the part rests on: a printer's build plate, a flat surface such as an
-A4 sheet or a 1 m square, or a custom size, with a 10 mm grid, a 1 in grid or a plain surface. Surfaces have no height limit. The
-choice is saved for the environment, so the Part tab, variants and settings follow it.
+A4 sheet or a 1 m square, or a custom size, with a 10 mm grid, a 1 in grid or a plain surface.
+Surfaces have no height limit. The choice is saved for the environment, so the Part tab,
+variants and settings follow it.
 Maximize the panel for a larger work area with the inspector alongside your part. In a narrow
 panel the inspector opens as a sheet below the viewport; expand it for long forms, then return
 to the viewport.
@@ -19,9 +20,22 @@ While the panel has focus, **F** fits the model, **O** and **H** choose orbit or
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
 **P** switches perspective and orthographic projection, and **I** shows or hides the inspector.
 The help button beside the zoom controls lists every shortcut.
-Dimensions are in millimetres: STL and OBJ are treated as mm, 3MF uses its recorded units,
-and glTF is converted from metres. Draco-compressed glTF requires an uncompressed export.
-Files above the environment's size limit need **Load anyway**.
+Choose **Units** in the Bed menu or **Settings > Loom > 3D model** to display lengths in
+millimetres or decimal inches. The command palette's **3D model: Switch units** changes the
+same setting. Dimensions, measurements, section offsets and custom bed inputs follow it;
+**Copy value** on a measurement copies the number in the selected unit. The grid pattern is a
+separate choice. Customizer parameters keep the units defined by the SCAD source.
+
+Stored lengths and agent tool values stay in millimetres. STL and OBJ are treated as mm, 3MF
+uses its recorded units, and glTF is converted from metres. Changing display units leaves
+model files and saved measurements unchanged. Draco-compressed glTF requires an uncompressed
+export. Files above the environment's size limit need **Load anyway**.
+
+For a sense of size, choose an object under **Bed > Show for scale**, or the same setting in
+Loom settings. A card, coin or other reference sits beside the part at its real size and
+appears in captures when it is in frame. It does not affect the part's dimensions, bed fit or
+measurements. Fit and standard views frame the part, so zoom out if a large reference is out
+of view. Choose **Nothing** to remove it; hiding the bed leaves the reference visible.
 
 The panel reloads when a file changes and keeps the camera. For glTF, buffers and textures
 must be below the model's directory, without parent-directory references. Close a tab to
@@ -74,6 +88,14 @@ showing iso, front, top and right, or one of your saved review sheets. The four-
 always orthographic; current-view captures and saved review sheets keep their views' projections.
 Capturing restores your working view afterward. Send the attachment with your next message;
 remove it from the composer if you no longer need it.
+
+The Capture menu also offers **Copy image** and **Save PNG** for the current view or four-view
+sheet. Saved views and review sheets have the same actions in their row menus. The command
+palette offers **3D model: Copy view image** and **3D model: Save view as PNG** for the current
+view. Copy puts the image on the clipboard for another app; Save PNG exports the full image
+without attaching it to the composer. When the browser cannot copy images, including plain HTTP connections to a
+remote host, copy is disabled and Save PNG remains available. Measurement labels in captures
+use the selected display unit.
 
 Agents can call `loom_model_preview_3d_render` for SCAD, STL, 3MF and OBJ PNG views, logs and
 geometry summaries. OpenSCAD runs on the environment host. **Let agents render models and propose variants** in
@@ -144,8 +166,9 @@ Agents can use `loom_model_preview_3d_*` tools to inspect files, render meshes, 
 parameter sets and workspace tools, propose variants, and operate the visible editor. Camera,
 picking, marked captures, customizer history and draft preparation use the connected client.
 Host rendering and saved state remain available without opening the editor. Agents can change
-projection through the editor's display action; its snapshot reports the current projection
-and bed-fit results for the loaded model.
+projection or show and hide a scale reference through the editor's display action; its
+snapshot reports the current projection and bed-fit results for the loaded model. Settings
+tools can change the display unit, while tool inputs and outputs keep lengths in millimetres.
 
 `t3 model <action> '<json>'` calls the same tools using their MCP suffix. It needs
 `LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION`, or the credentials inherited by an ACP agent

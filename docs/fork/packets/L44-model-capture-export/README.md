@@ -1,8 +1,13 @@
 # L44: Copy and save captures
 
-Status: Ready to build
+Status: Implemented locally; client verification pending (`feat/model-units-scale-capture`).
 
 Approved by Kyle on 2026-10-10.
+
+Implemented in the L40/L39/L44 batch on the branch above. All 70 focused tests, changed-source
+lint and contracts/web/server/client-runtime typechecks passed. Real-client interaction,
+clipboard/download behavior and real OpenSCAD checks were not run; see
+[TESTING.md](./TESTING.md#results) for the evidence and remaining checks.
 
 Captures can leave Loom. Next to "Attach to the composer", the Capture menu offers "Copy image"
 and "Save PNG" for the current view and the four-view sheet, and saved views and review sheets
