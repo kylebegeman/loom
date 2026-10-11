@@ -70,9 +70,8 @@ once through the existing sheet RPC and keeps only the small thumbnail in saved 
 
 ## Decisions
 
-- 8 candidates per sweep, 24 kept. tscircuit builds are slower than OpenSCAD previews and run one
-  at a time on the host, so 8 keeps a batch to a few minutes. Step 1 of the implementation
-  measures and may raise it to L23's 12; see below.
+- 8 candidates per sweep, 24 kept. Builds run one at a time on the host within a bounded queue.
+  Real-tool timings remain unmeasured; the approved limit stays 8.
 - Board SVG thumbnails, not 3D. The board drawing shows placement and size, which is what a sweep
   changes; 3D export is the slowest tscircuit output.
 - Thumbnails are made in the client from the SVG the host already produced. No image library on
@@ -84,13 +83,9 @@ once through the existing sheet RPC and keeps only the small thumbnail in saved 
 - Agents propose; they never build without the panel. Proposing writes only saved state, and
   rendering goes through the visible panel, which applies the trust gate.
 
-## Decisions needed from Kyle
+## Accepted defaults
 
-1. Sweep size. Recommended: ship 8 per sweep and let step 1's measurement decide. If the L24
-   fixture builds in under 8 seconds per candidate on Kyle's machine, use 12 to match L23. No
-   published tscircuit build times were found, so this is an estimate until measured.
-2. Agent rendering. Recommended: agents may ask the open panel to render (`render-variants`), and
-   the panel refuses until the user allows circuit code. Thumbnails are made in the client, so a
-   host-only render tool could not produce them anyway. Note that L24's `loom_pcb_render` and
-   `loom_pcb_asset` already build tscircuit code for agents without the panel's trust setting;
-   this packet does not widen that, and TECHNICAL.md records it.
+Kyle authorized implementation with 8 candidates per sweep and 24 saved variants. Agents may
+ask the open panel to render through `render-variants`, subject to circuit trust and permissions.
+The optional timing experiment is deferred because `tsci` is not installed. Existing host-only
+PCB render tools retain their prior behavior.

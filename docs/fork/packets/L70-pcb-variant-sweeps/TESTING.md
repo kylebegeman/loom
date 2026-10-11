@@ -1,95 +1,76 @@
 # L70 testing
 
-## Focused tests
+## Completed focused verification
 
-| File                                                                      | Proves                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/contracts/src/fork/pcb-workspace.test.ts` (new)                 | An L24 `PcbVariant` without the new fields decodes with `origin: "user"` and null render fields; a thumbnail over 24,000 characters and stats with more than 40 board values are rejected; `render-variants` decodes with and without `ids`.                                                                                                                                                                                                                                                                                                                                      |
-| `apps/server/src/fork/pcb-preview/variants.test.ts` (new)                 | `circuitIssues` counts `_error` and `_warning` elements and ignores others. `variantStats` reads bounds and component count, and merges board values. `validateVariantValues` accepts declared values and returns the `applyCircuitParameters` message for an unknown key, an out-of-range number and a choice not in the list.                                                                                                                                                                                                                                                   |
-| `apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts` (extend)     | With a fake `tsci`: `renderVariant` stages the applied source and leaves the real file byte-for-byte unchanged; a stale `expectedSourceHash` fails with `conflict`; a second call with the same values is `cached`; a failing export returns `failed` with the log; `cancelVariant` during the export returns `cancelled` and leaves no cache entry; `readSheet` serves the result. `proposeVariants` appends with `origin: "agent"`, rejects invalid values, refuses past 24 and publishes on the workspace bus. Existing render tests still pass after the `commitRender` move. |
-| `apps/server/src/fork/pcb-preview/mcp.test.ts` (extend)                   | `loom_pcb_propose_variants` reaches the service and returns the workspace; more than 8 entries fail decode; `loom_pcb_editor` accepts `render-variants`.                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `apps/web/src/fork/pcb-preview/sweep.test.ts` (new)                       | Number ranges are inclusive, snapped to `step`, clamped and de-duplicated; choices and booleans; two-axis products; counts above the limit are refused; names; sort order with unrendered last.                                                                                                                                                                                                                                                                                                                                                                                   |
-| `apps/web/src/fork/pcb-preview/variantImages.test.ts` (new)               | `alignSvgPair` gives both SVGs the union millimetre view box and leaves content untouched.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `apps/web/src/fork/pcb-preview/workspace.interactions.test.tsx` (extend)  | With mocked commands: a sweep of 3 renders cards in order with progress; **Cancel** stops after the current candidate and calls `cancelVariant`; a `conflict` stops the batch with the source message; a failed candidate shows **Build failed** and the batch continues; render buttons are disabled with the trust message until circuit code is allowed; **Use these values** opens the review diff.                                                                                                                                                                           |
-| `apps/web/src/fork/model-preview-3d/viewer/captureSheet.test.ts` (extend) | The `limit` argument is respected and the default is unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Coverage                                                | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing host rendering after `commitRender` extraction | All 49 existing PCB service tests passed at the refactor milestone.                                                                                                                                                                                                                                                                                                                                                          |
+| Candidate service                                       | 4 focused tests passed: staged source isolation, cache and readable sheets, invalid/stale values, export failure, cancellation without partial cache, source edits during export, atomic proposals, limits and workspace publication. The other 49 service cases were deliberately skipped in this final focused run.                                                                                                        |
+| Contracts, helper logic, tool routing and authorization | 43 tests passed across the contract, variant helper, MCP, client permission and server authorization files.                                                                                                                                                                                                                                                                                                                  |
+| Client helper and interaction logic                     | 18 tests passed across sweep, SVG alignment, batch and variant interaction files. Includes range snapping/deduplication, bounded products, sorting, sequential builds, failure/conflict behavior, trust/terminal/write refusal, cancel/unmount/source changes, late-result discard, deleted/edited candidates, single request consumption, immediate sweep rendering, comparison teardown and review's original source hash. |
+| Static verification                                     | Contracts, server, client-runtime and web typechecks passed. Scoped lint passed for changed backend and client files.                                                                                                                                                                                                                                                                                                        |
 
-## Commands
+Client interactions run in jsdom with mocked RPC and thumbnail boundaries, using the actual
+workbench and parameter editor. They prove the state and command flow, not browser image
+rasterization or real CAD output. L69 already added and verified the shared thumbnail limit;
+L70 reuses it unchanged.
 
-From `packages/contracts`:
+## Repeat the focused checks
 
-```sh
-pnpm exec vp test run src/fork/pcb-workspace.test.ts
-```
-
-From `apps/server`:
+From the repository root, using the installed Vite+ binary:
 
 ```sh
-pnpm exec vp test run src/fork/pcb-preview/variants.test.ts \
-  src/fork/pcb-preview/PcbPreviewService.test.ts src/fork/pcb-preview/mcp.test.ts \
-  src/fork/rpcAuthorization.test.ts src/fork/cli/callTool.test.ts
+./node_modules/.bin/vp test run packages/contracts/src/fork/pcb-workspace.test.ts \
+  apps/server/src/fork/pcb-preview/variants.test.ts \
+  apps/server/src/fork/pcb-preview/mcp.test.ts \
+  packages/client-runtime/src/fork/pcb-preview.permissions.test.ts \
+  apps/server/src/fork/rpcAuthorization.test.ts
+
+./node_modules/.bin/vp test run apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts \
+  -t 'isolated variants|variant build failures|proposes validated agent variants|source changes during the build'
+
+./node_modules/.bin/vp test run apps/web/src/fork/pcb-preview/sweep.test.ts \
+  apps/web/src/fork/pcb-preview/variantImages.test.ts \
+  apps/web/src/fork/pcb-preview/variantBatch.test.ts \
+  apps/web/src/fork/pcb-preview/variants.interactions.test.tsx
+
+./node_modules/.bin/vp run --filter @t3tools/contracts typecheck
+./node_modules/.bin/vp run --filter @t3tools/client-runtime typecheck
+./node_modules/.bin/vp run --filter t3 typecheck
+./node_modules/.bin/vp run --filter @t3tools/web typecheck
 ```
 
-From `apps/web`:
+Run lint on the specific changed files. No repo-wide checks, browser, dev server or dependency
+installation were run for this packet. The full upstream integration rehearsal remains a
+maintainer release check from a clean checkout.
 
-```sh
-pnpm exec vp test run src/fork/pcb-preview/sweep.test.ts \
-  src/fork/pcb-preview/variantImages.test.ts \
-  src/fork/pcb-preview/workspace.interactions.test.tsx \
-  src/fork/model-preview-3d/viewer/captureSheet.test.ts
-```
+## Pending real-client and CAD verification
 
-From `packages/client-runtime`, the permission test walks every fork scope:
+`tsci` is not installed. The optional build-time measurement and real-tool exports did not run;
+8 candidates per sweep and 24 saved remain unchanged. No browser or computer use was authorized.
 
-```sh
-pnpm exec vp test run src/state/commandPermissions.test.ts
-```
+With a declared tscircuit fixture and isolated development state, verify:
 
-Lint and typecheck from the repository root:
-
-```sh
-vp lint packages/contracts/src/fork packages/client-runtime/src/fork \
-  apps/server/src/fork/pcb-preview apps/web/src/fork/pcb-preview \
-  apps/web/src/fork/model-preview-3d/viewer/captureSheet.ts
-vp run --filter @t3tools/contracts typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/web typecheck
-```
-
-`realTools.test.ts` builds real `tsci` output and is slow; run it once after step 5 if `tsci` is
-installed, and otherwise leave it to CI.
-
-## Manual checks for Kyle
-
-Use a tscircuit design with declared parameters, in a dev server with copied data.
-
-1. Before allowing circuit code, open Parameters: saved variants show, render buttons are
-   disabled with the trust message.
-2. Allow circuit code. **Sweep** one number parameter over 4 values. Cards fill in one at a time
-   with "Rendering 2 of 4". Confirm `git status` shows no change to the circuit file.
-3. Sweep two parameters for 6 candidates and **Cancel** at the third. The running build stops,
-   finished thumbnails stay, the rest show **Queued** with **Render** available.
-4. Switch to **Table**, sort by width and by issues.
-5. Select two and **Compare**. Try every mode and the opacity slider; boards of different sizes
-   line up on their real coordinates.
-6. **Use these values** on one card. The diff opens; **Apply to source** updates the preview.
-7. Edit the source in an editor during a batch. The batch stops with the source changed message;
-   thumbnails show **Out of date**.
-8. Ask the agent to propose three variants and then render them. They appear marked as proposed;
-   rendering works only while circuit code is allowed and reports progress in the panel.
-9. Reload the page; thumbnails, stats and favourites persist. Delete one and confirm it stays
-   gone.
-10. Open the same thread from a second client over the tailnet; the sweep's results appear there
-    and **Compare** works from that client.
-11. If L55 landed, its columns appear in **Table** and sort correctly.
+1. Before allowing circuit code, saved variants remain visible and render controls are disabled.
+2. Create a numeric sweep and a two-axis sweep. Confirm physical thumbnails, statistics and
+   progress, and that the circuit source stays unchanged.
+3. Cancel mid-batch and leave the tab while rendering. Completed previews persist and later
+   candidates stay queued. Revoke permissions or edit a source dependency during a build.
+4. Compare two boards of different sizes in every mode and check their physical alignment,
+   opacity, image decoding, and cache-eviction rebuild behavior. Close during an evicted rebuild.
+5. Promote a candidate, review the diff and apply. Edit the source after review and confirm the
+   conflict prevents writing.
+6. Propose and render through agent tools, reload saved results, and check propagation from a
+   second client over a remote connection. Inspect the responsive layout.
 
 ## Merge safety
 
-- Contracts: only defaulted fields and new methods. Saved L24 workspaces and older clients decode;
-  older clients that rewrite variants drop the new fields until the next render, which is
-  harmless.
-- Shared files: see [SEAMS.md](./SEAMS.md). The `commitRender` move in `PcbPreviewService.ts` and
-  the Variants section in `ParameterEditor.tsx` are the likeliest conflicts; land the move as its
-  own commit.
-- Upstream: no upstream files. Before an upstream integration, confirm with
-  `git merge-tree --write-tree --name-only --no-messages HEAD "$tag"` that no L70 file appears.
+All edits are fork-owned. Old variants decode through defaulted fields. Older clients that
+rewrite workspace variants can drop the new metadata until the next render. No upstream wire
+schemas or persisted events changed. See [SEAMS.md](./SEAMS.md).
+
+A local merge preview against `v0.0.46-nightly.20261011.2980` reported three inherited
+conflicts: `apps/web/src/components/chat/ProviderModelPicker.tsx`,
+`apps/web/src/routes/__root.tsx` and `packages/client-runtime/src/state/runtime.ts`.
+The pre-L70 commit produced the same conflict file list. No L70 file conflicted. Resolving
+those existing seams and the full clean-checkout integration remain release work.

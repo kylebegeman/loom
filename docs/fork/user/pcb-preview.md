@@ -91,9 +91,16 @@ response, choose probes and optional parameter sweeps, then save a setup or expo
 circuit needs suitable SPICE models and ground. You can provide a workspace netlist when
 its CAD export is not simulation-ready.
 
-Parameters reads explicitly declared tscircuit values. Review the proposed source, then apply
-it or save a variant. Ask the agent to add the parameter schema and source markers when no
-parameters appear. Applying checks that the source has not changed since review.
+Parameters reads explicitly declared tscircuit values. Ask the agent to add the parameter
+schema and source markers when no parameters appear. Save a named variant or choose **Sweep**
+to try one or two parameters, up to 8 candidates per sweep and 24 saved variants. Circuit code
+must be allowed, with terminal and workspace write permissions, to render candidates. Builds
+leave your source unchanged; cancel a batch to keep the previews already completed.
+
+Compare two candidates side by side or as aligned overlays, and use the table to compare size,
+parts and build issues. Agents can propose saved variants for you to render. **Use these values**
+loads a candidate into source review. **Apply to source** checks that the source has not changed
+since review. Saved thumbnails marked **Out of date** can be rendered again.
 
 ## Print at true scale
 

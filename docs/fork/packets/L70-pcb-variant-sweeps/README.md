@@ -1,6 +1,6 @@
 # L70: tscircuit variant sweeps
 
-Status: Ready to build.
+Status: Implemented locally; real-client and CAD checks pending.
 
 Approved by Kyle on 2026-10-10.
 
