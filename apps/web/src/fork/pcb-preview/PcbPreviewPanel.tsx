@@ -75,12 +75,19 @@ import {
   SurfaceSwitch,
   WorkspaceMenu,
   type Surface,
+  type CaptureExportAction,
 } from "./WorkspaceChrome";
 import { usePcbWorkbench } from "./usePcbWorkbench";
 import { LayerSheet } from "./LayerSheet";
 import { DrawingOverlays } from "./Overlays";
 import { snapPoint } from "./geometry";
 import { attachModelImage, captureBase64 } from "../model-preview-3d/capture";
+import {
+  canCopyImages,
+  captureFileName,
+  copyImage,
+  saveImage,
+} from "../model-preview-3d/captureExport";
 import { TrueScalePrintDialog } from "./TrueScalePrintDialog";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { appendSummary, checkSummary } from "./summary";
@@ -131,6 +138,8 @@ function DesignWorkspace({
   const unit = useLengthUnit();
   const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
   const hiddenLayerPresets = usePcbPreferences((s) => s.hiddenLayerPresets);
+  const pngScale = usePcbPreferences((s) => s.pngScale);
+  const setPngScale = usePcbPreferences((s) => s.setPngScale);
   const printPermission = useAtomValue(pcb.print.permissionAtom(threadRef.environmentId));
   const canBuild3d = useAtomValue(pcb.asset.permissionAtom(threadRef.environmentId));
   const canReadInspection = useAtomValue(pcb.inspect.permissionAtom(threadRef.environmentId));
@@ -444,6 +453,61 @@ function DesignWorkspace({
     }
   };
 
+  const exportCapture = async (full: boolean, action: CaptureExportAction) => {
+    if (captureBusy) return;
+    setCaptureBusy(true);
+    setNotice(null);
+    try {
+      const format = action === "svg" ? "svg" : "png";
+      const surfaceLabel = three ? "3d" : view === "pcb" ? "board" : "schematic";
+      const sheetLabel =
+        !three && view === "schematic" && (preview.display?.result.sheets.length ?? 0) > 1
+          ? preview.display?.result.sheets.find((sheet) => sheet.id === preview.selectedSheet)
+              ?.label
+          : null;
+      const label = sheetLabel ? `${surfaceLabel}-${sheetLabel}` : surfaceLabel;
+      const fileName = captureFileName(
+        design.id.replace(/\.circuit\.tsx$/, ".tsx"),
+        label,
+        new Date(),
+        format,
+      );
+      if (format === "svg") {
+        if (three) throw new Error("SVG export is available for 2D drawings.");
+        if (!viewport.current) throw new Error("Wait for the drawing to load before capturing.");
+        saveImage(
+          new Blob([await viewport.current.exportSvg(full)], { type: "image/svg+xml" }),
+          fileName,
+        );
+        setNotice({ tone: "info", text: "Download started." });
+      } else {
+        const result = three
+          ? {
+              image: board3d.current
+                ? board3d.current.capture()
+                : Promise.reject(new Error("Wait for the 3D board to load.")),
+              reduced: false,
+            }
+          : viewport.current?.exportPng(full, pngScale);
+        if (!result) throw new Error("Wait for the drawing to load before capturing.");
+        // Clipboard permission belongs to the initiating gesture, before rendering awaits.
+        if (action === "copy") await copyImage(result.image);
+        else saveImage(await result.image, fileName);
+        setNotice({
+          tone: "info",
+          text: `${action === "copy" ? "Image copied." : "Download started."}${result.reduced ? " Size reduced to the browser canvas limit." : ""}`,
+        });
+      }
+    } catch (cause) {
+      setNotice({
+        tone: "error",
+        text: cause instanceof Error ? cause.message : "Capture export failed.",
+      });
+    } finally {
+      setCaptureBusy(false);
+    }
+  };
+
   const editorEvents = useAtomValue(
     pcb.editorEvents({
       environmentId: threadRef.environmentId,
@@ -458,6 +522,7 @@ function DesignWorkspace({
     const execute = async () => {
       const c = request.command;
       let png: string | undefined;
+      let svg: string | undefined;
       const drawing = () => {
         if (!viewport.current?.isReady() || !preview.display || three)
           throw new Error("Open a loaded 2D drawing for this action.");
@@ -623,12 +688,36 @@ function DesignWorkspace({
           break;
         }
         case "capture": {
-          const blob = three ? await model().capture() : await drawing().capture(c.full ?? false);
-          if (c.attachToDraft)
-            await attachModelImage(blob, threadRef, `${design.name}-${three ? "3d" : view}.png`);
-          png = await captureBase64(blob);
+          if (captureBusy) throw new Error("Another capture is in progress.");
+          if (c.format === "svg" && (three || c.attachToDraft))
+            throw new Error(
+              three
+                ? "SVG capture is available for 2D drawings."
+                : "SVG captures cannot be attached as draft images.",
+            );
+          setCaptureBusy(true);
+          try {
+            if (c.format === "svg") svg = await drawing().exportSvg(c.full ?? false);
+            else {
+              const blob = three
+                ? await model().capture()
+                : c.scale
+                  ? await drawing().exportPng(c.full ?? false, c.scale).image
+                  : await drawing().capture(c.full ?? false);
+              if (c.attachToDraft)
+                await attachModelImage(
+                  blob,
+                  threadRef,
+                  `${design.name}-${three ? "3d" : view}.png`,
+                );
+              png = await captureBase64(blob);
+            }
+          } finally {
+            setCaptureBusy(false);
+          }
           break;
         }
+
         default: {
           // A newer server can send an action this client does not know yet.
           const unknown: never = c.action;
@@ -637,6 +726,7 @@ function DesignWorkspace({
       }
       return {
         png,
+        svg,
         state:
           c.action === "snapshot"
             ? {
@@ -672,7 +762,7 @@ function DesignWorkspace({
       };
     };
     void execute()
-      .then(({ png, state }) =>
+      .then(({ png, svg, state }) =>
         runPcbCommand(pcb.completeEditorAction, {
           environmentId: threadRef.environmentId,
           input: {
@@ -682,6 +772,7 @@ function DesignWorkspace({
             message: "Editor action completed.",
             ...(state ? { state } : {}),
             ...(png ? { png } : {}),
+            ...(svg ? { svg } : {}),
           },
         }),
       )
@@ -1212,6 +1303,10 @@ function DesignWorkspace({
             three={three}
             disabled={!!blocked || (three ? false : !drawingCurrent)}
             busy={captureBusy}
+            canCopy={canCopyImages()}
+            scale={pngScale}
+            onScale={setPngScale}
+            onExport={(full, action) => void exportCapture(full, action)}
             onCapture={(full) => void capture(full)}
           />
           <WorkspaceMenu

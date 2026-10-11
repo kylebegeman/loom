@@ -398,6 +398,8 @@ export const PcbEditorAction = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
   layers: Schema.optional(list(PcbLayerState, 64)),
   full: Schema.optional(Schema.Boolean),
+  format: Schema.optional(Schema.Literals(["png", "svg"])),
+  scale: Schema.optional(Schema.Literals([1, 2])),
   attachToDraft: Schema.optional(Schema.Boolean),
   name: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))),
@@ -446,6 +448,7 @@ export const PcbCompleteEditorInput = Schema.Struct({
   error: Schema.optional(Schema.Boolean),
   state: PcbEditorResult.fields.state,
   png: Schema.optional(Schema.String.check(Schema.isMaxLength(12 * 1024 * 1024))),
+  svg: Schema.optional(Schema.String.check(Schema.isMaxLength(8 * 1024 * 1024))),
 });
 export type PcbCompleteEditorInput = typeof PcbCompleteEditorInput.Type;
 

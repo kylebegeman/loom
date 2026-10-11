@@ -1,39 +1,42 @@
 # L62 testing
 
-Focused tests only, no sleeps, no repo-wide checks.
+## Local results
 
-## Automated tests
+Focused checks passed on 2026-10-10:
 
-| File                                                                                                    | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/fork/model-preview-3d/captureExport.test.ts`                                              | L44's cases (created here if L44 has not landed), plus `extension: "svg"` and the default staying `.png`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `apps/web/src/fork/pcb-preview/svgExport.test.ts` (new, `// @vitest-environment jsdom` for `DOMParser`) | `exportFactor`: unchanged under the limits; reduced to fit 16,777,216 pixels and 8,192 per side, with `reduced: true`. `visibleArea`: identity view maps the viewport to the frame; zoomed and panned views map to the expected millimetre box; clipped to the frame. `composeSvg`: root `width`/`height` in mm and `viewBox` equal to the area; opacity-0 layers skipped; layer order kept; `<script>`, `foreignObject`, `onload` and external `href` removed; duplicate ids in two layers become distinct and their `url(#…)` references follow; a `<style>` rule in one layer is scoped to that layer; the title is escaped; over 32 MiB throws the "Save a PNG instead" error. |
-| `apps/web/src/fork/pcb-preview/workspace.interactions.test.tsx`                                         | Extend the existing jsdom harness (it already stubs Blob URLs and simulates image loads, lines 222-237). `exportSvg`: refuses before the drawing and visible layers decode, like `capture`; afterwards, with `fetch` stubbed per Blob URL, returns one document with the visible layers in DOM order at their opacity, the overlay last, and a hidden layer left out. `exportPng`: refuses before decode with the same messages.                                                                                                                                                                                                                                                   |
-| `apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts`                                            | `completeEditorAction` with `svg` writes `<uuid>.svg` and returns its path; rejects non-SVG text, over-limit text, and `png` plus `svg` together; pruning counts `.png` and `.svg` together and keeps the new file.                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `apps/server/src/fork/pcb-preview/mcp.test.ts`                                                          | `loom_pcb_editor` accepts `format` and `scale` and forwards them in the editor event (extend the existing capture case at line 187).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+- `svgExport.test.ts`: 5 tests for physical crop, rounded PNG limits, opacity/order, scoped
+  ids/styles, active/external content removal and the 32 MiB cap.
+- `workspace.interactions.test.tsx`: 8 tests, including visible-layer/overlay SVG export,
+  hidden loading-layer omission, physical crop, legacy PNG sizing and bounded explicit export.
+  The shared ResizeObserver fixture now supplies real target entries. The SVG case reproduced
+  and verifies the duplicate namespace fix.
+- `captureExport.test.ts`: 6 tests, including SVG filenames, secure clipboard checks,
+  synchronous clipboard initiation, rejection handling and download URL lifetime.
+- `captureStore.test.ts`: 6 tests for old PNG compatibility, XML SVG roots, supplied-format
+  conflicts, decoded/UTF-8 byte limits and combined PNG/SVG retention with newest-file protection.
+- `mcp.test.ts`: 10 tests across its retained base cases, printing and capture forwarding;
+  the new capture case forwards full SVG and 2× PNG options in the caller's thread.
+- `PcbPreviewService.test.ts`: 31 focused service regressions passed, including the new
+  inspection cache/height behavior, print wiring, signed PDF limits and canonical output
+  directory exclusions. Capture persistence is tested directly through the shared store;
+  the existing editor bridge tests cover request claiming and duplicate-completion rejection.
 
-jsdom has no canvas, so PNG pixels, the background fix and the Safari fallback are covered by
-the manual check. Starting the clipboard write inside the click is covered by L44's
-`copyImage` test; the panel only has to call it before any `await`, which review checks.
+Strict scoped lint passed for the changed capture and integration files. Contracts,
+client-runtime, server and web package typechecks passed after integration. No repo-wide
+suite, browser, GPU, dev server, real CAD export or live clipboard/download check was run.
+The PNG interaction test uses a stubbed canvas and does not establish rendered pixel quality.
 
-## Commands
+Focused reproduction:
 
 ```sh
-vp test run apps/web/src/fork/model-preview-3d/captureExport.test.ts \
+./node_modules/.bin/vp test run \
+  apps/web/src/fork/model-preview-3d/captureExport.test.ts \
   apps/web/src/fork/pcb-preview/svgExport.test.ts \
   apps/web/src/fork/pcb-preview/workspace.interactions.test.tsx \
+  apps/server/src/fork/pcb-preview/captureStore.test.ts \
   apps/server/src/fork/pcb-preview/PcbPreviewService.test.ts \
   apps/server/src/fork/pcb-preview/mcp.test.ts
-vp lint apps/web/src/fork/pcb-preview apps/web/src/fork/model-preview-3d/captureExport.ts \
-  apps/server/src/fork/pcb-preview packages/contracts/src/fork/pcb-workspace.ts
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/web typecheck
-vp run --filter @t3tools/client-runtime typecheck
 ```
-
-The contract change is additive and optional, but CONVENTIONS.md asks for every importing
-package to be typechecked, hence the server and client-runtime lines.
 
 ## Manual check
 

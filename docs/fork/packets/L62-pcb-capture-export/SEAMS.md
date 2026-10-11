@@ -19,9 +19,9 @@ exports (`~/components/ui/menu`) and browser APIs. Desktop needs no IPC.
 | `apps/web/src/fork/pcb-preview/SvgViewport.tsx`                     | `exportPng`, `exportSvg`, shared `draw`, background and Safari fixes                                | L52, L60, L69 (overlay children); L63 (name and focus)   |
 | `apps/web/src/fork/pcb-preview/preferences.ts`                      | `pngScale` with a decoding default                                                                  | Any packet adding PCB preferences                        |
 | `packages/contracts/src/fork/pcb-workspace.ts`                      | `format`, `scale`, `svg`                                                                            | PCB packets adding editor actions                        |
-| `apps/server/src/fork/pcb-preview/PcbPreviewService.ts`             | SVG capture write and prune filter                                                                  | PCB packets adding service call sites                    |
+| `apps/server/src/fork/pcb-preview/PcbPreviewService.ts`             | Shared capture-store call                                                                           | PCB packets adding service call sites                    |
 | `apps/server/src/fork/pcb-preview/mcp.ts`                           | `loom_pcb_editor` description                                                                       | PCB packets adding editor actions                        |
-| `docs/fork/user/pcb-preview.md`                                     | One sentence on copy and save                                                                       | L63 and others adding guide text                         |
+| `docs/fork/user/pcb-preview.md`                                     | Capture export task guidance                                                                        | L63 and others adding guide text                         |
 
 ## Merge check
 

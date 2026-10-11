@@ -21,7 +21,7 @@ a tscircuit design, for the manual pass. No dev data seeding is needed for the a
 3. Viewport. In `SvgViewport.tsx`, extract `draw(full, factor)` from `capture`, add `exportPng`
    and `exportSvg` to `PcbViewportHandle`, export or reuse `serializeOverlay`, and apply the
    background (`--pcb-canvas`) and Safari filter fallbacks. `capture` keeps its factor.
-4. Preference. Add `pngScale` with `Schema.withDecodingDefault(() => 2)` and `setPngScale` in
+4. Preference. Add `pngScale` with `Schema.withDecodingDefault(Effect.succeed(2))` and `setPngScale` in
    `preferences.ts`.
 5. Menu. Extend `CaptureMenu` in `WorkspaceChrome.tsx`: always show the chevron, add the
    "Copy image", "Save PNG" and (2D only) "Save SVG" groups and the "PNG size" radio group.
@@ -29,9 +29,9 @@ a tscircuit design, for the manual pass. No dev data seeding is needed for the a
    for multi-sheet schematics), the success and failure notices, and the new menu props.
 7. Contracts. Add `format` and `scale` to `PcbEditorAction` and `svg` to
    `PcbCompleteEditorInput` in `packages/contracts/src/fork/pcb-workspace.ts`.
-8. Server. In `PcbPreviewService.ts`, add the SVG branch with validation, a shared
-   `saveCapture(bytes, extension)`, and the `(png|svg)` prune filter; reject both formats at
-   once. Update the `loom_pcb_editor` description in `mcp.ts`. Add the service test.
+8. Server. Create `captureStore.ts` with PNG/SVG validation and serialized shared
+   retention, then call its `saveCapture` from `PcbPreviewService.ts`; reject both supplied
+   formats at once. Update the `loom_pcb_editor` description in `mcp.ts`. Add the service test.
 9. Editor command. Handle `format` and `scale` in the panel's `case "capture"` and send `svg`
    with the completion.
 10. Documentation. One sentence in `docs/fork/user/pcb-preview.md` (Capture can copy or save

@@ -27,6 +27,9 @@ it("names downloads with safe model/view names and padded local time", () => {
   expect(captureFileName("models\\Box part.3mf", "left / side?", date)).toBe(
     "Box-part-left-side-20260105-0907.png",
   );
+  expect(captureFileName("boards/Controller.kicad_pcb", "schematic-power", date, "svg")).toBe(
+    "Controller-schematic-power-20260105-0907.svg",
+  );
   expect(captureFileName("", "", date)).toBe("model-view-20260105-0907.png");
   expect(captureFileName("模型.stl", "前面", date)).toBe("model-view-20260105-0907.png");
   expect(captureFileName(`${"a".repeat(100)}.glb`, "top", date)).toBe(

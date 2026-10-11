@@ -1,6 +1,9 @@
 # L62: Copy and save PCB captures
 
-Status: Ready to build
+Status: Implemented locally on `feat/pcb-units-presets-stats-print-capture`.
+
+Focused validation passed. Browser, GPU and real CAD export checks remain unverified; see
+[TESTING.md](./TESTING.md).
 
 Approved by Kyle on 2026-10-10.
 

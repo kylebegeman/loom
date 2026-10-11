@@ -7,7 +7,12 @@ const safePart = (value: string, fallback: string) =>
     .slice(0, 80) || fallback;
 
 /** A local download name that keeps the model, view and local capture time recognizable. */
-export function captureFileName(path: string, label: string, date: Date): string {
+export function captureFileName(
+  path: string,
+  label: string,
+  date: Date,
+  extension: "png" | "svg" = "png",
+): string {
   const model =
     path
       .split(/[\\/]/)
@@ -15,7 +20,7 @@ export function captureFileName(path: string, label: string, date: Date): string
       ?.replace(/\.[^.]*$/, "") ?? "";
   const pad = (value: number) => String(value).padStart(2, "0");
   const time = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
-  return `${safePart(model, "model")}-${safePart(label, "view")}-${time}.png`;
+  return `${safePart(model, "model")}-${safePart(label, "view")}-${time}.${extension}`;
 }
 
 export function canCopyImages(): boolean {
@@ -40,7 +45,7 @@ export function copyImage(image: Promise<Blob>): Promise<void> {
   return navigator.clipboard.write([new ClipboardItem({ "image/png": image })]);
 }
 
-/** Downloads the full rendered PNG without changing the composer draft. */
+/** Downloads a rendered image without changing the composer draft. */
 export function saveImage(image: Blob, name: string): void {
   const url = URL.createObjectURL(image);
   try {

@@ -325,3 +325,39 @@ it.effect("requires a calling thread to print rather than an external client", (
     }),
   ),
 );
+it.effect("forwards SVG and scaled PNG capture commands in the calling thread", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const commands = [
+        { action: "capture", format: "svg", full: true },
+        { action: "capture", format: "png", scale: 2 },
+      ] as const;
+      let calls = 0;
+      const { toolkit, threads } = yield* fixture({
+        editorAction: (input) => {
+          expect(input).toEqual({
+            threadId,
+            designId: "board.kicad_pcb",
+            command: commands[calls],
+          });
+          calls += 1;
+          return Effect.succeed({ message: "Captured" });
+        },
+      });
+      for (const command of commands) {
+        const results = yield* toolkit
+          .handle("loom_pcb_editor", {
+            designId: "board.kicad_pcb",
+            command,
+          })
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provideService(McpInvocationContext, scope),
+            Effect.provideService(ThreadManagementService, threads),
+          );
+        expect(results.length).toBeGreaterThan(0);
+      }
+      expect(calls).toBe(2);
+    }),
+  ),
+);

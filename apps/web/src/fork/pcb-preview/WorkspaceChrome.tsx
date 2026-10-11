@@ -3,6 +3,8 @@ import { Link } from "@tanstack/react-router";
 import {
   BoxIcon,
   CameraIcon,
+  CopyIcon,
+  DownloadIcon,
   PrinterIcon,
   CheckIcon,
   ChevronDownIcon,
@@ -36,6 +38,8 @@ import {
   MenuGroupLabel,
   MenuItem,
   MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
   MenuSeparator,
   MenuShortcut,
   MenuTrigger,
@@ -141,16 +145,26 @@ export function SurfaceSwitch({
   );
 }
 
+export type CaptureExportAction = "copy" | "png" | "svg";
+
 export function CaptureMenu({
   three,
   disabled,
   busy,
+  canCopy,
+  scale,
+  onScale,
   onCapture,
+  onExport,
 }: {
   three: boolean;
   disabled: boolean;
   busy: boolean;
+  canCopy: boolean;
+  scale: 1 | 2;
+  onScale: (scale: 1 | 2) => void;
   onCapture: (full: boolean) => void;
+  onExport: (full: boolean, action: CaptureExportAction) => void;
 }) {
   return (
     <div className={styles.split}>
@@ -164,35 +178,93 @@ export function CaptureMenu({
         <CameraIcon />
         <span className={styles.label}>{busy ? "Capturing" : "Capture"}</span>
       </Button>
-      {!three && (
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                variant="outline"
-                size="icon-sm"
-                disabled={disabled || busy}
-                aria-label="Capture options"
-              />
-            }
-          >
-            <ChevronDownIcon />
-          </MenuTrigger>
-          <MenuPopup align="end">
-            <MenuGroup>
-              <MenuGroupLabel>Attach to draft</MenuGroupLabel>
-              <MenuItem onClick={() => onCapture(false)}>
-                <CameraIcon />
-                Visible area
-              </MenuItem>
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={disabled || busy}
+              aria-label="Capture options"
+            />
+          }
+        >
+          <ChevronDownIcon />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          <MenuGroup>
+            <MenuGroupLabel>Attach to draft</MenuGroupLabel>
+            <MenuItem onClick={() => onCapture(false)}>
+              <CameraIcon />
+              {three ? "Current view" : "Visible area"}
+            </MenuItem>
+            {!three && (
               <MenuItem onClick={() => onCapture(true)}>
                 <ScanIcon />
                 Whole drawing
               </MenuItem>
-            </MenuGroup>
-          </MenuPopup>
-        </Menu>
-      )}
+            )}
+          </MenuGroup>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel>Copy image</MenuGroupLabel>
+            <MenuItem disabled={!canCopy} onClick={() => onExport(false, "copy")}>
+              <CopyIcon />
+              {three ? "Current view" : "Visible area"}
+            </MenuItem>
+            {!three && (
+              <MenuItem disabled={!canCopy} onClick={() => onExport(true, "copy")}>
+                <CopyIcon />
+                Whole drawing
+              </MenuItem>
+            )}
+            {!canCopy && (
+              <MenuGroupLabel>
+                Copy requires a secure connection and image clipboard support.
+              </MenuGroupLabel>
+            )}
+          </MenuGroup>
+          <MenuSeparator />
+          <MenuGroup>
+            <MenuGroupLabel>Save PNG</MenuGroupLabel>
+            <MenuItem onClick={() => onExport(false, "png")}>
+              <DownloadIcon />
+              {three ? "Current view" : "Visible area"}
+            </MenuItem>
+            {!three && (
+              <MenuItem onClick={() => onExport(true, "png")}>
+                <DownloadIcon />
+                Whole drawing
+              </MenuItem>
+            )}
+          </MenuGroup>
+          {!three && (
+            <>
+              <MenuSeparator />
+              <MenuGroup>
+                <MenuGroupLabel>Save SVG</MenuGroupLabel>
+                <MenuItem onClick={() => onExport(false, "svg")}>
+                  <DownloadIcon />
+                  Visible area
+                </MenuItem>
+                <MenuItem onClick={() => onExport(true, "svg")}>
+                  <DownloadIcon />
+                  Whole drawing
+                </MenuItem>
+              </MenuGroup>
+              <MenuSeparator />
+              <MenuGroupLabel>PNG size</MenuGroupLabel>
+              <MenuRadioGroup
+                value={String(scale)}
+                onValueChange={(value) => onScale(value === "1" ? 1 : 2)}
+              >
+                <MenuRadioItem value="1">1×</MenuRadioItem>
+                <MenuRadioItem value="2">2×</MenuRadioItem>
+              </MenuRadioGroup>
+            </>
+          )}
+        </MenuPopup>
+      </Menu>
     </div>
   );
 }

@@ -56,6 +56,7 @@ import { starterHardware } from "./hardware.ts";
 import { normalizeCircuitGlb, readGlbBounds, type GlbBounds } from "./glb.ts";
 import { boardStats, type BoardStatsDesign } from "./boardStats.ts";
 import { makeTrueScalePrint } from "./trueScalePrint.ts";
+import { makeCaptureStore } from "./captureStore.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import { ServerConfig } from "../../config.ts";
@@ -2527,45 +2528,20 @@ export const make = Effect.gen(function* () {
   const panelEvents = (threadId: ThreadId) => mapEditorEvents(editorBridge.events(threadId));
   const editorAction = (input: W.PcbEditorInput) =>
     editorBridge.request({ ...input, path: input.designId });
+  const { saveCapture } = yield* makeCaptureStore(
+    path.join(config.stateDir, "fork", "pcb-preview", "captures"),
+  );
   const completeEditorAction = (input: W.PcbCompleteEditorInput) =>
     editorBridge.completeWith(
       { ...input, path: input.designId, error: input.error ? input.message : undefined },
       checked(
         Effect.gen(function* () {
-          let imagePath: string | undefined;
-          if (input.png && !input.error) {
-            const bytes = Buffer.from(input.png, "base64");
-            if (
-              bytes.length > 8 * 1024 * 1024 ||
-              bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a"
-            )
-              return yield* failure(
-                "invalid-report",
-                "The editor capture must be a PNG under 8 MiB.",
-              );
-            const directory = path.join(config.stateDir, "fork", "pcb-preview", "captures");
-            yield* fs.makeDirectory(directory, { recursive: true });
-            imagePath = path.join(directory, NodeCrypto.randomUUID() + ".png");
-            yield* fs.writeFile(imagePath, bytes);
-            const files = yield* fs.readDirectory(directory);
-            const records = yield* Effect.forEach(
-              files.filter((n) => /^[a-f0-9-]{36}\.png$/.test(n)),
-              (n) =>
-                fs.stat(path.join(directory, n)).pipe(
-                  Effect.map((info) => ({
-                    key: n,
-                    bytes: Number(info.size),
-                    modified: Option.getOrNull(info.mtime)?.getTime() ?? 0,
-                    protected: path.join(directory, n) === imagePath,
-                  })),
-                ),
-            );
-            for (const victim of pickPruneVictims(records, {
-              maxCount: 50,
-              maxBytes: 50 * 1024 * 1024,
-            }))
-              yield* fs.remove(path.join(directory, victim));
-          }
+          const imagePath = input.error
+            ? undefined
+            : yield* saveCapture({
+                ...(input.png !== undefined ? { png: input.png } : {}),
+                ...(input.svg !== undefined ? { svg: input.svg } : {}),
+              });
           const result = {
             message: input.message,
             ...(input.state ? { state: input.state } : {}),

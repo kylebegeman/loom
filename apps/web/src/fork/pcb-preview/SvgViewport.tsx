@@ -2,6 +2,7 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState 
 import { MinusIcon, PlusIcon, ScanIcon, ArrowLeftIcon, ArrowRightIcon } from "lucide-react";
 import { observeResize } from "~/lib/observeResize";
 import { svgFrame } from "./geometry";
+import { composeSvg, exportFactor, visibleArea, LIGHT_CANVAS } from "./svgExport";
 import { ToolButton } from "./ToolButton";
 import styles from "./workspace.module.css";
 
@@ -47,6 +48,11 @@ export type PcbViewportHandle = {
   back: () => void;
   forward: () => void;
   capture: (full: boolean) => Promise<Blob>;
+  exportPng: (
+    full: boolean,
+    scale: 1 | 2,
+  ) => { image: Promise<Blob>; width: number; height: number; reduced: boolean };
+  exportSvg: (full: boolean) => Promise<string>;
 };
 export function SvgViewport({
   svg,
@@ -232,6 +238,65 @@ export function SvgViewport({
         Number(getComputedStyle(img).opacity) === 0 ||
         (img.dataset.layerLoading !== "true" && img.complete && img.naturalWidth > 0),
     );
+  const draw = async (full: boolean, factor: number) => {
+    if (!imageLoaded.current || loadError)
+      throw new Error("Wait for the drawing to load before capturing.");
+    if (!visibleLayersReady())
+      throw new Error("Wait for the visible layers to load before capturing.");
+    const canvas = document.createElement("canvas"),
+      context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas capture is unavailable.");
+    const area = full ? drawing.current : size.current;
+    canvas.width = Math.ceil(area.width * factor);
+    canvas.height = Math.ceil(area.height * factor);
+    context.scale(factor, factor);
+    const images = [...(scene.current?.querySelectorAll<HTMLImageElement>("img") ?? [])];
+    const supportsFilter = typeof context.filter === "string";
+    const needsFilter = images.some(
+      (img) => Number(getComputedStyle(img).opacity) > 0 && getComputedStyle(img).filter !== "none",
+    );
+    context.fillStyle =
+      !supportsFilter && needsFilter
+        ? LIGHT_CANVAS
+        : getComputedStyle(nodeOrBody(container.current)).getPropertyValue("--pcb-canvas").trim() ||
+          LIGHT_CANVAS;
+    context.fillRect(0, 0, area.width, area.height);
+    if (!full) {
+      context.translate(view.current.x, view.current.y);
+      context.scale(view.current.scale, view.current.scale);
+    }
+    for (const img of images) {
+      const opacity = Number(getComputedStyle(img).opacity);
+      if (opacity === 0) continue;
+      if (!img.complete || !img.naturalWidth)
+        throw new Error("Wait for every visible layer to load before capturing.");
+      context.globalAlpha = opacity;
+      if (supportsFilter) context.filter = getComputedStyle(img).filter;
+      context.drawImage(img, 0, 0, drawing.current.width, drawing.current.height);
+    }
+    context.globalAlpha = 1;
+    if (supportsFilter) context.filter = "none";
+    const overlay = scene.current?.querySelector("svg[data-overlays]");
+    if (overlay) {
+      const objectUrl = URL.createObjectURL(
+        new Blob([serializeOverlay(overlay)], { type: "image/svg+xml" }),
+      );
+      try {
+        const img = new Image();
+        img.src = objectUrl;
+        await img.decode();
+        context.drawImage(img, 0, 0, drawing.current.width, drawing.current.height);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+    return new Promise<Blob>((resolve, reject) =>
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("Could not capture drawing."))),
+        "image/png",
+      ),
+    );
+  };
   useImperativeHandle(
     handle,
     () => ({
@@ -248,59 +313,48 @@ export function SvgViewport({
       back: () => navigate(-1),
       forward: () => navigate(1),
       focus,
-      capture: async (full) => {
-        if (!imageLoaded.current || loadError)
+      capture: (full) => {
+        const area = full ? drawing.current : size.current;
+        return draw(full, Math.min(2, 2400 / Math.max(area.width, area.height)));
+      },
+      exportPng: (full, scale) => {
+        const area = full ? drawing.current : size.current,
+          sizing = exportFactor(area.width, area.height, full ? scale * view.current.scale : scale);
+        return {
+          image: draw(full, sizing.factor),
+          width: Math.ceil(area.width * sizing.factor),
+          height: Math.ceil(area.height * sizing.factor),
+          reduced: sizing.reduced,
+        };
+      },
+      exportSvg: async (full) => {
+        if (!imageLoaded.current || loadError || !physical)
           throw new Error("Wait for the drawing to load before capturing.");
         if (!visibleLayersReady())
           throw new Error("Wait for the visible layers to load before capturing.");
-        const canvas = document.createElement("canvas"),
-          context = canvas.getContext("2d");
-        if (!context) throw new Error("Canvas capture is unavailable.");
-        const area = full ? drawing.current : size.current,
-          factor = Math.min(2, 2400 / Math.max(area.width, area.height));
-        canvas.width = Math.ceil(area.width * factor);
-        canvas.height = Math.ceil(area.height * factor);
-        context.scale(factor, factor);
-        context.fillStyle = getComputedStyle(nodeOrBody(container.current)).backgroundColor;
-        context.fillRect(0, 0, area.width, area.height);
-        if (!full) {
-          context.translate(view.current.x, view.current.y);
-          context.scale(view.current.scale, view.current.scale);
-        }
-        for (const img of scene.current?.querySelectorAll<HTMLImageElement>("img") ?? []) {
-          const opacity = Number(getComputedStyle(img).opacity);
-          if (opacity === 0) continue;
-          if (!img.complete || !img.naturalWidth)
-            throw new Error("Wait for every visible layer to load before capturing.");
-          context.globalAlpha = opacity;
-          context.filter = getComputedStyle(img).filter;
-          context.drawImage(img, 0, 0, drawing.current.width, drawing.current.height);
-        }
-        context.globalAlpha = 1;
-        context.filter = "none";
-        const overlay = scene.current?.querySelector("svg[data-overlays]");
-        if (overlay) {
-          const objectUrl = URL.createObjectURL(
-            new Blob([serializeOverlay(overlay)], { type: "image/svg+xml" }),
-          );
-          try {
-            const img = new Image();
-            img.src = objectUrl;
-            await img.decode();
-            context.drawImage(img, 0, 0, drawing.current.width, drawing.current.height);
-          } finally {
-            URL.revokeObjectURL(objectUrl);
-          }
-        }
-        return new Promise<Blob>((resolve, reject) =>
-          canvas.toBlob(
-            (blob) => (blob ? resolve(blob) : reject(new Error("Could not capture drawing."))),
-            "image/png",
-          ),
+        const images = [...(scene.current?.querySelectorAll<HTMLImageElement>("img") ?? [])].filter(
+          (img) => Number(getComputedStyle(img).opacity) > 0,
         );
+        const layers = await Promise.all(
+          images.map(async (img) => {
+            const response = await fetch(img.src);
+            if (!response.ok) throw new Error("Could not read a visible drawing layer.");
+            return { svg: await response.text(), opacity: Number(getComputedStyle(img).opacity) };
+          }),
+        );
+        const overlay = scene.current?.querySelector("svg[data-overlays]");
+        return composeSvg({
+          area: full
+            ? physical
+            : visibleArea(view.current, size.current, drawing.current, physical),
+          layers,
+          overlay: overlay ? serializeOverlay(overlay) : null,
+          background: LIGHT_CANVAS,
+          title: label,
+        });
       },
     }),
-    [navigate, restore, fit, focus, zoomBy, remember, loadError],
+    [navigate, restore, fit, focus, zoomBy, remember, loadError, physical, label],
   );
   const finish = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragging.current;
@@ -514,6 +568,9 @@ const nodeOrBody = (node: HTMLElement | null) => node ?? document.body;
 
 function serializeOverlay(overlay: Element) {
   const clone = overlay.cloneNode(true) as Element;
+  // XMLSerializer emits the SVG namespace; React's plain xmlns attribute can duplicate it.
+  clone.removeAttribute("xmlns");
+  clone.setAttribute("font-family", getComputedStyle(overlay).fontFamily || "sans-serif");
   const source = [overlay, ...overlay.querySelectorAll("*")];
   const target = [clone, ...clone.querySelectorAll("*")];
   for (let i = 0; i < source.length; i++) {

@@ -35,10 +35,12 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       constructor(private callback: ResizeObserverCallback) {}
-      observe() {
-        this.callback(
-          [{ contentRect: { width: 1048, height: 548 } } as ResizeObserverEntry],
-          this as unknown as ResizeObserver,
+      observe(target: Element) {
+        queueMicrotask(() =>
+          this.callback(
+            [{ target, contentRect: { width: 1048, height: 548 } } as ResizeObserverEntry],
+            this as unknown as ResizeObserver,
+          ),
         );
       }
       unobserve() {}
@@ -54,6 +56,7 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -309,4 +312,116 @@ it("keeps a named view after save failure and disables workspace writes without 
   await act(async () => root.render(<ToolPanel {...props} />));
   await act(async () => button.click());
   expect(input.value).toBe("");
+});
+
+it("exports visible layers and overlays in physical coordinates, skipping hidden layers", async () => {
+  const handle = { current: null as PcbViewportHandle | null };
+  const front =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 20 100 50"><path id="front" d="M10 20h20"/></svg>';
+  const back =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 20 100 50"><path id="back" d="M10 30h20"/></svg>';
+  const fetchLayer = vi.fn(async (url: string) => ({
+    ok: true,
+    text: async () => (url === "blob:front" ? front : back),
+  }));
+  vi.stubGlobal("fetch", fetchLayer);
+  await act(async () =>
+    root.render(
+      <SvgViewport
+        svg={front}
+        label="Controller"
+        handle={handle}
+        layered
+        overlays={
+          <text x="30" y="30" fill="currentColor">
+            Measure
+          </text>
+        }
+      >
+        <img src="blob:front" data-layer-image style={{ opacity: 0.5 }} alt="Front" />
+        <img
+          src="blob:hidden"
+          data-layer-image
+          data-layer-loading="true"
+          style={{ opacity: 0 }}
+          alt="Hidden"
+        />
+        <img src="blob:back" data-layer-image style={{ opacity: 1 }} alt="Back" />
+      </SvgViewport>,
+    ),
+  );
+  const images = [...host.querySelectorAll("img")];
+  for (const image of images)
+    Object.defineProperties(image, {
+      complete: { value: true },
+      naturalWidth: { value: 1000 },
+      naturalHeight: { value: 500 },
+    });
+  await act(async () => images[0]!.dispatchEvent(new Event("load")));
+  await flushFrames();
+  await act(async () => handle.current!.restore({ x: -100, y: -50, scale: 2 }));
+  const exported = new DOMParser().parseFromString(
+    await handle.current!.exportSvg(false),
+    "image/svg+xml",
+  );
+  const frame = exported.documentElement.getAttribute("viewBox")!.split(" ").map(Number);
+  expect(frame.slice(0, 2)).toEqual([15, 22.5]);
+  expect(frame[2]).toBeCloseTo(52.4);
+  expect(frame[3]).toBeCloseTo(27.4);
+  expect(fetchLayer.mock.calls.map(([url]) => url)).toEqual(["blob:front", "blob:back"]);
+  expect([...exported.querySelectorAll("svg > g")].map((group) => group.id)).toEqual([
+    "layer-1",
+    "layer-2",
+    "overlay",
+  ]);
+  expect(exported.querySelector("#layer-1")!.getAttribute("opacity")).toBe("0.5");
+  expect(exported.querySelector("#overlay")!.textContent).toBe("Measure");
+  const whole = new DOMParser().parseFromString(
+    await handle.current!.exportSvg(true),
+    "image/svg+xml",
+  );
+  expect(whole.documentElement.getAttribute("width")).toBe("100mm");
+});
+
+it("keeps legacy capture size and reports bounded PNG export dimensions", async () => {
+  const handle = { current: null as PcbViewportHandle | null };
+  const context = {
+    scale: vi.fn(),
+    translate: vi.fn(),
+    fillRect: vi.fn(),
+    drawImage: vi.fn(),
+    globalAlpha: 1,
+    fillStyle: "",
+    filter: "none",
+  };
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+    context as unknown as ReturnType<HTMLCanvasElement["getContext"]>,
+  );
+  const sizes: [number, number][] = [];
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(function (
+    this: HTMLCanvasElement,
+    callback,
+  ) {
+    sizes.push([this.width, this.height]);
+    callback(new Blob(["png"], { type: "image/png" }));
+  });
+  await act(async () => root.render(<SvgViewport svg="<svg/>" label="Board" handle={handle} />));
+  const image = host.querySelector("img")!;
+  Object.defineProperties(image, {
+    complete: { value: true },
+    naturalWidth: { value: 1000 },
+    naturalHeight: { value: 500 },
+  });
+  await act(async () => image.dispatchEvent(new Event("load")));
+  await handle.current!.capture(false);
+  expect(sizes[0]).toEqual([2096, 1096]);
+  const normal = handle.current!.exportPng(false, 1);
+  expect(normal).toMatchObject({ width: 1048, height: 548, reduced: false });
+  await normal.image;
+  await act(async () => handle.current!.restore({ x: 0, y: 0, scale: 32 }));
+  const huge = handle.current!.exportPng(true, 2);
+  expect(huge.reduced).toBe(true);
+  expect(Math.max(huge.width, huge.height)).toBeLessThanOrEqual(8192);
+  expect(huge.width * huge.height).toBeLessThanOrEqual(16_777_216);
+  await huge.image;
 });

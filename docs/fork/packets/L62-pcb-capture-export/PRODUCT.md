@@ -79,11 +79,7 @@ server the PCB panel does not exist.
 - No palette entries: the PCB palette has only its toggle, and the Capture menu is one click away.
 - Agents get files, not clipboards: the editor command runs outside a user gesture.
 
-## Decisions needed from Kyle
+## SVG colour choice
 
-1. SVG colours. Options: (a) KiCad's original colours on the light canvas colour `#f1f3f5`,
-   whatever the theme; (b) match the screen, baking the dark-theme schematic inversion into an
-   SVG filter and using the dark canvas colour. Recommendation: (a). An SVG is usually going into
-   a document or editor, where the tool's own colours print well and stay editable; a baked
-   filter changes every colour an editor shows. PNG already covers "exactly what I see". The
-   implementation is ready for (b) if Kyle prefers it (TECHNICAL.md, "Theme").
+The implementation uses the recommended original CAD colours on the light canvas colour,
+so exported vectors stay useful in a document or editor. PNG retains the screen's appearance.

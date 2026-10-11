@@ -67,11 +67,11 @@ part of these packets. Mobile PCB review and large-board performance work were n
   collection fails instead of erasing it. Every new field brings its own default and is added
   to both schemas. If that commit is not on your base, the first packet that adds a workspace
   field makes the same split.
-- Signed files: `http.ts` labels every signed file as `model/gltf-binary` today. Whichever of
-  L57 and L65 lands first adds a `SIGNED_FILE_TYPES` table in `cache.ts`, generalises `signBoard`
-  to `signCacheFile`, and lets `http.ts` pick the content type from the file name. Generated
-  outputs under the design's `fab/` folder are excluded from `sourceSnapshot`, so a package or
-  print never changes the design's source hash.
+- Signed files (implemented by L57): `SIGNED_FILE_TYPES` in `cache.ts` defines the content
+  types and byte limits for `board.glb` and `print.pdf`. `signCacheFile` signs either cached
+  output, and `http.ts` serves its matching content type. L65 extends the existing table for
+  its generated outputs. The design's `fab/` folder is excluded from `sourceSnapshot`, so a
+  package or print never changes the design's source hash.
 - `captureSheet.ts` `thumbnail`: L69 and L70 both add an optional size `limit`. Whichever lands
   second skips that edit.
 
@@ -126,17 +126,19 @@ with its own decoding default.
 A pure server function `boardStats` in `apps/server/src/fork/pcb-preview/boardStats.ts` works on
 already-built board data (so L70 can call it on a variant that is not the saved design) and
 returns size, area, copper layer count, component counts per side, hole and via counts, and the
-smallest drill, track, clearance and annular ring, plus the tallest component when height data
-is available. The MCP inspect output includes it.
+measured minimum drill, track, via diameter and annular ring, plus the tallest component when
+height data is available. Board-wide rule values, including clearance, remain separate from
+measurements. The MCP inspect output includes it.
 
-### Outline loops and GLB bounds (created by L55 or L67)
+### Outline loops and GLB bounds (created by L55, used by L67)
 
-`apps/server/src/fork/pcb-preview/outline.ts` chains a board's Edge.Cuts items (top level and
-inside footprints) or a tscircuit outline into closed loops. L55 shoelaces them for area; L67
-uses them for the case shape. `readGlbBounds` in `glb.ts` reads per-mesh bounds from a cached
-GLB's JSON chunk, with node names and materials for L67. Whichever lands first writes both as
-[L67's TECHNICAL.md](./L67-pcb-enclosure-fit/TECHNICAL.md) specifies; the other imports them.
-L67 also extends L48's assembly file to version 2 (`enclosure` section).
+L55 implemented `apps/server/src/fork/pcb-preview/outline.ts`: `kicadOutline` chains Edge.Cuts
+items from the board and its footprints into closed loops, and `circuitOutline` reads the
+tscircuit outline in the PCB drawing frame. L55 shoelaces the loops for area; L67 reuses them
+for the case shape. `readGlbJson` in `glb.ts` reads a cached GLB's JSON chunk, and
+`readGlbBounds` derives world-space per-mesh bounds with node names and materials for L67.
+Reuse these helpers when implementing [L67](./L67-pcb-enclosure-fit/TECHNICAL.md). L67 will also
+extend L48's assembly file to version 2 (`enclosure` section).
 
 ### Fab capabilities (created by L64, used by L65)
 
@@ -161,7 +163,7 @@ than building a second one:
   `restoredOid` and an optional recursive `lsTree`), and adds its own
   `apps/server/src/fork/pcb-preview/designFiles.ts` for which files belong to a design.
 - Copying and saving an image, with the insecure-origin fallback:
-  [L44](./L44-model-capture-export/), used by L62. L62 adds an optional
+  [L44](./L44-model-capture-export/), used by L62. L62 added an optional
   `extension: "png" | "svg"` (default `"png"`) to L44's `captureFileName`.
 - Live-region announcements: [L43](./L43-model-viewport-access/), used by L63. L43 defines a
   pattern rather than a module, so L63 keeps its own `announce.ts` of the same shape. Finding
@@ -185,6 +187,10 @@ uploads files to a fab and never calls a parts or pricing API.
 
 ## Suggested order
 
-Order is a suggestion, not a dependency. Quick wins first: L54, L56, L55, L57, L62, L52. Then
-the agent loop: L58, L53, L59, L60, L69. The larger systems follow: L68, L64, L65, L66, L61,
-L67, L70, with L63 alongside whichever touches the same UI.
+Order is a suggestion, not a dependency. The first five quick wins, L54, L56, L55, L57 and
+L62, are implemented locally on `feat/pcb-units-presets-stats-print-capture`. Their packet
+testing notes retain client, real-tool and physical-print checks.
+
+Next is L52, then the agent loop: L58, L53, L59, L60, L69. The larger systems follow: L68,
+L64, L65, L66, L61, L67, L70, with L63 alongside whichever touches the same UI. The selected
+scope and outstanding packet decisions are unchanged.

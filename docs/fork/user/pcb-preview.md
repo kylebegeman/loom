@@ -39,13 +39,32 @@ Loom server and is not available in the mobile client.
 
 ## Optional editor tools
 
-Open Inspect to find components, pins and nets. The linked-drawing button beside the sheet
-or layer menu shows the board and schematic side by side with the same selection
-highlighted. Layers offers visibility, opacity, Solo/Restore and saved layer combinations.
+Choose millimetres, mils or inches from the status bar or **Settings, Loom, PCB preview**.
+Lengths and hardware dimension inputs follow that choice, saved on this device. An explicit
+suffix such as `2 in` or `40 mil` overrides the selected unit. Saved files and agent tools
+always use millimetres.
+
+Open Inspect to find components, pins and nets. **Board stats** shows board size and area,
+copper layers, holes and the smallest features, with measured values distinguished from
+design rules. **Measure heights** builds the 3D board when needed to find the tallest
+component. Add board stats to your draft to share the facts with an agent in millimetres.
+
+The linked-drawing button beside the sheet or layer menu shows the board and schematic side
+by side with the same selection highlighted. Layers offers visibility, opacity, Solo/Restore
+and built-in sets for Assembly front/back, Copper only, Fab review and Silkscreen check.
+Apply these from Layers or the drawing's layer menu. Hide unused presets on this device and
+show them again from **Preset options**. Duplicate a preset as a saved set to customize it,
+or save the current layer combination; saved sets belong to the design.
+
 Views saves the current position; Back/Forward revisits recent navigation. Distance, Angle
 and Note in the drawing's tool bar pin measurements and notes to the current revision, and
-Marks lists them. Hold Alt to skip pad snapping. **Capture** attaches the visible area, the
-whole drawing or the 3D view to the composer draft for review.
+Marks lists them. Hold Alt to skip pad snapping.
+
+**Capture** attaches the visible area, whole drawing or 3D view to the composer draft. Its
+menu also copies an image or saves a PNG; choose 1× or 2× for 2D PNGs. **Save SVG** exports
+an editable 2D drawing with visible layers and markup, using CAD colours on a light
+background. Copy image needs a secure connection and browser image clipboard support.
+Downloads also work over remote HTTP connections; 3D captures save as PNG.
 
 Compare accepts a Git commit or agent checkpoint and compares it with another revision or
 the saved working tree. Structural and connectivity changes help locate changes. Board overlays
@@ -61,6 +80,17 @@ its CAD export is not simulation-ready.
 Parameters reads explicitly declared tscircuit values. Review the proposed source, then apply
 it or save a variant. Ask the agent to add the parameter schema and source markers when no
 parameters appear. Applying checks that the source has not changed since review.
+
+## Print at true scale
+
+Choose **…**, **Print at 1:1…** to create a PDF of the top or bottom board. Choose layers,
+paper and colour options; bottom is mirrored by default. Print at **100%** and check that
+the reference bar measures **50 mm** before laying real parts on their footprints.
+
+Download the PDF on this device, or use **Save to workspace** to keep it under `fab/print/`.
+Local desktop clients can open the saved PDF or show its folder. The original design stays
+unchanged. For tscircuit, allow circuit code rendering first; printing needs KiCad on the
+host too.
 
 ## Hardware and cases
 
@@ -78,7 +108,8 @@ prepares context in your draft and never sends a message to another thread.
 Agents use `loom_pcb_*` tools for PCB operations and `loom_model_preview_3d_*` for the 3D
 workspace. The same actions are available with `t3 pcb <action> '<json>'` and
 `t3 model <action> '<json>'`; action names match the MCP suffix. For example,
-`t3 pcb inspect '{"designId":"board.kicad_pcb"}'` reads board details.
+`t3 pcb inspect '{"designId":"board.kicad_pcb"}'` reads board details, and
+`t3 pcb print '{"designId":"board.kicad_pcb","side":"bottom"}'` saves a true-scale PDF.
 
 CLI calls need an authenticated Loom MCP endpoint and authorization header in
 `LOOM_MCP_ENDPOINT` and `LOOM_MCP_AUTHORIZATION`. ACP agent terminals inherit equivalent
