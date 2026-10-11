@@ -812,6 +812,25 @@ export const make = Effect.gen(function* () {
     }
     return tool;
   });
+  const commitRender = (
+    temporary: string,
+    target: string,
+    value: PcbRenderResult,
+    workspaceKey: string,
+  ) =>
+    cacheLock
+      .withPermit(
+        Effect.gen(function* () {
+          yield* fs.writeFileString(path.join(temporary, "workspace"), workspaceKey);
+          yield* writeFileStringAtomically({
+            filePath: path.join(temporary, "manifest.json"),
+            contents: encodeJson(value),
+          });
+          if (yield* fs.exists(target)) yield* fs.remove(target, { recursive: true, force: true });
+          yield* fs.rename(temporary, target);
+        }),
+      )
+      .pipe(Effect.mapError(ioFailure));
   const runRender = Effect.fn("PcbPreview.runRender")(function* (
     input: PcbRenderInput,
     resolved: ResolvedDesign,
@@ -1075,19 +1094,7 @@ export const make = Effect.gen(function* () {
         log: "The render exceeds the preview cache limit. Open the design in its editor.",
       } satisfies PcbRenderResult;
     const value = { ...base, sheets, outcome: "ok" } satisfies PcbRenderResult;
-    yield* cacheLock
-      .withPermit(
-        Effect.gen(function* () {
-          yield* fs.writeFileString(path.join(temporary, "workspace"), resolved.workspaceKey);
-          yield* writeFileStringAtomically({
-            filePath: path.join(temporary, "manifest.json"),
-            contents: encodeJson(value),
-          });
-          if (yield* fs.exists(target)) yield* fs.remove(target, { recursive: true, force: true });
-          yield* fs.rename(temporary, target);
-        }),
-      )
-      .pipe(Effect.mapError(ioFailure));
+    yield* commitRender(temporary, target, value, resolved.workspaceKey);
     yield* prune();
     return value;
   });
