@@ -8,6 +8,9 @@ import type {
   ModelAnnotation,
   BuildPlatePattern,
   ZoneRect,
+  ModelQuaternion,
+  ModelWall,
+  PrintFinding,
 } from "@t3tools/contracts/fork";
 import {
   ACESFilmicToneMapping,
@@ -26,6 +29,8 @@ import {
   SpriteMaterial,
   Color,
   DirectionalLight,
+  DoubleSide,
+  MeshBasicMaterial,
   Group,
   Mesh,
   InstancedMesh,
@@ -62,6 +67,17 @@ import {
 } from "./snap";
 import { createSnapOverlay } from "./snapOverlay";
 import { createBed } from "./bed";
+import { normalizeQuaternion } from "@t3tools/contracts/fork";
+import { createOrientationIndex, type FaceRegion } from "./orientation";
+import { frameFor } from "./printCheck";
+import {
+  createSectionCaps,
+  closedMesh as closedMeshGeometry,
+  sectionSegments,
+  insideSection,
+  wallAt,
+  type SectionGeometry,
+} from "./sectionCaps";
 import type { Nudge } from "./keyboard";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
@@ -93,6 +109,8 @@ export function createViewer(host: HTMLElement) {
     antialias: true,
     alpha: false,
     preserveDrawingBuffer: true,
+    // Section caps use stencil; three defaults the buffer off.
+    stencil: true,
   });
   renderer.localClippingEnabled = true;
   renderer.toneMapping = ACESFilmicToneMapping;
@@ -123,10 +141,48 @@ export function createViewer(host: HTMLElement) {
   const key = new DirectionalLight(0xffffff, 2);
   key.position.set(200, -300, 500);
   scene.add(key);
-  const overlay = new Group();
-  scene.add(overlay);
-  let section: ModelSection = { enabled: false, axis: "z", offset: 0, flipped: false };
-  let pickMode: "measure" | "annotate" | null = null;
+  const orientationRoot = new Group(),
+    overlay = new Group();
+  orientationRoot.name = "model-orientation";
+  orientationRoot.add(overlay);
+  scene.add(orientationRoot);
+  let orientation: ModelQuaternion | null = null,
+    authoredBox = new Box3(),
+    orientationIndex: ReturnType<typeof createOrientationIndex> | null = null,
+    highlightedRegion: FaceRegion | null = null,
+    faceHighlight: Mesh | null = null;
+  const modelToWorld = (point: ModelPoint) =>
+    new Vector3(...point).applyMatrix4(orientationRoot.matrixWorld);
+  const worldToModel = (point: Vector3): [number, number, number] =>
+    point.clone().applyMatrix4(orientationRoot.matrixWorld.clone().invert()).toArray();
+  const circleToModel = (circle: CircleFit | null): CircleFit | null =>
+    circle && {
+      ...circle,
+      center: worldToModel(new Vector3(...circle.center)),
+      normal: new Vector3(...circle.normal)
+        .applyQuaternion(orientationRoot.quaternion.clone().invert())
+        .toArray(),
+      loop: circle.loop.map((point) => worldToModel(new Vector3(...point))),
+    };
+  const clearFaceHighlight = () => {
+    highlightedRegion = null;
+    if (!faceHighlight) return;
+    orientationRoot.remove(faceHighlight);
+    faceHighlight.geometry.dispose();
+    const materials = Array.isArray(faceHighlight.material)
+      ? faceHighlight.material
+      : [faceHighlight.material];
+    for (const material of materials) material.dispose();
+    faceHighlight = null;
+    requestRender();
+  };
+  const prepareOrientation = () => {
+    if (!model) return null;
+    orientationIndex ??= createOrientationIndex(model, orientationRoot);
+    return orientationIndex;
+  };
+  let section: ModelSection = { enabled: false, axis: "z", offset: 0, flipped: false, caps: true };
+  let pickMode: "measure" | "annotate" | "lay-flat" | null = null;
   let onPick: ((points: ModelPoint[]) => void) | null = null;
   let onCircle: ((circle: CircleFit | null) => void) | null = null;
   let measureMode: "distance" | "hole" = "distance";
@@ -188,7 +244,34 @@ export function createViewer(host: HTMLElement) {
   };
   let onCamera: ((camera: ModelCamera) => void) | null = null;
   let restoring = false;
-  const plane = new Plane();
+  const plane = new Plane(),
+    caps = createSectionCaps(scene, plane);
+  let sectionGeometry: SectionGeometry | null = null,
+    closedHint: boolean | null = null,
+    onWall: ((start: ModelPoint, end: ModelPoint) => void) | null = null,
+    wallLayer: HTMLDivElement | null = null,
+    wallLabel: HTMLDivElement | null = null,
+    wallLine: SVGLineElement | null = null;
+  const updateCaps = () =>
+    caps.update({
+      enabled: section.enabled,
+      caps: section.caps,
+      wireframe,
+      box,
+      dark,
+      pixelRatio: renderer.getPixelRatio?.() ?? pixelRatio,
+    });
+  const getSectionGeometry = () =>
+    (sectionGeometry ??= sectionSegments(caps.closedMeshes(), plane, true));
+  const hideWall = () => {
+    if (wallLayer) wallLayer.hidden = true;
+  };
+  const capPoint = (surfaceDistance = Infinity) => {
+    if (!caps.visible()) return null;
+    const point = raycaster.ray.intersectPlane(plane, new Vector3());
+    if (!point || point.distanceTo(raycaster.ray.origin) > surfaceDistance + 1e-7) return null;
+    return insideSection(getSectionGeometry(), point) ? point : null;
+  };
   const applySection = () => {
     const sign = section.flipped ? -1 : 1;
     plane.normal.set(
@@ -203,10 +286,15 @@ export function createViewer(host: HTMLElement) {
           material.clippingPlanes = section.enabled ? [plane] : [];
     });
     previous?.setClipping(section.enabled ? [plane] : []);
+    if (faceHighlight && faceHighlight.material instanceof MeshBasicMaterial)
+      faceHighlight.material.clippingPlanes = section.enabled ? [plane] : [];
+    sectionGeometry = null;
+    hideWall();
+    updateCaps();
   };
   const raycaster = new Raycaster();
   const pick = (
-    event: PointerEvent,
+    event: Pick<PointerEvent, "clientX" | "clientY">,
   ): { point: [number, number, number]; mesh: Mesh | null; faceIndex: number } | null => {
     if (!model) return null;
     const rect = renderer.domElement.getBoundingClientRect();
@@ -226,6 +314,9 @@ export function createViewer(host: HTMLElement) {
     const hit = raycaster
       .intersectObject(model, true)
       .find((hit) => !section.enabled || plane.distanceToPoint(hit.point) >= 0);
+    const capped = capPoint(hit?.distance ?? Infinity);
+    if (capped && pickMode !== "lay-flat")
+      return { point: capped.toArray(), mesh: null, faceIndex: -1 };
     if (!hit) return null;
     const mesh = hit.object instanceof Mesh ? hit.object : null;
     const triangles = mesh
@@ -244,7 +335,7 @@ export function createViewer(host: HTMLElement) {
     renderer.domElement.focus();
     down = { x: event.clientX, y: event.clientY };
     const point = pick(event);
-    picked = point ? [point.point] : [];
+    picked = point ? [worldToModel(new Vector3(...point.point))] : [];
     renderer.domElement.setPointerCapture?.(event.pointerId);
   };
   const toScreen = (point: [number, number, number]): [number, number] => {
@@ -323,7 +414,98 @@ export function createViewer(host: HTMLElement) {
       );
     }
   };
+  const updateWallHover = (event: PointerEvent) => {
+    if (pickMode || event.buttons || !caps.visible()) {
+      hideWall();
+      return;
+    }
+    const hit = pick(event),
+      point = capPoint(hit ? new Vector3(...hit.point).distanceTo(raycaster.ray.origin) : Infinity);
+    const wall = point && wallAt(getSectionGeometry(), point);
+    if (!point || !wall) {
+      hideWall();
+      return;
+    }
+    if (!wallLayer) {
+      wallLayer = document.createElement("div");
+      wallLayer.className = styles["model-wall-readout"]!;
+      wallLayer.style.pointerEvents = "none";
+      wallLabel = document.createElement("div");
+      wallLabel.className = styles["model-mark-label"]!;
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.style.width = svg.style.height = "100%";
+      wallLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      wallLine.setAttribute("stroke", "#3984ff");
+      wallLine.setAttribute("stroke-width", "2");
+      svg.append(wallLine);
+      wallLayer.append(svg, wallLabel);
+      host.append(wallLayer);
+    }
+    wallLayer.hidden = false;
+    wallLabel!.textContent = `${lengthFormat(wall.thicknessMm)} wall`;
+    const [x, y] = toScreen(point.toArray()),
+      [sx, sy] = toScreen(wall.start),
+      [ex, ey] = toScreen(wall.end);
+    wallLabel!.style.transform = `translate(${x + 12}px, ${y - 24}px)`;
+    for (const [name, value] of [
+      ["x1", sx],
+      ["y1", sy],
+      ["x2", ex],
+      ["y2", ey],
+    ] as const)
+      wallLine!.setAttribute(name, String(value));
+  };
+  const updateFlatHover = (event: PointerEvent) => {
+    if (pickMode !== "lay-flat" || event.buttons) return;
+    const hit = pick(event),
+      index = prepareOrientation(),
+      triangles = hit?.mesh
+        ? Math.floor(
+            (hit.mesh.geometry.index?.count ?? hit.mesh.geometry.getAttribute("position").count) /
+              3,
+          )
+        : 0;
+    const region =
+      hit?.mesh && index
+        ? index.regionAt(
+            hit.mesh,
+            hit.faceIndex % triangles,
+            hit.mesh instanceof InstancedMesh ? Math.floor(hit.faceIndex / triangles) : undefined,
+          )
+        : null;
+    if (region === highlightedRegion) return;
+    clearFaceHighlight();
+    if (!region || !index) return;
+    highlightedRegion = region;
+    faceHighlight = new Mesh(
+      index.highlightGeometry(region),
+      new MeshBasicMaterial({
+        color: MARK_BLUE,
+        transparent: true,
+        opacity: 0.3,
+        side: DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+      }),
+    );
+    faceHighlight.renderOrder = 2;
+    orientationRoot.add(faceHighlight);
+    requestRender();
+  };
   const pointerMove = (event: PointerEvent) => {
+    if (!pickMode || pickMode === "lay-flat") {
+      hoverEvent = event;
+      if (hoverFrame === null)
+        hoverFrame = requestAnimationFrame(() => {
+          hoverFrame = null;
+          if (hoverEvent) {
+            if (pickMode === "lay-flat") updateFlatHover(hoverEvent);
+            else updateWallHover(hoverEvent);
+          }
+        });
+      return;
+    }
     if (pickMode === "measure") {
       if (snapState !== "ready" || event.altKey) return pointerLeave();
       hoverEvent = event;
@@ -340,15 +522,20 @@ export function createViewer(host: HTMLElement) {
     if (
       point &&
       (!picked.length ||
-        new Vector3(...point).distanceTo(new Vector3(...picked.at(-1)!)) >
+        new Vector3(...point).distanceTo(modelToWorld(picked.at(-1)!)) >
           box.getSize(new Vector3()).length() / 100)
     )
-      picked.push(point);
+      picked.push(worldToModel(new Vector3(...point)));
   };
   const pointerUp = (event: PointerEvent) => {
     if (!down || !pickMode) return;
     if (pickMode === "annotate") {
       if (picked.length) onPick?.(picked);
+    } else if (pickMode === "lay-flat") {
+      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5) {
+        const hit = pick(event);
+        if (hit?.mesh) onPick?.([worldToModel(new Vector3(...hit.point))]);
+      }
     } else if (Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5) {
       const hit = pick(event);
       if (hit) {
@@ -356,8 +543,8 @@ export function createViewer(host: HTMLElement) {
           event.altKey || snapState !== "ready"
             ? { kind: "face" as const, point: hit.point, edge: null }
             : snappedHit(hit);
-        if (measureMode === "hole") onCircle?.(circleHit(hit, snap));
-        else onPick?.([snap.point]);
+        if (measureMode === "hole") onCircle?.(circleToModel(circleHit(hit, snap)));
+        else onPick?.([worldToModel(new Vector3(...snap.point))]);
       } else if (measureMode === "hole") onCircle?.(null);
     }
     down = null;
@@ -368,7 +555,18 @@ export function createViewer(host: HTMLElement) {
     if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
     hoverFrame = null;
     snapOverlay.hide();
+    hideWall();
+    clearFaceHighlight();
   };
+  const doubleClick = (event: MouseEvent) => {
+    if (pickMode || !onWall || !caps.visible()) return;
+    const hit = pick(event),
+      point = capPoint(hit ? new Vector3(...hit.point).distanceTo(raycaster.ray.origin) : Infinity);
+    const wall = point && wallAt(getSectionGeometry(), point);
+    if (wall)
+      onWall(worldToModel(new Vector3(...wall.start)), worldToModel(new Vector3(...wall.end)));
+  };
+  renderer.domElement.addEventListener("dblclick", doubleClick);
   renderer.domElement.addEventListener("pointerdown", pointerDown);
   renderer.domElement.addEventListener("pointermove", pointerMove);
   renderer.domElement.addEventListener("pointerup", pointerUp);
@@ -406,7 +604,7 @@ export function createViewer(host: HTMLElement) {
       height = host.clientHeight;
     const viewCamera = activeCamera();
     for (const mark of marks) {
-      projected.copy(mark.position).project(viewCamera);
+      projected.copy(mark.position).applyMatrix4(orientationRoot.matrixWorld).project(viewCamera);
       mark.element.hidden = projected.z < -1 || projected.z > 1;
       const x = ((projected.x + 1) / 2) * width,
         y = ((1 - projected.y) / 2) * height;
@@ -550,7 +748,7 @@ export function createViewer(host: HTMLElement) {
     const scale = 1.25;
     const viewCamera = activeCamera();
     for (const mark of marks) {
-      projected.copy(mark.position).project(viewCamera);
+      projected.copy(mark.position).applyMatrix4(orientationRoot.matrixWorld).project(viewCamera);
       if (projected.z < -1 || projected.z > 1) continue;
       const px = x + ((projected.x + 1) / 2) * width,
         py = y + ((1 - projected.y) / 2) * height;
@@ -600,6 +798,7 @@ export function createViewer(host: HTMLElement) {
     previousAvailable = false,
     modelTriangles = 0;
   let model: Object3D | null = null,
+    currentStats: ReturnType<typeof meshStats> | null = null,
     box = new Box3(),
     bed: ReturnType<typeof createBed> | null = null,
     axes: AxesHelper | null = null,
@@ -635,7 +834,10 @@ export function createViewer(host: HTMLElement) {
     overhangs = false,
     navigationMode: NavigationMode = "orbit";
   let onNavigate: (() => void) | null = null;
-  const navigationStarted = () => onNavigate?.();
+  const navigationStarted = () => {
+    pointerLeave();
+    onNavigate?.();
+  };
   controls.addEventListener("start", navigationStarted);
   const setNavigationMode = (mode: NavigationMode) => {
     navigationMode = mode;
@@ -644,12 +846,83 @@ export function createViewer(host: HTMLElement) {
     controls.touches.ONE = mode === "pan" ? TOUCH.PAN : TOUCH.ROTATE;
     renderer.domElement.style.cursor = pickMode ? "crosshair" : mode === "pan" ? "move" : "grab";
   };
+  const orientedStats = (refresh = false) => {
+    if (!model) return null;
+    if (!refresh && currentStats) return currentStats;
+    const stats = meshStats(model);
+    stats.box = new Box3().setFromObject(model, true);
+    stats.size = stats.box.getSize(new Vector3()).toArray();
+    currentStats = stats;
+    return stats;
+  };
+  const applyOrientationRoot = () => {
+    const center = authoredBox.getCenter(new Vector3());
+    orientationRoot.quaternion.fromArray(normalizeQuaternion(orientation ?? [0, 0, 0, 1]));
+    orientationRoot.position
+      .copy(center)
+      .sub(center.clone().applyQuaternion(orientationRoot.quaternion));
+    orientationRoot.updateWorldMatrix(true, true);
+  };
+  let findingMarks: { finding: PrintFinding; number: number; element: HTMLButtonElement }[] = [],
+    findingLayer: HTMLDivElement | null = null;
+  const clearFindings = () => {
+    findingLayer?.remove();
+    findingLayer = null;
+    findingMarks = [];
+  };
+  const placeFindings = () => {
+    const viewCamera = activeCamera();
+    for (const { finding, element } of findingMarks) {
+      const point = modelToWorld(finding.location!.point);
+      const clipped = section.enabled && plane.distanceToPoint(point) < 0;
+      point.project(viewCamera);
+      element.hidden = clipped || point.z < -1 || point.z > 1;
+      element.style.transform = `translate(${((point.x + 1) * host.clientWidth) / 2}px, ${((1 - point.y) * host.clientHeight) / 2}px) translate(-50%, -50%)`;
+    }
+  };
+  const paintFindings = (
+    context: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+  ) => {
+    const viewCamera = activeCamera();
+    for (const { finding, number } of findingMarks) {
+      const point = modelToWorld(finding.location!.point);
+      if (section.enabled && plane.distanceToPoint(point) < 0) continue;
+      point.project(viewCamera);
+      if (point.z < -1 || point.z > 1) continue;
+      const px = x + ((point.x + 1) * width) / 2,
+        py = y + ((1 - point.y) * height) / 2;
+      context.save();
+      context.fillStyle =
+        finding.severity === "fail"
+          ? "#b42318"
+          : finding.severity === "warn"
+            ? "#a15c12"
+            : "#31598b";
+      context.beginPath();
+      context.roundRect(px - 11, py - 11, 22, 22, 4);
+      context.fill();
+      context.strokeStyle = "white";
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.fillStyle = "white";
+      context.font = "700 12px sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(String(number), px, py);
+      context.restore();
+    }
+  };
   const render = () => {
     if (disposed || !visible) return;
     snapOverlay.hide();
     scaleMarkers();
     renderer.render(scene, activeCamera());
     placeMarks();
+    placeFindings();
   };
   const requestRender = () => {
     if (frame === null && visible && !disposed)
@@ -680,6 +953,7 @@ export function createViewer(host: HTMLElement) {
     bed?.setTheme(dark);
     shading.setTheme(dark);
     previous?.setTheme(dark);
+    updateCaps();
     requestRender();
   };
   const themeObserver = new MutationObserver(theme);
@@ -701,6 +975,8 @@ export function createViewer(host: HTMLElement) {
     requestRender();
   };
   const applyWireframe = () => {
+    pointerLeave();
+    updateCaps();
     shading.setEnabled(overhangs && !wireframe);
     model?.traverse((object) => {
       if (object instanceof Mesh)
@@ -804,6 +1080,139 @@ export function createViewer(host: HTMLElement) {
     },
     snapshot,
     activeCamera,
+    setOrientation(next: ModelQuaternion | null) {
+      const normalized = next && normalizeQuaternion(next);
+      const unchanged = normalized
+        ? orientation?.every((value, index) => value === normalized[index])
+        : orientation === null;
+      orientation = normalized;
+      if (!model) {
+        applyOrientationRoot();
+        return null;
+      }
+      if (unchanged) return orientedStats();
+      pointerLeave();
+      resetSnapping();
+      circleCache = null;
+      applyOrientationRoot();
+      const stats = orientedStats(true)!;
+      box = stats.box;
+      overhangPositions = null;
+      shading.setBedZ(box.min.z);
+      caps.syncTransforms();
+      sectionGeometry = null;
+      if (section.enabled) {
+        section = { ...section, offset: box.getCenter(new Vector3())[section.axis] };
+        applySection();
+      }
+      updateCaps();
+      placeBed();
+      updateSceneRadius();
+      const direction = camera.position.clone().sub(controls.target).normalize(),
+        center = box.getCenter(new Vector3()),
+        distance = fitDistance(box, camera.fov, camera.aspect);
+      controls.target.copy(center);
+      camera.position.copy(center).addScaledVector(direction, distance);
+      camera.near = Math.max(distance / 10000, 0.01);
+      camera.far = Math.max(distance * 100, 10000);
+      camera.updateProjectionMatrix();
+      controls.update();
+      requestRender();
+      if (pickMode === "measure") void prepareSnapping();
+      return stats;
+    },
+    authoredCentre() {
+      return authoredBox.getCenter(new Vector3());
+    },
+    orientedMinZ() {
+      return box.min.z;
+    },
+    faceOrientationAt(point: ModelPoint) {
+      const index = prepareOrientation(),
+        region = index?.atPoint(point);
+      return region && index ? index.orientationFor(region, orientation) : null;
+    },
+    autoOrientation() {
+      return prepareOrientation()?.auto() ?? null;
+    },
+    wallThicknessAt(point: ModelPoint): ModelWall | null {
+      if (!caps.visible()) return null;
+      const projectedPoint = plane.projectPoint(modelToWorld(point), new Vector3()),
+        wall = wallAt(getSectionGeometry(), projectedPoint);
+      return wall
+        ? {
+            thicknessMm: wall.thicknessMm,
+            start: worldToModel(new Vector3(...wall.start)),
+            end: worldToModel(new Vector3(...wall.end)),
+          }
+        : null;
+    },
+    setClosedHint(manifold: boolean | null) {
+      if (closedHint === manifold) return;
+      closedHint = manifold;
+      caps.setModel(model, (mesh) => closedHint === true || closedMeshGeometry(mesh.geometry));
+      sectionGeometry = null;
+      hideWall();
+      updateCaps();
+      requestRender();
+    },
+    sectionCapsStatus: caps.state,
+    onSectionCapsStatus: caps.onState,
+    onWallMeasure(callback: typeof onWall) {
+      onWall = callback;
+    },
+    setFindings(
+      findings: readonly PrintFinding[],
+      selectedId: string | null,
+      onSelect: ((finding: PrintFinding) => void) | null,
+    ) {
+      clearFindings();
+      if (!findings.some((finding) => finding.location)) return;
+      findingLayer = document.createElement("div");
+      findingLayer.className = styles["model-marks"]!;
+      host.append(findingLayer);
+      for (const [index, finding] of findings.entries()) {
+        if (!finding.location) continue;
+        const element = document.createElement("button");
+        element.type = "button";
+        element.className = styles["model-finding-pin"]!;
+        element.dataset.severity = finding.severity;
+        element.dataset.selected = String(finding.id === selectedId);
+        element.textContent = String(index + 1);
+        element.title = finding.message;
+        element.setAttribute("aria-label", `${index + 1}: ${finding.message}`);
+        element.addEventListener("click", (event) => {
+          event.stopPropagation();
+          onSelect?.(finding);
+        });
+        findingLayer.append(element);
+        findingMarks.push({ finding, number: index + 1, element });
+      }
+      placeFindings();
+      requestRender();
+    },
+    frameFinding(finding: PrintFinding) {
+      if (!finding.location || !model) return;
+      const point = modelToWorld(finding.location.point),
+        normal = finding.location.normal
+          ? new Vector3(...finding.location.normal)
+              .applyQuaternion(orientationRoot.quaternion)
+              .toArray()
+          : null;
+      const framing = frameFor(
+        point.toArray(),
+        normal,
+        finding.location.radiusMm,
+        camera,
+        controls.target,
+      );
+      camera.position.copy(framing.position);
+      controls.target.copy(framing.target);
+      camera.updateProjectionMatrix();
+      controls.update();
+      navigationStarted();
+      requestRender();
+    },
     keepPrevious(enabled: boolean) {
       keep = enabled;
       if (!enabled) clearPrevious();
@@ -909,13 +1318,13 @@ export function createViewer(host: HTMLElement) {
       let best: Snap | null = null,
         distance = Infinity;
       for (const topology of topologies.values()) {
-        const snap = snapNearPoint(topology, [...point], radiusMm);
+        const snap = snapNearPoint(topology, modelToWorld(point).toArray(), radiusMm);
         if (
           snap.kind === "face" ||
           (section.enabled && plane.distanceToPoint(new Vector3(...snap.point)) < 0)
         )
           continue;
-        const d = new Vector3(...snap.point).distanceTo(new Vector3(...point));
+        const d = new Vector3(...snap.point).distanceTo(modelToWorld(point));
         if (
           !best ||
           (snap.kind === "vertex" && best.kind !== "vertex") ||
@@ -925,13 +1334,13 @@ export function createViewer(host: HTMLElement) {
           distance = d;
         }
       }
-      return best?.point ?? point;
+      return best ? worldToModel(new Vector3(...best.point)) : point;
     },
     async circleNear(point: ModelPoint, radiusMm = 1): Promise<CircleFit | null> {
       await prepareSnapping();
       let fit: CircleFit | null = null,
         nearest = radiusMm;
-      const target = new Vector3(...point),
+      const target = modelToWorld(point),
         closest = new Vector3(),
         triangle = new Triangle();
       for (const topology of topologies.values()) {
@@ -952,7 +1361,7 @@ export function createViewer(host: HTMLElement) {
         }
         if (seed < 0) continue;
         const snap = snapNearPoint(topology, [...point], radiusMm),
-          candidate = circleAt(topology, seed, [...point], snap.edge);
+          candidate = circleAt(topology, seed, target.toArray(), snap.edge);
         if (
           !candidate ||
           candidate.loop.some(
@@ -976,7 +1385,7 @@ export function createViewer(host: HTMLElement) {
           nearest = rimDistance;
         }
       }
-      return fit;
+      return circleToModel(fit);
     },
     onCameraChange(callback: typeof onCamera) {
       onCamera = callback;
@@ -1048,7 +1457,11 @@ export function createViewer(host: HTMLElement) {
         throw error;
       }
       if (model) {
-        scene.remove(model);
+        model.updateWorldMatrix(true, true);
+        const world = model.matrixWorld.clone();
+        orientationRoot.remove(model);
+        model.matrix.copy(world);
+        model.matrix.decompose(model.position, model.quaternion, model.scale);
         if (keep && modelTriangles <= GHOST_TRIANGLE_LIMIT) {
           previous ??= createGhost(ghosts, requestRender);
           previous.setTheme(dark);
@@ -1060,11 +1473,19 @@ export function createViewer(host: HTMLElement) {
           clearPrevious();
         }
       }
+      caps.setModel(null);
       resetSnapping();
       circleCache = null;
+      clearFaceHighlight();
+      orientationIndex = null;
+      sectionGeometry = null;
       model = next;
+      currentStats = null;
+      authoredBox = new Box3().setFromObject(next, true);
+      orientationRoot.add(model);
+      applyOrientationRoot();
       modelTriangles = stats.triangles;
-      box = stats.box;
+      box = orientedStats()!.box;
       overhangPositions = null;
       unsupportedMaterials = false;
       shading.setBedZ(box.min.z);
@@ -1077,13 +1498,13 @@ export function createViewer(host: HTMLElement) {
       });
       placeBed();
       updateSceneRadius();
-      scene.add(model);
+      caps.setModel(model, (mesh) => closedHint === true || closedMeshGeometry(mesh.geometry));
       applyWireframe();
       applySection();
       if (!keepCamera) setView("iso");
       requestRender();
       if (pickMode === "measure") void prepareSnapping();
-      return stats;
+      return orientedStats()!;
     },
     setView,
     refit() {
@@ -1160,6 +1581,14 @@ export function createViewer(host: HTMLElement) {
         if (four) projection = "orthographic";
         renderer.setPixelRatio(1);
         shading.setPixelRatio(1);
+        caps.update({
+          enabled: section.enabled,
+          caps: section.caps,
+          wireframe,
+          box,
+          dark,
+          pixelRatio: 1,
+        });
         renderer.setSize(four ? 800 : 1200, four ? 600 : output.height, false);
         camera.aspect = four ? 4 / 3 : aspect;
         camera.updateProjectionMatrix();
@@ -1171,6 +1600,7 @@ export function createViewer(host: HTMLElement) {
             y = four ? Math.floor(index / 2) * 600 : 0;
           context.drawImage(renderer.domElement, x, y);
           paintMarks(context, x, y, four ? 800 : 1200, four ? 600 : output.height);
+          paintFindings(context, x, y, four ? 800 : 1200, four ? 600 : output.height);
           if (view) {
             context.fillStyle = "#18202b";
             context.fillRect(x + 12, y + 12, 64, 26);
@@ -1196,6 +1626,14 @@ export function createViewer(host: HTMLElement) {
         camera.updateProjectionMatrix();
         renderer.setPixelRatio(pixelRatio);
         shading.setPixelRatio(pixelRatio);
+        caps.update({
+          enabled: section.enabled,
+          caps: section.caps,
+          wireframe,
+          box,
+          dark,
+          pixelRatio,
+        });
         renderer.setSize(size.x, size.y, false);
         controls.update();
         restoring = wasRestoring;
@@ -1220,6 +1658,7 @@ export function createViewer(host: HTMLElement) {
       onCircle = null;
       controls.removeEventListener("start", navigationStarted);
       onNavigate = null;
+      renderer.domElement.removeEventListener("dblclick", doubleClick);
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
@@ -1227,6 +1666,12 @@ export function createViewer(host: HTMLElement) {
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
       renderer.domElement.removeEventListener("mousedown", preventAutoscroll);
       controls.dispose();
+      caps.dispose();
+      clearFaceHighlight();
+      clearFindings();
+      wallLayer?.remove();
+      onWall = null;
+      orientationIndex = null;
       if (model) disposeModel(model);
       previous?.dispose();
       previousAvailable = false;

@@ -24,7 +24,7 @@ const camera: ReturnType<ModelViewer["snapshot"]> = {
   gridVisible: true,
   axesVisible: false,
   navigationMode: "orbit",
-  section: { enabled: false, axis: "z", offset: 0, flipped: false },
+  section: { enabled: false, axis: "z", offset: 0, flipped: false, caps: true },
 };
 let renderer: ReactTestRenderer | null = null;
 let viewers: ReturnType<typeof makeViewer>[];
@@ -35,6 +35,11 @@ function makeViewer() {
     describe: vi.fn(),
     dispose: vi.fn(),
     setModel: vi.fn(),
+    setOrientation: vi.fn(),
+    setClosedHint: vi.fn(),
+    onSectionCapsStatus: vi.fn(),
+    onWallMeasure: vi.fn(),
+    setFindings: vi.fn(),
     restore: vi.fn(),
     setVisible: vi.fn(),
     setBed: vi.fn(),

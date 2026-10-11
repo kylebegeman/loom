@@ -6,6 +6,8 @@ import type {
   ModelSection,
   ModelMeasurement,
   ModelAnnotation,
+  ModelOrientation,
+  PrintFinding,
 } from "@t3tools/contracts/fork";
 import { useEffect, useRef, useId } from "react";
 import { singleZoneStrips, type ModelFormat } from "@t3tools/contracts/fork";
@@ -15,8 +17,10 @@ import { createViewer, type ModelViewer, type NavigationMode } from "./createVie
 import { disposeModel, loadModel, type meshStats } from "./load";
 import type { CircleFit } from "./snap";
 import type { SnapStatus } from "./createViewer";
+import type { SectionCapState } from "./sectionCaps";
 const EMPTY_MEASUREMENTS: readonly ModelMeasurement[] = [];
 const EMPTY_ANNOTATIONS: readonly ModelAnnotation[] = [];
+const EMPTY_FINDINGS: readonly PrintFinding[] = [];
 export default function ViewerCanvas({
   label = "3D model",
   url,
@@ -47,12 +51,20 @@ export default function ViewerCanvas({
   keepPrevious = false,
   previousShown = false,
   sourceRevision,
+  orientation = null,
+  onOriented,
+  closedHint = null,
+  onSectionCapsStatus,
+  onWall,
+  findings = EMPTY_FINDINGS,
+  selectedFindingId = null,
+  onFinding,
 }: {
   section?: ModelSection;
   measurements?: readonly ModelMeasurement[];
   annotations?: readonly ModelAnnotation[];
   pendingPoint?: ModelPoint | null;
-  pickMode?: "measure" | "annotate" | null;
+  pickMode?: "measure" | "annotate" | "lay-flat" | null;
   onPick?: (points: ModelPoint[]) => void;
   measureMode?: "distance" | "hole";
   onCircle?: (circle: CircleFit | null) => void;
@@ -64,6 +76,14 @@ export default function ViewerCanvas({
   keepPrevious?: boolean;
   previousShown?: boolean;
   sourceRevision?: string;
+  orientation?: ModelOrientation | null;
+  onOriented?: (stats: ReturnType<typeof meshStats>) => void;
+  closedHint?: boolean | null;
+  onSectionCapsStatus?: (status: SectionCapState) => void;
+  onWall?: (start: ModelPoint, end: ModelPoint) => void;
+  findings?: readonly PrintFinding[];
+  selectedFindingId?: string | null;
+  onFinding?: (finding: PrintFinding) => void;
   label?: string;
   url: string;
   format: ModelFormat;
@@ -102,6 +122,8 @@ export default function ViewerCanvas({
     overhangAngleDegrees,
     keepPrevious,
     previousShown,
+    orientation,
+    closedHint,
   });
   useEffect(() => {
     options.current = {
@@ -117,6 +139,8 @@ export default function ViewerCanvas({
       overhangAngleDegrees,
       keepPrevious,
       previousShown,
+      orientation,
+      closedHint,
     };
   }, [
     navigationMode,
@@ -131,6 +155,8 @@ export default function ViewerCanvas({
     overhangAngleDegrees,
     keepPrevious,
     previousShown,
+    orientation,
+    closedHint,
   ]);
   useEffect(() => {
     if (!host.current) return;
@@ -198,6 +224,8 @@ export default function ViewerCanvas({
         }
         viewerRef.current.keepPrevious(options.current.keepPrevious);
         viewerRef.current.showPrevious(options.current.previousShown);
+        viewerRef.current.setOrientation(options.current.orientation?.quaternion ?? null);
+        viewerRef.current.setClosedHint(options.current.closedHint);
         const stats = viewerRef.current.setModel(
           model,
           loaded.current || savedViewRef.current !== null,
@@ -210,6 +238,7 @@ export default function ViewerCanvas({
           viewerRef.current.clearPrevious();
         loadedRevision.current = sourceRevision;
         onStats(stats);
+        onOriented?.(stats);
         if (!loaded.current && savedViewRef.current)
           viewerRef.current.restore(savedViewRef.current);
         if (options.current.navigationMode)
@@ -249,7 +278,35 @@ export default function ViewerCanvas({
         }
       });
     return () => abort.abort();
-  }, [url, format, sourceRevision, viewerRef, savedViewRef, onStats, onError, onProgress]);
+  }, [
+    url,
+    format,
+    sourceRevision,
+    viewerRef,
+    savedViewRef,
+    onStats,
+    onOriented,
+    onError,
+    onProgress,
+  ]);
+  useEffect(() => {
+    const stats = viewerRef.current?.setOrientation(orientation?.quaternion ?? null);
+    if (loaded.current && stats) onOriented?.(stats);
+  }, [viewerRef, orientation, onOriented]);
+  useEffect(() => {
+    viewerRef.current?.setClosedHint(closedHint);
+  }, [viewerRef, closedHint]);
+  useEffect(() => {
+    viewerRef.current?.onSectionCapsStatus(onSectionCapsStatus ?? null);
+    return () => viewerRef.current?.onSectionCapsStatus(null);
+  }, [viewerRef, onSectionCapsStatus]);
+  useEffect(() => {
+    viewerRef.current?.onWallMeasure(onWall ?? null);
+    return () => viewerRef.current?.onWallMeasure(null);
+  }, [viewerRef, onWall]);
+  useEffect(() => {
+    viewerRef.current?.setFindings(findings, selectedFindingId, onFinding ?? null);
+  }, [viewerRef, findings, selectedFindingId, onFinding]);
   useEffect(() => {
     viewerRef.current?.onNavigate(onNavigate ?? null);
     return () => viewerRef.current?.onNavigate(null);

@@ -8,7 +8,8 @@ import {
   type ScaleReference,
   SCALE_REFERENCE_LABELS,
   type BuildPlatePattern,
-  type BuildPlatePresetId,
+  selectBed,
+  customBedNameError,
   type ModelPreviewStatus,
 } from "@t3tools/contracts/fork";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
@@ -37,7 +38,7 @@ import { OperationStatus } from "./OperationStatus";
 import { BUILD_PLATE_PATTERNS, bedGroups, buildPlateLabel, buildPlateNote } from "./buildPlate";
 import { models, runModelCommand } from "./state";
 import { DisplayUnitsProvider, formatLengths } from "./units";
-import { CustomBedSize } from "./BedPicker";
+import { ManageBeds } from "./ManageBeds";
 
 const validateSettings = Schema.decodeSync(ModelPreviewSettings);
 const BACKENDS = [
@@ -86,6 +87,9 @@ function SettingsForm({
       setBusy(null);
     }
   };
+  const invalidBedName = settings.buildPlate.customBeds.some((bed) =>
+    customBedNameError(settings.buildPlate, bed.name, bed.id),
+  );
   const save = () =>
     act(async () => {
       const validated = validateSettings(settings);
@@ -101,7 +105,7 @@ function SettingsForm({
         canSave,
       }}
     >
-      <div className="flex flex-col gap-3">
+      <fieldset disabled={!canSave || busy !== null} className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
           <p className="text-sm text-muted-foreground">
             These settings apply to the selected environment. OpenSCAD runs on that host.
@@ -185,6 +189,57 @@ function SettingsForm({
           }
         />
         <SettingsRow
+          title="Nozzle diameter (mm)"
+          description="Used for print checks unless the selected printer provides its nozzle diameter."
+          control={
+            <Input
+              aria-label="Nozzle diameter (mm)"
+              type="number"
+              size="sm"
+              className="w-full sm:w-24"
+              min={0.1}
+              max={2}
+              step={0.05}
+              value={settings.nozzleDiameterMm}
+              onChange={(event) => set("nozzleDiameterMm", Number(event.target.value))}
+            />
+          }
+        />
+        <SettingsRow
+          title="Overhang limit (degrees)"
+          description="Faces beyond this angle from vertical are flagged by print checks and overhang shading."
+          control={
+            <Input
+              aria-label="Overhang limit (degrees)"
+              type="number"
+              size="sm"
+              className="w-full sm:w-24"
+              min={30}
+              max={70}
+              step={1}
+              value={settings.overhangAngleDegrees}
+              onChange={(event) => set("overhangAngleDegrees", Number(event.target.value))}
+            />
+          }
+        />
+        <SettingsRow
+          title="First layer height (mm)"
+          description="Used to estimate contact with the bed in print checks."
+          control={
+            <Input
+              aria-label="First layer height (mm)"
+              type="number"
+              size="sm"
+              className="w-full sm:w-24"
+              min={0.04}
+              max={1}
+              step={0.01}
+              value={settings.firstLayerHeightMm}
+              onChange={(event) => set("firstLayerHeightMm", Number(event.target.value))}
+            />
+          }
+        />
+        <SettingsRow
           title="Maximum file size (MB)"
           control={
             <Input
@@ -227,9 +282,9 @@ function SettingsForm({
           description="The plate under the model and the size fit checks use."
           control={
             <Select
-              value={settings.buildPlate.preset}
-              onValueChange={(next: BuildPlatePresetId | null) => {
-                if (next) set("buildPlate", { ...settings.buildPlate, preset: next });
+              value={activeBed(settings.buildPlate).id}
+              onValueChange={(next: string | null) => {
+                if (next) set("buildPlate", selectBed(settings.buildPlate, next));
               }}
             >
               <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed">
@@ -255,20 +310,15 @@ function SettingsForm({
             </Select>
           }
         />
-        {settings.buildPlate.preset === "custom" ? (
-          <div className="px-3 sm:px-4">
-            <CustomBedSize
-              key={`${settings.buildPlate.customMm.join()}:${settings.displayUnits}`}
-              value={settings.buildPlate.customMm}
-              onCommit={(customMm) => set("buildPlate", { ...settings.buildPlate, customMm })}
-            />
-          </div>
-        ) : (
-          buildPlateNote(settings.buildPlate) && (
-            <p className="px-3 text-xs text-muted-foreground sm:px-4">
-              {buildPlateNote(settings.buildPlate)}
-            </p>
-          )
+        <ManageBeds
+          value={settings.buildPlate}
+          onChange={(plate) => set("buildPlate", plate)}
+          disabled={!canSave || busy !== null}
+        />
+        {buildPlateNote(settings.buildPlate) && (
+          <p className="px-3 text-xs text-muted-foreground sm:px-4">
+            {buildPlateNote(settings.buildPlate)}
+          </p>
         )}
         <SettingsRow
           title="Bed pattern"
@@ -397,7 +447,7 @@ function SettingsForm({
         <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
           <div className="flex flex-wrap gap-2">
             <Button
-              disabled={busy !== null || !canSave}
+              disabled={busy !== null || !canSave || invalidBedName}
               title={
                 canSave ? undefined : "This connection requires permission to edit model settings."
               }
@@ -443,7 +493,7 @@ function SettingsForm({
             </p>
           )}
         </div>
-      </div>
+      </fieldset>
     </DisplayUnitsProvider>
   );
 }

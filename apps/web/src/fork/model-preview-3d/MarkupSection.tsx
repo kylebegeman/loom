@@ -1,4 +1,7 @@
+import { bedDelta } from "./viewer/orientation";
 import styles from "./workspace.module.css";
+import { PrintCheckSection, type PrintCheckView } from "./PrintCheckSection";
+import type { PrintFinding } from "@t3tools/contracts/fork";
 import { useState, type ReactNode } from "react";
 import {
   CameraIcon,
@@ -20,6 +23,7 @@ import {
 import type {
   ModelAnnotation,
   ModelMeasurement,
+  ModelQuaternion,
   ModelPoint,
   ModelWorkspace,
   ModelWorkspaceOperation,
@@ -416,6 +420,7 @@ function RequestDetail({
 
 function MeasurementRow({
   measurement,
+  orientation,
   stale,
   renaming,
   mutate,
@@ -424,6 +429,7 @@ function MeasurementRow({
   onCopy,
 }: {
   measurement: ModelMeasurement;
+  orientation: ModelQuaternion | null;
   stale: boolean;
   renaming: boolean;
   mutate: Mutation;
@@ -434,7 +440,7 @@ function MeasurementRow({
   const units = useDisplayUnits();
   const distanceDigits = 2;
   const circle = measurement.kind === "circle" ? measurement.circle : undefined;
-  const delta = measurement.end.map((value, axis) => value - measurement.start[axis]!);
+  const delta = bedDelta(measurement.start, measurement.end, orientation);
   const distance = circle?.diameter ?? Math.hypot(...delta);
   const save = (patch: Partial<ModelMeasurement>) =>
     void mutate({ kind: "measurement", item: { ...measurement, ...patch } });
@@ -541,11 +547,21 @@ export function MarkupSection({
   busy,
   disabled,
   actions,
+  printCheck,
+  findingsShown,
+  onFindings,
+  selectedFindingId,
+  onFinding,
 }: {
   data: ModelWorkspace;
+  printCheck?: PrintCheckView;
+  findingsShown?: boolean;
+  onFindings?: (value: boolean) => void;
+  selectedFindingId?: string | null;
+  onFinding?: (finding: PrintFinding) => void;
   mutate: Mutation;
   sourceRevision: string;
-  picking: "measure" | "annotate" | null;
+  picking: "measure" | "annotate" | "lay-flat" | null;
   pendingRegion: ModelPoint[] | null;
   relink: ModelAnnotation | null;
   busy: boolean;
@@ -557,23 +573,25 @@ export function MarkupSection({
   const detail = data.annotations.find((annotation) => annotation.id === detailId);
   if (detail)
     return (
-      <RequestDetail
-        key={detail.id}
-        annotation={detail}
-        index={data.annotations.indexOf(detail) + 1}
-        sourceRevision={sourceRevision}
-        mutate={mutate}
-        busy={busy}
-        disabled={disabled}
-        actions={{
-          ...actions,
-          onReselect: (annotation) => {
-            setDetailId(null);
-            actions.onReselect(annotation);
-          },
-        }}
-        onBack={() => setDetailId(null)}
-      />
+      <fieldset disabled={disabled} className="min-w-0">
+        <RequestDetail
+          key={detail.id}
+          annotation={detail}
+          index={data.annotations.indexOf(detail) + 1}
+          sourceRevision={sourceRevision}
+          mutate={mutate}
+          busy={busy}
+          disabled={disabled}
+          actions={{
+            ...actions,
+            onReselect: (annotation) => {
+              setDetailId(null);
+              actions.onReselect(annotation);
+            },
+          }}
+          onBack={() => setDetailId(null)}
+        />
+      </fieldset>
     );
   const current = data.measurements.filter((m) => m.sourceRevision === sourceRevision);
   const stale = data.measurements.filter((m) => m.sourceRevision !== sourceRevision);
@@ -581,6 +599,7 @@ export function MarkupSection({
     <MeasurementRow
       key={measurement.id}
       measurement={measurement}
+      orientation={data.orientation?.quaternion ?? null}
       stale={measurement.sourceRevision !== sourceRevision}
       renaming={renaming === measurement.id}
       mutate={mutate}
@@ -593,111 +612,127 @@ export function MarkupSection({
   );
   return (
     <div className={styles["model-inspector-scroll"]}>
-      {pendingRegion && (
-        <Composer
-          key={relink?.id ?? "new"}
-          index={relink ? data.annotations.indexOf(relink) + 1 : data.annotations.length + 1}
-          relink={relink}
-          picking={picking === "annotate"}
-          busy={busy}
-          disabled={disabled}
-          actions={actions}
-        />
-      )}
-      <SectionHead title="Change requests" count={data.annotations.length || undefined}>
-        <Tip label="Pin a region for the agent" kbd="N">
-          <Button
-            variant="ghost-muted"
-            size="xs"
-            disabled={disabled}
-            data-pressed={picking === "annotate" ? "" : undefined}
-            onClick={() => actions.onTool("annotate")}
-          >
-            <MapPinIcon />
-            Annotate
-          </Button>
-        </Tip>
-      </SectionHead>
-      {data.annotations.length ? (
-        data.annotations.map((annotation, index) => {
-          const status = annotationStatus(annotation, sourceRevision);
-          return (
-            <button
-              key={annotation.id}
-              type="button"
-              className={styles["model-request-row"]}
-              onClick={() => setDetailId(annotation.id)}
-            >
-              <Pin index={index + 1} status={status} />
-              <div className="min-w-0">
-                <div className={styles["model-request-top"]}>
-                  <span className={styles["model-row-name"]}>{annotation.name}</span>
-                  <StatusChip status={status} />
-                </div>
-                <div className={styles["model-request-text"]}>
-                  {annotation.request || "No description yet."}
-                </div>
-              </div>
-              {annotation.referenceImage ? (
-                <img
-                  className={styles["model-request-thumb"]}
-                  src={annotation.referenceImage}
-                  alt=""
-                />
-              ) : (
-                <span className={styles["model-request-thumb"]} />
-              )}
-            </button>
-          );
-        })
-      ) : pendingRegion ? null : (
-        <EmptyNote>
-          {picking === "annotate"
-            ? "Click the part of the model you want changed, or drag across a region."
-            : "Pin the part of the model you want changed and describe it. The request goes to the composer with a marked capture of the view."}
-        </EmptyNote>
-      )}
-      <SectionHead title="Measurements" count={current.length || undefined}>
-        <Tip label="Click two points" kbd="M">
-          <Button
-            variant="ghost-muted"
-            size="xs"
-            disabled={disabled}
-            data-pressed={picking === "measure" ? "" : undefined}
-            onClick={() => actions.onTool("measure")}
-          >
-            <RulerIcon />
-            Measure
-          </Button>
-        </Tip>
-      </SectionHead>
-      {current.length ? (
-        current.map(measurementRow)
-      ) : (
-        <EmptyNote>
-          Click two points on the model to measure the distance between them, or use Hole to measure
-          a diameter.
-        </EmptyNote>
-      )}
-      {stale.length > 0 && (
+      {printCheck && (
         <>
-          <div className={styles["model-subhead"]}>
-            <span>Earlier versions</span>
-            <div className="flex-1" />
+          <PrintCheckSection
+            check={printCheck}
+            selectedId={selectedFindingId ?? null}
+            onSelect={onFinding ?? (() => {})}
+          />
+          <div className="px-3 pb-2">
+            <Button variant="ghost-muted" size="xs" onClick={() => onFindings?.(!findingsShown)}>
+              {findingsShown ? "Hide pins" : "Show pins"}
+            </Button>
+          </div>
+        </>
+      )}
+      <fieldset disabled={disabled} className="min-w-0">
+        {pendingRegion && (
+          <Composer
+            key={relink?.id ?? "new"}
+            index={relink ? data.annotations.indexOf(relink) + 1 : data.annotations.length + 1}
+            relink={relink}
+            picking={picking === "annotate"}
+            busy={busy}
+            disabled={disabled}
+            actions={actions}
+          />
+        )}
+        <SectionHead title="Change requests" count={data.annotations.length || undefined}>
+          <Tip label="Pin a region for the agent" kbd="N">
             <Button
               variant="ghost-muted"
               size="xs"
-              onClick={() => {
-                for (const measurement of stale)
-                  void mutate({ kind: "remove", collection: "measurements", id: measurement.id });
-              }}
+              disabled={disabled}
+              data-pressed={picking === "annotate" ? "" : undefined}
+              onClick={() => actions.onTool("annotate")}
             >
-              Clear
+              <MapPinIcon />
+              Annotate
             </Button>
-          </div>
-          {stale.map(measurementRow)}
-        </>
-      )}
+          </Tip>
+        </SectionHead>
+        {data.annotations.length ? (
+          data.annotations.map((annotation, index) => {
+            const status = annotationStatus(annotation, sourceRevision);
+            return (
+              <button
+                key={annotation.id}
+                type="button"
+                className={styles["model-request-row"]}
+                onClick={() => setDetailId(annotation.id)}
+              >
+                <Pin index={index + 1} status={status} />
+                <div className="min-w-0">
+                  <div className={styles["model-request-top"]}>
+                    <span className={styles["model-row-name"]}>{annotation.name}</span>
+                    <StatusChip status={status} />
+                  </div>
+                  <div className={styles["model-request-text"]}>
+                    {annotation.request || "No description yet."}
+                  </div>
+                </div>
+                {annotation.referenceImage ? (
+                  <img
+                    className={styles["model-request-thumb"]}
+                    src={annotation.referenceImage}
+                    alt=""
+                  />
+                ) : (
+                  <span className={styles["model-request-thumb"]} />
+                )}
+              </button>
+            );
+          })
+        ) : pendingRegion ? null : (
+          <EmptyNote>
+            {picking === "annotate"
+              ? "Click the part of the model you want changed, or drag across a region."
+              : "Pin the part of the model you want changed and describe it. The request goes to the composer with a marked capture of the view."}
+          </EmptyNote>
+        )}
+        <SectionHead title="Measurements" count={current.length || undefined}>
+          <Tip label="Click two points" kbd="M">
+            <Button
+              variant="ghost-muted"
+              size="xs"
+              disabled={disabled}
+              data-pressed={picking === "measure" ? "" : undefined}
+              onClick={() => actions.onTool("measure")}
+            >
+              <RulerIcon />
+              Measure
+            </Button>
+          </Tip>
+        </SectionHead>
+        {current.length ? (
+          current.map(measurementRow)
+        ) : (
+          <EmptyNote>
+            Click two points on the model to measure the distance between them, or use Hole to
+            measure a diameter.
+          </EmptyNote>
+        )}
+        {stale.length > 0 && (
+          <>
+            <div className={styles["model-subhead"]}>
+              <span>Earlier versions</span>
+              <div className="flex-1" />
+              <Button
+                variant="ghost-muted"
+                size="xs"
+                onClick={() => {
+                  for (const measurement of stale)
+                    void mutate({ kind: "remove", collection: "measurements", id: measurement.id });
+                }}
+              >
+                Clear
+              </Button>
+            </div>
+            {stale.map(measurementRow)}
+          </>
+        )}
+      </fieldset>
       <div className="h-4" />
     </div>
   );

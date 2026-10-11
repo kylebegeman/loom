@@ -1,4 +1,6 @@
 import styles from "./workspace.module.css";
+import { PrintCheckSection, type PrintCheckView } from "./PrintCheckSection";
+import type { PrintFinding } from "@t3tools/contracts/fork";
 import type { KeyboardEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -19,7 +21,8 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   singleZoneStrips,
   type ZoneRect,
-  type BuildPlatePresetId,
+  activeBed,
+  selectBed,
   type DisplayUnits,
   type ModelPreviewSettings,
   type ScadRenderResult,
@@ -49,6 +52,7 @@ import {
   type BuildVolume,
 } from "./buildPlate";
 import { useBuildPlate } from "./BedPicker";
+import { OrientationSection, type OrientationControls } from "./OrientationSection";
 import { BedFitList } from "./BedFitList";
 import { formatLength, formatLengths, useDisplayUnits } from "./units";
 import { Chip, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
@@ -320,8 +324,8 @@ function PrinterMenu({
       )}
       <MenuPopup align="end">
         <MenuRadioGroup
-          value={plate.preset}
-          onValueChange={(next: BuildPlatePresetId) => void save({ ...plate, preset: next })}
+          value={activeBed(plate).id}
+          onValueChange={(next: string) => void save(selectBed(plate, next))}
         >
           {bedGroups(plate).map((group) => (
             <MenuGroup key={group.label}>
@@ -345,7 +349,7 @@ function PrinterMenu({
         <MenuSeparator />
         <MenuItem render={<Link to="/settings/loom" />}>
           <Settings2Icon />
-          Custom size and preview settings
+          Manage beds and preview settings
         </MenuItem>
       </MenuPopup>
     </Menu>
@@ -371,9 +375,17 @@ export function PartSection({
   format,
   path,
   previousSize,
+  orientation,
+  printCheck,
+  selectedFindingId,
+  onFinding,
 }: {
   environmentId: EnvironmentId;
   previousSize?: readonly [number, number, number] | null;
+  orientation?: OrientationControls;
+  printCheck?: PrintCheckView;
+  selectedFindingId?: string | null;
+  onFinding?: (finding: PrintFinding) => void;
   stats: ReturnType<typeof meshStats> | null;
   settings: ModelPreviewSettings;
   volume: BuildVolume;
@@ -402,7 +414,10 @@ export function PartSection({
   });
   const fits = fit.status === "fits";
   const rotated = fit.status === "fits-rotated";
-  const manifold = render?.summary?.manifold;
+  const manifold =
+    printCheck?.report && !printCheck.stale
+      ? printCheck.report.summary.watertight
+      : render?.summary?.manifold;
   const deltas = previousSize
     ? stats.size.map((value, axis) => dimensionDelta(value, previousSize[axis]!, units))
     : [];
@@ -467,6 +482,14 @@ export function PartSection({
         </p>
       </div>
       <BedFitList environmentId={environmentId} settings={settings} size={stats.size} />
+      {orientation && <OrientationSection {...orientation} />}
+      {printCheck && (
+        <PrintCheckSection
+          check={printCheck}
+          selectedId={selectedFindingId ?? null}
+          onSelect={onFinding ?? (() => {})}
+        />
+      )}
       <dl className={styles["model-facts"]}>
         <dt>Triangles</dt>
         <dd>{stats.triangles.toLocaleString()}</dd>

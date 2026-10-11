@@ -2190,3 +2190,105 @@ button.model-bed-fit-row:focus-visible {
   font-size: 11px;
   white-space: nowrap;
 }
+
+.model-wall-readout {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.model-wall-readout[hidden] {
+  display: none;
+}
+.model-finding-pin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 20%);
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.model-finding-pin[hidden] {
+  display: none;
+}
+.model-finding-pin[data-severity="warn"] {
+  background: var(--warning);
+  color: var(--warning-foreground);
+}
+.model-finding-pin[data-severity="fail"] {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+.model-finding-pin[data-selected="true"],
+.model-finding-pin:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.model-print-check {
+  padding-bottom: 8px;
+}
+.model-print-check[data-stale="true"] .model-check-row {
+  opacity: 0.6;
+}
+.model-check-row,
+.model-check-finding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 16px);
+  margin: 2px 8px;
+  padding: 8px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 12px;
+}
+.model-check-row > svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.model-check-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.model-check-row strong,
+.model-check-row small {
+  display: block;
+}
+.model-check-row small {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.model-check-row > [data-status="pass"] {
+  color: var(--primary);
+}
+.model-check-row > [data-status="warn"],
+.model-check-row > [data-status="fail"] {
+  color: var(--warning-foreground);
+}
+.model-check-finding {
+  padding-left: 30px;
+  overflow-wrap: anywhere;
+}
+.model-check-row:hover:enabled,
+.model-check-finding:hover:enabled,
+.model-check-finding[data-selected="true"] {
+  background: var(--model-hover);
+}
+.model-check-row:focus-visible,
+.model-check-finding:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}

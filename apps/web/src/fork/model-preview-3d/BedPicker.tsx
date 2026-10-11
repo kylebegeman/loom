@@ -1,17 +1,26 @@
+import { randomUUID } from "~/lib/utils";
 import styles from "./workspace.module.css";
+import { Link } from "@tanstack/react-router";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { ChevronDownIcon, Grid3x3Icon } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
-  type BuildPlatePresetId,
   type BuildPlateSetting,
   type ModelPreviewSettings,
   type ScaleReference,
   SCALE_REFERENCE_LABELS,
   activeBed,
+  addCustomBed,
+  CUSTOM_BED_LIMIT,
+  customBedNameError,
+  newCustomBedId,
+  selectBed,
+  updateCustomBed,
+  type BedVolume,
   sharedZone,
 } from "@t3tools/contracts/fork";
+import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
 import {
@@ -105,46 +114,68 @@ export function useScaleReference(
   return useMemo(() => ({ reference, canSave, save }), [reference, canSave, save]);
 }
 
-const samePlate = (a: BuildPlateSetting, b: BuildPlateSetting) =>
+export const samePlate = (a: BuildPlateSetting, b: BuildPlateSetting) =>
   a.preset === b.preset &&
   a.pattern === b.pattern &&
   a.showZones === b.showZones &&
-  a.customMm.every((value, axis) => value === b.customMm[axis]);
+  a.customBedId === b.customBedId &&
+  a.customMm.every((value, axis) => value === b.customMm[axis]) &&
+  a.hiddenPresets.length === b.hiddenPresets.length &&
+  a.hiddenPresets.every((id, index) => id === b.hiddenPresets[index]) &&
+  a.customBeds.length === b.customBeds.length &&
+  a.customBeds.every((bed, index) => {
+    const other = b.customBeds[index];
+    return (
+      other &&
+      bed.id === other.id &&
+      bed.name === other.name &&
+      bed.volumeMm.every((value, axis) => value === other.volumeMm[axis])
+    );
+  });
 
-/**
- * The environment's bed setting with an optimistic save. The viewport and the Part tab both use
- * it, so the plate, its pattern and the fit checks always follow one saved value.
- */
+/** Optimistic choices serialize writes so a slow earlier save cannot undo the latest choice. */
 export function useBuildPlate(environmentId: EnvironmentId, settings: ModelPreviewSettings) {
   const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
-  // Shows the choice while the save and settings refresh are in flight.
   const [pending, setPending] = useState<BuildPlateSetting | null>(null);
   if (pending !== null && samePlate(pending, settings.buildPlate)) setPending(null);
   const plate = pending ?? settings.buildPlate;
-  // Saves send the whole settings object, so they read the newest props, not the ones captured
-  // when the control rendered, and a failed save only undoes its own choice.
   const latest = useRef({ settings, plate });
+  const request = useRef(0);
+  const queue = useRef(Promise.resolve());
   useLayoutEffect(() => {
     latest.current = { settings, plate };
   });
-  const save = async (next: BuildPlateSetting) => {
-    if (samePlate(next, latest.current.plate)) return;
+  const save = (next: BuildPlateSetting): Promise<void> => {
+    if (!canSave || samePlate(next, latest.current.plate)) return queue.current;
+    const version = ++request.current;
     latest.current.plate = next;
     setPending(next);
-    try {
-      await runModelCommand(models.updateSettings, {
-        environmentId,
-        input: { ...latest.current.settings, buildPlate: next },
-      });
-      appAtomRegistry.refresh(models.settings({ environmentId, input: {} }));
-    } catch (error) {
-      setPending((current) => (current === next ? null : current));
-      toastManager.add({
-        type: "error",
-        title: "Bed not changed",
-        description: error instanceof Error ? error.message : "The setting could not be saved.",
-      });
-    }
+    const operation = queue.current.then(async () => {
+      try {
+        const saved = await runModelCommand(models.updateSettings, {
+          environmentId,
+          input: { ...latest.current.settings, buildPlate: next },
+        });
+        latest.current.settings = saved;
+        if (version === request.current) {
+          latest.current.plate = saved.buildPlate;
+          setPending(saved.buildPlate);
+        }
+        appAtomRegistry.refresh(models.settings({ environmentId, input: {} }));
+      } catch (error) {
+        if (version === request.current) {
+          latest.current.plate = latest.current.settings.buildPlate;
+          setPending(null);
+        }
+        toastManager.add({
+          type: "error",
+          title: "Bed not changed",
+          description: error instanceof Error ? error.message : "The setting could not be saved.",
+        });
+      }
+    });
+    queue.current = operation;
+    return operation;
   };
   return { plate, canSave, save };
 }
@@ -157,12 +188,12 @@ export function CustomBedSize({
   value,
   onCommit,
 }: {
-  value: readonly [number, number, number];
-  onCommit: (value: [number, number, number]) => void;
+  value: BedVolume;
+  onCommit: (value: [number, number, number | null]) => void;
 }) {
   const { units } = useDisplayUnitsControl();
   const initial = value.map((mm) =>
-    formatLength(mm, units, { digits: 1, trim: true, unit: false }),
+    mm === null ? "No limit" : formatLength(mm, units, { digits: 1, trim: true, unit: false }),
   );
   const [draft, setDraft] = useState(initial);
   const valid = (text: string, index: number) =>
@@ -171,8 +202,9 @@ export function CustomBedSize({
     if (draft.every((text, index) => text === initial[index])) return;
     const next = draft.map((text, index) =>
       text === initial[index] ? value[index]! : Math.round(toMm(Number(text), units) * 10) / 10,
-    ) as [number, number, number];
-    if (draft.every(valid) && next.every(inRange)) onCommit(next);
+    ) as [number, number, number | null];
+    if (draft.every(valid) && next.every((number) => number === null || inRange(number)))
+      onCommit(next);
     else setDraft(initial);
   };
   return (
@@ -181,8 +213,9 @@ export function CustomBedSize({
         <label key={axis} className="flex flex-col gap-1 text-muted-foreground text-xs">
           {axis} {units}
           <Input
-            aria-label={`Custom bed ${axis.toLowerCase()} in ${units}`}
-            type="number"
+            aria-label={`Custom size ${axis.toLowerCase()} in ${units}`}
+            type={value[index] === null ? "text" : "number"}
+            readOnly={value[index] === null}
             size="sm"
             min={fromMm(10, units)}
             max={fromMm(2000, units)}
@@ -219,6 +252,21 @@ export function BedPicker({
   const scale = referenceControl ?? ownReference;
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const volume = resolveBuildVolume(plate);
+  const chosen = activeBed(plate);
+  const [bedName, setBedName] = useState<string | null>(null);
+  const nameError = bedName === null ? null : customBedNameError(plate, bedName);
+  const atLimit = plate.customBeds.length >= CUSTOM_BED_LIMIT;
+  const saveAsBed = () => {
+    if (bedName === null || nameError || atLimit) return;
+    void save(
+      addCustomBed(plate, {
+        id: newCustomBedId(randomUUID()),
+        name: bedName.trim(),
+        volumeMm: plate.customMm,
+      }),
+    );
+    setBedName(null);
+  };
   const note = buildPlateNote(plate);
   const zones = activeBed(plate).zones ?? [];
   const common = sharedZone(zones, volume[2]);
@@ -236,9 +284,12 @@ export function BedPicker({
         <PopoverTitle>Bed</PopoverTitle>
         <fieldset disabled={!canSave} className="mt-3 flex flex-col gap-3">
           <Select
-            value={plate.preset}
-            onValueChange={(next: BuildPlatePresetId | null) => {
-              if (next) void save({ ...plate, preset: next });
+            value={chosen.id}
+            onValueChange={(next: string | null) => {
+              if (next) {
+                setBedName(null);
+                void save(selectBed(plate, next));
+              }
             }}
           >
             <SelectTrigger size="sm" aria-label="Bed">
@@ -264,11 +315,64 @@ export function BedPicker({
           </Select>
           {plate.preset === "custom" && (
             <CustomBedSize
-              key={`${plate.customMm.join()}:${units}`}
-              value={plate.customMm}
-              onCommit={(customMm) => void save({ ...plate, customMm })}
+              key={`${chosen.id}:${volume.join()}:${units}`}
+              value={volume}
+              onCommit={(next) =>
+                void save(
+                  chosen.id === "custom"
+                    ? { ...plate, customMm: [next[0], next[1], next[2] ?? plate.customMm[2]] }
+                    : updateCustomBed(plate, chosen.id, { volumeMm: next }),
+                )
+              }
             />
           )}
+          {chosen.id === "custom" &&
+            (bedName === null ? (
+              <div className="flex flex-col gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={atLimit}
+                  onClick={() => setBedName("")}
+                >
+                  Save as bed
+                </Button>
+                {atLimit && <p className="text-muted-foreground text-xs">Up to 24 custom beds.</p>}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                <Input
+                  autoFocus
+                  aria-label="New bed name"
+                  size="sm"
+                  value={bedName}
+                  aria-invalid={!!nameError}
+                  onChange={(event) => setBedName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      saveAsBed();
+                    } else if (event.key === "Escape") {
+                      event.stopPropagation();
+                      setBedName(null);
+                    }
+                  }}
+                />
+                {nameError && (
+                  <p role="alert" className="text-xs text-destructive">
+                    {nameError}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <Button size="sm" disabled={!!nameError} onClick={saveAsBed}>
+                    Save bed
+                  </Button>
+                  <Button size="sm" variant="ghost-muted" onClick={() => setBedName(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ))}
           <Segmented
             label="Bed pattern"
             options={BUILD_PLATE_PATTERNS}
@@ -330,6 +434,11 @@ export function BedPicker({
             </Select>
           </label>
         </fieldset>
+        <div className="mt-2">
+          <Button variant="link" size="xs" render={<Link to="/settings/loom" />}>
+            Manage beds
+          </Button>
+        </div>
         {zones.length > 0 && (
           <div className={styles["model-zone-legend"]}>
             {common && (

@@ -43,6 +43,9 @@ import {
   type ModelSavedView,
   type ModelSection,
   type ScadRenderResult,
+  type ModelWall,
+  type PrintFinding,
+  type PrintCheckReport,
 } from "@t3tools/contracts/fork";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
@@ -56,6 +59,8 @@ import { models, modelUrl, runModelCommand } from "./state";
 import { OperationStatus, type OperationProgress } from "./OperationStatus";
 import { ScadFile, type ScadSession } from "./ScadCustomizer";
 import { useModelEditing } from "./useModelEditing";
+import { usePrintCheck } from "./usePrintCheck";
+import type { SectionCapState } from "./viewer/sectionCaps";
 import { MarkupSection, openRequestCount, type MarkupActions } from "./MarkupSection";
 import { ViewsSection } from "./ViewsSection";
 import { VariantsInspector } from "./VariantsInspector";
@@ -76,7 +81,13 @@ import { BedPicker, useScaleReference } from "./BedPicker";
 import { Segmented } from "./controls";
 import { GHOST_TRIANGLE_LIMIT } from "./viewer/ghost";
 import { previousGeometry, type PreviewGeometry } from "./previousModel";
-import { DisplayUnitsProvider, formatLengths, unitName, useDisplayUnitsSetting } from "./units";
+import {
+  DisplayUnitsProvider,
+  formatLength,
+  formatLengths,
+  unitName,
+  useDisplayUnitsSetting,
+} from "./units";
 import {
   canCopyImages,
   captureFileName,
@@ -135,9 +146,11 @@ function ModelFile({
   const referenceControl = useScaleReference(threadRef.environmentId, settings, readSettings);
   const angleControl = useOverhangAngleSetting(threadRef.environmentId, settings, readSettings);
   const configs = useServerConfigs();
-  const adjustableOverhangs = loomFeaturesOf(
-    configs.get(threadRef.environmentId)?.environment.capabilities,
-  ).includes("model-overhangs");
+  const features = loomFeaturesOf(configs.get(threadRef.environmentId)?.environment.capabilities);
+  const adjustableOverhangs = features.includes("model-overhangs");
+  const supportsOrientation = features.includes("model-lay-flat");
+  const supportsCaps = features.includes("model-section-caps");
+  const supportsPrintCheck = features.includes("model-print-check");
   const displaySettings = useMemo(
     () => ({
       ...settings,
@@ -185,6 +198,7 @@ function ModelFile({
     [activeViewId, setActiveViewId] = useState<string | null>(null),
     [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit"),
     [display, setDisplay] = useState({
+      findings: true,
       wireframe: false,
       overhangs: false,
       grid: true,
@@ -199,6 +213,9 @@ function ModelFile({
   const [previousTooLarge, setPreviousTooLarge] = useState(false);
   const [changed, setChanged] = useState<"chip" | "dismissed" | null>(null);
   const [snapStatus, setSnapStatus] = useState<ReturnType<ModelViewer["snapStatus"]>>("idle");
+  const [sectionCaps, setSectionCaps] = useState<SectionCapState>("none");
+  const [selection, setSelection] = useState<{ report: PrintCheckReport; id: string } | null>(null);
+  const [printRunRequest, setPrintRunRequest] = useState(0);
   const loadedGeometry = useRef<PreviewGeometry | null>(null);
   const reloadCause = useRef<"watch" | null>(null);
   const lastWatchedRevision = useRef<string | null>(null);
@@ -209,7 +226,34 @@ function ModelFile({
   };
   const togglePrevious = () => showPrevious(!previousShown);
   const editing = useModelEditing(threadRef, path, viewer, geometryRevision, session);
-  const { measureMode, setMeasureMode } = editing;
+  const printCheck = usePrintCheck({
+    threadRef,
+    path,
+    format,
+    geometryRevision,
+    session,
+    settings: displaySettings,
+    orientation: editing.orientation,
+    active: visible && inspectorOpen && inspectorTab === "part",
+    enabled: supportsPrintCheck && visible,
+    allowLarge,
+  });
+  const selectedFindingId =
+    selection?.report === printCheck.report && !printCheck.stale ? selection.id : null;
+  const runPrintCheck = printCheck.run;
+  useEffect(() => {
+    if (printRunRequest) void runPrintCheck();
+  }, [printRunRequest, runPrintCheck]);
+  const selectFinding = (finding: PrintFinding) => {
+    if (printCheck.stale || !finding.location || !printCheck.report) return;
+    const selected = selectedFindingId === finding.id ? null : finding.id;
+    setSelection(selected ? { report: printCheck.report, id: selected } : null);
+    if (selected) {
+      setDisplay((value) => ({ ...value, findings: true }));
+      viewer.current?.frameFinding(finding);
+    }
+  };
+  const { measureMode, setMeasureMode, setSection: setModelSection } = editing;
   useEffect(() => {
     if (snapStatus === "off" && measureMode === "hole") setMeasureMode("distance");
   }, [snapStatus, measureMode, setMeasureMode]);
@@ -217,6 +261,7 @@ function ModelFile({
   const { copyToClipboard } = useCopyToClipboard();
   const recall = (camera: ModelCamera, refit: boolean) => {
     setDisplay({
+      findings: display.findings,
       wireframe: camera.wireframe,
       overhangs: camera.overhangs,
       grid: camera.gridVisible,
@@ -248,10 +293,10 @@ function ModelFile({
     setActiveView("iso");
     setActiveViewId(null);
   };
-  const openTab = (tab: InspectorTab) => {
+  const openTab = useCallback((tab: InspectorTab) => {
     setInspectorTab(tab);
     setInspectorOpen(true);
-  };
+  }, []);
   const showLog = () => openTab("part");
   useEffect(() => {
     if (!success) return;
@@ -280,6 +325,7 @@ function ModelFile({
         };
         let png: string | undefined;
         let measurement: ModelMeasurement | undefined;
+        let wall: ModelWall | undefined;
         switch (c.action) {
           case "fit":
             get().fit();
@@ -300,6 +346,8 @@ function ModelFile({
           case "display":
             get();
             if (c.overhangs !== undefined) get().setOverhangs(c.overhangs);
+            if (c.findings !== undefined)
+              setDisplay((value) => ({ ...value, findings: c.findings! }));
             if (c.previous !== undefined) {
               if (!previous || !get().hasPrevious()) throw new Error("No previous version yet.");
               showPrevious(c.previous);
@@ -329,11 +377,49 @@ function ModelFile({
             get();
             editing.setSection(c.section);
             break;
+          case "orientation": {
+            const current = get();
+            if (!supportsOrientation) throw new Error("This host does not support lay flat.");
+            if (c.name === "reset") {
+              if (!(await editing.resetOrientation()))
+                throw new Error("Orientation could not be reset.");
+            } else if (c.name === "auto") {
+              if (!(await editing.autoOrient())) throw new Error("No stable face found.");
+            } else if (c.name === "face" && c.points?.length === 1) {
+              if (!(await editing.faceOrientationAt(c.points[0]!)))
+                throw new Error("No face at that point.");
+            } else if (c.name === "bake")
+              await editing.prepareOrientationRequest(
+                format,
+                current.authoredCentre(),
+                current.orientedMinZ(),
+              );
+            else throw new Error("Choose auto, reset, bake, or face with one model-space point.");
+            break;
+          }
+          case "wall-thickness": {
+            if (!c.points || c.points.length !== 1)
+              throw new Error("Provide one point on the filled cut.");
+            const current = get();
+            if (!editing.section.enabled) throw new Error("Enable a section first.");
+            if (current.sectionCapsStatus() === "open-mesh")
+              throw new Error("Caps need a closed mesh.");
+            wall = current.wallThicknessAt(c.points[0]!) ?? undefined;
+            if (!wall) throw new Error("That point is not inside the cut.");
+            break;
+          }
           case "tool":
-            if (!["select", "measure", "annotate"].includes(c.name ?? ""))
-              throw new Error("Choose select, measure or annotate.");
+            if (
+              ![
+                "select",
+                "measure",
+                "annotate",
+                ...(supportsOrientation ? ["lay-flat"] : []),
+              ].includes(c.name ?? "")
+            )
+              throw new Error("Choose select, measure, annotate or lay-flat.");
             get();
-            editing.choose(c.name === "select" ? null : (c.name as "measure" | "annotate"));
+            editing.choose(c.name === "select" ? null : (c.name as PickTool));
             if (c.name === "measure") {
               if (c.measure === "hole" && stats && stats.triangles > GHOST_TRIANGLE_LIMIT)
                 throw new Error("Hole measurement is unavailable for models over 1M triangles.");
@@ -500,9 +586,12 @@ function ModelFile({
             throw new Error("Use the panel action host.");
         }
         return {
-          message: "3D editor action completed.",
+          message: wall
+            ? `${formatLength(wall.thicknessMm, units)} wall at that point.`
+            : "3D editor action completed.",
           ...(png ? { png } : {}),
           ...(measurement ? { measurement } : {}),
+          ...(wall ? { wall } : {}),
           ...(c.action === "snapshot"
             ? {
                 ...(viewer.current && stats && !progress
@@ -513,6 +602,8 @@ function ModelFile({
                   inspector: inspectorOpen ? inspectorTab : null,
                   tool: editing.picking,
                   measureMode: editing.measureMode,
+                  orientation: editing.orientation,
+                  sectionCaps,
                   ...(previous && viewer.current?.hasPrevious()
                     ? {
                         previous: {
@@ -640,6 +731,16 @@ function ModelFile({
       setError(null);
     },
     [],
+  );
+  const onOriented = useCallback(
+    (value: ReturnType<typeof meshStats>) => {
+      setStats(value);
+      // The renderer recentres only when the quaternion changes. Preserve restored cut offsets
+      // when a workspace update carries the same pose or a model reload keeps its camera.
+      const nextSection = viewer.current?.snapshot().section;
+      if (nextSection) setModelSection(nextSection);
+    },
+    [setModelSection],
   );
   const onError = useCallback((message: string) => setError(message), []);
   const onStats = useCallback(
@@ -788,7 +889,7 @@ function ModelFile({
     else {
       editing.choose(tool);
       if (tool === "measure" && measureMode) editing.setMeasureMode(measureMode);
-      openTab("markup");
+      openTab(tool === "lay-flat" ? "part" : "markup");
     }
   };
   const markupActions: MarkupActions = {
@@ -894,7 +995,13 @@ function ModelFile({
     return onModelAction(
       threadRef,
       (action) => {
-        if (action === "toggle-previous") togglePrevious();
+        if (action === "auto-lay-flat" && supportsOrientation) void editing.autoOrient();
+        else if (action === "reset-orientation" && supportsOrientation)
+          void editing.resetOrientation();
+        else if (action === "print-check" && supportsPrintCheck) {
+          openTab("part");
+          setPrintRunRequest((value) => value + 1);
+        } else if (action === "toggle-previous") togglePrevious();
         else if (action === "toggle-overhangs")
           setDisplay((value) => ({ ...value, overhangs: !value.overhangs }));
         else if (action === "rerender") setRevision((value) => value + 1);
@@ -908,8 +1015,21 @@ function ModelFile({
         } else void capture(action === "capture-four");
       },
       () => display.overhangs,
+      () => !!editing.orientation,
     );
-  }, [visible, threadRef, capture, exportCapture, unitsControl, display.overhangs, togglePrevious]);
+  }, [
+    visible,
+    threadRef,
+    capture,
+    exportCapture,
+    unitsControl,
+    display.overhangs,
+    togglePrevious,
+    supportsOrientation,
+    supportsPrintCheck,
+    editing,
+    openTab,
+  ]);
   const displayedError =
     watchError ??
     error ??
@@ -929,7 +1049,9 @@ function ModelFile({
           : "Click the first point to measure from"
       : editing.picking === "annotate"
         ? "Click the part you want changed"
-        : null;
+        : editing.picking === "lay-flat"
+          ? (editing.orientationMessage ?? "Click the face to rest on the bed")
+          : null;
   const announceFit = stats ? fitPlate(stats.size, plate).fit.status === "fits" : null;
   const bedLabel = buildPlateLabel(settings.buildPlate);
   useEffect(() => {
@@ -1006,7 +1128,12 @@ function ModelFile({
   const badges: Partial<Record<InspectorTab, InspectorBadge>> = {};
   if (unapplied) badges.customize = { tone: "warning", count: unapplied };
   if (openRequests) badges.markup = { tone: "primary", count: openRequests };
-  if (plateFit !== "fits" || issues) badges.part = { tone: "warning", count: null };
+  if (
+    plateFit !== "fits" ||
+    issues ||
+    (printCheck.report && !printCheck.stale && printCheck.report.verdict !== "ready")
+  )
+    badges.part = { tone: "warning", count: null };
   const hint =
     editing.picking === "measure"
       ? editing.measureMode === "hole"
@@ -1016,7 +1143,9 @@ function ModelFile({
           : "Click the first point to measure from"
       : editing.picking === "annotate"
         ? "Click the part you want changed"
-        : null;
+        : editing.picking === "lay-flat"
+          ? (editing.orientationMessage ?? "Click the face to rest on the bed")
+          : null;
   return (
     <DisplayUnitsProvider value={unitsControl}>
       <div
@@ -1058,7 +1187,9 @@ function ModelFile({
           if (key === "escape" && (editing.picking || editing.pendingRegion)) {
             if (editing.picking) editing.stopPicking();
             else editing.cancel();
-          } else if (key === "m" && !editDisabled) startTool("measure");
+          } else if (key === "escape" && selectedFindingId) setSelection(null);
+          else if (key === "l" && supportsOrientation && !editDisabled) startTool("lay-flat");
+          else if (key === "m" && !editDisabled) startTool("measure");
           else if (key === "n" && !editDisabled) startTool("annotate");
           else if (key === "s" && !editDisabled) toggleSection();
           else if (["1", "2", "3", "4"].includes(key) && stats)
@@ -1174,6 +1305,18 @@ function ModelFile({
                     viewerRef={viewer}
                     savedViewRef={savedView}
                     onStats={onStats}
+                    orientation={supportsOrientation ? editing.orientation : null}
+                    onOriented={onOriented}
+                    closedHint={render?.summary?.manifold ?? null}
+                    onSectionCapsStatus={setSectionCaps}
+                    {...(!editDisabled ? { onWall: editing.onWall } : {})}
+                    findings={
+                      display.findings && !printCheck.stale
+                        ? (printCheck.report?.findings ?? [])
+                        : []
+                    }
+                    selectedFindingId={selectedFindingId}
+                    onFinding={selectFinding}
                     onError={onError}
                     onProgress={onProgress}
                     sourceRevision={mesh.revision}
@@ -1186,7 +1329,7 @@ function ModelFile({
                       adjustableOverhangs ? angleControl.angle : OVERHANG_ANGLE.default
                     }
                     onNavigate={onNavigate}
-                    section={editing.section}
+                    section={supportsCaps ? editing.section : { ...editing.section, caps: false }}
                     measurements={editing.measurements}
                     annotations={editing.annotations}
                     pendingPoint={editing.pendingPoint}
@@ -1216,6 +1359,7 @@ function ModelFile({
             />
             <ToolRail
               tool={editing.picking}
+              layFlat={supportsOrientation}
               section={editing.section.enabled}
               disabled={editDisabled}
               onTool={startTool}
@@ -1224,6 +1368,8 @@ function ModelFile({
             {editing.section.enabled && stats && (
               <SectionStrip
                 section={editing.section}
+                {...(supportsCaps ? { capsState: sectionCaps } : {})}
+                wireframe={display.wireframe}
                 bounds={sectionBounds(editing.section.axis)}
                 onChange={changeSection}
                 onRemove={toggleSection}
@@ -1262,6 +1408,7 @@ function ModelFile({
               />
             )}
             <DisplayTools
+              onFindings={(findings) => setDisplay((value) => ({ ...value, findings }))}
               bed={
                 <BedPicker
                   environmentId={threadRef.environmentId}
@@ -1280,6 +1427,7 @@ function ModelFile({
                 onChange: showPrevious,
               }}
               {...display}
+              {...(supportsPrintCheck ? { findings: display.findings } : { findings: undefined })}
               orthographic={display.projection === "orthographic"}
               onOrthographic={(orthographic) =>
                 setDisplay((value) => ({
@@ -1474,15 +1622,14 @@ function ModelFile({
                   />
                 </fieldset>
               )}
-              <fieldset
+              <div
                 role="tabpanel"
                 aria-labelledby="model-tab-markup"
-                disabled={!editing.canEdit}
                 className={styles["model-inspector-tab-panel"]}
                 hidden={inspectorTab !== "markup"}
               >
                 <MarkupSection
-                  data={editing.data}
+                  data={{ ...editing.data, orientation: editing.orientation }}
                   mutate={editing.mutate}
                   sourceRevision={geometryRevision}
                   picking={editing.picking}
@@ -1491,8 +1638,13 @@ function ModelFile({
                   busy={editing.operation !== null}
                   disabled={editDisabled}
                   actions={markupActions}
+                  {...(supportsPrintCheck ? { printCheck } : {})}
+                  findingsShown={display.findings}
+                  onFindings={(findings) => setDisplay((value) => ({ ...value, findings }))}
+                  selectedFindingId={selectedFindingId}
+                  onFinding={selectFinding}
                 />
-              </fieldset>
+              </div>
               <fieldset
                 role="tabpanel"
                 aria-labelledby="model-tab-views"
@@ -1526,6 +1678,31 @@ function ModelFile({
                   environmentId={threadRef.environmentId}
                   stats={stats}
                   previousSize={previous?.size ?? null}
+                  {...(supportsPrintCheck ? { printCheck } : {})}
+                  selectedFindingId={selectedFindingId}
+                  onFinding={selectFinding}
+                  {...(supportsOrientation
+                    ? {
+                        orientation: {
+                          value: editing.orientation,
+                          sourceRevision: geometryRevision,
+                          disabled: editDisabled,
+                          picking: editing.picking === "lay-flat",
+                          onFace: () => startTool("lay-flat"),
+                          onAuto: () => void editing.autoOrient(),
+                          onReset: () => void editing.resetOrientation(),
+                          onBake: () => {
+                            const current = viewer.current;
+                            if (current)
+                              void editing.prepareOrientationRequest(
+                                format,
+                                current.authoredCentre(),
+                                current.orientedMinZ(),
+                              );
+                          },
+                        },
+                      }
+                    : {})}
                   settings={displaySettings}
                   volume={volume}
                   render={render}
@@ -1544,6 +1721,11 @@ function ModelFile({
             <span className={styles["model-triangle-count"]}>
               {stats.triangles.toLocaleString()} triangles
             </span>
+          )}
+          {editing.orientation && (
+            <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
+              Laid flat
+            </button>
           )}
           {plateFit !== "fits" && (
             <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>

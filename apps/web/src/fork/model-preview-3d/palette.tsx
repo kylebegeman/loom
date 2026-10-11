@@ -2,7 +2,7 @@ import { BoxIcon } from "lucide-react";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { forkPanelSurface } from "../panels/registry";
-import { dispatchModelAction, modelOverhangsShown } from "./actions";
+import { dispatchModelAction, modelOverhangsShown, modelOrientationActive } from "./actions";
 import { modelSurface, openLastAgentModels } from "./agentModels";
 export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
   id: "model-preview-3d",
@@ -70,12 +70,19 @@ export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
           "save-view",
           "toggle-overhangs",
           "toggle-previous",
+          ...(loomFeatures.includes("model-lay-flat")
+            ? [
+                "auto-lay-flat" as const,
+                ...(modelOrientationActive(activeThreadRef) ? ["reset-orientation" as const] : []),
+              ]
+            : []),
+          ...(loomFeatures.includes("model-print-check") ? ["print-check" as const] : []),
         ] as const
       ).map((action) => ({
         ...base,
         kind: "action" as const,
         value: `action:loom:model-preview-3d:${action}`,
-        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs", "toggle-previous": "Show or hide previous version" }[action]}`,
+        title: `3D model: ${{ "auto-lay-flat": "Auto lay flat", "reset-orientation": "Reset orientation", "print-check": "Check part for printing", capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs", "toggle-previous": "Show or hide previous version" }[action]}`,
         run: async () => {
           dispatchModelAction(activeThreadRef, action);
         },

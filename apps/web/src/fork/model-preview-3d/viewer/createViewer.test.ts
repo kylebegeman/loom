@@ -223,7 +223,7 @@ it("switches drag tools and zooms around the target without creating an idle fra
 it("surface picking respects clipping, disables navigation and removes pointer listeners on dispose", () => {
   const viewer = createViewer(host());
   viewer.setModel(new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()), false);
-  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false });
+  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false, caps: true });
   viewer.setProjection("orthographic");
   const rayCamera = vi.spyOn(Raycaster.prototype, "setFromCamera");
   const callback = vi.fn();
@@ -474,7 +474,7 @@ it("keeps references hidden without a model and moves them with reloaded geometr
   viewer.setBed([350, 320], "grid-mm");
   viewer.setGrid(false);
   viewer.setWireframe(true);
-  viewer.setSection({ enabled: true, axis: "x", offset: 100, flipped: false });
+  viewer.setSection({ enabled: true, axis: "x", offset: 100, flipped: false, caps: true });
   flushFrame();
   expect(reference.visible).toBe(true);
   const refMaterial = (reference.children[0] as Mesh).material as MeshStandardMaterial;
@@ -706,6 +706,8 @@ it("lazily caches indexed geometry in normalized millimetres and resets on repla
   root.scale.setScalar(1000);
   root.add(nested);
   viewer.setModel(root, false);
+  // Orientation bounds read vertices once; this assertion concerns the lazy overhang copy.
+  readVertex.mockClear();
   viewer.setBed([350, 320], "grid-mm");
   viewer.setReference("hand");
   expect(readVertex).not.toHaveBeenCalled();
@@ -857,7 +859,7 @@ it("retains exactly one previous geometry and releases it on replacement, clear 
 it("clips previous geometry without changing fit, picking or current geometry statistics", () => {
   const viewer = createViewer(host());
   viewer.keepPrevious(true);
-  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false });
+  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false, caps: true });
   const previous = new Mesh(new BoxGeometry(200, 200, 200), new MeshStandardMaterial());
   viewer.setModel(previous, false);
   const stats = viewer.setModel(
@@ -873,10 +875,10 @@ it("clips previous geometry without changing fit, picking or current geometry st
   expect(material).toBeInstanceOf(MeshBasicMaterial);
   expect(material.clippingPlanes?.[0]?.normal.toArray()).toEqual([0, 0, 1]);
   expect(material.color.getHex()).toBe(0xa3acb9);
-  viewer.setSection({ enabled: true, axis: "x", offset: 2, flipped: true });
+  viewer.setSection({ enabled: true, axis: "x", offset: 2, flipped: true, caps: true });
   expect(material.clippingPlanes?.[0]?.normal.toArray()).toEqual([-1, 0, 0]);
   expect(material.clippingPlanes?.[0]?.constant).toBe(2);
-  viewer.setSection({ enabled: false, axis: "z", offset: 0, flipped: false });
+  viewer.setSection({ enabled: false, axis: "z", offset: 0, flipped: false, caps: true });
   expect(material.clippingPlanes).toEqual([]);
   viewer.restore({
     ...viewer.snapshot(),
@@ -997,10 +999,28 @@ it("coalesces hover, snaps release positions and cancels pending hover when Alt 
   pointerHandlers.pointerup!(event);
   expect(pick).toHaveBeenLastCalledWith([[10, 10, 10]]);
   pointerHandlers.pointermove!(event);
-  pointerHandlers.pointermove!({ ...event, altKey: true } as PointerEvent);
+  pointerHandlers.pointermove!({
+    button: event.button,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    pointerId: event.pointerId,
+    altKey: true,
+  } as PointerEvent);
   expect(frames.size).toBe(0);
-  pointerHandlers.pointerdown!({ ...event, altKey: true } as PointerEvent);
-  pointerHandlers.pointerup!({ ...event, altKey: true } as PointerEvent);
+  pointerHandlers.pointerdown!({
+    button: event.button,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    pointerId: event.pointerId,
+    altKey: true,
+  } as PointerEvent);
+  pointerHandlers.pointerup!({
+    button: event.button,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    pointerId: event.pointerId,
+    altKey: true,
+  } as PointerEvent);
   expect(pick).toHaveBeenLastCalledWith([[9.7, 9.7, 10]]);
   viewer.dispose();
   hits.mockRestore();
@@ -1052,5 +1072,231 @@ it("nudges only loaded geometry and coalesces keyboard navigation into one frame
   expect(frames.size).toBe(1);
   flushFrame();
   expect(frames.size).toBe(0);
+  viewer.dispose();
+});
+
+it("rotates about the authored centre with precise bounds, recentres the section and preserves a ghost pose", () => {
+  const viewer = createViewer(host()),
+    mesh = new Mesh(new BoxGeometry(2, 4, 6), new MeshStandardMaterial());
+  mesh.position.set(10, 20, 30);
+  viewer.keepPrevious(true);
+  viewer.setModel(mesh, false);
+  viewer.setSection({ enabled: true, axis: "z", offset: 29, flipped: false, caps: true });
+  const stats = viewer.setOrientation([Math.SQRT1_2, 0, 0, Math.SQRT1_2])!;
+  expect(stats.size[0]).toBeCloseTo(2, 6);
+  expect(stats.size[1]).toBeCloseTo(6, 6);
+  expect(stats.size[2]).toBeCloseTo(4, 6);
+  stats.box
+    .getCenter(new Vector3())
+    .toArray()
+    .forEach((value, index) => expect(value).toBeCloseTo([10, 20, 30][index]!, 6));
+  expect(viewer.authoredCentre().toArray()).toEqual([10, 20, 30]);
+  expect(viewer.orientedMinZ()).toBeCloseTo(28, 6);
+  expect(viewer.snapshot().section.offset).toBeCloseTo(30, 6);
+  mesh.updateWorldMatrix(true, true);
+  const matrix = mesh.matrixWorld.clone();
+  viewer.setModel(new Mesh(new BoxGeometry(2, 4, 6), new MeshStandardMaterial()), true);
+  expect(viewer.hasPrevious()).toBe(true);
+  flushFrame();
+  expect(mesh.matrixWorld.elements).toEqual(matrix.elements);
+  viewer.dispose();
+});
+
+it("converts feature snapping and circle results back to model space after orientation", async () => {
+  const viewer = createViewer(host()),
+    mesh = new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial());
+  mesh.position.set(30, 40, 50);
+  viewer.setModel(mesh, false);
+  viewer.setOrientation([0, 0, Math.SQRT1_2, Math.SQRT1_2]);
+  const point = await viewer.snapPoint([39.8, 50.1, 60.1], 1);
+  expect(point[0]).toBeCloseTo(40, 6);
+  expect(point[1]).toBeCloseTo(50, 6);
+  expect(point[2]).toBeCloseTo(60, 6);
+  const cylinder = new Mesh(
+    new CylinderGeometry(1.7, 1.7, 8, 64).rotateX(Math.PI / 2),
+    new MeshStandardMaterial(),
+  );
+  viewer.setModel(cylinder, false);
+  viewer.setOrientation([Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
+  const circle = await viewer.circleNear([1.7, 0, 4], 1);
+  expect(circle?.diameter).toBeCloseTo(3.4, 5);
+  expect(circle?.center[0]).toBeCloseTo(0, 5);
+  expect(circle?.center[1]).toBeCloseTo(0, 5);
+  expect(circle?.center[2]).toBeCloseTo(4, 5);
+  expect(Math.abs(circle!.normal[2])).toBeCloseTo(1, 5);
+  viewer.dispose();
+});
+
+it("caps a nearer cut for picks and measures a model-space wall after orientation", () => {
+  const viewer = createViewer(host()),
+    mesh = new Mesh(new BoxGeometry(2, 4, 6), new MeshStandardMaterial()),
+    status = vi.fn();
+  viewer.setModel(mesh, false);
+  viewer.onSectionCapsStatus(status);
+  viewer.setOrientation([Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
+  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false, caps: true });
+  viewer.restore({ ...viewer.snapshot(), position: [0, 0, -100], target: [0, 0, 0] });
+  viewer.activeCamera().up.set(0, 1, 0);
+  viewer.activeCamera().lookAt(0, 0, 0);
+  expect(viewer.sectionCapsStatus()).toBe("filled");
+  const wall = viewer.wallThicknessAt([0, 0, 0]);
+  expect(wall?.thicknessMm).toBeCloseTo(2, 6);
+  expect(new Vector3(...wall!.start).distanceTo(new Vector3(...wall!.end))).toBeCloseTo(2, 6);
+  const pick = vi.fn(),
+    keep = vi.fn(),
+    event = { button: 0, clientX: 300, clientY: 200, pointerId: 1, altKey: true } as PointerEvent;
+  viewer.setPickMode("measure", pick);
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(pick).toHaveBeenCalledOnce();
+  pick.mock.calls[0]![0][0].forEach((value: number) => expect(value).toBeCloseTo(0, 6));
+  viewer.setPickMode(null, null);
+  viewer.onWallMeasure(keep);
+  pointerHandlers.dblclick!(event);
+  expect(keep).toHaveBeenCalledWith(wall!.start, wall!.end);
+  viewer.setWireframe(true);
+  expect(viewer.wallThicknessAt([0, 0, 0])).toBeNull();
+  expect(status).toHaveBeenLastCalledWith("off");
+  viewer.setWireframe(false);
+  expect(status).toHaveBeenLastCalledWith("filled");
+  viewer.dispose();
+});
+
+it("returns face orientation from model coordinates without including scene helpers", () => {
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(2, 4, 6), new MeshStandardMaterial()), false);
+  viewer.setBed([350, 320], "grid-mm");
+  viewer.setReference("coin-us");
+  const face = viewer.faceOrientationAt([1, 0, 0]);
+  expect(face?.areaMm2).toBeCloseTo(24, 6);
+  expect(face?.floats).toBe(false);
+  expect(viewer.autoOrientation()).not.toBeNull();
+  expect(viewer.faceOrientationAt([1000, 1000, 1000])).toBeNull();
+  viewer.dispose();
+});
+
+it("coalesces wall hover without GPU frames and positions numbered finding pins in model space", () => {
+  const elements: {
+    tag: string;
+    hidden?: boolean;
+    textContent?: string;
+    style: Record<string, string>;
+    dataset: Record<string, string>;
+    children: unknown[];
+    remove: ReturnType<typeof vi.fn>;
+    append: (...children: unknown[]) => void;
+    handlers: Record<string, (event: MouseEvent) => void>;
+  }[] = [];
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: (tag: string) => makeElement(tag),
+    createElementNS: (_namespace: string, tag: string) => makeElement(tag),
+  });
+  function makeElement(tag: string) {
+    const element = {
+      tag,
+      hidden: false,
+      textContent: "",
+      style: {},
+      dataset: {},
+      children: [] as unknown[],
+      remove: vi.fn(),
+      handlers: {} as Record<string, (event: MouseEvent) => void>,
+      append(...children: unknown[]) {
+        this.children.push(...children);
+      },
+      setAttribute: vi.fn(),
+      addEventListener(name: string, callback: (event: MouseEvent) => void) {
+        this.handlers[name] = callback;
+      },
+    };
+    elements.push(element);
+    return element;
+  }
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(2, 4, 6), new MeshStandardMaterial()), false);
+  viewer.setOrientation([Math.SQRT1_2, 0, 0, Math.SQRT1_2]);
+  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false, caps: true });
+  viewer.restore({ ...viewer.snapshot(), position: [0, 0, -100], target: [0, 0, 0] });
+  viewer.activeCamera().up.set(0, 1, 0);
+  viewer.activeCamera().lookAt(0, 0, 0);
+  viewer.activeCamera().up.set(0, 1, 0);
+  viewer.activeCamera().lookAt(0, 0, 0);
+  flushFrame();
+  gpu.render.mockClear();
+  const event = { buttons: 0, clientX: 300, clientY: 200 } as PointerEvent;
+  pointerHandlers.pointermove!(event);
+  pointerHandlers.pointermove!(event);
+  expect(frames.size).toBe(1);
+  flushFrame();
+  expect(gpu.render).not.toHaveBeenCalled();
+  expect(elements.some((element) => element.textContent === "2.00 mm wall")).toBe(true);
+  pointerHandlers.pointerleave!(event);
+  expect(elements.find((element) => element.tag === "div")?.hidden).toBe(true);
+  const finding = {
+    id: "THIN_WALL-1",
+    check: "walls",
+    code: "THIN_WALL",
+    severity: "warn",
+    message: "Thin wall",
+    value: 0.4,
+    limit: 0.8,
+    unit: "mm",
+    location: { point: [1, 0, 0], normal: [1, 0, 0], radiusMm: 2 },
+  } as const;
+  const selected = vi.fn();
+  viewer.setFindings([finding], finding.id, selected);
+  const button = elements.find((element) => element.tag === "button")!;
+  expect(button.dataset).toEqual({ severity: "warn", selected: "true" });
+  button.handlers.click!({ stopPropagation: vi.fn() } as unknown as MouseEvent);
+  expect(selected).toHaveBeenCalledWith(finding);
+  viewer.frameFinding(finding);
+  expect(viewer.snapshot().target).toEqual([1, 0, 0]);
+  viewer.setFindings([], null, null);
+  expect(button.remove).not.toHaveBeenCalled();
+  viewer.dispose();
+});
+
+it("uses capture pixel ratio for section hatching and restores it after capture failure", async () => {
+  let ratio = 2;
+  Object.assign(gpu, {
+    getSize: (size: import("three").Vector2) => size.set(600, 400),
+    getPixelRatio: () => ratio,
+    setPixelRatio: vi.fn((next: number) => {
+      ratio = next;
+    }),
+  });
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: () => ({
+      getContext: () => ({
+        drawImage: () => {
+          throw new Error("capture draw failed");
+        },
+      }),
+    }),
+  });
+  const viewer = createViewer(host());
+  ratio = 2;
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), false);
+  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false, caps: true });
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene,
+    cap = scene.getObjectByName("section-cap") as Mesh,
+    material = cap.material as MeshBasicMaterial,
+    shader = {
+      uniforms: {} as Record<string, { value: unknown }>,
+      vertexShader: "",
+      fragmentShader: "#include <color_fragment>",
+    };
+  material.onBeforeCompile(
+    shader as Parameters<typeof material.onBeforeCompile>[0],
+    {} as WebGLRenderer,
+  );
+  expect(shader.uniforms.loomSectionHatch!.value).toBe(12);
+  gpu.render.mockImplementation(() => expect(shader.uniforms.loomSectionHatch!.value).toBe(6));
+  await expect(viewer.capture(false)).rejects.toThrow("capture draw failed");
+  expect(shader.uniforms.loomSectionHatch!.value).toBe(12);
+  expect(ratio).toBe(2);
   viewer.dispose();
 });

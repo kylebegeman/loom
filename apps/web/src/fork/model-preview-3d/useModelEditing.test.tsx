@@ -2,18 +2,29 @@ import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
-import { EMPTY_MODEL_WORKSPACE, type ModelSavedView } from "@t3tools/contracts/fork";
+import {
+  EMPTY_MODEL_WORKSPACE,
+  normalizeQuaternion,
+  type ModelSavedView,
+  type ModelOrientation,
+} from "@t3tools/contracts/fork";
+import { Vector3 } from "three";
 import type { ModelViewer } from "./viewer/createViewer";
 import { attachModelImage } from "./capture";
 import { captureNamedViews } from "./viewer/captureSheet";
 import { useModelEditing } from "./useModelEditing";
 const mutate = vi.hoisted(() => vi.fn());
-const fixture = vi.hoisted(() => ({ views: [] as ModelSavedView[] }));
+const fixture = vi.hoisted(() => ({
+  views: [] as ModelSavedView[],
+  orientation: null as ModelOrientation | null,
+  canEdit: true,
+}));
 const composer = vi.hoisted(() => vi.fn());
 vi.mock("~/composerDraftStore", () => ({ useComposerDraftStore: { getState: composer } }));
 vi.mock("./useModelWorkspace", () => ({
   useModelWorkspace: () => ({
-    data: { ...EMPTY_MODEL_WORKSPACE, views: fixture.views },
+    data: { ...EMPTY_MODEL_WORKSPACE, views: fixture.views, orientation: fixture.orientation },
+    canEdit: fixture.canEdit,
     mutate,
     ready: true,
     error: null,
@@ -106,6 +117,8 @@ beforeEach(() => {
   vi.mocked(attachModelImage).mockReset();
   vi.mocked(captureNamedViews).mockReset();
   fixture.views = [];
+  fixture.orientation = null;
+  fixture.canEdit = true;
   viewer.current = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
@@ -183,7 +196,7 @@ function exportedView(): ModelSavedView {
       gridVisible: true,
       axesVisible: false,
       navigationMode: "orbit",
-      section: { enabled: false, axis: "z", offset: 0, flipped: false },
+      section: { enabled: false, axis: "z", offset: 0, flipped: false, caps: true },
     },
   };
 }
@@ -350,4 +363,174 @@ it("keeps failed hole picks empty and clears the hint on a successful fit", asyn
     });
   });
   expect(editing.error).toBeNull();
+});
+
+const sourcePose: ModelOrientation = { quaternion: [0, 0, 0, 1], sourceRevision: "earlier" };
+const laidFlat: ModelOrientation = {
+  quaternion: normalizeQuaternion([Math.SQRT1_2, 0, 0, Math.SQRT1_2]),
+  sourceRevision: "revision",
+};
+function orientationViewer() {
+  const setOrientation = vi.fn();
+  const faceOrientationAt = vi.fn(() => ({
+    quaternion: laidFlat.quaternion,
+    areaMm2: 100,
+    floats: false,
+  }));
+  const autoOrientation = vi.fn(() => laidFlat.quaternion);
+  viewer.current = { setOrientation, faceOrientationAt, autoOrientation } as unknown as ModelViewer;
+  return { setOrientation, faceOrientationAt, autoOrientation };
+}
+
+it("applies a face optimistically, persists its revision and keeps lay-flat picking active", async () => {
+  fixture.orientation = sourcePose;
+  const { setOrientation } = orientationViewer();
+  let resolve!: (value: typeof EMPTY_MODEL_WORKSPACE) => void;
+  mutate.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  await update();
+  await act(async () => editing.choose("lay-flat"));
+  let saving!: ReturnType<typeof editing.onPick>;
+  await act(async () => {
+    saving = editing.onPick([[0, 0, 5]]);
+  });
+  expect(editing.orientation).toEqual(laidFlat);
+  expect(editing.operation).toBe("Saving orientation");
+  expect(setOrientation).toHaveBeenLastCalledWith(laidFlat.quaternion);
+  expect(mutate).toHaveBeenCalledWith({ kind: "orientation", item: laidFlat });
+  await act(async () => {
+    resolve({ ...EMPTY_MODEL_WORKSPACE, orientation: laidFlat });
+    expect(await saving).toEqual({ measurement: null });
+  });
+  expect(editing.picking).toBe("lay-flat");
+  expect(editing.orientationMessage).toBe("Resting on a face of 100.0 mm².");
+  fixture.orientation = laidFlat;
+  await update();
+  fixture.orientation = sourcePose;
+  await update();
+  expect(editing.orientation).toEqual(sourcePose);
+});
+
+it("rolls a failed orientation save back to the server pose and reports the failure", async () => {
+  fixture.orientation = sourcePose;
+  const { setOrientation } = orientationViewer();
+  mutate.mockRejectedValueOnce(new Error("Disconnected"));
+  await update();
+  await act(async () => {
+    expect(await editing.faceOrientationAt([0, 0, 5])).toBeNull();
+  });
+  expect(editing.orientation).toEqual(sourcePose);
+  expect(setOrientation.mock.calls.map(([q]) => q)).toEqual([
+    laidFlat.quaternion,
+    sourcePose.quaternion,
+  ]);
+  expect(editing.error).toBe("Disconnected");
+  expect(editing.operation).toBeNull();
+});
+
+it("preserves a saved orientation across source revisions and rejects readonly face picks", async () => {
+  fixture.orientation = sourcePose;
+  fixture.canEdit = false;
+  const { faceOrientationAt } = orientationViewer();
+  await update("new-file");
+  expect(editing.orientation).toEqual(sourcePose);
+  await act(async () => {
+    expect(await editing.faceOrientationAt([0, 0, 0])).toBeNull();
+  });
+  expect(faceOrientationAt).not.toHaveBeenCalled();
+  expect(mutate).not.toHaveBeenCalled();
+});
+
+it("reports already-resting faces without saving and handles absent or floating faces", async () => {
+  const { faceOrientationAt } = orientationViewer();
+  fixture.orientation = laidFlat;
+  await update();
+  await act(async () => {
+    expect(await editing.faceOrientationAt([0, 0, 5])).not.toBeNull();
+  });
+  expect(editing.orientationMessage).toBe("Already resting on that face");
+  expect(mutate).not.toHaveBeenCalled();
+  faceOrientationAt.mockReturnValueOnce(null as never);
+  await act(async () => {
+    expect(await editing.faceOrientationAt([100, 100, 100])).toBeNull();
+  });
+  expect(editing.error).toBe("No face at that point.");
+  fixture.orientation = sourcePose;
+  await update();
+  faceOrientationAt.mockReturnValueOnce({
+    quaternion: laidFlat.quaternion,
+    areaMm2: 25,
+    floats: true,
+  });
+  mutate.mockResolvedValueOnce({ ...EMPTY_MODEL_WORKSPACE, orientation: laidFlat });
+  await act(async () => {
+    await editing.faceOrientationAt([0, 0, 1]);
+  });
+  expect(editing.orientationMessage).toBe(
+    "This face cannot touch the bed; the part rests on other points.",
+  );
+});
+
+it("automatically lays flat, persists reset and appends an exact bake request to the composer", async () => {
+  orientationViewer();
+  const setPrompt = vi.fn();
+  composer.mockReturnValue({ getComposerDraft: () => ({ prompt: "Existing request" }), setPrompt });
+  mutate.mockResolvedValue({ ...EMPTY_MODEL_WORKSPACE, orientation: laidFlat });
+  await update();
+  await act(async () => {
+    expect(await editing.autoOrient()).toEqual(laidFlat.quaternion);
+  });
+  expect(editing.orientation).toEqual(laidFlat);
+  fixture.orientation = laidFlat;
+  await update();
+  await act(async () => {
+    expect(await editing.prepareOrientationRequest("scad", new Vector3(0, 0, 0), -10)).toBe(true);
+  });
+  const prompt = setPrompt.mock.calls[0]![1] as string;
+  expect(prompt).toContain("Existing request\n\nBake the Loom orientation into board.glb.");
+  expect(prompt).toContain("multmatrix(");
+  expect(prompt).toContain("translate([0, 0, 10])");
+  expect(prompt).toContain('{ "kind": "orientation", "item": null }');
+  expect(attachModelImage).not.toHaveBeenCalled();
+  mutate.mockResolvedValueOnce(EMPTY_MODEL_WORKSPACE);
+  await act(async () => {
+    expect(await editing.resetOrientation()).toBe(true);
+  });
+  expect(mutate).toHaveBeenLastCalledWith({ kind: "orientation", item: null });
+  expect(editing.orientation).toBeNull();
+});
+
+it("persists wall chords as normal measurements and retains pending state on save failure", async () => {
+  await update();
+  await act(async () => editing.choose("measure"));
+  await act(async () => {
+    await editing.onPick([[1, 2, 3]]);
+  });
+  mutate.mockResolvedValueOnce(undefined);
+  await act(async () => {
+    expect(await editing.onWall([0, 0, 0], [0, 2, 0])).toBe(false);
+  });
+  expect(editing.pendingPoint).toEqual([1, 2, 3]);
+  mutate.mockResolvedValueOnce(EMPTY_MODEL_WORKSPACE);
+  await act(async () => {
+    expect(await editing.onWall([0, 0, 0], [0, 2, 0])).toMatchObject({
+      measurement: {
+        kind: "distance",
+        name: "Wall 1",
+        sourceRevision: "revision",
+        start: [0, 0, 0],
+        end: [0, 2, 0],
+        visible: true,
+      },
+    });
+  });
+  expect(editing.pendingPoint).toBeNull();
+  expect(mutate).toHaveBeenLastCalledWith({
+    kind: "measurement",
+    item: expect.objectContaining({ name: "Wall 1", kind: "distance" }),
+  });
 });

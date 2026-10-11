@@ -725,6 +725,7 @@ export function VariantsInspector({
         try {
           viewer = createViewer(host);
           viewer.setVisible(false);
+          viewer.setOrientation(data.orientation?.quaternion ?? null);
           viewer.setBed([plate.volume[0], plate.volume[1]], plate.pattern);
           loadAbort.current = abort;
           const model = await loadModel(

@@ -40,6 +40,7 @@ import type { View } from "./viewer/views";
 import { Scrub, Segmented } from "./controls";
 import type { ExportAction } from "./captureExport";
 import { fromMm, toMm, useDisplayUnits } from "./units";
+import type { SectionCapState } from "./viewer/sectionCaps";
 
 /** Feature-owned controls for the floating 3D tool shelves. */
 export function ModelTool({
@@ -160,7 +161,11 @@ export function DisplayTools({
   onGrid,
   onAxes,
   previous,
+  findings,
+  onFindings,
 }: {
+  findings?: boolean | undefined;
+  onFindings?: (value: boolean) => void;
   /** The bed picker, shown before the display menu. */
   bed?: ReactNode;
   overhangLegend?: ReactNode;
@@ -195,6 +200,11 @@ export function DisplayTools({
         <MenuPopup align="end">
           <MenuGroup>
             <MenuGroupLabel>Display</MenuGroupLabel>
+            {findings !== undefined && (
+              <MenuCheckboxItem checked={findings} onCheckedChange={onFindings}>
+                Print check pins
+              </MenuCheckboxItem>
+            )}
             <MenuCheckboxItem checked={wireframe} onCheckedChange={onWireframe}>
               Wireframe
               <MenuShortcut>W</MenuShortcut>
@@ -245,6 +255,7 @@ const HELP = [
   ["Standard views", "1 to 4"],
   ["Measure, annotate", "M, N"],
   ["Section plane", "S"],
+  ["Lay flat on a face", "L"],
   ["Wireframe, bed, axes", "W, G, A"],
   ["Inspector", "I"],
   ["Perspective, orthographic", "P"],
@@ -438,7 +449,7 @@ export function CaptureMenu({
     </div>
   );
 }
-export type PickTool = "measure" | "annotate";
+export type PickTool = "measure" | "annotate" | "lay-flat";
 /** Vertical rail for the tools that act on the model itself. */
 export function ToolRail({
   tool,
@@ -446,7 +457,9 @@ export function ToolRail({
   disabled,
   onTool,
   onSection,
+  layFlat,
 }: {
+  layFlat?: boolean;
   tool: PickTool | null;
   section: boolean;
   disabled: boolean;
@@ -480,6 +493,18 @@ export function ToolRail({
       >
         <MapPinIcon />
       </ModelTool>
+      {layFlat && (
+        <ModelTool
+          label="Lay flat on a face"
+          kbd="L"
+          side="right"
+          disabled={disabled}
+          aria-pressed={tool === "lay-flat"}
+          onClick={() => onTool("lay-flat")}
+        >
+          <Rotate3dIcon />
+        </ModelTool>
+      )}
       <span className={styles["model-tool-divider"]} />
       <ModelTool
         label="Section plane"
@@ -505,8 +530,12 @@ export function SectionStrip({
   bounds,
   onChange,
   onRemove,
+  capsState,
+  wireframe,
 }: {
   section: ModelSection;
+  capsState?: SectionCapState;
+  wireframe?: boolean;
   /** Model extent along the current axis, in millimetres. */
   bounds: { min: number; max: number };
   onChange: (section: ModelSection) => void;
@@ -561,6 +590,26 @@ export function SectionStrip({
       >
         <FlipHorizontal2Icon />
       </ModelTool>
+      {capsState !== undefined && (
+        <ModelTool
+          label={
+            capsState === "checking"
+              ? "Checking the mesh..."
+              : capsState === "open-mesh"
+                ? "Caps need a closed mesh"
+                : capsState === "partial"
+                  ? "Some parts are not closed, so their cut is not filled"
+                  : wireframe
+                    ? "Filled cut is hidden in wireframe"
+                    : "Filled cut"
+          }
+          aria-pressed={section.caps ?? true}
+          disabled={capsState === "checking" || capsState === "open-mesh"}
+          onClick={() => onChange({ ...section, caps: !(section.caps ?? true) })}
+        >
+          <LayersIcon />
+        </ModelTool>
+      )}
       <ModelTool label="Remove section" kbd="S" onClick={onRemove}>
         <XIcon />
       </ModelTool>

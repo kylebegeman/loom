@@ -3,9 +3,16 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import type {
   ModelAnnotation,
   ModelMeasurement,
+  ModelOrientation,
+  ModelQuaternion,
   ModelPoint,
   ModelSection,
 } from "@t3tools/contracts/fork";
+import { normalizeQuaternion } from "@t3tools/contracts/fork";
+import type { Vector3 } from "three";
+import { createWallMeasurement } from "./wallMeasurement";
+import { orientationRequest } from "./orientationRequest";
+import type { FaceOrientation } from "./viewer/orientation";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { randomUUID } from "~/lib/utils";
 import type { CircleFit } from "./viewer/snap";
@@ -29,14 +36,34 @@ export function useModelEditing(
     axis: "z",
     offset: 0,
     flipped: false,
+    caps: true,
   });
-  const [picking, setPicking] = useState<"measure" | "annotate" | null>(null);
+  const [picking, setPicking] = useState<"measure" | "annotate" | "lay-flat" | null>(null);
   const [measureMode, updateMeasureMode] = useState<"distance" | "hole">("distance");
   const [pendingPoint, setPendingPoint] = useState<ModelPoint | null>(null);
   const [pendingCamera, setPendingCamera] = useState<ModelAnnotation["camera"] | null>(null);
   const [pendingRegion, setPendingRegion] = useState<ModelPoint[] | null>(null);
   const [relink, setRelink] = useState<ModelAnnotation | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [orientationMessage, setOrientationMessage] = useState<string | null>(null);
+  const [orientationOverride, setOrientationOverride] = useState<{
+    value: ModelOrientation | null;
+    before: string;
+  } | null>(null);
+  const storedOrientation = workspace.data.orientation;
+  const latestStoredOrientation = useRef(storedOrientation);
+  useEffect(() => {
+    latestStoredOrientation.current = storedOrientation;
+  }, [storedOrientation]);
+  const storedKey = JSON.stringify(storedOrientation);
+  const overrideActive = orientationOverride && storedKey === orientationOverride.before;
+  const orientation = overrideActive ? orientationOverride.value : storedOrientation;
+  // A server-confirmed pose or a newer client edit ends the optimistic override.
+  if (
+    orientationOverride &&
+    (!overrideActive || storedKey === JSON.stringify(orientationOverride.value))
+  )
+    setOrientationOverride(null);
   const [operation, setOperation] = useState<string | null>(null);
   const operationActive = useRef(false);
   const perform = useCallback(async <T>(label: string, task: () => Promise<T>) => {
@@ -84,6 +111,7 @@ export function useModelEditing(
     setPicking(null);
     updateMeasureMode("distance");
     setError(null);
+    setOrientationMessage(null);
     setPendingPoint(null);
     setPendingRegion(null);
     setRelink(null);
@@ -101,12 +129,92 @@ export function useModelEditing(
     setError(null);
   }, []);
   const mutate = workspace.mutate;
+  /** Apply immediately, then let the persisted workspace stream become authoritative. */
+  const saveOrientation = useCallback(
+    async (item: ModelOrientation | null) =>
+      (await perform("Saving orientation", async () => {
+        if (!workspace.canEdit || !workspace.ready || !viewer.current) return false;
+        const value = item && { ...item, quaternion: normalizeQuaternion(item.quaternion) };
+        const before = JSON.stringify(latestStoredOrientation.current);
+        setOrientationOverride({ value, before });
+        viewer.current.setOrientation(value?.quaternion ?? null);
+        try {
+          const saved = await mutate({ kind: "orientation", item: value });
+          if (!saved) {
+            setOrientationOverride(null);
+            viewer.current?.setOrientation(latestStoredOrientation.current?.quaternion ?? null);
+            return false;
+          }
+          return true;
+        } catch (cause) {
+          setOrientationOverride(null);
+          viewer.current?.setOrientation(latestStoredOrientation.current?.quaternion ?? null);
+          throw cause;
+        }
+      })) ?? false,
+    [perform, workspace.canEdit, workspace.ready, viewer, mutate],
+  );
+  const faceOrientationAt = useCallback(
+    async (point: ModelPoint): Promise<FaceOrientation | null> => {
+      if (!workspace.canEdit || !workspace.ready || !sourceRevision || !viewer.current) return null;
+      const result = viewer.current.faceOrientationAt(point);
+      if (!result) {
+        setError("No face at that point.");
+        return null;
+      }
+      const old = normalizeQuaternion(orientation?.quaternion ?? [0, 0, 0, 1]);
+      const next = normalizeQuaternion(result.quaternion);
+      const dot = old.reduce((total, value, axis) => total + value * next[axis]!, 0);
+      if (Math.abs(dot) >= 1 - 1e-10) {
+        setError(null);
+        setOrientationMessage("Already resting on that face");
+        return result;
+      }
+      if (!(await saveOrientation({ quaternion: result.quaternion, sourceRevision }))) return null;
+      setOrientationMessage(
+        result.floats
+          ? "This face cannot touch the bed; the part rests on other points."
+          : `Resting on a face of ${result.areaMm2.toFixed(1)} mm².`,
+      );
+      return result;
+    },
+    [workspace.canEdit, workspace.ready, sourceRevision, viewer, orientation, saveOrientation],
+  );
+  const autoOrient = useCallback(async (): Promise<ModelQuaternion | null> => {
+    const quaternion = viewer.current?.autoOrientation();
+    if (!quaternion) {
+      setError("No stable face found.");
+      return null;
+    }
+    if (!(await saveOrientation({ quaternion, sourceRevision }))) return null;
+    setOrientationMessage("Laid flat on the largest side.");
+    return quaternion;
+  }, [viewer, saveOrientation, sourceRevision]);
+  const resetOrientation = useCallback(async () => {
+    const saved = await saveOrientation(null);
+    if (saved) setOrientationMessage("Orientation reset.");
+    return saved;
+  }, [saveOrientation]);
+  const prepareOrientationRequest = useCallback(
+    async (format: string, partCentre: Vector3, orientedMinZ: number) =>
+      perform("Preparing rotation request", async () => {
+        if (!orientation) return false;
+        const store = useComposerDraftStore.getState();
+        const previous = store.getComposerDraft(threadRef)?.prompt ?? "";
+        const request = orientationRequest(path, format, orientation, partCentre, orientedMinZ);
+        store.setPrompt(threadRef, previous ? `${previous}\n\n${request}` : request);
+        return true;
+      }),
+    [orientation, threadRef, path, perform],
+  );
   const measurementCount = workspace.data.measurements.length;
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry replacement invalidates unfinished surface picks.
   useEffect(() => cancel, [sourceRevision, cancel]);
   const onPick = useCallback(
     async (points: ModelPoint[]): Promise<false | { measurement: ModelMeasurement | null }> => {
       if (!sourceRevision || !points.length) return false;
+      if (picking === "lay-flat")
+        return (await faceOrientationAt(points[0]!)) ? { measurement: null } : false;
       if (picking === "measure") {
         if (!pendingPoint) {
           setPendingPoint(points[0]!);
@@ -133,7 +241,7 @@ export function useModelEditing(
       }
       return false;
     },
-    [sourceRevision, picking, pendingPoint, mutate, measurementCount, viewer],
+    [sourceRevision, picking, pendingPoint, mutate, measurementCount, viewer, faceOrientationAt],
   );
   const circleCount = workspace.data.measurements.filter((item) => item.kind === "circle").length;
   const onCircle = useCallback(
@@ -179,6 +287,29 @@ export function useModelEditing(
       return { measurement };
     },
     [sourceRevision, picking, circleCount, mutate],
+  );
+  const wallCount = workspace.data.measurements.filter((item) =>
+    /^Wall \d+$/.test(item.name),
+  ).length;
+  const onWall = useCallback(
+    async (
+      start: ModelPoint,
+      end: ModelPoint,
+    ): Promise<false | { measurement: ModelMeasurement }> => {
+      if (!sourceRevision || !workspace.canEdit) return false;
+      const measurement = createWallMeasurement(
+        start,
+        end,
+        sourceRevision,
+        randomUUID(),
+        wallCount,
+      );
+      if (!(await mutate({ kind: "measurement", item: measurement }))) return false;
+      setError(null);
+      setPendingPoint(null);
+      return { measurement };
+    },
+    [sourceRevision, workspace.canEdit, mutate, wallCount],
   );
   const markedCapture = async (annotation: ModelAnnotation) => {
     if (!viewer.current) throw new Error("Load the model before capturing it.");
@@ -309,6 +440,13 @@ export function useModelEditing(
     ...workspace,
     operation,
     perform,
+    orientation,
+    orientationMessage,
+    saveOrientation,
+    faceOrientationAt,
+    autoOrient,
+    resetOrientation,
+    prepareOrientationRequest,
     section,
     setSection,
     picking,
@@ -321,6 +459,7 @@ export function useModelEditing(
     annotations,
     onPick,
     onCircle,
+    onWall,
     cancel,
     addAnnotation,
     prepareRequest,

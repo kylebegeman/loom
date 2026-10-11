@@ -78,8 +78,7 @@ export const describeZoneFit = (
   }
   return { short: rotated ? `${short}, rotated` : short, long };
 };
-export const buildPlateLabel = (setting: BuildPlateSetting) =>
-  setting.preset === "custom" ? "Custom bed" : activeBed(setting).label;
+export const buildPlateLabel = (setting: BuildPlateSetting) => activeBed(setting).label;
 /** Extra limits worth knowing, such as per-nozzle reach on a dual-nozzle printer. */
 export const buildPlateNote = (setting: BuildPlateSetting): string | null =>
   activeBed(setting).note;

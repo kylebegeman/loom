@@ -1,5 +1,8 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
 export type ModelAction =
+  | "auto-lay-flat"
+  | "reset-orientation"
+  | "print-check"
   | "capture"
   | "capture-four"
   | "rerender"
@@ -12,13 +15,15 @@ const listeners = new Set<{
   ref: ScopedThreadRef;
   callback: (action: ModelAction) => void;
   getOverhangs: (() => boolean) | undefined;
+  getOrientation: (() => boolean) | undefined;
 }>();
 export function onModelAction(
   ref: ScopedThreadRef,
   callback: (action: ModelAction) => void,
   getOverhangs?: () => boolean,
+  getOrientation?: () => boolean,
 ) {
-  const entry = { ref, callback, getOverhangs };
+  const entry = { ref, callback, getOverhangs, getOrientation };
   listeners.add(entry);
   return () => {
     listeners.delete(entry);
@@ -35,5 +40,12 @@ export function modelOverhangsShown(ref: ScopedThreadRef): boolean {
   for (const entry of listeners)
     if (entry.ref.threadId === ref.threadId && entry.ref.environmentId === ref.environmentId)
       return entry.getOverhangs?.() ?? false;
+  return false;
+}
+
+export function modelOrientationActive(ref: ScopedThreadRef): boolean {
+  for (const entry of listeners)
+    if (entry.ref.threadId === ref.threadId && entry.ref.environmentId === ref.environmentId)
+      return entry.getOrientation?.() ?? false;
   return false;
 }

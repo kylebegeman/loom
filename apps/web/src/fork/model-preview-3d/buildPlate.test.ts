@@ -2,11 +2,14 @@ import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import {
   BUILD_PLATE_PRESETS,
+  addCustomBed,
+  selectBed,
   BuildPlateSetting,
   DEFAULT_MODEL_PREVIEW_SETTINGS,
 } from "@t3tools/contracts/fork";
 import {
   bedFit,
+  buildPlateLabel,
   bedGroups,
   describeFit,
   fitsBuildVolume,
@@ -125,4 +128,19 @@ it("uses the supplied units for zone requirements and omits constraints for fail
   });
   expect(describeZoneFit(fitPlate([500, 500, 500], plate), plate.zones, String)).toBeNull();
   expect(describeZoneFit(result, [], String)).toBeNull();
+});
+
+it("shows named custom beds before the scratch size and hides unused presets", () => {
+  const bed = { id: "custom-12345678", name: "Laser", volumeMm: [400, 300, null] as const };
+  const named = addCustomBed(DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate, bed);
+  expect(buildPlateLabel(named)).toBe("Laser");
+  expect(resolvePlate(named)).toMatchObject({ volume: bed.volumeMm, zones: [] });
+  expect(buildPlateLabel(selectBed(named, "custom"))).toBe("Custom size");
+  const groups = bedGroups({ ...named, hiddenPresets: ["prusa-mini"] });
+  expect(
+    groups.find((group) => group.label === "Custom")?.options.map((option) => option.label),
+  ).toEqual(["Laser", "Custom size"]);
+  expect(
+    groups.flatMap((group) => group.options).some((option) => option.id === "prusa-mini"),
+  ).toBe(false);
 });

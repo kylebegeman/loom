@@ -15,7 +15,7 @@ it("snapshots every named view before encoding and immediately restores the user
     gridVisible: true,
     axesVisible: false,
     navigationMode: "orbit",
-    section: { enabled: false, axis: "z", offset: 0, flipped: false },
+    section: { enabled: false, axis: "z", offset: 0, flipped: false, caps: true },
   };
   let camera = original;
   const frames = [0, 1].map(() => {
