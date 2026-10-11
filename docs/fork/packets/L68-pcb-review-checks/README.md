@@ -1,6 +1,8 @@
 # L68: Review checks
 
-Status: Ready to build
+Status: Implemented locally
+
+Implemented on `feat/pcb-units-presets-stats-print-capture`. Focused model, rule, service, settings, MCP, marker and permission checks cover both data paths. Real-client, remote and real-KiCad verification remain pending. LM1117 and supported AP2112 variants use checked manufacturer limits; other entries remain recognition-only.
 
 Approved by Kyle on 2026-10-10.
 

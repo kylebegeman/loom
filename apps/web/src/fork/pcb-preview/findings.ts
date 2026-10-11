@@ -1,4 +1,9 @@
-import type { PcbCheckResult, PcbFinding, PcbPoint } from "@t3tools/contracts/fork";
+import type {
+  PcbReviewResult,
+  PcbCheckResult,
+  PcbFinding,
+  PcbPoint,
+} from "@t3tools/contracts/fork";
 
 /** Marker metadata stays local; the shared wire finding contains only drawing information. */
 export type DrawingFinding = PcbFinding & { excluded: boolean; otherPoints: readonly PcbPoint[] };
@@ -101,3 +106,28 @@ export const snapshotFinding = ({
   ...(layer ? { layer } : {}),
   pointMm,
 });
+
+export function reviewFindings(
+  result: PcbReviewResult | null | undefined,
+  surface: "schematic" | "pcb",
+  { showExcluded }: { showExcluded: boolean },
+): DrawingFinding[] {
+  if (!result || result.outcome === "failed") return [];
+  return result.findings.flatMap((f) => {
+    const point = surface === "pcb" ? f.board : f.schematic;
+    if (!point || (f.waived && !showExcluded)) return [];
+    return [
+      {
+        id: f.id,
+        source: "review",
+        severity: f.severity,
+        message: f.message,
+        pointMm: { x: point.x, y: point.y },
+        ...(point.sheet ? { sheet: point.sheet } : {}),
+        ...(point.layer ? { layer: point.layer } : {}),
+        excluded: f.waived,
+        otherPoints: [],
+      },
+    ];
+  });
+}

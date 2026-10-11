@@ -12,6 +12,7 @@ import type {
   PcbReadSheetResult,
   PcbCheckKind,
   PcbCheckResult,
+  PcbReviewResult,
   PcbCheckActivity,
 } from "@t3tools/contracts/fork";
 import { pcb } from "./state";
@@ -21,6 +22,7 @@ const idleRender = Atom.make(AsyncResult.initial<PcbRenderResult, never>());
 const idleSheet = Atom.make(AsyncResult.initial<PcbReadSheetResult, never>());
 const idleChecks = Atom.make(AsyncResult.success<readonly PcbCheckResult[]>([]));
 const idleActivity = Atom.make(AsyncResult.initial<PcbCheckActivity, never>());
+const idleReview = Atom.make(AsyncResult.initial<PcbReviewResult | null, never>());
 const idleCheck = Atom.make(AsyncResult.initial<PcbCheckResult, never>());
 export const asyncValue = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
   Option.getOrNull(AsyncResult.value(result));
@@ -145,7 +147,7 @@ export function usePcbPreview(
       : idleChecks,
   );
   const activityState = useAtomValue(
-    design.kind === "kicad" && visible
+    visible
       ? pcb.checkEvents({ environmentId, input: { threadId, designId: design.id } })
       : idleActivity,
   );
@@ -155,6 +157,19 @@ export function usePcbPreview(
       ? pcb.latestChecks({ environmentId, input: { threadId, designId: design.id } })
       : idleChecks,
   );
+  const reviewTarget = { environmentId, input: { threadId, designId: design.id } };
+  const reviewLoaded = useAtomValue(visible ? pcb.latestReview(reviewTarget) : idleReview);
+  const refreshReview = useAtomRefresh(pcb.latestReview(reviewTarget));
+  const reviewResult = asyncValue(reviewLoaded);
+  const projectLoaded = useAtomValue(pcb.projectSettings({ environmentId, input: { threadId } }));
+  const projectSettings = asyncValue(projectLoaded);
+  useEffect(() => {
+    if (projectSettings) refreshReview();
+  }, [projectSettings, refreshReview]);
+  useEffect(() => {
+    if (activity?.ranAt.review && (!reviewResult || activity.ranAt.review > reviewResult.ranAt))
+      refreshReview();
+  }, [activity, reviewResult, refreshReview]);
   const loaded = asyncValue(latestState);
   const observedChecks = useRef("");
   useEffect(() => {
@@ -200,6 +215,10 @@ export function usePcbPreview(
     setJob(null);
   }
   return {
+    review: reviewResult,
+    reviewLoading: reviewLoaded.waiting || reviewLoaded._tag === "Initial",
+    reviewError: asyncError(reviewLoaded),
+    refreshReview,
     canRender,
     canCheck: canCheck && design.toolAvailable,
     sourceHash,

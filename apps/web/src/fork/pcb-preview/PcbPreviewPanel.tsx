@@ -107,7 +107,14 @@ import {
 import { usePcbWorkbench } from "./usePcbWorkbench";
 import { LayerSheet } from "./LayerSheet";
 import { CheckMarkers } from "./CheckMarkers";
-import { checkFindings, orderFindings, stepFinding, hitFinding, snapshotFinding } from "./findings";
+import {
+  checkFindings,
+  reviewFindings,
+  orderFindings,
+  stepFinding,
+  hitFinding,
+  snapshotFinding,
+} from "./findings";
 import { DrawingOverlays } from "./Overlays";
 import { snapPoint } from "./geometry";
 import { attachModelImage, captureBase64 } from "../model-preview-3d/capture";
@@ -125,7 +132,7 @@ import type { PcbViewportHandle } from "./SvgViewport";
 const Board3D = lazy(() => import("./Board3D").then((m) => ({ default: m.Board3D })));
 import { SvgViewport } from "./SvgViewport";
 import { PinMapDialog } from "./PinMapDialog";
-import { ChecksView } from "./ChecksView";
+import { ChecksSection } from "./ChecksSection";
 import { OperationStatus } from "./OperationStatus";
 import styles from "./workspace.module.css";
 
@@ -365,13 +372,16 @@ export function DesignWorkspace({
     () => [
       ...checkFindings(preview.checks.erc, "erc", { showExcluded }),
       ...checkFindings(preview.checks.drc, "drc", { showExcluded }),
+      ...reviewFindings(preview.review, view, { showExcluded }),
     ],
-    [preview.checks, showExcluded],
+    [preview.checks, preview.review, view, showExcluded],
   );
   const surfaceFindings = useMemo(
     () =>
       orderFindings(
-        allFindings.filter((f) => f.source === (view === "schematic" ? "erc" : "drc")),
+        allFindings.filter(
+          (f) => f.source === "review" || f.source === (view === "schematic" ? "erc" : "drc"),
+        ),
         view === "schematic"
           ? preview.good?.view === "schematic"
             ? preview.good.result.sheets.map((s) => s.id)
@@ -393,14 +403,20 @@ export function DesignWorkspace({
     [drawingFindings, activeFinding],
   );
   const markerReport = preview.checks[view === "schematic" ? "erc" : "drc"];
-  const markersStale = !!markerReport && markerReport.sourceHash !== preview.display?.sourceHash;
+  const markersStale =
+    (!!markerReport && markerReport.sourceHash !== preview.display?.sourceHash) ||
+    (!!preview.review && preview.review.sourceHash !== preview.display?.sourceHash);
   const visibleActiveFinding = surfaceFindings.some((f) => f.id === activeFinding)
     ? activeFinding
     : null;
   const goToFinding = (finding: PcbFinding) => {
     setActiveFinding(finding.id);
     openTab("Checks");
-    focusPoint(finding.source === "erc" ? "schematic" : "pcb", finding.pointMm, finding.sheet);
+    focusPoint(
+      finding.source === "review" ? view : finding.source === "erc" ? "schematic" : "pcb",
+      finding.pointMm,
+      finding.sheet,
+    );
   };
   const stepFindings = (direction: 1 | -1) => {
     const next = stepFinding(surfaceFindings, activeFinding, direction);
@@ -1951,7 +1967,12 @@ export function DesignWorkspace({
             onClose={() => openTab(null)}
           >
             {tab === "Checks" ? (
-              <ChecksView
+              <ChecksSection
+                review={preview.review}
+                reviewLoading={preview.reviewLoading}
+                reviewError={preview.reviewError}
+                onReviewRefresh={preview.refreshReview}
+                onReviewLocate={(surface, point, sheet) => focusPoint(surface, point, sheet)}
                 threadRef={threadRef}
                 design={design}
                 activity={preview.activity}
@@ -1968,7 +1989,13 @@ export function DesignWorkspace({
                 findingStatus={findingStatus}
                 orderedFindings={surfaceFindings}
                 canCheck={preview.canCheck}
-                checking={preview.checking ?? preview.activity?.running?.kind ?? null}
+                checking={
+                  preview.checking ??
+                  (preview.activity?.running?.kind === "review"
+                    ? null
+                    : preview.activity?.running?.kind) ??
+                  null
+                }
                 error={preview.checkError ?? preview.checksError}
                 loading={preview.checksLoading}
                 onRun={preview.runCheck}
@@ -2185,6 +2212,31 @@ export function DesignWorkspace({
             </MenuGroup>
           </MenuPopup>
         </Menu>
+        {preview.review && (
+          <ToolButton
+            label="Review findings"
+            hint="Deterministic schematic review heuristics"
+            className={styles.statusChip}
+            data-tone={
+              preview.review.sourceHash !== preview.sourceHash
+                ? "stale"
+                : preview.review.outcome === "clean"
+                  ? "ok"
+                  : "warning"
+            }
+            onClick={() => {
+              setActiveFinding(preview.review?.findings[0]?.id ?? "review:status");
+              openTab("Checks");
+            }}
+          >
+            Review{" "}
+            {preview.review.outcome === "clean"
+              ? "clean"
+              : preview.review.counts.errors +
+                preview.review.counts.warnings +
+                preview.review.counts.info}
+          </ToolButton>
+        )}
         {tabs.includes("Checks") &&
           (["erc", "drc"] as const).map((kind) => {
             const result = preview.checks[kind];

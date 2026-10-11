@@ -1,3 +1,10 @@
+import {
+  PcbReviewInput,
+  PcbReviewResult,
+  PcbLatestReviewResult,
+  PcbReviewSettings,
+  PcbReviewSettingsUpdate,
+} from "./pcb-review.ts";
 import { PcbPinMapInput, PcbPinMapResult } from "./pcb-pin-map.ts";
 import * as W from "./pcb-workspace.ts";
 import { PcbPrintInput, PcbPrintResult } from "./pcb-print.ts";
@@ -21,6 +28,8 @@ import {
 export const PCB_PREVIEW_WS_METHODS = {
   turnDesigns: "loom.pcb-preview.turnDesigns",
   turnDesignEvents: "loom.pcb-preview.turnDesignEvents",
+  review: "loom.pcb-preview.review",
+  latestReview: "loom.pcb-preview.latestReview",
   pinMap: "loom.pcb-preview.pinMap",
   reuseHardware: "loom.pcb-preview.reuseHardware",
   status: "loom.pcb-preview.status",
@@ -216,11 +225,15 @@ export const PcbCheckDelta = Schema.Struct({
   approximate: Schema.Boolean,
 });
 export type PcbCheckDelta = typeof PcbCheckDelta.Type;
+export const PcbAutoCheckKind = Schema.Literals(["erc", "drc", "review"]);
+export type PcbAutoCheckKind = typeof PcbAutoCheckKind.Type;
 export const PcbAutoChecks = Schema.Struct({
+  review: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   erc: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   drc: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 });
 export const PcbProjectSettings = Schema.Struct({
+  review: PcbReviewSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   autoChecks: PcbAutoChecks.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type PcbProjectSettings = typeof PcbProjectSettings.Type;
@@ -228,8 +241,13 @@ export const PcbProjectSettingsInput = Schema.Struct({ threadId: ThreadId });
 export type PcbProjectSettingsInput = typeof PcbProjectSettingsInput.Type;
 export const PcbUpdateProjectSettingsInput = Schema.Struct({
   threadId: ThreadId,
+  review: Schema.optional(PcbReviewSettingsUpdate),
   autoChecks: Schema.optional(
-    Schema.Struct({ erc: Schema.optional(Schema.Boolean), drc: Schema.optional(Schema.Boolean) }),
+    Schema.Struct({
+      review: Schema.optional(Schema.Boolean),
+      erc: Schema.optional(Schema.Boolean),
+      drc: Schema.optional(Schema.Boolean),
+    }),
   ),
 });
 export type PcbUpdateProjectSettingsInput = typeof PcbUpdateProjectSettingsInput.Type;
@@ -241,19 +259,23 @@ export type PcbCheckEventsInput = typeof PcbCheckEventsInput.Type;
 export const PcbCheckActivity = Schema.Struct({
   running: Schema.NullOr(
     Schema.Struct({
-      kind: PcbCheckKind,
+      kind: PcbAutoCheckKind,
       trigger: PcbCheckTrigger,
       sourceHash: TrimmedNonEmptyString,
     }),
   ),
   paused: Schema.Array(
     Schema.Struct({
-      kind: PcbCheckKind,
+      kind: PcbAutoCheckKind,
       reason: Schema.Literals(["slow", "failed"]),
       durationMs: Schema.optional(NonNegativeInt),
     }),
   ),
-  ranAt: Schema.Struct({ erc: Schema.optional(IsoDateTime), drc: Schema.optional(IsoDateTime) }),
+  ranAt: Schema.Struct({
+    review: Schema.optional(IsoDateTime),
+    erc: Schema.optional(IsoDateTime),
+    drc: Schema.optional(IsoDateTime),
+  }),
 });
 export type PcbCheckActivity = typeof PcbCheckActivity.Type;
 
@@ -457,6 +479,16 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
     success: PcbTurnDesigns,
     error: errors,
     stream: true,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.review, {
+    payload: PcbReviewInput,
+    success: PcbReviewResult,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.latestReview, {
+    payload: PcbReviewInput,
+    success: PcbLatestReviewResult,
+    error: errors,
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.pinMap, {
     payload: PcbPinMapInput,

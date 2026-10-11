@@ -125,7 +125,7 @@ export function inspectorTabs(design: PcbDesign): readonly InspectorTab[] {
     tab === "Layers"
       ? design.kind === "kicad" && !!design.boardPath
       : tab === "Checks"
-        ? design.kind === "kicad"
+        ? true
         : tab === "Parameters"
           ? design.kind === "tscircuit"
           : true,

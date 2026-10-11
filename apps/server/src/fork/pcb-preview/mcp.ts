@@ -127,6 +127,17 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "PCB: print")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_review", {
+    description:
+      "Run eight deterministic schematic review heuristics: I2C pull-ups, decoupling, ESD, floating inputs, reset bias, LED resistors, drivers and regulator ratings. Each finding explains why. Reuses unchanged saved results. Configure rules or ignore findings with loom_pcb_check_settings.",
+    parameters: Schema.Struct(design),
+    success: W.PcbReviewResult,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: review")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_check", {
     description:
       "Run KiCad ERC or DRC on saved source. The delta lists findings added and resolved since the previous run. Coordinates are millimetres.",
@@ -162,7 +173,10 @@ export const PcbToolkit = Toolkit.make(
   Tool.make("loom_pcb_check_settings", {
     description:
       "Read or update project checks after each save. Runs while a design is open or an agent requests fresh checks.",
-    parameters: Schema.Struct({ autoChecks: W.PcbUpdateProjectSettingsInput.fields.autoChecks }),
+    parameters: Schema.Struct({
+      autoChecks: W.PcbUpdateProjectSettingsInput.fields.autoChecks,
+      review: W.PcbUpdateProjectSettingsInput.fields.review,
+    }),
     success: W.PcbProjectSettings,
     failure,
     dependencies: [McpInvocationContext, ThreadManagementService],
@@ -474,12 +488,20 @@ export const pcbHandlers = McpToolAccess.toLayer(
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
+      loom_pcb_review: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) => service.review({ ...input, threadId })),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       loom_pcb_check_settings: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* thread;
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) =>
-              input.autoChecks
+              input.autoChecks || input.review
                 ? service.updateProjectSettings({ ...input, threadId })
                 : service.projectSettings({ threadId }),
             ),

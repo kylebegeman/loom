@@ -1,7 +1,8 @@
 import { expect, it } from "vite-plus/test";
-import type { PcbCheckResult, PcbFinding } from "@t3tools/contracts/fork";
+import type { PcbReviewResult, PcbCheckResult, PcbFinding } from "@t3tools/contracts/fork";
 import {
   checkFindings,
+  reviewFindings,
   orderFindings,
   stepFinding,
   hitFinding,
@@ -108,4 +109,48 @@ it("hits the nearest pin within eight screen pixels and scales sizes consistentl
   expect(hitFinding(values, { x: 3, y: 0 }, 0.1)).toBeNull();
   expect(hitFinding(values, { x: 0, y: 0 }, 0)).toBeNull();
   for (const scale of [0.01, 0.1, 1, 10]) expect(markerSize(scale).radius / scale).toBe(5);
+});
+
+it("review markers use each surface's anchor and ignored state", () => {
+  const result: PcbReviewResult = {
+    designKind: "kicad",
+    outcome: "findings",
+    sourceHash: "one",
+    configHash: "one",
+    rulesVersion: 1,
+    counts: { errors: 0, warnings: 1, info: 0, waived: 0 },
+    rules: [],
+    notices: [],
+    truncated: false,
+    durationMs: 1,
+    ranAt: "2026-10-11T12:00:00Z",
+    log: "",
+    findings: [
+      {
+        id: "r",
+        rule: "decoupling",
+        severity: "warning",
+        message: "Missing",
+        why: "Why",
+        fix: "Fix",
+        parts: ["U1"],
+        nets: ["VDD"],
+        waived: false,
+        schematic: { x: 1, y: 2, sheet: "main.svg" },
+        board: { x: 10, y: 20 },
+      },
+    ],
+  };
+  expect(reviewFindings(result, "schematic", { showExcluded: false })[0]).toMatchObject({
+    source: "review",
+    pointMm: { x: 1, y: 2 },
+    sheet: "main.svg",
+  });
+  expect(reviewFindings(result, "pcb", { showExcluded: false })[0]?.pointMm).toEqual({
+    x: 10,
+    y: 20,
+  });
+  const ignored = { ...result, findings: result.findings.map((f) => ({ ...f, waived: true })) };
+  expect(reviewFindings(ignored, "pcb", { showExcluded: false })).toEqual([]);
+  expect(reviewFindings(ignored, "pcb", { showExcluded: true })[0]?.excluded).toBe(true);
 });

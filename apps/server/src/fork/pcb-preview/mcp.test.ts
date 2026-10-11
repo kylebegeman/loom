@@ -411,12 +411,18 @@ it.effect("agent latest checks default to fresh and project settings use the cal
         projectSettings: (input) =>
           Effect.sync(() => {
             calls.push(input);
-            return { autoChecks: { erc: false, drc: false } };
+            return {
+              autoChecks: { erc: false, drc: false, review: false },
+              review: { rules: {}, params: {}, waivers: [] },
+            };
           }),
         updateProjectSettings: (input) =>
           Effect.sync(() => {
             calls.push(input);
-            return { autoChecks: { erc: false, drc: true } };
+            return {
+              autoChecks: { erc: false, drc: true, review: false },
+              review: { rules: {}, params: {}, waivers: [] },
+            };
           }),
       });
       yield* toolkit
@@ -561,4 +567,47 @@ it.effect(
         });
       }),
     ),
+);
+
+it.effect("review and waiver settings reach the caller's service", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let called = false;
+      const { toolkit, threads } = yield* fixture({
+        review: (input) => {
+          expect(input).toEqual({ threadId, designId: "board.kicad_pro" });
+          called = true;
+          return Effect.fail(new PcbPreviewError({ reason: "invalid-report", message: "fixture" }));
+        },
+        updateProjectSettings: (input) => {
+          expect(input.review?.waive?.[0]).toMatchObject({
+            findingId: "review:a:1",
+            designId: "board.kicad_pro",
+          });
+          return Effect.succeed({
+            autoChecks: { erc: false, drc: false, review: false },
+            review: { rules: {}, params: {}, waivers: [] },
+          });
+        },
+      });
+      const provide = <A, E, R>(e: Effect.Effect<A, E, R>) =>
+        e.pipe(
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      yield* provide(
+        toolkit
+          .handle("loom_pcb_review", { designId: "board.kicad_pro" })
+          .pipe(Effect.flatMap(Stream.runCollect), Effect.flip),
+      );
+      expect(called).toBe(true);
+      yield* provide(
+        toolkit
+          .handle("loom_pcb_check_settings", {
+            review: { waive: [{ designId: "board.kicad_pro", findingId: "review:a:1" }] },
+          })
+          .pipe(Effect.flatMap(Stream.runCollect)),
+      );
+    }),
+  ),
 );

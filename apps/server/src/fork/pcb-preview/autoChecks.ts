@@ -5,32 +5,36 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import type {
   PcbCheckActivity,
-  PcbCheckKind,
+  PcbAutoCheckKind,
+  PcbReviewResult,
   PcbCheckResult,
   PcbPreviewError,
-  PcbProjectSettings,
+  PcbCheckKind,
 } from "@t3tools/contracts/fork";
 
 export const AUTO_CHECK_DEBOUNCE = "2 seconds";
 export const AUTO_CHECK_TIMEOUT = "120 seconds";
 export const AUTO_CHECK_MAX_MS = 60_000;
-const KINDS = ["erc", "drc"] as const;
+
 /** One host-owned worker avoids duplicate client runs. New saves cancel obsolete work; closing
  * the last watcher releases its process. Slow checks pause and failures wait for another save. */
-export const makeAutoChecks = <D>(deps: {
+export const makeAutoChecks = <D, K extends PcbAutoCheckKind = PcbCheckKind>(deps: {
+  kinds?: readonly K[];
   key: (design: D) => string;
   project: (design: D) => string;
-  available: (design: D, kind: PcbCheckKind) => boolean;
-  settings: (project: string) => Effect.Effect<PcbProjectSettings>;
+  available: (design: D, kind: K) => boolean;
+  settings: (project: string) => Effect.Effect<{ autoChecks: Partial<Record<K, boolean>> }>;
   snapshot: (design: D) => Effect.Effect<string, PcbPreviewError>;
-  stored: (design: D, kind: PcbCheckKind) => Effect.Effect<PcbCheckResult | null>;
+  stored: (design: D, kind: K) => Effect.Effect<PcbCheckResult | PcbReviewResult | null>;
+  fresh?: (design: D, kind: K, stored: PcbCheckResult | PcbReviewResult) => Effect.Effect<boolean>;
   run: (
     design: D,
-    kind: PcbCheckKind,
+    kind: K,
     trigger: "auto" | "manual",
-  ) => Effect.Effect<PcbCheckResult, PcbPreviewError>;
+  ) => Effect.Effect<PcbCheckResult | PcbReviewResult, PcbPreviewError>;
 }) =>
   Effect.gen(function* () {
+    const KINDS = deps.kinds ?? (["erc", "drc"] as K[]);
     const scope = yield* Effect.scope;
     const permit = yield* Semaphore.make(1);
     const manualPermit = yield* Semaphore.make(1);
@@ -44,8 +48,8 @@ export const makeAutoChecks = <D>(deps: {
       pending: Fiber.Fiber<void> | null;
       pendingHash: string | null;
       running: PcbCheckActivity["running"];
-      manual: Set<PcbCheckKind>;
-      paused: Map<PcbCheckKind, PcbCheckActivity["paused"][number] & { hash: string }>;
+      manual: Set<K>;
+      paused: Map<K, PcbCheckActivity["paused"][number] & { hash: string }>;
     };
     const states = new Map<string, State>();
     const state = (design: D) => {
@@ -72,8 +76,11 @@ export const makeAutoChecks = <D>(deps: {
     const activity = (design: D) =>
       Effect.gen(function* () {
         const current = states.get(deps.key(design));
-        const erc = yield* deps.stored(design, "erc"),
-          drc = yield* deps.stored(design, "drc");
+        const review = KINDS.includes("review" as K)
+          ? yield* deps.stored(design, "review" as K)
+          : null;
+        const erc = yield* deps.stored(design, "erc" as K),
+          drc = yield* deps.stored(design, "drc" as K);
         return {
           running: current?.running ?? null,
           paused: [...(current?.paused.values() ?? [])].map((pause) => ({
@@ -81,7 +88,11 @@ export const makeAutoChecks = <D>(deps: {
             reason: pause.reason,
             ...(pause.durationMs !== undefined ? { durationMs: pause.durationMs } : {}),
           })),
-          ranAt: { ...(erc ? { erc: erc.ranAt } : {}), ...(drc ? { drc: drc.ranAt } : {}) },
+          ranAt: {
+            ...(review ? { review: review.ranAt } : {}),
+            ...(erc ? { erc: erc.ranAt } : {}),
+            ...(drc ? { drc: drc.ranAt } : {}),
+          },
         } satisfies PcbCheckActivity;
       });
     const stop = (s: State) =>
@@ -119,7 +130,11 @@ export const makeAutoChecks = <D>(deps: {
                   )
                     continue;
                   const stored = yield* deps.stored(s.design, kind);
-                  if (stored?.sourceHash === hash) continue;
+                  if (
+                    stored?.sourceHash === hash &&
+                    (!deps.fresh || (yield* deps.fresh(s.design, kind, stored)))
+                  )
+                    continue;
                   if ((yield* deps.snapshot(s.design)) !== hash) return;
                   s.paused.delete(kind);
                   s.running = { kind, trigger: "auto", sourceHash: hash };
@@ -185,7 +200,7 @@ export const makeAutoChecks = <D>(deps: {
             }),
           ),
       );
-    const manual = (design: D, kind: PcbCheckKind) =>
+    const manual = (design: D, kind: K) =>
       manualPermit.withPermit(
         Effect.gen(function* () {
           const s = state(design),

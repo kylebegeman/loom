@@ -9,6 +9,7 @@ export * from "./model-overhangs.ts";
 export * from "./model-workspace.ts";
 export * from "./clientRpcPermissions.ts";
 export * from "./pcb-preview.ts";
+export * from "./pcb-review.ts";
 
 export * from "./pcb-workspace.ts";
 export * from "./pcb-layer-presets.ts";

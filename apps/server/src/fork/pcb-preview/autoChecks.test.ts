@@ -2,8 +2,14 @@ import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
+import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
-import type { PcbCheckKind, PcbCheckResult } from "@t3tools/contracts/fork";
+import type {
+  PcbCheckKind,
+  PcbCheckResult,
+  PcbReviewResult,
+  PcbAutoCheckKind,
+} from "@t3tools/contracts/fork";
 import { makeAutoChecks } from "./autoChecks.ts";
 
 const setup = Effect.gen(function* () {
@@ -169,4 +175,61 @@ it.effect("settings off cancels queued work and agent reads do not run disabled 
       expect(t.calls).toEqual([]);
     }),
   ),
+);
+
+it.effect(
+  "automatic review shares debounce, refreshes changed configuration and reports its timestamp",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let stored: PcbReviewResult | null = null,
+          calls = 0,
+          fresh = true;
+        const scheduler = yield* makeAutoChecks<string, PcbAutoCheckKind>({
+          kinds: ["erc", "drc", "review"],
+          key: (d) => d,
+          project: () => "p",
+          available: (_d, k) => k === "review",
+          settings: () => Effect.succeed({ autoChecks: { review: true } }),
+          snapshot: () => Effect.succeed("one"),
+          stored: (_d, k) => Effect.succeed(k === "review" ? stored : null),
+          fresh: () => Effect.succeed(fresh),
+          run: () =>
+            Effect.sync(() => {
+              calls++;
+              fresh = true;
+              stored = {
+                designKind: "tscircuit",
+                outcome: "clean",
+                sourceHash: "one",
+                configHash: String(calls),
+                rulesVersion: 1,
+                counts: { errors: 0, warnings: 0, info: 0, waived: 0 },
+                findings: [],
+                rules: [],
+                notices: [],
+                truncated: false,
+                log: "",
+                durationMs: 1,
+                ranAt: "2026-10-11T12:00:00Z",
+              };
+              return stored;
+            }),
+        });
+        yield* scheduler.watching("a");
+        const job = yield* scheduler.notify("a", "one");
+        yield* TestClock.adjust("2 seconds");
+        if (job) yield* Fiber.join(job);
+        expect(calls).toBe(1);
+        yield* scheduler.ensureFresh("a");
+        expect(calls).toBe(1);
+        fresh = false;
+        yield* scheduler.settingsChanged("p");
+        yield* TestClock.adjust("2 seconds");
+        yield* scheduler.ensureFresh("a");
+        expect(calls).toBe(2);
+        const events = yield* scheduler.events("a").pipe(Stream.take(1), Stream.runCollect);
+        expect(events[0]?.ranAt.review).toBe("2026-10-11T12:00:00Z");
+      }),
+    ),
 );

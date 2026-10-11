@@ -101,6 +101,8 @@ import { makeTurnDesigns } from "./turnDesigns.ts";
 import { isPcbSource } from "./sourceFiles.ts";
 import { makePinMap } from "./pinMap.ts";
 import { makeProjectSettings } from "./projectSettings.ts";
+import { kicadReviewModel, circuitJsonReviewModel } from "./reviewModel.ts";
+import { runReview, applyReviewWaivers, REVIEW_RULES_VERSION } from "./reviewRules.ts";
 import { makeAutoChecks, AUTO_CHECK_TIMEOUT } from "./autoChecks.ts";
 
 const CIRCUIT_VERSION_TIMEOUT = "15 seconds";
@@ -187,6 +189,10 @@ export class PcbPreviewService extends Context.Service<
     readonly turnDesignEvents: (input: {
       threadId: ThreadId;
     }) => Stream.Stream<W.PcbTurnDesigns, PcbPreviewError>;
+    readonly review: (input: W.PcbReviewInput) => Effect.Effect<W.PcbReviewResult, PcbPreviewError>;
+    readonly latestReview: (
+      input: W.PcbReviewInput,
+    ) => Effect.Effect<W.PcbReviewResult | null, PcbPreviewError>;
     readonly pinMap: (input: W.PcbPinMapInput) => Effect.Effect<W.PcbPinMapResult, PcbPreviewError>;
     readonly projectSettings: (
       input: PcbProjectSettingsInput,
@@ -221,6 +227,7 @@ const decodeParameterFile = Schema.decodeUnknownEffect(Schema.fromJsonString(Par
 const decodeWorkspaceJson = Schema.decodeUnknownEffect(Schema.fromJsonString(W.PcbWorkspace));
 const decodeLibraryJson = Schema.decodeUnknownEffect(Schema.fromJsonString(W.PcbHardwareLibrary));
 const decodeRender = Schema.decodeUnknownEffect(Schema.fromJsonString(PcbRenderResult));
+const decodeReview = Schema.decodeUnknownEffect(Schema.fromJsonString(W.PcbReviewResult));
 const decodeCheck = Schema.decodeUnknownEffect(Schema.fromJsonString(PcbCheckResult));
 const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 const ignoredDirectories = new Set([
@@ -579,9 +586,9 @@ export const make = Effect.gen(function* () {
         "design-not-found",
         "The design is no longer in this workspace. Refresh the design list.",
       );
-    return yield* resolveFound(ws, design, absolute);
+    return { ...(yield* resolveFound(ws, design, absolute)), threadId: input.threadId };
   });
-  type ResolvedDesign = Effect.Success<ReturnType<typeof resolveDesign>>;
+  type ResolvedDesign = Effect.Success<ReturnType<typeof resolveFound>> & { threadId?: ThreadId };
   const sourceSnapshot = Effect.fn("PcbPreview.sourceSnapshot")(function* (
     resolved: ResolvedDesign,
   ) {
@@ -1253,15 +1260,30 @@ export const make = Effect.gen(function* () {
   const settings = yield* makeProjectSettings(
     path.join(config.stateDir, "fork", "pcb-preview", "project-settings.json"),
   );
-  const scheduler = yield* makeAutoChecks<ResolvedDesign>({
+  const scheduler = yield* makeAutoChecks<ResolvedDesign, W.PcbAutoCheckKind>({
+    kinds: ["erc", "drc", "review"],
     key: (r) => hashKey(r.workspaceKey, r.design.id),
     project: (r) => r.projectId,
     available: (r, kind) =>
-      r.design.kind === "kicad" && !!(kind === "erc" ? r.design.schematicPath : r.design.boardPath),
+      kind === "review"
+        ? r.design.kind === "tscircuit" || !!r.design.schematicPath
+        : r.design.kind === "kicad" &&
+          !!(kind === "erc" ? r.design.schematicPath : r.design.boardPath),
     settings: settings.get,
     snapshot: (r) => checked(sourceSnapshot(r)).pipe(Effect.map((s) => s.sourceHash)),
-    stored: readStoredCheck,
-    run: (r, kind, trigger) => checked(runCheck(r, kind, trigger)),
+    stored: (r, kind) => (kind === "review" ? readStoredReview(r) : readStoredCheck(r, kind)),
+    fresh: (r, kind, stored) =>
+      kind !== "review"
+        ? Effect.succeed(true)
+        : settings
+            .get(r.projectId)
+            .pipe(
+              Effect.map(
+                (s) => "configHash" in stored && stored.configHash === reviewConfigHash(s),
+              ),
+            ),
+    run: (r, kind, trigger) =>
+      kind === "review" ? checked(runDesignReview(r)) : checked(runCheck(r, kind, trigger)),
   });
   const projectSettings = Effect.fn("PcbPreview.projectSettings")(function* (
     input: PcbProjectSettingsInput,
@@ -1287,8 +1309,7 @@ export const make = Effect.gen(function* () {
     input: PcbLatestChecksInput,
   ) {
     const resolved = yield* resolveDesign(input);
-    if (input.ensureFresh && resolved.design.kind === "kicad")
-      yield* scheduler.ensureFresh(resolved);
+    if (input.ensureFresh) yield* scheduler.ensureFresh(resolved);
     const results = yield* Effect.forEach(["erc", "drc"], (kind) =>
       Effect.gen(function* () {
         const file = checkPath(resolved, kind);
@@ -1559,6 +1580,7 @@ export const make = Effect.gen(function* () {
     resolved: ResolvedDesign,
     hash: string,
     read: (relative: string) => Effect.Effect<string, PcbPreviewError | PlatformError>,
+    noConnects?: W.PcbReviewLocation[],
   ) {
     let result = resolved.design.boardPath
       ? yield* Effect.gen(function* () {
@@ -1602,6 +1624,15 @@ export const make = Effect.gen(function* () {
           },
           catch: () => failure("invalid-report", "The saved schematic could not be inspected."),
         });
+        if (noConnects && Array.isArray(parsed.root))
+          for (const flag of children(parsed.root, "no_connect")) {
+            const at = child(flag, "at");
+            noConnects.push({
+              x: Number(atom(at)),
+              y: Number(atom(at, 2)),
+              sheet: sheetName + ".svg",
+            });
+          }
         for (const component of parsed.components) {
           const index = components.findIndex((c) => c.reference === component.reference);
           if (index >= 0)
@@ -2057,10 +2088,11 @@ export const make = Effect.gen(function* () {
       "60 seconds",
     );
     let result = inspection;
+    let netlist: string | null = null;
     if (exported.code === 0 && !exported.timedOut) {
-      const netlist = yield* smallSource(output);
+      netlist = yield* smallSource(output);
       result = yield* Effect.try({
-        try: () => mergeNetlist(inspection, netlist),
+        try: () => mergeNetlist(inspection, netlist!),
         catch: () => failure("invalid-report", "KiCad produced invalid netlist data."),
       });
     } else
@@ -2071,7 +2103,136 @@ export const make = Effect.gen(function* () {
           "Schematic connectivity is unavailable; connectivity changes may be incomplete.",
         ],
       };
-    return { inspection: result, log: processLog(exported) };
+    return { inspection: result, netlist, log: processLog(exported) };
+  });
+  const readStoredReview = Effect.fn("PcbPreview.readStoredReview")(function* (
+    resolved: ResolvedDesign,
+  ) {
+    const file = checkPath(resolved, "review");
+    return yield* Effect.gen(function* () {
+      if (!(yield* fs.exists(file)) || Number((yield* fs.stat(file)).size) > 4 * 1024 * 1024)
+        return null;
+      return yield* decodeReview(yield* fs.readFileString(file));
+    }).pipe(Effect.orElseSucceed(() => null));
+  });
+  const reviewConfigHash = (value: W.PcbProjectSettings) =>
+    hashKey(
+      String(REVIEW_RULES_VERSION),
+      encodeJson(value.review.rules),
+      encodeJson(value.review.params),
+    );
+  const runDesignReview = Effect.fn("PcbPreview.runDesignReview")(function* (
+    resolved: ResolvedDesign,
+  ): Effect.fn.Return<
+    W.PcbReviewResult,
+    PcbPreviewError | PlatformError,
+    FileSystem.FileSystem | Path.Path
+  > {
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        if (resolved.design.kind === "kicad" && !resolved.design.schematicPath)
+          return yield* failure("unsupported-view", "This design has no schematic to review.");
+        const started = yield* now;
+        const snapshot = yield* sourceSnapshot(resolved);
+        const config = yield* settings.get(resolved.projectId);
+        const configHash = reviewConfigHash(config);
+        const stored = yield* readStoredReview(resolved);
+        if (stored?.sourceHash === snapshot.sourceHash && stored.configHash === configHash)
+          return applyReviewWaivers(stored, config.review, resolved.design.id);
+        let model;
+        let log = "";
+        if (resolved.design.kind === "tscircuit") {
+          const json = yield* asset({
+            threadId: resolved.threadId!,
+            designId: resolved.design.id,
+            format: "circuit-json",
+          });
+          const data = yield* decodeJson(json.data).pipe(
+            Effect.mapError(() => failure("invalid-report", "Invalid Circuit JSON.")),
+          );
+          model = yield* Effect.try({
+            try: () => circuitJsonReviewModel(data, inspectCircuitJson(data, json.sourceHash)),
+            catch: () => failure("invalid-report", "The circuit data could not be reviewed."),
+          });
+        } else {
+          const flags: W.PcbReviewLocation[] = [];
+          const inspection = yield* sourceInspection(
+            resolved,
+            snapshot.sourceHash,
+            (relative) => safePath(resolved.root, relative).pipe(Effect.flatMap(smallSource)),
+            flags,
+          );
+          const tool = (yield* status()).kicad;
+          let connected = { inspection, netlist: null as string | null, log: "" };
+          if (tool.found && !tool.problem) {
+            const directory = yield* fs.makeTempDirectoryScoped({
+              directory: cacheDir,
+              prefix: "pending-review-",
+            });
+            connected = yield* schematicConnectivity(
+              inspection,
+              tool,
+              yield* safePath(resolved.root, resolved.design.schematicPath!),
+              path.join(directory, "nets.net"),
+              resolved.cwd,
+            ).pipe(
+              Effect.catch(() =>
+                Effect.succeed({
+                  inspection,
+                  netlist: null,
+                  log: "Netlist export failed; reviewing available source.",
+                }),
+              ),
+            );
+          }
+          log = connected.log;
+          model = yield* Effect.try({
+            try: () => kicadReviewModel(connected.inspection, connected.netlist, flags),
+            catch: () => failure("invalid-report", "The netlist could not be reviewed."),
+          });
+        }
+        const output = runReview(model, config.review);
+        const value: W.PcbReviewResult = {
+          ...output,
+          designKind: resolved.design.kind,
+          outcome: output.findings.length ? "findings" : "clean",
+          sourceHash: snapshot.sourceHash,
+          configHash,
+          rulesVersion: REVIEW_RULES_VERSION,
+          counts: { errors: 0, warnings: 0, info: 0, waived: 0 },
+          log,
+          durationMs: Math.max(0, (yield* now) - started),
+          ranAt: yield* timestamp,
+        };
+        yield* cacheLock.withPermit(
+          Effect.gen(function* () {
+            const previous = yield* readStoredReview(resolved);
+            if (!previous || previous.ranAt <= value.ranAt) {
+              yield* writeFileStringAtomically({
+                filePath: checkPath(resolved, "review"),
+                contents: encodeJson(value),
+              });
+              yield* scheduler.changed(hashKey(resolved.workspaceKey, resolved.design.id));
+            }
+          }),
+        );
+        yield* prune();
+        return applyReviewWaivers(value, config.review, resolved.design.id);
+      }),
+    );
+  });
+  const review = Effect.fn("PcbPreview.review")(function* (input: W.PcbReviewInput) {
+    return yield* scheduler.manual(yield* resolveDesign(input), "review");
+  });
+  const latestReview = Effect.fn("PcbPreview.latestReview")(function* (input: W.PcbReviewInput) {
+    const resolved = yield* resolveDesign(input),
+      stored = yield* readStoredReview(resolved);
+    if (!stored) return null;
+    return applyReviewWaivers(
+      stored,
+      (yield* settings.get(resolved.projectId)).review,
+      resolved.design.id,
+    );
   });
   const inspectionCache = new Map<string, W.PcbInspection>();
   const inspect = Effect.fn("PcbPreview.inspect")(function* (input: W.PcbInspectInput) {
@@ -2960,7 +3121,9 @@ export const make = Effect.gen(function* () {
     projectSettings: (i) => checked(projectSettings(i)),
     updateProjectSettings: (i) => checked(updateProjectSettings(i)),
     checkEvents,
-    check: (i) => checked(check(i)),
+    review: (i) => checked(review(i)).pipe(Effect.map((value) => value as W.PcbReviewResult)),
+    latestReview: (i) => checked(latestReview(i)),
+    check: (i) => checked(check(i)).pipe(Effect.map((value) => value as PcbCheckResult)),
     latestChecks: (i) => checked(latestChecks(i)),
     watch: (i) =>
       watch(i).pipe(

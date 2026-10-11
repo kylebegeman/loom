@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import {
   PCB_PREVIEW_WS_METHODS as M,
+  type PcbReviewInput,
   type PcbRenderInput,
   type PcbCheckInput,
   type PcbPrintInput,
@@ -26,6 +27,11 @@ import type { Atom } from "effect/reactivity";
 
 /** Document-lived jobs cancel when their result atom loses its last subscriber. */
 export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
+  const latestReview = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:pcb-review",
+    tag: M.latestReview,
+    staleTimeMs: 0,
+  });
   const latestChecks = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "loom:pcb-checks",
     tag: M.latestChecks,
@@ -65,6 +71,25 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
       label: "loom:pcb-turn-design-events",
       tag: M.turnDesignEvents,
       idleTtlMs: 0,
+    }),
+    latestReview,
+    review: createEnvironmentRpcCommand<
+      R,
+      E,
+      typeof M.review,
+      PcbReviewInput & { revision?: number }
+    >(runtime, {
+      label: "loom:pcb-review-run",
+      tag: M.review,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(
+            latestReview({
+              environmentId,
+              input: { threadId: input.threadId, designId: input.designId },
+            }),
+          ),
+        ),
     }),
     projectSettings,
     updateProjectSettings: createEnvironmentRpcCommand(runtime, {

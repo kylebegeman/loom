@@ -31,6 +31,13 @@ Press `.` or `,` to step through them, including across sheets, and `C` to show 
 **Show excluded** applies to both the list and drawing. Select a pin or use Locate to open its
 detail; Escape clears the selection before closing Checks. Captures include visible pins.
 
+Choose **Review** in Checks for KiCad or tscircuit schematics. Eight deterministic heuristics
+look for missing pulls, decoupling and protection, floating inputs, LED current limiting,
+UART crossings and regulator issues. Every finding explains why it fired. These are review
+hints, not a guarantee. **Rules** turns a rule off for the project or changes its parameters.
+**Ignore here** saves a waiver with an optional note; **Show ignored** and **Stop ignoring**
+restore it without rerunning. Enable automatic Review in **Check after each save** if desired.
+
 ERC locations are corrected for KiCad 9 and early 10.0 releases. If an older report's scale
 cannot be verified against the saved schematic, its list remains available and the log asks
 you to run ERC again to restore locations.

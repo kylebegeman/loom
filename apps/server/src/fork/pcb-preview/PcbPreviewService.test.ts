@@ -72,6 +72,7 @@ const setup = Effect.gen(function* () {
   let invalidSheet = false;
   let code = 0,
     timeout = false;
+  let reviewNetlist = "(export (nets))";
   const calls: ProcessRunInput[] = [];
   let block: { started: Deferred.Deferred<void>; stopped: Deferred.Deferred<void> } | null = null;
   const runner = ProcessRunner.of({
@@ -113,8 +114,7 @@ const setup = Effect.gen(function* () {
           );
         else if (input.args.includes("pdf")) yield* fs.writeFileString(target, "%PDF-1.7\nfixture");
         else if (input.args.includes("glb")) yield* fs.writeFileString(target, "glTFtest");
-        else if (input.args.includes("netlist"))
-          yield* fs.writeFileString(target, "(export (nets))");
+        else if (input.args.includes("netlist")) yield* fs.writeFileString(target, reviewNetlist);
         else if (input.args.includes("erc") || input.args.includes("drc")) {
           const violation = {
             type: "clearance",
@@ -233,6 +233,9 @@ const setup = Effect.gen(function* () {
     stateDir: (yield* Config.ServerConfig.pipe(Effect.provide(context))).stateDir,
     create,
     calls,
+    setReviewNetlist: (source: string) => {
+      reviewNetlist = source;
+    },
     runner,
     getRefreshes: () => refreshes,
     capturedRefs,
@@ -1610,6 +1613,63 @@ it.effect.each([false, true])(
           "(kicad_pcb (general (thickness 2)))",
         );
         expect((yield* service.listRequests(t.input, "all"))[0]?.designChanged).toBe(true);
+      }),
+    ),
+);
+
+it.effect(
+  "review persists, reuses its source and config, applies waivers without rerunning and degrades after a failed export",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup;
+        yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "(kicad_sch)");
+        t.setReviewNetlist(
+          yield* t.fs.readFileString(
+            "apps/server/src/fork/pcb-preview/fixtures/review/i2c-missing.net",
+          ),
+        );
+        const service = yield* t.create();
+        const input = { threadId: t.input.threadId, designId: t.input.designId };
+        const result = yield* service.review(input);
+        expect(result.findings.find((f) => f.rule === "i2c-pullup")).toBeDefined();
+        const count = t.calls.length;
+        expect((yield* service.review(input)).ranAt).toBe(result.ranAt);
+        expect(t.calls).toHaveLength(count);
+        yield* service.updateProjectSettings({
+          threadId: input.threadId,
+          review: {
+            waive: [
+              {
+                designId: input.designId,
+                findingId: result.findings[0]!.id,
+                note: "External pull",
+              },
+            ],
+          },
+        });
+        expect((yield* service.latestReview(input))?.counts.waived).toBe(1);
+        expect(t.calls).toHaveLength(count);
+        yield* service.updateProjectSettings({
+          threadId: input.threadId,
+          review: { rules: { "i2c-pullup": false } },
+        });
+        expect((yield* service.review(input)).findings).toHaveLength(0);
+        expect(t.calls.length).toBeGreaterThan(count);
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_sch"),
+          "(kicad_sch (version 1))",
+        );
+        t.setResult(1);
+        expect((yield* service.review(input)).notices.join()).toContain(
+          "Pin types are unavailable",
+        );
+        yield* t.fs.remove(t.path.join(t.root, "board.kicad_sch"));
+        t.names.splice(t.names.indexOf("board.kicad_sch"), 1);
+        const failed = yield* service
+          .review({ ...input, designId: "board.kicad_pro" })
+          .pipe(Effect.flip);
+        expect(failed).toMatchObject({ reason: "unsupported-view" });
       }),
     ),
 );

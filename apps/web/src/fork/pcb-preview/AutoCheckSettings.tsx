@@ -27,7 +27,7 @@ export function AutoCheckSettings({
   return (
     <div>
       <strong>Check after each save</strong>
-      {(["erc", "drc"] as const).map((kind) => (
+      {(["erc", "drc", "review"] as const).map((kind) => (
         <label key={kind} className={k.markerToggle}>
           <Switch
             aria-label={`Automatic ${kind.toUpperCase()}`}
@@ -36,7 +36,10 @@ export function AutoCheckSettings({
               !settings ||
               !allowed ||
               saving ||
-              !(kind === "erc" ? design.schematicPath : design.boardPath)
+              !(kind === "review"
+                ? design.kind === "tscircuit" || design.schematicPath
+                : design.kind === "kicad" &&
+                  (kind === "erc" ? design.schematicPath : design.boardPath))
             }
             onCheckedChange={(enabled) => {
               setSaving(true);

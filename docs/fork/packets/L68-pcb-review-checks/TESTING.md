@@ -1,5 +1,7 @@
 # L68 testing
 
+Local automated verification exercises hand-authored netlists and circuit flags, all eight matchers, reuse/configuration/waivers, failed-export fallback, marker anchors and protected commands. Real-client and opt-in CAD checks are pending. KiCad is unavailable on this host, so `complex_hierarchy.net` generation is pending; existing real ERC/DRC fixtures remain unchanged.
+
 Focused tests, no repo-wide checks, no sleeps. Rules are pure, so almost everything is proven
 with fixtures and no tools.
 

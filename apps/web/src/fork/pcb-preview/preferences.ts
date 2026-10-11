@@ -12,6 +12,7 @@ const Selection = Schema.Struct({
 export type Selection = typeof Selection.Type;
 // Saved preferences outlive releases: a field added later must not reset trust and selections.
 const Preferences = Schema.Struct({
+  reviewShowWaived: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   agentDesigns: Schema.Literals(["offer", "open", "off"]).pipe(
     Schema.withDecodingDefault(Effect.succeed("offer")),
   ),
@@ -29,6 +30,7 @@ const Preferences = Schema.Struct({
 });
 const KEY = "loom:pcb-preview:preferences:v1";
 const defaults = {
+  reviewShowWaived: false,
   agentDesigns: "offer",
   selections: {},
   trusted: [],
@@ -58,6 +60,7 @@ export const projectPreferenceKey = (environmentId: string, projectId: string) =
   JSON.stringify([environmentId, projectId]);
 export const usePcbPreferences = create<
   typeof Preferences.Type & {
+    setReviewShowWaived: (show: boolean) => void;
     setAgentDesigns: (mode: "offer" | "open" | "off") => void;
     select: (key: string, value: Selection) => void;
     trust: (key: string, trusted: boolean) => void;
@@ -69,6 +72,10 @@ export const usePcbPreferences = create<
   }
 >((set, get) => ({
   ...load(),
+  setReviewShowWaived: (show) => {
+    set({ reviewShowWaived: show });
+    save(get());
+  },
   setAgentDesigns: (agentDesigns) => {
     save({ ...get(), agentDesigns });
     set({ agentDesigns });
