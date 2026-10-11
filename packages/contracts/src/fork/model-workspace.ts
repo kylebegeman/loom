@@ -35,8 +35,19 @@ const identity = {
   sourceRevision: Schema.String.check(Schema.isMaxLength(200)),
 };
 export const ModelSavedView = Schema.Struct({ ...identity, camera: ModelCamera });
+export const ModelCircle = Schema.Struct({
+  center: ModelPoint,
+  normal: ModelPoint,
+  diameter: finite.check(Schema.isGreaterThan(0)),
+  sides: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 3, maximum: 128 }))),
+});
+export type ModelCircle = typeof ModelCircle.Type;
 export const ModelMeasurement = Schema.Struct({
   ...identity,
+  kind: Schema.Literals(["distance", "circle"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("distance" as const)),
+  ),
+  circle: Schema.optional(ModelCircle),
   start: ModelPoint,
   end: ModelPoint,
   visible: Schema.Boolean,

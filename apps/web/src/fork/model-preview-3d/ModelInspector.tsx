@@ -20,6 +20,7 @@ import {
   singleZoneStrips,
   type ZoneRect,
   type BuildPlatePresetId,
+  type DisplayUnits,
   type ModelPreviewSettings,
   type ScadRenderResult,
 } from "@t3tools/contracts/fork";
@@ -351,6 +352,15 @@ function PrinterMenu({
   );
 }
 
+export const DIMENSION_DELTA_MM = 0.05;
+
+/** A signed size change, excluding float noise smaller than the displayed precision. */
+export function dimensionDelta(current: number, previous: number, units: DisplayUnits = "mm") {
+  const delta = current - previous;
+  if (!Number.isFinite(delta) || Math.abs(delta) + 1e-9 < DIMENSION_DELTA_MM) return null;
+  return (delta > 0 ? "+" : "−") + formatLength(Math.round(Math.abs(delta) * 1e9) / 1e9, units);
+}
+
 /** Part tab: dimensions, build plate fit, mesh facts and the OpenSCAD render log. */
 export function PartSection({
   environmentId,
@@ -360,8 +370,10 @@ export function PartSection({
   render,
   format,
   path,
+  previousSize,
 }: {
   environmentId: EnvironmentId;
+  previousSize?: readonly [number, number, number] | null;
   stats: ReturnType<typeof meshStats> | null;
   settings: ModelPreviewSettings;
   volume: BuildVolume;
@@ -391,6 +403,9 @@ export function PartSection({
   const fits = fit.status === "fits";
   const rotated = fit.status === "fits-rotated";
   const manifold = render?.summary?.manifold;
+  const deltas = previousSize
+    ? stats.size.map((value, axis) => dimensionDelta(value, previousSize[axis]!, units))
+    : [];
   return (
     <div className={styles["model-inspector-scroll"]}>
       <div className={styles["model-dims"]}>
@@ -404,6 +419,14 @@ export function PartSection({
               {formatLength(value, units, { unit: false })}
               <small>{units}</small>
             </strong>
+            {deltas[axis] && previousSize && (
+              <small
+                className={styles["model-dim-delta"]}
+                aria-label={`${"XYZ"[axis]} changed by ${value > previousSize[axis]! ? "plus" : "minus"} ${deltas[axis]!.slice(1)}`}
+              >
+                {deltas[axis]}
+              </small>
+            )}
           </div>
         ))}
       </div>

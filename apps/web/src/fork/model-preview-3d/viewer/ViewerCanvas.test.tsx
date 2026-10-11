@@ -41,6 +41,8 @@ function makeViewer() {
     setSection: vi.fn(),
     setOverlays: vi.fn(),
     setPickMode: vi.fn(),
+    setMeasureMode: vi.fn(),
+    onSnapStatus: vi.fn(),
     onCameraChange: vi.fn(),
     setNavigationMode: vi.fn(),
     setWireframe: vi.fn(),
@@ -51,28 +53,40 @@ function makeViewer() {
     setLengthFormat: vi.fn(),
     setOverhangs: vi.fn(),
     setOverhangAngle: vi.fn(),
+    keepPrevious: vi.fn(),
+    showPrevious: vi.fn(),
+    clearPrevious: vi.fn(),
   };
 }
 const viewerRef = { current: null as ModelViewer | null };
 const savedViewRef = { current: null as typeof camera | null };
 const callbacks = { onStats: vi.fn(), onProgress: vi.fn(), onError: vi.fn() };
 const PLATE = { volume: [350, 320, 325], pattern: "grid-mm", showZones: true, zones: [] } as const;
-async function mount() {
+type PreviousOptions = {
+  url?: string;
+  sourceRevision?: string;
+  keepPrevious?: boolean;
+  previousShown?: boolean;
+};
+function canvas(options: PreviousOptions = {}) {
+  return (
+    <StrictMode>
+      <ViewerCanvas
+        url="/cube.stl"
+        format="stl"
+        plate={PLATE}
+        visible
+        viewerRef={viewerRef}
+        savedViewRef={savedViewRef}
+        {...callbacks}
+        {...options}
+      />
+    </StrictMode>
+  );
+}
+async function mount(options: PreviousOptions = {}) {
   await act(async () => {
-    renderer = create(
-      <StrictMode>
-        <ViewerCanvas
-          url="/cube.stl"
-          format="stl"
-          plate={PLATE}
-          visible
-          viewerRef={viewerRef}
-          savedViewRef={savedViewRef}
-          {...callbacks}
-        />
-      </StrictMode>,
-      { createNodeMock: () => ({}) },
-    );
+    renderer = create(canvas(options), { createNodeMock: () => ({}) });
   });
 }
 async function load() {
@@ -137,5 +151,59 @@ describe("camera persistence", () => {
     await load();
     expect(viewers.at(-1)!.setModel).toHaveBeenCalledWith(expect.any(Group), true);
     expect(viewers.at(-1)!.restore).toHaveBeenCalledWith(camera);
+  });
+});
+
+describe("previous revision retention", () => {
+  it("clears unchanged cached renders before reporting stats and preserves actual changes", async () => {
+    await mount({ sourceRevision: "one", keepPrevious: true });
+    await load();
+    const viewer = viewers.at(-1)!;
+    expect(viewer.clearPrevious).not.toHaveBeenCalled();
+    await act(async () =>
+      renderer!.update(
+        canvas({ url: "/rerender-one.stl", sourceRevision: "one", keepPrevious: true }),
+      ),
+    );
+    await load();
+    expect(viewer.clearPrevious).toHaveBeenCalledOnce();
+    expect(viewer.clearPrevious.mock.invocationCallOrder[0]).toBeLessThan(
+      callbacks.onStats.mock.invocationCallOrder.at(-1)!,
+    );
+    await act(async () =>
+      renderer!.update(
+        canvas({
+          url: "/changed.stl",
+          sourceRevision: "two",
+          keepPrevious: true,
+          previousShown: true,
+        }),
+      ),
+    );
+    await load();
+    expect(viewer.clearPrevious).toHaveBeenCalledOnce();
+    expect(viewer.keepPrevious).toHaveBeenLastCalledWith(true);
+    expect(viewer.showPrevious).toHaveBeenLastCalledWith(true);
+  });
+  it("drops revision history on released viewer remount", async () => {
+    await mount({ sourceRevision: "one", keepPrevious: true });
+    await load();
+    await act(async () => renderer!.unmount());
+    renderer = null;
+    await mount({ sourceRevision: "one", keepPrevious: true });
+    await load();
+    expect(viewers.at(-1)!.clearPrevious).not.toHaveBeenCalled();
+    expect(viewers.at(-1)!.setModel).toHaveBeenCalledWith(expect.any(Group), true);
+  });
+  it("uses the latest retention choice without restarting a pending download", async () => {
+    await mount({ sourceRevision: "one" });
+    const downloads = loads.length;
+    await act(async () =>
+      renderer!.update(canvas({ sourceRevision: "one", keepPrevious: true, previousShown: true })),
+    );
+    expect(loads.length).toBe(downloads);
+    await load();
+    expect(viewers.at(-1)!.keepPrevious).toHaveBeenLastCalledWith(true);
+    expect(viewers.at(-1)!.showPrevious).toHaveBeenLastCalledWith(true);
   });
 });

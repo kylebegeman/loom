@@ -18,6 +18,8 @@ import {
   Raycaster,
   BufferGeometry,
   Line,
+  LineLoop,
+  Triangle,
   LineBasicMaterial,
   CanvasTexture,
   Sprite,
@@ -46,11 +48,25 @@ import { markerScale, syncOrthographic } from "./projection";
 import { createReference, placeReference } from "./references";
 import { createOverhangShading } from "./overhangs";
 import { createZoneStrips } from "./zones";
+import { createGhost, GHOST_TRIANGLE_LIMIT } from "./ghost";
+import { buildTopologies } from "./snapTopology";
+import {
+  circleAt,
+  snapNear,
+  snapNearPoint,
+  topologyPoint,
+  SNAP_TRIANGLE_LIMIT,
+  type CircleFit,
+  type Topology,
+  type Snap,
+} from "./snap";
+import { createSnapOverlay } from "./snapOverlay";
 import { createBed } from "./bed";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
 import styles from "../workspace.module.css";
 
+export type SnapStatus = "idle" | "building" | "ready" | "off" | "failed";
 export type NavigationMode = "orbit" | "pan";
 /** An annotation with its number in the request list; the overlay falls back to list order. */
 export type OverlayAnnotation = ModelAnnotation & { number?: number };
@@ -60,6 +76,7 @@ type ViewerMark = {
   position: Vector3;
   element: HTMLElement;
   lengthMm: number | null;
+  prefix: string;
 };
 const MARK_BLUE = 0x3984ff;
 
@@ -112,6 +129,64 @@ export function createViewer(host: HTMLElement) {
   let section: ModelSection = { enabled: false, axis: "z", offset: 0, flipped: false };
   let pickMode: "measure" | "annotate" | null = null;
   let onPick: ((points: ModelPoint[]) => void) | null = null;
+  let onCircle: ((circle: CircleFit | null) => void) | null = null;
+  let measureMode: "distance" | "hole" = "distance";
+  let snapState: SnapStatus = "idle",
+    snapBuild: Promise<void> | null = null,
+    snapAbort: AbortController | null = null;
+  let topologies = new Map<Mesh, Topology>();
+  let snapChanged: ((status: SnapStatus) => void) | null = null;
+  let hoverFrame: number | null = null,
+    hoverEvent: PointerEvent | null = null;
+  const snapOverlay = createSnapOverlay(host);
+  const setSnapState = (status: SnapStatus) => {
+    snapState = status;
+    snapChanged?.(status);
+  };
+  const resetSnapping = () => {
+    snapAbort?.abort();
+    snapAbort = null;
+    snapBuild = null;
+    topologies.clear();
+    if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
+    hoverFrame = null;
+    hoverEvent = null;
+    snapOverlay.hide();
+    setSnapState("idle");
+  };
+  const prepareSnapping = (): Promise<void> => {
+    if (snapBuild) return snapBuild;
+    if (!model || snapState !== "idle") return Promise.resolve();
+    const meshes: Mesh[] = [];
+    let triangles = 0;
+    model.updateMatrixWorld(true);
+    model.traverse((object) => {
+      if (object instanceof Mesh && object.geometry.getAttribute("position")) {
+        meshes.push(object);
+        triangles +=
+          Math.floor(
+            (object.geometry.index?.count ?? object.geometry.getAttribute("position").count) / 3,
+          ) * (object instanceof InstancedMesh ? object.count : 1);
+      }
+    });
+    if (triangles > SNAP_TRIANGLE_LIMIT) {
+      setSnapState("off");
+      return Promise.resolve();
+    }
+    const controller = new AbortController();
+    snapAbort = controller;
+    setSnapState("building");
+    snapBuild = buildTopologies(meshes, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return;
+        topologies = result;
+        setSnapState("ready");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setSnapState("failed");
+      });
+    return snapBuild;
+  };
   let onCamera: ((camera: ModelCamera) => void) | null = null;
   let restoring = false;
   const plane = new Plane();
@@ -128,9 +203,12 @@ export function createViewer(host: HTMLElement) {
         for (const material of Array.isArray(object.material) ? object.material : [object.material])
           material.clippingPlanes = section.enabled ? [plane] : [];
     });
+    previous?.setClipping(section.enabled ? [plane] : []);
   };
   const raycaster = new Raycaster();
-  const pick = (event: PointerEvent): ModelPoint | null => {
+  const pick = (
+    event: PointerEvent,
+  ): { point: [number, number, number]; mesh: Mesh | null; faceIndex: number } | null => {
     if (!model) return null;
     const rect = renderer.domElement.getBoundingClientRect();
     const viewCamera = activeCamera();
@@ -149,7 +227,16 @@ export function createViewer(host: HTMLElement) {
     const hit = raycaster
       .intersectObject(model, true)
       .find((hit) => !section.enabled || plane.distanceToPoint(hit.point) >= 0);
-    return hit ? hit.point.toArray() : null;
+    if (!hit) return null;
+    const mesh = hit.object instanceof Mesh ? hit.object : null;
+    const triangles = mesh
+      ? Math.floor((mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position").count) / 3)
+      : 0;
+    return {
+      point: hit.point.toArray(),
+      mesh,
+      faceIndex: (hit.faceIndex ?? -1) + (hit.instanceId ?? 0) * triangles,
+    };
   };
   let picked: ModelPoint[] = [];
   let down: { x: number; y: number } | null = null;
@@ -158,12 +245,99 @@ export function createViewer(host: HTMLElement) {
     renderer.domElement.focus();
     down = { x: event.clientX, y: event.clientY };
     const point = pick(event);
-    picked = point ? [point] : [];
+    picked = point ? [point.point] : [];
     renderer.domElement.setPointerCapture?.(event.pointerId);
   };
+  const toScreen = (point: [number, number, number]): [number, number] => {
+    const projected = new Vector3(...point).project(activeCamera());
+    return [
+      ((projected.x + 1) * host.clientWidth) / 2,
+      ((1 - projected.y) * host.clientHeight) / 2,
+    ];
+  };
+  const keepSnap = (point: [number, number, number]) => {
+    const vector = new Vector3(...point),
+      projected = vector.clone().project(activeCamera());
+    return (
+      (!section.enabled || plane.distanceToPoint(vector) >= 0) &&
+      projected.z >= -1 &&
+      projected.z <= 1
+    );
+  };
+  const snappedHit = (hit: NonNullable<ReturnType<typeof pick>>): Snap => {
+    const topology = hit.mesh && topologies.get(hit.mesh);
+    return topology
+      ? snapNear(
+          topology,
+          hit.faceIndex,
+          hit.point,
+          { origin: raycaster.ray.origin.toArray(), direction: raycaster.ray.direction.toArray() },
+          toScreen,
+          10,
+          keepSnap,
+        )
+      : { kind: "face", point: hit.point, edge: null };
+  };
+  let circleCache: { topology: Topology; edge: [number, number]; fit: CircleFit | null } | null =
+    null;
+  const circleHit = (hit: NonNullable<ReturnType<typeof pick>>, snap: Snap) => {
+    const topology = hit.mesh && topologies.get(hit.mesh);
+    if (!topology) return null;
+    const edge = snap.edge;
+    if (
+      edge &&
+      circleCache?.topology === topology &&
+      circleCache.edge[0] === edge[0] &&
+      circleCache.edge[1] === edge[1]
+    )
+      return circleCache.fit;
+    const fit = circleAt(topology, hit.faceIndex, hit.point, edge);
+    const visible = fit && fit.loop.every(keepSnap) ? fit : null;
+    if (edge) circleCache = { topology, edge, fit: visible };
+    return visible;
+  };
+  const updateHover = (event: PointerEvent) => {
+    if (pickMode !== "measure" || snapState !== "ready" || event.altKey) return snapOverlay.hide();
+    const hit = pick(event);
+    if (!hit) return snapOverlay.hide();
+    const snap = snappedHit(hit),
+      [x, y] = toScreen(snap.point);
+    if (measureMode === "hole") {
+      const circle = circleHit(hit, snap);
+      if (!circle) return snapOverlay.hide();
+      snapOverlay.show(
+        snap.kind,
+        x,
+        y,
+        [...circle.loop, circle.loop[0]!].flatMap(toScreen),
+        `Ø${lengthFormat(circle.diameter)}`,
+      );
+    } else {
+      const topology = hit.mesh && topologies.get(hit.mesh);
+      snapOverlay.show(
+        snap.kind,
+        x,
+        y,
+        snap.edge && topology
+          ? snap.edge.flatMap((id) => toScreen(topologyPoint(topology, id)))
+          : null,
+      );
+    }
+  };
   const pointerMove = (event: PointerEvent) => {
+    if (pickMode === "measure") {
+      if (snapState !== "ready" || event.altKey) return pointerLeave();
+      hoverEvent = event;
+      if (hoverFrame === null)
+        hoverFrame = requestAnimationFrame(() => {
+          hoverFrame = null;
+          if (hoverEvent) updateHover(hoverEvent);
+        });
+      return;
+    }
     if (!down || pickMode !== "annotate" || picked.length >= 64) return;
-    const point = pick(event);
+    const hit = pick(event),
+      point = hit?.point;
     if (
       point &&
       (!picked.length ||
@@ -174,15 +348,32 @@ export function createViewer(host: HTMLElement) {
   };
   const pointerUp = (event: PointerEvent) => {
     if (!down || !pickMode) return;
-    if (pickMode === "annotate" || Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5) {
+    if (pickMode === "annotate") {
       if (picked.length) onPick?.(picked);
+    } else if (Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5) {
+      const hit = pick(event);
+      if (hit) {
+        const snap =
+          event.altKey || snapState !== "ready"
+            ? { kind: "face" as const, point: hit.point, edge: null }
+            : snappedHit(hit);
+        if (measureMode === "hole") onCircle?.(circleHit(hit, snap));
+        else onPick?.([snap.point]);
+      } else if (measureMode === "hole") onCircle?.(null);
     }
     down = null;
     picked = [];
   };
+  const pointerLeave = () => {
+    hoverEvent = null;
+    if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
+    hoverFrame = null;
+    snapOverlay.hide();
+  };
   renderer.domElement.addEventListener("pointerdown", pointerDown);
   renderer.domElement.addEventListener("pointermove", pointerMove);
   renderer.domElement.addEventListener("pointerup", pointerUp);
+  renderer.domElement.addEventListener("pointerleave", pointerLeave);
   const pointerCancel = () => {
     down = null;
     picked = [];
@@ -209,7 +400,7 @@ export function createViewer(host: HTMLElement) {
   let marksLayer: HTMLDivElement | null = null,
     marks: ViewerMark[] = [],
     dotTexture: CanvasTexture | null = null;
-  let lengthFormat = (mm: number) => `${mm.toFixed(1)} mm`;
+  let lengthFormat = (mm: number) => `${mm.toFixed(2)} mm`;
   const projected = new Vector3();
   const placeMarks = () => {
     const width = host.clientWidth,
@@ -227,7 +418,7 @@ export function createViewer(host: HTMLElement) {
     kind: ViewerMark["kind"],
     text: string,
     position: Vector3,
-    options?: { status?: string; lengthMm?: number },
+    options?: { status?: string; lengthMm?: number; prefix?: string },
   ) => {
     if (!marksLayer) {
       marksLayer = document.createElement("div");
@@ -243,7 +434,14 @@ export function createViewer(host: HTMLElement) {
       element.append(body);
     } else element.textContent = text;
     marksLayer.append(element);
-    marks.push({ kind, text, position, element, lengthMm: options?.lengthMm ?? null });
+    marks.push({
+      kind,
+      text,
+      position,
+      element,
+      lengthMm: options?.lengthMm ?? null,
+      prefix: options?.prefix ?? "",
+    });
   };
   const dot = (point: ModelPoint) => {
     if (!dotTexture) {
@@ -281,6 +479,37 @@ export function createViewer(host: HTMLElement) {
     clearOverlay();
     for (const measurement of measurements)
       if (measurement.visible) {
+        if (measurement.kind === "circle" && measurement.circle) {
+          const circle = measurement.circle,
+            center = new Vector3(...circle.center),
+            normal = new Vector3(...circle.normal).normalize();
+          const x = new Vector3(
+              Math.abs(normal.x) < 0.9 ? 1 : 0,
+              Math.abs(normal.x) < 0.9 ? 0 : 1,
+              0,
+            )
+              .projectOnPlane(normal)
+              .normalize(),
+            y = normal.clone().cross(x);
+          const points = Array.from({ length: 64 }, (_, i) =>
+            center
+              .clone()
+              .addScaledVector(x, (Math.cos((i * Math.PI) / 32) * circle.diameter) / 2)
+              .addScaledVector(y, (Math.sin((i * Math.PI) / 32) * circle.diameter) / 2),
+          );
+          const line = new LineLoop(
+            new BufferGeometry().setFromPoints(points),
+            new LineBasicMaterial({ color: MARK_BLUE, depthTest: false }),
+          );
+          line.renderOrder = 9;
+          overlay.add(line);
+          dot(circle.center);
+          addMark("label", `Ø${lengthFormat(circle.diameter)}`, center, {
+            lengthMm: circle.diameter,
+            prefix: "Ø",
+          });
+          continue;
+        }
         const start = new Vector3(...measurement.start),
           end = new Vector3(...measurement.end);
         const line = new Line(
@@ -362,8 +591,15 @@ export function createViewer(host: HTMLElement) {
       context.restore();
     }
   };
-  const helpers = new Group();
-  scene.add(helpers);
+  const helpers = new Group(),
+    ghosts = new Group();
+  ghosts.name = "model-ghosts";
+  scene.add(helpers, ghosts);
+  let keep = false,
+    previous: ReturnType<typeof createGhost> | null = null,
+    previousShown = false,
+    previousAvailable = false,
+    modelTriangles = 0;
   let model: Object3D | null = null,
     box = new Box3(),
     bed: ReturnType<typeof createBed> | null = null,
@@ -411,6 +647,7 @@ export function createViewer(host: HTMLElement) {
   };
   const render = () => {
     if (disposed || !visible) return;
+    snapOverlay.hide();
     scaleMarkers();
     renderer.render(scene, activeCamera());
     placeMarks();
@@ -443,6 +680,7 @@ export function createViewer(host: HTMLElement) {
     scene.background = new Color(dark ? 0x151920 : 0xf1f3f5);
     bed?.setTheme(dark);
     shading.setTheme(dark);
+    previous?.setTheme(dark);
     requestRender();
   };
   const themeObserver = new MutationObserver(theme);
@@ -529,6 +767,10 @@ export function createViewer(host: HTMLElement) {
     }
     placeReferenceObject();
   };
+  const clearPrevious = () => {
+    previous?.set(null);
+    previousAvailable = false;
+  };
   const snapshot = (): ModelCamera => ({
     projection,
     overhangs,
@@ -545,6 +787,19 @@ export function createViewer(host: HTMLElement) {
   return {
     snapshot,
     activeCamera,
+    keepPrevious(enabled: boolean) {
+      keep = enabled;
+      if (!enabled) clearPrevious();
+    },
+    showPrevious(value: boolean) {
+      previousShown = value;
+      previous?.setVisible(value);
+      requestRender();
+    },
+    clearPrevious,
+    hasPrevious() {
+      return previousAvailable;
+    },
     overhangInput() {
       if (!model) return null;
       if (overhangPositions) return overhangPositions;
@@ -602,10 +857,17 @@ export function createViewer(host: HTMLElement) {
       scaleMarkers();
       requestRender();
     },
-    setPickMode(mode: typeof pickMode, callback: typeof onPick) {
+    setPickMode(
+      mode: typeof pickMode,
+      callback: typeof onPick,
+      circleCallback: typeof onCircle = null,
+    ) {
       pointerCancel();
       pickMode = mode;
       onPick = callback;
+      onCircle = circleCallback;
+      pointerLeave();
+      if (mode === "measure") void prepareSnapping();
       controls.enabled = mode === null;
       renderer.domElement.style.cursor = mode
         ? "crosshair"
@@ -613,11 +875,99 @@ export function createViewer(host: HTMLElement) {
           ? "move"
           : "grab";
     },
+    setMeasureMode(mode: "distance" | "hole") {
+      measureMode = mode;
+      circleCache = null;
+      pointerLeave();
+    },
+    snapStatus() {
+      return snapState;
+    },
+    onSnapStatus(callback: typeof snapChanged) {
+      snapChanged = callback;
+      callback?.(snapState);
+    },
+    async snapPoint(point: ModelPoint, radiusMm = 1): Promise<ModelPoint> {
+      await prepareSnapping();
+      let best: Snap | null = null,
+        distance = Infinity;
+      for (const topology of topologies.values()) {
+        const snap = snapNearPoint(topology, [...point], radiusMm);
+        if (
+          snap.kind === "face" ||
+          (section.enabled && plane.distanceToPoint(new Vector3(...snap.point)) < 0)
+        )
+          continue;
+        const d = new Vector3(...snap.point).distanceTo(new Vector3(...point));
+        if (
+          !best ||
+          (snap.kind === "vertex" && best.kind !== "vertex") ||
+          (snap.kind === best.kind && d < distance)
+        ) {
+          best = snap;
+          distance = d;
+        }
+      }
+      return best?.point ?? point;
+    },
+    async circleNear(point: ModelPoint, radiusMm = 1): Promise<CircleFit | null> {
+      await prepareSnapping();
+      let fit: CircleFit | null = null,
+        nearest = radiusMm;
+      const target = new Vector3(...point),
+        closest = new Vector3(),
+        triangle = new Triangle();
+      for (const topology of topologies.values()) {
+        let seed = -1,
+          distance = radiusMm;
+        for (let t = 0; t < topology.region.length; t++) {
+          triangle.set(
+            ...([0, 1, 2].map(
+              (c) => new Vector3(...topologyPoint(topology, topology.corners[t * 3 + c]!)),
+            ) as [Vector3, Vector3, Vector3]),
+          );
+          triangle.closestPointToPoint(target, closest);
+          const d = closest.distanceTo(target);
+          if (d <= distance) {
+            seed = t;
+            distance = d;
+          }
+        }
+        if (seed < 0) continue;
+        const snap = snapNearPoint(topology, [...point], radiusMm),
+          candidate = circleAt(topology, seed, [...point], snap.edge);
+        if (
+          !candidate ||
+          candidate.loop.some(
+            (p) => section.enabled && plane.distanceToPoint(new Vector3(...p)) < 0,
+          )
+        )
+          continue;
+        let rimDistance = Infinity;
+        for (let i = 0; i < candidate.loop.length; i++) {
+          const a = new Vector3(...candidate.loop[i]!),
+            b = new Vector3(...candidate.loop[(i + 1) % candidate.loop.length]!),
+            delta = b.sub(a);
+          const along = Math.max(
+            0,
+            Math.min(1, target.clone().sub(a).dot(delta) / delta.lengthSq()),
+          );
+          rimDistance = Math.min(rimDistance, a.addScaledVector(delta, along).distanceTo(target));
+        }
+        if (rimDistance <= nearest) {
+          fit = candidate;
+          nearest = rimDistance;
+        }
+      }
+      return fit;
+    },
     onCameraChange(callback: typeof onCamera) {
       onCamera = callback;
     },
     setSection(next: ModelSection) {
       section = next;
+      circleCache = null;
+      pointerLeave();
       applySection();
       requestRender();
     },
@@ -626,7 +976,7 @@ export function createViewer(host: HTMLElement) {
       lengthFormat = format;
       for (const mark of marks)
         if (mark.lengthMm !== null) {
-          mark.text = format(mark.lengthMm);
+          mark.text = mark.prefix + format(mark.lengthMm);
           mark.element.textContent = mark.text;
         }
       requestRender();
@@ -682,9 +1032,21 @@ export function createViewer(host: HTMLElement) {
       }
       if (model) {
         scene.remove(model);
-        disposeModel(model);
+        if (keep && modelTriangles <= GHOST_TRIANGLE_LIMIT) {
+          previous ??= createGhost(ghosts, requestRender);
+          previous.setTheme(dark);
+          previous.set(model);
+          previous.setVisible(previousShown);
+          previousAvailable = true;
+        } else {
+          disposeModel(model);
+          clearPrevious();
+        }
       }
+      resetSnapping();
+      circleCache = null;
       model = next;
+      modelTriangles = stats.triangles;
       box = stats.box;
       overhangPositions = null;
       unsupportedMaterials = false;
@@ -703,6 +1065,7 @@ export function createViewer(host: HTMLElement) {
       applySection();
       if (!keepCamera) setView("iso");
       requestRender();
+      if (pickMode === "measure") void prepareSnapping();
       return stats;
     },
     setView,
@@ -825,6 +1188,9 @@ export function createViewer(host: HTMLElement) {
     },
     dispose() {
       disposed = true;
+      resetSnapping();
+      snapChanged = null;
+      snapOverlay.dispose();
       if (frame !== null) cancelAnimationFrame(frame);
       stopObserving();
       themeObserver.disconnect();
@@ -834,15 +1200,19 @@ export function createViewer(host: HTMLElement) {
       dotTexture?.dispose();
       onCamera = null;
       onPick = null;
+      onCircle = null;
       controls.removeEventListener("start", navigationStarted);
       onNavigate = null;
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
+      renderer.domElement.removeEventListener("pointerleave", pointerLeave);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
       renderer.domElement.removeEventListener("mousedown", preventAutoscroll);
       controls.dispose();
       if (model) disposeModel(model);
+      previous?.dispose();
+      previousAvailable = false;
       overhangPositions = null;
       bed?.dispose();
       reference?.dispose();

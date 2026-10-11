@@ -1019,6 +1019,10 @@ unchanged (checked with `tsc --strict` and `oxfmt` on a sample).
 
 ### Fork-owned files
 
+`ForkPanelDefinition.TabIcon` optionally decorates one tab surface while keeping the panel
+icon for its launcher entry; `ForkSurfaceIcon` falls back to `icon`. L41 uses it for the
+static changed-model dot.
+
 **`apps/web/src/fork/panels/types.ts`**
 
 ```ts
@@ -1052,6 +1056,8 @@ export interface ForkPanelDefinition {
   readonly id: string;
   readonly title: string;
   readonly icon: ComponentType<{ className?: string }>;
+  /** Optional tab icon for one surface; defaults to `icon`. */
+  readonly TabIcon?: ComponentType<{ surface: ForkRightPanelSurface; className?: string }>;
   /** The panel's letter from "Launcher letters" in EXTENSION-POINTS.md; "" for none. */
   readonly shortcut: string;
   /** Optional one-sentence description, shown by the panel picker (L12). */
@@ -1108,7 +1114,9 @@ export const forkSurfaceTitle = (surface: ForkRightPanelSurface): string =>
   surface.title ?? findForkPanel(surface.panelId)?.title ?? "Unavailable panel";
 
 export function ForkSurfaceIcon({ surface }: { surface: ForkRightPanelSurface }) {
-  const Icon = findForkPanel(surface.panelId)?.icon ?? PuzzleIcon;
+  const panel = findForkPanel(surface.panelId);
+  if (panel?.TabIcon) return <panel.TabIcon surface={surface} className="size-3 shrink-0" />;
+  const Icon = panel?.icon ?? PuzzleIcon;
   return <Icon className="size-3 shrink-0" />;
 }
 ```

@@ -11,6 +11,8 @@ import { forkPanelSurface } from "../panels/registry";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useServerConfigs } from "~/state/entities";
 import { dispatchModelAction } from "./actions";
+import { modelSurface } from "./agentModels";
+import { AgentModelsHost } from "./AgentModelsHost";
 const idle = Atom.make(AsyncResult.initial<typeof ModelEditorEvent.Type, never>());
 export function ModelPreview3dShortcuts() {
   const threadRef = useRouteThread()?.threadRef ?? null;
@@ -35,10 +37,7 @@ export function ModelPreview3dShortcuts() {
     handled.current = request.requestId;
     const act = async () => {
       const panels = useRightPanelStore.getState(),
-        surface = {
-          ...forkPanelSurface("model-preview-3d", request.path),
-          title: request.path.split("/").at(-1) ?? request.path,
-        };
+        surface = modelSurface(request.path);
       if (request.command.action === "close") panels.closeSurface(threadRef, surface.id);
       else if (request.command.action === "maximize")
         await requestPanelPresentation(threadRef, request.command.enabled ?? true);
@@ -82,5 +81,5 @@ export function ModelPreview3dShortcuts() {
       capture();
     };
   }, [available, threadRef]);
-  return null;
+  return <AgentModelsHost />;
 }

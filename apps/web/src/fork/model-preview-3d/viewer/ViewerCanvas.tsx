@@ -13,6 +13,8 @@ import { formatLength, useDisplayUnits } from "../units";
 import type { Plate } from "../buildPlate";
 import { createViewer, type ModelViewer, type NavigationMode } from "./createViewer";
 import { disposeModel, loadModel, type meshStats } from "./load";
+import type { CircleFit } from "./snap";
+import type { SnapStatus } from "./createViewer";
 const EMPTY_MEASUREMENTS: readonly ModelMeasurement[] = [];
 const EMPTY_ANNOTATIONS: readonly ModelAnnotation[] = [];
 export default function ViewerCanvas({
@@ -34,10 +36,16 @@ export default function ViewerCanvas({
   pendingPoint = null,
   pickMode = null,
   onPick,
+  measureMode = "distance",
+  onCircle,
+  onSnapStatus,
   onCamera,
   camera,
   reference = "none",
   overhangAngleDegrees = 45,
+  keepPrevious = false,
+  previousShown = false,
+  sourceRevision,
 }: {
   section?: ModelSection;
   measurements?: readonly ModelMeasurement[];
@@ -45,10 +53,16 @@ export default function ViewerCanvas({
   pendingPoint?: ModelPoint | null;
   pickMode?: "measure" | "annotate" | null;
   onPick?: (points: ModelPoint[]) => void;
+  measureMode?: "distance" | "hole";
+  onCircle?: (circle: CircleFit | null) => void;
+  onSnapStatus?: (status: SnapStatus) => void;
   onCamera?: (camera: ModelCamera) => void;
   camera?: ModelCamera | null;
   reference?: ScaleReference;
   overhangAngleDegrees?: number;
+  keepPrevious?: boolean;
+  previousShown?: boolean;
+  sourceRevision?: string;
   url: string;
   format: ModelFormat;
   plate: Plate;
@@ -70,7 +84,8 @@ export default function ViewerCanvas({
 }) {
   const units = useDisplayUnits();
   const host = useRef<HTMLDivElement>(null),
-    loaded = useRef(false);
+    loaded = useRef(false),
+    loadedRevision = useRef<string | undefined>(undefined);
   const options = useRef({
     navigationMode,
     display,
@@ -82,6 +97,8 @@ export default function ViewerCanvas({
     reference,
     units,
     overhangAngleDegrees,
+    keepPrevious,
+    previousShown,
   });
   useEffect(() => {
     options.current = {
@@ -95,6 +112,8 @@ export default function ViewerCanvas({
       reference,
       units,
       overhangAngleDegrees,
+      keepPrevious,
+      previousShown,
     };
   }, [
     navigationMode,
@@ -107,6 +126,8 @@ export default function ViewerCanvas({
     reference,
     units,
     overhangAngleDegrees,
+    keepPrevious,
+    previousShown,
   ]);
   useEffect(() => {
     if (!host.current) return;
@@ -125,8 +146,15 @@ export default function ViewerCanvas({
       viewerRef.current?.dispose();
       viewerRef.current = null;
       loaded.current = false;
+      loadedRevision.current = undefined;
     };
   }, [viewerRef, savedViewRef, onError]);
+  useEffect(() => {
+    viewerRef.current?.keepPrevious(keepPrevious);
+  }, [keepPrevious, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.showPrevious(previousShown);
+  }, [previousShown, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setBed(
       [plate.volume[0], plate.volume[1]],
@@ -141,7 +169,7 @@ export default function ViewerCanvas({
     viewerRef.current?.setReference(reference);
   }, [reference, viewerRef]);
   useEffect(() => {
-    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units));
+    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units, { digits: 2 }));
   }, [units, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setVisible(visible);
@@ -162,7 +190,20 @@ export default function ViewerCanvas({
           disposeModel(model);
           return;
         }
-        onStats(viewerRef.current.setModel(model, loaded.current || savedViewRef.current !== null));
+        viewerRef.current.keepPrevious(options.current.keepPrevious);
+        viewerRef.current.showPrevious(options.current.previousShown);
+        const stats = viewerRef.current.setModel(
+          model,
+          loaded.current || savedViewRef.current !== null,
+        );
+        if (
+          loaded.current &&
+          sourceRevision !== undefined &&
+          loadedRevision.current === sourceRevision
+        )
+          viewerRef.current.clearPrevious();
+        loadedRevision.current = sourceRevision;
+        onStats(stats);
         if (!loaded.current && savedViewRef.current)
           viewerRef.current.restore(savedViewRef.current);
         if (options.current.navigationMode)
@@ -176,7 +217,9 @@ export default function ViewerCanvas({
         }
         viewerRef.current.setOverhangAngle(options.current.overhangAngleDegrees);
         viewerRef.current.setReference(options.current.reference);
-        viewerRef.current.setLengthFormat((mm) => formatLength(mm, options.current.units));
+        viewerRef.current.setLengthFormat((mm) =>
+          formatLength(mm, options.current.units, { digits: 2 }),
+        );
         if (options.current.section) viewerRef.current.setSection(options.current.section);
         if (options.current.camera) viewerRef.current.restore(options.current.camera);
         viewerRef.current.setOverlays(
@@ -200,7 +243,7 @@ export default function ViewerCanvas({
         }
       });
     return () => abort.abort();
-  }, [url, format, viewerRef, savedViewRef, onStats, onError, onProgress]);
+  }, [url, format, sourceRevision, viewerRef, savedViewRef, onStats, onError, onProgress]);
   useEffect(() => {
     viewerRef.current?.onNavigate(onNavigate ?? null);
     return () => viewerRef.current?.onNavigate(null);
@@ -223,9 +266,16 @@ export default function ViewerCanvas({
     viewerRef.current?.setOverlays(measurements, annotations, pendingPoint);
   }, [viewerRef, measurements, annotations, pendingPoint]);
   useEffect(() => {
-    viewerRef.current?.setPickMode(pickMode, onPick ?? null);
+    viewerRef.current?.setPickMode(pickMode, onPick ?? null, onCircle ?? null);
     return () => viewerRef.current?.setPickMode(null, null);
-  }, [viewerRef, pickMode, onPick]);
+  }, [viewerRef, pickMode, onPick, onCircle]);
+  useEffect(() => {
+    viewerRef.current?.setMeasureMode(measureMode);
+  }, [viewerRef, measureMode]);
+  useEffect(() => {
+    viewerRef.current?.onSnapStatus(onSnapStatus ?? null);
+    return () => viewerRef.current?.onSnapStatus(null);
+  }, [viewerRef, onSnapStatus]);
   useEffect(() => {
     viewerRef.current?.onCameraChange(onCamera ?? null);
     return () => viewerRef.current?.onCameraChange(null);

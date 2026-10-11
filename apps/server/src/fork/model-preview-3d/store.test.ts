@@ -25,6 +25,7 @@ it.effect("persists parameters/settings and sweeps deleted projects", () =>
       measurements: [
         {
           id: "distance",
+          kind: "distance" as const,
           name: "Width",
           sourceRevision: "mesh1",
           start: [0, 0, 0] as const,

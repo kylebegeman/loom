@@ -107,6 +107,11 @@ removing it again.
 Upstream edits a single packet needs that no extension point covers. Each packet's `SEAMS.md`
 explains why. Find them with `git grep -n "fork: <slug>"`.
 
+L41 renders the 3D model turn chip at the start of the changed files card's header actions in
+`apps/web/src/components/chat/ChangedFilesTree.tsx` (`fork: model-follow-agent`, 2 marker
+lines). The chip renders nothing without Loom's model follow feature. See the
+[L41 packet](docs/fork/packets/L41-model-follow-agent/SEAMS.md).
+
 L24 adds an optional `extendEnv` flag to `apps/server/src/processRunner.ts`
 (`fork: pcb-preview`) so circuit code receives only its filtered environment.
 Existing callers retain inherited variables. See the

@@ -20,6 +20,8 @@ export const forkSurfaceTitle = (surface: ForkRightPanelSurface): string =>
   surface.title ?? findForkPanel(surface.panelId)?.title ?? "Unavailable panel";
 
 export function ForkSurfaceIcon({ surface }: { surface: ForkRightPanelSurface }) {
-  const Icon = findForkPanel(surface.panelId)?.icon ?? PuzzleIcon;
+  const panel = findForkPanel(surface.panelId);
+  if (panel?.TabIcon) return <panel.TabIcon surface={surface} className="size-3 shrink-0" />;
+  const Icon = panel?.icon ?? PuzzleIcon;
   return <Icon className="size-3 shrink-0" />;
 }

@@ -159,10 +159,17 @@ export function DisplayTools({
   onWireframe,
   onGrid,
   onAxes,
+  previous,
 }: {
   /** The bed picker, shown before the display menu. */
   bed?: ReactNode;
   overhangLegend?: ReactNode;
+  previous?: {
+    available: boolean;
+    shown: boolean;
+    note: string | null;
+    onChange: (value: boolean) => void;
+  };
   overhangs: boolean;
   onOverhangs: (value: boolean) => void;
   wireframe: boolean;
@@ -200,6 +207,21 @@ export function DisplayTools({
               Axes
               <MenuShortcut>A</MenuShortcut>
             </MenuCheckboxItem>
+            {previous && (
+              <MenuCheckboxItem
+                checked={previous.shown}
+                onCheckedChange={previous.onChange}
+                disabled={!previous.available}
+              >
+                <span>
+                  Previous version
+                  {previous.note && (
+                    <span className="block text-xs text-muted-foreground">{previous.note}</span>
+                  )}
+                </span>
+                <MenuShortcut>D</MenuShortcut>
+              </MenuCheckboxItem>
+            )}
             <MenuCheckboxItem checked={orthographic} onCheckedChange={onOrthographic}>
               Orthographic
               <MenuShortcut>P</MenuShortcut>
@@ -227,6 +249,8 @@ const HELP = [
   ["Inspector", "I"],
   ["Perspective, orthographic", "P"],
   ["Overhangs", "V"],
+  ["Previous version", "D"],
+  ["Free pick while measuring", "Hold Alt"],
 ] as const;
 export function NavigationTools({
   mode,
@@ -551,6 +575,30 @@ export function ToolHint({ children, onDone }: { children: ReactNode; onDone: ()
       <Kbd>Esc</Kbd>
       <Button variant="ghost-muted" size="xs" onClick={onDone}>
         Done
+      </Button>
+    </div>
+  );
+}
+
+/** Offers the last replaced version after a file change, without interrupting navigation. */
+export function PreviousChip({
+  shown,
+  onToggle,
+  onDismiss,
+}: {
+  shown: boolean;
+  onToggle: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className={styles["model-change-chip"]} role="status">
+      <span>{shown ? "Showing previous." : "Changed."}</span>
+      <Button variant="ghost-muted" size="xs" onClick={onToggle}>
+        {shown ? "Hide" : "Show previous"}
+      </Button>
+      <Kbd>D</Kbd>
+      <Button variant="ghost-muted" size="xs" aria-label="Dismiss change hint" onClick={onDismiss}>
+        <XIcon />
       </Button>
     </div>
   );

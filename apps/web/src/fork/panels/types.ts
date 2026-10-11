@@ -28,6 +28,8 @@ export interface ForkPanelDefinition {
   readonly id: string;
   readonly title: string;
   readonly icon: ComponentType<{ className?: string }>;
+  /** Optional tab icon for one surface; defaults to `icon`. */
+  readonly TabIcon?: ComponentType<{ surface: ForkRightPanelSurface; className?: string }>;
   /** The panel's letter from "Launcher letters" in EXTENSION-POINTS.md; "" for none. */
   readonly shortcut: string;
   /** Optional one-sentence description, shown by the panel picker (L12). */

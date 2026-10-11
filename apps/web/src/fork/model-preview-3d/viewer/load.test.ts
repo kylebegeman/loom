@@ -3,7 +3,17 @@
 import * as NodeFSP from "node:fs/promises";
 import { expect, it, vi, afterEach } from "vite-plus/test";
 import { disposeModel, meshStats, parseModel, resourceUrl } from "./load";
-import { Group, Mesh, Line, BufferGeometry, MeshStandardMaterial, Texture } from "three";
+import {
+  Group,
+  Mesh,
+  InstancedMesh,
+  BoxGeometry,
+  Matrix4,
+  Line,
+  BufferGeometry,
+  MeshStandardMaterial,
+  Texture,
+} from "three";
 const fixture = async (name: string) => {
   const bytes = await NodeFSP.readFile(new URL(`../__fixtures__/${name}`, import.meta.url));
   return Uint8Array.from(bytes).buffer;
@@ -145,4 +155,17 @@ it("disposes shared textures and decoded bitmaps once, including non-mesh geomet
   expect(disposeGeometry).toHaveBeenCalledOnce();
   expect(disposeTexture).toHaveBeenCalledOnce();
   expect(image.close).toHaveBeenCalledOnce();
+});
+
+it("counts rendered instances when computing the triangle retention budget", () => {
+  const root = new Group();
+  const instances = new InstancedMesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial(), 3);
+  instances.setMatrixAt(0, new Matrix4().makeTranslation(0, 0, 0));
+  instances.setMatrixAt(1, new Matrix4().makeTranslation(5, 0, 0));
+  instances.setMatrixAt(2, new Matrix4().makeTranslation(10, 0, 0));
+  root.add(instances, new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial()));
+  expect(meshStats(root).triangles).toBe(48);
+  instances.count = 2;
+  expect(meshStats(root).triangles).toBe(36);
+  disposeModel(root);
 });

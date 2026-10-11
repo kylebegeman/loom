@@ -80,7 +80,7 @@ function RowMenu({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export type MarkupActions = {
-  onTool: (mode: "measure" | "annotate") => void;
+  onTool: (mode: "measure" | "annotate", measureMode?: "distance" | "hole") => void;
   onMovePin: () => void;
   onDiscard: () => void;
   onSave: (name: string, request: string, addToComposer: boolean) => Promise<boolean>;
@@ -432,9 +432,10 @@ function MeasurementRow({
   onCopy: (text: string) => void;
 }) {
   const units = useDisplayUnits();
-  const distanceDigits = units === "in" ? 2 : 1;
+  const distanceDigits = 2;
+  const circle = measurement.kind === "circle" ? measurement.circle : undefined;
   const delta = measurement.end.map((value, axis) => value - measurement.start[axis]!);
-  const distance = Math.hypot(...delta);
+  const distance = circle?.diameter ?? Math.hypot(...delta);
   const save = (patch: Partial<ModelMeasurement>) =>
     void mutate({ kind: "measurement", item: { ...measurement, ...patch } });
   const remove = () =>
@@ -481,15 +482,18 @@ function MeasurementRow({
         <div className={styles["model-row-detail"]}>
           {stale
             ? "From an earlier version of the file"
-            : delta
-                .map(
-                  (value, axis) =>
-                    `Δ${"XYZ"[axis]} ${formatLength(Math.abs(value), units, { unit: false })}`,
-                )
-                .join("   ")}
+            : circle
+              ? `Centre ${circle.center.map((value, axis) => `${"XYZ"[axis]} ${formatLength(value, units)}`).join(", ")}${circle.sides !== null && circle.sides <= 22 ? `; ${circle.sides} sides, ${formatLength(circle.diameter * Math.cos(Math.PI / circle.sides), units, { digits: 2 })} across flats` : ""}`
+              : delta
+                  .map(
+                    (value, axis) =>
+                      `Δ${"XYZ"[axis]} ${formatLength(Math.abs(value), units, { unit: false })}`,
+                  )
+                  .join("   ")}
         </div>
       </div>
       <span className={styles["model-measure-value"]}>
+        {circle ? "Ø" : ""}
         {formatLength(distance, units, { digits: distanceDigits })}
       </span>
       <RowMenu label={`${measurement.name} actions`}>
@@ -581,7 +585,9 @@ export function MarkupSection({
       renaming={renaming === measurement.id}
       mutate={mutate}
       onRename={(next) => setRenaming(next ? measurement.id : null)}
-      onMeasureAgain={() => actions.onTool("measure")}
+      onMeasureAgain={() =>
+        actions.onTool("measure", measurement.kind === "circle" ? "hole" : "distance")
+      }
       onCopy={actions.onCopy}
     />
   );
@@ -668,7 +674,10 @@ export function MarkupSection({
       {current.length ? (
         current.map(measurementRow)
       ) : (
-        <EmptyNote>Click two points on the model to measure the distance between them.</EmptyNote>
+        <EmptyNote>
+          Click two points on the model to measure the distance between them, or use Hole to measure
+          a diameter.
+        </EmptyNote>
       )}
       {stale.length > 0 && (
         <>

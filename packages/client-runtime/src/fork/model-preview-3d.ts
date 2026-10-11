@@ -56,6 +56,19 @@ export function createModelPreviewAtoms<R, E>(
       label: "loom:models",
       tag: M.listModels,
     }),
+    turnModels: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:model-turn-models",
+      tag: M.turnModels,
+    }),
+    loadTurnModels: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-turn-models-load",
+      tag: M.turnModels,
+    }),
+    turnModelEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "loom:model-turn-events",
+      tag: M.turnModelEvents,
+      idleTtlMs: 0,
+    }),
     settings: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:model-settings",
       tag: M.getSettings,

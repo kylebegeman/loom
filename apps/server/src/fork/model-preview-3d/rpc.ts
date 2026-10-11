@@ -29,6 +29,12 @@ export const makeModelPreviewRpcHandlers = (auth: ForkRpcAuth) =>
       [M.listModels]: (
         input: Parameters<typeof service.listModels>[0] extends infer Id ? { threadId: Id } : never,
       ) => auth.effect(M.listModels, service.listModels(input.threadId)),
+      [M.turnModels]: (input: {
+        threadId: Parameters<typeof service.turnModels>[0];
+        runId: Parameters<typeof service.turnModels>[1];
+      }) => auth.effect(M.turnModels, service.turnModels(input.threadId, input.runId)),
+      [M.turnModelEvents]: (input: { threadId: Parameters<typeof service.turnModelEvents>[0] }) =>
+        auth.stream(M.turnModelEvents, service.turnModelEvents(input.threadId)),
       [M.fileUrl]: (
         input: Parameters<typeof service.fileUrl>[0] & { allowLarge?: boolean | undefined },
       ) => auth.effect(M.fileUrl, service.fileUrl(input, input.allowLarge)),

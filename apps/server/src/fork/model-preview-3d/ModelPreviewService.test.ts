@@ -11,9 +11,24 @@ import * as Fiber from "effect/Fiber";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
+import * as DateTime from "effect/DateTime";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ProcessRunnerModule from "../../processRunner.ts";
 import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import {
+  ProjectId,
+  ThreadId,
+  RunId,
+  CheckpointId,
+  CheckpointScopeId,
+  NodeId,
+  CheckpointRef,
+  type OrchestrationV2Checkpoint,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2ThreadProjection,
+} from "@t3tools/contracts";
+import type { ModelEditorEvent, ModelMeasurement } from "@t3tools/contracts/fork";
 import { make } from "./ModelPreviewService.ts";
 import { ModelPreviewMigrations } from "./migrations.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
@@ -101,9 +116,24 @@ const setup = Effect.gen(function* () {
   let exportFailure: "timeout" | "error" | "missing" | null = null;
   let duringRender: Effect.Effect<void, PlatformError> | null = null;
   let block: { started: Deferred.Deferred<void>; cancelled: Deferred.Deferred<void> } | null = null;
+  const liveRunner = yield* ProcessRunner;
+  let gitCalls = 0;
+  let refreshCalls = 0;
+  let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
+  let events: Stream.Stream<OrchestrationV2DomainEvent> = Stream.empty;
+  let entryPaths = ["models/part.scad", "models/part.stl", "models/part.step", "models/ignore.txt"];
+  const threads = partial<ThreadManagementService["Service"]>({
+    get streamDomainEvents() {
+      return events;
+    },
+  });
   const runner = ProcessRunner.of({
     run: (input) =>
       Effect.gen(function* () {
+        if (input.command === "git") {
+          gitCalls++;
+          return yield* liveRunner.run(input).pipe(Effect.orDie);
+        }
         if (input.args.includes("--version")) return output("OpenSCAD version 2026.10.05");
         if (input.args.includes("--help"))
           return output(
@@ -144,6 +174,8 @@ const setup = Effect.gen(function* () {
       }).pipe(Effect.orDie),
   });
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
+    getThreadRecords: () =>
+      Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
     getThread: () =>
       Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktreePath })),
   });
@@ -159,10 +191,14 @@ const setup = Effect.gen(function* () {
       ]),
   });
   const entries = partial<WorkspaceEntries["Service"]>({
+    refresh: () =>
+      Effect.sync(() => {
+        refreshCalls++;
+      }),
     list: () =>
       Effect.succeed({
-        entries: ["part.scad", "part.stl", "part.step", "ignore.txt"].map((name) => ({
-          path: `models/${name}`,
+        entries: entryPaths.map((name) => ({
+          path: name,
           kind: "file" as const,
         })),
         truncated: false,
@@ -179,6 +215,7 @@ const setup = Effect.gen(function* () {
       Effect.provideService(WorkspaceEntries, entries),
       Effect.provideService(ServerSecretStore, secret),
       Effect.provideService(ProcessRunner, runner),
+      Effect.provideService(ThreadManagementService, threads),
       Effect.provideService(FileSystem.FileSystem, filesystem),
     );
   return {
@@ -189,6 +226,18 @@ const setup = Effect.gen(function* () {
     file,
     create,
     getRenders: () => renders,
+    initGit: () => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd: root }),
+    getGitCalls: () => gitCalls,
+    getRefreshCalls: () => refreshCalls,
+    setEntries: (names: string[]) => {
+      entryPaths = names;
+    },
+    setCheckpoints: (checkpoints: readonly OrchestrationV2Checkpoint[]) => {
+      checkpointRecords = checkpoints;
+    },
+    setEvents: (value: Stream.Stream<OrchestrationV2DomainEvent>) => {
+      events = value;
+    },
     getProjections: () => projections,
     getRuns: () => runs,
     setOverhangMesh: (bytes: Uint8Array) => {
@@ -217,7 +266,9 @@ const setup = Effect.gen(function* () {
     },
   };
 });
-const testLayer = Layer.mergeAll(NodeServices.layer, SqlitePersistenceMemory);
+const testLayer = Layer.mergeAll(NodeServices.layer, SqlitePersistenceMemory).pipe(
+  Layer.provideMerge(ProcessRunnerModule.layer.pipe(Layer.provide(NodeServices.layer))),
+);
 it.effect(
   "discovers formats and refuses STEP, missing files, symlinks and oversized signed resources",
   () =>
@@ -677,6 +728,7 @@ it.effect("isolates variant jobs, persists workspace identities and gates agent 
     expect((yield* service.parameters(t.file)).lastUsed).toEqual({ width: "3" });
     const measurement = {
       id: "distance",
+      kind: "distance" as const,
       name: "Width",
       sourceRevision: "mesh1",
       start: [0, 0, 0] as const,
@@ -861,6 +913,7 @@ it.effect("slow workspace subscribers retain their latest change despite unrelat
     yield* Deferred.await(ready);
     const item = {
       id: "distance",
+      kind: "distance" as const,
       name: "Width",
       sourceRevision: "mesh",
       start: [0, 0, 0] as const,
@@ -960,4 +1013,248 @@ it.effect("discards renders after edits to saved sets or known dependencies", ()
       expect(next.cached).toBe(false);
     }
   }).pipe(Effect.provide(testLayer), Effect.scoped),
+);
+
+const checkpoint = (
+  threadId: ThreadId,
+  turn: number,
+  files: readonly string[],
+  patch: Partial<OrchestrationV2Checkpoint> = {},
+): OrchestrationV2Checkpoint => ({
+  id: CheckpointId.make(`checkpoint-${turn}`),
+  threadId,
+  scopeId: CheckpointScopeId.make("root"),
+  runId: RunId.make(`run-${turn}`),
+  nodeId: NodeId.make(`node-${turn}`),
+  parentCheckpointId: null,
+  ordinalWithinScope: turn,
+  appRunOrdinal: turn,
+  ref: CheckpointRef.make(`refs/checkpoints/${turn}`),
+  status: "ready",
+  files: files.map((path) => ({ path, kind: "modified", additions: 0, deletions: 0 })),
+  capturedAt: DateTime.makeUnsafe("2026-10-10T00:00:00Z"),
+  ...patch,
+});
+const checkpointEvent = (value: OrchestrationV2Checkpoint): OrchestrationV2DomainEvent =>
+  ({ type: "checkpoint.captured", payload: value }) as OrchestrationV2DomainEvent;
+
+it.effect("maps current ready root checkpoints through a real Git workspace prefix", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    t.setWorkspace(t.path.join(t.root, "models"));
+    t.setEntries(["part.scad", "shape.scad", "part.stl", "part.step"]);
+    t.setCheckpoints([
+      checkpoint(t.file.threadId, 1, ["models/part.scad"], { runId: null, appRunOrdinal: null }),
+      checkpoint(t.file.threadId, 2, ["models/part.stl"], { status: "stale" }),
+      checkpoint(t.file.threadId, 3, [
+        "outside.stl",
+        "models/shape.scad",
+        "models/part.step",
+        "models/deleted.stl",
+      ]),
+    ]);
+    const service = yield* t.create();
+    const result = yield* service.turnModels(t.file.threadId, RunId.make("run-3"));
+    expect(result).toMatchObject({ turn: 3, checkpointId: "checkpoint-3", truncated: false });
+    expect(result.models).toEqual([
+      { path: "shape.scad", format: "scad", reason: "written", via: null },
+      { path: "part.scad", format: "scad", reason: "dependency", via: "shape.scad" },
+    ]);
+    expect((yield* service.turnModels(t.file.threadId, RunId.make("run-2"))).models).toEqual([]);
+    expect((yield* service.turnModels(t.file.threadId, null)).runId).toBe("run-3");
+    expect(t.getGitCalls()).toBe(1);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("looks back through code-only turns and returns no models outside Git", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const nonGit = yield* t.create();
+    expect((yield* nonGit.turnModels(t.file.threadId, null)).models).toEqual([]);
+    yield* t.initGit();
+    t.setCheckpoints([
+      checkpoint(t.file.threadId, 4, ["models/part.stl"]),
+      checkpoint(t.file.threadId, 5, ["app.ts"]),
+      checkpoint(t.file.threadId, 6, ["models/gone.stl"]),
+    ]);
+    const service = yield* t.create();
+    expect((yield* service.turnModels(t.file.threadId, null)).runId).toBe("run-4");
+    t.setCheckpoints(
+      Array.from({ length: 21 }, (_, i) =>
+        checkpoint(t.file.threadId, i + 1, i === 0 ? ["models/part.stl"] : ["app.ts"]),
+      ),
+    );
+    expect((yield* service.turnModels(t.file.threadId, null)).runId).toBeNull();
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect(
+  "emits only this thread's finished model checkpoints and skips empty and code turns",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      yield* t.initGit();
+      t.setEvents(
+        Stream.make(
+          checkpointEvent(checkpoint(ThreadId.make("other"), 1, ["models/part.stl"])),
+          checkpointEvent(checkpoint(t.file.threadId, 2, [])),
+          checkpointEvent(checkpoint(t.file.threadId, 3, ["app.ts"])),
+          checkpointEvent(checkpoint(t.file.threadId, 4, ["models/part.stl"], { status: "error" })),
+          checkpointEvent(checkpoint(t.file.threadId, 5, ["models/part.stl"])),
+        ),
+      );
+      const service = yield* t.create();
+      const result = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId));
+      expect(result.map((turn) => turn.turn)).toEqual([5]);
+      expect(result[0]?.models[0]?.path).toBe("models/part.stl");
+      expect(t.getRefreshCalls()).toBe(1);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect(
+  "finds transitive uncached includes, rejects escaped symlinks and bounds source reads",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      yield* t.initGit();
+      const outside = yield* t.fs.makeTempDirectoryScoped();
+      yield* t.fs.writeFileString(t.path.join(outside, "outside.scad"), "include <shape.scad>");
+      yield* t.fs.symlink(
+        t.path.join(outside, "outside.scad"),
+        t.path.join(t.root, "models/escape.scad"),
+      );
+      yield* t.fs.writeFileString(t.path.join(t.root, "models/top.scad"), "include <part.scad>");
+      yield* t.fs.writeFileString(
+        t.path.join(t.root, "models/large.scad"),
+        " ".repeat(256 * 1024 + 1),
+      );
+      t.setEntries([
+        "models/part.scad",
+        "models/top.scad",
+        "models/shape.scad",
+        "models/escape.scad",
+        "models/large.scad",
+      ]);
+      t.setCheckpoints([checkpoint(t.file.threadId, 1, ["models/shape.scad"])]);
+      const service = yield* t.create();
+      const result = yield* service.turnModels(t.file.threadId, null);
+      expect(result.models.map((model) => model.path)).toEqual([
+        "models/shape.scad",
+        "models/part.scad",
+        "models/top.scad",
+      ]);
+      expect(result.truncated).toBe(true);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+
+it.effect(
+  "returns a saved circle measurement to the editor action waiting for acknowledgement",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const absolute = t.path.join(t.root, t.file.path);
+      const info = yield* t.fs.stat(absolute);
+      // Immediate external path lookups let startImmediately establish the listener without sleeps.
+      const filesystem = {
+        ...t.fs,
+        realPath: (path: string) => Effect.succeed(path),
+        stat: (path: string) => (path === absolute ? Effect.succeed(info) : t.fs.stat(path)),
+      };
+      const service = yield* t.create(filesystem);
+      const received = yield* Deferred.make<typeof ModelEditorEvent.Type>();
+      const reader = yield* service.editorEvents(t.file).pipe(
+        Stream.tap((event) => Deferred.succeed(received, event)),
+        Stream.runDrain,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      const job = yield* service
+        .editorAction({
+          ...t.file,
+          command: { action: "pick", measure: "hole", points: [[1, 0, 0]] },
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      const event = yield* Deferred.await(received);
+      const measurement: ModelMeasurement = {
+        id: "hole-1",
+        name: "Hole 1",
+        sourceRevision: "mesh",
+        kind: "circle",
+        start: [-2, 0, 0],
+        end: [2, 0, 0],
+        visible: true,
+        circle: { center: [0, 0, 0], normal: [0, 0, 1], diameter: 4, sides: 6 },
+      };
+      yield* service.completeEditorAction({
+        ...t.file,
+        requestId: event.requestId,
+        message: "Measured hole",
+        measurement,
+      });
+      expect((yield* Fiber.join(job)).measurement).toEqual(measurement);
+      yield* Fiber.interrupt(reader);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("caches SCAD reference parses by revision and updates reverse edges after edits", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    t.setEntries(["models/part.scad", "models/shape.scad"]);
+    t.setCheckpoints([checkpoint(t.file.threadId, 1, ["models/shape.scad"])]);
+    let reads = 0;
+    const filesystem = {
+      ...t.fs,
+      readFileString: (path: string, encoding?: string) => {
+        if (path.endsWith(".scad")) reads++;
+        return t.fs.readFileString(path, encoding);
+      },
+    };
+    const service = yield* t.create(filesystem);
+    expect((yield* service.turnModels(t.file.threadId, null)).models).toHaveLength(2);
+    expect((yield* service.turnModels(t.file.threadId, null)).models).toHaveLength(2);
+    expect(reads).toBe(2);
+    yield* t.fs.writeFileString(t.path.join(t.root, t.file.path), "cube(4);");
+    expect(
+      (yield* service.turnModels(t.file.threadId, null)).models.map((item) => item.path),
+    ).toEqual(["models/shape.scad"]);
+    expect(reads).toBe(3);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+
+it.effect(
+  "refreshes discovery only for candidate turns and preserves symlink heightmap reasons",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      yield* t.initGit();
+      yield* t.fs.writeFileString(
+        t.path.join(t.root, t.file.path),
+        'surface(file="height.dat"); surface("height.txt");',
+      );
+      yield* t.fs.writeFileString(t.path.join(t.root, "models/height.dat"), "1 2\n3 4");
+      yield* t.fs.writeFileString(t.path.join(t.root, "models/height.txt"), "4 3\n2 1");
+      yield* t.fs.symlink(
+        t.path.join(t.root, "models/height.dat"),
+        t.path.join(t.root, "models/linked.dat"),
+      );
+      t.setEntries(["models/part.scad"]);
+      t.setCheckpoints([
+        checkpoint(t.file.threadId, 1, ["models/linked.dat", "models/height.txt"]),
+        checkpoint(t.file.threadId, 2, ["source.ts"]),
+      ]);
+      const service = yield* t.create();
+      expect((yield* service.turnModels(t.file.threadId, RunId.make("run-2"))).models).toEqual([]);
+      expect(t.getRefreshCalls()).toBe(0);
+      const result = yield* service.turnModels(t.file.threadId, null);
+      expect(result.models).toEqual([
+        {
+          path: "models/part.scad",
+          format: "scad",
+          reason: "dependency",
+          via: "models/linked.dat",
+        },
+      ]);
+      expect(t.getRefreshCalls()).toBe(1);
+      t.setCheckpoints([checkpoint(t.file.threadId, 3, ["models/height.txt"])]);
+      expect((yield* service.turnModels(t.file.threadId, null)).models[0]?.via).toBe(
+        "models/height.txt",
+      );
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );

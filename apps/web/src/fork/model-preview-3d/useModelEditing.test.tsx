@@ -119,7 +119,7 @@ it("awaits measurement persistence and preserves the first point after a failed 
   await update();
   await act(async () => editing.choose("measure"));
   await act(async () => {
-    expect(await editing.onPick([[1, 2, 3]])).toBe(true);
+    expect(await editing.onPick([[1, 2, 3]])).toEqual({ measurement: null });
   });
   expect(editing.pendingPoint).toEqual([1, 2, 3]);
   mutate.mockResolvedValueOnce(undefined);
@@ -138,12 +138,14 @@ it("awaits measurement persistence and preserves the first point after a failed 
   expect(editing.pendingPoint).toEqual([1, 2, 3]);
   await act(async () => {
     resolve(EMPTY_MODEL_WORKSPACE);
-    expect(await saving).toBe(true);
+    expect(await saving).toMatchObject({
+      measurement: { kind: "distance", start: [1, 2, 3], end: [4, 6, 3] },
+    });
   });
   expect(editing.pendingPoint).toBeNull();
   expect(mutate.mock.calls.at(-1)?.[0]).toMatchObject({
     kind: "measurement",
-    item: { sourceRevision: "revision", start: [1, 2, 3], end: [4, 6, 3] },
+    item: { kind: "distance", sourceRevision: "revision", start: [1, 2, 3], end: [4, 6, 3] },
   });
 });
 it("rejects empty or inactive picks and invalidates an unfinished region when geometry changes", async () => {
@@ -157,7 +159,7 @@ it("rejects empty or inactive picks and invalidates an unfinished region when ge
         [1, 2, 3],
         [4, 5, 6],
       ]),
-    ).toBe(true);
+    ).toEqual({ measurement: null });
   });
   expect(editing.pendingRegion).toHaveLength(2);
   await update("changed");
@@ -287,4 +289,65 @@ it("returns action-specific export failures, restores overlays and releases the 
   expect(editing.error).toBeNull();
   expect(attachModelImage).not.toHaveBeenCalled();
   expect(composer).not.toHaveBeenCalled();
+});
+
+it("saves circular measurements with an honest diameter fallback and resets the mode", async () => {
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await update();
+  await act(async () => {
+    editing.choose("measure");
+    editing.setMeasureMode("hole");
+  });
+  const fit = {
+    center: [5, 6, 7] as [number, number, number],
+    normal: [1, 0, 0] as [number, number, number],
+    diameter: 3.4,
+    sides: 6,
+    loop: [],
+    rms: 0,
+  };
+  await act(async () => {
+    const saved = await editing.onCircle(fit);
+    expect(saved).toMatchObject({
+      measurement: {
+        kind: "circle",
+        name: "Hole 1",
+        circle: { center: [5, 6, 7], diameter: 3.4, sides: 6 },
+      },
+    });
+    if (saved) {
+      const { start, end } = saved.measurement;
+      expect(Math.hypot(...end.map((value, axis) => value - start[axis]!))).toBeCloseTo(3.4);
+      expect(start[0]).toBe(5);
+      expect(end[0]).toBe(5);
+    }
+  });
+  expect(editing.measureMode).toBe("hole");
+  await act(async () => editing.cancel());
+  expect(editing.measureMode).toBe("distance");
+  expect(editing.picking).toBeNull();
+});
+it("keeps failed hole picks empty and clears the hint on a successful fit", async () => {
+  await update();
+  await act(async () => {
+    editing.choose("measure");
+    editing.setMeasureMode("hole");
+  });
+  await act(async () => {
+    expect(await editing.onCircle(null)).toBe(false);
+  });
+  expect(editing.error).toBe("Click the rim of the hole");
+  expect(mutate).not.toHaveBeenCalled();
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await act(async () => {
+    await editing.onCircle({
+      center: [0, 0, 0],
+      normal: [0, 0, 1],
+      diameter: 4,
+      sides: 64,
+      loop: [],
+      rms: 0,
+    });
+  });
+  expect(editing.error).toBeNull();
 });

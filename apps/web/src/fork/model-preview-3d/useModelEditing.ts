@@ -1,8 +1,14 @@
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import type { ModelAnnotation, ModelPoint, ModelSection } from "@t3tools/contracts/fork";
+import type {
+  ModelAnnotation,
+  ModelMeasurement,
+  ModelPoint,
+  ModelSection,
+} from "@t3tools/contracts/fork";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { randomUUID } from "~/lib/utils";
+import type { CircleFit } from "./viewer/snap";
 import type { ModelViewer, OverlayAnnotation } from "./viewer/createViewer";
 import type { ScadSession } from "./ScadCustomizer";
 import { attachModelImage } from "./capture";
@@ -25,6 +31,7 @@ export function useModelEditing(
     flipped: false,
   });
   const [picking, setPicking] = useState<"measure" | "annotate" | null>(null);
+  const [measureMode, updateMeasureMode] = useState<"distance" | "hole">("distance");
   const [pendingPoint, setPendingPoint] = useState<ModelPoint | null>(null);
   const [pendingCamera, setPendingCamera] = useState<ModelAnnotation["camera"] | null>(null);
   const [pendingRegion, setPendingRegion] = useState<ModelPoint[] | null>(null);
@@ -75,6 +82,8 @@ export function useModelEditing(
   }, [workspace.data.annotations, sourceRevision, pendingRegion, pendingCamera]);
   const cancel = useCallback(() => {
     setPicking(null);
+    updateMeasureMode("distance");
+    setError(null);
     setPendingPoint(null);
     setPendingRegion(null);
     setRelink(null);
@@ -86,40 +95,90 @@ export function useModelEditing(
     },
     [cancel],
   );
+  const setMeasureMode = useCallback((mode: "distance" | "hole") => {
+    updateMeasureMode(mode);
+    setPendingPoint(null);
+    setError(null);
+  }, []);
   const mutate = workspace.mutate;
   const measurementCount = workspace.data.measurements.length;
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Geometry replacement invalidates unfinished surface picks.
   useEffect(() => cancel, [sourceRevision, cancel]);
   const onPick = useCallback(
-    async (points: ModelPoint[]) => {
+    async (points: ModelPoint[]): Promise<false | { measurement: ModelMeasurement | null }> => {
       if (!sourceRevision || !points.length) return false;
       if (picking === "measure") {
-        if (!pendingPoint) setPendingPoint(points[0]!);
-        else {
-          const saved = await mutate({
-            kind: "measurement",
-            item: {
-              id: randomUUID(),
-              name: `Distance ${measurementCount + 1}`,
-              sourceRevision,
-              start: pendingPoint,
-              end: points[0]!,
-              visible: true,
-            },
-          });
-          if (!saved) return false;
-          setPendingPoint(null);
+        if (!pendingPoint) {
+          setPendingPoint(points[0]!);
+          return { measurement: null };
         }
-        return true;
+        const measurement: ModelMeasurement = {
+          id: randomUUID(),
+          kind: "distance",
+          name: `Distance ${measurementCount + 1}`,
+          sourceRevision,
+          start: pendingPoint,
+          end: points[0]!,
+          visible: true,
+        };
+        const saved = await mutate({ kind: "measurement", item: measurement });
+        if (!saved) return false;
+        setPendingPoint(null);
+        return { measurement };
       } else if (picking === "annotate") {
         setPendingCamera(viewer.current?.snapshot() ?? null);
         setPendingRegion(points);
         setPicking(null);
-        return true;
+        return { measurement: null };
       }
       return false;
     },
     [sourceRevision, picking, pendingPoint, mutate, measurementCount, viewer],
+  );
+  const circleCount = workspace.data.measurements.filter((item) => item.kind === "circle").length;
+  const onCircle = useCallback(
+    async (fit: CircleFit | null): Promise<false | { measurement: ModelMeasurement }> => {
+      if (!fit) {
+        setError("Click the rim of the hole");
+        return false;
+      }
+      if (!sourceRevision || picking !== "measure") return false;
+      const normal = fit.normal;
+      const axis: ModelPoint = Math.abs(normal[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      const projection = axis[0] * normal[0] + axis[1] * normal[1] + axis[2] * normal[2];
+      const direction = axis.map((value, i) => value - projection * normal[i]!) as [
+        number,
+        number,
+        number,
+      ];
+      const size = Math.hypot(...direction);
+      const start = fit.center.map(
+        (value, i) => value - ((direction[i]! / size) * fit.diameter) / 2,
+      ) as [number, number, number];
+      const end = fit.center.map(
+        (value, i) => value + ((direction[i]! / size) * fit.diameter) / 2,
+      ) as [number, number, number];
+      const measurement: ModelMeasurement = {
+        id: randomUUID(),
+        kind: "circle",
+        name: `Hole ${circleCount + 1}`,
+        sourceRevision,
+        start,
+        end,
+        visible: true,
+        circle: {
+          center: fit.center,
+          normal: fit.normal,
+          diameter: fit.diameter,
+          sides: fit.sides,
+        },
+      };
+      if (!(await mutate({ kind: "measurement", item: measurement }))) return false;
+      setError(null);
+      setPendingPoint(null);
+      return { measurement };
+    },
+    [sourceRevision, picking, circleCount, mutate],
   );
   const markedCapture = async (annotation: ModelAnnotation) => {
     if (!viewer.current) throw new Error("Load the model before capturing it.");
@@ -253,12 +312,15 @@ export function useModelEditing(
     section,
     setSection,
     picking,
+    measureMode,
+    setMeasureMode,
     choose,
     pendingPoint,
     pendingRegion,
     measurements,
     annotations,
     onPick,
+    onCircle,
     cancel,
     addAnnotation,
     prepareRequest,

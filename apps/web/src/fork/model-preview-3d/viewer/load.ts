@@ -4,6 +4,7 @@ import {
   BufferGeometry,
   LoadingManager,
   Mesh,
+  InstancedMesh,
   Line,
   Points,
   Material,
@@ -53,7 +54,9 @@ export function meshStats(model: Object3D) {
   model.traverse((object) => {
     if (object instanceof Mesh)
       triangles +=
-        (object.geometry.index?.count ?? object.geometry.getAttribute("position")?.count ?? 0) / 3;
+        ((object.geometry.index?.count ?? object.geometry.getAttribute("position")?.count ?? 0) /
+          3) *
+        (object instanceof InstancedMesh ? object.count : 1);
   });
   return { box, size: box.getSize(new Vector3()).toArray(), triangles: Math.round(triangles) };
 }

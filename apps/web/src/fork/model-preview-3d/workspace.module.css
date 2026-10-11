@@ -2125,3 +2125,68 @@ button.model-bed-fit-row:focus-visible {
 .model-log > [data-level="echo"] {
   color: color-mix(in oklab, var(--primary) 55%, var(--foreground));
 }
+
+.model-change-chip {
+  position: absolute;
+  z-index: 2;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 100px);
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--model-line-strong);
+  border-radius: 9px;
+  background: var(--model-surface);
+  box-shadow: var(--model-shadow);
+  font-size: 12px;
+}
+.model-dim-delta {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.model-hint:has([role="radiogroup"]) {
+  flex-wrap: wrap;
+  max-width: calc(100% - 80px);
+  white-space: normal;
+}
+.model-snap {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.model-snap-marker {
+  position: absolute;
+  top: -5px;
+  left: -5px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid #16263e;
+  background: #3984ff;
+}
+.model-snap-marker[data-kind="midpoint"] {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+.model-snap-marker[data-kind="edge"] {
+  rotate: 45deg;
+}
+.model-snap-path {
+  fill: none;
+  stroke: #3984ff;
+  stroke-width: 2px;
+}
+.model-snap-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 3px 5px;
+  border: 1px solid var(--model-line-strong);
+  border-radius: 4px;
+  background: var(--model-surface);
+  color: var(--foreground);
+  font-size: 11px;
+  white-space: nowrap;
+}

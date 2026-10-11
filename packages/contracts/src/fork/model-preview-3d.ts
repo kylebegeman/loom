@@ -7,7 +7,7 @@ import { ModelWorkspace, ModelWorkspaceOperation } from "./model-workspace.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
-import { ThreadId } from "../baseSchemas.ts";
+import { ThreadId, RunId, CheckpointId, PositiveInt } from "../baseSchemas.ts";
 import { EnvironmentAuthorizationError } from "../auth.ts";
 
 export const MODEL_PREVIEW_3D_WS_METHODS = {
@@ -20,6 +20,8 @@ export const MODEL_PREVIEW_3D_WS_METHODS = {
   cancelVariant: "loom.model-preview-3d.cancelVariant",
   status: "loom.model-preview-3d.status",
   listModels: "loom.model-preview-3d.listModels",
+  turnModels: "loom.model-preview-3d.turnModels",
+  turnModelEvents: "loom.model-preview-3d.turnModelEvents",
   fileUrl: "loom.model-preview-3d.fileUrl",
   watch: "loom.model-preview-3d.watch",
   parameters: "loom.model-preview-3d.parameters",
@@ -41,6 +43,42 @@ export const THREE_MF_UNIT_MM = {
 } as const;
 
 export const ModelFormat = Schema.Literals(["stl", "3mf", "obj", "glb", "gltf", "scad", "step"]);
+
+export const MODEL_EXTENSIONS = {
+  ".stl": "stl",
+  ".3mf": "3mf",
+  ".obj": "obj",
+  ".gltf": "gltf",
+  ".glb": "glb",
+  ".scad": "scad",
+  ".step": "step",
+  ".stp": "step",
+} as const;
+/** Shared format recognition for server and clients. */
+export const modelFormatOf = (path: string): ModelFormat | null => {
+  const name = path
+    .slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1)
+    .toLowerCase();
+  const extension = name.slice(name.lastIndexOf("."));
+  return MODEL_EXTENSIONS[extension as keyof typeof MODEL_EXTENSIONS] ?? null;
+};
+
+export const TurnModel = Schema.Struct({
+  path: Schema.String,
+  format: ModelFormat,
+  reason: Schema.Literals(["written", "dependency"]),
+  via: Schema.NullOr(Schema.String),
+});
+export const TurnModels = Schema.Struct({
+  threadId: ThreadId,
+  runId: Schema.NullOr(RunId),
+  checkpointId: Schema.NullOr(CheckpointId),
+  turn: Schema.NullOr(PositiveInt),
+  models: Schema.Array(TurnModel).check(Schema.isMaxLength(50)),
+  truncated: Schema.Boolean,
+});
+export type TurnModel = typeof TurnModel.Type;
+export type TurnModels = typeof TurnModels.Type;
 
 export const ModelFileRef = Schema.Struct({
   threadId: ThreadId,
@@ -144,6 +182,10 @@ export const ScadRenderResult = Schema.Struct({
 export const DisplayUnits = Schema.Literals(["mm", "in"]);
 export type DisplayUnits = typeof DisplayUnits.Type;
 
+/** How finished agent turns offer models to clients. */
+export const AgentModelsMode = Schema.Literals(["offer", "open", "off"]);
+export type AgentModelsMode = typeof AgentModelsMode.Type;
+
 export const ModelPreviewSettings = Schema.Struct({
   openscadPath: Schema.NullOr(Schema.String),
   backend: Schema.Literals(["auto", "manifold", "cgal"]),
@@ -173,6 +215,7 @@ export const ModelPreviewSettings = Schema.Struct({
     ),
   ),
   agentToolEnabled: Schema.Boolean, // default true
+  agentModels: AgentModelsMode.pipe(Schema.withDecodingDefault(Effect.succeed("offer" as const))),
 });
 
 export class ModelPreviewError extends Schema.TaggedError<ModelPreviewError>()(
@@ -222,6 +265,7 @@ export const DEFAULT_MODEL_PREVIEW_SETTINGS: ModelPreviewSettings = {
   overhangAngleDegrees: OVERHANG_ANGLE.default,
   fabricationUrl: null,
   agentToolEnabled: true,
+  agentModels: "offer",
 };
 const rpc = <const Tag extends string, Payload extends Schema.Top, Success extends Schema.Top>(
   tag: Tag,
@@ -283,6 +327,17 @@ export const ModelPreview3dRpcGroup = RpcGroup.make(
     Schema.Struct({ threadId: ThreadId }),
     Schema.Struct({ models: Schema.Array(ModelEntry), truncated: Schema.Boolean }),
   ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.turnModels,
+    Schema.Struct({ threadId: ThreadId, runId: Schema.NullOr(RunId) }),
+    TurnModels,
+  ),
+  Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.turnModelEvents, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: TurnModels,
+    error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
+    stream: true,
+  }),
   rpc(
     MODEL_PREVIEW_3D_WS_METHODS.fileUrl,
     Schema.Struct({ ...ModelFileRef.fields, allowLarge: Schema.optional(Schema.Boolean) }),

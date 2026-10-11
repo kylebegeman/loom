@@ -55,6 +55,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [M.cancelVariant]: AuthOrchestrationOperateScope,
   [M.status]: AuthOrchestrationReadScope,
   [M.listModels]: AuthOrchestrationReadScope,
+  [M.turnModels]: AuthOrchestrationReadScope,
+  [M.turnModelEvents]: AuthOrchestrationReadScope,
   [M.fileUrl]: AuthOrchestrationReadScope,
   [M.watch]: AuthOrchestrationReadScope,
   [M.parameters]: AuthOrchestrationReadScope,

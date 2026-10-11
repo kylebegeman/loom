@@ -4,6 +4,7 @@ import {
   ModelPreviewSettings,
   activeBed,
   type DisplayUnits,
+  type AgentModelsMode,
   type ScaleReference,
   SCALE_REFERENCE_LABELS,
   type BuildPlatePattern,
@@ -56,6 +57,10 @@ function SettingsForm({
     [message, setMessage] = useState<string | null>(null),
     [failed, setFailed] = useState(false),
     [detection, setDetection] = useState<ModelPreviewStatus | null>(null);
+  const configs = useServerConfigs();
+  const supportsAgentModels = loomFeaturesOf(
+    configs.get(environmentId)?.environment.capabilities,
+  ).includes("model-follow-agent");
   const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
   const status = useAtomValue(models.status({ environmentId, input: {} }));
   const info = detection ?? Option.getOrNull(AsyncResult.value(status));
@@ -355,6 +360,40 @@ function SettingsForm({
             />
           }
         />
+        {supportsAgentModels && (
+          <SettingsRow
+            title="When an agent writes a model"
+            description="Offer models a turn wrote or changed, or open them in the 3D panel."
+            control={
+              <Select
+                disabled={!canSave}
+                value={settings.agentModels}
+                onValueChange={(next: AgentModelsMode | null) => {
+                  if (next) set("agentModels", next);
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-full sm:w-48"
+                  aria-label="When an agent writes a model"
+                >
+                  <SelectValue>
+                    {
+                      { offer: "Offer to open", open: "Open automatically", off: "Do nothing" }[
+                        settings.agentModels
+                      ]
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem value="offer">Offer to open</SelectItem>
+                  <SelectItem value="open">Open automatically</SelectItem>
+                  <SelectItem value="off">Do nothing</SelectItem>
+                </SelectPopup>
+              </Select>
+            }
+          />
+        )}
         <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
           <div className="flex flex-wrap gap-2">
             <Button

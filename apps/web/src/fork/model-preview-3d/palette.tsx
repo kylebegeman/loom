@@ -3,6 +3,7 @@ import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { forkPanelSurface } from "../panels/registry";
 import { dispatchModelAction, modelOverhangsShown } from "./actions";
+import { modelSurface, openLastAgentModels } from "./agentModels";
 export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
   id: "model-preview-3d",
   items: ({ activeThreadRef, loomFeatures, modelFiles }) => {
@@ -41,16 +42,24 @@ export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
                 value: `action:loom:model-preview-3d:file:${path}`,
                 title: path,
                 run: async () => {
-                  useRightPanelStore.getState().openSurface(activeThreadRef, {
-                    ...forkPanelSurface("model-preview-3d", path),
-                    title: path.split("/").at(-1) ?? path,
-                  });
+                  useRightPanelStore.getState().openSurface(activeThreadRef, modelSurface(path));
                 },
               })),
             ],
           },
         ],
       },
+      ...(loomFeatures.includes("model-follow-agent")
+        ? [
+            {
+              ...base,
+              kind: "action" as const,
+              value: "action:loom:model-preview-3d:last-agent-turn",
+              title: "3D model: Open models from the last turn",
+              run: () => openLastAgentModels(activeThreadRef),
+            },
+          ]
+        : []),
       ...(
         [
           "capture",
@@ -60,12 +69,13 @@ export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
           "copy-view",
           "save-view",
           "toggle-overhangs",
+          "toggle-previous",
         ] as const
       ).map((action) => ({
         ...base,
         kind: "action" as const,
         value: `action:loom:model-preview-3d:${action}`,
-        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs" }[action]}`,
+        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs", "toggle-previous": "Show or hide previous version" }[action]}`,
         run: async () => {
           dispatchModelAction(activeThreadRef, action);
         },

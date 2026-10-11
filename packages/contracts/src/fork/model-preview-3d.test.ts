@@ -1,6 +1,10 @@
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { DEFAULT_MODEL_PREVIEW_SETTINGS, ModelPreviewSettings } from "./model-preview-3d.ts";
+import {
+  DEFAULT_MODEL_PREVIEW_SETTINGS,
+  ModelPreviewSettings,
+  modelFormatOf,
+} from "./model-preview-3d.ts";
 import { ModelEditorAction } from "./model-editor.ts";
 import { ModelCamera } from "./model-workspace.ts";
 
@@ -64,4 +68,18 @@ it("loads old overhang preferences and validates the threshold and camera toggle
   };
   expect(decodeCamera(oldCamera).overhangs).toBe(false);
   expect(decodeEditor({ action: "display", overhangs: true }).overhangs).toBe(true);
+});
+
+it("defaults legacy settings to offer agent models and rejects unknown modes", () => {
+  expect(decodeSettings(legacySettings).agentModels).toBe("offer");
+  for (const agentModels of ["offer", "open", "off"])
+    expect(decodeSettings({ ...legacySettings, agentModels }).agentModels).toBe(agentModels);
+  expect(() => decodeSettings({ ...legacySettings, agentModels: "always" })).toThrow();
+});
+it("recognizes shared model extensions without mistaking directories for extensions", () => {
+  expect(modelFormatOf("part.STL")).toBe("stl");
+  expect(modelFormatOf("a.stp")).toBe("step");
+  expect(modelFormatOf("notes.txt")).toBeNull();
+  expect(modelFormatOf("Makefile")).toBeNull();
+  expect(modelFormatOf("folder.scad/Makefile")).toBeNull();
 });

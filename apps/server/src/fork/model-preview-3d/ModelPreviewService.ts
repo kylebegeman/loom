@@ -19,10 +19,11 @@ import {
   type ModelFileRef,
   type ModelPreviewSettings,
   type ModelProjection,
-  type ModelEntry,
   type ScadRenderInput,
   ScadRenderResult,
   type ModelWatchEvent,
+  type TurnModels,
+  modelFormatOf,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -38,6 +39,11 @@ import * as Fiber from "effect/Fiber";
 import * as Cause from "effect/Cause";
 import * as Exit from "effect/Exit";
 import * as DateTime from "effect/DateTime";
+import type { RunId } from "@t3tools/contracts";
+import { makeTurnFiles, type TurnCheckpoint } from "../turnFiles.ts";
+import { SCAD_INPUT_EXTENSIONS } from "./formats.ts";
+import { scadReferences, resolveScadReference } from "./scadIncludes.ts";
+import { dependentModels, modelCandidates, capTurnModels } from "./turnModels.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
@@ -76,16 +82,6 @@ const mapError = (cause: unknown) =>
         cause instanceof Error ? cause.message : "The model operation failed.",
       );
 const checked = <A, E, R>(effect: Effect.Effect<A, E, R>) => effect.pipe(Effect.mapError(mapError));
-const formats: Readonly<Record<string, ModelEntry["format"]>> = {
-  ".stl": "stl",
-  ".3mf": "3mf",
-  ".obj": "obj",
-  ".gltf": "gltf",
-  ".glb": "glb",
-  ".scad": "scad",
-  ".step": "step",
-  ".stp": "step",
-};
 const Sidecar = Schema.Struct({
   fileFormatVersion: Schema.optional(Schema.String),
   parameterSets: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Unknown)),
@@ -132,6 +128,8 @@ export const make = Effect.gen(function* () {
   const workspaceLock = yield* Semaphore.make(1);
   const workspaceSubscribers = new Map<string, Set<PubSub.PubSub<void>>>();
   const dependencies = new Map<string, string[]>();
+  const turnFiles = yield* makeTurnFiles;
+  const scadParseCache = new Map<string, { revision: string; refs: readonly string[] }>();
   const depUpdates = yield* PubSub.unbounded<string>();
   const jobs = new Map<string, Fiber.Fiber<ScadRenderResult, ModelPreviewError>>();
   const jobLock = yield* Semaphore.make(1),
@@ -184,6 +182,171 @@ export const make = Effect.gen(function* () {
     if (info.type !== "File") return yield* error("not-found", "Choose a model file.");
     return { ...workspace, absolute: real, info };
   });
+  const containedReference = Effect.fn("ModelPreview.containedReference")(function* (
+    root: string,
+    absolute: string,
+  ) {
+    if (!isContained(root, absolute)) return null;
+    // Missing inputs still affect their including model, but existing symlinks must stay inside.
+    const canonical = yield* fs.realPath(absolute).pipe(Effect.orElseSucceed(() => absolute));
+    return isContained(root, canonical) ? canonical : null;
+  });
+  const scadDependents = Effect.fn("ModelPreview.scadDependents")(function* (
+    threadId: ModelFileRef["threadId"],
+    root: string,
+    changed: readonly string[],
+  ) {
+    const reverse = new Map<string, Set<string>>();
+    const add = (dependency: string, model: string) => {
+      if (!isContained(root, dependency) || !isContained(root, model)) return;
+      const parents = reverse.get(dependency) ?? new Set<string>();
+      parents.add(model);
+      reverse.set(dependency, parents);
+    };
+    for (const [model, inputs] of dependencies)
+      if (modelFormatOf(model) === "scad") for (const input of inputs) add(input, model);
+    const listing = yield* entries.list({ cwd: root });
+    const sources = listing.entries.filter(
+      (entry) => entry.kind === "file" && modelFormatOf(entry.path) === "scad",
+    );
+    const scanned = yield* Effect.forEach(
+      sources.slice(0, 500),
+      (entry) =>
+        Effect.gen(function* () {
+          const resolved = yield* resolveFile({ threadId, path: entry.path });
+          if (Number(resolved.info.size) > 256 * 1024) return null;
+          const revision = metadata(resolved.info).revision;
+          let parsed = scadParseCache.get(resolved.absolute);
+          if (parsed?.revision !== revision) {
+            const source = yield* fs.readFileString(resolved.absolute);
+            if (source.length > 256 * 1024) return null;
+            parsed = {
+              revision,
+              refs: scadReferences(source).map((ref) =>
+                resolveScadReference(resolved.absolute, ref),
+              ),
+            };
+            if (!scadParseCache.has(resolved.absolute) && scadParseCache.size >= 2000)
+              scadParseCache.delete(scadParseCache.keys().next().value!);
+            scadParseCache.set(resolved.absolute, parsed);
+          }
+          for (const input of parsed.refs) {
+            const contained = yield* containedReference(root, input);
+            if (contained) add(contained, resolved.absolute);
+          }
+          return resolved.absolute;
+        }).pipe(Effect.option),
+      { concurrency: 8 },
+    );
+    const changedAbsolute = yield* Effect.forEach(changed, (file) =>
+      containedReference(root, path.resolve(root, file)),
+    );
+    const changedPaths = new Map<string, string>();
+    for (let index = 0; index < changedAbsolute.length; index++) {
+      const absolute = changedAbsolute[index];
+      if (absolute && !changedPaths.has(absolute)) changedPaths.set(absolute, changed[index]!);
+    }
+    const result = dependentModels([...changedPaths.keys()], reverse);
+    const relative = new Map(
+      [...result.models].map(([model, via]) => [
+        path.relative(root, model).split(path.sep).join("/"),
+        changedPaths.get(via)!,
+      ]),
+    );
+    return {
+      models: relative,
+      truncated:
+        result.truncated ||
+        listing.truncated ||
+        sources.length > 500 ||
+        scanned.some((item) => Option.isNone(item) || item.value === null),
+    };
+  });
+  const modelsForCheckpoint = Effect.fn("ModelPreview.modelsForCheckpoint")(function* (
+    threadId: ModelFileRef["threadId"],
+    root: string,
+    prefix: string,
+    checkpoint: TurnCheckpoint,
+  ) {
+    const changed = turnFiles.workspaceFiles(prefix, checkpoint.files);
+    const inputs = changed.filter((file) =>
+      SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()),
+    );
+    const dependent = inputs.length
+      ? yield* scadDependents(threadId, root, inputs)
+      : {
+          models: new Map<string, string>(),
+          truncated: false,
+        };
+    const candidates = modelCandidates(changed, dependent.models);
+    const valid = yield* Effect.forEach(
+      candidates,
+      (candidate) =>
+        resolveFile({ threadId, path: candidate.path }).pipe(Effect.as(candidate), Effect.option),
+      { concurrency: 16 },
+    );
+    const capped = capTurnModels(valid.flatMap(Option.toArray));
+    return {
+      threadId,
+      runId: checkpoint.runId,
+      checkpointId: checkpoint.checkpointId,
+      turn: checkpoint.turn,
+      models: capped.models,
+      truncated: capped.truncated || dependent.truncated,
+    } satisfies TurnModels;
+  });
+  const emptyTurnModels = (threadId: ModelFileRef["threadId"]): TurnModels => ({
+    threadId,
+    runId: null,
+    checkpointId: null,
+    turn: null,
+    models: [],
+    truncated: false,
+  });
+  const turnModels = Effect.fn("ModelPreview.turnModels")(function* (
+    threadId: ModelFileRef["threadId"],
+    runId: RunId | null,
+  ) {
+    const { root } = yield* resolveWorkspace({ threadId, path: "." });
+    const prefix = yield* turnFiles.repoPrefix(root);
+    if (prefix === null) return emptyTurnModels(threadId);
+    const checkpoints = yield* turnFiles.turnCheckpoints(threadId, runId, 20);
+    // The workspace index is cached. Refresh once per lookup only when SCAD dependencies matter.
+    if (
+      checkpoints.some((checkpoint) =>
+        turnFiles
+          .workspaceFiles(prefix, checkpoint.files)
+          .some((file) => SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase())),
+      )
+    )
+      yield* entries.refresh(root);
+    for (const checkpoint of checkpoints) {
+      const models = yield* modelsForCheckpoint(threadId, root, prefix, checkpoint);
+      if (runId !== null || models.models.length) return models;
+    }
+    return emptyTurnModels(threadId);
+  });
+  const turnModelEvents = (threadId: ModelFileRef["threadId"]) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const { root } = yield* resolveWorkspace({ threadId, path: "." });
+        const prefix = yield* turnFiles.repoPrefix(root);
+        if (prefix === null) return Stream.empty;
+        return turnFiles.turnCheckpointEvents(threadId).pipe(
+          Stream.mapEffect((checkpoint) =>
+            Effect.gen(function* () {
+              const changed = turnFiles.workspaceFiles(prefix, checkpoint.files);
+              if (
+                changed.some((file) => SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()))
+              )
+                yield* entries.refresh(root);
+              return yield* modelsForCheckpoint(threadId, root, prefix, checkpoint);
+            }),
+          ),
+          Stream.filter((result) => result.models.length > 0),
+        );
+      }),
+    ).pipe(Stream.mapError(mapError));
   const sign = Effect.fn("ModelPreview.sign")(function* (
     root: string,
     absolute: string,
@@ -224,7 +387,7 @@ export const make = Effect.gen(function* () {
   });
   const parameters = Effect.fn("ModelPreview.parameters")(function* (file: ModelFileRef) {
     const resolved = yield* resolveFile(file);
-    if (formats[path.extname(file.path).toLowerCase()] !== "scad")
+    if (modelFormatOf(file.path) !== "scad")
       return yield* error("unsupported-format", "Parameters are available for OpenSCAD files.");
     const source = yield* fs.readFileString(resolved.absolute);
     const parsed = parseCustomizer(source);
@@ -594,7 +757,7 @@ export const make = Effect.gen(function* () {
   });
   const renderScad = Effect.fn("ModelPreview.renderScad")(function* (input: ScadRenderInput) {
     const resolved = yield* resolveFile(input.file);
-    if (formats[path.extname(input.file.path).toLowerCase()] !== "scad")
+    if (modelFormatOf(input.file.path) !== "scad")
       return yield* error("unsupported-format", "Choose an OpenSCAD file.");
     const jobKey = resolved.absolute + (input.variantId ? `\0${input.variantId}` : "");
     const fiber = yield* jobLock.withPermit(
@@ -900,6 +1063,7 @@ export const make = Effect.gen(function* () {
             ...(input.camera ? { camera: input.camera } : {}),
             ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}),
             ...(input.state ? { state: input.state } : {}),
+            ...(input.measurement ? { measurement: input.measurement } : {}),
           };
         }),
       ),
@@ -989,21 +1153,22 @@ export const make = Effect.gen(function* () {
           ),
         ),
       ),
+    turnModels: (threadId: ModelFileRef["threadId"], runId: RunId | null) =>
+      checked(turnModels(threadId, runId)),
+    turnModelEvents,
     listModels: (threadId: ModelFileRef["threadId"]) =>
       checked(
         Effect.gen(function* () {
           const { root } = yield* resolveWorkspace({ threadId, path: "." });
           const listing = yield* entries.list({ cwd: root });
-          const names = listing.entries.filter(
-            (e) => e.kind === "file" && formats[path.extname(e.path).toLowerCase()],
-          );
+          const names = listing.entries.filter((e) => e.kind === "file" && modelFormatOf(e.path));
           const models = yield* Effect.forEach(
             names.slice(0, 2000),
             (e) =>
               resolveFile({ threadId, path: e.path }).pipe(
                 Effect.map((file) => ({
                   path: e.path,
-                  format: formats[path.extname(e.path).toLowerCase()]!,
+                  format: modelFormatOf(e.path)!,
                   ...metadata(file.info),
                 })),
                 Effect.option,
@@ -1019,7 +1184,7 @@ export const make = Effect.gen(function* () {
     fileUrl: (file: ModelFileRef, allowLarge = false) =>
       checked(
         Effect.gen(function* () {
-          const format = formats[path.extname(file.path).toLowerCase()];
+          const format = modelFormatOf(file.path);
           if (!format || format === "step" || format === "scad")
             return yield* error("unsupported-format", "This format cannot be loaded as a mesh.");
           const resolved = yield* resolveFile(file);
@@ -1135,7 +1300,7 @@ export const make = Effect.gen(function* () {
                         "Overhang angles must be whole degrees from 30 to 70.",
                       );
                     const resolved = yield* resolveFile(file),
-                      format = formats[path.extname(file.path).toLowerCase()];
+                      format = modelFormatOf(file.path);
                     if (
                       format !== "scad" &&
                       format !== "stl" &&

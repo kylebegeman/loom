@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  CylinderGeometry,
   BufferGeometry,
   Float32BufferAttribute,
   Group,
@@ -28,6 +29,8 @@ const doubles = vi.hoisted(() => ({
   controls: null as unknown,
   environment: null as unknown,
   resized: null as (() => void) | null,
+  snapShow: vi.fn(),
+  snapHide: vi.fn(),
 }));
 vi.mock("three", async (original) => ({
   ...(await original<typeof import("three")>()),
@@ -40,6 +43,9 @@ vi.mock("three", async (original) => ({
     }
     dispose() {}
   },
+}));
+vi.mock("./snapOverlay", () => ({
+  createSnapOverlay: () => ({ show: doubles.snapShow, hide: doubles.snapHide, dispose: vi.fn() }),
 }));
 vi.mock("~/lib/observeResize", () => ({
   observeResize: (_element: Element, callback: () => void) => {
@@ -87,6 +93,8 @@ function flushFrame() {
 }
 beforeEach(() => {
   pointerHandlers = {};
+  doubles.snapShow.mockClear();
+  doubles.snapHide.mockClear();
   frames = new Map();
   sequence = 0;
   gpu = renderer();
@@ -589,6 +597,7 @@ it("updates existing measurement labels and captures without rebuilding millimet
   const measurement = {
     id: "m",
     name: "Width",
+    kind: "distance" as const,
     sourceRevision: "one",
     visible: true,
     start: [0, 0, 0] as const,
@@ -596,7 +605,7 @@ it("updates existing measurement labels and captures without rebuilding millimet
   };
   viewer.setOverlays([measurement], [], null);
   flushFrame();
-  const label = elements.find((element) => element.textContent === "25.4 mm")!;
+  const label = elements.find((element) => element.textContent === "25.40 mm")!;
   expect(label).toBeDefined();
   const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
   const line = scene.getObjectsByProperty("type", "Line")[0] as import("three").Line;
@@ -609,6 +618,24 @@ it("updates existing measurement labels and captures without rebuilding millimet
   expect(frames.size).toBe(0);
   await viewer.capture(false);
   expect(context.fillText).toHaveBeenCalledWith("1.00 in", 0, 0.5);
+  viewer.setOverlays(
+    [
+      {
+        ...measurement,
+        kind: "circle",
+        circle: { center: [0, 0, 0], normal: [0, 0, 1], diameter: 25.4, sides: 64 },
+      },
+    ],
+    [],
+    null,
+  );
+  flushFrame();
+  const circle = scene.getObjectsByProperty("type", "LineLoop")[0] as import("three").LineLoop;
+  expect(circle.geometry.getAttribute("position").count).toBe(64);
+  const circleLabel = elements.find((element) => element.textContent === "Ø1.00 in")!;
+  expect(circleLabel).toBeDefined();
+  viewer.setLengthFormat((mm) => `${mm.toFixed(2)} mm`);
+  expect(circleLabel.textContent).toBe("Ø25.40 mm");
   viewer.dispose();
   vi.restoreAllMocks();
 });
@@ -770,5 +797,229 @@ it("preserves outward facet normals for mirrored glTF nodes", () => {
   expect(stats.totalAreaMm2).toBe(5200);
   expect(stats.overhangAreaMm2).toBe(0);
   expect(stats.regions).toEqual([]);
+  viewer.dispose();
+});
+
+it("keeps normal replacement disposal when previous retention is disabled", () => {
+  const viewer = createViewer(host());
+  const first = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+  const geometryDispose = vi.spyOn(first.geometry, "dispose"),
+    materialDispose = vi.spyOn(first.material, "dispose");
+  viewer.setModel(first, false);
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), true);
+  expect(viewer.hasPrevious()).toBe(false);
+  expect(geometryDispose).toHaveBeenCalledOnce();
+  expect(materialDispose).toHaveBeenCalledOnce();
+  viewer.dispose();
+  expect(geometryDispose).toHaveBeenCalledOnce();
+  vi.restoreAllMocks();
+});
+
+it("retains exactly one previous geometry and releases it on replacement, clear and close", () => {
+  const viewer = createViewer(host());
+  viewer.keepPrevious(true);
+  const first = new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial()),
+    second = new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()),
+    third = new Mesh(new BoxGeometry(5, 5, 5), new MeshStandardMaterial());
+  const firstDispose = vi.spyOn(first.geometry, "dispose"),
+    secondDispose = vi.spyOn(second.geometry, "dispose"),
+    thirdDispose = vi.spyOn(third.geometry, "dispose");
+  viewer.setModel(first, false);
+  expect(viewer.hasPrevious()).toBe(false);
+  viewer.setModel(second, true);
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  expect(scene.getObjectByName("model-ghosts")!.children).toEqual([first]);
+  expect(first.visible).toBe(false);
+  expect(viewer.hasPrevious()).toBe(true);
+  expect(firstDispose).not.toHaveBeenCalled();
+  viewer.showPrevious(true);
+  expect(first.visible).toBe(true);
+  viewer.setModel(third, true);
+  expect(firstDispose).toHaveBeenCalledOnce();
+  expect(second.visible).toBe(true);
+  expect(scene.getObjectByName("model-ghosts")!.children).toEqual([second]);
+  viewer.keepPrevious(false);
+  expect(viewer.hasPrevious()).toBe(false);
+  expect(secondDispose).toHaveBeenCalledOnce();
+  viewer.clearPrevious();
+  viewer.dispose();
+  expect(firstDispose).toHaveBeenCalledOnce();
+  expect(secondDispose).toHaveBeenCalledOnce();
+  expect(thirdDispose).toHaveBeenCalledOnce();
+  vi.restoreAllMocks();
+});
+
+it("clips previous geometry without changing fit, picking or current geometry statistics", () => {
+  const viewer = createViewer(host());
+  viewer.keepPrevious(true);
+  viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false });
+  const previous = new Mesh(new BoxGeometry(200, 200, 200), new MeshStandardMaterial());
+  viewer.setModel(previous, false);
+  const stats = viewer.setModel(
+    new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()),
+    false,
+  );
+  expect(stats.size).toEqual([10, 10, 10]);
+  const currentCamera = viewer.snapshot();
+  viewer.showPrevious(true);
+  viewer.fit();
+  expect(viewer.snapshot()).toEqual(currentCamera);
+  const material = previous.material;
+  expect(material).toBeInstanceOf(MeshBasicMaterial);
+  expect(material.clippingPlanes?.[0]?.normal.toArray()).toEqual([0, 0, 1]);
+  expect(material.color.getHex()).toBe(0xa3acb9);
+  viewer.setSection({ enabled: true, axis: "x", offset: 2, flipped: true });
+  expect(material.clippingPlanes?.[0]?.normal.toArray()).toEqual([-1, 0, 0]);
+  expect(material.clippingPlanes?.[0]?.constant).toBe(2);
+  viewer.setSection({ enabled: false, axis: "z", offset: 0, flipped: false });
+  expect(material.clippingPlanes).toEqual([]);
+  viewer.restore({
+    ...viewer.snapshot(),
+    projection: "orthographic",
+    position: [0, 0, 300],
+    target: [0, 0, 0],
+  });
+  const callback = vi.fn();
+  viewer.setPickMode("measure", callback);
+  const event = { button: 0, clientX: 300, clientY: 200, pointerId: 1 } as PointerEvent;
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(callback).toHaveBeenCalledWith([[0, 0, 5]]);
+  expect(viewer.overhangInput()).toHaveLength(12 * 9);
+  viewer.dispose();
+});
+
+it("does not retain outgoing models over the triangle cap and clears an earlier ghost", () => {
+  const viewer = createViewer(host());
+  viewer.keepPrevious(true);
+  const first = new Mesh(new BoxGeometry(), new MeshStandardMaterial()),
+    large = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+  // The renderer is mocked; only the index count is needed to exercise the retention cap.
+  Object.defineProperty(large.geometry.index!, "count", { value: 3_000_003 });
+  const firstDispose = vi.spyOn(first.geometry, "dispose"),
+    largeDispose = vi.spyOn(large.geometry, "dispose");
+  viewer.setModel(first, false);
+  viewer.setModel(large, true);
+  expect(viewer.hasPrevious()).toBe(true);
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), true);
+  expect(viewer.hasPrevious()).toBe(false);
+  expect(firstDispose).toHaveBeenCalledOnce();
+  expect(largeDispose).toHaveBeenCalledOnce();
+  viewer.dispose();
+  vi.restoreAllMocks();
+});
+
+it("captures the scene with the live previous visibility and releases its geometry on close", async () => {
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: () => ({
+      getContext: () => ({ drawImage: vi.fn() }),
+      toBlob: (callback: BlobCallback) => callback(new Blob(["png"])),
+    }),
+  });
+  Object.assign(gpu, {
+    getSize: (size: import("three").Vector2) => size.set(600, 400),
+    getPixelRatio: () => 1,
+  });
+  const viewer = createViewer(host());
+  viewer.keepPrevious(true);
+  const previous = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+  const dispose = vi.spyOn(previous.geometry, "dispose");
+  viewer.setModel(previous, false);
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), true);
+  viewer.showPrevious(true);
+  gpu.render.mockClear();
+  await viewer.capture(false);
+  const scene = gpu.render.mock.calls[0]![0] as import("three").Scene;
+  expect(scene.getObjectByName("model-ghosts")!.children[0]).toBe(previous);
+  expect(previous.visible).toBe(true);
+  viewer.showPrevious(false);
+  await viewer.capture(false);
+  expect(previous.visible).toBe(false);
+  viewer.dispose();
+  expect(dispose).toHaveBeenCalledOnce();
+  vi.restoreAllMocks();
+});
+
+it("builds snapping lazily, caps large meshes and resets on replacement", async () => {
+  const viewer = createViewer(host());
+  const geometry = new BoxGeometry();
+  Object.defineProperty(geometry.index!, "count", { value: 3_000_003 });
+  viewer.setModel(new Mesh(geometry, new MeshStandardMaterial()), false);
+  expect(viewer.snapStatus()).toBe("idle");
+  const status = vi.fn();
+  viewer.onSnapStatus(status);
+  viewer.setPickMode("measure", vi.fn());
+  expect(viewer.snapStatus()).toBe("off");
+  expect(status).toHaveBeenLastCalledWith("off");
+  viewer.setPickMode(null, null);
+  const next = new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial());
+  viewer.setModel(next, false);
+  expect(viewer.snapStatus()).toBe("idle");
+  expect(await viewer.snapPoint([9.8, 10.1, 10.1], 1)).toEqual([10, 10, 10]);
+  expect(viewer.snapStatus()).toBe("ready");
+  viewer.dispose();
+});
+it("coalesces hover, snaps release positions and cancels pending hover when Alt is held", async () => {
+  const viewer = createViewer(host()),
+    mesh = new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial());
+  viewer.setModel(mesh, false);
+  viewer.restore({ ...viewer.snapshot(), position: [0, 0, 200], target: [0, 0, 0] });
+  await viewer.snapPoint([10, 10, 10]);
+  flushFrame();
+  gpu.render.mockClear();
+  const pick = vi.fn();
+  viewer.setPickMode("measure", pick);
+  const hits = vi
+    .spyOn(Raycaster.prototype, "intersectObject")
+    .mockReturnValue([
+      { distance: 190, point: new Vector3(9.7, 9.7, 10), object: mesh, faceIndex: 8 },
+    ] as ReturnType<Raycaster["intersectObject"]>);
+  const event = {
+    button: 0,
+    clientX: 315,
+    clientY: 185,
+    pointerId: 1,
+    altKey: false,
+  } as PointerEvent;
+  pointerHandlers.pointermove!(event);
+  pointerHandlers.pointermove!(event);
+  expect(frames.size).toBe(1);
+  flushFrame();
+  expect(doubles.snapShow).toHaveBeenCalledOnce();
+  expect(gpu.render).not.toHaveBeenCalled();
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(pick).toHaveBeenLastCalledWith([[10, 10, 10]]);
+  pointerHandlers.pointermove!(event);
+  pointerHandlers.pointermove!({ ...event, altKey: true } as PointerEvent);
+  expect(frames.size).toBe(0);
+  pointerHandlers.pointerdown!({ ...event, altKey: true } as PointerEvent);
+  pointerHandlers.pointerup!({ ...event, altKey: true } as PointerEvent);
+  expect(pick).toHaveBeenLastCalledWith([[9.7, 9.7, 10]]);
+  viewer.dispose();
+  hits.mockRestore();
+});
+it("finds circles from model-space points regardless of camera and ignores retained ghosts", async () => {
+  const viewer = createViewer(host());
+  const pin = new Mesh(new CylinderGeometry(1.7, 1.7, 8, 64), new MeshStandardMaterial());
+  pin.rotation.x = Math.PI / 2;
+  viewer.keepPrevious(true);
+  viewer.setModel(pin, false);
+  viewer.setModel(new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()), true);
+  expect(await viewer.circleNear([1.7, 0, 4], 1)).toBeNull();
+  viewer.setModel(
+    new Mesh(
+      new CylinderGeometry(1.7, 1.7, 8, 64).rotateX(Math.PI / 2),
+      new MeshStandardMaterial(),
+    ),
+    true,
+  );
+  const fit = await viewer.circleNear([1.7, 0, 4], 1);
+  expect(fit?.diameter).toBeCloseTo(3.4, 5);
+  viewer.setProjection("orthographic");
+  viewer.setView("front");
+  expect((await viewer.circleNear([1.7, 0, 4], 1))?.diameter).toBeCloseTo(fit!.diameter, 5);
   viewer.dispose();
 });

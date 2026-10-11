@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import { ThreadId } from "../baseSchemas.ts";
 import {
   ModelCamera,
+  ModelMeasurement,
   ModelSection,
   ModelVariant,
   ModelPoint,
@@ -49,6 +50,11 @@ export const ModelEditorAction = Schema.Struct({
   points: Schema.optional(
     Schema.Array(ModelPoint).check(Schema.isMinLength(1), Schema.isMaxLength(64)),
   ),
+  snap: Schema.optional(Schema.Boolean),
+  snapRadius: Schema.optional(
+    Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0.01, maximum: 50 })),
+  ),
+  measure: Schema.optional(Schema.Literals(["distance", "hole"])),
   request: Schema.optional(Schema.String.check(Schema.isMaxLength(8000))),
   values: Schema.optional(ModelVariant.fields.values),
   camera: Schema.optional(ModelCamera),
@@ -57,6 +63,7 @@ export const ModelEditorAction = Schema.Struct({
   reference: Schema.optional(ScaleReference),
   wireframe: Schema.optional(Schema.Boolean),
   overhangs: Schema.optional(Schema.Boolean),
+  previous: Schema.optional(Schema.Boolean),
   grid: Schema.optional(Schema.Boolean),
   axes: Schema.optional(Schema.Boolean),
   four: Schema.optional(Schema.Boolean),
@@ -76,9 +83,17 @@ export const ModelEditorEvent = Schema.Struct({
 export const ModelEditorState = Schema.Struct({
   inspector: Schema.NullOr(Schema.String),
   tool: Schema.NullOr(Schema.Literals(["measure", "annotate"])),
+  measureMode: Schema.optional(Schema.Literals(["distance", "hole"])),
   pendingPoint: Schema.NullOr(ModelPoint),
   pendingRegion: Schema.NullOr(Schema.Array(ModelPoint).check(Schema.isMaxLength(64))),
   loading: Schema.Boolean,
+  previous: Schema.optional(
+    Schema.Struct({
+      shown: Schema.Boolean,
+      size: ModelPoint,
+      sourceRevision: Schema.String,
+    }),
+  ),
   fit: Schema.optional(BedFitSummary),
   parameters: Schema.NullOr(
     Schema.Struct({
@@ -98,6 +113,7 @@ export const ModelEditorResult = Schema.Struct({
   camera: Schema.optional(ModelCamera),
   sourceRevision: Schema.optional(Schema.String),
   state: Schema.optional(ModelEditorState),
+  measurement: Schema.optional(ModelMeasurement),
 });
 export const ModelEditorComplete = Schema.Struct({
   threadId: ThreadId,
@@ -108,5 +124,6 @@ export const ModelEditorComplete = Schema.Struct({
   camera: Schema.optional(ModelCamera),
   sourceRevision: Schema.optional(Schema.String),
   state: Schema.optional(ModelEditorState),
+  measurement: Schema.optional(ModelMeasurement),
   png: Schema.optional(Schema.String.check(Schema.isMaxLength(12 * 1024 * 1024))),
 });

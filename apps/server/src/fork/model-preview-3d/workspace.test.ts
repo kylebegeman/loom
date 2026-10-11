@@ -41,6 +41,7 @@ it("rejects unbounded workspace data and nonfinite spatial coordinates", () => {
       kind: "measurement",
       item: {
         id: "m",
+        kind: "distance",
         name: "invalid",
         sourceRevision: "v1",
         start: [NaN, 0, 0],

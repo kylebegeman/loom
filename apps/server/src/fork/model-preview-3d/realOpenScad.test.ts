@@ -95,6 +95,12 @@ const setup = Effect.gen(function* () {
     Effect.provideService(ProjectStore.ProjectStoreV2, projectStore),
     Effect.provideService(WorkspaceEntries, entries),
     Effect.provideService(ServerSecretStore, secret),
+    Effect.provideService(
+      ThreadManagement.ThreadManagementService,
+      partial<ThreadManagement.ThreadManagementService["Service"]>({
+        streamDomainEvents: Stream.empty,
+      }),
+    ),
   );
   yield* service.updateSettings({ ...(yield* service.getSettings()), openscadPath: executable! });
   return { fs, path, root, threadId, service, file: { threadId, path: "bracket.scad" } };

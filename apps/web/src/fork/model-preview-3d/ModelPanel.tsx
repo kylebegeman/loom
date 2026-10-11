@@ -14,6 +14,8 @@ import {
 } from "react";
 import { Link } from "@tanstack/react-router";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { useAgentModelMarks } from "./agentModelMarks";
 import { useServerConfigs } from "~/state/entities";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
@@ -35,6 +37,7 @@ import {
   bedFitSummary,
   OVERHANG_ANGLE,
   type ModelProjection,
+  type ModelMeasurement,
   type ModelEntry,
   type ModelPreviewSettings,
   type ModelSavedView,
@@ -70,6 +73,9 @@ import { fitPlate, resolvePlate } from "./buildPlate";
 import { OverhangLegend } from "./OverhangLegend";
 import { useOverhangAngleSetting } from "./overhangSettings";
 import { BedPicker, useScaleReference } from "./BedPicker";
+import { Segmented } from "./controls";
+import { GHOST_TRIANGLE_LIMIT } from "./viewer/ghost";
+import { previousGeometry, type PreviewGeometry } from "./previousModel";
 import { DisplayUnitsProvider, formatLengths, unitName, useDisplayUnitsSetting } from "./units";
 import {
   canCopyImages,
@@ -91,6 +97,7 @@ import {
   DisplayTools,
   ModelTool,
   NavigationTools,
+  PreviousChip,
   SectionStrip,
   ToolHint,
   ToolRail,
@@ -115,6 +122,10 @@ function ModelFile({
   visible: boolean;
   settings: ModelPreviewSettings;
 }) {
+  const agentMark = useAgentModelMarks((state) => state.marks[scopedThreadKey(threadRef)]?.[path]);
+  useEffect(() => {
+    if (visible && agentMark) useAgentModelMarks.getState().clear(scopedThreadKey(threadRef), path);
+  }, [visible, agentMark, threadRef, path]);
   const latestSettings = useRef(settings);
   const readSettings = useCallback(() => latestSettings.current, []);
   const unitsControl = useDisplayUnitsSetting(threadRef.environmentId, settings, readSettings);
@@ -180,7 +191,25 @@ function ModelFile({
   const [variantActivity, setVariantActivity] = useState<OperationProgress | null>(null);
   const [session, setSession] = useState<ScadSession | null>(null);
   const [geometryRevision, setGeometryRevision] = useState("");
+  const [previous, setPrevious] = useState<PreviewGeometry | null>(null);
+  const [previousShown, setPreviousShown] = useState(false);
+  const [previousTooLarge, setPreviousTooLarge] = useState(false);
+  const [changed, setChanged] = useState<"chip" | "dismissed" | null>(null);
+  const [snapStatus, setSnapStatus] = useState<ReturnType<ModelViewer["snapStatus"]>>("idle");
+  const loadedGeometry = useRef<PreviewGeometry | null>(null);
+  const reloadCause = useRef<"watch" | null>(null);
+  const lastWatchedRevision = useRef<string | null>(null);
+  const showPrevious = (shown: boolean) => {
+    if (!previous || !viewer.current?.hasPrevious()) return;
+    viewer.current.showPrevious(shown);
+    setPreviousShown(shown);
+  };
+  const togglePrevious = () => showPrevious(!previousShown);
   const editing = useModelEditing(threadRef, path, viewer, geometryRevision, session);
+  const { measureMode, setMeasureMode } = editing;
+  useEffect(() => {
+    if (snapStatus === "off" && measureMode === "hole") setMeasureMode("distance");
+  }, [snapStatus, measureMode, setMeasureMode]);
   const perform = editing.perform;
   const { copyToClipboard } = useCopyToClipboard();
   const recall = (camera: ModelCamera, refit: boolean) => {
@@ -247,6 +276,7 @@ function ModelFile({
           return viewer.current;
         };
         let png: string | undefined;
+        let measurement: ModelMeasurement | undefined;
         switch (c.action) {
           case "fit":
             get().fit();
@@ -267,6 +297,10 @@ function ModelFile({
           case "display":
             get();
             if (c.overhangs !== undefined) get().setOverhangs(c.overhangs);
+            if (c.previous !== undefined) {
+              if (!previous || !get().hasPrevious()) throw new Error("No previous version yet.");
+              showPrevious(c.previous);
+            }
             if (c.reference !== undefined) {
               if (!referenceControl.canSave)
                 throw new Error("This connection cannot change model settings.");
@@ -297,6 +331,11 @@ function ModelFile({
               throw new Error("Choose select, measure or annotate.");
             get();
             editing.choose(c.name === "select" ? null : (c.name as "measure" | "annotate"));
+            if (c.name === "measure") {
+              if (c.measure === "hole" && stats && stats.triangles > GHOST_TRIANGLE_LIMIT)
+                throw new Error("Hole measurement is unavailable for models over 1M triangles.");
+              editing.setMeasureMode(c.measure ?? "distance");
+            }
             break;
           case "inspector": {
             if (c.enabled === false) {
@@ -356,13 +395,30 @@ function ModelFile({
           case "allow-large":
             setAllowLarge(c.enabled ?? true);
             break;
-          case "pick":
-            get();
+          case "pick": {
+            const current = get();
             if (!editing.canEdit || !editing.ready || !c.points)
               throw new Error("Provide model points and wait for editable workspace data.");
-            if (!(await editing.onPick([...c.points])))
+            let picked;
+            if (editing.picking === "measure" && editing.measureMode === "hole") {
+              if (c.points.length !== 1) throw new Error("Provide one point near the hole rim.");
+              const fit = await current.circleNear(c.points[0]!, c.snapRadius ?? 1);
+              if (!fit)
+                throw new Error(`No circular edge within ${c.snapRadius ?? 1} mm of that point.`);
+              picked = await editing.onCircle(fit);
+            } else {
+              const points = c.snap
+                ? await Promise.all(
+                    c.points.map((point) => current.snapPoint(point, c.snapRadius ?? 1)),
+                  )
+                : [...c.points];
+              picked = await editing.onPick(points);
+            }
+            if (!picked)
               throw new Error("Choose a picking tool first, or check the workspace save error.");
+            measurement = picked.measurement ?? undefined;
             break;
+          }
           case "save-annotation":
             get();
             if (!editing.canEdit || !editing.ready || !c.request?.trim())
@@ -443,6 +499,7 @@ function ModelFile({
         return {
           message: "3D editor action completed.",
           ...(png ? { png } : {}),
+          ...(measurement ? { measurement } : {}),
           ...(c.action === "snapshot"
             ? {
                 ...(viewer.current && stats && !progress
@@ -452,6 +509,16 @@ function ModelFile({
                 state: {
                   inspector: inspectorOpen ? inspectorTab : null,
                   tool: editing.picking,
+                  measureMode: editing.measureMode,
+                  ...(previous && viewer.current?.hasPrevious()
+                    ? {
+                        previous: {
+                          shown: previousShown,
+                          size: previous.size,
+                          sourceRevision: previous.revision,
+                        },
+                      }
+                    : {}),
                   pendingPoint: editing.pendingPoint,
                   pendingRegion: editing.pendingRegion,
                   loading: loadingFile || (!stats && !error),
@@ -506,6 +573,18 @@ function ModelFile({
   const watched = useAtomValue(
     models.watch({ environmentId: threadRef.environmentId, input: file }),
   );
+  const watchedRevision = watched._tag === "Success" ? watched.value.revision : null;
+  useLayoutEffect(() => {
+    if (
+      watchedRevision !== null &&
+      lastWatchedRevision.current !== null &&
+      watchedRevision !== lastWatchedRevision.current
+    ) {
+      reloadCause.current = "watch";
+      setChanged(null);
+    }
+    if (watchedRevision !== null) lastWatchedRevision.current = watchedRevision;
+  }, [watchedRevision]);
   // Printer, agent and Fabrication settings do not change the mesh, so they skip the reload.
   const loadKey = JSON.stringify([
     settings.openscadPath,
@@ -535,22 +614,64 @@ function ModelFile({
   }
   useEffect(() => {
     if (visible) return;
-    const timeout = setTimeout(() => setRelease(true), 60000);
+    const timeout = setTimeout(() => {
+      setRelease(true);
+      setPrevious(null);
+      setPreviousShown(false);
+      setChanged(null);
+      loadedGeometry.current = null;
+      reloadCause.current = null;
+    }, 60000);
     return () => clearTimeout(timeout);
   }, [visible]);
-  const onMesh = useCallback((url: string, meshFormat: "stl" | "3mf", meshRevision: string) => {
-    setMesh({ url, format: meshFormat, revision: meshRevision });
-    setError(null);
-  }, []);
+  const onMesh = useCallback(
+    (url: string, meshFormat: ModelEntry["format"], meshRevision: string) => {
+      if (loadedGeometry.current?.revision === meshRevision) {
+        viewer.current?.clearPrevious();
+        setPrevious(null);
+        setPreviousShown(false);
+        setChanged(null);
+        reloadCause.current = null;
+      }
+      setMesh({ url, format: meshFormat, revision: meshRevision });
+      setError(null);
+    },
+    [],
+  );
   const onError = useCallback((message: string) => setError(message), []);
   const onStats = useCallback(
     (value: ReturnType<typeof meshStats>) => {
+      const nextRevision = mesh?.revision ?? "";
+      const retained = previousGeometry(
+        loadedGeometry.current,
+        nextRevision,
+        viewer.current?.hasPrevious() ?? false,
+      );
+      if (!retained) {
+        viewer.current?.clearPrevious();
+        setPreviousShown(false);
+      }
+      setPrevious(retained);
+      setPreviousTooLarge(
+        !retained && (loadedGeometry.current?.triangles ?? value.triangles) > GHOST_TRIANGLE_LIMIT,
+      );
+      setChanged(retained && reloadCause.current === "watch" ? "chip" : null);
+      reloadCause.current = null;
+      loadedGeometry.current = {
+        revision: nextRevision,
+        size: value.size,
+        triangles: value.triangles,
+      };
       setStats(value);
-      setGeometryRevision(mesh?.revision ?? "");
+      setGeometryRevision(nextRevision);
       setError(null);
     },
     [mesh?.revision],
   );
+  const onProgress = useCallback((value: string | null) => {
+    setProgress(value);
+    if (value !== null) setChanged(null);
+  }, []);
   const onPending = useCallback((value: boolean) => {
     setPending(value);
   }, []);
@@ -568,11 +689,7 @@ function ModelFile({
     })
       .then((signed) => {
         if (active) {
-          setMesh({
-            url: modelUrl(threadRef.environmentId, signed.relativeUrl),
-            format,
-            revision: signed.revision,
-          });
+          onMesh(modelUrl(threadRef.environmentId, signed.relativeUrl), format, signed.revision);
           setError(null);
           setTooLarge(false);
         }
@@ -594,7 +711,7 @@ function ModelFile({
     return () => {
       active = false;
     };
-  }, [file, threadRef.environmentId, format, revision, allowLarge]);
+  }, [file, threadRef.environmentId, format, revision, allowLarge, onMesh]);
   const busy = loadingFile || (!stats && !error && !watchError);
   const captureBusy = capturing || editing.operation !== null;
   const editDisabled = !editing.canEdit || !stats || busy || captureBusy;
@@ -663,10 +780,11 @@ function ModelFile({
     else if (stats)
       editing.setSection({ ...section, enabled: true, offset: centred(section.axis) });
   };
-  const startTool = (tool: PickTool) => {
-    if (editing.picking === tool) editing.stopPicking();
+  const startTool = (tool: PickTool, measureMode?: "distance" | "hole") => {
+    if (editing.picking === tool && measureMode === undefined) editing.stopPicking();
     else {
       editing.choose(tool);
+      if (tool === "measure" && measureMode) editing.setMeasureMode(measureMode);
       openTab("markup");
     }
   };
@@ -773,7 +891,8 @@ function ModelFile({
     return onModelAction(
       threadRef,
       (action) => {
-        if (action === "toggle-overhangs")
+        if (action === "toggle-previous") togglePrevious();
+        else if (action === "toggle-overhangs")
           setDisplay((value) => ({ ...value, overhangs: !value.overhangs }));
         else if (action === "rerender") setRevision((value) => value + 1);
         else if (action === "toggle-units") {
@@ -787,7 +906,7 @@ function ModelFile({
       },
       () => display.overhangs,
     );
-  }, [visible, threadRef, capture, exportCapture, unitsControl, display.overhangs]);
+  }, [visible, threadRef, capture, exportCapture, unitsControl, display.overhangs, togglePrevious]);
   const displayedError =
     watchError ??
     error ??
@@ -837,9 +956,11 @@ function ModelFile({
   if (plateFit !== "fits" || issues) badges.part = { tone: "warning", count: null };
   const hint =
     editing.picking === "measure"
-      ? editing.pendingPoint
-        ? "Click the second point"
-        : "Click the first point to measure from"
+      ? editing.measureMode === "hole"
+        ? "Click the rim or wall of the hole"
+        : editing.pendingPoint
+          ? "Click the second point"
+          : "Click the first point to measure from"
       : editing.picking === "annotate"
         ? "Click the part you want changed"
         : null;
@@ -901,6 +1022,7 @@ function ModelFile({
           else if (key === "g") setDisplay((value) => ({ ...value, grid: !value.grid }));
           else if (key === "a") setDisplay((value) => ({ ...value, axes: !value.axes }));
           else if (key === "v") setDisplay((value) => ({ ...value, overhangs: !value.overhangs }));
+          else if (key === "d" && previous) togglePrevious();
           else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
           else if (key === "-" && stats) viewer.current?.zoom(1.2);
           else return;
@@ -993,7 +1115,10 @@ function ModelFile({
                     savedViewRef={savedView}
                     onStats={onStats}
                     onError={onError}
-                    onProgress={setProgress}
+                    onProgress={onProgress}
+                    sourceRevision={mesh.revision}
+                    keepPrevious
+                    previousShown={previousShown}
                     navigationMode={navigationMode}
                     display={display}
                     reference={referenceControl.reference}
@@ -1007,6 +1132,9 @@ function ModelFile({
                     pendingPoint={editing.pendingPoint}
                     pickMode={busy ? null : editing.picking}
                     onPick={editing.onPick}
+                    measureMode={editing.measureMode}
+                    onCircle={editing.onCircle}
+                    onSnapStatus={setSnapStatus}
                   />
                 )}
               </Suspense>
@@ -1041,7 +1169,38 @@ function ModelFile({
                 onRemove={toggleSection}
               />
             )}
-            {hint && <ToolHint onDone={editing.stopPicking}>{hint}</ToolHint>}
+            {hint && (
+              <ToolHint onDone={editing.stopPicking}>
+                {editing.picking === "measure" && (
+                  <Segmented
+                    label="Measure mode"
+                    value={editing.measureMode}
+                    options={[
+                      { value: "distance", label: "Distance" },
+                      ...(snapStatus === "off" ? [] : [{ value: "hole" as const, label: "Hole" }]),
+                    ]}
+                    onChange={editing.setMeasureMode}
+                  />
+                )}
+                <span>{hint}</span>
+                {editing.picking === "measure" && snapStatus === "building" && (
+                  <span>Preparing snapping...</span>
+                )}
+                {editing.picking === "measure" && snapStatus === "off" && (
+                  <span>Snapping is off for models over 1M triangles.</span>
+                )}
+                {editing.picking === "measure" && snapStatus === "failed" && (
+                  <span>Snapping is unavailable for this model.</span>
+                )}
+              </ToolHint>
+            )}
+            {changed === "chip" && previous && (
+              <PreviousChip
+                shown={previousShown}
+                onToggle={togglePrevious}
+                onDismiss={() => setChanged("dismissed")}
+              />
+            )}
             <DisplayTools
               bed={
                 <BedPicker
@@ -1050,6 +1209,16 @@ function ModelFile({
                   referenceControl={referenceControl}
                 />
               }
+              previous={{
+                available: previous !== null,
+                shown: previousShown,
+                note: previous
+                  ? null
+                  : previousTooLarge
+                    ? "Previous versions are not kept for models over 1M triangles."
+                    : "No previous version yet.",
+                onChange: showPrevious,
+              }}
               {...display}
               orthographic={display.projection === "orthographic"}
               onOrthographic={(orthographic) =>
@@ -1299,6 +1468,7 @@ function ModelFile({
                 <PartSection
                   environmentId={threadRef.environmentId}
                   stats={stats}
+                  previousSize={previous?.size ?? null}
                   settings={displaySettings}
                   volume={volume}
                   render={render}

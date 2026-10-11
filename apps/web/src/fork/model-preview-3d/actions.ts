@@ -6,7 +6,8 @@ export type ModelAction =
   | "toggle-units"
   | "copy-view"
   | "save-view"
-  | "toggle-overhangs";
+  | "toggle-overhangs"
+  | "toggle-previous";
 const listeners = new Set<{
   ref: ScopedThreadRef;
   callback: (action: ModelAction) => void;
