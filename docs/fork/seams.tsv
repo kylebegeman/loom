@@ -22,6 +22,7 @@ packages/contracts/src/environment.ts	ext-core	2
 apps/server/package.json	-	"diff": "8.0.3"
 packages/client-runtime/package.json	-	"./fork"
 packages/contracts/package.json	-	"./fork"
+packages/contracts/package.json	-	"./fork/model-check-limits"
 apps/web/src/routes/__root.tsx	ext-web-root	2
 apps/web/src/components/ChatView.tsx	ext-panels	9
 apps/web/src/components/RightPanelTabs.tsx	ext-panels	8

@@ -3,6 +3,7 @@ import {
   ENCLOSURE_MAX_HOLES,
   type PcbReferenceMetadata,
 } from "@t3tools/contracts/fork";
+import { center, median } from "./geometry.ts";
 import { readGlbBounds } from "../glb.ts";
 export type Box = { min: [number, number, number]; max: [number, number, number] };
 export type Facing = "+x" | "-x" | "+y" | "-y";
@@ -21,21 +22,12 @@ export type BoardFeatures = {
   connectors: { reference: string; box: Box; facing: Facing; edgeMm: number }[];
   warnings: string[];
 };
-export const median = (values: readonly number[]) => {
-  const sorted = values.toSorted((a, b) => a - b),
-    n = sorted.length;
-  return n ? (sorted[Math.floor((n - 1) / 2)]! + sorted[Math.floor(n / 2)]!) / 2 : 0;
-};
 export function unionBoxes(boxes: readonly Box[]): Box {
   return {
     min: [0, 1, 2].map((a) => Math.min(...boxes.map((b) => b.min[a]!))) as Box["min"],
     max: [0, 1, 2].map((a) => Math.max(...boxes.map((b) => b.max[a]!))) as Box["max"],
   };
 }
-export const center = (b: Box) =>
-  b.min.map((v, a) => (v + b.max[a]!) / 2) as [number, number, number];
-export const facingVector = (f: Facing): [number, number, number] =>
-  f === "+x" ? [1, 0, 0] : f === "-x" ? [-1, 0, 0] : f === "+y" ? [0, 1, 0] : [0, -1, 0];
 export function nearestEdge(loop: readonly [number, number][], p: readonly [number, number]) {
   let best = { distance: Infinity, facing: "+x" as Facing, normal: [1, 0] as [number, number] };
   for (let i = 0; i < loop.length; i++) {

@@ -1,5 +1,5 @@
 import type { EnclosurePlan } from "./plan.ts";
-import { facingVector } from "./features.ts";
+import { facingVector } from "./geometry.ts";
 import { generatedSource, literal } from "./scad.ts";
 export function writeBuild123d(p: EnclosurePlan) {
   const v = p.params,

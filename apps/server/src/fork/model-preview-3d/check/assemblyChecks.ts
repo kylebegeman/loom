@@ -1,5 +1,6 @@
 import { checkEnclosure } from "./enclosure.ts";
-import { ASSEMBLY_MAX_REGIONS, type AssemblyPairResult } from "@t3tools/contracts/fork";
+import { ASSEMBLY_MAX_REGIONS } from "@t3tools/contracts/fork/model-check-limits";
+import type { AssemblyPairResult } from "@t3tools/contracts/fork";
 import type { AssemblyWorkerRequest, AssemblyWorkerCore, AssemblyWorkerPart } from "./protocol.ts";
 import {
   CheckFailure,

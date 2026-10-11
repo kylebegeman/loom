@@ -102,7 +102,7 @@ it("subscribes only to the active environment/thread and handles a checkpoint on
   await render();
   expect(mocks.subscribe).toHaveBeenCalledWith({
     environmentId: ref.environmentId,
-    input: { threadId: ref.threadId },
+    input: { threadId: ref.threadId, include: ["build123d"] },
   });
   expect(useRightPanelStore.getState().byThreadKey[scopedThreadKey(ref)]!.isOpen).toBe(true);
   useRightPanelStore.getState().closeAllSurfaces(ref);

@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import type { EnclosurePlan } from "./plan.ts";
-import { facingVector } from "./features.ts";
+import { facingVector } from "./geometry.ts";
 export const literal = (value: unknown): string =>
   JSON.stringify(value, (_key, v: unknown) =>
     typeof v === "number" ? Math.round(v * 10000) / 10000 : v,

@@ -3,6 +3,7 @@ import {
   EnclosureRequirementsPatch,
   EnclosureReport,
 } from "./pcb-enclosure.ts";
+import { ASSEMBLY_MAX_REGIONS } from "./model-check-limits.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ModelFormat } from "./model-preview-3d.ts";
@@ -15,7 +16,7 @@ export const ASSEMBLY_MAX_PARTS = 32;
 export const ASSEMBLY_MAX_CLEARANCES = 32;
 export const ASSEMBLY_MAX_OPERATIONS = 64;
 export const ASSEMBLY_MAX_BYTES = 256 * 1024;
-export const ASSEMBLY_MAX_REGIONS = 10;
+export { ASSEMBLY_MAX_REGIONS } from "./model-check-limits.ts";
 
 const finite = Schema.Number.check(Schema.isFinite());
 const mm = finite.check(Schema.isBetween({ minimum: -100_000, maximum: 100_000 }));

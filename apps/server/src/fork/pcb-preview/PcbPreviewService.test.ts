@@ -2223,14 +2223,10 @@ it.effect("returns a 3D measurement to the editor caller through the completion 
     Effect.gen(function* () {
       const t = yield* setup,
         service = yield* t.create();
-      const received = yield* Deferred.make<import("@t3tools/contracts/fork").PcbEditorEvent>();
-      const reader = yield* service
-        .editorEvents({ threadId: t.input.threadId, designId: t.input.designId })
-        .pipe(
-          Stream.tap((event) => Deferred.succeed(received, event)),
-          Stream.runDrain,
-          Effect.forkChild({ startImmediately: true }),
-        );
+      // Acquire the stream before requesting an action: design resolution performs async I/O.
+      const pull = yield* Stream.toPull(
+        service.editorEvents({ threadId: t.input.threadId, designId: t.input.designId }),
+      );
       const job = yield* service
         .editorAction({
           threadId: t.input.threadId,
@@ -2244,7 +2240,7 @@ it.effect("returns a 3D measurement to the editor caller through the completion 
           },
         })
         .pipe(Effect.forkChild({ startImmediately: true }));
-      const event = yield* Deferred.await(received);
+      const [event] = yield* pull;
       const measurement3d = {
         kind: "distance" as const,
         start: [0, 0, 0] as const,
@@ -2259,7 +2255,6 @@ it.effect("returns a 3D measurement to the editor caller through the completion 
         measurement3d,
       });
       expect((yield* Fiber.join(job)).measurement3d).toEqual(measurement3d);
-      yield* Fiber.interrupt(reader);
     }),
   ),
 );
@@ -2428,7 +2423,9 @@ it.effect("rejects a variant whose source changes during the build", () =>
             .pipe(
               Effect.tap(() =>
                 input.args.includes("circuit-json")
-                  ? t.fs.writeFileString(t.file, t.source + "\n// Edited while exporting\n")
+                  ? t.fs
+                      .writeFileString(t.file, t.source + "\n// Edited while exporting\n")
+                      .pipe(Effect.orDie)
                   : Effect.void,
               ),
             ),

@@ -15,6 +15,10 @@
       "types": "./src/fork/index.ts",
       "import": "./src/fork/index.ts"
     },
+    "./fork/model-check-limits": {
+      "types": "./src/fork/model-check-limits.ts",
+      "import": "./src/fork/model-check-limits.ts"
+    },
     "./settings": {
       "types": "./src/settings.ts",
       "import": "./src/settings.ts"

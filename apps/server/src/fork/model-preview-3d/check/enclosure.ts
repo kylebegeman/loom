@@ -1,17 +1,12 @@
-import {
-  ENCLOSURE_MAX_FINDINGS,
-  type EnclosureFinding,
-  type EnclosureReport,
-  type EnclosureRequirements,
-  type AssemblyPairResult,
+import { ENCLOSURE_MAX_FINDINGS } from "@t3tools/contracts/fork/model-check-limits";
+import type {
+  EnclosureFinding,
+  EnclosureReport,
+  EnclosureRequirements,
+  AssemblyPairResult,
 } from "@t3tools/contracts/fork";
-import {
-  center,
-  facingVector,
-  median,
-  type BoardFeatures,
-  type Facing,
-} from "../../pcb-preview/enclosure/features.ts";
+import { center, facingVector, median } from "../../pcb-preview/enclosure/geometry.ts";
+import type { BoardFeatures, Facing } from "../../pcb-preview/enclosure/features.ts";
 import { normal, type IndexedMesh, type Vec3 } from "./mesh.ts";
 import { buildGrid, raycast } from "./grid.ts";
 import { topologyOf } from "./topology.ts";

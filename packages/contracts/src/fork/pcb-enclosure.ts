@@ -1,11 +1,14 @@
+import { ENCLOSURE_MAX_FINDINGS, ENCLOSURE_MAX_CONNECTORS } from "./model-check-limits.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 export const PCB_REFERENCE_FORMAT = "loom-pcb-reference";
 export const PCB_REFERENCE_VERSION = 2;
-export const ENCLOSURE_MAX_FINDINGS = 200;
-export const ENCLOSURE_MAX_HOLES = 32;
-export const ENCLOSURE_MAX_CONNECTORS = 16;
+export {
+  ENCLOSURE_MAX_FINDINGS,
+  ENCLOSURE_MAX_HOLES,
+  ENCLOSURE_MAX_CONNECTORS,
+} from "./model-check-limits.ts";
 export const ASSUMED_PART_HEIGHT_MM = 10;
 
 const finite = Schema.Number.check(Schema.isFinite());

@@ -26,7 +26,10 @@ const mocks = vi.hoisted(() => ({
   inspection: null as PcbInspection | null,
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
-vi.mock("~/state/entities", () => ({ useServerConfigs: () => [] }));
+vi.mock("~/state/entities", () => ({
+  useServerConfigs: () => new Map(),
+  useThreadProjection: () => undefined,
+}));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: vi.fn() } }));
 vi.mock("./AutoCheckSettings", () => ({ AutoCheckSettings: () => null }));
 vi.mock("./TrueScalePrintDialog", () => ({ TrueScalePrintDialog: () => null }));
@@ -37,6 +40,7 @@ vi.mock("./RevisionCompare", () => ({ RevisionCompare: () => null }));
 vi.mock("../model-preview-3d/state", () => ({ runModelCommand: mocks.run }));
 vi.mock("./state", () => ({
   pcb: {
+    historyRestore: { permissionAtom: () => false },
     print: { permissionAtom: () => false },
     asset: { permissionAtom: () => false },
     inspect: { permissionAtom: () => false },
@@ -339,7 +343,7 @@ async function ready() {
 async function key(key: string) {
   await act(async () =>
     host
-      .querySelector<HTMLElement>('[aria-label="PCB workspace"]')!
+      .querySelector<HTMLElement>('[role="region"][aria-label^="PCB workspace,"]')!
       .dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })),
   );
 }

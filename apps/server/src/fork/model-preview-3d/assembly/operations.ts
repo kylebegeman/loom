@@ -16,6 +16,7 @@ import {
   type AssemblyBounds,
 } from "@t3tools/contracts/fork";
 const decode = Schema.decodeUnknownSync(ModelAssembly);
+const decodeRequirements = Schema.decodeUnknownEffect(EnclosureRequirements);
 const partDecode = Schema.decodeUnknownSync(AssemblyPart);
 const invalid = (message: string) =>
   new ModelPreviewError({ reason: "invalid-parameter", message });
@@ -43,19 +44,18 @@ export const applyOperations = Effect.fn("Assembly.applyOperations")(function* (
     )
       return yield* invalid(`${at}: No part with id "${op.id}".`);
     if (op.op === "set-enclosure") {
-      const requirements = yield* Schema.decodeUnknownEffect(EnclosureRequirements)({
+      const requirements = yield* decodeRequirements({
         ...next.enclosure?.requirements,
         ...op.requirements,
       }).pipe(Effect.mapError(() => invalid(`${at}: Invalid fit requirements.`)));
-      next = {
-        ...next,
+      next = Object.assign({}, next, {
         enclosure: {
           board: op.board,
           parts: op.parts ?? next.enclosure?.parts ?? [],
           requirements,
         },
-      };
-    } else if (op.op === "clear-enclosure") next = { ...next, enclosure: null };
+      });
+    } else if (op.op === "clear-enclosure") next = Object.assign({}, next, { enclosure: null });
     else if (op.op === "place-board" || op.op === "swap-board") {
       const part = find(op.id)!;
       if (!ctx.features) return yield* invalid("Board reference data is unavailable.");
@@ -128,7 +128,9 @@ export const applyOperations = Effect.fn("Assembly.applyOperations")(function* (
           ) as [number, number, number],
         };
       }
-      next = { ...next, parts: next.parts.map((p) => (p.id === op.id ? updated : p)) };
+      next = Object.assign({}, next, {
+        parts: next.parts.map((p) => (p.id === op.id ? updated : p)),
+      });
     } else if (op.op === "add-part") {
       yield* ctx.addPath(op.path);
       const name =
@@ -232,7 +234,7 @@ export const applyOperations = Effect.fn("Assembly.applyOperations")(function* (
     } else if (op.op === "remove-clearance")
       next = Object.assign({}, next, { clearances: next.clearances.filter((c) => c.id !== op.id) });
     else if (op.op === "set-name") next = Object.assign({}, next, { name: op.name });
-    next = { ...next, version: next.enclosure ? 2 : 1 };
+    next = Object.assign({}, next, { version: next.enclosure ? 2 : 1 });
     next = yield* Effect.try({
       try: () => decode(next),
       catch: () => invalid(`${at}: The change exceeds assembly limits or has invalid coordinates.`),

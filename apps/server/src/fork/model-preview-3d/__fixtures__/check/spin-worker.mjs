@@ -1,4 +1,4 @@
-import { parentPort } from "node:worker_threads";
-parentPort.once("message", () => {
+import * as NodeWorkerThreads from "node:worker_threads";
+NodeWorkerThreads.parentPort.once("message", () => {
   for (;;) {}
 });

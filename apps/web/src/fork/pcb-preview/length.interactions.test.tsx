@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   library: { value: { version: 0, items: [] as PcbHardware[] } },
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
+vi.mock("./AutoCheckSettings", () => ({ AutoCheckSettings: () => null }));
 vi.mock("./state", () => ({
   pcb: { library: () => mocks.library, updateLibrary: { permissionAtom: () => true } },
 }));
@@ -102,7 +103,7 @@ it("locates normalized report positions and updates their labels live", async ()
   expect(host.textContent).toContain("500.0, -250.0 mil");
   const locate = host.querySelector<HTMLButtonElement>('button[aria-label="Go to R1 pad 1"]')!;
   await act(async () => locate.click());
-  expect(onLocate).toHaveBeenCalledWith("drc", { x: 12.7, y: -6.35 }, undefined);
+  expect(onLocate).toHaveBeenCalledWith("drc", { x: 12.7, y: -6.35 }, undefined, "Too close");
   await act(async () => usePcbPreferences.getState().setLengthUnit("mm"));
   expect(host.textContent).toContain("12.70, -6.35 mm");
   await act(async () => root.render(render({ ...result, coordinateUnits: "cm" })));

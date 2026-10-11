@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: (value: unknown) => value }));
 vi.mock("~/state/entities", () => ({
-  useServerConfigs: () => [],
+  useServerConfigs: () => new Map(),
   useThreadProjection: () => undefined,
 }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { refresh: vi.fn() } }));

@@ -15,7 +15,7 @@ panel (Part, Markup, pins)          agent
            bed fit (L32) and verdict on the main thread, LRU cache (64 reports)
 ```
 
-All geometry work runs in a Node worker thread that imports nothing but `node:worker_threads`
+All geometry work runs in a Node worker thread that imports `node:worker_threads`
 and its own pure modules. The main thread does file IO, validation, caching and the bed. The
 report is a small typed object; mesh bytes never leave the host.
 
@@ -242,8 +242,9 @@ A check spends host CPU for up to a minute, like a render.
 
 New folder `apps/server/src/fork/model-preview-3d/check/`. Everything except `printChecker.ts`
 and `workerHost.ts` is pure, synchronous and runs inside the worker. Worker modules import only
-`node:worker_threads` (the entry) and sibling worker modules, with `.ts` extensions and erasable
-syntax (`tsconfig.base.json:9`), so Node can load them from source and the bundle stays
+`node:worker_threads` (the entry), pure geometry helpers and the schema-free
+`@t3tools/contracts/fork/model-check-limits` constants. Relative imports use `.ts`
+extensions and erasable syntax (`tsconfig.base.json:9`), so Node can load them from source and the bundle stays
 self-contained.
 
 | File                    | Runs in | Purpose                                                                                                                                                                |
@@ -262,9 +263,9 @@ self-contained.
 | `report.ts`             | main    | `finalizeReport(core, bed, settings)`: bed finding, row statuses, sort, caps, verdict. Pure.                                                                           |
 | `printChecker.ts`       | main    | `makePrintChecker(deps)`: IO, cache, shared jobs, slot.                                                                                                                |
 
-Main-thread files may import worker modules with `import type` only. A test enforces it
-(TESTING.md): a runtime import would make the bundler put shared code in a chunk the worker
-cannot load from a `data:` URL.
+The worker dependency graph must remain free of Effect schemas and host services; a test
+walks its runtime imports. Host coordinators use type-only imports for mesh and protocol
+modules. Bundled workers stay on disk so any shared chunks resolve relative to their file URL.
 
 ### Reading meshes
 
