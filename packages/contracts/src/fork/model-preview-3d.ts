@@ -1,4 +1,17 @@
+import { ModelFileRef, SignedFile, ScadRenderResult } from "./model-files.ts";
+export { ModelFileRef, SignedFile, ScadRenderResult } from "./model-files.ts";
 import * as Effect from "effect/Effect";
+import * as H from "./model-history.ts";
+import * as A from "./model-assembly.ts";
+import * as S from "./model-slicer.ts";
+import { PythonCadInfo } from "./model-python-cad.ts";
+import { SlicerSettings, DEFAULT_SLICER_SETTINGS } from "./model-slicer.ts";
+import {
+  PrinterLibrary,
+  PrinterLibraryUpdate,
+  PrinterProfileInput,
+  PrinterProfileDraft,
+} from "./model-printers.ts";
 import { ScaleReference } from "./model-scale.ts";
 import { OVERHANG_ANGLE } from "./model-overhangs.ts";
 import * as Editor from "./model-editor.ts";
@@ -33,6 +46,26 @@ export const MODEL_PREVIEW_3D_WS_METHODS = {
   getSettings: "loom.model-preview-3d.getSettings",
   updateSettings: "loom.model-preview-3d.updateSettings",
   clearCache: "loom.model-preview-3d.clearCache",
+  history: "loom.model-preview-3d.history",
+  historyVersion: "loom.model-preview-3d.historyVersion",
+  historyCancel: "loom.model-preview-3d.historyCancel",
+  historyRestore: "loom.model-preview-3d.historyRestore",
+  historyUndo: "loom.model-preview-3d.historyUndo",
+  assembly: "loom.model-preview-3d.assembly",
+  updateAssembly: "loom.model-preview-3d.updateAssembly",
+  checkAssembly: "loom.model-preview-3d.checkAssembly",
+  cancelAssemblyCheck: "loom.model-preview-3d.cancelAssemblyCheck",
+  slice: "loom.model-preview-3d.slice",
+  slicerProfiles: "loom.model-preview-3d.slicerProfiles",
+  importSlicerProfile: "loom.model-preview-3d.importSlicerProfile",
+  openSlice: "loom.model-preview-3d.openSlice",
+  renderModel: "loom.model-preview-3d.renderModel",
+  exportStep: "loom.model-preview-3d.exportStep",
+  pythonSetup: "loom.model-preview-3d.pythonSetup",
+
+  printers: "loom.model-preview-3d.printers",
+  updatePrinters: "loom.model-preview-3d.updatePrinters",
+  parsePrinterProfile: "loom.model-preview-3d.parsePrinterProfile",
 } as const;
 
 /** 3MF core units normalized to Loom's millimetres. */
@@ -45,9 +78,19 @@ export const THREE_MF_UNIT_MM = {
   meter: 1000,
 } as const;
 
-export const ModelFormat = Schema.Literals(["stl", "3mf", "obj", "glb", "gltf", "scad", "step"]);
+export const ModelFormat = Schema.Literals([
+  "stl",
+  "3mf",
+  "obj",
+  "glb",
+  "gltf",
+  "scad",
+  "step",
+  "build123d",
+]);
 
 export const MODEL_EXTENSIONS = {
+  ".b3d.py": "build123d",
   ".stl": "stl",
   ".3mf": "3mf",
   ".obj": "obj",
@@ -62,9 +105,14 @@ export const modelFormatOf = (path: string): ModelFormat | null => {
   const name = path
     .slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1)
     .toLowerCase();
+  if (name.endsWith(".b3d.py")) return "build123d";
   const extension = name.slice(name.lastIndexOf("."));
   return MODEL_EXTENSIONS[extension as keyof typeof MODEL_EXTENSIONS] ?? null;
 };
+
+/** Source models expose parameters and require rendering. */
+export const isSourceFormat = (format: ModelFormat | null): format is "scad" | "build123d" =>
+  format === "scad" || format === "build123d";
 
 export const TurnModel = Schema.Struct({
   path: Schema.String,
@@ -82,12 +130,6 @@ export const TurnModels = Schema.Struct({
 });
 export type TurnModel = typeof TurnModel.Type;
 export type TurnModels = typeof TurnModels.Type;
-
-export const ModelFileRef = Schema.Struct({
-  threadId: ThreadId,
-  /** Workspace-relative path. */
-  path: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
-});
 
 export const ModelEntry = Schema.Struct({
   path: Schema.String,
@@ -108,16 +150,8 @@ export const OpenScadInfo = Schema.Struct({
 export const ModelPreviewStatus = Schema.Struct({
   openscad: OpenScadInfo,
   maxFileBytes: Schema.Number,
-});
-
-export const SignedFile = Schema.Struct({
-  /** Relative to the environment's HTTP base URL; resolve with resolveAssetUrl. */
-  relativeUrl: Schema.String,
-  expiresAt: Schema.Number,
-  sizeBytes: Schema.Number,
-  modifiedAt: Schema.String,
-  /** Changes whenever the bytes change; used as the viewer's cache key. */
-  revision: Schema.String,
+  python: Schema.optionalKey(PythonCadInfo),
+  slicers: Schema.optionalKey(Schema.Array(S.SlicerInfo)),
 });
 
 export const ModelWatchEvent = Schema.Struct({
@@ -158,30 +192,6 @@ export const ScadRenderInput = Schema.Struct({
   parameterSet: Schema.NullOr(Schema.String),
 });
 
-export const ScadRenderResult = Schema.Struct({
-  status: Schema.Literals(["ok", "error", "cancelled"]),
-  mesh: Schema.NullOr(SignedFile), // binary STL or 3MF
-  meshFormat: Schema.NullOr(Schema.Literals(["stl", "3mf"])),
-  cached: Schema.Boolean,
-  durationMs: Schema.Number,
-  log: Schema.Array(
-    Schema.Struct({
-      level: Schema.Literals(["echo", "warning", "error", "trace", "info"]),
-      text: Schema.String,
-    }),
-  ),
-  summary: Schema.NullOr(
-    Schema.Struct({
-      manifold: Schema.NullOr(Schema.Boolean),
-      facets: Schema.NullOr(Schema.Int),
-      vertices: Schema.NullOr(Schema.Int),
-      boundingBox: Schema.NullOr(
-        Schema.Struct({ min: Schema.Array(Schema.Number), max: Schema.Array(Schema.Number) }),
-      ),
-    }),
-  ),
-});
-
 export const DisplayUnits = Schema.Literals(["mm", "in"]);
 export type DisplayUnits = typeof DisplayUnits.Type;
 
@@ -190,6 +200,8 @@ export const AgentModelsMode = Schema.Literals(["offer", "open", "off"]);
 export type AgentModelsMode = typeof AgentModelsMode.Type;
 
 export const ModelPreviewSettings = Schema.Struct({
+  pythonPath: Schema.NullOr(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  slicer: SlicerSettings.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_SLICER_SETTINGS))),
   openscadPath: Schema.NullOr(Schema.String),
   backend: Schema.Literals(["auto", "manifold", "cgal"]),
   renderTimeoutSeconds: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 600 })), // default 120
@@ -232,6 +244,8 @@ export const ModelPreviewSettings = Schema.Struct({
 /** Full legacy fields plus optional additions; absent fields keep the host's preferences. */
 export const ModelPreviewSettingsUpdate = Schema.Struct({
   ...ModelPreviewSettings.fields,
+  pythonPath: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  slicer: Schema.optionalKey(SlicerSettings),
   buildPlate: BuildPlateSettingUpdate,
   displayUnits: Schema.optionalKey(DisplayUnits),
   scaleReference: Schema.optionalKey(ScaleReference),
@@ -260,28 +274,30 @@ export class ModelPreviewError extends Schema.TaggedError<ModelPreviewError>()(
       "unsupported-format", // includes STEP, which stays with the Fabrication app
       "too-large",
       "openscad-missing",
+      "python-missing",
+      "slicer-missing",
       "invalid-parameter",
       "timeout",
       "command-failed",
       "unavailable",
+      "conflict",
     ]),
     message: Schema.String,
   },
 ) {}
 export type ModelFormat = typeof ModelFormat.Type;
-export type ModelFileRef = typeof ModelFileRef.Type;
 export type ModelEntry = typeof ModelEntry.Type;
 export type OpenScadInfo = typeof OpenScadInfo.Type;
 export type ModelPreviewStatus = typeof ModelPreviewStatus.Type;
-export type SignedFile = typeof SignedFile.Type;
 export type ModelWatchEvent = typeof ModelWatchEvent.Type;
 export type ScadParameter = typeof ScadParameter.Type;
 export type ScadParameters = typeof ScadParameters.Type;
 export type ScadRenderInput = typeof ScadRenderInput.Type;
-export type ScadRenderResult = typeof ScadRenderResult.Type;
 export type ModelPreviewSettings = typeof ModelPreviewSettings.Type;
 
 export const DEFAULT_MODEL_PREVIEW_SETTINGS: ModelPreviewSettings = {
+  pythonPath: null,
+  slicer: DEFAULT_SLICER_SETTINGS,
   openscadPath: null,
   backend: "auto",
   renderTimeoutSeconds: 120,
@@ -316,6 +332,85 @@ const rpc = <const Tag extends string, Payload extends Schema.Top, Success exten
     error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
   });
 export const ModelPreview3dRpcGroup = RpcGroup.make(
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.history, H.ModelHistoryInput, H.ModelHistory),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.historyVersion,
+    H.ModelHistoryVersionInput,
+    H.historyVersionResultSchema(SignedFile, ScadRenderResult),
+  ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.historyCancel,
+    Schema.Struct({ file: ModelFileRef }),
+    Schema.Void,
+  ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.historyRestore,
+    H.ModelHistoryRestoreInput,
+    H.ModelHistoryRestoreResult,
+  ),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.historyUndo, H.ModelHistoryUndoInput, Schema.Void),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.assembly,
+    Schema.Struct({ file: ModelFileRef }),
+    Schema.suspend(() => A.AssemblyReadResult),
+  ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.updateAssembly,
+    Schema.Struct({
+      file: ModelFileRef,
+      operations: Schema.Array(Schema.suspend(() => A.AssemblyOperation)).check(
+        Schema.isMinLength(1),
+        Schema.isMaxLength(64),
+      ),
+      expectedRevision: Schema.optionalKey(Schema.String),
+      createOnly: Schema.optionalKey(Schema.Boolean),
+    }),
+    Schema.suspend(() => A.AssemblyReadResult),
+  ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.checkAssembly,
+    Schema.suspend(() =>
+      Schema.Struct({
+        file: ModelFileRef,
+        requestId: Schema.optionalKey(
+          Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+        ),
+        ...A.AssemblyCheckOptions.fields,
+      }),
+    ),
+    Schema.suspend(() => A.AssemblyCheckResult),
+  ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.cancelAssemblyCheck,
+    Schema.Struct({
+      file: ModelFileRef,
+      requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+    }),
+    Schema.Void,
+  ),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.slice, S.SliceInput, S.SliceResult),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.slicerProfiles,
+    Schema.Struct({ app: S.SlicerApp, machine: Schema.optionalKey(Schema.String) }),
+    S.SlicerProfileList,
+  ),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.importSlicerProfile, S.ImportSlicerProfile, S.SlicerProfileEntry),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.openSlice,
+    Schema.Struct({ key: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) }),
+    Schema.Void,
+  ),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.renderModel, ScadRenderInput, ScadRenderResult),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.exportStep, ScadRenderInput, SignedFile),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.pythonSetup,
+    Schema.Struct({ action: Schema.Literals(["install", "remove"]) }),
+    PythonCadInfo,
+  ),
+
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.printers, Schema.Struct({}), PrinterLibrary),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.updatePrinters, PrinterLibraryUpdate, PrinterLibrary),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.parsePrinterProfile, PrinterProfileInput, PrinterProfileDraft),
   rpc(
     MODEL_PREVIEW_3D_WS_METHODS.checkPrint,
     Schema.Struct({
@@ -379,16 +474,38 @@ export const ModelPreview3dRpcGroup = RpcGroup.make(
   ),
   rpc(
     MODEL_PREVIEW_3D_WS_METHODS.listModels,
-    Schema.Struct({ threadId: ThreadId }),
-    Schema.Struct({ models: Schema.Array(ModelEntry), truncated: Schema.Boolean }),
+    Schema.Struct({
+      threadId: ThreadId,
+      include: Schema.optionalKey(Schema.Array(Schema.Literal("build123d"))),
+    }),
+    Schema.Struct({
+      models: Schema.Array(ModelEntry),
+      assemblies: Schema.optionalKey(
+        Schema.Array(
+          Schema.Struct({
+            path: Schema.String,
+            sizeBytes: Schema.Number,
+            modifiedAt: Schema.String,
+          }),
+        ),
+      ),
+      truncated: Schema.Boolean,
+    }),
   ),
   rpc(
     MODEL_PREVIEW_3D_WS_METHODS.turnModels,
-    Schema.Struct({ threadId: ThreadId, runId: Schema.NullOr(RunId) }),
+    Schema.Struct({
+      threadId: ThreadId,
+      runId: Schema.NullOr(RunId),
+      include: Schema.optionalKey(Schema.Array(Schema.Literal("build123d"))),
+    }),
     TurnModels,
   ),
   Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.turnModelEvents, {
-    payload: Schema.Struct({ threadId: ThreadId }),
+    payload: Schema.Struct({
+      threadId: ThreadId,
+      include: Schema.optionalKey(Schema.Array(Schema.Literal("build123d"))),
+    }),
     success: TurnModels,
     error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
     stream: true,

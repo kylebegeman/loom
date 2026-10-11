@@ -21,6 +21,79 @@ export function createModelPreviewAtoms<R, E>(
     tag: M.renderScad,
   });
   return {
+    history: createEnvironmentRpcCommand(runtime, { label: "loom:model-history", tag: M.history }),
+    historyVersion: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-historyVersion",
+      tag: M.historyVersion,
+    }),
+    historyCancel: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-historyCancel",
+      tag: M.historyCancel,
+    }),
+    historyRestore: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-historyRestore",
+      tag: M.historyRestore,
+    }),
+    historyUndo: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-historyUndo",
+      tag: M.historyUndo,
+    }),
+    assembly: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-assembly",
+      tag: M.assembly,
+    }),
+    updateAssembly: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-updateAssembly",
+      tag: M.updateAssembly,
+    }),
+    checkAssembly: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-checkAssembly",
+      tag: M.checkAssembly,
+    }),
+    cancelAssemblyCheck: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-cancelAssemblyCheck",
+      tag: M.cancelAssemblyCheck,
+    }),
+    slice: createEnvironmentRpcCommand(runtime, { label: "loom:model-slice", tag: M.slice }),
+    slicerProfiles: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-slicerProfiles",
+      tag: M.slicerProfiles,
+    }),
+    importSlicerProfile: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-importSlicerProfile",
+      tag: M.importSlicerProfile,
+    }),
+    openSlice: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-openSlice",
+      tag: M.openSlice,
+    }),
+    exportStep: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-exportStep",
+      tag: M.exportStep,
+    }),
+    pythonSetup: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-pythonSetup",
+      tag: M.pythonSetup,
+    }),
+    renderModel: createEnvironmentRpcCommand<
+      R,
+      E,
+      typeof M.renderModel,
+      ScadRenderInput & { revision?: number }
+    >(runtime, { label: "loom:model-render-model", tag: M.renderModel }),
+
+    printers: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:model-printers",
+      tag: M.printers,
+    }),
+    updatePrinters: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-printers-save",
+      tag: M.updatePrinters,
+    }),
+    parsePrinterProfile: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-printer-profile",
+      tag: M.parsePrinterProfile,
+    }),
     editorEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "loom:model-editor",
       tag: M.editorEvents,

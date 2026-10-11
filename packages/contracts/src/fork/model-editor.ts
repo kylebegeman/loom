@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { ThreadId } from "../baseSchemas.ts";
+import { ThreadId, CheckpointId } from "../baseSchemas.ts";
 import {
   ModelCamera,
   ModelMeasurement,
@@ -49,8 +49,15 @@ export const ModelEditorAction = Schema.Struct({
     "save-annotation",
     "capture-annotation",
     "allow-large",
+    "turn-history",
+    "turn-compare",
+    "explode",
+    "isolate",
+    "select-part",
+    "layers",
   ]),
   enabled: Schema.optional(Schema.Boolean),
+  layer: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   index: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 79 }))),
   factor: Schema.optional(
     Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0.01, maximum: 100 })),
@@ -91,6 +98,30 @@ export const ModelEditorEvent = Schema.Struct({
   command: ModelEditorAction,
 });
 export const ModelEditorState = Schema.Struct({
+  turnHistory: Schema.optionalKey(
+    Schema.Struct({
+      open: Schema.Boolean,
+      viewing: Schema.NullOr(CheckpointId),
+      viewingTurn: Schema.NullOr(Schema.Int),
+      comparing: Schema.NullOr(CheckpointId),
+      latestTurn: Schema.NullOr(Schema.Int),
+    }),
+  ),
+  layers: Schema.optionalKey(
+    Schema.Struct({
+      shown: Schema.Boolean,
+      index: Schema.Int,
+      count: Schema.Int,
+      zMm: Schema.NullOr(Schema.Number),
+    }),
+  ),
+  assembly: Schema.optionalKey(
+    Schema.Struct({
+      selectedPartId: Schema.NullOr(Schema.String),
+      isolatedPartId: Schema.NullOr(Schema.String),
+      explode: Schema.Number,
+    }),
+  ),
   inspector: Schema.NullOr(Schema.String),
   tool: Schema.NullOr(Schema.Literals(["measure", "annotate", "lay-flat"])),
   orientation: Schema.optional(Schema.NullOr(ModelOrientation)),

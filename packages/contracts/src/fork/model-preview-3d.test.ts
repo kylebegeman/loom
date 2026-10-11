@@ -79,6 +79,8 @@ it("defaults legacy settings to offer agent models and rejects unknown modes", (
 it("recognizes shared model extensions without mistaking directories for extensions", () => {
   expect(modelFormatOf("part.STL")).toBe("stl");
   expect(modelFormatOf("a.stp")).toBe("step");
+  expect(modelFormatOf("bracket.B3D.PY")).toBe("build123d");
+  expect(modelFormatOf("helper.py")).toBeNull();
   expect(modelFormatOf("notes.txt")).toBeNull();
   expect(modelFormatOf("Makefile")).toBeNull();
   expect(modelFormatOf("folder.scad/Makefile")).toBeNull();

@@ -1,3 +1,4 @@
+import { blankPrinter, usePrinterLibrary } from "./printers";
 import { randomUUID } from "~/lib/utils";
 import styles from "./workspace.module.css";
 import { Link } from "@tanstack/react-router";
@@ -13,6 +14,7 @@ import {
   activeBed,
   addCustomBed,
   CUSTOM_BED_LIMIT,
+  USER_PRINTER_LIMIT,
   customBedNameError,
   newCustomBedId,
   selectBed,
@@ -247,17 +249,63 @@ export function BedPicker({
   settings: ModelPreviewSettings;
   referenceControl?: ScaleReferenceControl;
 }) {
+  const library = usePrinterLibrary(environmentId);
   const { units, setUnits, canSave: canSaveUnits } = useDisplayUnitsControl();
   const ownReference = useScaleReference(environmentId, settings);
   const scale = referenceControl ?? ownReference;
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
-  const volume = resolveBuildVolume(plate);
-  const chosen = activeBed(plate);
+  const volume = resolveBuildVolume(plate, library);
+  const chosen = activeBed(plate, { library });
   const [bedName, setBedName] = useState<string | null>(null);
-  const nameError = bedName === null ? null : customBedNameError(plate, bedName);
-  const atLimit = plate.customBeds.length >= CUSTOM_BED_LIMIT;
+  const nameError =
+    bedName === null
+      ? null
+      : library
+        ? !bedName.trim()
+          ? "Enter a bed name."
+          : bedName.trim().length > 60
+            ? "Use up to 60 characters."
+            : library.printers.some(
+                  (p) => p.name.trim().toLocaleLowerCase() === bedName.trim().toLocaleLowerCase(),
+                )
+              ? "A printer with this name already exists."
+              : null
+        : customBedNameError(plate, bedName);
+  const atLimit = library
+    ? library.printers.length >= USER_PRINTER_LIMIT
+    : plate.customBeds.length >= CUSTOM_BED_LIMIT;
   const saveAsBed = () => {
     if (bedName === null || nameError || atLimit) return;
+    if (library) {
+      const entry = {
+        ...blankPrinter(newCustomBedId(randomUUID()), "printer"),
+        name: bedName.trim(),
+        volumeMm: plate.customMm,
+      };
+      void runModelCommand(models.updatePrinters, {
+        environmentId,
+        input: {
+          expectedVersion: library.version,
+          printers: [...library.printers, entry],
+          materials: library.materials,
+          hiddenBuiltIns: library.hiddenBuiltIns,
+        },
+      })
+        .then(async (next) => {
+          appAtomRegistry.refresh(models.printers({ environmentId, input: {} }));
+          await save(selectBed(plate, entry.id, { library: next }));
+          setBedName(null);
+        })
+        .catch((cause) =>
+          toastManager.add({
+            type: "error",
+            title: "Bed not saved",
+            description:
+              cause instanceof Error ? cause.message : "The printer library could not be saved.",
+          }),
+        );
+      return;
+    }
     void save(
       addCustomBed(plate, {
         id: newCustomBedId(randomUUID()),
@@ -267,10 +315,10 @@ export function BedPicker({
     );
     setBedName(null);
   };
-  const note = buildPlateNote(plate);
-  const zones = activeBed(plate).zones ?? [];
+  const note = buildPlateNote(plate, library);
+  const zones = activeBed(plate, { library }).zones ?? [];
   const common = sharedZone(zones, volume[2]);
-  const label = buildPlateLabel(plate);
+  const label = buildPlateLabel(plate, library);
   return (
     <Popover>
       <PopoverTrigger
@@ -288,7 +336,7 @@ export function BedPicker({
             onValueChange={(next: string | null) => {
               if (next) {
                 setBedName(null);
-                void save(selectBed(plate, next));
+                void save(selectBed(plate, next, { library }));
               }
             }}
           >
@@ -296,7 +344,7 @@ export function BedPicker({
               <SelectValue>{label}</SelectValue>
             </SelectTrigger>
             <SelectPopup alignItemWithTrigger={false}>
-              {bedGroups(plate).map((group) => (
+              {bedGroups(plate, library).map((group) => (
                 <SelectGroup key={group.label}>
                   <SelectGroupLabel>{group.label}</SelectGroupLabel>
                   {group.options.map((option) => (
@@ -313,7 +361,7 @@ export function BedPicker({
               ))}
             </SelectPopup>
           </Select>
-          {plate.preset === "custom" && (
+          {plate.preset === "custom" && (!library || chosen.id === "custom") && (
             <CustomBedSize
               key={`${chosen.id}:${volume.join()}:${units}`}
               value={volume}
@@ -436,7 +484,7 @@ export function BedPicker({
         </fieldset>
         <div className="mt-2">
           <Button variant="link" size="xs" render={<Link to="/settings/loom" />}>
-            Manage beds
+            Manage printers
           </Button>
         </div>
         {zones.length > 0 && (

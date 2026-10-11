@@ -5,6 +5,7 @@ import {
   fitBed,
   sharedZone,
   type BedZone,
+  type PrinterLibrary,
   type BedFitResult,
   type BedFit as SharedBedFit,
   type BedVolume,
@@ -13,24 +14,28 @@ import {
 } from "@t3tools/contracts/fork";
 /** X, Y and Z in mm. Z is null for a surface, which has no height limit. */
 export type BuildVolume = BedVolume;
-export const resolveBuildVolume = (setting: BuildPlateSetting): BuildVolume =>
-  activeBed(setting).volumeMm;
+export const resolveBuildVolume = (
+  setting: BuildPlateSetting,
+  library?: PrinterLibrary,
+): BuildVolume => activeBed(setting, { library }).volumeMm;
 /** What a viewer draws and fit checks use: the bed's volume and the pattern on its surface. */
 export type Plate = {
   readonly volume: BuildVolume;
   readonly pattern: BuildPlatePattern;
   readonly zones: readonly BedZone[];
   readonly showZones: boolean;
+  readonly shape?: "rectangle" | "round";
 };
-export const resolvePlate = (setting: BuildPlateSetting): Plate => ({
-  volume: resolveBuildVolume(setting),
+export const resolvePlate = (setting: BuildPlateSetting, library?: PrinterLibrary): Plate => ({
+  volume: resolveBuildVolume(setting, library),
   pattern: setting.pattern,
-  zones: activeBed(setting).zones ?? [],
+  zones: activeBed(setting, { library }).zones ?? [],
   showZones: setting.showZones,
+  shape: activeBed(setting, { library }).bedShape,
 });
 /** Fit against nozzle reach even when the plate's zone tint is hidden. */
 export const fitPlate = (size: readonly [number, number, number], plate: Plate): BedFitResult =>
-  fitBed(size, { volumeMm: plate.volume, zones: plate.zones });
+  fitBed(size, { volumeMm: plate.volume, zones: plate.zones, bedShape: plate.shape });
 
 /** Nozzle constraints for fit cards and bed lists, including a required quarter turn. */
 export const describeZoneFit = (
@@ -78,17 +83,30 @@ export const describeZoneFit = (
   }
   return { short: rotated ? `${short}, rotated` : short, long };
 };
-export const buildPlateLabel = (setting: BuildPlateSetting) => activeBed(setting).label;
+export const buildPlateLabel = (setting: BuildPlateSetting, library?: PrinterLibrary) =>
+  activeBed(setting, { library }).label;
 /** Extra limits worth knowing, such as per-nozzle reach on a dual-nozzle printer. */
-export const buildPlateNote = (setting: BuildPlateSetting): string | null =>
-  activeBed(setting).note;
+export const buildPlateNote = (
+  setting: BuildPlateSetting,
+  library?: PrinterLibrary,
+): string | null => activeBed(setting, { library }).note;
 /** Bed choices grouped for menus: printers, surfaces, then the custom size. */
-export const bedGroups = (setting: BuildPlateSetting) => {
-  const beds = listBeds(setting);
+export const bedGroups = (setting: BuildPlateSetting, library?: PrinterLibrary) => {
+  const beds = listBeds(setting, { library });
   return [
-    { label: "Printers", options: beds.filter((bed) => bed.kind === "printer") },
-    { label: "Surfaces", options: beds.filter((bed) => bed.kind === "surface") },
-    { label: "Custom", options: beds.filter((bed) => bed.kind === "custom") },
+    {
+      label: "Your printers",
+      options: beds.filter((bed) => bed.id !== "custom" && bed.origin === "user"),
+    },
+    {
+      label: "Printers",
+      options: beds.filter((bed) => bed.kind === "printer" && bed.origin === "built-in"),
+    },
+    {
+      label: "Surfaces",
+      options: beds.filter((bed) => bed.kind === "surface" && bed.origin === "built-in"),
+    },
+    { label: "Custom", options: beds.filter((bed) => bed.id === "custom") },
   ];
 };
 /** Short labels suit the viewport's segmented control; names suit lists. */

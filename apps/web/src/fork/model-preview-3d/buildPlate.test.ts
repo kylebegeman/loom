@@ -138,7 +138,9 @@ it("shows named custom beds before the scratch size and hides unused presets", (
   expect(buildPlateLabel(selectBed(named, "custom"))).toBe("Custom size");
   const groups = bedGroups({ ...named, hiddenPresets: ["prusa-mini"] });
   expect(
-    groups.find((group) => group.label === "Custom")?.options.map((option) => option.label),
+    groups
+      .filter((group) => group.label === "Your printers" || group.label === "Custom")
+      .flatMap((group) => group.options.map((option) => option.label)),
   ).toEqual(["Laser", "Custom size"]);
   expect(
     groups.flatMap((group) => group.options).some((option) => option.id === "prusa-mini"),

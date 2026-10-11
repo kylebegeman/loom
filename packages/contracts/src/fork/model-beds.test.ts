@@ -92,6 +92,9 @@ it("lists presets in stable table order and the custom slot last", () => {
   expect(new Set(beds.map((bed) => bed.id)).size).toBe(beds.length);
   expect(beds.at(-1)).toEqual({
     id: "custom",
+    origin: "user",
+    bedShape: "rectangle",
+    nozzlesMm: [],
     label: "Custom size",
     kind: "custom",
     volumeMm: setting.customMm,

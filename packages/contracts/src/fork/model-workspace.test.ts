@@ -39,6 +39,7 @@ it("restores legacy saved view and annotation cameras as perspective", () => {
         request: "Move the hole",
         status: "open",
         reviewedRevision: null,
+        resolvedIn: null,
         camera: legacyCamera,
         parameters: {},
       },

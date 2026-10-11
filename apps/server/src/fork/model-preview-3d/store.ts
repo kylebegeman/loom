@@ -3,14 +3,17 @@ import {
   ModelWorkspace,
   DEFAULT_MODEL_PREVIEW_SETTINGS,
   ModelPreviewSettings,
+  PrinterLibrary,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as DateTime from "effect/DateTime";
 import * as SqlClient from "effect/sql/SqlClient";
 const workspaceJson = Schema.fromJsonString(ModelWorkspace);
 const Overrides = Schema.Record(Schema.String, Schema.String);
 const settingsJson = Schema.fromJsonString(ModelPreviewSettings);
+const printersJson = Schema.fromJsonString(PrinterLibrary);
 const overridesJson = Schema.fromJsonString(Overrides);
 export const makeStore = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -56,6 +59,19 @@ export const makeStore = Effect.gen(function* () {
     ) {
       yield* sql`INSERT INTO fork_model_preview_3d_settings (key,value_json) VALUES ('settings', ${yield* Schema.encodeEffect(settingsJson)(settings)}) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`;
       return settings;
+    }),
+    getPrinters: Effect.fn("ModelPreviewStore.getPrinters")(function* () {
+      const rows = yield* sql<{
+        value_json: string;
+      }>`SELECT value_json FROM fork_model_preview_3d_settings WHERE key = 'printers'`;
+      return rows[0]
+        ? Option.some(yield* Schema.decodeEffect(printersJson)(rows[0].value_json))
+        : Option.none<PrinterLibrary>();
+    }),
+    savePrinters: Effect.fn("ModelPreviewStore.savePrinters")(function* (value: PrinterLibrary) {
+      const encoded = yield* Schema.encodeEffect(printersJson)(value);
+      yield* sql`INSERT INTO fork_model_preview_3d_settings (key,value_json) VALUES ('printers', ${encoded}) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json`;
+      return value;
     }),
     getParams: Effect.fn("ModelPreviewStore.getParams")(function* (
       projectId: string,

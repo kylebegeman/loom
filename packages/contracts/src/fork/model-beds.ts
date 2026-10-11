@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import type { PrinterLibrary } from "./model-printers.ts";
 
 export type BedZone = {
   readonly id: string;
@@ -30,7 +31,7 @@ type BuildPlatePreset = {
  * surfaces to compare a part against. To add one, add an entry with a stable id: the setting
  * schema, menus and fit checks all read this table. Printer volumes are vendor build volumes.
  */
-export const BUILD_PLATE_PRESETS = {
+const PRESET_DATA = {
   "bambu-h2d": {
     label: "Bambu Lab H2D",
     kind: "printer",
@@ -129,6 +130,49 @@ export const BUILD_PLATE_PRESETS = {
   "plane-1m": { label: "1 m square", kind: "surface", volumeMm: [1000, 1000, null], note: null },
 } as const satisfies Record<string, BuildPlatePreset>;
 
+const builtin = <const K extends keyof typeof PRESET_DATA>(id: K) => {
+  const preset = PRESET_DATA[id];
+  return {
+    ...preset,
+    id,
+    bedShape: "rectangle" as const,
+    nozzlesMm: preset.kind === "printer" ? [0.4] : [],
+    materialIds: [] as readonly string[],
+    defaultMaterialId: null,
+    zones: "zones" in preset ? preset.zones : [],
+    excludedAreasMm:
+      id === "bambu-x1-p1-a1"
+        ? [
+            [
+              [0, 0],
+              [18, 0],
+              [18, 28],
+              [0, 28],
+            ] as const,
+          ]
+        : [],
+  };
+};
+/** Built-in printer metadata keeps saved preset ids stable across library upgrades. */
+export const BUILT_IN_PRINTERS = {
+  "bambu-h2d": builtin("bambu-h2d"),
+  "bambu-h2c": builtin("bambu-h2c"),
+  "bambu-x1-p1-a1": builtin("bambu-x1-p1-a1"),
+  "bambu-a1-mini": builtin("bambu-a1-mini"),
+  "anycubic-kobra-s1": builtin("anycubic-kobra-s1"),
+  "prusa-core-one": builtin("prusa-core-one"),
+  "prusa-mk4s": builtin("prusa-mk4s"),
+  "prusa-mini": builtin("prusa-mini"),
+  "creality-k1-max": builtin("creality-k1-max"),
+  "creality-ender-3-v3": builtin("creality-ender-3-v3"),
+  "sheet-a4": builtin("sheet-a4"),
+  "sheet-letter": builtin("sheet-letter"),
+  "mat-12in": builtin("mat-12in"),
+  "plane-1m": builtin("plane-1m"),
+} as const;
+/** Compatibility alias for callers that predate the printer library. */
+export const BUILD_PLATE_PRESETS = BUILT_IN_PRINTERS;
+
 export const BuildPlatePresetId = Schema.Literals([
   ...(Object.keys(BUILD_PLATE_PRESETS) as (keyof typeof BUILD_PLATE_PRESETS)[]),
   "custom",
@@ -193,40 +237,84 @@ export type Bed = {
   readonly volumeMm: BedVolume;
   readonly note: string | null;
   readonly zones?: readonly BedZone[];
+  readonly origin: "built-in" | "user";
+  readonly bedShape: "rectangle" | "round";
+  readonly nozzlesMm: readonly number[];
+};
+
+export type BedListOptions = {
+  readonly includeHidden?: boolean;
+  readonly library?: PrinterLibrary | undefined;
 };
 
 /** Visible beds in menu order. An active hidden preset stays visible until another is selected. */
 export const listBeds = (
   setting: BuildPlateSetting,
-  options: { includeHidden?: boolean } = {},
+  options: BedListOptions = {},
 ): readonly Bed[] => [
   ...Object.entries(BUILD_PLATE_PRESETS)
     .filter(
       ([id]) =>
         options.includeHidden ||
         id === setting.preset ||
-        !setting.hiddenPresets.includes(id as typeof PresetOnlyId.Type),
+        !(options.library?.hiddenBuiltIns ?? setting.hiddenPresets).includes(
+          id as typeof PresetOnlyId.Type,
+        ),
     )
-    .map(([id, preset]) => ({ id, ...preset })),
-  ...setting.customBeds.map((bed) => ({
-    id: bed.id,
-    label: bed.name,
-    kind: "custom" as const,
-    volumeMm: bed.volumeMm,
+    .map(([id, preset]) => ({ ...preset, id, origin: "built-in" as const })),
+  ...(options.library
+    ? options.library.printers.map((printer) => ({
+        id: printer.id,
+        label: printer.name,
+        kind: printer.kind,
+        volumeMm: printer.volumeMm,
+        origin: "user" as const,
+        bedShape: printer.bedShape,
+        nozzlesMm: printer.nozzlesMm,
+        zones: printer.zones,
+        note: printer.notes || null,
+      }))
+    : setting.customBeds.map((bed) => ({
+        id: bed.id,
+        label: bed.name,
+        kind: "custom" as const,
+        volumeMm: bed.volumeMm,
+        origin: "user" as const,
+        bedShape: "rectangle" as const,
+        nozzlesMm: [],
+        note: null,
+      }))),
+  {
+    id: "custom",
+    label: "Custom size",
+    kind: "custom",
+    origin: "user",
+    bedShape: "rectangle",
+    nozzlesMm: [],
+    volumeMm: setting.customMm,
     note: null,
-  })),
-  { id: "custom", label: "Custom size", kind: "custom", volumeMm: setting.customMm, note: null },
+  },
 ];
 /** Stale named references safely fall back to the scratch size. */
-export const activeBed = (setting: BuildPlateSetting): Bed => {
-  const beds = listBeds(setting);
+export const activeBed = (setting: BuildPlateSetting, options: BedListOptions = {}): Bed => {
+  const beds = listBeds(setting, options);
   const id = setting.preset === "custom" ? (setting.customBedId ?? "custom") : setting.preset;
-  return beds.find((bed) => bed.id === id) ?? beds[beds.length - 1]!;
+  return (
+    beds.find((bed) => bed.id === id) ??
+    (options.library && setting.customBedId
+      ? listBeds(setting).find((bed) => bed.id === id)
+      : undefined) ??
+    beds[beds.length - 1]!
+  );
 };
-export const selectBed = (setting: BuildPlateSetting, id: string): BuildPlateSetting => {
+export const selectBed = (
+  setting: BuildPlateSetting,
+  id: string,
+  options: BedListOptions = {},
+): BuildPlateSetting => {
   if (id === "custom" || Object.hasOwn(BUILD_PLATE_PRESETS, id))
     return { ...setting, preset: id as BuildPlatePresetId, customBedId: null };
-  return setting.customBeds.some((bed) => bed.id === id)
+  return (options.library?.printers ?? setting.customBeds).some((bed) => bed.id === id)
     ? { ...setting, preset: "custom", customBedId: id }
     : setting;
 };
@@ -294,7 +382,11 @@ export type BedFit =
 const FIT_TOLERANCE_MM = 1e-6;
 
 /** Check size as placed, then rotated 90 degrees about Z. Invalid dimensions throw. */
-export const fitOnBed = (size: readonly [number, number, number], volume: BedVolume): BedFit => {
+export const fitOnBed = (
+  size: readonly [number, number, number],
+  volume: BedVolume,
+  shape: "rectangle" | "round" = "rectangle",
+): BedFit => {
   if (
     size.length !== 3 ||
     [size[0], size[1], size[2]].some((value) => !Number.isFinite(value) || value < 0)
@@ -311,6 +403,15 @@ export const fitOnBed = (size: readonly [number, number, number], volume: BedVol
     );
   }
   const heightFits = volume[2] === null || size[2] <= volume[2] + FIT_TOLERANCE_MM;
+  if (shape === "round") {
+    const over = Math.max(0, Math.hypot(size[0], size[1]) - Math.min(volume[0], volume[1]));
+    return heightFits && over <= FIT_TOLERANCE_MM
+      ? { status: "fits" }
+      : {
+          status: "too-big",
+          overMm: [over, over, volume[2] === null ? 0 : Math.max(0, size[2] - volume[2])],
+        };
+  }
   if (
     heightFits &&
     size[0] <= volume[0] + FIT_TOLERANCE_MM &&
@@ -398,11 +499,15 @@ export type BedFitResult = {
 /** Refine the outer volume by shared nozzle reach, single nozzles, then the whole plate. */
 export const fitBed = (
   size: readonly [number, number, number],
-  bed: { readonly volumeMm: BedVolume; readonly zones?: readonly BedZone[] },
+  bed: {
+    readonly volumeMm: BedVolume;
+    readonly zones?: readonly BedZone[];
+    readonly bedShape?: "rectangle" | "round" | undefined;
+  },
 ): BedFitResult => {
   const zones = bed.zones;
   if (!zones?.length)
-    return { fit: fitOnBed(size, bed.volumeMm), zone: null, withinMm: bed.volumeMm };
+    return { fit: fitOnBed(size, bed.volumeMm, bed.bedShape), zone: null, withinMm: bed.volumeMm };
   const common = sharedZone(zones, bed.volumeMm[2]);
   const candidates: BedFitResult[] = [];
   if (common) {
@@ -472,10 +577,11 @@ export type BedFitSummary = typeof BedFitSummary.Type;
 export const bedFitSummary = (
   size: readonly [number, number, number],
   setting: BuildPlateSetting,
+  options: BedListOptions = {},
 ): BedFitSummary => ({
   sizeMm: size,
-  activeBedId: activeBed(setting).id,
-  beds: listBeds(setting).map((bed) => {
+  activeBedId: activeBed(setting, options).id,
+  beds: listBeds(setting, options).map((bed) => {
     const { fit, zone } = fitBed(size, bed);
     return {
       id: bed.id,

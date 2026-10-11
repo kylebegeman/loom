@@ -1,3 +1,4 @@
+import { ThreadId, CheckpointId, PositiveInt } from "../baseSchemas.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 const text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
@@ -90,6 +91,9 @@ export const ModelAnnotation = Schema.Struct({
   request: text(4000),
   status: Schema.Literals(["open", "review", "accepted"]),
   reviewedRevision: Schema.NullOr(Schema.String),
+  resolvedIn: Schema.NullOr(
+    Schema.Struct({ threadId: ThreadId, checkpointId: CheckpointId, turn: PositiveInt }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   camera: ModelCamera,
   parameters: values,
 });
