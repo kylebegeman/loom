@@ -18,7 +18,9 @@ it.effect(
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem,
           path = yield* Path.Path,
-          root = yield* fs.makeTempDirectoryScoped({ prefix: "loom-enclosure-" });
+          root = yield* fs
+            .makeTempDirectoryScoped({ prefix: "loom-enclosure-" })
+            .pipe(Effect.flatMap(fs.realPath));
         let exports = 0,
           race = false;
         const guarded = FileSystem.FileSystem.of({

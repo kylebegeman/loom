@@ -1,6 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
+import * as Channel from "effect/Channel";
+import * as Scope from "effect/Scope";
 import * as Deferred from "effect/Deferred";
 import * as Semaphore from "effect/Semaphore";
 import type { ThreadId } from "@t3tools/contracts";
@@ -22,30 +24,35 @@ export const makeEditorBridge = <Action, Result, Error>(options: {
       listenerSequence = 0,
       outstanding = 0;
     const events = (threadId: ThreadId, path?: string) =>
-      Stream.unwrap(
-        Effect.gen(function* () {
-          if (path) yield* options.resolve(threadId, path);
-          const key = keyOf(threadId, path ?? ""),
-            subscription = yield* PubSub.subscribe(bus);
-          const listener = ++listenerSequence;
-          yield* Effect.acquireRelease(
-            Effect.sync(() => {
-              const owners = listeners.get(key) ?? new Set<number>();
-              owners.add(listener);
-              listeners.set(key, owners);
-            }),
-            () =>
+      Stream.fromChannel(
+        // Acquire the listener before returning the pull, including asynchronous design resolution.
+        Channel.fromTransform((_, scope) =>
+          Effect.gen(function* () {
+            if (path) yield* options.resolve(threadId, path);
+            const key = keyOf(threadId, path ?? ""),
+              subscription = yield* PubSub.subscribe(bus);
+            const listener = ++listenerSequence;
+            yield* Effect.acquireRelease(
               Effect.sync(() => {
-                const owners = listeners.get(key);
-                owners?.delete(listener);
-                if (!owners?.size) listeners.delete(key);
+                const owners = listeners.get(key) ?? new Set<number>();
+                owners.add(listener);
+                listeners.set(key, owners);
               }),
-          );
-          return Stream.fromSubscription(subscription).pipe(
-            Stream.filter((v) => v.listener === listener),
-            Stream.map((v) => v.event),
-          );
-        }),
+              () =>
+                Effect.sync(() => {
+                  const owners = listeners.get(key);
+                  owners?.delete(listener);
+                  if (!owners?.size) listeners.delete(key);
+                }),
+            );
+            return yield* Stream.toPull(
+              Stream.fromSubscription(subscription).pipe(
+                Stream.filter((v) => v.listener === listener),
+                Stream.map((v) => v.event),
+              ),
+            );
+          }).pipe(Scope.provide(scope)),
+        ),
       );
     const request = (input: { threadId: ThreadId; path: string; command: Action }) =>
       Effect.gen(function* () {

@@ -53,7 +53,9 @@ const output = (code = 0, stdout = "", timedOut = false): ProcessRunOutput => ({
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path;
-  const root = yield* fs.makeTempDirectoryScoped({ prefix: "loom-pcb-test-" });
+  const root = yield* fs
+    .makeTempDirectoryScoped({ prefix: "loom-pcb-test-" })
+    .pipe(Effect.flatMap(fs.realPath));
   const state = path.join(root, ".t3");
   const bin = path.join(root, ".tools");
   yield* fs.makeDirectory(bin);

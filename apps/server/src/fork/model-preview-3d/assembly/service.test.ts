@@ -7,7 +7,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { makeAssemblies } from "./service.ts";
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
-    root = yield* fs.makeTempDirectoryScoped();
+    root = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
   const resolveWorkspace = (file: ModelFileRef) =>
     Effect.succeed({ root, absolute: `${root}/${file.path}` });
   const service = yield* makeAssemblies({

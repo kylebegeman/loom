@@ -22,7 +22,9 @@ const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path,
-    root = yield* fs.makeTempDirectoryScoped({ prefix: "loom-print-check-" }),
+    root = yield* fs
+      .makeTempDirectoryScoped({ prefix: "loom-print-check-" })
+      .pipe(Effect.flatMap(fs.realPath)),
     file = { threadId: ThreadId.make("check"), path: "cube.stl" };
   yield* fs.writeFile(path.join(root, file.path), binaryStl(cubeSoup()));
   let settings = DEFAULT_MODEL_PREVIEW_SETTINGS,

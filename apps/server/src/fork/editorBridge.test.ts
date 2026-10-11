@@ -123,3 +123,32 @@ it.effect("serializes actions, delivers to one client and refuses duplicate capt
     }),
   ),
 );
+
+it.effect("acquires an asynchronous editor subscription before returning its pull", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const resolving = yield* Deferred.make<void>(),
+        release = yield* Deferred.make<void>();
+      const bridge = yield* makeEditorBridge<string, string, string>({
+        resolve: () =>
+          Deferred.succeed(resolving, undefined).pipe(Effect.andThen(Deferred.await(release))),
+        failure: (message) => message,
+        panelAction: () => false,
+      });
+      const threadId = ThreadId.make("async-editor"),
+        path = "board.glb";
+      const acquisition = yield* Stream.toPull(bridge.events(threadId, path)).pipe(
+        Effect.forkChild({ startImmediately: true }),
+      );
+      yield* Deferred.await(resolving);
+      yield* Deferred.succeed(release, undefined);
+      const pull = yield* Fiber.join(acquisition);
+      const job = yield* bridge
+        .request({ threadId, path, command: "measure" })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      const [event] = yield* pull;
+      yield* bridge.complete({ threadId, path, requestId: event.requestId, result: "measured" });
+      expect(yield* Fiber.join(job)).toBe("measured");
+    }),
+  ),
+);

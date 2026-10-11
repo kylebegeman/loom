@@ -37,7 +37,9 @@ const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path,
     runner = yield* ProcessRunner.ProcessRunner;
-  const top = yield* fs.makeTempDirectoryScoped({ prefix: "loom-history-" });
+  const top = yield* fs
+    .makeTempDirectoryScoped({ prefix: "loom-history-" })
+    .pipe(Effect.flatMap(fs.realPath));
   const root = path.join(top, "workspace");
   yield* fs.makeDirectory(root);
   const git = (args: ReadonlyArray<string>) =>

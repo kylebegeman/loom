@@ -106,7 +106,9 @@ type TestDesign = { id: string; kind: "kicad" | "tscircuit"; name: string; board
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path;
-  const root = yield* fs.makeTempDirectoryScoped({ prefix: "loom-print-test-" }),
+  const root = yield* fs
+      .makeTempDirectoryScoped({ prefix: "loom-print-test-" })
+      .pipe(Effect.flatMap(fs.realPath)),
     cacheDir = path.join(root, "cache"),
     board = path.join(root, "board.kicad_pcb"),
     project = path.join(root, "board.kicad_pro");
