@@ -65,7 +65,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_editor", {
     description:
-      "Control the visible PCB editor: 3D projection, section, layer visibility, 3D measurements and component heights; show changes since the last reload (changes), fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. finding steps next/previous or selects a finding id; markers shows/hides pins; snapshot lists current surface findings. turn-history shows history or a version (name = checkpoint id or current); turn-compare compares the shown version with another (name = checkpoint id or current). layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
+      "Control the visible PCB editor: 3D projection, section, layer visibility, 3D measurements and component heights; show changes since the last reload (changes), fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. finding steps next/previous or selects a finding id; markers shows/hides pins; snapshot lists current surface findings. turn-history shows history or a version (name = checkpoint id or current); turn-compare compares the shown version with another (name = checkpoint id or current). render-variants starts a batch in the visible panel with optional ids and requires allowed circuit code. layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
     parameters: Schema.Struct({ ...design, command: W.PcbEditorAction }),
     success: W.PcbEditorResult,
     failure,
@@ -449,6 +449,17 @@ export const PcbToolkit = Toolkit.make(
   })
     .annotate(Tool.Title, "PCB: parameters")
     .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_propose_variants", {
+    description:
+      "Propose up to eight named tscircuit parameter variants into the user's workbench. Does not build, edit source or apply values. Values must match declared parameters. Use the editor render-variants action to build in the trusted visible panel.",
+    parameters: Schema.Struct({ ...design, variants: W.PcbProposedVariants }),
+    success: W.PcbWorkspace,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Propose circuit variants")
+    .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_apply_parameters", {
     description:
@@ -886,6 +897,16 @@ export const pcbHandlers = McpToolAccess.toLayer(
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) =>
               service.parameters({ ...input, threadId }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_propose_variants: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.proposeVariants({ threadId, designId: input.designId }, input.variants),
             ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),

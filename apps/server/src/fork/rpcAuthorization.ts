@@ -48,6 +48,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [P.status]: AuthOrchestrationReadScope,
   [P.listDesigns]: AuthOrchestrationReadScope,
   [P.render]: AuthTerminalOperateScope,
+  [P.renderVariant]: AuthTerminalOperateScope,
+  [P.cancelVariant]: AuthTerminalOperateScope,
   [P.projectSettings]: AuthOrchestrationReadScope,
   [P.updateProjectSettings]: AuthTerminalOperateScope,
   [P.checkEvents]: AuthOrchestrationReadScope,

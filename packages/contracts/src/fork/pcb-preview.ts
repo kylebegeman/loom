@@ -68,6 +68,8 @@ export const PCB_PREVIEW_WS_METHODS = {
   updateLibrary: "loom.pcb-preview.updateLibrary",
 
   listDesigns: "loom.pcb-preview.listDesigns",
+  renderVariant: "loom.pcb-preview.renderVariant",
+  cancelVariant: "loom.pcb-preview.cancelVariant",
   render: "loom.pcb-preview.render",
   readSheet: "loom.pcb-preview.readSheet",
   projectSettings: "loom.pcb-preview.projectSettings",
@@ -182,6 +184,32 @@ export const PcbRenderResult = Schema.Struct({
   cached: Schema.Boolean,
 });
 export type PcbRenderResult = typeof PcbRenderResult.Type;
+
+export const PcbRenderVariantInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: TrimmedNonEmptyString,
+  variantId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+  values: W.PcbVariant.fields.values,
+  expectedSourceHash: TrimmedNonEmptyString,
+});
+export type PcbRenderVariantInput = typeof PcbRenderVariantInput.Type;
+export const PcbCancelVariantInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: TrimmedNonEmptyString,
+  variantId: PcbRenderVariantInput.fields.variantId,
+});
+export type PcbCancelVariantInput = typeof PcbCancelVariantInput.Type;
+export const PcbRenderVariantResult = Schema.Struct({
+  variantId: Schema.String,
+  outcome: PcbRenderResult.fields.outcome,
+  renderKey: TrimmedNonEmptyString,
+  sheet: Schema.NullOr(PcbSheet),
+  sourceHash: TrimmedNonEmptyString,
+  stats: Schema.NullOr(W.PcbVariantStats),
+  log: Schema.String,
+  cached: Schema.Boolean,
+});
+export type PcbRenderVariantResult = typeof PcbRenderVariantResult.Type;
 
 export const PcbReadSheetInput = Schema.Struct({
   threadId: ThreadId,
@@ -360,6 +388,16 @@ export type PcbLatestChecksResult = typeof PcbLatestChecksResult.Type;
 const errors = Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]);
 
 export const PcbPreviewRpcGroup = RpcGroup.make(
+  Rpc.make(PCB_PREVIEW_WS_METHODS.renderVariant, {
+    payload: PcbRenderVariantInput,
+    success: PcbRenderVariantResult,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.cancelVariant, {
+    payload: PcbCancelVariantInput,
+    success: Schema.Void,
+    error: errors,
+  }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.history, {
     payload: W.PcbHistoryInput,
     success: W.PcbHistory,

@@ -2,6 +2,8 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PcbVariant,
+  PcbProposedVariants,
   PcbEditorAction,
   PcbCompleteEditorInput,
   PcbWorkspace,
@@ -210,4 +212,37 @@ it("decodes 3D editor tools and bounded points while retaining old actions", asy
     },
   });
   expect(completion.measurement3d).toEqual(measurement3d);
+});
+
+const decodeVariant = Schema.decodeUnknownSync(PcbVariant);
+const decodeProposals = Schema.decodeUnknownSync(PcbProposedVariants);
+it("upgrades saved variants and bounds thumbnails, stats and agent proposals", () => {
+  const legacy = { id: "a", name: "A", values: { width: 20 }, sourceHash: "r1" };
+  expect(decodeVariant(legacy)).toMatchObject({
+    origin: "user",
+    thumbnail: null,
+    renderedRevision: null,
+    render: null,
+    stats: null,
+    error: null,
+  });
+  expect(() => decodeVariant({ ...legacy, thumbnail: "a".repeat(24001) })).toThrow();
+  expect(() =>
+    decodeVariant({
+      ...legacy,
+      stats: {
+        widthMm: 1,
+        heightMm: 2,
+        components: 0,
+        errors: 0,
+        warnings: 0,
+        board: Object.fromEntries(Array.from({ length: 41 }, (_, i) => [String(i), i])),
+      },
+    }),
+  ).toThrow();
+  expect(() =>
+    decodeProposals(Array.from({ length: 9 }, () => ({ name: "A", values: {} }))),
+  ).toThrow();
+  expect(readEditorAction({ action: "render-variants" })).toEqual({ action: "render-variants" });
+  expect(readEditorAction({ action: "render-variants", ids: ["a"] }).ids).toEqual(["a"]);
 });

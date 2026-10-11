@@ -40,6 +40,8 @@ const runtime = Atom.runtime(
 
 it.effect.each([
   "print",
+  "renderVariant",
+  "cancelVariant",
   "enclosure",
   "updateProjectSettings",
   "pinMap",

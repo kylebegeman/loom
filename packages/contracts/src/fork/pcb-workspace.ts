@@ -170,6 +170,21 @@ export const PcbSimulationSetup = Schema.Struct({
   ),
 });
 export type PcbSimulationSetup = typeof PcbSimulationSetup.Type;
+const nullable = <S extends Schema.Top>(s: S) =>
+  Schema.NullOr(s).pipe(Schema.withDecodingDefault(Effect.succeed(null)));
+export const PCB_SWEEP_LIMIT = 8;
+export const PCB_VARIANT_LIMIT = 24;
+export const PcbVariantStats = Schema.Struct({
+  widthMm: finite,
+  heightMm: finite,
+  components: NonNegativeInt,
+  errors: NonNegativeInt,
+  warnings: NonNegativeInt,
+  board: Schema.Record(text(60), finite)
+    .check(Schema.isMaxProperties(40))
+    .pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+export type PcbVariantStats = typeof PcbVariantStats.Type;
 export const PcbVariant = Schema.Struct({
   id: text(),
   name: text(),
@@ -178,7 +193,20 @@ export const PcbVariant = Schema.Struct({
     Schema.Union([finite, Schema.String.check(Schema.isMaxLength(2000)), Schema.Boolean]),
   ).check(Schema.isMaxProperties(100)),
   sourceHash: text(),
+  origin: Schema.Literals(["user", "agent"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("user" as const)),
+  ),
+  thumbnail: nullable(Schema.String.check(Schema.isMaxLength(24000))),
+  renderedRevision: nullable(text()),
+  render: nullable(Schema.Struct({ renderKey: text(), sheetId: text(240) })),
+  stats: nullable(PcbVariantStats),
+  error: nullable(text(2000)),
 });
+export type PcbVariant = typeof PcbVariant.Type;
+export const PcbProposedVariants = list(
+  Schema.Struct({ name: text(100), values: PcbVariant.fields.values }),
+  PCB_SWEEP_LIMIT,
+).check(Schema.isMinLength(1));
 export const PcbRequestAnchor = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("component"), reference: text() }),
   Schema.Struct({ kind: Schema.Literal("net"), name: text() }),
@@ -186,8 +214,6 @@ export const PcbRequestAnchor = Schema.Union([
 ]);
 export type PcbRequestAnchor = typeof PcbRequestAnchor.Type;
 export const PcbRequestStatus = Schema.Literals(["open", "review", "accepted"]);
-const nullable = <S extends Schema.Top>(s: S) =>
-  Schema.NullOr(s).pipe(Schema.withDecodingDefault(Effect.succeed(null)));
 export const PcbChangeRequestDraft = Schema.Struct({
   id: text(),
   title: text(120),
@@ -630,6 +656,7 @@ export type Pcb3dHeights = typeof Pcb3dHeights.Type;
 export const PcbEditorAction = Schema.Struct({
   requestId: Schema.optional(text()),
   action: Schema.Literals([
+    "render-variants",
     "refresh",
     "cancel",
     "checks",
@@ -668,6 +695,7 @@ export const PcbEditorAction = Schema.Struct({
     "measure",
     "height",
   ]),
+  ids: Schema.optional(list(text(100), PCB_VARIANT_LIMIT)),
   camera: Schema.optional(ModelCamera),
   cameraView: Schema.optional(Schema.Literals(["iso", "top", "front", "right"])),
   view: Schema.optional(Schema.Literals(["pcb", "schematic"])),

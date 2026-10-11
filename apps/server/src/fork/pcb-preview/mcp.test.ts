@@ -814,3 +814,38 @@ it.effect(
       }),
     ),
 );
+
+it.effect("agent proposals reach the workspace service in the caller thread", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const workspace = {
+        version: 1,
+        views: [],
+        layerSets: [],
+        measurements: [],
+        annotations: [],
+        simulations: [],
+        variants: [],
+        requests: [],
+      };
+      const { toolkit, threads } = yield* fixture({
+        proposeVariants: (input, variants) => {
+          expect(input).toEqual({ threadId, designId: "blink.circuit.tsx" });
+          expect(variants).toEqual([{ name: "Wide", values: { width: 30 } }]);
+          return Effect.succeed(workspace);
+        },
+      });
+      const results = yield* toolkit
+        .handle("loom_pcb_propose_variants", {
+          designId: "blink.circuit.tsx",
+          variants: [{ name: "Wide", values: { width: 30 } }],
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, threads),
+        );
+      expect(results[0]?.isFailure).toBe(false);
+    }),
+  ),
+);

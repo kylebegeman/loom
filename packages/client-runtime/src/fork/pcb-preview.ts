@@ -340,6 +340,14 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
       tag: M.watch,
       idleTtlMs: 0,
     }),
+    renderVariant: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-render-variant",
+      tag: M.renderVariant,
+    }),
+    cancelVariant: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-cancel-variant",
+      tag: M.cancelVariant,
+    }),
     render: createEnvironmentRpcCommand<
       R,
       E,

@@ -1,3 +1,6 @@
+import { variantStats, validateVariantValues } from "./variants.ts";
+import * as Cause from "effect/Cause";
+import * as Exit from "effect/Exit";
 import { makeEnclosure } from "./enclosure/service.ts";
 import { readGlbDocument } from "./enclosure/readJson.ts";
 import { kicadOutline, circuitOutline } from "./outline.ts";
@@ -163,6 +166,16 @@ export class PcbPreviewService extends Context.Service<
     readonly parameters: (
       input: W.PcbInspectInput,
     ) => Effect.Effect<W.PcbParameters, PcbPreviewError>;
+    readonly renderVariant: (
+      input: W.PcbRenderVariantInput,
+    ) => Effect.Effect<W.PcbRenderVariantResult, PcbPreviewError>;
+    readonly cancelVariant: (
+      input: W.PcbCancelVariantInput,
+    ) => Effect.Effect<void, PcbPreviewError>;
+    readonly proposeVariants: (
+      input: W.PcbInspectInput,
+      variants: typeof W.PcbProposedVariants.Type,
+    ) => Effect.Effect<W.PcbWorkspace, PcbPreviewError>;
     readonly applyParameters: (
       input: W.PcbApplyParametersInput,
     ) => Effect.Effect<W.PcbApplyParametersResult, PcbPreviewError>;
@@ -295,6 +308,7 @@ const contains = (root: string, absolute: string, path: Path.Path) => {
 
 /** Exported for service tests with real filesystem and injected process/store boundaries. */
 export const make = Effect.gen(function* () {
+  const serviceScope = yield* Effect.scope;
   const checkpoints = yield* CheckpointStore;
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path;
@@ -836,6 +850,7 @@ export const make = Effect.gen(function* () {
     resolved: ResolvedDesign,
     snapshot: { dirs: string[]; sourceHash: string },
     frozen = false,
+    variantSource?: string,
   ) {
     const tool = yield* requiredTool(resolved);
     const preset = input.view === "schematic" ? "front" : (input.layers ?? "front");
@@ -853,7 +868,11 @@ export const make = Effect.gen(function* () {
       snapshot.sourceHash,
       resolved.design.kind,
       input.view,
-      input.layerNames ? input.layerNames.join(",") : preset,
+      variantSource !== undefined
+        ? "variant:" + hashKey(variantSource)
+        : input.layerNames
+          ? input.layerNames.join(",")
+          : preset,
       version + ":physical-v3",
     );
     const target = path.join(cacheDir, key),
@@ -963,7 +982,7 @@ export const make = Effect.gen(function* () {
     let circuitInspection: W.PcbInspection | undefined;
     if (resolved.design.kind === "tscircuit") {
       const jsonPath = path.join(temporary, "circuit.json");
-      const build = yield* assetFor(
+      const ordinaryBuild = assetFor(
         {
           threadId: input.threadId,
           designId: input.designId,
@@ -980,6 +999,31 @@ export const make = Effect.gen(function* () {
             : Effect.fail(cause),
         ),
       );
+      const build = yield* variantSource === undefined
+        ? ordinaryBuild
+        : Effect.gen(function* () {
+            const staged = path.join(runCwd, path.relative(resolved.cwd, source));
+            // Replace the staging symlink before writing. The user's source is never a write target.
+            yield* fs.remove(staged);
+            yield* fs.writeFileString(staged, variantSource);
+            const result = yield* run(
+              tool,
+              ["export", staged, "-f", "circuit-json", "-o", jsonPath],
+              runCwd,
+              "120 seconds",
+              true,
+              runtimeTemp,
+            );
+            if (result.timedOut || result.code !== 0)
+              return {
+                error: new PcbPreviewError({
+                  reason: "unsupported-view",
+                  message: processLog(result) || "The circuit variant build failed.",
+                  timedOut: result.timedOut,
+                }),
+              };
+            return { data: yield* smallSource(jsonPath) };
+          });
       if ("error" in build)
         return {
           renderKey: key,
@@ -1000,6 +1044,13 @@ export const make = Effect.gen(function* () {
         try: () => inspectCircuitJson(json, snapshot.sourceHash),
         catch: () => failure("invalid-report", "Invalid circuit coordinates."),
       });
+      if (variantSource !== undefined) {
+        if (!Array.isArray(json)) return yield* failure("invalid-report", "Invalid Circuit JSON.");
+        yield* fs.writeFileString(
+          path.join(temporary, "variant-stats.json"),
+          encodeJson(variantStats(circuitInspection, json)),
+        );
+      }
       args[1] = jsonPath;
     }
     const result = yield* run(
@@ -2847,6 +2898,150 @@ export const make = Effect.gen(function* () {
       }),
     );
   });
+  const decodeVariantStats = Schema.decodeUnknownEffect(Schema.fromJsonString(W.PcbVariantStats));
+  const variantJobs = new Map<string, Fiber.Fiber<W.PcbRenderVariantResult, PcbPreviewError>>();
+  const variantJobKey = (i: W.PcbCancelVariantInput) =>
+    `${i.threadId}\0${i.designId}\0${i.variantId}`;
+  const renderVariant = Effect.fn("PcbPreview.renderVariant")(function* (
+    input: W.PcbRenderVariantInput,
+  ) {
+    const key = variantJobKey(input);
+    const work = checked(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const resolved = yield* resolveDesign(input);
+          if (resolved.design.kind !== "tscircuit")
+            return yield* failure("unsupported-view", "Variants need a tscircuit design.");
+          const current = yield* parameters(input);
+          if (current.sourceHash !== input.expectedSourceHash)
+            return yield* failure(
+              "conflict",
+              "The circuit source changed. Reload parameters before rendering variants.",
+            );
+          const problem = validateVariantValues(current, input.values);
+          if (problem) return yield* failure("invalid-parameters", problem);
+          const snapshot = yield* sourceSnapshot(resolved);
+          const source = applyCircuitParameters(current.source, current.parameters, input.values);
+          const rendered = yield* runRender(
+            { threadId: input.threadId, designId: input.designId, view: "pcb" },
+            resolved,
+            snapshot,
+            false,
+            source,
+          );
+          if (
+            (yield* parameters(input)).sourceHash !== current.sourceHash ||
+            (yield* sourceSnapshot(resolved)).sourceHash !== snapshot.sourceHash
+          )
+            return yield* failure(
+              "conflict",
+              "The circuit source changed. Render again to update the variants.",
+            );
+          const stats =
+            rendered.outcome === "ok"
+              ? yield* decodeVariantStats(
+                  yield* smallSource(path.join(cacheDir, rendered.renderKey, "variant-stats.json")),
+                ).pipe(
+                  Effect.mapError(() =>
+                    failure("invalid-report", "The cached variant statistics are invalid."),
+                  ),
+                )
+              : null;
+          return {
+            variantId: input.variantId,
+            outcome: rendered.outcome,
+            renderKey: rendered.renderKey,
+            sheet: rendered.sheets[0] ?? null,
+            sourceHash: rendered.sourceHash,
+            stats,
+            log: rendered.log,
+            cached: rendered.cached,
+          } satisfies W.PcbRenderVariantResult;
+        }),
+      ),
+    );
+    const fiber = yield* work.pipe(Effect.forkIn(serviceScope));
+    const prior = variantJobs.get(key);
+    variantJobs.set(key, fiber);
+    if (prior) yield* Fiber.interrupt(prior);
+    const exit = yield* Effect.exit(Fiber.join(fiber)).pipe(
+      Effect.onInterrupt(() => Fiber.interrupt(fiber)),
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (variantJobs.get(key) === fiber) variantJobs.delete(key);
+        }),
+      ),
+    );
+    if (Exit.isSuccess(exit)) return exit.value;
+    if (Cause.hasInterruptsOnly(exit.cause))
+      return {
+        variantId: input.variantId,
+        outcome: "cancelled" as const,
+        renderKey: hashKey(key),
+        sheet: null,
+        sourceHash: input.expectedSourceHash,
+        stats: null,
+        log: "Variant rendering cancelled.",
+        cached: false,
+      };
+    return yield* Effect.failCause(exit.cause);
+  });
+  const cancelVariant = Effect.fn("PcbPreview.cancelVariant")(function* (
+    input: W.PcbCancelVariantInput,
+  ) {
+    const fiber = variantJobs.get(variantJobKey(input));
+    if (fiber) yield* Fiber.interrupt(fiber);
+  });
+  const decodeVariant = Schema.decodeUnknownEffect(W.PcbVariant);
+  const proposeVariants = Effect.fn("PcbPreview.proposeVariants")(function* (
+    input: W.PcbInspectInput,
+    variants: typeof W.PcbProposedVariants.Type,
+  ) {
+    const resolved = yield* resolveDesign(input);
+    if (resolved.design.kind !== "tscircuit")
+      return yield* failure("unsupported-view", "Variants need a tscircuit design.");
+    return yield* storageLock.withPermit(
+      Effect.gen(function* () {
+        const current = yield* parameters(input);
+        const saved = yield* readState(
+          workspaceFile(resolved),
+          decodeWorkspaceJson,
+          freshWorkspace,
+        );
+        if (!variants.length || variants.length > W.PCB_SWEEP_LIMIT)
+          return yield* failure("invalid-parameters", "Propose one to eight variants at a time.");
+        if (saved.variants.length + variants.length > W.PCB_VARIANT_LIMIT)
+          return yield* failure(
+            "invalid-parameters",
+            "This design already has 24 variants. Ask the user to delete some.",
+          );
+        const additions = yield* Effect.forEach(variants, (v) =>
+          Effect.gen(function* () {
+            const problem = validateVariantValues(current, v.values);
+            if (problem) return yield* failure("invalid-parameters", problem);
+            return yield* decodeVariant({
+              ...v,
+              id: NodeCrypto.randomUUID(),
+              sourceHash: current.sourceHash,
+              origin: "agent",
+            });
+          }).pipe(
+            Effect.mapError((e) =>
+              isPreviewError(e) ? e : failure("invalid-parameters", "Invalid proposed variant."),
+            ),
+          ),
+        );
+        const next = {
+          ...saved,
+          version: saved.version + 1,
+          variants: [...saved.variants, ...additions],
+        };
+        yield* writeState(workspaceFile(resolved), next);
+        yield* PubSub.publish(workspaceBus, { key: workspaceFile(resolved), data: next });
+        return next;
+      }),
+    );
+  });
   const simulate = Effect.fn("PcbPreview.simulate")(function* (input: W.PcbSimulateInput) {
     return yield* Effect.scoped(
       Effect.gen(function* () {
@@ -3245,6 +3440,9 @@ export const make = Effect.gen(function* () {
       ),
   });
   return PcbPreviewService.of({
+    renderVariant,
+    cancelVariant,
+    proposeVariants: (i, v) => checked(proposeVariants(i, v)),
     history: pcbHistory.history,
     historyRestore: (i, options) => storageLock.withPermit(pcbHistory.restore(i, options)),
     historyUndo: (i) => storageLock.withPermit(pcbHistory.undo(i)),

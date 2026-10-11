@@ -78,6 +78,7 @@ const setup = Effect.gen(function* () {
     timeout = false;
   let reviewNetlist = "(export (nets))";
   const calls: ProcessRunInput[] = [];
+  const stagedSources: string[] = [];
   let block: { started: Deferred.Deferred<void>; stopped: Deferred.Deferred<void> } | null = null;
   const runner = ProcessRunner.of({
     run: (input) =>
@@ -96,6 +97,8 @@ const setup = Effect.gen(function* () {
           return output(0, input.command.endsWith("ngspice") ? "ngspice-47" : "0.0.2764");
         }
         calls.push(input);
+        if (input.args[0] === "export" && input.args[1]?.endsWith(".tsx"))
+          stagedSources.push(yield* fs.readFileString(input.args[1]));
         const target =
           input.args[input.args.indexOf(input.args.includes("-o") ? "-o" : "--output") + 1]!;
         if (block) {
@@ -244,6 +247,7 @@ const setup = Effect.gen(function* () {
     stateDir: (yield* Config.ServerConfig.pipe(Effect.provide(context))).stateDir,
     create,
     calls,
+    stagedSources,
     setHistory: (
       records: readonly OrchestrationV2Checkpoint[],
       scopes: readonly OrchestrationV2CheckpointScope[],
@@ -2256,6 +2260,146 @@ it.effect("returns a 3D measurement to the editor caller through the completion 
       });
       expect((yield* Fiber.join(job)).measurement3d).toEqual(measurement3d);
       yield* Fiber.interrupt(reader);
+    }),
+  ),
+);
+
+const variantFixture = Effect.gen(function* () {
+  const t = yield* setup,
+    input = { threadId: t.input.threadId, designId: "blink.circuit.tsx" };
+  const file = t.path.join(t.root, input.designId),
+    source = "const width = /* loom:param width */ 20;";
+  yield* t.fs.writeFileString(file, source);
+  yield* t.fs.writeFileString(
+    file + ".parameters.json",
+    JSON.stringify({
+      parameters: [
+        {
+          key: "width",
+          label: "Width",
+          description: "",
+          type: "number",
+          default: 20,
+          min: 10,
+          max: 40,
+        },
+      ],
+    }),
+  );
+  const service = yield* t.create(),
+    parameters = yield* service.parameters(input);
+  return {
+    ...t,
+    input,
+    file,
+    source,
+    service,
+    request: {
+      ...input,
+      variantId: "candidate",
+      values: { width: 30 },
+      expectedSourceHash: parameters.sourceHash,
+    },
+  };
+});
+it.effect(
+  "builds and caches isolated variants with stats and readable sheets without writing the source",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* variantFixture,
+          first = yield* t.service.renderVariant(t.request);
+        expect(first.outcome).toBe("ok");
+        expect(first.stats).toMatchObject({ widthMm: 20, heightMm: 20, errors: 0 });
+        expect(t.stagedSources).toContain("const width = /* loom:param width */ 30;");
+        expect(yield* t.fs.readFileString(t.file)).toBe(t.source);
+        expect(
+          (yield* t.service.readSheet({
+            threadId: t.input.threadId,
+            renderKey: first.renderKey,
+            sheetId: first.sheet!.id,
+          })).svg,
+        ).toContain("viewBox");
+        const calls = t.calls.length;
+        expect((yield* t.service.renderVariant(t.request)).cached).toBe(true);
+        expect(t.calls).toHaveLength(calls);
+        expect(
+          (yield* t.service
+            .renderVariant({ ...t.request, values: { width: 50 } })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-parameters");
+        yield* t.fs.writeFileString(t.file, t.source + "\n");
+        expect((yield* t.service.renderVariant(t.request).pipe(Effect.flip)).reason).toBe(
+          "conflict",
+        );
+      }),
+    ),
+);
+it.effect(
+  "returns variant build failures and cancels a running exporter with no partial cache",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* variantFixture;
+        t.setResult(1);
+        const failed = yield* t.service.renderVariant(t.request);
+        expect(failed.outcome).toBe("failed");
+        expect(failed.log).toContain("tool log");
+        t.setResult(0);
+        const started = yield* Deferred.make<void>(),
+          stopped = yield* Deferred.make<void>();
+        t.setBlock({ started, stopped });
+        const job = yield* t.service.renderVariant(t.request).pipe(Effect.forkChild);
+        yield* Deferred.await(started);
+        yield* t.service.cancelVariant(t.request);
+        yield* Deferred.await(stopped);
+        expect((yield* Fiber.join(job)).outcome).toBe("cancelled");
+        expect(
+          yield* t.fs.readDirectory(t.path.join(t.stateDir, "fork", "pcb-preview", "cache")),
+        ).toEqual([]);
+        expect(yield* t.fs.readFileString(t.file)).toBe(t.source);
+        yield* t.service.cancelVariant(t.request);
+      }),
+    ),
+);
+it.effect("proposes validated agent variants atomically and enforces the saved limit", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* variantFixture;
+      const first = yield* t.service.proposeVariants(t.input, [
+        { name: "Wide", values: { width: 35 } },
+      ]);
+      expect(first.variants[0]).toMatchObject({
+        origin: "agent",
+        thumbnail: null,
+        stats: null,
+        values: { width: 35 },
+      });
+      expect(t.calls).toHaveLength(0);
+      expect(
+        (yield* t.service
+          .proposeVariants(t.input, [{ name: "Invalid", values: { width: 50 } }])
+          .pipe(Effect.flip)).reason,
+      ).toBe("invalid-parameters");
+      expect((yield* t.service.getWorkspace(t.input)).version).toBe(first.version);
+      const full = yield* t.service.updateWorkspace({
+        ...t.input,
+        expectedVersion: first.version,
+        workspace: {
+          ...first,
+          variants: Array.from({ length: 24 }, (_, i) => ({
+            ...first.variants[0]!,
+            id: String(i),
+          })),
+        },
+      });
+      expect(full.variants).toHaveLength(24);
+      expect(
+        (yield* t.service
+          .proposeVariants(t.input, [{ name: "Extra", values: { width: 20 } }])
+          .pipe(Effect.flip)).message,
+      ).toContain("24 variants");
+      expect(yield* t.fs.readFileString(t.file)).toBe(t.source);
     }),
   ),
 );
