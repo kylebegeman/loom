@@ -97,3 +97,42 @@ it.effect(
       );
     }).pipe(Effect.provide(SqlitePersistenceMemory)),
 );
+
+it.effect("loads pre-custom-bed settings and persists named surfaces across store instances", () =>
+  Effect.gen(function* () {
+    yield* runForkMigrationSet(ModelPreviewMigrations);
+    const sql = yield* SqlClient.SqlClient;
+    const store = yield* makeStore;
+    const defaults = yield* store.getSettings();
+    const legacy = {
+      ...defaults,
+      buildPlate: {
+        preset: "custom",
+        customMm: [400, 300, 200],
+        pattern: "plain",
+        showZones: false,
+      },
+    };
+    const encoded = JSON.stringify(legacy);
+    yield* sql`INSERT INTO fork_model_preview_3d_settings (key,value_json) VALUES ('settings', ${encoded})`;
+    const loaded = yield* store.getSettings();
+    expect(loaded.buildPlate).toEqual({
+      ...legacy.buildPlate,
+      customBedId: null,
+      customBeds: [],
+      hiddenPresets: [],
+    });
+    const settings = {
+      ...loaded,
+      buildPlate: {
+        ...loaded.buildPlate,
+        customBedId: "custom-12345678",
+        customBeds: [{ id: "custom-12345678", name: "Laser", volumeMm: [400, 300, null] as const }],
+        hiddenPresets: ["prusa-mini" as const],
+      },
+    };
+    yield* store.updateSettings(settings);
+    const reopened = yield* makeStore;
+    expect(yield* reopened.getSettings()).toEqual(settings);
+  }).pipe(Effect.provide(SqlitePersistenceMemory)),
+);

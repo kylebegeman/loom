@@ -12,7 +12,7 @@ const camera: ModelCamera = {
   gridVisible: true,
   axesVisible: false,
   navigationMode: "orbit",
-  section: { enabled: false, axis: "z", offset: 0, flipped: false },
+  section: { enabled: false, axis: "z", offset: 0, flipped: false, caps: true },
 };
 it("merges independent identities, preserves order and removes dangling capture presets", () => {
   let state = EMPTY_MODEL_WORKSPACE;
@@ -62,4 +62,36 @@ it("rejects unbounded workspace data and nonfinite spatial coordinates", () => {
       item: { id: "overflow", name: "overflow", sourceRevision: "v1", camera },
     }),
   ).toThrow();
+});
+
+it("sets, replaces and resets orientation while preserving independent workspace entities", () => {
+  const base = applyWorkspaceOperation(EMPTY_MODEL_WORKSPACE, {
+    kind: "view",
+    item: { id: "v", name: "Front", sourceRevision: "v1", camera },
+  });
+  const set = applyWorkspaceOperation(base, {
+    kind: "orientation",
+    item: { quaternion: [0, 0, 0, -1.0005], sourceRevision: "v1" },
+  });
+  expect(set.orientation).toEqual({ quaternion: [-0, -0, -0, 1], sourceRevision: "v1" });
+  expect(set.views).toEqual(base.views);
+  expect(set.measurements).toEqual(base.measurements);
+  expect(set.annotations).toEqual(base.annotations);
+  expect(set.presets).toEqual(base.presets);
+  expect(set.variants).toEqual(base.variants);
+  const replaced = applyWorkspaceOperation(set, {
+    kind: "orientation",
+    item: { quaternion: [1, 0, 0, 0], sourceRevision: "v2" },
+  });
+  expect(replaced.orientation).toEqual({ quaternion: [1, 0, 0, 0], sourceRevision: "v2" });
+  const removed = applyWorkspaceOperation(replaced, {
+    kind: "remove",
+    collection: "views",
+    id: "v",
+  });
+  expect(removed.views).toEqual([]);
+  expect(removed.orientation).toEqual(replaced.orientation);
+  expect(
+    applyWorkspaceOperation(removed, { kind: "orientation", item: null }).orientation,
+  ).toBeNull();
 });

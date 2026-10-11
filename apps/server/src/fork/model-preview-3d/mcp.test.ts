@@ -136,7 +136,7 @@ it.effect("renders with default or explicit projection and passes bed fit throug
         expect(views).toEqual(["iso"]);
         expect(overrides).toEqual({ width: "3" });
         projections.push(projection);
-        return Effect.succeed({ images: [], summary: null, log: [], fit });
+        return Effect.succeed({ images: [], summary: null, log: [], fit, orientation: null });
       },
     });
     const toolkit = yield* ModelPreview3dToolkit.pipe(
@@ -205,7 +205,14 @@ it.effect("forwards overhang requests and returns statistics through the tool sc
       getSettings: () => Effect.succeed(DEFAULT_MODEL_PREVIEW_SETTINGS),
       renderImages: (_file, _views, _overrides, _projection, options) => {
         expect(options).toEqual({ overhangs: { angle: 50 } });
-        return Effect.succeed({ images: [], summary: null, log: [], fit: null, overhangs: stats });
+        return Effect.succeed({
+          images: [],
+          summary: null,
+          log: [],
+          fit: null,
+          orientation: null,
+          overhangs: stats,
+        });
       },
     });
     const invocation = {
@@ -398,5 +405,78 @@ it.effect("refuses every tool, including settings, while agent model tools are o
         reason: "command-failed",
         message: expect.stringContaining("disabled"),
       });
+  }).pipe(Effect.scoped),
+);
+
+it.effect("print checks use caller workspace, forward options and obey the agent switch", () =>
+  Effect.gen(function* () {
+    let enabled = true,
+      calls = 0;
+    const threadId = ThreadId.make("check-thread"),
+      service = partial<ModelPreviewService["Service"]>({
+        getSettings: () =>
+          Effect.succeed({ ...DEFAULT_MODEL_PREVIEW_SETTINGS, agentToolEnabled: enabled }),
+        checkPrint: (input) => {
+          calls++;
+          expect(input).toEqual({
+            file: { threadId, path: "part.scad" },
+            overrides: { width: "3" },
+            force: true,
+            allowLarge: true,
+            parameterSet: null,
+          });
+          return Effect.succeed({ status: "cancelled", report: null });
+        },
+      });
+    const toolkit = yield* ModelPreview3dToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
+          Layer.provide(callerLayer),
+          Layer.provide(
+            Layer.succeed(
+              ForkRuntime,
+              Context.make(
+                ModelPreviewService,
+                service,
+              ) as unknown as Context.Context<ForkServices>,
+            ),
+          ),
+        ),
+      ),
+    );
+    const invoke = () =>
+      toolkit
+        .handle("loom_model_preview_3d_check", {
+          path: "part.scad",
+          overrides: { width: "3" },
+          force: true,
+          allowLarge: true,
+          parameterSet: null,
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provide(callerLayer),
+          Effect.provideService(McpInvocationContext, {
+            environmentId: EnvironmentId.make("test"),
+            thread: {
+              threadId,
+              providerSessionId: "session",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+            },
+            client: undefined,
+            requestNamespace: "check-test",
+            capabilities: new Set<McpCapability>(),
+            issuedAt: 0,
+          }),
+        );
+    expect((yield* invoke())[0]).toMatchObject({
+      isFailure: false,
+      result: { status: "cancelled", report: null },
+    });
+    enabled = false;
+    expect((yield* Effect.flip(invoke())).message).toBe(
+      "Agent model tools are disabled in Loom settings.",
+    );
+    expect(calls).toBe(1);
   }).pipe(Effect.scoped),
 );

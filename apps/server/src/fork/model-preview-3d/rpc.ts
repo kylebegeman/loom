@@ -42,6 +42,10 @@ export const makeModelPreviewRpcHandlers = (auth: ForkRpcAuth) =>
         auth.stream(M.watch, service.watch(input)),
       [M.parameters]: (input: Parameters<typeof service.parameters>[0]) =>
         auth.effect(M.parameters, service.parameters(input)),
+      [M.checkPrint]: (input: Parameters<typeof service.checkPrint>[0]) =>
+        auth.effect(M.checkPrint, service.checkPrint(input)),
+      [M.cancelPrintCheck]: (input: Parameters<typeof service.cancelPrintCheck>[0]) =>
+        auth.effect(M.cancelPrintCheck, service.cancelPrintCheck(input)),
       [M.renderScad]: (input: Parameters<typeof service.renderScad>[0]) =>
         auth.effect(M.renderScad, service.renderScad(input)),
       [M.saveParameterSet]: (input: {

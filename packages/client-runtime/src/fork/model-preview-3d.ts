@@ -87,6 +87,14 @@ export function createModelPreviewAtoms<R, E>(
       tag: M.parameters,
     }),
     fileUrl: createEnvironmentRpcCommand(runtime, { label: "loom:model-url", tag: M.fileUrl }),
+    checkPrint: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-print-check",
+      tag: M.checkPrint,
+    }),
+    cancelPrintCheck: createEnvironmentRpcCommand(runtime, {
+      label: "loom:model-print-check-cancel",
+      tag: M.cancelPrintCheck,
+    }),
     renderResult: render.resultAtom,
     render,
     saveSet: createEnvironmentRpcCommand(runtime, {

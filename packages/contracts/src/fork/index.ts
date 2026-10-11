@@ -21,3 +21,5 @@ export * from "./apple-build-tooling.ts";
 export * from "./device-qa.ts";
 
 export * from "./code-graph.ts";
+
+export * from "./model-print-check.ts";

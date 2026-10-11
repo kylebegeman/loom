@@ -137,17 +137,48 @@ export const BuildPlatePresetId = Schema.Literals([
 /** The lines drawn on the bed: a 10 mm grid, a 1 in grid with quarter-inch lines, or only the outline. */
 export const BuildPlatePattern = Schema.Literals(["grid-mm", "grid-inch", "plain"]);
 
+const axisMm = Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 }));
+export const CUSTOM_BED_LIMIT = 24;
+export const DEFAULT_BUILD_PLATE_PRESET = "bambu-h2d" as const;
+export const CustomBedId = Schema.String.check(Schema.isPattern(/^custom-[0-9a-f-]{8,36}$/));
+export const CustomBed = Schema.Struct({
+  id: CustomBedId,
+  name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(60)),
+  /** Width, depth and height in mm; null height means a flat surface. */
+  volumeMm: Schema.Tuple([axisMm, axisMm, Schema.NullOr(axisMm)]),
+});
+export type CustomBed = typeof CustomBed.Type;
+const customBeds = Schema.Array(CustomBed).check(
+  Schema.isMaxLength(CUSTOM_BED_LIMIT),
+  Schema.makeFilter((beds) => new Set(beds.map((bed) => bed.id)).size === beds.length, {
+    message: "Custom bed ids must be unique.",
+  }),
+);
+const PresetOnlyId = Schema.Literals(
+  Object.keys(BUILD_PLATE_PRESETS) as (keyof typeof BUILD_PLATE_PRESETS)[],
+);
+const hiddenPresets = Schema.Array(PresetOnlyId).check(Schema.isMaxLength(64));
 export const BuildPlateSetting = Schema.Struct({
   preset: BuildPlatePresetId,
-  /** Used only when preset is "custom"; each axis 10 to 2000 mm. */
-  customMm: Schema.Tuple([
-    Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 })),
-    Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 })),
-    Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 })),
-  ]),
+  /** Unsaved scratch size, used when preset is custom and no named bed is selected. */
+  customMm: Schema.Tuple([axisMm, axisMm, axisMm]),
   showZones: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   pattern: BuildPlatePattern.pipe(Schema.withDecodingDefault(Effect.succeed("grid-mm" as const))),
+  customBedId: Schema.NullOr(CustomBedId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  customBeds: customBeds.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  hiddenPresets: hiddenPresets.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
 });
+/** Missing newer fields preserve the host's saved values, including when older clients save. */
+export const BuildPlateSettingUpdate = Schema.Struct({
+  preset: BuildPlatePresetId,
+  customMm: BuildPlateSetting.fields.customMm,
+  showZones: Schema.optionalKey(Schema.Boolean),
+  pattern: Schema.optionalKey(BuildPlatePattern),
+  customBedId: Schema.optionalKey(Schema.NullOr(CustomBedId)),
+  customBeds: Schema.optionalKey(customBeds),
+  hiddenPresets: Schema.optionalKey(hiddenPresets),
+});
+export type BuildPlateSettingUpdate = typeof BuildPlateSettingUpdate.Type;
 
 export type BuildPlatePresetId = typeof BuildPlatePresetId.Type;
 export type BuildPlatePattern = typeof BuildPlatePattern.Type;
@@ -164,24 +195,95 @@ export type Bed = {
   readonly zones?: readonly BedZone[];
 };
 
-/** Every bed the user can choose, in menu order: printers, surfaces, custom. */
-export const listBeds = (setting: BuildPlateSetting): readonly Bed[] => [
-  ...Object.entries(BUILD_PLATE_PRESETS).map(([id, preset]) => ({ id, ...preset })),
-  { id: "custom", label: "Custom", kind: "custom", volumeMm: setting.customMm, note: null },
+/** Visible beds in menu order. An active hidden preset stays visible until another is selected. */
+export const listBeds = (
+  setting: BuildPlateSetting,
+  options: { includeHidden?: boolean } = {},
+): readonly Bed[] => [
+  ...Object.entries(BUILD_PLATE_PRESETS)
+    .filter(
+      ([id]) =>
+        options.includeHidden ||
+        id === setting.preset ||
+        !setting.hiddenPresets.includes(id as typeof PresetOnlyId.Type),
+    )
+    .map(([id, preset]) => ({ id, ...preset })),
+  ...setting.customBeds.map((bed) => ({
+    id: bed.id,
+    label: bed.name,
+    kind: "custom" as const,
+    volumeMm: bed.volumeMm,
+    note: null,
+  })),
+  { id: "custom", label: "Custom size", kind: "custom", volumeMm: setting.customMm, note: null },
 ];
-
-/** The bed the setting points at. Always one of listBeds(setting). */
+/** Stale named references safely fall back to the scratch size. */
 export const activeBed = (setting: BuildPlateSetting): Bed => {
-  const bed = listBeds(setting).find((bed) => bed.id === setting.preset);
-  if (!bed) throw new RangeError(`Unknown bed: ${setting.preset}`);
-  return bed;
+  const beds = listBeds(setting);
+  const id = setting.preset === "custom" ? (setting.customBedId ?? "custom") : setting.preset;
+  return beds.find((bed) => bed.id === id) ?? beds[beds.length - 1]!;
 };
-
-/** Make a known bed active, keeping the pattern and custom dimensions. */
-export const selectBed = (setting: BuildPlateSetting, id: string): BuildPlateSetting =>
-  id === "custom" || Object.hasOwn(BUILD_PLATE_PRESETS, id)
-    ? { ...setting, preset: id as BuildPlatePresetId }
+export const selectBed = (setting: BuildPlateSetting, id: string): BuildPlateSetting => {
+  if (id === "custom" || Object.hasOwn(BUILD_PLATE_PRESETS, id))
+    return { ...setting, preset: id as BuildPlatePresetId, customBedId: null };
+  return setting.customBeds.some((bed) => bed.id === id)
+    ? { ...setting, preset: "custom", customBedId: id }
     : setting;
+};
+export const addCustomBed = (setting: BuildPlateSetting, bed: CustomBed): BuildPlateSetting =>
+  setting.customBeds.length >= CUSTOM_BED_LIMIT ||
+  setting.customBeds.some((item) => item.id === bed.id)
+    ? setting
+    : {
+        ...setting,
+        customBeds: [...setting.customBeds, bed],
+        preset: "custom",
+        customBedId: bed.id,
+      };
+export const updateCustomBed = (
+  setting: BuildPlateSetting,
+  id: string,
+  patch: Partial<Pick<CustomBed, "name" | "volumeMm">>,
+): BuildPlateSetting => ({
+  ...setting,
+  customBeds: setting.customBeds.map((bed) => (bed.id === id ? { ...bed, ...patch } : bed)),
+});
+export const removeCustomBed = (setting: BuildPlateSetting, id: string): BuildPlateSetting => ({
+  ...setting,
+  customBeds: setting.customBeds.filter((bed) => bed.id !== id),
+  ...(setting.preset === "custom" && setting.customBedId === id
+    ? { preset: DEFAULT_BUILD_PLATE_PRESET, customBedId: null }
+    : {}),
+});
+export const setPresetHidden = (
+  setting: BuildPlateSetting,
+  id: typeof PresetOnlyId.Type,
+  hidden: boolean,
+): BuildPlateSetting => {
+  if (hidden && setting.preset === id) return setting;
+  return {
+    ...setting,
+    hiddenPresets: hidden
+      ? [...new Set([...setting.hiddenPresets, id])]
+      : setting.hiddenPresets.filter((value) => value !== id),
+  };
+};
+export const newCustomBedId = (uuid: string): string => `custom-${uuid}`;
+export const customBedNameError = (
+  setting: BuildPlateSetting,
+  name: string,
+  exceptId?: string,
+): string | null => {
+  const trimmed = name.trim();
+  if (!trimmed) return "Enter a bed name.";
+  if (trimmed.length > 60) return "Use up to 60 characters.";
+  return setting.customBeds.some(
+    (bed) =>
+      bed.id !== exceptId && bed.name.trim().toLocaleLowerCase() === trimmed.toLocaleLowerCase(),
+  )
+    ? "A bed with this name already exists."
+    : null;
+};
 
 export type BedFit =
   | { readonly status: "fits" }

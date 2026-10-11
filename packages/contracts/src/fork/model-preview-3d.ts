@@ -2,8 +2,9 @@ import * as Effect from "effect/Effect";
 import { ScaleReference } from "./model-scale.ts";
 import { OVERHANG_ANGLE } from "./model-overhangs.ts";
 import * as Editor from "./model-editor.ts";
-import { BuildPlateSetting } from "./model-beds.ts";
+import { BuildPlateSetting, BuildPlateSettingUpdate } from "./model-beds.ts";
 import { ModelWorkspace, ModelWorkspaceOperation } from "./model-workspace.ts";
+import { PrintCheckOptions, PrintCheckResult } from "./model-print-check.ts";
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -20,6 +21,8 @@ export const MODEL_PREVIEW_3D_WS_METHODS = {
   cancelVariant: "loom.model-preview-3d.cancelVariant",
   status: "loom.model-preview-3d.status",
   listModels: "loom.model-preview-3d.listModels",
+  checkPrint: "loom.model-preview-3d.checkPrint",
+  cancelPrintCheck: "loom.model-preview-3d.cancelPrintCheck",
   turnModels: "loom.model-preview-3d.turnModels",
   turnModelEvents: "loom.model-preview-3d.turnModelEvents",
   fileUrl: "loom.model-preview-3d.fileUrl",
@@ -214,9 +217,38 @@ export const ModelPreviewSettings = Schema.Struct({
       ),
     ),
   ),
+  nozzleDiameterMm: Schema.Number.check(
+    Schema.isFinite(),
+    Schema.isBetween({ minimum: 0.1, maximum: 2 }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(0.4))),
+  firstLayerHeightMm: Schema.Number.check(
+    Schema.isFinite(),
+    Schema.isBetween({ minimum: 0.04, maximum: 1 }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(0.2))),
   agentToolEnabled: Schema.Boolean, // default true
   agentModels: AgentModelsMode.pipe(Schema.withDecodingDefault(Effect.succeed("offer" as const))),
 });
+
+/** Full legacy fields plus optional additions; absent fields keep the host's preferences. */
+export const ModelPreviewSettingsUpdate = Schema.Struct({
+  ...ModelPreviewSettings.fields,
+  buildPlate: BuildPlateSettingUpdate,
+  displayUnits: Schema.optionalKey(DisplayUnits),
+  scaleReference: Schema.optionalKey(ScaleReference),
+  overhangAngleDegrees: Schema.optionalKey(
+    Schema.Int.check(
+      Schema.isBetween({ minimum: OVERHANG_ANGLE.minimum, maximum: OVERHANG_ANGLE.maximum }),
+    ),
+  ),
+  agentModels: Schema.optionalKey(AgentModelsMode),
+  nozzleDiameterMm: Schema.optionalKey(
+    Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0.1, maximum: 2 })),
+  ),
+  firstLayerHeightMm: Schema.optionalKey(
+    Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0.04, maximum: 1 })),
+  ),
+});
+export type ModelPreviewSettingsUpdate = typeof ModelPreviewSettingsUpdate.Type;
 
 export class ModelPreviewError extends Schema.TaggedError<ModelPreviewError>()(
   "ModelPreviewError",
@@ -231,6 +263,7 @@ export class ModelPreviewError extends Schema.TaggedError<ModelPreviewError>()(
       "invalid-parameter",
       "timeout",
       "command-failed",
+      "unavailable",
     ]),
     message: Schema.String,
   },
@@ -259,6 +292,9 @@ export const DEFAULT_MODEL_PREVIEW_SETTINGS: ModelPreviewSettings = {
     customMm: [350, 320, 325],
     pattern: "grid-mm",
     showZones: true,
+    customBedId: null,
+    customBeds: [],
+    hiddenPresets: [],
   },
   displayUnits: "mm",
   scaleReference: "none",
@@ -266,6 +302,8 @@ export const DEFAULT_MODEL_PREVIEW_SETTINGS: ModelPreviewSettings = {
   fabricationUrl: null,
   agentToolEnabled: true,
   agentModels: "offer",
+  nozzleDiameterMm: 0.4,
+  firstLayerHeightMm: 0.2,
 };
 const rpc = <const Tag extends string, Payload extends Schema.Top, Success extends Schema.Top>(
   tag: Tag,
@@ -278,6 +316,23 @@ const rpc = <const Tag extends string, Payload extends Schema.Top, Success exten
     error: Schema.Union([ModelPreviewError, EnvironmentAuthorizationError]),
   });
 export const ModelPreview3dRpcGroup = RpcGroup.make(
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.checkPrint,
+    Schema.Struct({
+      file: ModelFileRef,
+      requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+      ...PrintCheckOptions.fields,
+    }),
+    PrintCheckResult,
+  ),
+  rpc(
+    MODEL_PREVIEW_3D_WS_METHODS.cancelPrintCheck,
+    Schema.Struct({
+      file: ModelFileRef,
+      requestId: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
+    }),
+    Schema.Void,
+  ),
   Rpc.make(MODEL_PREVIEW_3D_WS_METHODS.editorAction, {
     payload: Editor.ModelEditorInput,
     success: Editor.ModelEditorResult,
@@ -361,6 +416,6 @@ export const ModelPreview3dRpcGroup = RpcGroup.make(
     ScadParameters,
   ),
   rpc(MODEL_PREVIEW_3D_WS_METHODS.getSettings, Schema.Struct({}), ModelPreviewSettings),
-  rpc(MODEL_PREVIEW_3D_WS_METHODS.updateSettings, ModelPreviewSettings, ModelPreviewSettings),
+  rpc(MODEL_PREVIEW_3D_WS_METHODS.updateSettings, ModelPreviewSettingsUpdate, ModelPreviewSettings),
   rpc(MODEL_PREVIEW_3D_WS_METHODS.clearCache, Schema.Struct({}), Schema.Void),
 );

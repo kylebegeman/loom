@@ -1,8 +1,20 @@
-import { ModelWorkspace, type ModelWorkspaceOperation } from "@t3tools/contracts/fork";
+import {
+  ModelWorkspace,
+  normalizeQuaternion,
+  type ModelWorkspaceOperation,
+} from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 const decode = Schema.decodeUnknownSync(ModelWorkspace);
 /** Operations merge individual identities, preserving simultaneous proposals from other clients. */
 export function applyWorkspaceOperation(state: ModelWorkspace, operation: ModelWorkspaceOperation) {
+  if (operation.kind === "orientation")
+    return decode({
+      ...state,
+      orientation: operation.item && {
+        ...operation.item,
+        quaternion: normalizeQuaternion(operation.item.quaternion),
+      },
+    });
   if (operation.kind === "remove") {
     const next = {
       ...state,

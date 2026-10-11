@@ -3,6 +3,7 @@ import { ThreadId } from "../baseSchemas.ts";
 import {
   ModelCamera,
   ModelMeasurement,
+  ModelOrientation,
   ModelSection,
   ModelVariant,
   ModelPoint,
@@ -10,6 +11,12 @@ import {
 } from "./model-workspace.ts";
 import { BedFitSummary } from "./model-beds.ts";
 import { ScaleReference } from "./model-scale.ts";
+export const ModelWall = Schema.Struct({
+  thicknessMm: Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0)),
+  start: ModelPoint,
+  end: ModelPoint,
+});
+export type ModelWall = typeof ModelWall.Type;
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
 export const ModelEditorAction = Schema.Struct({
   action: Schema.Literals([
@@ -23,6 +30,8 @@ export const ModelEditorAction = Schema.Struct({
     "display",
     "navigation",
     "section",
+    "orientation",
+    "wall-thickness",
     "tool",
     "inspector",
     "refresh",
@@ -64,6 +73,7 @@ export const ModelEditorAction = Schema.Struct({
   wireframe: Schema.optional(Schema.Boolean),
   overhangs: Schema.optional(Schema.Boolean),
   previous: Schema.optional(Schema.Boolean),
+  findings: Schema.optional(Schema.Boolean),
   grid: Schema.optional(Schema.Boolean),
   axes: Schema.optional(Schema.Boolean),
   four: Schema.optional(Schema.Boolean),
@@ -82,7 +92,11 @@ export const ModelEditorEvent = Schema.Struct({
 });
 export const ModelEditorState = Schema.Struct({
   inspector: Schema.NullOr(Schema.String),
-  tool: Schema.NullOr(Schema.Literals(["measure", "annotate"])),
+  tool: Schema.NullOr(Schema.Literals(["measure", "annotate", "lay-flat"])),
+  orientation: Schema.optional(Schema.NullOr(ModelOrientation)),
+  sectionCaps: Schema.optional(
+    Schema.Literals(["none", "off", "checking", "filled", "partial", "open-mesh"]),
+  ),
   measureMode: Schema.optional(Schema.Literals(["distance", "hole"])),
   pendingPoint: Schema.NullOr(ModelPoint),
   pendingRegion: Schema.NullOr(Schema.Array(ModelPoint).check(Schema.isMaxLength(64))),
@@ -114,6 +128,7 @@ export const ModelEditorResult = Schema.Struct({
   sourceRevision: Schema.optional(Schema.String),
   state: Schema.optional(ModelEditorState),
   measurement: Schema.optional(ModelMeasurement),
+  wall: Schema.optional(ModelWall),
 });
 export const ModelEditorComplete = Schema.Struct({
   threadId: ThreadId,
@@ -125,5 +140,6 @@ export const ModelEditorComplete = Schema.Struct({
   sourceRevision: Schema.optional(Schema.String),
   state: Schema.optional(ModelEditorState),
   measurement: Schema.optional(ModelMeasurement),
+  wall: Schema.optional(ModelWall),
   png: Schema.optional(Schema.String.check(Schema.isMaxLength(12 * 1024 * 1024))),
 });

@@ -2,6 +2,14 @@ import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import {
   activeBed,
+  addCustomBed,
+  updateCustomBed,
+  removeCustomBed,
+  setPresetHidden,
+  customBedNameError,
+  CUSTOM_BED_LIMIT,
+  BuildPlateSettingUpdate,
+  type CustomBed,
   bedFitSummary,
   BedFitSummary,
   BUILD_PLATE_PRESETS,
@@ -22,6 +30,9 @@ const setting: BuildPlateSetting = {
   customMm: [100, 200, 300],
   pattern: "grid-inch",
   showZones: true,
+  customBedId: null,
+  customBeds: [],
+  hiddenPresets: [],
 };
 
 it("fits exact boundaries and accepts the existing numerical tolerance", () => {
@@ -81,7 +92,7 @@ it("lists presets in stable table order and the custom slot last", () => {
   expect(new Set(beds.map((bed) => bed.id)).size).toBe(beds.length);
   expect(beds.at(-1)).toEqual({
     id: "custom",
-    label: "Custom",
+    label: "Custom size",
     kind: "custom",
     volumeMm: setting.customMm,
     note: null,
@@ -245,4 +256,105 @@ it("defaults old settings to visible zones and retains an explicit hidden prefer
   expect(decode({ preset: setting.preset, customMm: setting.customMm }).showZones).toBe(true);
   expect(decode({ ...setting, showZones: false }).showZones).toBe(false);
   expect(selectBed({ ...setting, showZones: false }, "bambu-h2c").showZones).toBe(false);
+});
+
+const laser: CustomBed = { id: "custom-12345678", name: "Laser", volumeMm: [400, 300, null] };
+const decodeSetting = Schema.decodeUnknownSync(BuildPlateSetting);
+const decodeSettingUpdate = Schema.decodeUnknownSync(BuildPlateSettingUpdate);
+it("loads legacy beds and leaves absent update fields absent", () => {
+  const old = { preset: "custom", customMm: [100, 200, 300] };
+  expect(decodeSetting(old)).toEqual({ ...setting, ...old, pattern: "grid-mm" });
+  expect(decodeSettingUpdate(old)).toEqual(old);
+  expect(decodeSetting({ ...old, customBeds: [laser], customBedId: laser.id }).customBeds).toEqual([
+    laser,
+  ]);
+});
+it.each([
+  {
+    customBeds: Array.from({ length: CUSTOM_BED_LIMIT + 1 }, (_, index) => ({
+      ...laser,
+      id: `custom-${index.toString(16).padStart(8, "0")}`,
+    })),
+  },
+  { customBeds: [laser, laser] },
+  { customBeds: [{ ...laser, name: "" }] },
+  { customBeds: [{ ...laser, name: "x".repeat(61) }] },
+  { customBeds: [{ ...laser, volumeMm: [9, 300, null] }] },
+  { customBeds: [{ ...laser, volumeMm: [400, 2001, null] }] },
+  { customBeds: [{ ...laser, volumeMm: [400, 300, 0] }] },
+  { customBeds: [{ ...laser, id: "wrong-id" }] },
+  { hiddenPresets: ["custom"] },
+  { hiddenPresets: ["unknown"] },
+])("validates custom bed and hidden-preset boundaries %j", (invalid) => {
+  expect(() => decodeSetting({ ...setting, ...invalid })).toThrow();
+});
+it("lists visible presets and named beds in insertion order, including an active hidden preset", () => {
+  const named = addCustomBed(setting, laser);
+  const second = { ...laser, id: "custom-abcdef01", name: "Desk" };
+  const beds = {
+    ...addCustomBed(named, second),
+    preset: "bambu-h2d" as const,
+    hiddenPresets: ["bambu-h2d", "prusa-mini"] as const,
+  };
+  expect(listBeds(beds).some((bed) => bed.id === "bambu-h2d")).toBe(true);
+  expect(listBeds(beds).some((bed) => bed.id === "prusa-mini")).toBe(false);
+  expect(listBeds(beds, { includeHidden: true }).some((bed) => bed.id === "prusa-mini")).toBe(true);
+  expect(
+    listBeds(beds)
+      .slice(-3)
+      .map((bed) => bed.id),
+  ).toEqual([laser.id, second.id, "custom"]);
+  expect(listBeds(selectBed(beds, laser.id)).some((bed) => bed.id === "bambu-h2d")).toBe(false);
+});
+it("selects and edits named beds, clears the pointer for presets and falls back for stale references", () => {
+  const named = addCustomBed(setting, laser);
+  expect(activeBed(named)).toMatchObject({
+    id: laser.id,
+    label: "Laser",
+    volumeMm: [400, 300, null],
+  });
+  expect(selectBed(named, "sheet-a4")).toMatchObject({ preset: "sheet-a4", customBedId: null });
+  expect(selectBed(named, "custom")).toMatchObject({ preset: "custom", customBedId: null });
+  expect(selectBed(named, "unknown")).toBe(named);
+  expect(activeBed({ ...named, customBedId: "custom-deadbeef" }).id).toBe("custom");
+  expect(
+    updateCustomBed(named, laser.id, { name: "Cutter", volumeMm: [300, 200, 100] }).customBeds[0],
+  ).toEqual({ ...laser, name: "Cutter", volumeMm: [300, 200, 100] });
+  expect(bedFitSummary([200, 200, 5000], named)).toMatchObject({
+    activeBedId: laser.id,
+    beds: expect.arrayContaining([expect.objectContaining({ id: laser.id, fit: "fits" })]),
+  });
+});
+it("refuses duplicate ids and the bed limit, resets the active deletion and preserves other choices", () => {
+  const named = addCustomBed(setting, laser);
+  expect(addCustomBed(named, laser)).toBe(named);
+  const full = {
+    ...named,
+    customBeds: Array.from({ length: CUSTOM_BED_LIMIT }, (_, index) => ({
+      ...laser,
+      id: `custom-${index.toString(16).padStart(8, "0")}`,
+    })),
+  };
+  expect(addCustomBed(full, laser)).toBe(full);
+  expect(removeCustomBed(named, laser.id)).toMatchObject({
+    preset: "bambu-h2d",
+    customBedId: null,
+    customBeds: [],
+  });
+  expect(removeCustomBed(selectBed(named, "sheet-a4"), laser.id)).toMatchObject({
+    preset: "sheet-a4",
+    customBedId: null,
+  });
+  expect(setPresetHidden(setting, "bambu-h2d", true)).toBe(setting);
+  const hidden = setPresetHidden(setting, "prusa-mini", true);
+  expect(setPresetHidden(hidden, "prusa-mini", true).hiddenPresets).toEqual(["prusa-mini"]);
+  expect(setPresetHidden(hidden, "prusa-mini", false).hiddenPresets).toEqual([]);
+});
+it("validates trimmed names and refuses duplicates without refusing a bed's own name", () => {
+  const named = addCustomBed(setting, laser);
+  expect(customBedNameError(named, "  ")).toBeTruthy();
+  expect(customBedNameError(named, "x".repeat(61))).toBeTruthy();
+  expect(customBedNameError(named, " laser ")).toBeTruthy();
+  expect(customBedNameError(named, " Laser ", laser.id)).toBeNull();
+  expect(customBedNameError(named, "Desk")).toBeNull();
 });

@@ -61,3 +61,27 @@ it.effect(
       expect(invoked).toBe(false);
     }),
 );
+
+it.effect("print checks and cancellation require the operate grant before work starts", () =>
+  Effect.gen(function* () {
+    const auth = makeForkRpcAuth({
+      sessionId: AuthSessionId.make("check-test"),
+      subject: "test",
+      method: "bearer-access-token",
+      scopes: [AuthOrchestrationReadScope],
+    });
+    let started = false;
+    for (const method of [M.checkPrint, M.cancelPrintCheck]) {
+      const denied = yield* Effect.flip(
+        auth.effect(
+          method,
+          Effect.sync(() => {
+            started = true;
+          }),
+        ),
+      );
+      expect(denied.requiredScope).toBe("orchestration:operate");
+    }
+    expect(started).toBe(false);
+  }),
+);

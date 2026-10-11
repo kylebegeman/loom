@@ -89,6 +89,17 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Title, "3D: save workspace")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_check", {
+    description:
+      "Check mesh topology, shells, build volume, first-layer contact, overhangs, unsupported islands, walls and small features before slicing. Runs on the environment host and returns the same located report as the Part inspector. All lengths and coordinates are millimetres, in model space. Applies saved orientation. Settings control nozzle diameter, first-layer height and overhang angle. Results may be sampled; incomplete reports need review.",
+    parameters: Schema.Struct({ path: W.ModelFileRef.fields.path, ...W.PrintCheckOptions.fields }),
+    success: W.PrintCheckResult,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: print check")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_render_mesh", {
     description:
       "Build a preview mesh with customizer values or a saved parameter set. MCP cancellation interrupts the render.",
@@ -181,7 +192,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_render", {
     description:
-      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary. fit.beds[].zone.reach is all-zones for shared nozzle reach, one-zone for the listed zoneIds, or whole-bed for the combined bed using the same filament in every nozzle. Set overhangs to also return overhang statistics: area beyond the angle from vertical, and the largest regions with their centres in model coordinates. overhangAngle defaults to the environment setting. Rendered PNGs remain unshaded; use an editor capture for overhang shading.",
+      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary. fit.beds[].zone.reach is all-zones for shared nozzle reach, one-zone for the listed zoneIds, or whole-bed for the combined bed using the same filament in every nozzle. Set overhangs to also return overhang statistics: area beyond the angle from vertical, and the largest regions with their centres in model coordinates. overhangAngle defaults to the environment setting. Applies the model's saved Loom orientation unless orientation is none. Rendered PNGs remain unshaded; use an editor capture for overhang shading.",
     parameters: Schema.Struct({
       path: Schema.String,
       views: Schema.optional(
@@ -189,6 +200,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
       ),
       overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
       projection: Schema.optional(W.ModelProjection),
+      orientation: Schema.optional(Schema.Literals(["saved", "none"])),
       overhangs: Schema.optional(Schema.Boolean),
       overhangAngle: Schema.optional(W.OverhangStats.fields.thresholdDegrees),
     }),
@@ -196,6 +208,9 @@ export const ModelPreview3dToolkit = Toolkit.make(
       images: Schema.Array(Schema.Struct({ view: View, path: Schema.String })),
       summary: ScadRenderResult.fields.summary,
       fit: Schema.NullOr(W.BedFitSummary),
+      orientation: Schema.NullOr(W.ModelOrientation).pipe(
+        Schema.withDecodingDefault(Effect.succeed(null)),
+      ),
       overhangs: Schema.optional(W.OverhangStats),
       log: ScadRenderResult.fields.log,
     }),
@@ -238,6 +253,7 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
   views?: ReadonlyArray<typeof View.Type> | undefined;
   overrides?: Readonly<Record<string, string>> | undefined;
   projection?: W.ModelProjection | undefined;
+  orientation?: "saved" | "none" | undefined;
   overhangs?: boolean | undefined;
   overhangAngle?: number | undefined;
 }) {
@@ -248,7 +264,10 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
       input.views ?? ["iso", "front", "top", "right"],
       input.overrides ?? {},
       input.projection ?? DEFAULT_RENDER_PROJECTION,
-      input.overhangs ? { overhangs: { angle: input.overhangAngle } } : {},
+      {
+        ...(input.overhangs ? { overhangs: { angle: input.overhangAngle } } : {}),
+        ...(input.orientation ? { orientation: input.orientation } : {}),
+      },
     ),
   );
 });
@@ -306,6 +325,15 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
           const threadId = yield* modelThread;
           return yield* withAgentTools((service) =>
             service.updateWorkspace({ threadId, path: input.path }, input.operation),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_check: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const { path, ...options } = input;
+          return yield* withAgentTools((service) =>
+            service.checkPrint({ file: { threadId, path }, ...options }),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),

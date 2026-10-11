@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL_PREVIEW_SETTINGS } from "@t3tools/contracts/fork";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeURL from "node:url";
 import { expect, it } from "@effect/vitest";
@@ -161,7 +162,9 @@ const setup = Effect.gen(function* () {
           if (exportFailure === "missing") return output();
           yield* fs.writeFile(target, overhangMesh);
           if (exportFailure === "error") return output("ERROR: Could not evaluate model");
-        } else yield* fs.writeFileString(target, "mesh bytes");
+        } else if (target.endsWith(".stl"))
+          yield* fs.writeFile(target, binaryMesh([0, 0, 0, 10, 0, 0, 0, 10, 0]));
+        else yield* fs.writeFileString(target, "mesh bytes");
         const deps = input.args.indexOf("-d");
         if (deps >= 0)
           yield* fs.writeFileString(
@@ -1257,4 +1260,132 @@ it.effect(
         "models/height.txt",
       );
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+
+it.effect("print checks render an isolated SCAD variant without saving last-used parameters", () =>
+  Effect.gen(function* () {
+    const t = yield* setup,
+      service = yield* t.create();
+    yield* service.updateSettings({ ...DEFAULT_MODEL_PREVIEW_SETTINGS, renderColors: false });
+    const checked = yield* service.checkPrint({
+      file: t.file,
+      overrides: { width: "3" },
+      requestId: "check",
+    });
+    expect(checked.status).toBe("ok");
+    expect(checked.report?.summary.triangles).toBe(1);
+    const rendered = yield* service.renderScad({
+      file: t.file,
+      overrides: { width: "3" },
+      parameterSet: null,
+      variantId: "inspect-cache",
+    });
+    expect(checked.report?.geometryRevision).toBe(rendered.mesh?.revision);
+    expect((yield* service.parameters(t.file)).lastUsed).not.toEqual({ width: "3" });
+    expect(
+      (yield* service.checkPrint({ file: t.file, overrides: { width: "3" } })).report?.cached,
+    ).toBe(true);
+  }).pipe(Effect.provide(testLayer), Effect.scoped),
+);
+
+it.effect("headless renders apply saved orientation through a SCAD mesh wrapper", () =>
+  Effect.gen(function* () {
+    const t = yield* setup,
+      service = yield* t.create(),
+      orientation = {
+        quaternion: [Math.SQRT1_2, 0, 0, Math.SQRT1_2] as const,
+        sourceRevision: "source",
+      };
+    yield* service.updateWorkspace(t.file, { kind: "orientation", item: orientation });
+    const rendered = yield* service.renderImages(t.file, ["iso", "top"], { width: "3" });
+    expect(rendered.orientation?.sourceRevision).toBe("source");
+    expect(rendered.orientation?.quaternion[0]).toBeCloseTo(Math.SQRT1_2);
+    const runs = t.getRuns(),
+      exports = runs.filter((r) => r.args.some((a) => a.endsWith(".oriented.stl")));
+    expect(exports).toHaveLength(1);
+    expect(exports[0]?.args).toContain("width=3");
+    const png = runs.filter((r) => r.args.some((a) => a.endsWith(".png")));
+    expect(png).toHaveLength(2);
+    expect(png.every((r) => !r.args.includes("width=3"))).toBe(true);
+    expect(
+      (yield* service.renderImages(t.file, ["iso"], {}, "orthographic", { orientation: "none" }))
+        .orientation,
+    ).toBeNull();
+  }).pipe(Effect.provide(testLayer), Effect.scoped),
+);
+
+it.effect("SCAD print checks do not interrupt a pending panel render", () =>
+  Effect.gen(function* () {
+    const t = yield* setup,
+      service = yield* t.create(),
+      started = yield* Deferred.make<void>(),
+      cancelled = yield* Deferred.make<void>();
+    t.block(started, cancelled);
+    const panel = yield* service
+      .renderScad({ file: t.file, overrides: { width: "2" }, parameterSet: null })
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(started);
+    const result = yield* service.checkPrint({ file: t.file, overrides: { width: "3" } });
+    expect(result.status).toBe("ok");
+    expect(yield* Deferred.isDone(cancelled)).toBe(false);
+    expect((yield* service.parameters(t.file)).lastUsed).toEqual({});
+    yield* service.renderScad({ file: t.file, overrides: { width: "4" }, parameterSet: null });
+    expect((yield* Fiber.join(panel)).status).toBe("cancelled");
+    yield* Deferred.await(cancelled);
+  }).pipe(Effect.provide(testLayer), Effect.scoped),
+);
+
+it.effect("old settings updates retain named beds and later display and print settings", () =>
+  Effect.gen(function* () {
+    const t = yield* setup,
+      service = yield* t.create();
+    const initial = {
+      ...DEFAULT_MODEL_PREVIEW_SETTINGS,
+      displayUnits: "in" as const,
+      scaleReference: "card" as const,
+      agentModels: "off" as const,
+      nozzleDiameterMm: 0.6,
+      firstLayerHeightMm: 0.3,
+      buildPlate: {
+        ...DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate,
+        preset: "custom" as const,
+        customBedId: "custom-12345678",
+        customBeds: [{ id: "custom-12345678", name: "Laser", volumeMm: [400, 300, null] as const }],
+        hiddenPresets: ["prusa-mini"] as const,
+        showZones: false,
+      },
+    };
+    yield* service.updateSettings(initial);
+    const legacy = {
+      openscadPath: null,
+      backend: "auto" as const,
+      renderTimeoutSeconds: 120,
+      renderColors: false,
+      maxFileMegabytes: 150,
+      agentToolEnabled: true,
+      fabricationUrl: null,
+      buildPlate: { preset: "custom" as const, customMm: [400, 300, 200] as const },
+    };
+    const updated = yield* service.updateSettings(legacy);
+    expect(updated).toMatchObject({
+      displayUnits: "in",
+      scaleReference: "card",
+      agentModels: "off",
+      nozzleDiameterMm: 0.6,
+      firstLayerHeightMm: 0.3,
+      buildPlate: {
+        customBedId: "custom-12345678",
+        customBeds: initial.buildPlate.customBeds,
+        hiddenPresets: ["prusa-mini"] as const,
+        showZones: false,
+      },
+    });
+    expect(yield* (yield* t.create()).getSettings()).toEqual(updated);
+    expect(
+      (yield* service.updateSettings({
+        ...legacy,
+        buildPlate: { ...legacy.buildPlate, customBeds: [], hiddenPresets: [] },
+      })).buildPlate.customBeds,
+    ).toEqual([]);
+  }).pipe(Effect.provide(testLayer), Effect.scoped),
 );

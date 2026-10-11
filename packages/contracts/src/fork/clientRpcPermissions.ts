@@ -26,6 +26,8 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [M.updateWorkspace]: AuthOrchestrationOperateScope,
   [M.cancelVariant]: AuthOrchestrationOperateScope,
   [M.renderScad]: AuthOrchestrationOperateScope,
+  [M.checkPrint]: AuthOrchestrationOperateScope,
+  [M.cancelPrintCheck]: AuthOrchestrationOperateScope,
   [M.saveParameterSet]: AuthOrchestrationOperateScope,
   [M.updateSettings]: AuthOrchestrationOperateScope,
   [M.clearCache]: AuthOrchestrationOperateScope,

@@ -17,13 +17,15 @@ import {
   type ModelWorkspace,
   type ModelVariant,
   type ModelFileRef,
-  type ModelPreviewSettings,
+  type ModelPreviewSettingsUpdate,
   type ModelProjection,
   type ScadRenderInput,
   ScadRenderResult,
   type ModelWatchEvent,
   type TurnModels,
   modelFormatOf,
+  normalizeQuaternion,
+  quaternionMatrix,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -68,6 +70,7 @@ import {
 import { cacheKey, pruneList, createStemProtection } from "./renderCache.ts";
 import { threeMfScale } from "./threeMfUnits.ts";
 import { parseBinaryStl } from "./overhangMesh.ts";
+import { makePrintChecker } from "./check/printChecker.ts";
 
 const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const error = (reason: ModelPreviewError["reason"], message: string) =>
@@ -1064,11 +1067,22 @@ export const make = Effect.gen(function* () {
             ...(input.sourceRevision ? { sourceRevision: input.sourceRevision } : {}),
             ...(input.state ? { state: input.state } : {}),
             ...(input.measurement ? { measurement: input.measurement } : {}),
+            ...(input.wall ? { wall: input.wall } : {}),
           };
         }),
       ),
     );
+  const printChecker = yield* makePrintChecker({
+    resolveFile: (file) => checked(resolveFile(file)),
+    metadata,
+    getWorkspace: (file) => checked(getWorkspace(file)),
+    getSettings: () => settings,
+    renderScad: (input) => checked(renderScad(input)),
+    protectStem,
+    cacheDir,
+  });
   return {
+    ...printChecker,
     editorEvents: (file: ModelFileRef) => editorBridge.events(file.threadId, file.path),
     panelEvents: (threadId: ModelFileRef["threadId"]) => editorBridge.events(threadId),
     editorAction: (input: typeof ModelEditorInput.Type) => editorBridge.request(input),
@@ -1142,9 +1156,15 @@ export const make = Effect.gen(function* () {
       ),
     status: (refresh?: boolean) => checked(status(refresh)),
     getSettings: () => Effect.succeed(settings),
-    updateSettings: (value: ModelPreviewSettings) =>
+    updateSettings: (value: ModelPreviewSettingsUpdate) =>
       checked(
-        store.updateSettings(value).pipe(
+        Effect.suspend(() =>
+          store.updateSettings({
+            ...settings,
+            ...value,
+            buildPlate: { ...settings.buildPlate, ...value.buildPlate },
+          }),
+        ).pipe(
           Effect.tap((saved) =>
             Effect.sync(() => {
               settings = saved;
@@ -1279,7 +1299,10 @@ export const make = Effect.gen(function* () {
       views: ReadonlyArray<ModelView>,
       overrides: Readonly<Record<string, string>>,
       projection: ModelProjection = DEFAULT_RENDER_PROJECTION,
-      options: { readonly overhangs?: { readonly angle?: number | undefined } } = {},
+      options: {
+        readonly overhangs?: { readonly angle?: number | undefined };
+        readonly orientation?: "saved" | "none";
+      } = {},
     ) =>
       checked(
         Effect.gen(function* () {
@@ -1328,7 +1351,7 @@ export const make = Effect.gen(function* () {
                     // The PNGs stay for the agent to read; the import wrapper and summary do not.
                     yield* Effect.addFinalizer(() =>
                       Effect.forEach(
-                        [".scad", ".summary.json", ".overhangs.stl"],
+                        [".scad", ".summary.json", ".overhangs.stl", ".oriented.stl"],
                         (suffix) =>
                           fs.remove(imageStem + suffix, { force: true }).pipe(Effect.ignore),
                         { discard: true },
@@ -1339,20 +1362,64 @@ export const make = Effect.gen(function* () {
                         "invalid-parameter",
                         "Parameters are available only for SCAD models.",
                       );
+                    const saved =
+                      options.orientation === "none"
+                        ? null
+                        : (yield* getWorkspace(file)).orientation;
+                    const orientation = saved
+                      ? { ...saved, quaternion: normalizeQuaternion(saved.quaternion) }
+                      : null;
+                    const rotation = orientation ? quaternionMatrix(orientation.quaternion) : null;
                     let source = resolved.absolute;
-                    if (format !== "scad") {
-                      source = path.join(cacheDir, `${runId}.scad`);
-                      const scale = format === "3mf" ? yield* threeMfScale(resolved.absolute) : 1;
-                      yield* fs.writeFileString(
-                        source,
-                        `scale(${scale}) import(${json(resolved.absolute)});\n`,
-                      );
-                    } else
+                    let log: ScadRenderResult["log"] = [];
+                    let pngOverrides = overrides;
+                    if (format === "scad")
                       yield* validateOverrides(
                         parseCustomizer(yield* fs.readFileString(source)),
                         overrides,
                       );
-                    let log: ScadRenderResult["log"] = [];
+                    if (format === "scad" && orientation) {
+                      const target = imageStem + ".oriented.stl";
+                      const result = yield* runner.run({
+                        command: info.path,
+                        args: meshArgs({ source, output: target, info, settings, overrides }),
+                        cwd: path.dirname(resolved.absolute),
+                        timeout: `${settings.renderTimeoutSeconds} seconds`,
+                        timeoutBehavior: "timedOutResult",
+                        outputMode: "truncate",
+                        maxOutputBytes: 512 * 1024,
+                      });
+                      const exportLog = parseLog(result.stderr);
+                      log = exportLog;
+                      if (result.timedOut)
+                        return yield* error(
+                          "timeout",
+                          `Exporting oriented geometry timed out after ${settings.renderTimeoutSeconds} s.`,
+                        );
+                      if (
+                        result.code !== 0 ||
+                        exportLog.some((line) => line.level === "error") ||
+                        !(yield* fs.exists(target))
+                      )
+                        return yield* error(
+                          "command-failed",
+                          "Could not export the model for its saved orientation.",
+                        );
+                      source = target;
+                      pngOverrides = {};
+                    }
+                    if (format !== "scad" || orientation) {
+                      const imported = source;
+                      source = path.join(cacheDir, `${runId}.scad`);
+                      const scale = format === "3mf" ? yield* threeMfScale(resolved.absolute) : 1;
+                      const matrix = rotation
+                        ? json([...rotation.map((row) => [...row, 0]), [0, 0, 0, 1]])
+                        : null;
+                      yield* fs.writeFileString(
+                        source,
+                        `${matrix ? `multmatrix(${matrix}) ` : ""}scale(${scale}) import(${json(imported)});\n`,
+                      );
+                    }
                     let overhangs: OverhangStats | undefined;
                     if (options.overhangs) {
                       const target = imageStem + ".overhangs.stl";
@@ -1388,6 +1455,25 @@ export const make = Effect.gen(function* () {
                         catch: mapError,
                       });
                     }
+                    if (overhangs && rotation)
+                      overhangs = {
+                        ...overhangs,
+                        oriented: true,
+                        regions: overhangs.regions.map((region) => ({
+                          ...region,
+                          centre: [
+                            rotation[0][0] * region.centre[0] +
+                              rotation[1][0] * region.centre[1] +
+                              rotation[2][0] * region.centre[2],
+                            rotation[0][1] * region.centre[0] +
+                              rotation[1][1] * region.centre[1] +
+                              rotation[2][1] * region.centre[2],
+                            rotation[0][2] * region.centre[0] +
+                              rotation[1][2] * region.centre[1] +
+                              rotation[2][2] * region.centre[2],
+                          ] as const,
+                        })),
+                      };
                     const summaryPath = path.join(cacheDir, `${runId}.summary.json`);
                     const images = yield* Effect.forEach([...new Set(views)], (view) =>
                       Effect.gen(function* () {
@@ -1417,7 +1503,7 @@ export const make = Effect.gen(function* () {
                         args.splice(
                           args.length - 1,
                           0,
-                          ...Object.entries(overrides).flatMap(([name, value]) => [
+                          ...Object.entries(pngOverrides).flatMap(([name, value]) => [
                             "-D",
                             `${name}=${value}`,
                           ]),
@@ -1467,7 +1553,14 @@ export const make = Effect.gen(function* () {
                       size && size.every((mm) => Number.isFinite(mm) && mm >= 0)
                         ? bedFitSummary(size, settings.buildPlate)
                         : null;
-                    return { images, log, summary, fit, ...(overhangs ? { overhangs } : {}) };
+                    return {
+                      images,
+                      log,
+                      summary,
+                      fit,
+                      orientation,
+                      ...(overhangs ? { overhangs } : {}),
+                    };
                   }),
                 ),
               )

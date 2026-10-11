@@ -104,6 +104,11 @@ removing it again.
 
 ### Packet seams
 
+L46 adds the print check worker to the server pack entries in `apps/server/vite.config.ts`
+(`fork: model-print-check`) so the worker ships beside `bin.mjs`. The single-file executable
+reports print checks as unavailable. See the
+[L46 packet](docs/fork/packets/L46-model-print-check/SEAMS.md).
+
 Upstream edits a single packet needs that no extension point covers. Each packet's `SEAMS.md`
 explains why. Find them with `git grep -n "fork: <slug>"`.
 
