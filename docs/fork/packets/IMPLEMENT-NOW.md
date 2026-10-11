@@ -42,7 +42,7 @@ The first PCB batch, L54, L56, L55, L57 and L62, is implemented locally on
 physical-print verification remain in each packet's testing notes. The rest of the selection
 is unchanged. L52 is also implemented locally on the same branch, with focused report,
 marker/navigation, capture and agent tests. Real-client and CAD verification remain pending;
-L58 is implemented locally with host scheduling, project settings and agent/client result refresh. Real-client and CAD checks remain pending. L53 is also implemented locally with shared pin-map generation and guarded file exports. L59 is implemented locally with grouped turn designs and shared background tab opening. L60 is next in this batch.
+L58 is implemented locally with host scheduling, project settings and agent/client result refresh. Real-client and CAD checks remain pending. L53 is also implemented locally with shared pin-map generation and guarded file exports. L59 is implemented locally with grouped turn designs and shared background tab opening. L60 is implemented locally with shared structural diff and drawing highlights. L69 is next in this batch.
 
 Each follow-up is an independent packet. One marked "Needs decision" in the
 [packet index](./README.md#packet-index) waits for Kyle's answer to the question in its

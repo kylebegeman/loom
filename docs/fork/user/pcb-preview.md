@@ -128,3 +128,5 @@ Enable **Check after each save** in Checks to run ERC, DRC, or both for this pro
 Select a part in Inspect and open **Pin map** to copy its connections or generate firmware constants for C, Rust, MicroPython, CircuitPython or Arduino. GPIO identities come from pin names; verify them against the datasheet and your board core. Save requires a workspace write grant and confirmation before replacing an existing file.
 
 When an agent changes a design, choose **Open board** in its changed-files card. Related project files and imported sources are grouped into one design. PCB settings can open designs automatically or turn off offers. If PCB tabs are already open, new designs arrive in background tabs. The command palette can open designs from the last relevant turn.
+
+After a design reloads, press **D** or choose **Changed** to highlight parts, connections and drawing areas that changed since the previous view. The list can focus a part or net; dismissing hides it until the next change. Agents can read the same list through the editor snapshot.

@@ -6,6 +6,7 @@ import {
   ArrowDownUpIcon,
   GitCompareArrowsIcon,
   MinusIcon,
+  MoveIcon,
   PencilIcon,
   PlusIcon,
 } from "lucide-react";
@@ -34,7 +35,8 @@ import k from "./inspector.module.css";
 const idleComparison = Atom.make(AsyncResult.initial<PcbComparison, never>());
 type Change = PcbComparison["changes"][number]["kind"];
 type Mode = "overlay" | "before" | "after" | "difference";
-const CHANGE = {
+export const CHANGE = {
+  moved: { title: "Moved", icon: MoveIcon, tone: "info" },
   added: { title: "Added", icon: PlusIcon, tone: "success" },
   removed: { title: "Removed", icon: MinusIcon, tone: "error" },
   changed: { title: "Changed", icon: PencilIcon, tone: "warning" },

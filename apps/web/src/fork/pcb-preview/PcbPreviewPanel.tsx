@@ -1,3 +1,6 @@
+import { useChangeHighlights } from "./useChangeHighlights";
+import { ChangeHighlights } from "./ChangeHighlights";
+import { ChangesChip } from "./ChangesChip";
 import type { PcbEditorEvent } from "@t3tools/contracts/fork";
 import { randomUUID } from "~/lib/utils";
 import { useState, useRef, useEffect, useMemo, useEffectEvent, lazy, Suspense } from "react";
@@ -214,6 +217,13 @@ export function DesignWorkspace({
     preview.sourceHash,
     design.toolAvailable && (design.kind === "kicad" || trusted),
   );
+  const changes = useChangeHighlights({
+    key: `${threadRef.environmentId}:${threadRef.threadId}:${design.id}`,
+    inspection: workbench.inspection,
+    display: preview.display,
+    customLayers,
+    suspended: three,
+  });
   if (workbench.inspection && design.kind === "kicad") {
     const reconciled = reconcileLayerChoice(customLayers, workbench.inspection.layers, layers);
     if (reconciled !== customLayers) setCustomLayers(reconciled);
@@ -615,6 +625,7 @@ export function DesignWorkspace({
       const c = request.command;
       let png: string | undefined;
       let svg: string | undefined;
+      let settledChanges: ReturnType<typeof changes.state> | undefined;
       const drawing = () => {
         if (!viewport.current?.isReady() || !preview.display || three)
           throw new Error("Open a loaded 2D drawing for this action.");
@@ -656,6 +667,12 @@ export function DesignWorkspace({
           }
           break;
         }
+        case "changes":
+          drawing();
+          if (!changes.pair) throw new Error("This design has not changed since it was opened.");
+          changes.show(c.enabled ?? true);
+          if (c.enabled !== false) settledChanges = await changes.drawingSettled();
+          break;
         case "markers":
           setCheckMarkers(c.enabled ?? !checkMarkers);
           break;
@@ -836,7 +853,7 @@ export function DesignWorkspace({
         png,
         svg,
         state:
-          c.action === "snapshot"
+          c.action === "snapshot" || c.action === "changes"
             ? {
                 view,
                 sheet: preview.selectedSheet,
@@ -856,6 +873,9 @@ export function DesignWorkspace({
                     }
                   : {}),
                 sourceHash: preview.sourceHash ?? "",
+                changes: settledChanges
+                  ? { ...settledChanges, shown: c.enabled ?? true }
+                  : changes.state(),
                 findings: {
                   visible: checkMarkers && !three && preview.display?.view === view,
                   showExcluded,
@@ -1326,6 +1346,18 @@ export function DesignWorkspace({
       layered={preview.display.view === "pcb" && !!preview.display.result.sheets[0]?.layer}
       overlays={
         <>
+          {changes.shown &&
+            changes.pair &&
+            changes.pair.after.sourceHash === preview.display.sourceHash && (
+              <ChangeHighlights
+                set={changes.set}
+                regions={changes.regions}
+                view={view}
+                sheet={preview.selectedSheet}
+                before={changes.pair.before.inspection}
+                after={changes.pair.after}
+              />
+            )}
           <DrawingOverlays
             data={workbench.data}
             sourceHash={preview.display.sourceHash}
@@ -1363,6 +1395,7 @@ export function DesignWorkspace({
             renderKey={preview.display!.renderKey}
             sheetId={sheet.id}
             revision={preview.display!.requestKey}
+            onSvg={changes.onSvg}
             opacity={
               customLayers?.find((l) => l.name === sheet.layer)?.visible
                 ? customLayers.find((l) => l.name === sheet.layer)!.opacity
@@ -1424,6 +1457,7 @@ export function DesignWorkspace({
         else if (key === "v" && drawingTools) chooseTool("select");
         else if (key === "m" && drawingTools && canMark) chooseTool("distance");
         else if (key === "a" && drawingTools && canMark) chooseTool("angle");
+        else if (key === "d" && drawingTools && changes.pair) changes.show(!changes.shown);
         else if (key === "n" && drawingTools && canMark) chooseTool("annotate");
         else return;
         event.preventDefault();
@@ -1433,6 +1467,9 @@ export function DesignWorkspace({
       <header className={styles.docBar}>
         <DesignMenu design={design} listing={listing} onSelect={onSelect} onDiscover={onDiscover} />
         <div className={styles.docActions}>
+          {changes.chip && (
+            <ChangesChip changes={changes} onComponent={selectComponent} onNet={setNet} />
+          )}
           {!blocked && (
             <SurfaceSwitch active={surface} available={surfaces} onChoose={chooseSurface} />
           )}
@@ -1566,6 +1603,7 @@ export function DesignWorkspace({
               </div>
               {linked && (
                 <LinkedDrawing
+                  changes={changes}
                   threadRef={threadRef}
                   design={design}
                   view={view === "pcb" ? "schematic" : "pcb"}
@@ -1858,6 +1896,7 @@ function LinkedDrawing({
   net,
   workbench,
   handle,
+  changes,
 }: {
   threadRef: ScopedThreadRef;
   design: PcbDesign;
@@ -1867,6 +1906,7 @@ function LinkedDrawing({
   net: string | null;
   workbench: ReturnType<typeof usePcbWorkbench>;
   handle: React.RefObject<PcbViewportHandle | null>;
+  changes: ReturnType<typeof useChangeHighlights>;
 }) {
   const unit = useLengthUnit();
   const preview = usePcbPreview(
@@ -1902,17 +1942,31 @@ function LinkedDrawing({
             if (p) handle.current?.focus(p);
           }}
           overlays={
-            <DrawingOverlays
-              data={workbench.data}
-              sourceHash={preview.display.sourceHash}
-              view={view}
-              sheet={preview.selectedSheet}
-              selected={selected}
-              net={net}
-              components={workbench.inspection?.components ?? []}
-              pending={[]}
-              unit={unit}
-            />
+            <>
+              {changes.shown &&
+                changes.pair &&
+                changes.pair.after.sourceHash === preview.display.sourceHash && (
+                  <ChangeHighlights
+                    set={changes.set}
+                    regions={[]}
+                    view={view}
+                    sheet={preview.selectedSheet}
+                    before={changes.pair.before.inspection}
+                    after={changes.pair.after}
+                  />
+                )}
+              <DrawingOverlays
+                data={workbench.data}
+                sourceHash={preview.display.sourceHash}
+                view={view}
+                sheet={preview.selectedSheet}
+                selected={selected}
+                net={net}
+                components={workbench.inspection?.components ?? []}
+                pending={[]}
+                unit={unit}
+              />
+            </>
           }
         >
           {view === "pcb" &&

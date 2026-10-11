@@ -33,3 +33,5 @@ export * from "./model-assembly.ts";
 export * from "./model-history.ts";
 
 export * from "./pcb-pin-map.ts";
+
+export * from "./pcb-changes.ts";

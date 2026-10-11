@@ -1,3 +1,4 @@
+import { pcbChangeSet, changeDetail } from "@t3tools/contracts/fork";
 import type { PcbComponent, PcbInspection, PcbComparison } from "@t3tools/contracts/fork";
 import {
   parseSexp,
@@ -435,21 +436,11 @@ export function inspectCircuitJson(json: unknown, sourceHash: string): PcbInspec
   };
 }
 export function compareInspections(before: PcbInspection, after: PcbInspection) {
-  const old = new Map(before.components.map((c) => [c.reference, c])),
-    now = new Map(after.components.map((c) => [c.reference, c]));
-  return [...new Set([...old.keys(), ...now.keys()])].flatMap<PcbComparison["changes"][number]>(
-    (reference) => {
-      const a = old.get(reference),
-        b = now.get(reference);
-      if (!a) return [{ kind: "added" as const, reference, detail: `Added ${b!.value}` }];
-      if (!b) return [{ kind: "removed" as const, reference, detail: `Removed ${a.value}` }];
-      const fields = ["value", "footprint", "pcb", "schematic", "pins"] as const;
-      const changed = fields.filter((k) => JSON.stringify(a[k]) !== JSON.stringify(b[k]));
-      return changed.length
-        ? [{ kind: "changed" as const, reference, detail: changed.join(", ") }]
-        : [];
-    },
-  );
+  return pcbChangeSet(before, after).components.map((c): PcbComparison["changes"][number] => ({
+    kind: c.kind === "moved" ? "changed" : c.kind,
+    reference: c.reference,
+    detail: changeDetail(c),
+  }));
 }
 
 const canonicalLayer = (name: string) =>

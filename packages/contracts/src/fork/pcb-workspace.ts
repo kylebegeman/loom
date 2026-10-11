@@ -232,6 +232,48 @@ export const PcbCompareInput = Schema.Struct({
   to: Schema.String.check(Schema.isMaxLength(200)),
 });
 export type PcbCompareInput = typeof PcbCompareInput.Type;
+export const PcbChangeField = Schema.Literals([
+  "value",
+  "footprint",
+  "pcb",
+  "schematic",
+  "orientation",
+  "pins",
+  "nets",
+]);
+const locationChange = Schema.Struct({
+  from: Schema.optional(PcbLocation),
+  to: Schema.optional(PcbLocation),
+});
+export const PcbComponentChange = Schema.Struct({
+  kind: Schema.Literals(["added", "removed", "moved", "changed"]),
+  reference: text(),
+  value: Schema.String,
+  fields: list(PcbChangeField, 7),
+  pcb: Schema.optional(locationChange),
+  schematic: Schema.optional(locationChange),
+});
+export type PcbComponentChange = typeof PcbComponentChange.Type;
+export const PcbNetChange = Schema.Struct({
+  name: text(),
+  kind: Schema.Literals(["added", "removed", "changed"]),
+  joined: list(Schema.Struct({ reference: text(), pin: text() }), 50),
+  left: list(Schema.Struct({ reference: text(), pin: text() }), 50),
+});
+export type PcbNetChange = typeof PcbNetChange.Type;
+export const PcbChangeRegion = PcbBounds;
+export type PcbChangeRegion = typeof PcbChangeRegion.Type;
+export const PcbChangeState = Schema.Struct({
+  shown: Schema.Boolean,
+  fromSourceHash: text(),
+  toSourceHash: text(),
+  components: list(PcbComponentChange, 200),
+  nets: list(PcbNetChange, 200),
+  regions: list(PcbChangeRegion, 50),
+  drawing: Schema.Literals(["pending", "ready", "unavailable"]),
+  truncated: Schema.Boolean,
+});
+export type PcbChangeState = typeof PcbChangeState.Type;
 export const PcbComparison = Schema.Struct({
   from: text(),
   to: text(),
@@ -379,6 +421,7 @@ export const PcbEditorAction = Schema.Struct({
     "checks",
     "finding",
     "markers",
+    "changes",
     "prepare-summary",
     "trust",
     "pick",
@@ -462,6 +505,7 @@ export const PcbEditorResult = Schema.Struct({
           items: list(PcbFinding, 50),
         }),
       ),
+      changes: Schema.optional(Schema.NullOr(PcbChangeState)),
       loading: Schema.optional(Schema.Boolean),
     }),
   ),

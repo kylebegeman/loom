@@ -10,12 +10,14 @@ export function LayerSheet({
   sheetId,
   revision,
   opacity,
+  onSvg,
 }: {
   threadRef: ScopedThreadRef;
   renderKey: string;
   sheetId: string;
   revision: string;
   opacity: number;
+  onSvg?: (renderKey: string, sheetId: string, svg: string) => void;
 }) {
   const result = useAtomValue(
     pcb.readSheet.resultAtom({
@@ -40,6 +42,9 @@ export function LayerSheet({
     setImage({ svg, url: value });
     return () => URL.revokeObjectURL(value);
   }, [svg]);
+  useEffect(() => {
+    if (svg) onSvg?.(renderKey, sheetId, svg);
+  }, [svg, onSvg, renderKey, sheetId]);
   return (
     <>
       <img

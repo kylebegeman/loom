@@ -1,6 +1,6 @@
 # L60: PCB change highlight
 
-Status: Ready to build.
+Status: Implemented locally; focused checks pass. Real-canvas, CAD and remote checks remain pending.
 
 Approved by Kyle on 2026-10-10.
 

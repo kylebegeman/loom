@@ -64,3 +64,7 @@ Watch a performance trace while highlights are shown and the board is idle: no r
 ## Merge safety
 
 Run `scripts/fork/loom.sh check` and the check in SEAMS.md. No upstream files change.
+
+## Local verification
+
+Structural diff, memory eviction, raster region and workspace interaction tests pass. Hook tests cover hide/unmount, successive saves, dismissal and 3D suspension. Agent MCP regressions pass. Scoped strict lint and affected package typechecks pass. Real canvas/SVG decoding, CAD and remote checks remain pending.
