@@ -1,7 +1,6 @@
 # L33: Named custom beds and a shorter bed menu
 
-Status: Needs decision: confirm the settings schema change (named beds beside the existing custom
-size, hidden presets, and a merge-on-save update payload).
+Status: Implemented locally (`feat/model-orientation-sections-print-check`).
 
 Approved by Kyle on 2026-10-10.
 

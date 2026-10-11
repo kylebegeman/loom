@@ -2,13 +2,26 @@
 
 Focused tests only, no sleeps, no repo-wide checks.
 
+## Verification evidence (2026-10-10)
+
+Implementation milestones: `6a6645e435` (viewport access).
+
+Milestone `6a6645e435` passed 44 focused tests across four files for keyboard mappings,
+announcements, viewer navigation and canvas lifecycle. The later integrated viewer run passed
+40 tests, including its keyboard regression; see [L37's evidence](../L37-model-section-caps/TESTING.md).
+These overlapping runs are not added together.
+
+Contracts, client-runtime, web and server package typechecks passed.
+Targeted lint passed for the checked files, including the ten root integration files. Browser, desktop, GPU, relay and real-model
+performance checks were not run. No repository-wide checks were run.
+
 ## Automated tests
 
 | File                                                               | Covers                                                                                                                                                                                                                                                                                                                          |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `apps/web/src/fork/model-preview-3d/viewer/keyboard.test.ts` (new) | Each arrow maps to orbit without Shift and pan with it, with OrbitControls' signs; opposite arrows cancel; non-arrow keys return `null`.                                                                                                                                                                                        |
 | `apps/web/src/fork/model-preview-3d/announce.test.ts` (new)        | Load message with fits and with too large; no message when nothing changed; fit flip at the same revision; stale; tool hint and tool off; pan and orbit; standard view; success text; load outranks a simultaneous mode change; a keyboard camera move (no tracked input change) produces nothing; custom `formatSize` is used. |
-| `viewer/createViewer.test.ts`                                      | If the existing stubs allow it: `nudge` before a model loads is a no-op; `owns` is true only for the canvas. Otherwise the helper tests carry the logic.                                                                                                                                                                        |
+| `viewer/createViewer.test.ts`                                      | `nudge` before a model loads is a no-op; `owns` is true only for the canvas; repeated nudges coalesce into one render and notify navigation.                                                                                                                                                                                    |
 
 No markup snapshot tests for the region or attributes.
 

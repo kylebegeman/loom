@@ -2,6 +2,15 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+## Verification evidence (2026-10-10)
+
+Implementation milestones: `331537b175` (contracts and host services), `90db501feb` (viewer and inspector integration).
+
+On `feat/model-orientation-sections-print-check`, 69 focused tests passed across five files covering bed contracts,
+settings updates, menu helpers and service persistence. Contracts, client-runtime, web and server package typechecks passed.
+Targeted lint passed for the checked files, including the ten root integration files. Browser, desktop, GPU, relay and real-model
+performance checks were not run. No repository-wide checks were run.
+
 ## Automated tests
 
 | File                                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |

@@ -501,7 +501,7 @@ Effect<CheckReply, ModelPreviewError>` (the options exist for tests):
 - `Effect.callback` resolves on `message`, fails on `error` and on `exit` before a reply
   ("The print check stopped unexpectedly (exit code 1)."), and its finalizer calls
   `worker.terminate()`. Interruption and the timeout both run the finalizer.
-- `Effect.timeoutOrElse` at 60 seconds fails with `timeout`: "The print check took longer than
+- `Effect.timeoutOrElse({ duration, orElse })` at 60 seconds fails with `timeout`: "The print check took longer than
   60 seconds and was stopped."
 
 ### `printChecker.ts` and the service method
@@ -525,7 +525,9 @@ cancelPrintCheck(input: { file: ModelFileRef; requestId: string }): Effect<void>
 4. Nozzle: with L51, `activeBed(settings.buildPlate, { library }).nozzlesMm[0]` when the list is
    not empty (`nozzleSource: "printer"`); otherwise `settings.nozzleDiameterMm` ("setting").
 5. Key: sha256 of the JSON array `[PRINT_CHECK_VERSION, geometryRevision, format, orientation,
-nozzle, overhangAngleDegrees, firstLayerHeightMm]`. The bed is not in the key: fit is
+nozzle, overhangAngleDegrees, firstLayerHeightMm, bufferRevisions]`. For glTF and GLB, a bounded
+   manifest cache supplies contained external-buffer revisions, so a changed `.bin` invalidates
+   the cache while `geometryRevision` remains the viewer's main-file revision. The bed is not in the key: fit is
    recomputed on every call, so changing the bed never reruns geometry.
 6. Cache: an in-memory LRU of 64 `PrintCheckCore` values keyed by the key. A hit returns at once
    with `cached: true` unless `force`.
@@ -670,7 +672,7 @@ Tool.make("loom_model_preview_3d_check", {
   .annotate(Tool.Destructive, false),
 ```
 
-The handler uses `McpToolAccess.readsAsCaller`, resolves the thread with `modelThread`
+The handler uses `McpToolAccess.actsAsCaller`, resolves the thread with `modelThread`
 (`mcp.ts:203-211`), checks `agentToolEnabled` with the same message as its siblings
 (`mcp.ts:271-276`), and calls `service.checkPrint({ file: { threadId, path }, ...options })`.
 The report is the success value, so an agent reads `findings[].location.point` and can follow up
@@ -680,19 +682,24 @@ The editor command needs no new action: `inspector` opens Part, which runs the c
 
 ## Performance
 
-Measured numbers replace these estimates in the implementation PR (IMPLEMENTATION.md step 9).
+Measured on 2026-10-10 with `node apps/server/src/fork/model-preview-3d/check/bench.ts`,
+an Apple M5 Pro, 64 GiB memory and Node v24.21.0. Each size checks a subdivided sphere and a
+10-plate grid. Triangle counts are slightly below the targets because subdivisions are whole
+numbers. Times cover worker parsing and all checks; worker startup and file IO are additional.
 
-| Triangles | Parse and weld | Topology and checks | Grid and 20,000 rays | Total          |
-| --------- | -------------- | ------------------- | -------------------- | -------------- |
-| 100,000   | about 60 ms    | about 50 ms         | about 80 ms          | about 0.2 s    |
-| 1,000,000 | about 0.6 s    | about 0.4 s         | about 0.3 s          | about 1.5 s    |
-| 3,000,000 | about 2 s      | about 1.3 s         | about 0.8 s          | about 4 to 5 s |
+| Target triangles | Sphere actual | Sphere total | Plate actual | Plate total |
+| ---------------- | ------------- | ------------ | ------------ | ----------- |
+| 100,000          | 99,852        | 187 ms       | 94,080       | 226 ms      |
+| 1,000,000        | 999,996       | 1.41 s       | 993,720      | 1.62 s      |
+| 3,000,000        | 2,999,820     | 4.14 s       | 2,995,680    | 4.75 s      |
 
-- Memory: about 150 bytes per triangle at peak inside the worker (soup 36, welded vertices and
-  indices 24, weld table 24, normals and areas 16, edge table 32, grid ids 12 or more, shell and
-  plateau union-find 8), about 450 MB at the cap, plus the file bytes until parsing ends. One
-  check runs at a time. Typed arrays are outside `resourceLimits`, so the triangle cap, checked
-  before allocation, is the guard.
+- Memory: the benchmark process used 182 to 211 MiB at about 100k triangles, 668 to 843 MiB
+  at about 1M and 2,039 to 2,136 MiB at about 3M when receiving the result. These readings
+  include generated fixture arrays, file bytes and the worker, and are not an isolated worker
+  heap measurement. The original 450 MB estimate at the cap was too low. One check and its
+  file IO run at a time; shared callers retain leases rather than duplicate buffers. Typed
+  arrays are outside `resourceLimits`, so the 3M triangle cap and bounded grid references
+  provide the memory guard. Findings are capped inside the worker before caching.
 - The event loop never runs geometry; the main thread only reads files and hashes a short key.
 - Network: the report is typically under 10 KB and at most about 80 KB (200 findings). Nothing
   streams. Mesh bytes stay on the host, which matters for remote clients over T3 Connect.

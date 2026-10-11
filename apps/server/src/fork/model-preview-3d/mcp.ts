@@ -13,7 +13,7 @@ import { DEFAULT_RENDER_PROJECTION, View } from "./openscad.ts";
 export const ModelPreview3dToolkit = Toolkit.make(
   Tool.make("loom_model_preview_3d_editor", {
     description:
-      "Open, close, maximize and control the 3D editor: camera, standard views, display, navigation, section, selection tools, inspectors, refresh, saved views, captures and current state. Captures return a host PNG path. Lengths are in millimetres. display can show an everyday object for scale (reference), overhang shading, or the previous model version after a change (previous). Measure picks can snap to corners and edges (snap). Use tool with measure set to hole and one pick near a rim to save a hole diameter, returned as measurement.",
+      "Open, close, maximize and control the 3D editor: camera, standard views, display, navigation, section, selection tools, inspectors, refresh, saved views, captures and current state. Captures return a host PNG path. Lengths are in millimetres. display can show an everyday object for scale (reference), overhang shading, or the previous model version after a change (previous). Measure picks can snap to corners and edges (snap). Use tool with measure set to hole and one pick near a rim to save a hole diameter, returned as measurement. orientation supports auto, reset, bake, or face with one model-space point; tool lay-flat enables face picking. section.caps controls filled cuts; wall-thickness with one point returns a section-plane wall chord. display.findings shows or hides print-check pins.",
     parameters: Schema.Struct({ path: W.ModelFileRef.fields.path, command: W.ModelEditorAction }),
     success: W.ModelEditorResult,
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),

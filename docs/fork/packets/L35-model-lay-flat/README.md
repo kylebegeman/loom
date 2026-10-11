@@ -1,6 +1,6 @@
 # L35: Lay flat
 
-Status: Ready to build.
+Status: Implemented locally (`feat/model-orientation-sections-print-check`).
 
 Approved by Kyle on 2026-10-10.
 
@@ -61,8 +61,8 @@ None. Every file touched is fork-owned. See [SEAMS.md](./SEAMS.md).
 
 ## New dependencies
 
-None. `ConvexHull` and `BufferGeometryUtils.mergeVertices` ship in three's `examples/jsm`, which
-L23 already depends on (three 0.186.0, MIT).
+None. `ConvexHull` ships with the existing three dependency (0.186.0, MIT); geometry
+welding reuses L38's cached `viewer/weld.ts`.
 
 ## Relationship to other follow-up packets
 

@@ -141,7 +141,7 @@ Pure helpers (unit tested, no WebGL):
 Viewer changes in `createViewer.ts`:
 
 - A `root` group is created once and added to the scene. `setModel` (`createViewer.ts:513-534`)
-  adds the model to `root` instead of the scene, computes the part-space box once (identity
+  adds the model to `root` instead of the scene, computes the precise part-space box once (identity
   rotation), then applies the viewer's current orientation before `placeBed`, so a reload never
   flashes the unrotated pose.
 - `setOrientation(q: ModelQuaternion | null)`: sets `root.quaternion`, and
@@ -176,7 +176,7 @@ Viewer changes in `createViewer.ts`:
   saves `{ kind: "orientation", item: { quaternion, sourceRevision } }` through
   `workspace.mutate`. It stays in lay flat mode.
 - The orientation comes from `workspace.data.orientation`; `ViewerCanvas` gets an `orientation`
-  prop and an effect that calls `onStats(viewer.setOrientation(...))`, next to the existing
+  prop and an effect that calls `onOriented(viewer.setOrientation(...))`, next to the existing
   `setSection` effect (`viewer/ViewerCanvas.tsx:121-131`). Saving is optimistic in the panel:
   apply first, roll back to the stored value if the mutation fails.
 - `ModelPanel.tsx:748-765`: one line, `else if (key === "l" && !editDisabled && layFlat) startTool("lay-flat");`

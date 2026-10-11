@@ -1,6 +1,6 @@
 # L46: Print check
 
-Status: Needs decision: one build seam in `apps/server/vite.config.ts` for the check worker.
+Status: Implemented locally (`feat/model-orientation-sections-print-check`).
 
 Approved by Kyle on 2026-10-10.
 

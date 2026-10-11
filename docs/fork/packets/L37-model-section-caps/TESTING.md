@@ -2,6 +2,21 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+## Verification evidence (2026-10-10)
+
+Implementation milestones: `331537b175` (contracts and host services), `90db501feb` (viewer and inspector integration).
+
+On `feat/model-orientation-sections-print-check`, 62 focused tests passed across `createViewer.test.ts` (40),
+`ViewerCanvas.test.tsx` (6) and `sectionCaps.test.ts` (16). They cover closed/open meshes,
+holes, overlapping solids, exact-plane vertices, parent and instance transforms, the in-plane
+thickness limit, orientation-safe cap picks and wall saving, hover without GPU frames,
+findings pins, geometry ownership and restoring hatch density after capture failure.
+The viewer run is shared with L35 and L46 and is counted once.
+
+Contracts, client-runtime, web and server package typechecks passed.
+Targeted lint passed for the checked files, including the ten root integration files. Browser, desktop, GPU, relay and real-model
+performance checks were not run. No repository-wide checks were run.
+
 ## Automated tests
 
 | File                                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
@@ -56,5 +71,5 @@ Upstream T3 server: the panel is unavailable.
 
 ## Merge safety
 
-Run `scripts/fork/loom.sh check` and the merge preview in SEAMS.md; expect no conflicts. After
+The full release rehearsal is deferred. Before merge, use the preview in SEAMS.md; after
 merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.

@@ -3,6 +3,30 @@
 Focused tests, no repo-wide checks, no sleeps. Geometry tests build meshes in code so each case
 states its shape; the few binary fixtures cover parsers only.
 
+## Verification evidence (2026-10-10)
+
+Implementation milestones: `331537b175` (contracts and host services), `90db501feb` (viewer and inspector integration).
+
+On `feat/model-orientation-sections-print-check`, the web request/staleness and finding-framing helpers passed 10 tests
+across two files. Mesh parsers passed 24 tests across four files. The shared viewer run covered
+numbered pins, selection, camera framing and captures; see [L37's evidence](../L37-model-section-caps/TESTING.md).
+The backend passed 98 focused tests: 74 across geometry core, workers, cache, service, MCP,
+contracts and permissions, plus the 24 parser tests above. The parser total is included in 98.
+
+Synthetic worker benchmarks on an Apple M5 Pro with 64 GiB RAM and Node 24.21.0 took
+0.187/0.226 seconds at approximately 100,000 triangles, 1.409/1.620 seconds at approximately
+1 million and 4.143/4.751 seconds at approximately 3 million. These measure parsing, welding and analysis inside the worker,
+excluding host file reads, worker startup, transport and browser latency. The benchmark setup and interpretation are in
+[TECHNICAL.md](./TECHNICAL.md).
+
+The benchmark process reached 2,136 MiB RSS at about 3M triangles, including generated fixture
+arrays, file bytes and the worker. The server bundle built and its worker ran from a data URL
+with only `node:worker_threads` imported.
+
+Contracts, client-runtime, web and server package typechecks passed.
+Targeted lint passed for the checked files, including the ten root integration files. Browser, desktop, GPU, relay and real-model
+performance checks were not run. No repository-wide checks were run.
+
 ## Automated tests
 
 All server paths below are under `apps/server/src/fork/model-preview-3d/`.
@@ -44,7 +68,6 @@ vp run --filter @t3tools/contracts typecheck
 vp run --filter @t3tools/client-runtime typecheck
 vp run --filter @t3tools/web typecheck
 vp run --filter t3 typecheck
-scripts/fork/loom.sh check
 ```
 
 Once, for step 6 of IMPLEMENTATION.md only: `vp run --filter t3 build`, then confirm the worker

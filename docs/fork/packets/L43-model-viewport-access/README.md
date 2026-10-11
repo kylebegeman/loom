@@ -1,6 +1,6 @@
 # L43: Viewport keyboard and screen reader access
 
-Status: Ready to build
+Status: Implemented locally (`feat/model-orientation-sections-print-check`).
 
 Approved by Kyle on 2026-10-10.
 

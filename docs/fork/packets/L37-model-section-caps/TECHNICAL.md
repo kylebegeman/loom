@@ -36,7 +36,7 @@ viewer's initial section (`createViewer.ts:91`) and the panel's default
 - `ModelEditorResult` (`model-editor.ts:83-89`) and `ModelEditorComplete`
   (`model-editor.ts:90-100`) gain `wall: Schema.optional(ModelWall)`.
 - `ModelEditorState` (`model-editor.ts:65-82`) gains
-  `sectionCaps: Schema.optional(Schema.Literals(["filled", "partial", "off", "open-mesh", "none"]))`
+  `sectionCaps: Schema.optional(Schema.Literals(["filled", "partial", "off", "open-mesh", "none", "checking"]))`
   (`"none"` when no section is enabled).
 
 ## Server
@@ -67,39 +67,25 @@ captures include caps with no further change. `autoClear` clears stencil each fr
 
 `closedMesh(geometry): boolean`, pure and cached in a `WeakMap<BufferGeometry, boolean>`:
 
-1. Weld vertices by exact position: hash the three `Float32` bit patterns of each vertex (a
-   `Uint32Array` view of the position array) into an open-addressing table of `Int32Array`s.
-   Exact equality is right here: STL and 3MF exporters write shared corners with identical
-   floats, and a mesh whose corners do not match is not closed for stencil purposes either.
-   `BufferGeometryUtils.mergeVertices` would also work but builds string keys, which is slow on
-   million-triangle meshes.
-2. For every triangle, emit its three directed edges as `a * vertexCount + b` into a
-   `Float64Array` (exact up to 2^53, so up to about 94 million vertices).
-3. Sort; for each undirected edge, require exactly one `a -> b` and one `b -> a`. Any edge used
-   once (a hole), more than twice (non-manifold) or twice in the same direction (flipped winding)
-   fails.
+1. Reuse L38's cached `weld()` in `viewer/weld.ts`, preserving triangle order. It joins
+   exporter rounding within a small scale-aware tolerance.
+2. Encode undirected edges with their direction in a `Float64Array`, then sort them.
+3. Require exactly one use in each direction for every edge. A hole, repeated triangle,
+   degenerate edge, non-manifold fin or flipped winding fails. The geometry's draw range is
+   respected, so a cropped solid is not declared closed.
 
 The viewer runs the check lazily when a section is first enabled for a model, once per geometry.
 When the render summary already says `manifold: true`
 (`packages/contracts/src/fork/model-preview-3d.ts:131`), the panel passes that through and the
 check is skipped. Per-mesh results give the `"filled"`, `"partial"` and `"open-mesh"` states.
 
-Step 1 uses the shared `weld()` in `viewer/weld.ts` ([MODEL-3D-FOLLOW-UPS.md](../MODEL-3D-FOLLOW-UPS.md), "Mesh welding"), creating it if no other packet has. Its small tolerance also joins
-corners that exporters wrote a rounding apart, which only helps the closed check.
-
 ### Stencil caps (`viewer/sectionCaps.ts`)
 
-```ts
-export function createSectionCaps(
-  scene: Scene,
-  plane: Plane,
-): {
-  setModel(model: Object3D | null, closed: (mesh: Mesh) => boolean): void;
-  syncTransforms(): void; // after setModel and L35 orientation changes
-  update(options: { enabled: boolean; box: Box3; dark: boolean }): void;
-  dispose(): void;
-};
-```
+`createSectionCaps(scene, plane)` owns only helper geometry and materials. `setModel` stores
+source meshes without checking until an enabled filled section first calls `update`.
+`update` takes section enablement, caps, wireframe, world box, theme and pixel ratio;
+`syncTransforms` follows orientation and visibility changes. `state`, `onState`, `visible`
+and `closedMeshes` expose the outcome to the viewer, and `dispose` releases the helpers.
 
 - A `caps` group lives directly in the scene, not under the model, so `meshStats`
   (`viewer/load.ts:46-59`), `applyWireframe` (`createViewer.ts:403-408`), `applySection`,
@@ -113,12 +99,13 @@ export function createSectionCaps(
   - front: `side: FrontSide`, stencil ops `DecrementWrapStencilOp`;
   - both: `colorWrite: false`, `depthWrite: false`, `depthTest: false`, `stencilWrite: true`,
     `clippingPlanes: [plane]`, `renderOrder = 1`, `raycast = () => {}`.
-- The cap: a `PlaneGeometry` quad sized to the world box diagonal, placed with
-  `plane.coplanarPoint(target)` and `lookAt(target - plane.normal)`, `renderOrder = 1.1`,
+- The cap: a `PlaneGeometry` quad sized to the world box diagonal, centred at the world box
+  centre projected onto the plane, with `lookAt(target - plane.normal)`, `renderOrder = 1.1`,
   `raycast = () => {}`, material:
   `MeshBasicMaterial({ color, stencilWrite: true, stencilRef: 0, stencilFunc: NotEqualStencilFunc, stencilFail/ZFail/ZPass: ReplaceStencilOp })`,
   with `onAfterRender = (renderer) => renderer.clearStencil()`. Unlit, so the cut is flat at any
   angle. No clipping planes on the cap itself.
+- Instance copies retain their instance matrices; effective visibility includes hidden ancestors.
 - Hatch: an `onBeforeCompile` patch on the cap material mixes a darker stripe where
   `fract((gl_FragCoord.x - gl_FragCoord.y) / (6.0 * pixelRatio)) > 0.5`. The stripe runs the
   opposite diagonal to L36's overhang hatch so the two never read as the same thing.
@@ -143,15 +130,15 @@ Pure functions, unit tested:
   `d === 0` counts as positive, so shared vertices on the plane are classified consistently), and
   for each triangle with mixed signs emit the segment between the two edge crossings. Each
   segment is oriented with `cross(plane.normal, faceNormal)` so solid lies on its left. Points are
-  projected to 2D using the two world axes in the plane (the plane is always axis aligned). Output
+  projected to 2D using the two world axes in the plane (the plane is always axis aligned). Directed collinear chains are merged without connecting open ends. Output
   is a `Float64Array` of segments plus a uniform grid index (cell size about
   `sqrt(bboxArea / segmentCount) * 2`, cells listing segment ids).
 - `insideSection(section, p)`: nonzero winding number of the oriented segments around `p`, using
   only segments in the grid row to the right of `p`. Winding, not even-odd, so overlapping parts
   of a multi-part file count as solid.
 - `wallAt(section, p)`: the shortest chord through `p`. Sample 32 directions over 180°; for each,
-  cast rays in both directions with a grid walk (DDA) to the first segment hit, chord length
-  `t+ + t-`. Refine around the best sample with a ternary search to 0.1°. Return
+  cast rays in both directions with a bounded grid walk (DDA) until winding leaves solid,
+  so overlapping parts do not create an artificial internal wall. Chord length is `t+ + t-`. Refine around the best sample with a ternary search to 0.1°. Return
   `{ thicknessMm, start, end }` in 2D, mapped back to world. For a point anywhere in a wall of
   thickness `w`, the perpendicular chord has length `w` and every other chord is longer, so the
   minimum is the wall thickness within the plane.
@@ -162,8 +149,8 @@ wall. Inside a large solid region the readout is that region's narrowest width, 
 the honest answer to "how thick is the material here".
 
 The section is built lazily, on the first hover (or editor call) after the plane, model or
-orientation changes, never while the offset is being scrubbed. A 1M-triangle mesh is one linear
-pass (tens of milliseconds); measure on Kyle's largest STL.
+orientation changes, never while the offset is being scrubbed. The triangle intersection pass is linear. Large real-model latency and GPU stencil rendering
+remain unmeasured in this batch; [TESTING.md](./TESTING.md) records the focused proof.
 
 ### Hover, readout and picking
 
@@ -178,12 +165,11 @@ pass (tens of milliseconds); measure on Kyle's largest STL.
 - Double-click on the cap (a `dblclick` listener on the canvas; nothing else uses it) calls a new
   `onWallMeasure(start, end)` callback with model-space points (through L35's root when present).
   `useModelEditing.ts` saves it like `onPick` saves a distance (`useModelEditing.ts:92-122`):
-  `{ kind: "measurement", item: { id, name: "Wall N", sourceRevision, start, end, visible: true } }`.
+  `{ kind: "measurement", item: { id, kind: "distance", name: "Wall N", sourceRevision, start, end, visible: true } }`.
 - `pick` (`createViewer.ts:112-126`): when caps are visible, also intersect the plane; if that
   point is inside the section and nearer than the mesh hit, return it. Measuring on the cap then
   works with the existing Measure tool.
-- Length text: `${thickness.toFixed(1)} mm wall` from one helper, swapped for L40's
-  `formatLength` when it lands.
+- Length text uses L40's `formatLength` and the selected display unit.
 
 ### Panel
 

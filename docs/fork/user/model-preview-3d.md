@@ -18,7 +18,10 @@ parallel edges stay parallel, useful for checking alignment against a drawing. T
 in the viewport sets what the part rests on: a printer's build plate, a flat surface such as an
 A4 sheet or a 1 m square, or a custom size, with a 10 mm grid, a 1 in grid or a plain surface.
 Surfaces have no height limit. The choice is saved for the environment, so the Part tab,
-variants and settings follow it.
+variants and settings follow it. To keep a custom size, choose **Bed > Custom size**, enter its
+size and **Save as bed**. Named beds appear under Custom. **Manage beds** opens
+**Settings > Loom > 3D model > Beds** to rename, resize or delete them and hide unused presets.
+Save settings to apply those changes; the active preset stays visible.
 Maximize the panel for a larger work area with the inspector alongside your part. In a narrow
 panel the inspector opens as a sheet below the viewport; expand it for long forms, then return
 to the viewport.
@@ -27,6 +30,10 @@ While the panel has focus, **F** fits the model, **O** and **H** choose orbit or
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
 **P** switches perspective and orthographic projection, **V** toggles overhang shading,
 **D** shows or hides the previous version, and **I** shows or hides the inspector.
+Press **L** to choose a face to rest on the bed. With the canvas itself focused, arrow keys
+orbit and **Shift + arrows** pan; they leave fields and menus to use their own arrows.
+The canvas names the file and describes its controls. Screen reader announcements report a
+loaded part's dimensions and bed fit, tool changes and capture results.
 The help button beside the zoom controls lists every shortcut.
 Choose **Units** in the Bed menu or **Settings > Loom > 3D model** to display lengths in
 millimetres or decimal inches. The command palette's **3D model: Switch units** changes the
@@ -156,8 +163,19 @@ fewer also show the across-flats size. Copy value on a hole copies its diameter.
 hole fitting are unavailable above 1 million triangles, while free distance picks still work.
 A changed mesh marks previous measurements stale; **Measure again** returns to the matching
 Distance or Hole mode.
-The section plane strip chooses the X, Y or Z axis, the offset and which side to keep. Section
-planes change the view, not the model file.
+The section plane strip chooses the X, Y or Z axis, the offset and which side to keep.
+Closed meshes show a hatched **Filled cut**. Hover the cut to read the wall thickness and
+double-click to save **Wall N** under Markup. Thickness is measured within the section plane;
+choose the axis across the wall, because an angled cut reads wider. Open parts remain unfilled.
+Turn off **Filled cut** to look through the cut; wireframe also hides it. Saved views remember
+the choice, and captures include the fill. Section planes change the view, not the model file.
+
+In **Part > Orientation**, **Lay flat on a face** or **L** lets you click the face that should
+rest on the bed. **Auto lay flat** chooses the largest convex-hull side; **Reset orientation**
+returns to the authored pose. Dimensions, bed fit, sections and overhangs follow the saved
+rotation. Measurements and annotation anchors stay with the part. **Ask agent to bake this
+rotation** adds the exact rotation to your composer draft for review before sending it.
+The preview rotation leaves the source file unchanged.
 
 To ask for a change, annotate a point or drag over a region, then describe the change. **Save
 draft** keeps it under **Markup**; **Save and add to composer** adds a marked capture and
@@ -183,8 +201,26 @@ choose whether to use them.
 
 Views, measurements, review sheets, variants and change requests are saved for this model in
 this environment and workspace. They survive closing the panel and are shared with other
-clients connected to the same workspace. Support generation and broader print checks remain
-separate future work.
+clients connected to the same workspace. Support generation remains separate from print checks.
+
+## Check a part before printing
+
+Open **Part > Print check** for a report on the mesh, bodies, bed fit, first layer, overhangs,
+islands, walls and small features. It checks the part in its saved orientation. Expand a finding
+and select it, or select its numbered pin, to frame that area. **Markup > Print check** lists
+the findings too. **Display > Print check pins** and Markup's pin control show or hide them;
+shown pins appear in captures. **Check again** reruns the report, and **Cancel** stops an active
+check. A changed part keeps its old report marked out of date until the new check finishes.
+
+Set nozzle diameter, overhang limit and first-layer height in **Settings > Loom > 3D model**.
+The report uses the saved nozzle diameter.
+Thin walls below two nozzle widths and features below one nozzle width are flagged. The report
+helps locate problems before slicing; bridges can appear as overhangs, and a check that reaches
+its time budget reports which checks were incomplete.
+
+Agents can run `loom_model_preview_3d_check` without opening a panel and receive the same report.
+The check runs on the environment host for STL, OBJ, 3MF, glTF, GLB and SCAD renders. STEP needs
+the optional Fabrication app. Print checks are unavailable in the single-file `t3` executable.
 
 ## Blender and remote work
 
@@ -207,7 +243,10 @@ picking, marked captures, customizer history and draft preparation use the conne
 Host rendering and saved state remain available without opening the editor. Agents can change
 projection, overhang shading, a scale reference or the previous version through the editor's
 display action; its snapshot reports the current camera, bed-fit results and available previous
-version. Measure picks can snap to corners and edges. Choose Hole mode then pick near a rim to
+version. The editor's `orientation` action chooses auto, reset or a face at a model-space point;
+`section.caps` controls the fill, and `wall-thickness` returns the chord at a model-space point.
+Saved rotations apply to host renders by default; `orientation: "none"` opts out.
+Measure picks can snap to corners and edges. Choose Hole mode then pick near a rim to
 save a diameter and read the returned measurement. Settings tools
 can change the display unit and overhang threshold, while tool inputs and outputs keep lengths
 in millimetres and areas in square millimetres.

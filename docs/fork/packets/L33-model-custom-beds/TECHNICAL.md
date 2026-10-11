@@ -111,7 +111,7 @@ All in `model-beds.ts`, pure, shared by web, server and tests:
 | `updateCustomBed(setting, id, patch)`   | Replaces `name` and/or `volumeMm`.                                                                                                                                                                                                                                         |
 | `removeCustomBed(setting, id)`          | Removes it; if it was active, selects `DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate.preset` with `customBedId: null`.                                                                                                                                                         |
 | `setPresetHidden(setting, id, hidden)`  | Adds or removes the id; refuses to hide the active preset.                                                                                                                                                                                                                 |
-| `newCustomBedId()`                      | `"custom-" + crypto.randomUUID()`. Web and Node both have `crypto.randomUUID`.                                                                                                                                                                                             |
+| `newCustomBedId(uuid)`                  | `"custom-" + uuid`; the caller supplies a generated UUID.                                                                                                                                                                                                                  |
 
 `buildPlateLabel` in `buildPlate.ts` becomes `activeBed(setting).label`, which now reads "Custom
 size" for the slot. `bedGroups(setting)` groups `listBeds(setting)`; Manage beds calls
@@ -125,7 +125,7 @@ enforces only length, so a duplicate saved by an agent still loads.
 
 - `ModelPreviewService.updateSettings` (`ModelPreviewService.ts:973-982`) takes
   `ModelPreviewSettingsUpdate` and saves
-  `{ ...input, buildPlate: { ...settings.buildPlate, ...input.buildPlate } }`, where `settings`
+  `{ ...settings, ...input, buildPlate: { ...settings.buildPlate, ...input.buildPlate } }`, where `settings`
   is the current in-memory value. Missing optional keys are absent from the decoded input, so the
   spread keeps stored values.
 - The RPC handler (`rpc.ts:51-52`) is unchanged apart from its inferred input type.
@@ -144,7 +144,7 @@ enforces only length, so a duplicate saved by an agent still loads.
 - Custom group: named beds, then "Custom size" (from `bedGroups`).
 - When "Custom size" is active: the size fields as today, plus "Save as bed" (a small button).
   It turns into an inline name `Input` with Enter to save and Escape to cancel; on save,
-  `save(addCustomBed(plate, { id: newCustomBedId(), name, volumeMm: plate.customMm }))`.
+  `save(addCustomBed(plate, { id: newCustomBedId(randomUUID()), name, volumeMm: plate.customMm }))`.
   Disabled at the limit with the limit text.
 - When a named bed is active: the same `CustomSize` fields bound to that bed's volume, committing
   `updateCustomBed`. For a bed with no height limit, the height field shows "No limit" and is

@@ -2,6 +2,21 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+## Verification evidence (2026-10-10)
+
+Implementation milestones: `331537b175` (contracts and host services), `90db501feb` (viewer and inspector integration).
+
+On `feat/model-orientation-sections-print-check`, 35 core tests passed across five files: orientation helpers (12),
+editing lifecycle and wall saving (14), bake-request preparation (1), workspace contracts (5)
+and server workspace operations (3). The shared viewer and canvas run passed 62 tests across
+three files, including orientation bounds, model-space picks and retained ghost transforms;
+see [L37's evidence](../L37-model-section-caps/TESTING.md). These overlapping runs are not added
+together. Server render-tool coverage is recorded with the integration milestone.
+
+Contracts, client-runtime, web and server package typechecks passed.
+Targeted lint passed for the checked files, including the ten root integration files. Browser, desktop, GPU, relay and real-model
+performance checks were not run. No repository-wide checks were run.
+
 ## Automated tests
 
 | File                                                                         | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
@@ -67,5 +82,5 @@ Upstream T3 server: the panel is unavailable. Older Loom server: no lay flat con
 
 ## Merge safety
 
-Run `scripts/fork/loom.sh check` and the merge preview in SEAMS.md; expect no conflicts. After
+The full release rehearsal is deferred. Before merge, use the preview in SEAMS.md; after
 merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.
