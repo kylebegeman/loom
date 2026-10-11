@@ -24,6 +24,7 @@ import {
   type ModelWatchEvent,
   type TurnModels,
   modelFormatOf,
+  isSourceFormat,
   normalizeQuaternion,
   quaternionMatrix,
 } from "@t3tools/contracts/fork";
@@ -70,6 +71,17 @@ import {
 import { cacheKey, pruneList, createStemProtection } from "./renderCache.ts";
 import { threeMfScale } from "./threeMfUnits.ts";
 import { parseBinaryStl } from "./overhangMesh.ts";
+import { makePythonEnvironment } from "./pythonCad/environment.ts";
+import { makePythonInspector } from "./pythonCad/inspect.ts";
+import { makePythonRenderer, type PythonResolved } from "./pythonCad/render.ts";
+import { makePrinterLibrary } from "./printers.ts";
+import { makeHistory } from "./history/ModelHistory.ts";
+import { makeSlicer } from "./slicer/service.ts";
+import { makeCheckCoordinator } from "./check/coordinator.ts";
+import { makeAssemblies } from "./assembly/service.ts";
+import { makeAssemblyGeometry } from "./assembly/geometry.ts";
+import { makeAssemblyChecker } from "./assembly/checker.ts";
+import { listBeds, isAssemblyPath, type AssemblyReadResult } from "@t3tools/contracts/fork";
 import { makePrintChecker } from "./check/printChecker.ts";
 
 const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -126,6 +138,12 @@ export const make = Effect.gen(function* () {
   const dependencyDir = path.join(config.stateDir, "fork", "model-preview-3d", "dependencies");
   yield* fs.makeDirectory(dependencyDir, { recursive: true });
   let settings = yield* store.getSettings();
+  const python = yield* makePythonEnvironment({
+    stateDir: config.stateDir,
+    getPythonPath: () => settings.pythonPath,
+    runner,
+  });
+  const inspectPython = makePythonInspector(python);
   const projects = yield* projectStore.listShells();
   yield* store.sweep(projects.map((p) => p.id));
   const workspaceLock = yield* Semaphore.make(1);
@@ -207,7 +225,7 @@ export const make = Effect.gen(function* () {
       reverse.set(dependency, parents);
     };
     for (const [model, inputs] of dependencies)
-      if (modelFormatOf(model) === "scad") for (const input of inputs) add(input, model);
+      if (isSourceFormat(modelFormatOf(model))) for (const input of inputs) add(input, model);
     const listing = yield* entries.list({ cwd: root });
     const sources = listing.entries.filter(
       (entry) => entry.kind === "file" && modelFormatOf(entry.path) === "scad",
@@ -270,10 +288,13 @@ export const make = Effect.gen(function* () {
     root: string,
     prefix: string,
     checkpoint: TurnCheckpoint,
+    include?: readonly "build123d"[],
   ) {
     const changed = turnFiles.workspaceFiles(prefix, checkpoint.files);
-    const inputs = changed.filter((file) =>
-      SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()),
+    const inputs = changed.filter(
+      (file) =>
+        SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+        path.extname(file).toLowerCase() === ".py",
     );
     const dependent = inputs.length
       ? yield* scadDependents(threadId, root, inputs)
@@ -281,7 +302,9 @@ export const make = Effect.gen(function* () {
           models: new Map<string, string>(),
           truncated: false,
         };
-    const candidates = modelCandidates(changed, dependent.models);
+    const candidates = modelCandidates(changed, dependent.models).filter(
+      (candidate) => candidate.format !== "build123d" || include?.includes("build123d"),
+    );
     const valid = yield* Effect.forEach(
       candidates,
       (candidate) =>
@@ -309,6 +332,7 @@ export const make = Effect.gen(function* () {
   const turnModels = Effect.fn("ModelPreview.turnModels")(function* (
     threadId: ModelFileRef["threadId"],
     runId: RunId | null,
+    include?: readonly "build123d"[],
   ) {
     const { root } = yield* resolveWorkspace({ threadId, path: "." });
     const prefix = yield* turnFiles.repoPrefix(root);
@@ -319,17 +343,21 @@ export const make = Effect.gen(function* () {
       checkpoints.some((checkpoint) =>
         turnFiles
           .workspaceFiles(prefix, checkpoint.files)
-          .some((file) => SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase())),
+          .some(
+            (file) =>
+              SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+              path.extname(file).toLowerCase() === ".py",
+          ),
       )
     )
       yield* entries.refresh(root);
     for (const checkpoint of checkpoints) {
-      const models = yield* modelsForCheckpoint(threadId, root, prefix, checkpoint);
+      const models = yield* modelsForCheckpoint(threadId, root, prefix, checkpoint, include);
       if (runId !== null || models.models.length) return models;
     }
     return emptyTurnModels(threadId);
   });
-  const turnModelEvents = (threadId: ModelFileRef["threadId"]) =>
+  const turnModelEvents = (threadId: ModelFileRef["threadId"], include?: readonly "build123d"[]) =>
     Stream.unwrap(
       Effect.gen(function* () {
         const { root } = yield* resolveWorkspace({ threadId, path: "." });
@@ -340,10 +368,14 @@ export const make = Effect.gen(function* () {
             Effect.gen(function* () {
               const changed = turnFiles.workspaceFiles(prefix, checkpoint.files);
               if (
-                changed.some((file) => SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()))
+                changed.some(
+                  (file) =>
+                    SCAD_INPUT_EXTENSIONS.has(path.extname(file).toLowerCase()) ||
+                    path.extname(file).toLowerCase() === ".py",
+                )
               )
                 yield* entries.refresh(root);
-              return yield* modelsForCheckpoint(threadId, root, prefix, checkpoint);
+              return yield* modelsForCheckpoint(threadId, root, prefix, checkpoint, include);
             }),
           ),
           Stream.filter((result) => result.models.length > 0),
@@ -374,7 +406,7 @@ export const make = Effect.gen(function* () {
       relativeUrl: `/api/loom/model-preview-3d/f/${token}/${encodeURIComponent(path.basename(absolute))}`,
     };
   });
-  const sidecarPath = (absolute: string) => absolute.replace(/\.scad$/i, ".json");
+  const sidecarPath = (absolute: string) => absolute.replace(/(\.b3d\.py|\.scad)$/i, ".json");
   const readSidecar = Effect.fn("ModelPreview.readSidecar")(function* (absolute: string) {
     const target = sidecarPath(absolute);
     if (!(yield* fs.exists(target))) return { fileFormatVersion: "1", parameterSets: {} };
@@ -390,10 +422,17 @@ export const make = Effect.gen(function* () {
   });
   const parameters = Effect.fn("ModelPreview.parameters")(function* (file: ModelFileRef) {
     const resolved = yield* resolveFile(file);
-    if (modelFormatOf(file.path) !== "scad")
-      return yield* error("unsupported-format", "Parameters are available for OpenSCAD files.");
+    const format = modelFormatOf(file.path);
+    if (!isSourceFormat(format))
+      return yield* error(
+        "unsupported-format",
+        "Parameters are available for OpenSCAD and Python CAD files.",
+      );
     const source = yield* fs.readFileString(resolved.absolute);
-    const parsed = parseCustomizer(source);
+    const parsed =
+      format === "build123d"
+        ? ((yield* inspectPython(resolved.absolute, source)).parameters ?? [])
+        : parseCustomizer(source);
     const sidecar = yield* readSidecar(resolved.absolute);
     const previous = yield* store.getParams(
       resolved.projectId,
@@ -439,7 +478,7 @@ export const make = Effect.gen(function* () {
           : null,
     };
   });
-  const status = Effect.fn("ModelPreview.status")(function* (refresh = false) {
+  const openscadStatus = Effect.fn("ModelPreview.openscadStatus")(function* (refresh = false) {
     const time = yield* now;
     if (refresh || !detection || time - detection.at > 60000) {
       const candidates = [
@@ -494,8 +533,12 @@ export const make = Effect.gen(function* () {
     }
     return { openscad: detection.value, maxFileBytes: settings.maxFileMegabytes * 1024 * 1024 };
   });
+  const status = Effect.fn("ModelPreview.status")(function* (refresh = false) {
+    const result = yield* openscadStatus(refresh);
+    return { ...result, python: yield* python.info(refresh) };
+  });
   const validateOverrides = (
-    parsed: ReturnType<typeof parseCustomizer>,
+    parsed: Readonly<ReturnType<typeof parseCustomizer>>,
     values: Readonly<Record<string, string>>,
   ) =>
     Effect.gen(function* () {
@@ -574,13 +617,41 @@ export const make = Effect.gen(function* () {
     dependencies.set(absolute, next);
     if (json(previous ?? []) !== json(next)) yield* PubSub.publish(depUpdates, absolute);
   });
+  const pythonRenderer = yield* makePythonRenderer({
+    environment: python,
+    inspect: inspectPython,
+    cacheDir,
+    getSettings: () => settings,
+    metadata,
+    readSidecar: (absolute) => checked(readSidecar(absolute)),
+    restoreDependencies: (absolute) => checked(restoreDependencies(absolute)),
+    dependencyMetadata: (absolute) => checked(dependencyMetadata(absolute)),
+    readDeps: (depfile, absolute) => checked(readDeps(depfile, absolute)),
+    persistDependencies: (absolute) =>
+      checked(
+        fs.writeFileString(dependencyRecordPath(absolute), json(dependencies.get(absolute) ?? [])),
+      ),
+    saveParams: (resolved, input) =>
+      checked(
+        store.saveParams(
+          resolved.projectId,
+          resolved.root + "\0" + input.file.path,
+          input.overrides,
+          input.parameterSet,
+        ),
+      ),
+    protectStem,
+    sign: (root, absolute, allowLarge) => checked(sign(root, absolute, allowLarge)),
+    prune: () => checked(prune()),
+  });
   const runRender = Effect.fn("ModelPreview.runRender")(function* (
     input: ScadRenderInput,
     resolved: Effect.Success<ReturnType<typeof resolveFile>>,
+    options: { snapshot?: boolean; cachedOnly?: boolean } = {},
   ) {
     const start = yield* now,
       currentSettings = settings;
-    const info = (yield* status()).openscad;
+    const info = (yield* openscadStatus()).openscad;
     if (!info.path)
       return yield* error(
         "openscad-missing",
@@ -604,8 +675,10 @@ export const make = Effect.gen(function* () {
       return yield* error("invalid-parameter", "The parameter set no longer exists.");
     const format = currentSettings.renderColors ? "3mf" : "stl";
     const dependencyRecord = dependencyRecordPath(resolved.absolute);
-    yield* restoreDependencies(resolved.absolute);
-    const initialDependencies = yield* dependencyMetadata(resolved.absolute);
+    if (!options.snapshot) yield* restoreDependencies(resolved.absolute);
+    const initialDependencies = options.snapshot
+      ? []
+      : yield* dependencyMetadata(resolved.absolute);
     const getHash = (deps: typeof initialDependencies) =>
       cacheKey(
         resolved.absolute + "\0" + source,
@@ -627,6 +700,16 @@ export const make = Effect.gen(function* () {
     yield* protectStem(stem);
     let cached = yield* fs.exists(output),
       log: ScadRenderResult["log"] = [];
+    if (!cached && options.cachedOnly)
+      return {
+        status: "error",
+        mesh: null,
+        meshFormat: null,
+        cached: false,
+        durationMs: 0,
+        log: [],
+        summary: null,
+      } satisfies ScadRenderResult;
     if (!cached) {
       const pendingStem = path.join(cacheDir, `pending-${NodeCrypto.randomUUID()}`);
       stem = pendingStem;
@@ -687,8 +770,10 @@ export const make = Effect.gen(function* () {
           summary: null,
         } satisfies ScadRenderResult;
       }
-      yield* readDeps(depsPath, resolved.absolute);
-      const finalDependencies = yield* dependencyMetadata(resolved.absolute);
+      if (!options.snapshot) yield* readDeps(depsPath, resolved.absolute);
+      const finalDependencies = options.snapshot
+        ? []
+        : yield* dependencyMetadata(resolved.absolute);
       // OpenSCAD reads live files. Never label an output with inputs edited during the job.
       const changed =
         source !== (yield* fs.readFileString(resolved.absolute)) ||
@@ -714,7 +799,11 @@ export const make = Effect.gen(function* () {
           ],
           summary: null,
         } satisfies ScadRenderResult;
-      yield* fs.writeFileString(dependencyRecord, json(dependencies.get(resolved.absolute) ?? []));
+      if (!options.snapshot)
+        yield* fs.writeFileString(
+          dependencyRecord,
+          json(dependencies.get(resolved.absolute) ?? []),
+        );
       const finalHash = getHash(finalDependencies);
       if (stem !== path.join(cacheDir, finalHash)) {
         const finalStem = path.join(cacheDir, finalHash);
@@ -734,11 +823,11 @@ export const make = Effect.gen(function* () {
       const text = yield* fs.readFileString(`${stem}.log`).pipe(Effect.orElseSucceed(() => "[]"));
       log = yield* decodeLog(text);
     }
-    yield* readDeps(depsPath, resolved.absolute);
+    if (!options.snapshot) yield* readDeps(depsPath, resolved.absolute);
     const summary = parseSummary(
       yield* fs.readFileString(summaryPath).pipe(Effect.orElseSucceed(() => "")),
     );
-    if (!input.variantId)
+    if (!input.variantId && !options.snapshot && !options.cachedOnly)
       yield* store.saveParams(
         resolved.projectId,
         resolved.root + "\0" + input.file.path,
@@ -758,17 +847,30 @@ export const make = Effect.gen(function* () {
       summary,
     } satisfies ScadRenderResult;
   });
-  const renderScad = Effect.fn("ModelPreview.renderScad")(function* (input: ScadRenderInput) {
+  const renderJob = Effect.fn("ModelPreview.renderJob")(function* (
+    input: ScadRenderInput,
+    exportStep = false,
+  ) {
     const resolved = yield* resolveFile(input.file);
-    if (modelFormatOf(input.file.path) !== "scad")
-      return yield* error("unsupported-format", "Choose an OpenSCAD file.");
+    const format = modelFormatOf(input.file.path);
+    if (format !== "scad" && format !== "step" && format !== "build123d")
+      return yield* error("unsupported-format", "Choose an OpenSCAD, Python CAD or STEP file.");
     const jobKey = resolved.absolute + (input.variantId ? `\0${input.variantId}` : "");
     const fiber = yield* jobLock.withPermit(
       Effect.gen(function* () {
         const previous = jobs.get(jobKey);
         if (previous) yield* Fiber.interrupt(previous);
         const next = yield* checked(
-          renderSlots.withPermit(Effect.scoped(runRender(input, resolved))),
+          renderSlots.withPermit(
+            Effect.scoped(
+              format === "scad"
+                ? runRender(input, resolved)
+                : pythonRenderer.run(input, resolved, {
+                    tessellate: format === "step",
+                    exportStep,
+                  }),
+            ),
+          ),
         ).pipe(Effect.forkChild);
         jobs.set(jobKey, next);
         return next;
@@ -793,6 +895,33 @@ export const make = Effect.gen(function* () {
         summary: null,
       } satisfies ScadRenderResult;
     return yield* Effect.failCause(result.cause);
+  });
+  const renderScad = Effect.fn("ModelPreview.renderScad")(function* (input: ScadRenderInput) {
+    const format = modelFormatOf(input.file.path);
+    if (format !== "scad" && format !== "step")
+      return yield* error("unsupported-format", "Choose an OpenSCAD or STEP file.");
+    return yield* renderJob(input);
+  });
+  const renderPython = Effect.fn("ModelPreview.renderPython")(function* (input: ScadRenderInput) {
+    if (modelFormatOf(input.file.path) !== "build123d")
+      return yield* error("unsupported-format", "Choose a .b3d.py Python CAD file.");
+    return yield* renderJob(input);
+  });
+  const renderModel = (input: ScadRenderInput) =>
+    modelFormatOf(input.file.path) === "build123d" ? renderPython(input) : renderScad(input);
+  const exportStep = Effect.fn("ModelPreview.exportStep")(function* (input: ScadRenderInput) {
+    if (modelFormatOf(input.file.path) !== "build123d")
+      return yield* error("unsupported-format", "STEP export is available for Python CAD models.");
+    const result = yield* renderJob(
+      { ...input, variantId: input.variantId ?? "loom-step-export" },
+      true,
+    );
+    if (result.status !== "ok" || !result.mesh)
+      return yield* error(
+        "command-failed",
+        result.log.find((row) => row.level === "error")?.text ?? "STEP export was cancelled.",
+      );
+    return result.mesh;
   });
   const nearestDirectory = Effect.fn("ModelPreview.nearestDirectory")(function* (
     directory: string,
@@ -989,7 +1118,17 @@ export const make = Effect.gen(function* () {
           try: () => operations.reduce(applyWorkspaceOperation, previous),
           catch: mapError,
         });
-        const saved = yield* mapWorkspaceImages(value, saveImage);
+        const annotations = yield* Effect.forEach(value.annotations, (annotation) => {
+          if (annotation.status !== "accepted")
+            return Effect.succeed({ ...annotation, resolvedIn: null });
+          const prior = previous.annotations.find((item) => item.id === annotation.id);
+          if (prior?.status === "accepted")
+            return Effect.succeed({ ...annotation, resolvedIn: prior.resolvedIn });
+          return history
+            .latestTouching(file)
+            .pipe(Effect.map((resolvedIn) => ({ ...annotation, resolvedIn })));
+        });
+        const saved = yield* mapWorkspaceImages({ ...value, annotations }, saveImage);
         yield* store.saveWorkspace(resolved.projectId, key, saved);
         yield* Effect.forEach(
           workspaceSubscribers.get(resolved.projectId + "\0" + key) ?? [],
@@ -1072,16 +1211,205 @@ export const make = Effect.gen(function* () {
         }),
       ),
     );
+  const saveSettings = (value: ModelPreviewSettingsUpdate) =>
+    checked(
+      Effect.suspend(() =>
+        store.updateSettings({
+          ...settings,
+          ...value,
+          buildPlate: { ...settings.buildPlate, ...value.buildPlate },
+        }),
+      ).pipe(
+        Effect.tap((saved) =>
+          Effect.sync(() => {
+            settings = saved;
+            detection = null;
+            python.reset();
+          }),
+        ),
+      ),
+    );
+  const printerLibrary = yield* makePrinterLibrary({
+    getSettings: () => Effect.succeed(settings),
+    saveSettings,
+  });
+  const history = yield* makeHistory({
+    historyDir: path.join(config.stateDir, "fork", "model-preview-3d", "history"),
+    resolveWorkspace: (file) => checked(resolveWorkspace(file)),
+    sign: (root, absolute, large) => checked(sign(root, absolute, large)),
+    maxFileBytes: () => settings.maxFileMegabytes * 1024 * 1024,
+    currentDependencies: (absolute) => dependencies.get(absolute) ?? [],
+    resolvedAnnotations: (file) =>
+      checked(
+        getWorkspace(file).pipe(
+          Effect.map((workspace) =>
+            workspace.annotations.map((annotation) => ({
+              id: annotation.id,
+              resolvedIn: annotation.resolvedIn ?? null,
+            })),
+          ),
+        ),
+      ),
+    renderSnapshot: (input, resolved) =>
+      checked(
+        renderSlots.withPermit(
+          Effect.scoped(
+            Effect.gen(function* () {
+              const format = modelFormatOf(input.file.path);
+              const rendered =
+                format === "scad"
+                  ? yield* runRender({ ...input, variantId: "loom-history" }, resolved, {
+                      snapshot: true,
+                    })
+                  : yield* pythonRenderer.run({ ...input, variantId: "loom-history" }, resolved, {
+                      snapshot: true,
+                      tessellate: format === "step",
+                    });
+              return {
+                status: rendered.status,
+                mesh: rendered.mesh,
+                meshFormat: rendered.meshFormat,
+                render: rendered,
+              };
+            }),
+          ),
+        ),
+      ),
+  });
+  const coordinator = yield* makeCheckCoordinator;
+  const assemblyGeometry = yield* makeAssemblyGeometry({
+    resolveFile: (file) => checked(resolveFile(file)),
+    metadata,
+    getSettings: () => settings,
+    renderModel: (input) => checked(renderModel(input)),
+    protectStem,
+    cacheDir,
+  });
+  let assemblies: {
+    assembly: (file: ModelFileRef) => Effect.Effect<AssemblyReadResult, ModelPreviewError>;
+    updateAssembly: Effect.Success<ReturnType<typeof makeAssemblies>>["updateAssembly"];
+  };
+  const assemblyChecker = yield* makeAssemblyChecker({
+    assembly: (file) => assemblies.assembly(file),
+    geometry: assemblyGeometry.geometry,
+    geometryRevision: assemblyGeometry.revisionOf,
+    coordinator,
+  });
+  assemblies = yield* makeAssemblies({
+    resolveWorkspace: (file) => checked(resolveWorkspace(file)),
+    resolveFile: (file) => checked(resolveFile(file)),
+    metadata,
+    boundsOf: assemblyChecker.boundsOf,
+  });
+  const slicer = yield* makeSlicer({
+    stateDir: path.join(config.stateDir, "fork", "model-preview-3d"),
+    home: NodeOS.homedir(),
+    getSettings: () => settings,
+    getOpenScad: () => checked(openscadStatus().pipe(Effect.map((info) => info.openscad))),
+    getOrientation: (file) =>
+      checked(
+        getWorkspace(file).pipe(
+          Effect.map((workspace) => workspace.orientation?.quaternion ?? null),
+        ),
+      ),
+    sign: (root, absolute, large) => checked(sign(root, absolute, large)),
+    resolveBed: (id) =>
+      printerLibrary
+        .printers()
+        .pipe(
+          Effect.map(
+            (library) =>
+              listBeds(settings.buildPlate, { library, includeHidden: true }).find(
+                (bed) => bed.id === id,
+              ) ?? null,
+          ),
+        ),
+    material: (id, _slot, bedId) =>
+      printerLibrary.printers().pipe(
+        Effect.map((library) => {
+          const printer = library.printers.find((p) => p.id === bedId);
+          const material = library.materials.find(
+            (m) => m.id === (id ?? printer?.defaultMaterialId),
+          );
+          return material
+            ? { density: material.densityGCm3, pricePerKg: material.costPerKg }
+            : null;
+        }),
+      ),
+    resolveMesh: (input, cachedOnly) =>
+      checked(
+        Effect.gen(function* () {
+          const resolved = yield* resolveFile(input.file),
+            format = modelFormatOf(input.file.path);
+          if (format === "stl" || format === "3mf" || format === "obj")
+            return {
+              absolute: resolved.absolute,
+              format,
+              geometryRevision: metadata(resolved.info).revision,
+            };
+          if (format !== "scad" && format !== "build123d" && format !== "step")
+            return yield* error(
+              "unsupported-format",
+              "Slicing needs STL, 3MF, OBJ or a source CAD model.",
+            );
+          const sliceInput = { ...input, variantId: input.variantId ?? "loom-slice" };
+          const rendered = yield* format === "scad"
+            ? runRender(sliceInput, resolved, { cachedOnly })
+            : pythonRenderer.run(sliceInput, resolved, {
+                cachedOnly,
+                tessellate: format === "step",
+              });
+          if (rendered.status !== "ok" || !rendered.mesh || !rendered.meshFormat) {
+            if (cachedOnly) return null;
+            return yield* error(
+              "command-failed",
+              rendered.log.find((row) => row.level === "error")?.text ??
+                "The model could not be prepared for slicing.",
+            );
+          }
+          const absolute = path.join(
+            cacheDir,
+            decodeURIComponent(
+              rendered.mesh.relativeUrl.slice(rendered.mesh.relativeUrl.lastIndexOf("/") + 1),
+            ),
+          );
+          yield* protectStem(absolute.slice(0, absolute.lastIndexOf(".")));
+          return {
+            absolute,
+            format: rendered.meshFormat,
+            geometryRevision: rendered.mesh.revision,
+          };
+        }),
+      ),
+  });
   const printChecker = yield* makePrintChecker({
+    coordinator,
+    getPrinterLibrary: printerLibrary.printers,
     resolveFile: (file) => checked(resolveFile(file)),
     metadata,
     getWorkspace: (file) => checked(getWorkspace(file)),
     getSettings: () => settings,
-    renderScad: (input) => checked(renderScad(input)),
+    renderScad: (input) => checked(renderModel(input)),
     protectStem,
     cacheDir,
   });
   return {
+    ...printerLibrary,
+    ...history,
+    assembly: (file: ModelFileRef) => checked(assemblies.assembly(file)),
+    updateAssembly: (input: Parameters<typeof assemblies.updateAssembly>[0]) =>
+      checked(assemblies.updateAssembly(input)),
+    ...assemblyChecker,
+    slice: slicer.slice,
+    slicerProfiles: slicer.slicerProfiles,
+    importSlicerProfile: slicer.importSlicerProfile,
+    openSlice: (key: string) => checked(slicer.openSlice(key)),
+    readPrinterProfile: (file: ModelFileRef) =>
+      checked(
+        resolveFile(file).pipe(
+          Effect.flatMap((resolved) => printerLibrary.readPrinterProfile(resolved.absolute)),
+        ),
+      ),
     ...printChecker,
     editorEvents: (file: ModelFileRef) => editorBridge.events(file.threadId, file.path),
     panelEvents: (threadId: ModelFileRef["threadId"]) => editorBridge.events(threadId),
@@ -1154,34 +1482,31 @@ export const make = Effect.gen(function* () {
           return yield* updateWorkspaceMany(file, operations);
         }),
       ),
-    status: (refresh?: boolean) => checked(status(refresh)),
-    getSettings: () => Effect.succeed(settings),
-    updateSettings: (value: ModelPreviewSettingsUpdate) =>
+    status: (refresh?: boolean) =>
       checked(
-        Effect.suspend(() =>
-          store.updateSettings({
-            ...settings,
-            ...value,
-            buildPlate: { ...settings.buildPlate, ...value.buildPlate },
-          }),
-        ).pipe(
-          Effect.tap((saved) =>
-            Effect.sync(() => {
-              settings = saved;
-              detection = null;
-            }),
-          ),
-        ),
+        Effect.gen(function* () {
+          return { ...(yield* status(refresh)), slicers: yield* slicer.status(refresh) };
+        }),
       ),
-    turnModels: (threadId: ModelFileRef["threadId"], runId: RunId | null) =>
-      checked(turnModels(threadId, runId)),
+    getSettings: () => Effect.succeed(settings),
+    updateSettings: saveSettings,
+    turnModels: (
+      threadId: ModelFileRef["threadId"],
+      runId: RunId | null,
+      include?: readonly "build123d"[],
+    ) => checked(turnModels(threadId, runId, include)),
     turnModelEvents,
-    listModels: (threadId: ModelFileRef["threadId"]) =>
+    listModels: (threadId: ModelFileRef["threadId"], include?: readonly "build123d"[]) =>
       checked(
         Effect.gen(function* () {
           const { root } = yield* resolveWorkspace({ threadId, path: "." });
           const listing = yield* entries.list({ cwd: root });
-          const names = listing.entries.filter((e) => e.kind === "file" && modelFormatOf(e.path));
+          const names = listing.entries.filter(
+            (e) =>
+              e.kind === "file" &&
+              modelFormatOf(e.path) &&
+              (modelFormatOf(e.path) !== "build123d" || include?.includes("build123d")),
+          );
           const models = yield* Effect.forEach(
             names.slice(0, 2000),
             (e) =>
@@ -1195,9 +1520,24 @@ export const make = Effect.gen(function* () {
               ),
             { concurrency: 16 },
           );
+          const assemblyNames = listing.entries.filter(
+            (e) => e.kind === "file" && isAssemblyPath(e.path),
+          );
+          const assemblyEntries = yield* Effect.forEach(
+            assemblyNames.slice(0, 2000),
+            (e) =>
+              resolveFile({ threadId, path: e.path }).pipe(
+                Effect.map((file) => ({ path: e.path, ...metadata(file.info) })),
+                Effect.option,
+              ),
+            { concurrency: 16 },
+          );
           return {
+            assemblies: assemblyEntries
+              .flatMap(Option.toArray)
+              .toSorted((a, b) => a.path.localeCompare(b.path)),
             models: models.flatMap(Option.toArray).toSorted((a, b) => a.path.localeCompare(b.path)),
-            truncated: listing.truncated || names.length > 2000,
+            truncated: listing.truncated || names.length > 2000 || assemblyNames.length > 2000,
           };
         }),
       ),
@@ -1205,7 +1545,7 @@ export const make = Effect.gen(function* () {
       checked(
         Effect.gen(function* () {
           const format = modelFormatOf(file.path);
-          if (!format || format === "step" || format === "scad")
+          if (!format || format === "step" || isSourceFormat(format))
             return yield* error("unsupported-format", "This format cannot be loaded as a mesh.");
           const resolved = yield* resolveFile(file);
           return yield* sign(resolved.root, resolved.absolute, allowLarge);
@@ -1237,6 +1577,44 @@ export const make = Effect.gen(function* () {
       ),
     parameters: (file: ModelFileRef) => checked(parameters(file)),
     renderScad: (input: ScadRenderInput) => checked(renderScad(input)),
+    renderPython: (input: ScadRenderInput) => checked(renderPython(input)),
+    renderModel: (input: ScadRenderInput) => checked(renderModel(input)),
+    renderSnapshotPython: (input: ScadRenderInput, resolved: PythonResolved) =>
+      checked(
+        renderSlots.withPermit(
+          Effect.scoped(pythonRenderer.run(input, resolved, { snapshot: true })),
+        ),
+      ),
+    exportStep: (input: ScadRenderInput) => checked(exportStep(input)),
+    exportStepTo: (input: ScadRenderInput & { outputPath?: string }) =>
+      checked(
+        Effect.gen(function* () {
+          const file = yield* exportStep(input);
+          const source = path.join(
+            cacheDir,
+            decodeURIComponent(file.relativeUrl.slice(file.relativeUrl.lastIndexOf("/") + 1)),
+          );
+          const outputPath = input.outputPath ?? input.file.path.replace(/\.b3d\.py$/i, ".step");
+          if (!/\.(step|stp)$/i.test(outputPath))
+            return yield* error("invalid-path", "Choose a STEP output path.");
+          const location = yield* resolveWorkspace({ ...input.file, path: outputPath });
+          const parent = yield* fs.realPath(path.dirname(location.absolute));
+          if (!isContained(location.root, parent))
+            return yield* error("invalid-path", "Choose an output folder inside the workspace.");
+          const target = path.join(parent, path.basename(location.absolute));
+          const existing = yield* fs.realPath(target).pipe(Effect.option);
+          if (Option.isSome(existing) && !isContained(location.root, existing.value))
+            return yield* error("invalid-path", "The output points outside the workspace.");
+          yield* protectStem(source.slice(0, source.lastIndexOf(".")));
+          const contents = yield* fs.readFileString(source);
+          yield* writeFileStringAtomically({ filePath: target, contents }).pipe(
+            Effect.provideService(FileSystem.FileSystem, fs),
+            Effect.provideService(Path.Path, path),
+          );
+          return { path: target, file: yield* sign(location.root, target, true) };
+        }).pipe(Effect.scoped),
+      ),
+    pythonSetup: (input: { action: "install" | "remove" }) => checked(python.setup(input)),
     watch,
     saveParameterSet: (
       file: ModelFileRef,
@@ -1274,25 +1652,29 @@ export const make = Effect.gen(function* () {
       ),
     clearCache: () =>
       checked(
-        jobLock.withPermit(
-          Effect.gen(function* () {
-            yield* Effect.forEach([...jobs.values(), ...imageJobs], Fiber.interrupt, {
-              discard: true,
-            });
-            jobs.clear();
-            imageJobs.clear();
-            yield* cacheLock.withPermit(
-              Effect.gen(function* () {
-                const names = yield* fs.readDirectory(cacheDir);
-                yield* Effect.forEach(
-                  names,
-                  (name) => fs.remove(path.join(cacheDir, name), { force: true }),
-                  { discard: true },
-                );
-              }),
-            );
-          }),
-        ),
+        Effect.gen(function* () {
+          yield* slicer.clearCache();
+          yield* history.clearTrees;
+          yield* jobLock.withPermit(
+            Effect.gen(function* () {
+              yield* Effect.forEach([...jobs.values(), ...imageJobs], Fiber.interrupt, {
+                discard: true,
+              });
+              jobs.clear();
+              imageJobs.clear();
+              yield* cacheLock.withPermit(
+                Effect.gen(function* () {
+                  const names = yield* fs.readDirectory(cacheDir);
+                  yield* Effect.forEach(
+                    names,
+                    (name) => fs.remove(path.join(cacheDir, name), { force: true }),
+                    { discard: true },
+                  );
+                }),
+              );
+            }),
+          );
+        }),
       ),
     renderImages: (
       file: ModelFileRef,
@@ -1300,6 +1682,7 @@ export const make = Effect.gen(function* () {
       overrides: Readonly<Record<string, string>>,
       projection: ModelProjection = DEFAULT_RENDER_PROJECTION,
       options: {
+        readonly checkpointId?: import("@t3tools/contracts").CheckpointId;
         readonly overhangs?: { readonly angle?: number | undefined };
         readonly orientation?: "saved" | "none";
       } = {},
@@ -1322,19 +1705,24 @@ export const make = Effect.gen(function* () {
                         "invalid-parameter",
                         "Overhang angles must be whole degrees from 30 to 70.",
                       );
-                    const resolved = yield* resolveFile(file),
+                    const historical = options.checkpointId
+                      ? yield* history.materialize({ file, checkpointId: options.checkpointId })
+                      : null;
+                    const resolved = historical?.resolved ?? (yield* resolveFile(file)),
                       format = modelFormatOf(file.path);
                     if (
                       format !== "scad" &&
+                      format !== "build123d" &&
+                      format !== "step" &&
                       format !== "stl" &&
                       format !== "3mf" &&
                       format !== "obj"
                     )
                       return yield* error(
                         "unsupported-format",
-                        "The agent tool renders SCAD, STL, 3MF and OBJ files.",
+                        "The agent tool renders OpenSCAD, Python CAD, STEP, STL, 3MF and OBJ files.",
                       );
-                    const info = (yield* status()).openscad;
+                    const info = (yield* openscadStatus()).openscad;
                     if (!info.path)
                       return yield* error(
                         "openscad-missing",
@@ -1357,13 +1745,13 @@ export const make = Effect.gen(function* () {
                         { discard: true },
                       ),
                     );
-                    if (format !== "scad" && Object.keys(overrides).length)
+                    if (!isSourceFormat(format) && Object.keys(overrides).length)
                       return yield* error(
                         "invalid-parameter",
-                        "Parameters are available only for SCAD models.",
+                        "Parameters are available only for source models.",
                       );
                     const saved =
-                      options.orientation === "none"
+                      historical || options.orientation === "none"
                         ? null
                         : (yield* getWorkspace(file)).orientation;
                     const orientation = saved
@@ -1373,6 +1761,29 @@ export const make = Effect.gen(function* () {
                     let source = resolved.absolute;
                     let log: ScadRenderResult["log"] = [];
                     let pngOverrides = overrides;
+                    if (format === "build123d" || format === "step") {
+                      const rendered = yield* pythonRenderer.run(
+                        { file, overrides, parameterSet: null, variantId: "loom-image-render" },
+                        resolved,
+                        { tessellate: format === "step", snapshot: historical !== null },
+                      );
+                      if (rendered.status !== "ok" || !rendered.mesh)
+                        return yield* error(
+                          "command-failed",
+                          rendered.log.find((row) => row.level === "error")?.text ??
+                            "Could not render the model for images.",
+                        );
+                      source = path.join(
+                        cacheDir,
+                        decodeURIComponent(
+                          rendered.mesh.relativeUrl.slice(
+                            rendered.mesh.relativeUrl.lastIndexOf("/") + 1,
+                          ),
+                        ),
+                      );
+                      log = [...rendered.log];
+                      pngOverrides = {};
+                    }
                     if (format === "scad")
                       yield* validateOverrides(
                         parseCustomizer(yield* fs.readFileString(source)),
@@ -1382,7 +1793,13 @@ export const make = Effect.gen(function* () {
                       const target = imageStem + ".oriented.stl";
                       const result = yield* runner.run({
                         command: info.path,
-                        args: meshArgs({ source, output: target, info, settings, overrides }),
+                        args: meshArgs({
+                          source,
+                          output: target,
+                          info,
+                          settings,
+                          overrides: pngOverrides,
+                        }),
                         cwd: path.dirname(resolved.absolute),
                         timeout: `${settings.renderTimeoutSeconds} seconds`,
                         timeoutBehavior: "timedOutResult",
@@ -1425,7 +1842,13 @@ export const make = Effect.gen(function* () {
                       const target = imageStem + ".overhangs.stl";
                       const result = yield* runner.run({
                         command: info.path,
-                        args: meshArgs({ source, output: target, info, settings, overrides }),
+                        args: meshArgs({
+                          source,
+                          output: target,
+                          info,
+                          settings,
+                          overrides: pngOverrides,
+                        }),
                         cwd: path.dirname(resolved.absolute),
                         timeout: `${settings.renderTimeoutSeconds} seconds`,
                         timeoutBehavior: "timedOutResult",
@@ -1551,7 +1974,9 @@ export const make = Effect.gen(function* () {
                         : null;
                     const fit =
                       size && size.every((mm) => Number.isFinite(mm) && mm >= 0)
-                        ? bedFitSummary(size, settings.buildPlate)
+                        ? bedFitSummary(size, settings.buildPlate, {
+                            library: yield* printerLibrary.printers(),
+                          })
                         : null;
                     return {
                       images,

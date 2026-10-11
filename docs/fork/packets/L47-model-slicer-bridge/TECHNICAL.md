@@ -301,7 +301,7 @@ For each app, the configured path wins; otherwise the first existing candidate:
 
 Only the Bambu Studio macOS path is verified; the rest are marked in REFERENCES.md. The probe
 runs `<exe> --help` with a 10 second timeout and `maxOutputBytes` 64 KiB; the version is the
-first `(\d+\.\d+\.\d+(\.\d+)?)` on the first line (Bambu Studio prints
+first `(\d+\.\d+\.\d+(\.\d+)?)` in the output (Bambu Studio may print initialization traces before
 `BambuStudio-02.08.04.57:`). On macOS, when `--help` fails, read `CFBundleShortVersionString`
 from `Contents/Info.plist` (XML in Bambu Studio's case). Results are cached for 60 seconds
 like OpenSCAD's and reset by `updateSettings`. Detection runs only when the `status` RPC or a
@@ -347,9 +347,11 @@ export const flattenProfile: (
   `<directory>/<kind>/<name>.json`. Parents named by `inherits` resolve in the same vendor.
 - **Flatten.** Load the leaf, follow `inherits` up to 16 levels (a loop or a missing parent is
   an error naming it), merge from the root down with child keys replacing parent keys
-  (arrays replace whole), then delete `inherits`, keep `name` and `type`, and set
-  `from: "User"` and `instantiation: "true"`. The Fabrication research found the CLI accepts
-  this form; verify on the first real slice. The hash is SHA-256 of the canonical JSON (keys
+  (arrays replace whole), keep `name` and `type`, and set `from: "User"` and
+  `instantiation: "true"`. Preserve the nearest instantiated system preset name in
+  `inherits` as the CLI identity, or the leaf name for a standalone imported preset. The
+  values are fully flattened; Bambu 02.08.04.57 still compares compatibility against that
+  identity and rejects a preset when it is absent. The hash is SHA-256 of the canonical JSON (keys
   sorted). Flattened files are written once to
   `<stateDir>/fork/model-preview-3d/slicer/profiles/<hash>.json`.
 - **Listing.** Only presets with `instantiation: "true"` are selectable. Processes and
@@ -423,6 +425,11 @@ export const flattenProfile: (
   with the wrong printer). The result is accepted only when the 3MF exists, `slice_info.config`
   has plate 1 with a `prediction`, and `printer_model_id` matches the `model_id` of the
   mapped machine's printer model (`machine_model_list` entry, for example `O1D` for the H2D).
+  When that metadata id is empty, verify `printer_model` in the bounded
+  `Metadata/project_settings.config` against the mapped machine's model instead. The
+  installed Bambu 02.08.04.57 bundle has no `machine_full` folder and emits an empty id; its
+  exported project settings retain the actual printer model. A nonempty mismatched id
+  always fails, even when the exported model name matches.
   Otherwise the job fails with the wrong-result message in PRODUCT.md. A non-zero exit maps to
   "Slicing failed" plus the last `error`-level lines of the log.
 - `outside="true"` adds "Part of the model is outside the plate." Each slicer `<warning>`

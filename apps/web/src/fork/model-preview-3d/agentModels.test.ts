@@ -63,7 +63,8 @@ describe("agent model opening", () => {
       "height.txt",
     ])
       expect(mayAffectModels([path])).toBe(true);
-    expect(mayAffectModels(["code.ts", "Makefile", "notes.md", "part.step"])).toBe(false);
+    expect(mayAffectModels(["code.ts", "Makefile", "notes.md"])).toBe(false);
+    expect(mayAffectModels(["part.step", "bracket.b3d.py", "helper.py"])).toBe(true);
     expect(mayAffectModels([])).toBe(false);
   });
   it("names a model surface by its basename while retaining its workspace-relative id", () => {

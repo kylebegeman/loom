@@ -47,7 +47,12 @@ export const modelCandidates = (
   const dependencies = [...dependents.entries()]
     .filter(([path]) => !written.has(path))
     .toSorted(([a], [b]) => a.localeCompare(b))
-    .map(([path, via]): TurnModel => ({ path, format: "scad", reason: "dependency", via }));
+    .flatMap(([path, via]): TurnModel[] => {
+      const format = modelFormatOf(path);
+      return format && PREVIEWABLE_FORMATS.has(format)
+        ? [{ path, format, reason: "dependency", via }]
+        : [];
+    });
   return [...written.values(), ...dependencies];
 };
 

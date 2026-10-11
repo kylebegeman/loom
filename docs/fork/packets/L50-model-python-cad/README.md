@@ -1,6 +1,6 @@
 # L50: Python CAD and STEP
 
-Status: Needs decision: managed Python environment and the `build123d` model format.
+Status: Implemented locally (`feat/model-history-assemblies-slicing-cad`).
 
 Approved by Kyle on 2026-10-10. Kyle chose to build Python CAD in Loom on 2026-10-10.
 
@@ -10,9 +10,10 @@ kernel that agents can write. This packet lets a workspace file named `*.b3d.py`
 `def model(...)` function behave like a SCAD file in the 3D panel: its typed keyword arguments
 become the same customizer, renders are cached and re-run when the file or a local module it
 imports changes, variants and parameter sets work, and "Export STEP" hands a real solid to other
-CAD tools. STEP files, which today show "Open in Fabrication", get a preview. Python runs on the
+CAD tools. STEP files get a mesh preview. Python runs on the
 environment host in a Loom-owned environment that the user sets up with one click (or their own
-interpreter), and only clients allowed to run terminal commands can run it.
+interpreter). Executing Python source, setup and STEP export need terminal access; STEP
+preview uses the normal model permission.
 
 ## Scope
 
@@ -71,8 +72,8 @@ commands to run. Kyle approves this host install model in PRODUCT.md, decision 1
   this packet's `modelFormatOf(path)`, because `.b3d.py` is not a plain extension.
 - L47 (slicing): slices build123d and STEP through their rendered mesh, keyed by revision.
 - L48 (assemblies): a STEP or build123d model can be one part of an assembly through its mesh.
-- L49 (history): checkpoints of `.b3d.py` render like SCAD; L49's local include parser has a
-  Python counterpart only if L49 asks for it (out of scope here).
+- L49 (history): checkpoints of `.b3d.py` render from isolated snapshots. L49 resolves local
+  Python imports and recorded dependencies when materializing those snapshots.
 - L46 (print check): works on the rendered mesh, as for SCAD.
 - L35, L36, L37, L38: work on the mesh; nothing format-specific.
 

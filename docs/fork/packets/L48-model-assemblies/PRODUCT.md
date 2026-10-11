@@ -21,7 +21,7 @@ USB-C plug clear the wall?" or "move the board 2 mm up and check again".
   the field steppers (1 mm, 10 mm with Shift, 0.1 mm with Alt; rotation in 15 degree steps),
   turn it a quarter about any axis, drop it to the bed, or align it to another part: left, centre
   or right faces on X, Y or Z, or "on top of" and "below" with an offset.
-- For a SCAD part, set its parameters or parameter set for this assembly only. The file's own
+- For a SCAD or build123d part, set its parameters or parameter set for this assembly only. The file's own
   last-used values are untouched.
 - Drag "Explode" to pull parts apart from the assembly centre, or press `E` to toggle between
   assembled and the last exploded amount. Exploded is a view; positions in the file never change.
@@ -68,10 +68,11 @@ selection and the picked result in that order through the existing key handler.
   clearance changed since the check. Another client's edit of the file reloads the panel; a save
   from this panel that loses the race shows "The assembly changed on another client. Reload to
   see the latest."
-- Disabled: STEP parts show "STEP files belong in the Fabrication app." and are skipped. A
-  single-file executable build shows "Fit checks are not available in this build." in Fit; the
-  rest of the assembly works. A connection without operate permission can view but not edit
-  (fields read-only, with the existing permission tip).
+- Disabled: STEP and build123d parts need the host's Python CAD environment; an unavailable
+  renderer reports a per-part error while the rest of the assembly works. A single-file
+  executable build shows "Fit checks are not available in this build." in Fit. A connection
+  without operate permission can view but not edit. Fit checks, alignment and drop-to-bed need
+  terminal permission because they can render Python source parts.
 
 ## Surfaces and connection modes
 

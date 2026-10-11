@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import type { ScadParameters, ScadRenderResult } from "@t3tools/contracts/fork";
+import { modelFormatOf, type ScadParameters, type ScadRenderResult } from "@t3tools/contracts/fork";
 import { models, modelUrl, runModelCommand } from "./state";
 import { useParameterHistory } from "./useParameterHistory";
 import { parameterValues } from "./params";
@@ -53,7 +53,11 @@ export function ScadFile({
   onPending: (pending: boolean) => void;
   onError: (error: string) => void;
 }) {
-  const canRender = useAtomValue(models.render.permissionAtom(threadRef.environmentId));
+  const canRender = useAtomValue(
+    (modelFormatOf(path) === "build123d" ? models.renderModel : models.render).permissionAtom(
+      threadRef.environmentId,
+    ),
+  );
   const [data, setData] = useState<ScadParameters | null>(null);
   const [finishedRevision, setFinishedRevision] = useState<number | null>(null);
   const refreshing = finishedRevision !== revision;
@@ -301,7 +305,7 @@ function ScadRender({
 }) {
   const [submittedValues] = useState(values);
   const result = useAtomValue(
-    models.renderResult({
+    (modelFormatOf(path) === "build123d" ? models.renderModel.resultAtom : models.renderResult)({
       environmentId: threadRef.environmentId,
       input: {
         file: { threadId: threadRef.threadId, path },

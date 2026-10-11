@@ -1,6 +1,6 @@
 # L49: Model history
 
-Status: Ready to build
+Status: Implemented locally (`feat/model-history-assemblies-slicing-cad`).
 
 Approved by Kyle on 2026-10-10.
 

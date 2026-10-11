@@ -23,7 +23,7 @@ function ResolvedModelTurnChip({ threadRef, runId }: { threadRef: ScopedThreadRe
   const result = useAtomValue(
     models.turnModels({
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, runId },
+      input: { threadId: threadRef.threadId, runId, include: ["build123d"] },
     }),
   );
   const loggedFailure = useRef(false);

@@ -35,6 +35,8 @@ import {
 } from "lucide-react";
 import {
   bedFitSummary,
+  modelFormatOf,
+  isSourceFormat,
   OVERHANG_ANGLE,
   type ModelProjection,
   type ModelMeasurement,
@@ -46,8 +48,10 @@ import {
   type ModelWall,
   type PrintFinding,
   type PrintCheckReport,
+  type ModelHistoryVersionResult,
+  type ModelHistory,
 } from "@t3tools/contracts/fork";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { CheckpointId, ScopedThreadRef } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "~/components/ui/menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
@@ -101,7 +105,18 @@ import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
 import { attachModelImage, captureToComposer, captureBase64 } from "./capture";
 import { type ModelViewer, type NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
-import type { meshStats } from "./viewer/load";
+import { loadModel, disposeModel, meshStats } from "./viewer/load";
+import { Group, type Object3D } from "three";
+import { useModelHistory } from "./useModelHistory";
+import { HistoryControls } from "./HistoryControls";
+import { HistoryStrip } from "./HistoryStrip";
+import { RestoreVersionDialog } from "./RestoreVersionDialog";
+import { historyChips, sizeDelta, stepChip, viewingLabel } from "./history";
+import { usePrinterLibrary } from "./printers";
+import { ExportStep } from "./ExportStep";
+import { useSlicing } from "./useSlicing";
+import { LayerSlider } from "./LayerSlider";
+import AssemblyPanel from "./AssemblyPanel";
 import { onModelAction } from "./actions";
 import { nudgeFor } from "./viewer/keyboard";
 import { announcement, type AnnounceInput } from "./announce";
@@ -151,6 +166,10 @@ function ModelFile({
   const supportsOrientation = features.includes("model-lay-flat");
   const supportsCaps = features.includes("model-section-caps");
   const supportsPrintCheck = features.includes("model-print-check");
+  const supportsHistory = features.includes("model-history");
+  const supportsPython = features.includes("model-python-cad");
+  const supportsSlicing = features.includes("model-slicer");
+  const library = usePrinterLibrary(threadRef.environmentId);
   const displaySettings = useMemo(
     () => ({
       ...settings,
@@ -165,9 +184,10 @@ function ModelFile({
   }, [displaySettings]);
   const units = unitsControl.units;
   const file = useMemo(() => ({ threadId: threadRef.threadId, path }), [threadRef.threadId, path]);
-  const format = (
-    /\.(stp|step)$/i.test(path) ? "step" : path.split(".").at(-1)?.toLowerCase()
-  ) as ModelEntry["format"];
+  const format = modelFormatOf(path) ?? "stl";
+  const sourceFormat = isSourceFormat(format);
+  const pythonFormat = format === "build123d" || format === "step";
+  const pythonUnavailable = pythonFormat && !supportsPython;
   const savedView = useRef<ReturnType<ModelViewer["snapshot"]> | null>(null);
   const viewer = useRef<ModelViewer | null>(null),
     [revision, setRevision] = useState(0),
@@ -189,11 +209,9 @@ function ModelFile({
     [success, setSuccess] = useState<string | null>(null),
     [captureError, setCaptureError] = useState<{ title: string; message: string } | null>(null),
     [release, setRelease] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(format === "scad"),
+  const [inspectorOpen, setInspectorOpen] = useState(sourceFormat),
     [inspectorExpanded, setInspectorExpanded] = useState(false),
-    [inspectorTab, setInspectorTab] = useState<InspectorTab>(
-      defaultInspectorTab(format === "scad"),
-    ),
+    [inspectorTab, setInspectorTab] = useState<InspectorTab>(defaultInspectorTab(sourceFormat)),
     [activeView, setActiveView] = useState<View | null>("iso"),
     [activeViewId, setActiveViewId] = useState<string | null>(null),
     [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit"),
@@ -205,6 +223,40 @@ function ModelFile({
       axes: false,
       projection: "perspective" as ModelProjection,
     });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewing, setViewing] = useState<{
+    checkpointId: CheckpointId;
+    turn: number;
+    status: "loading" | "ready" | "error" | "absent";
+    mesh: typeof mesh;
+    stats: ReturnType<typeof meshStats> | null;
+    result: ModelHistoryVersionResult | null;
+    error: string | null;
+  } | null>(null);
+  const viewingHistory = viewing !== null;
+  const historyViewingRef = useRef(viewingHistory);
+  const liveMeshRevision = useRef(mesh?.revision ?? "");
+  useLayoutEffect(() => {
+    historyViewingRef.current = viewingHistory;
+    liveMeshRevision.current = mesh?.revision ?? "";
+  }, [viewingHistory, mesh?.revision]);
+  const [comparing, setComparing] = useState<CheckpointId | "now" | null>(null);
+  const [compareGeometry, setCompareGeometry] = useState<{
+    model: Object3D;
+    stats: ReturnType<typeof meshStats>;
+  } | null>(null);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const [restoreOpen, setRestoreOpen] = useState(false);
+  const [undo, setUndo] = useState<{ id: string; busy: boolean; error: string | null } | null>(
+    null,
+  );
+  const historyRequest = useRef(0);
+  const canRestore = useAtomValue(models.historyRestore.permissionAtom(threadRef.environmentId));
+  const canUndo = useAtomValue(models.historyUndo.permissionAtom(threadRef.environmentId));
+  const canExportStep = useAtomValue(models.exportStep.permissionAtom(threadRef.environmentId));
+  const canRenderModel = useAtomValue(models.renderModel.permissionAtom(threadRef.environmentId));
+  const canRenderFormat = format !== "build123d" || canRenderModel;
+  const canRender = useAtomValue(models.render.permissionAtom(threadRef.environmentId));
   const [variantActivity, setVariantActivity] = useState<OperationProgress | null>(null);
   const [session, setSession] = useState<ScadSession | null>(null);
   const [geometryRevision, setGeometryRevision] = useState("");
@@ -226,6 +278,22 @@ function ModelFile({
   };
   const togglePrevious = () => showPrevious(!previousShown);
   const editing = useModelEditing(threadRef, path, viewer, geometryRevision, session);
+  const slicing = useSlicing({
+    threadRef,
+    path,
+    format,
+    geometryRevision,
+    session,
+    settings: displaySettings,
+    orientation: editing.orientation,
+    active: !viewing && visible && inspectorOpen && inspectorTab === "part",
+    enabled: !viewing && supportsSlicing && visible && canRenderFormat,
+  });
+  const layersShown = slicing.shown && !viewing;
+  const showLayers = (enabled?: boolean) =>
+    void slicing
+      .toggleLayers(enabled)
+      .catch((cause: unknown) => toastManager.add({ type: "error", title: failureMessage(cause) }));
   const printCheck = usePrintCheck({
     threadRef,
     path,
@@ -235,7 +303,7 @@ function ModelFile({
     settings: displaySettings,
     orientation: editing.orientation,
     active: visible && inspectorOpen && inspectorTab === "part",
-    enabled: supportsPrintCheck && visible,
+    enabled: supportsPrintCheck && visible && viewing === null && canRenderFormat,
     allowLarge,
   });
   const selectedFindingId =
@@ -276,6 +344,7 @@ function ModelFile({
     setActiveViewId(null);
   };
   const recallView = (view: ModelSavedView) => {
+    if (viewing) return;
     recall(view.camera, view.sourceRevision !== geometryRevision);
     setActiveViewId(view.id);
   };
@@ -303,8 +372,229 @@ function ModelFile({
     const timeout = setTimeout(() => setSuccess(null), 5000);
     return () => clearTimeout(timeout);
   }, [success]);
-  const resolving = format !== "scad" && resolvedKey !== JSON.stringify([revision, allowLarge]);
-  const loadingFile = pending || refreshing || resolving || progress !== null;
+  const resolving = !sourceFormat && resolvedKey !== JSON.stringify([revision, allowLarge]);
+  const loadingFile = viewing
+    ? viewing.status === "loading" || progress !== null
+    : pending || refreshing || resolving || progress !== null;
+  const plate = useMemo(
+    () => resolvePlate(settings.buildPlate, library),
+    [settings.buildPlate, library],
+  );
+  const volume = plate.volume;
+  const watched = useAtomValue(
+    models.watch({ environmentId: threadRef.environmentId, input: file }),
+  );
+  const watchedRevision = watched._tag === "Success" ? watched.value.revision : null;
+  const history = useModelHistory({
+    threadRef,
+    path,
+    active: supportsHistory && visible && (historyOpen || viewing !== null),
+    liveRevision: watchedRevision,
+    selected: viewing?.checkpointId ?? null,
+  });
+  const viewHistory = async (id: CheckpointId | "now", turnHint?: number) => {
+    if (id !== "now" && !canRenderFormat)
+      throw new Error("Terminal permission is required to preview Python CAD history.");
+    const request = ++historyRequest.current;
+    setHistoryOpen(true);
+    setComparing(null);
+    setRestoreOpen(false);
+    editing.stopPicking();
+    showPrevious(false);
+    slicing.hideLayers();
+    if (id === "now") {
+      setViewing(null);
+      void runModelCommand(models.historyCancel, {
+        environmentId: threadRef.environmentId,
+        input: { file },
+      }).catch(() => undefined);
+      return;
+    }
+    let version = history.pages
+      .flatMap((page) => page.versions)
+      .find((version) => version.checkpointId === id);
+    if (!version) {
+      let cursor: number | null = null;
+      do {
+        const page: ModelHistory = await runModelCommand(models.history, {
+          environmentId: threadRef.environmentId,
+          input: { file, ...(cursor === null ? {} : { cursor }) },
+        });
+        if (historyRequest.current !== request) return;
+        history.includePage(page);
+        version = page.versions.find((candidate) => candidate.checkpointId === id);
+        cursor = page.nextCursor;
+      } while (!version && cursor !== null);
+      if (!version)
+        throw new Error("This version is no longer available. The thread was rolled back.");
+    }
+    const turn = version?.turn ?? turnHint ?? 0;
+    setViewing({
+      checkpointId: id,
+      turn,
+      status: version?.present === false ? "absent" : "loading",
+      mesh: version?.present === false ? null : (viewing?.mesh ?? mesh),
+      stats: version?.present === false ? null : (viewing?.stats ?? stats),
+      result: null,
+      error: null,
+    });
+    if (version?.present === false) return;
+    try {
+      const result = await runModelCommand(models.historyVersion, {
+        environmentId: threadRef.environmentId,
+        input: { file, checkpointId: id, allowLarge },
+      });
+      if (historyRequest.current !== request || result.status === "cancelled") return;
+      const signed = result.mesh;
+      setViewing({
+        checkpointId: id,
+        turn,
+        status: result.status === "ok" && signed && result.meshFormat ? "ready" : "error",
+        mesh:
+          signed && result.meshFormat
+            ? {
+                url: modelUrl(threadRef.environmentId, signed.relativeUrl),
+                format: result.meshFormat,
+                revision: signed.revision,
+              }
+            : null,
+        stats: null,
+        result,
+        error:
+          result.status === "error"
+            ? (result.render?.log.find((line) => line.level === "error")?.text ??
+              "Could not render this version.")
+            : null,
+      });
+    } catch (cause: unknown) {
+      if (historyRequest.current === request)
+        setViewing({
+          checkpointId: id,
+          turn,
+          status: "error",
+          mesh: null,
+          stats: null,
+          result: null,
+          error: failureMessage(cause),
+        });
+    }
+  };
+  const closeHistory = () => {
+    historyRequest.current++;
+    setHistoryOpen(false);
+    setViewing(null);
+    setComparing(null);
+    setRestoreOpen(false);
+    void runModelCommand(models.historyCancel, {
+      environmentId: threadRef.environmentId,
+      input: { file },
+    }).catch(() => undefined);
+  };
+  const stepHistory = (direction: -1 | 1) => {
+    setHistoryOpen(true);
+    if (history.pages.length === 0) {
+      void runModelCommand(models.history, {
+        environmentId: threadRef.environmentId,
+        input: { file },
+      })
+        .then((page) => {
+          const target = stepChip(historyChips([page]), "now", direction);
+          if (target)
+            return viewHistory(
+              target,
+              target === "now"
+                ? undefined
+                : page.versions.find((version) => version.checkpointId === target)?.turn,
+            );
+        })
+        .catch((cause: unknown) => setCompareError(failureMessage(cause)));
+      return;
+    }
+    const target = stepChip(history.chips, viewing?.checkpointId ?? "now", direction);
+    if (target)
+      void viewHistory(target).catch((cause: unknown) => setCompareError(failureMessage(cause)));
+    else if (direction === -1 && history.pages.at(-1)?.nextCursor) history.loadEarlier();
+  };
+  const liveCompareMesh = comparing === "now" ? mesh : null;
+  useEffect(() => {
+    if (!comparing || !canRenderFormat) return;
+    const controller = new AbortController();
+    let loaded: Object3D | null = null;
+    let active = true;
+    const load = async () => {
+      const result =
+        comparing === "now"
+          ? null
+          : await runModelCommand(models.historyVersion, {
+              environmentId: threadRef.environmentId,
+              input: { file, checkpointId: comparing, allowLarge },
+            });
+      if (!active) return;
+      const selected =
+        result?.mesh && result.meshFormat
+          ? {
+              url: modelUrl(threadRef.environmentId, result.mesh.relativeUrl),
+              format: result.meshFormat,
+            }
+          : comparing === "now"
+            ? liveCompareMesh
+            : null;
+      if (!selected) throw new Error("This version has no preview to compare.");
+      const object = await loadModel(
+        selected.url,
+        selected.format,
+        controller.signal,
+        () => undefined,
+      );
+      if (!active) {
+        disposeModel(object);
+        return;
+      }
+      loaded = object;
+      const group = new Group();
+      group.add(object);
+      if (editing.orientation) group.quaternion.fromArray([...editing.orientation.quaternion]);
+      const comparisonStats = meshStats(group);
+      group.remove(object);
+      setCompareGeometry({ model: object, stats: comparisonStats });
+      setCompareError(null);
+    };
+    void load().catch((cause: unknown) => {
+      if (active) setCompareError(failureMessage(cause));
+    });
+    return () => {
+      active = false;
+      controller.abort();
+      viewer.current?.setCompareModel(null);
+      if (loaded) disposeModel(loaded);
+      queueMicrotask(() => setCompareGeometry((value) => (value?.model === loaded ? null : value)));
+    };
+  }, [
+    comparing,
+    file,
+    threadRef.environmentId,
+    liveCompareMesh,
+    allowLarge,
+    editing.orientation,
+    canRenderFormat,
+  ]);
+  useEffect(
+    () => () => {
+      if (!supportsHistory) return;
+      historyRequest.current++;
+      void runModelCommand(models.historyCancel, {
+        environmentId: threadRef.environmentId,
+        input: { file },
+      }).catch(() => undefined);
+    },
+    [file, threadRef.environmentId, supportsHistory],
+  );
+  const shownMesh = viewing ? viewing.mesh : mesh;
+  const shownStats = viewing ? viewing.stats : stats;
+  const shownRender = viewing ? (viewing.result?.render ?? null) : render;
+  const comparison =
+    shownStats && compareGeometry ? sizeDelta(shownStats, compareGeometry.stats) : null;
+
   const editorEvents = useAtomValue(
     visible
       ? models.editorEvents({ environmentId: threadRef.environmentId, input: file })
@@ -319,14 +609,65 @@ function ModelFile({
       const execute = async () => {
         const c = editorRequest.command;
         const get = () => {
-          if (!viewer.current || !stats || loadingFile)
+          if (!viewer.current || !(viewing ? viewing.stats : stats) || loadingFile)
             throw new Error("Wait for the 3D model to load.");
           return viewer.current;
         };
+        if (
+          viewing &&
+          ![
+            "fit",
+            "zoom",
+            "view",
+            "display",
+            "navigation",
+            "inspector",
+            "turn-history",
+            "turn-compare",
+            "snapshot",
+            "refresh",
+            "allow-large",
+          ].includes(c.action)
+        )
+          throw new Error("Return to Now before editing or capturing this model.");
         let png: string | undefined;
         let measurement: ModelMeasurement | undefined;
         let wall: ModelWall | undefined;
         switch (c.action) {
+          case "turn-history":
+            if (!supportsHistory) throw new Error("This host does not support model history.");
+            if (c.enabled === false) closeHistory();
+            else if (c.name)
+              await viewHistory(c.name === "current" ? "now" : (c.name as CheckpointId));
+            else setHistoryOpen(true);
+            break;
+          case "turn-compare":
+            if (c.enabled !== false && !canRenderFormat)
+              throw new Error("Terminal permission is required to compare Python CAD history.");
+            if (c.enabled !== false && !c.name)
+              throw new Error("Provide a checkpoint id or current.");
+            if (!supportsHistory) throw new Error("This host does not support model history.");
+            setHistoryOpen(true);
+            setComparing(
+              c.enabled === false ? null : c.name === "current" ? "now" : (c.name as CheckpointId),
+            );
+            break;
+          case "layers": {
+            if (!supportsSlicing) throw new Error("This host does not support slicing.");
+            if (!canRenderFormat)
+              throw new Error("Terminal permission is required to slice this model.");
+            if (c.enabled === false) {
+              slicing.hideLayers();
+              break;
+            }
+            const data = await slicing.toggleLayers(true);
+            if (!data) throw new Error("The layer preview was cancelled.");
+            if (c.layer !== undefined) {
+              if (c.layer >= data.layers.length) throw new Error("No layer at that position.");
+              slicing.setLayer(c.layer);
+            }
+            break;
+          }
           case "fit":
             get().fit();
             break;
@@ -431,10 +772,10 @@ function ModelFile({
               setInspectorOpen(false);
               break;
             }
-            const tab = resolveInspectorTab(c.name, format === "scad");
+            const tab = resolveInspectorTab(c.name, sourceFormat);
             if (!tab)
               throw new Error(
-                `Choose one of these inspector tabs: ${(format === "scad" ? ["customize", "variants"] : []).concat("markup", "views", "part").join(", ")}.`,
+                `Choose one of these inspector tabs: ${(sourceFormat ? ["customize", "variants"] : []).concat("markup", "views", "part").join(", ")}.`,
               );
             openTab(tab);
             break;
@@ -451,12 +792,12 @@ function ModelFile({
           }
           case "parameters": {
             if (!session || !c.values)
-              throw new Error("Open a SCAD model and provide customizer values.");
+              throw new Error("Open a source model and provide customizer values.");
             session.promote(c.values, c.name ?? "Agent preview");
             break;
           }
           case "parameter-history": {
-            if (!session) throw new Error("Open a SCAD model first.");
+            if (!session) throw new Error("Open a source model first.");
             const index =
               c.index ??
               session.historyCursor + (c.name === "undo" ? -1 : c.name === "redo" ? 1 : 0);
@@ -466,7 +807,7 @@ function ModelFile({
             break;
           }
           case "parameter-set": {
-            if (!session) throw new Error("Open a SCAD model first.");
+            if (!session) throw new Error("Open a source model first.");
             const name = c.name || null;
             if (name && !session.data.sets.includes(name))
               throw new Error("Unknown parameter set.");
@@ -474,7 +815,7 @@ function ModelFile({
             break;
           }
           case "parameter-preview":
-            if (!session) throw new Error("Open a SCAD model first.");
+            if (!session) throw new Error("Open a source model first.");
             if (c.enabled !== undefined) session.setAutomatic(c.enabled);
             else session.apply();
             break;
@@ -594,7 +935,7 @@ function ModelFile({
           ...(wall ? { wall } : {}),
           ...(c.action === "snapshot"
             ? {
-                ...(viewer.current && stats && !progress
+                ...(viewer.current && shownStats && !progress
                   ? { camera: viewer.current.snapshot() }
                   : {}),
                 sourceRevision: geometryRevision,
@@ -604,6 +945,27 @@ function ModelFile({
                   measureMode: editing.measureMode,
                   orientation: editing.orientation,
                   sectionCaps,
+                  ...(supportsSlicing
+                    ? {
+                        layers: {
+                          shown: layersShown,
+                          index: slicing.layer,
+                          count: slicing.layers?.layers.length ?? 0,
+                          zMm: slicing.layers?.layers[slicing.layer]?.z ?? null,
+                        },
+                      }
+                    : {}),
+                  ...(supportsHistory
+                    ? {
+                        turnHistory: {
+                          open: historyOpen,
+                          viewing: viewing?.checkpointId ?? null,
+                          viewingTurn: viewing?.turn ?? null,
+                          comparing: comparing === "now" ? null : comparing,
+                          latestTurn: history.latestTurn,
+                        },
+                      }
+                    : {}),
                   ...(previous && viewer.current?.hasPrevious()
                     ? {
                         previous: {
@@ -615,8 +977,10 @@ function ModelFile({
                     : {}),
                   pendingPoint: editing.pendingPoint,
                   pendingRegion: editing.pendingRegion,
-                  loading: loadingFile || (!stats && !error),
-                  ...(stats ? { fit: bedFitSummary(stats.size, settings.buildPlate) } : {}),
+                  loading: loadingFile || (!shownStats && !(viewing ? viewing.error : error)),
+                  ...(shownStats
+                    ? { fit: bedFitSummary(shownStats.size, settings.buildPlate, { library }) }
+                    : {}),
                   parameters: session
                     ? {
                         values: session.values,
@@ -662,12 +1026,6 @@ function ModelFile({
   useEffect(() => {
     handleEditorRequest(editorRequest);
   }, [editorRequest]);
-  const plate = useMemo(() => resolvePlate(settings.buildPlate), [settings.buildPlate]);
-  const volume = plate.volume;
-  const watched = useAtomValue(
-    models.watch({ environmentId: threadRef.environmentId, input: file }),
-  );
-  const watchedRevision = watched._tag === "Success" ? watched.value.revision : null;
   useLayoutEffect(() => {
     if (
       watchedRevision !== null &&
@@ -686,6 +1044,7 @@ function ModelFile({
     settings.renderTimeoutSeconds,
     settings.renderColors,
     settings.maxFileMegabytes,
+    settings.pythonPath,
   ]);
   const [seen, setSeen] = useState<{ watched: typeof watched | null; loadKey: string | null }>({
     watched: null,
@@ -734,6 +1093,10 @@ function ModelFile({
   );
   const onOriented = useCallback(
     (value: ReturnType<typeof meshStats>) => {
+      if (historyViewingRef.current) {
+        setViewing((current) => (current ? { ...current, stats: value } : current));
+        return;
+      }
       setStats(value);
       // The renderer recentres only when the quaternion changes. Preserve restored cut offsets
       // when a workspace update carries the same pose or a model reload keeps its camera.
@@ -742,36 +1105,44 @@ function ModelFile({
     },
     [setModelSection],
   );
-  const onError = useCallback((message: string) => setError(message), []);
-  const onStats = useCallback(
-    (value: ReturnType<typeof meshStats>) => {
-      const nextRevision = mesh?.revision ?? "";
-      const retained = previousGeometry(
-        loadedGeometry.current,
-        nextRevision,
-        viewer.current?.hasPrevious() ?? false,
+  const onLiveError = useCallback((message: string) => setError(message), []);
+  const onError = useCallback((message: string) => {
+    if (historyViewingRef.current)
+      setViewing((current) =>
+        current ? { ...current, status: "error", error: message } : current,
       );
-      if (!retained) {
-        viewer.current?.clearPrevious();
-        setPreviousShown(false);
-      }
-      setPrevious(retained);
-      setPreviousTooLarge(
-        !retained && (loadedGeometry.current?.triangles ?? value.triangles) > GHOST_TRIANGLE_LIMIT,
-      );
-      setChanged(retained && reloadCause.current === "watch" ? "chip" : null);
-      reloadCause.current = null;
-      loadedGeometry.current = {
-        revision: nextRevision,
-        size: value.size,
-        triangles: value.triangles,
-      };
-      setStats(value);
-      setGeometryRevision(nextRevision);
-      setError(null);
-    },
-    [mesh?.revision],
-  );
+    else setError(message);
+  }, []);
+  const onStats = useCallback((value: ReturnType<typeof meshStats>) => {
+    if (historyViewingRef.current) {
+      setViewing((current) => (current ? { ...current, stats: value } : current));
+      return;
+    }
+    const nextRevision = liveMeshRevision.current;
+    const retained = previousGeometry(
+      loadedGeometry.current,
+      nextRevision,
+      viewer.current?.hasPrevious() ?? false,
+    );
+    if (!retained) {
+      viewer.current?.clearPrevious();
+      setPreviousShown(false);
+    }
+    setPrevious(retained);
+    setPreviousTooLarge(
+      !retained && (loadedGeometry.current?.triangles ?? value.triangles) > GHOST_TRIANGLE_LIMIT,
+    );
+    setChanged(retained && reloadCause.current === "watch" ? "chip" : null);
+    reloadCause.current = null;
+    loadedGeometry.current = {
+      revision: nextRevision,
+      size: value.size,
+      triangles: value.triangles,
+    };
+    setStats(value);
+    setGeometryRevision(nextRevision);
+    setError(null);
+  }, []);
   const onProgress = useCallback((value: string | null) => {
     setProgress(value);
     if (value !== null) setChanged(null);
@@ -785,7 +1156,48 @@ function ModelFile({
       setError(value.log.find((line) => line.level === "error")?.text ?? "Render failed.");
   }, []);
   useEffect(() => {
-    if (format === "scad" || format === "step") return;
+    if (sourceFormat) return;
+    if (format === "step") {
+      if (!supportsPython) return;
+      if (!canRender) {
+        queueMicrotask(() => {
+          setError("This connection does not permit previewing STEP files.");
+          setResolvedKey(JSON.stringify([revision, allowLarge]));
+        });
+        return;
+      }
+      let active = true;
+      queueMicrotask(() => {
+        if (active) setPending(true);
+      });
+      void runModelCommand(models.render, {
+        environmentId: threadRef.environmentId,
+        input: { file, overrides: {}, parameterSet: null, revision },
+      })
+        .then((result) => {
+          if (active) {
+            onResult(result);
+            if (result.mesh && result.meshFormat)
+              onMesh(
+                modelUrl(threadRef.environmentId, result.mesh.relativeUrl),
+                result.meshFormat,
+                result.mesh.revision,
+              );
+          }
+        })
+        .catch((cause: unknown) => {
+          if (active) setError(failureMessage(cause));
+        })
+        .finally(() => {
+          if (active) {
+            setPending(false);
+            setResolvedKey(JSON.stringify([revision, allowLarge]));
+          }
+        });
+      return () => {
+        active = false;
+      };
+    }
     let active = true;
     void runModelCommand(models.fileUrl, {
       environmentId: threadRef.environmentId,
@@ -815,10 +1227,26 @@ function ModelFile({
     return () => {
       active = false;
     };
-  }, [file, threadRef.environmentId, format, revision, allowLarge, onMesh]);
-  const busy = loadingFile || (!stats && !error && !watchError);
+  }, [
+    file,
+    threadRef.environmentId,
+    format,
+    sourceFormat,
+    supportsPython,
+    canRender,
+    revision,
+    allowLarge,
+    onMesh,
+    onResult,
+  ]);
+  const busy =
+    !pythonUnavailable &&
+    (loadingFile ||
+      (!shownStats &&
+        !(viewing ? viewing.error || viewing.status === "absent" : error || watchError)));
   const captureBusy = capturing || editing.operation !== null;
-  const editDisabled = !editing.canEdit || !stats || busy || captureBusy;
+  const editDisabled =
+    viewing !== null || layersShown || !editing.canEdit || !stats || busy || captureBusy;
   const viewThumbnail = useCallback(
     async (view: ModelSavedView) => {
       const current = viewer.current;
@@ -838,6 +1266,7 @@ function ModelFile({
     [stats, busy, geometryRevision],
   );
   const saveView = () => {
+    if (editDisabled) return;
     const camera = viewer.current?.snapshot();
     if (!camera || !geometryRevision) return;
     const names = new Set(editing.data.views.map((view) => view.name));
@@ -879,12 +1308,14 @@ function ModelFile({
       next.axis === editing.section.axis ? next : { ...next, offset: centred(next.axis) },
     );
   const toggleSection = () => {
+    if (viewing) return;
     const section = editing.section;
     if (section.enabled) editing.setSection({ ...section, enabled: false });
     else if (stats)
       editing.setSection({ ...section, enabled: true, offset: centred(section.axis) });
   };
   const startTool = (tool: PickTool, measureMode?: "distance" | "hole") => {
+    if (editDisabled) return;
     if (editing.picking === tool && measureMode === undefined) editing.stopPicking();
     else {
       editing.choose(tool);
@@ -907,10 +1338,11 @@ function ModelFile({
     onShow: (annotation) =>
       recall(annotation.camera, annotation.sourceRevision !== geometryRevision),
     onCopy: (text) => copyToClipboard(text),
+    onViewTurn: (resolved) => void viewHistory(resolved.checkpointId, resolved.turn),
   };
   const capture = useCallback(
     async (four: boolean) => {
-      if (!viewer.current || !stats || busy) {
+      if (viewingHistory || !viewer.current || !stats || busy) {
         setCaptureError({
           title: "Capture could not be attached",
           message: "Wait for the model preview to finish loading before capturing it.",
@@ -935,12 +1367,12 @@ function ModelFile({
         }
       });
     },
-    [threadRef, path, perform, stats, busy],
+    [threadRef, path, perform, stats, busy, viewingHistory],
   );
   const exportCapture = useCallback(
     async (four: boolean, action: ExportAction) => {
       const title = action === "copy" ? "Image could not be copied" : "PNG could not be saved";
-      if (!viewer.current || !stats || busy) {
+      if (viewingHistory || !viewer.current || !stats || busy) {
         setCaptureError({
           title,
           message: "Wait for the model preview to finish loading before capturing it.",
@@ -969,7 +1401,7 @@ function ModelFile({
         }
       });
     },
-    [path, perform, stats, busy, activeView, activeViewId, editing.data.views],
+    [path, perform, stats, busy, activeView, activeViewId, editing.data.views, viewingHistory],
   );
   const exportViews = async (
     ids: readonly string[],
@@ -977,7 +1409,7 @@ function ModelFile({
     name: string,
     action: ExportAction,
   ) => {
-    if (!viewer.current || !stats || busy) {
+    if (viewing || !viewer.current || !stats || busy) {
       setCaptureError({
         title: action === "copy" ? "Image could not be copied" : "PNG could not be saved",
         message: "Wait for the model preview to finish loading before capturing it.",
@@ -995,7 +1427,26 @@ function ModelFile({
     return onModelAction(
       threadRef,
       (action) => {
-        if (action === "auto-lay-flat" && supportsOrientation) void editing.autoOrient();
+        if (action === "toggle-history" && supportsHistory) {
+          if (historyOpen) closeHistory();
+          else setHistoryOpen(true);
+        } else if (action === "history-earlier" && supportsHistory) stepHistory(-1);
+        else if (action === "history-later" && supportsHistory) stepHistory(1);
+        else if (action === "toggle-layers" && supportsSlicing && !viewing) showLayers();
+        else if (
+          viewing &&
+          [
+            "auto-lay-flat",
+            "reset-orientation",
+            "print-check",
+            "copy-view",
+            "save-view",
+            "capture",
+            "capture-four",
+          ].includes(action)
+        )
+          return;
+        else if (action === "auto-lay-flat" && supportsOrientation) void editing.autoOrient();
         else if (action === "reset-orientation" && supportsOrientation)
           void editing.resetOrientation();
         else if (action === "print-check" && supportsPrintCheck) {
@@ -1027,15 +1478,25 @@ function ModelFile({
     togglePrevious,
     supportsOrientation,
     supportsPrintCheck,
+    supportsHistory,
+    historyOpen,
+    viewing,
+    closeHistory,
+    stepHistory,
+    supportsSlicing,
+    showLayers,
     editing,
     openTab,
   ]);
-  const displayedError =
-    watchError ??
-    error ??
-    (render?.status === "error"
-      ? (render.log.find((line) => line.level === "error")?.text ?? "Render failed.")
-      : null);
+  const displayedError = viewing
+    ? viewing.error
+    : pythonUnavailable
+      ? "Update this host to preview Python CAD files."
+      : (watchError ??
+        error ??
+        (render?.status === "error"
+          ? (render.log.find((line) => line.level === "error")?.text ?? "Render failed.")
+          : null));
   const picker = () =>
     useRightPanelStore.getState().openSurface(threadRef, forkPanelSurface("model-preview-3d"));
   const announcePrevious = useRef<AnnounceInput | null>(null);
@@ -1090,7 +1551,7 @@ function ModelFile({
     success,
     units,
   ]);
-  if (format === "step")
+  if (format === "step" && !supportsPython)
     return (
       <div className={styles["model-library"]}>
         <div className={styles["model-document-bar"]}>
@@ -1105,7 +1566,7 @@ function ModelFile({
         <div className={styles["model-empty"] + " h-full"}>
           <BoxIcon />
           <strong>Open this part in Fabrication</strong>
-          <p>STEP files are not previewed here. STEP import is planned in the Fabrication app.</p>
+          <p>Update this host to preview STEP files, or open this part in Fabrication.</p>
           {settings.fabricationUrl && (
             <Button render={<a href={settings.fabricationUrl} target="_blank" rel="noreferrer" />}>
               Open in Fabrication
@@ -1119,7 +1580,7 @@ function ModelFile({
     );
   const issues =
     render?.log.filter((line) => line.level === "error" || line.level === "warning").length ?? 0;
-  const plateFit = stats ? fitPlate(stats.size, plate).fit.status : "fits";
+  const plateFit = shownStats ? fitPlate(shownStats.size, plate).fit.status : "fits";
   const unapplied =
     session && !session.automatic && session.hasUnapplied
       ? changedParameters(session.data.parameters, session.values, session.applied).length
@@ -1159,6 +1620,7 @@ function ModelFile({
           if (
             visible &&
             session &&
+            !viewing &&
             !typing &&
             !event.defaultPrevented &&
             (event.metaKey || event.ctrlKey) &&
@@ -1166,6 +1628,20 @@ function ModelFile({
           ) {
             const index = session.historyCursor + (event.shiftKey ? 1 : -1);
             if (index >= 0 && index < session.historyLabels.length) session.moveHistory(index);
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          if (
+            visible &&
+            supportsHistory &&
+            !typing &&
+            !event.defaultPrevented &&
+            !event.metaKey &&
+            !event.ctrlKey &&
+            (event.key === "[" || event.key === "]")
+          ) {
+            stepHistory(event.key === "[" ? -1 : 1);
             event.preventDefault();
             event.stopPropagation();
             return;
@@ -1192,12 +1668,16 @@ function ModelFile({
           else if (key === "m" && !editDisabled) startTool("measure");
           else if (key === "n" && !editDisabled) startTool("annotate");
           else if (key === "s" && !editDisabled) toggleSection();
-          else if (["1", "2", "3", "4"].includes(key) && stats)
+          else if (["1", "2", "3", "4"].includes(key) && shownStats)
             setView((["iso", "front", "top", "right"] as const)[Number(key) - 1]!);
-          else if (key === "f" && stats) fit();
+          else if (key === "f" && shownStats) fit();
           else if (key === "h") setNavigationMode("pan");
           else if (key === "o") setNavigationMode("orbit");
-          else if (key === "i") setInspectorOpen((value) => !value);
+          else if (key === "y" && supportsSlicing && !viewing) showLayers();
+          else if (key === "t" && supportsHistory) {
+            if (historyOpen) closeHistory();
+            else setHistoryOpen(true);
+          } else if (key === "i") setInspectorOpen((value) => !value);
           else if (key === "w") setDisplay((value) => ({ ...value, wireframe: !value.wireframe }));
           else if (key === "p")
             setDisplay((value) => ({
@@ -1221,7 +1701,7 @@ function ModelFile({
           {announced && <span key={announced.id}>{announced.text}</span>}
         </div>
         <div className={styles["model-document-bar"]}>
-          {format === "scad" ? (
+          {sourceFormat ? (
             <FileCode2Icon className="size-5 shrink-0 text-muted-foreground" />
           ) : (
             <BoxIcon className="size-5 shrink-0 text-muted-foreground" />
@@ -1231,12 +1711,20 @@ function ModelFile({
             <small>
               {path.includes("/")
                 ? path.slice(0, path.lastIndexOf("/"))
-                : format === "scad"
-                  ? "OpenSCAD source"
+                : sourceFormat
+                  ? format === "build123d"
+                    ? "Python CAD source"
+                    : "OpenSCAD source"
                   : `${format.toUpperCase()} model`}
             </small>
           </div>
           <div className={styles["model-document-actions"]}>
+            {supportsHistory && (
+              <HistoryControls
+                open={historyOpen}
+                onToggle={() => (historyOpen ? closeHistory() : setHistoryOpen(true))}
+              />
+            )}
             <CaptureMenu
               disabled={editDisabled}
               capturing={captureBusy}
@@ -1295,11 +1783,11 @@ function ModelFile({
                   </div>
                 }
               >
-                {mesh && (visible || !release) && (
+                {shownMesh && (visible || !release) && (
                   <ViewerCanvas
                     label={path.split("/").at(-1) ?? path}
-                    url={mesh.url}
-                    format={mesh.format}
+                    url={shownMesh.url}
+                    format={shownMesh.format}
                     plate={plate}
                     visible={visible}
                     viewerRef={viewer}
@@ -1307,11 +1795,11 @@ function ModelFile({
                     onStats={onStats}
                     orientation={supportsOrientation ? editing.orientation : null}
                     onOriented={onOriented}
-                    closedHint={render?.summary?.manifold ?? null}
+                    closedHint={shownRender?.summary?.manifold ?? null}
                     onSectionCapsStatus={setSectionCaps}
                     {...(!editDisabled ? { onWall: editing.onWall } : {})}
                     findings={
-                      display.findings && !printCheck.stale
+                      !viewing && display.findings && !printCheck.stale
                         ? (printCheck.report?.findings ?? [])
                         : []
                     }
@@ -1319,8 +1807,11 @@ function ModelFile({
                     onFinding={selectFinding}
                     onError={onError}
                     onProgress={onProgress}
-                    sourceRevision={mesh.revision}
-                    keepPrevious
+                    sourceRevision={shownMesh.revision}
+                    keepPrevious={!viewing}
+                    compareModel={compareGeometry?.model ?? null}
+                    layers={layersShown ? slicing.layers : null}
+                    layer={slicing.layer}
                     previousShown={previousShown}
                     navigationMode={navigationMode}
                     display={display}
@@ -1330,10 +1821,10 @@ function ModelFile({
                     }
                     onNavigate={onNavigate}
                     section={supportsCaps ? editing.section : { ...editing.section, caps: false }}
-                    measurements={editing.measurements}
-                    annotations={editing.annotations}
-                    pendingPoint={editing.pendingPoint}
-                    pickMode={busy ? null : editing.picking}
+                    measurements={viewing ? [] : editing.measurements}
+                    annotations={viewing ? [] : editing.annotations}
+                    pendingPoint={viewing ? null : editing.pendingPoint}
+                    pickMode={editDisabled ? null : editing.picking}
                     onPick={editing.onPick}
                     measureMode={editing.measureMode}
                     onCircle={editing.onCircle}
@@ -1342,20 +1833,26 @@ function ModelFile({
                 )}
               </Suspense>
             </div>
-            {!mesh && !displayedError && (
+            {!shownMesh && !displayedError && viewing?.status !== "absent" && (
               <div className={styles["model-loading"]}>
                 <BoxIcon />
                 <p>{pending ? "Preparing your part..." : "Loading model..."}</p>
               </div>
             )}
+            {viewing?.status === "absent" && (
+              <div className={styles["model-loading"]}>
+                <BoxIcon />
+                <p>This model did not exist after turn {viewing.turn}.</p>
+              </div>
+            )}
             <ViewTools
               active={activeView}
-              savedViews={editing.data.views}
+              savedViews={viewing ? [] : editing.data.views}
               activeViewId={activeViewId}
               onView={setView}
               onSavedView={recallView}
               onSaveView={saveView}
-              disabled={!stats}
+              disabled={!shownStats}
             />
             <ToolRail
               tool={editing.picking}
@@ -1365,7 +1862,18 @@ function ModelFile({
               onTool={startTool}
               onSection={toggleSection}
             />
-            {editing.section.enabled && stats && (
+            {layersShown && slicing.layers && (
+              <div className="absolute inset-x-4 bottom-20 z-10">
+                <LayerSlider
+                  layer={slicing.layer}
+                  count={slicing.layers.layers.length}
+                  zMm={slicing.layers.layers[slicing.layer]?.z ?? 0}
+                  onChange={slicing.setLayer}
+                  onClose={slicing.hideLayers}
+                />
+              </div>
+            )}
+            {!viewing && !layersShown && editing.section.enabled && stats && (
               <SectionStrip
                 section={editing.section}
                 {...(supportsCaps ? { capsState: sectionCaps } : {})}
@@ -1375,7 +1883,7 @@ function ModelFile({
                 onRemove={toggleSection}
               />
             )}
-            {hint && (
+            {!viewing && hint && (
               <ToolHint onDone={editing.stopPicking}>
                 {editing.picking === "measure" && (
                   <Segmented
@@ -1400,7 +1908,7 @@ function ModelFile({
                 )}
               </ToolHint>
             )}
-            {changed === "chip" && previous && (
+            {!viewing && changed === "chip" && previous && (
               <PreviousChip
                 shown={previousShown}
                 onToggle={togglePrevious}
@@ -1417,7 +1925,7 @@ function ModelFile({
                 />
               }
               previous={{
-                available: previous !== null,
+                available: !viewing && previous !== null,
                 shown: previousShown,
                 note: previous
                   ? null
@@ -1457,13 +1965,28 @@ function ModelFile({
               onMode={setNavigationMode}
               onFit={fit}
               onZoom={(factor) => viewer.current?.zoom(factor)}
-              disabled={!stats}
+              disabled={!shownStats}
             />
             <div className={styles["model-status-overlay"]}>
+              {compareError && (
+                <div className={styles["model-notice"]} role="alert">
+                  {compareError}
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => {
+                      setComparing(null);
+                      setCompareError(null);
+                    }}
+                  >
+                    Stop comparing
+                  </Button>
+                </div>
+              )}
               {displayedError && (
                 <div className={styles["model-notice"]} role="alert" data-tone="error">
                   <strong className="font-medium">
-                    {stats ? "Preview is out of date" : "Unable to preview this model"}
+                    {shownStats ? "Preview is out of date" : "Unable to preview this model"}
                   </strong>
                   <p className="mt-1 wrap-anywhere">{displayedError}</p>
                   <div className="mt-2 flex flex-wrap gap-2">
@@ -1475,6 +1998,22 @@ function ModelFile({
                     {format === "scad" && render && (
                       <Button size="sm" variant="outline" onClick={showLog}>
                         View render log
+                      </Button>
+                    )}
+                    {pythonFormat && (
+                      <Button size="sm" variant="outline" render={<Link to="/settings/loom" />}>
+                        Python CAD setup
+                      </Button>
+                    )}
+                    {settings.fabricationUrl && pythonFormat && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        render={
+                          <a href={settings.fabricationUrl} target="_blank" rel="noreferrer" />
+                        }
+                      >
+                        Open in Fabrication
                       </Button>
                     )}
                     {displayedError.includes("OpenSCAD") && (
@@ -1495,7 +2034,11 @@ function ModelFile({
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => setRevision((value) => value + 1)}
+                      onClick={() =>
+                        viewing
+                          ? void viewHistory(viewing.checkpointId, viewing.turn)
+                          : setRevision((value) => value + 1)
+                      }
                     >
                       Try again
                     </Button>
@@ -1524,7 +2067,9 @@ function ModelFile({
                     refreshing
                       ? "Refreshing model parameters"
                       : pending
-                        ? "Rendering with OpenSCAD"
+                        ? pythonFormat
+                          ? "Rendering Python CAD"
+                          : "Rendering with OpenSCAD"
                         : "Loading model"
                   }
                   detail={
@@ -1576,14 +2121,15 @@ function ModelFile({
                 setInspectorOpen(false);
                 viewer.current?.focus();
               }}
-              scad={format === "scad"}
+              scad={sourceFormat}
               badges={badges}
               expanded={inspectorExpanded}
               onExpand={() => setInspectorExpanded((value) => !value)}
             />
             <div className={styles["model-inspector-content"]}>
-              {format === "scad" && (
-                <div
+              {sourceFormat && !pythonUnavailable && (
+                <fieldset
+                  disabled={viewing !== null}
                   role="tabpanel"
                   aria-labelledby="model-tab-customize"
                   className={styles["model-inspector-tab-panel"]}
@@ -1599,15 +2145,15 @@ function ModelFile({
                     onResult={onResult}
                     onPending={onPending}
                     onRefreshing={setRefreshing}
-                    onError={onError}
+                    onError={onLiveError}
                   />
-                </div>
+                </fieldset>
               )}
-              {format === "scad" && (
+              {sourceFormat && !pythonUnavailable && (
                 <fieldset
                   role="tabpanel"
                   aria-labelledby="model-tab-variants"
-                  disabled={!editing.canEdit}
+                  disabled={viewing !== null || !editing.canEdit}
                   className={styles["model-inspector-tab-panel"]}
                   hidden={inspectorTab !== "variants"}
                 >
@@ -1619,6 +2165,9 @@ function ModelFile({
                     path={path}
                     plate={plate}
                     onActivity={setVariantActivity}
+                    settings={displaySettings}
+                    active={!viewing && visible && inspectorOpen && inspectorTab === "variants"}
+                    slicingEnabled={supportsSlicing && !viewing && canRenderFormat}
                   />
                 </fieldset>
               )}
@@ -1638,7 +2187,7 @@ function ModelFile({
                   busy={editing.operation !== null}
                   disabled={editDisabled}
                   actions={markupActions}
-                  {...(supportsPrintCheck ? { printCheck } : {})}
+                  {...(supportsPrintCheck && !viewing && canRenderFormat ? { printCheck } : {})}
                   findingsShown={display.findings}
                   onFindings={(findings) => setDisplay((value) => ({ ...value, findings }))}
                   selectedFindingId={selectedFindingId}
@@ -1648,7 +2197,7 @@ function ModelFile({
               <fieldset
                 role="tabpanel"
                 aria-labelledby="model-tab-views"
-                disabled={!editing.canEdit}
+                disabled={viewing !== null || !editing.canEdit}
                 className={styles["model-inspector-tab-panel"]}
                 hidden={inspectorTab !== "views"}
               >
@@ -1656,7 +2205,7 @@ function ModelFile({
                   data={editing.data}
                   mutate={editing.mutate}
                   sourceRevision={geometryRevision}
-                  visible={visible && inspectorOpen && inspectorTab === "views"}
+                  visible={!viewing && visible && inspectorOpen && inspectorTab === "views"}
                   activeViewId={activeViewId}
                   disabled={editDisabled}
                   onSave={saveView}
@@ -1676,9 +2225,11 @@ function ModelFile({
               >
                 <PartSection
                   environmentId={threadRef.environmentId}
-                  stats={stats}
+                  threadRef={threadRef}
+                  {...(supportsSlicing && !viewing && canRenderFormat ? { slicing } : {})}
+                  stats={shownStats}
                   previousSize={previous?.size ?? null}
-                  {...(supportsPrintCheck ? { printCheck } : {})}
+                  {...(supportsPrintCheck && !viewing && canRenderFormat ? { printCheck } : {})}
                   selectedFindingId={selectedFindingId}
                   onFinding={selectFinding}
                   {...(supportsOrientation
@@ -1705,24 +2256,138 @@ function ModelFile({
                     : {})}
                   settings={displaySettings}
                   volume={volume}
-                  render={render}
+                  render={shownRender}
                   format={format}
                   path={path}
                 />
+                {format === "build123d" && (
+                  <ExportStep
+                    canExport={canExportStep && !viewing && !busy}
+                    filename={path.split("/").at(-1) ?? path}
+                    urlOf={(relative) => modelUrl(threadRef.environmentId, relative)}
+                    onExport={() =>
+                      runModelCommand(models.exportStep, {
+                        environmentId: threadRef.environmentId,
+                        input: {
+                          file,
+                          overrides: session?.applied ?? {},
+                          parameterSet: session?.setName ?? null,
+                        },
+                      })
+                    }
+                  />
+                )}
               </div>
             </div>
           </aside>
         </div>
+        {historyOpen && (
+          <HistoryStrip
+            chips={history.chips}
+            viewing={viewing?.checkpointId ?? null}
+            comparing={comparing}
+            hasEarlier={
+              history.pages.at(-1)?.nextCursor !== null &&
+              history.pages.at(-1)?.nextCursor !== undefined
+            }
+            loading={history.status === "loading" || viewing?.status === "loading"}
+            error={history.error}
+            unavailable={history.unavailable}
+            canRestore={canRestore && viewing?.status === "ready"}
+            canPreview={canRenderFormat}
+            onEarlier={history.loadEarlier}
+            onView={(id) =>
+              void viewHistory(id).catch((cause: unknown) => setCompareError(failureMessage(cause)))
+            }
+            onCompare={setComparing}
+            onRestore={() => setRestoreOpen(true)}
+            onClose={closeHistory}
+          />
+        )}
+        {undo && (
+          <div className="flex items-center gap-2 px-3 py-1 text-xs" role="status">
+            <span>{undo.error ?? "Version restored."}</span>
+            <Button
+              size="xs"
+              variant="ghost"
+              disabled={!canUndo || undo.busy}
+              onClick={() => {
+                setUndo({ ...undo, busy: true });
+                void runModelCommand(models.historyUndo, {
+                  environmentId: threadRef.environmentId,
+                  input: { file, undoId: undo.id },
+                })
+                  .then(() => {
+                    setUndo(null);
+                    setRevision((value) => value + 1);
+                    history.refresh();
+                  })
+                  .catch((cause: unknown) =>
+                    setUndo({ ...undo, busy: false, error: failureMessage(cause) }),
+                  );
+              }}
+            >
+              {undo.busy ? "Undoing…" : "Undo"}
+            </Button>
+            <Button
+              size="icon-xs"
+              variant="ghost"
+              aria-label="Dismiss restore notice"
+              disabled={undo.busy}
+              onClick={() => setUndo(null)}
+            >
+              <XIcon />
+            </Button>
+          </div>
+        )}
+        {viewing && (
+          <RestoreVersionDialog
+            key={viewing.checkpointId}
+            open={restoreOpen}
+            label={viewing.turn === 0 ? "the start" : `turn ${viewing.turn}`}
+            differingIncludes={viewing.result?.differingIncludes ?? []}
+            threadRunning={history.threadRunning}
+            onClose={() => setRestoreOpen(false)}
+            onRestore={async (includeDependencies) => {
+              if (!canRestore) throw new Error("This connection cannot restore models.");
+              const restored = await runModelCommand(models.historyRestore, {
+                environmentId: threadRef.environmentId,
+                input: {
+                  file,
+                  checkpointId: viewing.checkpointId,
+                  includeDependencies,
+                  expectedContentKey: history.current?.contentKey ?? null,
+                },
+              });
+              historyRequest.current++;
+              setViewing(null);
+              setComparing(null);
+              setUndo({ id: restored.undoId, busy: false, error: null });
+              setRevision((value) => value + 1);
+              history.refresh();
+            }}
+          />
+        )}
         <div className={styles["model-status-bar"]}>
           <span>
-            {stats ? formatLengths(stats.size, units) : `Dimensions in ${unitName(units)}`}
+            {shownStats
+              ? formatLengths(shownStats.size, units)
+              : `Dimensions in ${unitName(units)}`}
           </span>
-          {stats && (
+          {shownStats && (
             <span className={styles["model-triangle-count"]}>
-              {stats.triangles.toLocaleString()} triangles
+              {shownStats.triangles.toLocaleString()} triangles
             </span>
           )}
-          {editing.orientation && (
+          {viewing && <span>{viewingLabel(viewing.turn, history.latestTurn)}</span>}
+          {comparison && (
+            <span>
+              Compare Δ {formatLengths(comparison.size, units)},{" "}
+              {comparison.triangles > 0 ? "+" : ""}
+              {comparison.triangles.toLocaleString()} triangles
+            </span>
+          )}
+          {!viewing && editing.orientation && (
             <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
               Laid flat
             </button>
@@ -1739,7 +2404,7 @@ function ModelFile({
             data-error={!!displayedError}
           >
             <span className={styles["model-state-dot"]} />
-            {displayedError ? (stats ? "Stale" : "Error") : busy ? "Updating" : "Ready"}
+            {displayedError ? (shownStats ? "Stale" : "Error") : busy ? "Updating" : "Ready"}
           </span>
         </div>
       </div>
@@ -1760,6 +2425,16 @@ export default function ModelPanel({ surface, threadRef, visible }: ForkPanelPro
       </p>
     );
   if (!settings) return <OperationStatus label="Loading model settings" />;
+  if (surface.resourceId.endsWith(".loom-assembly.json"))
+    return (
+      <AssemblyPanel
+        key={`${threadRef.environmentId}:${threadRef.threadId}:${surface.resourceId}`}
+        threadRef={threadRef}
+        path={surface.resourceId}
+        visible={visible}
+        settings={settings}
+      />
+    );
   return (
     <ModelFile
       key={`${threadRef.environmentId}:${threadRef.threadId}:${surface.resourceId}`}

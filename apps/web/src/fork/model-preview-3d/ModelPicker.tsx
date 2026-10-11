@@ -75,6 +75,36 @@ function usePickerAgentModels(threadRef: ScopedThreadRef) {
 }
 export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
   const agentModels = usePickerAgentModels(threadRef);
+  const configs = useServerConfigs();
+  const features = loomFeaturesOf(configs.get(threadRef.environmentId)?.environment.capabilities);
+  const canCreate = useAtomValue(models.updateAssembly.permissionAtom(threadRef.environmentId));
+  const [creating, setCreating] = useState(false),
+    [assemblyName, setAssemblyName] = useState("New assembly"),
+    [assemblyPath, setAssemblyPath] = useState("assembly.loom-assembly.json"),
+    [createError, setCreateError] = useState<string | null>(null),
+    [createBusy, setCreateBusy] = useState(false);
+  const create = async () => {
+    setCreateBusy(true);
+    setCreateError(null);
+    try {
+      if (!assemblyPath.toLowerCase().endsWith(".loom-assembly.json"))
+        throw new Error("Use a .loom-assembly.json path.");
+      await runModelCommand(models.updateAssembly, {
+        environmentId: threadRef.environmentId,
+        input: {
+          file: { threadId: threadRef.threadId, path: assemblyPath.trim() },
+          createOnly: true,
+          operations: [{ op: "set-name", name: assemblyName.trim() }],
+        },
+      });
+      appAtomRegistry.refresh(atom);
+      useRightPanelStore.getState().openSurface(threadRef, modelSurface(assemblyPath.trim()));
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : "The assembly could not be created.");
+    } finally {
+      setCreateBusy(false);
+    }
+  };
   const atom = models.models({
     environmentId: threadRef.environmentId,
     input: { threadId: threadRef.threadId },
@@ -82,8 +112,12 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
   const result = useAtomValue(atom);
   const listing = Option.getOrNull(AsyncResult.value(result));
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "mesh" | "scad">("all");
-  const files = listing?.models.filter(
+  const [filter, setFilter] = useState<"all" | "mesh" | "scad" | "python" | "assembly">("all");
+  const combined = [
+    ...(listing?.models ?? []),
+    ...(listing?.assemblies ?? []).map((entry) => ({ ...entry, format: "assembly" as const })),
+  ];
+  const files = combined.filter(
     (model) =>
       (!agentModels.filtered ||
         agentModels.result?.models.some((changed) => changed.path === model.path)) &&
@@ -91,7 +125,11 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
       (filter === "all" ||
         (filter === "scad"
           ? model.format === "scad"
-          : model.format !== "scad" && model.format !== "step")),
+          : filter === "python"
+            ? model.format === "build123d" || model.format === "step"
+            : filter === "assembly"
+              ? model.format === "assembly"
+              : !["scad", "step", "build123d", "assembly"].includes(model.format))),
   );
   return (
     <div className={styles["model-library"]}>
@@ -108,6 +146,51 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
             <RefreshCwIcon />
           </ModelTool>
         </div>
+        {features.includes("model-assemblies") && (
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canCreate}
+              onClick={() => setCreating((value) => !value)}
+            >
+              New assembly
+            </Button>
+          </div>
+        )}
+        {creating && (
+          <fieldset disabled={createBusy} className="mt-2 flex flex-col gap-2">
+            <label className="text-xs">
+              Name
+              <Input
+                aria-label="Assembly name"
+                value={assemblyName}
+                onChange={(e) => setAssemblyName(e.target.value)}
+              />
+            </label>
+            <label className="text-xs">
+              Workspace path
+              <Input
+                aria-label="Assembly path"
+                value={assemblyPath}
+                onChange={(e) => setAssemblyPath(e.target.value)}
+              />
+            </label>
+            {createError && <p role="alert">{createError}</p>}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={!canCreate || !assemblyName.trim()}
+                onClick={() => void create()}
+              >
+                Create assembly
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setCreating(false)}>
+                Cancel
+              </Button>
+            </div>
+          </fieldset>
+        )}
         <p>Open a part from this workspace. Each file gets its own preview.</p>
       </div>
       <div className={styles["model-library-search"]}>
@@ -120,14 +203,30 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
         />
       </div>
       <div className={styles["model-library-filters"]} role="group" aria-label="File type">
-        {(["all", "mesh", "scad"] as const).map((value) => (
+        {(
+          [
+            "all",
+            "mesh",
+            "scad",
+            ...(features.includes("model-python-cad") ? ["python" as const] : []),
+            ...(features.includes("model-assemblies") ? ["assembly" as const] : []),
+          ] as const
+        ).map((value) => (
           <button
             key={value}
             className={styles["model-tool"]}
             aria-pressed={filter === value}
             onClick={() => setFilter(value)}
           >
-            {{ all: "All files", mesh: "Meshes", scad: "OpenSCAD" }[value]}
+            {
+              {
+                all: "All files",
+                mesh: "Meshes",
+                scad: "OpenSCAD",
+                python: "Python CAD / STEP",
+                assembly: "Assemblies",
+              }[value]
+            }
           </button>
         ))}
       </div>
@@ -210,11 +309,11 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
               detail="Searching this workspace on the selected environment."
             />
           </div>
-        ) : !listing.models.length ? (
+        ) : !combined.length ? (
           <div className={styles["model-empty"]}>
             <BoxIcon />
             <strong>Your parts will appear here</strong>
-            <p>Add an STL, 3MF, OBJ, glTF, GLB or SCAD file to this workspace.</p>
+            <p>Add an STL, 3MF, OBJ, glTF, GLB, SCAD, .b3d.py or STEP file to this workspace.</p>
           </div>
         ) : !files?.length ? (
           <div className={styles["model-empty"]}>
@@ -239,7 +338,7 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
                 ? model.path.slice(0, -(name.length + 1))
                 : "Workspace";
               const Icon =
-                model.format === "scad"
+                model.format === "scad" || model.format === "build123d"
                   ? FileCode2Icon
                   : model.format === "step"
                     ? FileBoxIcon
@@ -258,10 +357,7 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
                   <span className={styles["model-file-name"]}>
                     <strong>{name}</strong>
                     <small>
-                      {folder} ·{" "}
-                      {model.format === "step"
-                        ? "Open in Fabrication"
-                        : formatAttachmentSize(model.sizeBytes)}
+                      {folder} · {formatAttachmentSize(model.sizeBytes)}
                     </small>
                   </span>
                   <span className={styles["model-file-format"]}>{model.format.toUpperCase()}</span>
@@ -274,7 +370,7 @@ export function ModelPicker({ threadRef }: { threadRef: ScopedThreadRef }) {
       {listing && (
         <div className={styles["model-status-bar"]}>
           <span>
-            {files?.length ?? 0} of {listing.models.length} files
+            {files?.length ?? 0} of {combined.length} files
             {listing.truncated ? " · First 2,000 indexed" : ""}
           </span>
           <span>Environment workspace</span>

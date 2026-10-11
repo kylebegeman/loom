@@ -130,11 +130,11 @@ that sees no `python` key is talking to an older server and shows the "Update Lo
 
 ### RPC methods
 
-| Tag                                  | Payload                             | Success            | Scope            |
-| ------------------------------------ | ----------------------------------- | ------------------ | ---------------- |
-| `loom.model-preview-3d.renderPython` | `ScadRenderInput`                   | `ScadRenderResult` | Terminal operate |
-| `loom.model-preview-3d.exportStep`   | `ScadRenderInput`                   | `SignedFile`       | Terminal operate |
-| `loom.model-preview-3d.pythonSetup`  | `{ action: "install" \| "remove" }` | `PythonCadInfo`    | Terminal operate |
+| Tag                                 | Payload                             | Success            | Scope            |
+| ----------------------------------- | ----------------------------------- | ------------------ | ---------------- |
+| `loom.model-preview-3d.renderModel` | `ScadRenderInput`                   | `ScadRenderResult` | Terminal operate |
+| `loom.model-preview-3d.exportStep`  | `ScadRenderInput`                   | `SignedFile`       | Terminal operate |
+| `loom.model-preview-3d.pythonSetup` | `{ action: "install" \| "remove" }` | `PythonCadInfo`    | Terminal operate |
 
 Changed methods:
 
@@ -142,7 +142,7 @@ Changed methods:
   keeps orchestration operate: tessellating STEP runs only Loom's runner on a data file.
 - `parameters` also accepts `.b3d.py` files and keeps orchestration read: it runs only the
   runner's static reader.
-- `listModels` gains the `include` field above.
+- `listModels`, `turnModels` and `turnModelEvents` gain the `include` field above. Older clients receive only their known formats; updated clients opt into `build123d`.
 
 Entries go in `apps/server/src/fork/rpcAuthorization.ts` and the operate ones in
 `packages/contracts/src/fork/clientRpcPermissions.ts`. Cancelling is interrupting the request,
@@ -150,11 +150,11 @@ as for renders.
 
 ## Server
 
-New folder `apps/server/src/fork/model-preview-3d/python/`, created by `makePythonCad(deps)`
-inside `make`, with the closures it needs (`resolveFile`, `cacheDir`, `protectStem`, `sign`,
-`prune`, `readDeps`, `restoreDependencies`, `dependencyMetadata`, `readSidecar`, `renderSlots`,
-`store`, `runner`, `settings`). Its methods are spread into the service object, and
-`renderScad` dispatches STEP to it.
+The environment, static inspector and renderer factories in
+`apps/server/src/fork/model-preview-3d/pythonCad/` are created inside the model service's `make`.
+They reuse its cache, dependency records, signing and settings closures. The shared `renderJob`
+serializes source and STEP jobs under the same slots; `renderModel` dispatches sources and
+`renderScad` dispatches STEP to the Python renderer.
 
 | File              | Contents                                                            |
 | ----------------- | ------------------------------------------------------------------- |
@@ -293,9 +293,9 @@ Settings gain `pythonPath` with a decoding default. No table or migration.
 
 ### Shared atoms
 
-`packages/client-runtime/src/fork/model-preview-3d.ts` adds `renderPython` (with its
-`resultAtom` as `renderPythonResult`, label `loom:model-render-python`), `exportStep` and
-`pythonSetup`, next to `render` (`:14-22`).
+`packages/client-runtime/src/fork/model-preview-3d.ts` adds `renderModel` with its `resultAtom`,
+`exportStep` and `pythonSetup`, next to the existing `render` command. Python source uses
+`renderModel`; SCAD and trusted STEP preview use `render`.
 
 ### Web
 
@@ -305,11 +305,10 @@ Settings gain `pythonPath` with a decoding default. No table or migration.
   `:1036`, `:1057`; `ModelInspector.tsx:438`, `:452`; `ModelPicker.tsx:32-33`, `:113`, `:129`.
   STEP joins the mesh path for loading: instead of `fileUrl`, a STEP tab uses the render result
   atom with empty overrides.
-- **Render command.** `ScadCustomizer.tsx:304` and `VariantsInspector.tsx:129`, `:690` choose
-  `models.render`/`renderResult` or `models.renderPython`/`renderPythonResult` with a helper
-  `renderCommandFor(models, format)` in a new `formats.ts`. The permission tip at
-  `ScadCustomizer.tsx:56` reads the chosen command's `permissionAtom`, so a client without the
-  terminal permission sees the "needs terminal access" state.
+- **Render command.** The customizer and variant flows choose `models.render` for SCAD or
+  `models.renderModel` for Python source and read that command's `permissionAtom`. A client
+  without terminal permission sees the "needs terminal access" state for Python. STEP uses
+  `models.render`, which retains orchestration permission.
 - **STEP tab.** The placeholder at `ModelPanel.tsx:666-692` shows only when Python CAD is not
   ready (or the server is older), with "Set up Python CAD" and the existing Fabrication link;
   otherwise STEP renders like a mesh.
@@ -320,7 +319,7 @@ Settings gain `pythonPath` with a decoding default. No table or migration.
 - **Export STEP.** A button in `PartSection` (`ModelInspector.tsx:336`) for `build123d` files,
   with `OperationStatus` while running and an anchor download of the signed URL, the way
   `downloadMedia` works upstream (`apps/web/src/components/media/mediaContent.ts:29-39`).
-- **Settings.** `PythonSettings.tsx` (new), rendered by `SettingsSection.tsx` after the OpenSCAD
+- **Settings.** `PythonCadSettings.tsx`, rendered by `SettingsSection.tsx` after the OpenSCAD
   rows: the detection line, "Set up" (when `uv` is found and the managed environment is missing),
   "Update" (when the managed build123d differs from the tested version), "Remove", the
   "Python interpreter" path `Input` (blank means managed), and, when `uv` is missing, the

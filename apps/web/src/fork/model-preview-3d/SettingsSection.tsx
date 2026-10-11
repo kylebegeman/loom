@@ -39,6 +39,10 @@ import { BUILD_PLATE_PATTERNS, bedGroups, buildPlateLabel, buildPlateNote } from
 import { models, runModelCommand } from "./state";
 import { DisplayUnitsProvider, formatLengths } from "./units";
 import { ManageBeds } from "./ManageBeds";
+import { PrintersSection } from "./PrintersSection";
+import { usePrinterLibrary } from "./printers";
+import { PythonCadSettings } from "./PythonCadSettings";
+import { SlicingSettings } from "./SlicingSettings";
 
 const validateSettings = Schema.decodeSync(ModelPreviewSettings);
 const BACKENDS = [
@@ -59,6 +63,12 @@ function SettingsForm({
     [failed, setFailed] = useState(false),
     [detection, setDetection] = useState<ModelPreviewStatus | null>(null);
   const configs = useServerConfigs();
+  const library = usePrinterLibrary(environmentId);
+  const features = loomFeaturesOf(configs.get(environmentId)?.environment.capabilities);
+  const canSetupPython = useAtomValue(models.pythonSetup.permissionAtom(environmentId));
+  const supportsPrinters = loomFeaturesOf(
+    configs.get(environmentId)?.environment.capabilities,
+  ).includes("printer-library");
   const supportsAgentModels = loomFeaturesOf(
     configs.get(environmentId)?.environment.capabilities,
   ).includes("model-follow-agent");
@@ -87,9 +97,11 @@ function SettingsForm({
       setBusy(null);
     }
   };
-  const invalidBedName = settings.buildPlate.customBeds.some((bed) =>
-    customBedNameError(settings.buildPlate, bed.name, bed.id),
-  );
+  const invalidBedName =
+    !supportsPrinters &&
+    settings.buildPlate.customBeds.some((bed) =>
+      customBedNameError(settings.buildPlate, bed.name, bed.id),
+    );
   const save = () =>
     act(async () => {
       const validated = validateSettings(settings);
@@ -137,6 +149,38 @@ function SettingsForm({
             />
           </div>
         </SettingsRow>
+        {features.includes("model-python-cad") && (
+          <PythonCadSettings
+            info={info?.python}
+            pythonPath={settings.pythonPath}
+            canSetup={canSetupPython}
+            onPathChange={(pythonPath) => set("pythonPath", pythonPath)}
+            onSetup={async (action) => {
+              await runModelCommand(models.updateSettings, {
+                environmentId,
+                input: { ...initial, pythonPath: settings.pythonPath },
+              });
+              const result = await runModelCommand(models.pythonSetup, {
+                environmentId,
+                input: { action },
+              });
+              appAtomRegistry.refresh(models.status({ environmentId, input: {} }));
+              appAtomRegistry.refresh(models.settings({ environmentId, input: {} }));
+              setDetection(null);
+              return result;
+            }}
+          />
+        )}
+        {features.includes("model-slicer-bridge") && (
+          <SlicingSettings
+            environmentId={environmentId}
+            value={settings.slicer}
+            onChange={(slicer) => set("slicer", slicer)}
+            buildPlate={settings.buildPlate}
+            disabled={!canSave || busy !== null}
+            {...(info?.slicers ? { status: info.slicers } : {})}
+          />
+        )}
         <SettingsRow
           title="Render backend"
           control={
@@ -282,16 +326,16 @@ function SettingsForm({
           description="The plate under the model and the size fit checks use."
           control={
             <Select
-              value={activeBed(settings.buildPlate).id}
+              value={activeBed(settings.buildPlate, { library }).id}
               onValueChange={(next: string | null) => {
-                if (next) set("buildPlate", selectBed(settings.buildPlate, next));
+                if (next) set("buildPlate", selectBed(settings.buildPlate, next, { library }));
               }}
             >
               <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed">
-                <SelectValue>{buildPlateLabel(settings.buildPlate)}</SelectValue>
+                <SelectValue>{buildPlateLabel(settings.buildPlate, library)}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
-                {bedGroups(settings.buildPlate).map((group) => (
+                {bedGroups(settings.buildPlate, library).map((group) => (
                   <SelectGroup key={group.label}>
                     <SelectGroupLabel>{group.label}</SelectGroupLabel>
                     {group.options.map((option) => (
@@ -310,14 +354,18 @@ function SettingsForm({
             </Select>
           }
         />
-        <ManageBeds
-          value={settings.buildPlate}
-          onChange={(plate) => set("buildPlate", plate)}
-          disabled={!canSave || busy !== null}
-        />
-        {buildPlateNote(settings.buildPlate) && (
+        {supportsPrinters ? (
+          <PrintersSection environmentId={environmentId} />
+        ) : (
+          <ManageBeds
+            value={settings.buildPlate}
+            onChange={(plate) => set("buildPlate", plate)}
+            disabled={!canSave || busy !== null}
+          />
+        )}
+        {buildPlateNote(settings.buildPlate, library) && (
           <p className="px-3 text-xs text-muted-foreground sm:px-4">
-            {buildPlateNote(settings.buildPlate)}
+            {buildPlateNote(settings.buildPlate, library)}
           </p>
         )}
         <SettingsRow
@@ -347,7 +395,7 @@ function SettingsForm({
             </Select>
           }
         />
-        {!!activeBed(settings.buildPlate).zones?.length && (
+        {!!activeBed(settings.buildPlate, { library }).zones?.length && (
           <SettingsRow
             title="Show nozzle zones"
             description="Tint areas that only one nozzle reaches. Fit checks always use nozzle limits."

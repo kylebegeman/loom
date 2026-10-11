@@ -1,6 +1,6 @@
 # L47: Slicing estimates
 
-Status: Needs decision: first slicer, where profiles come from, and the `Y` key.
+Status: Implemented locally (`feat/model-history-assemblies-slicing-cad`).
 
 Approved by Kyle on 2026-10-10. Kyle chose to build slicing estimates in Loom on 2026-10-10.
 

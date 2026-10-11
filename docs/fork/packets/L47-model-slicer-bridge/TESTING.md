@@ -16,7 +16,7 @@ into the repository (see REFERENCES.md, "Licences").
   - An editor action `{ action: "layers", layer: 120 }` decodes; `layer: -1` does not.
 - `apps/server/src/fork/model-preview-3d/slicer/profiles.test.ts`
   - The H2D machine chain flattens with the leaf's `printable_area` over the parent's, arrays
-    replaced whole, `inherits` removed and `name` and `type` kept.
+    replaced whole, the system preset identity retained in `inherits`, and `name` and `type` kept.
   - A user preset that inherits a system preset flattens to the system values plus its
     changes.
   - The higher index version wins between two roots for the same vendor.
@@ -32,7 +32,8 @@ into the repository (see REFERENCES.md, "Licences").
   - `slice_info.config` parsing: prediction, weight, filaments, `outside`, `support_used` and
     warnings.
   - Verification: a `printer_model_id` that differs from the mapping's `model_id` fails with
-    the wrong-result message; a missing 3MF with exit code 0 fails with "The slicer exited
+    the wrong-result message; empty ids require a matching exported project printer model.
+    A missing 3MF with exit code 0 fails with "The slicer exited
     without a result."
 - `apps/server/src/fork/model-preview-3d/slicer/gcode.test.ts`
   - Bambu header totals and Prusa footer totals, including `1d 2h 3m 4s` durations.
@@ -80,6 +81,7 @@ vp test run packages/contracts/src/fork/model-slicer.test.ts \
   apps/server/src/fork/model-preview-3d/slicer/service.test.ts \
   apps/server/src/fork/model-preview-3d/mcp.test.ts \
   apps/web/src/fork/model-preview-3d/slicing.test.ts \
+  apps/web/src/fork/model-preview-3d/useSlicing.test.ts \
   apps/web/src/fork/model-preview-3d/viewer/layers.test.ts
 vp lint packages/contracts/src/fork apps/server/src/fork/model-preview-3d \
   apps/web/src/fork/model-preview-3d packages/client-runtime/src/fork/model-preview-3d.ts
@@ -119,3 +121,19 @@ Bambu Studio installed:
 
 No upstream file changes, so the merge preview in [SEAMS.md](./SEAMS.md) must exit 0. After
 merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.
+
+## Verified host CLI smoke
+
+On 2026-10-10, Bambu Studio 02.08.04.57 on macOS successfully sliced a closed 10 mm
+ASCII and binary STL cubes using the installed H2D 0.4 mm machine, 0.20 mm Standard process and
+Bambu PLA Basic profiles. The CLI used a temporary isolated `--datadir`, fully flattened
+profiles, `--arrange 1 --orient 0 --slice 0`, and a complete exported 3MF. It exited 0.
+Loom's streaming archive reader accepted the project and reported 264 seconds, 0.75 g,
+50 layers and nonempty toolpaths. No GUI or printer connection was opened.
+
+This smoke established the preset identity and missing model-id behavior documented in
+TECHNICAL.md. Startup purge extrusion is excluded before the first explicit print layer.
+The temporary profiles and outputs are not repository fixtures. OrcaSlicer and PrusaSlicer
+were not installed on this host; their real CLI runs remain unverified. Their argument and
+output contracts have focused fixture coverage, including Prusa cache publication and
+caller cancellation. No browser or desktop UI interaction was run for this slice.

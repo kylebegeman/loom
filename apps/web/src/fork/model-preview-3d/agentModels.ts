@@ -11,7 +11,7 @@ import { models, runModelCommand } from "./state";
 export const MAX_AGENT_MODEL_TABS = 8;
 export const DISMISSED_MODEL_TURNS_KEY = "loom:model-follow-agent:dismissed:v1";
 const MAX_DISMISSED_MODEL_TURNS = 200;
-// Literal OpenSCAD inputs can change a part even when no model file was edited directly.
+// Imported data and Python helpers can change a model without editing its source.
 const SCAD_INPUT_EXTENSIONS = new Set([
   "scad",
   "stl",
@@ -26,14 +26,14 @@ const SCAD_INPUT_EXTENSIONS = new Set([
   "png",
   "dat",
   "txt",
+  "py",
 ]);
 
 export function mayAffectModels(paths: readonly string[]): boolean {
   return paths.some((path) => {
     const format = modelFormatOf(path);
     return (
-      (format !== null && format !== "step") ||
-      SCAD_INPUT_EXTENSIONS.has(path.split(".").at(-1)?.toLowerCase() ?? "")
+      format !== null || SCAD_INPUT_EXTENSIONS.has(path.split(".").at(-1)?.toLowerCase() ?? "")
     );
   });
 }
@@ -185,7 +185,7 @@ export async function openLastAgentModels(threadRef: ScopedThreadRef) {
   try {
     const result = await runModelCommand(models.loadTurnModels, {
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId, runId: null },
+      input: { threadId: threadRef.threadId, runId: null, include: ["build123d"] },
     });
     if (!result.models.length) {
       toastManager.add({

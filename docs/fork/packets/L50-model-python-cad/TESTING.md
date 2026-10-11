@@ -1,74 +1,39 @@
 # L50 testing
 
-Focused tests only. No repo-wide checks, no sleeps. Unit and service tests use a fake process
-runner with fixture runner output, so CI needs no Python. The real-runner test runs only where
-an interpreter with build123d exists, like `realOpenScad.test.ts`.
+Focused checks only. No repository-wide checks or browser/computer-use runs.
 
-## Automated tests
+## Verification evidence (2026-10-10)
 
-- `packages/contracts/src/fork/model-formats.test.ts`
-  - `modelFormatOf`: `a.b3d.py` is `build123d`; `a.py` and `a.b3d` are null; `A.STP` is `step`;
-    every existing extension maps as before.
-  - Settings saved before L50 decode with `pythonPath: null`.
-  - `pythonInstallCommands` quotes a path with spaces.
-- `apps/server/src/fork/model-preview-3d/python/inspect.test.ts` (fixture runner output)
-  - Maps number, integer, boolean, string, `Literal` with labels, and vector parameters onto
-    `ScadParameter` with ranges, steps, groups and descriptions.
-  - Skipped parameters become warnings; `no-model` becomes the "needs a `def model(...)`"
-    error.
-  - Results are cached by source hash: a second call does not run the runner.
-- `apps/server/src/fork/model-preview-3d/python/environment.test.ts` (fake runner)
-  - A configured path wins; otherwise the managed path; probe results are cached and reset by
-    `updateSettings`.
-  - Install runs the two commands into a pending folder and renames it only after a good probe;
-    a failing probe leaves `broken` with the last line and no `venv` folder.
-  - Interrupting install removes the pending folder (await the fiber exit; no sleeps).
-  - A second install while one runs waits on the semaphore.
-- `apps/server/src/fork/model-preview-3d/python/render.test.ts` (fake runner)
-  - Same inputs twice: one run, the second `cached`. Changing an override, the sidecar, a
-    dependency's revision, the build123d version or the interpreter path changes the key.
-  - The runner's deps file feeds `readDeps`, and `watch` then emits for a dependency change.
-  - A source edited during the run returns the "inputs changed" error.
-  - Interruption gives `status: "cancelled"`; a new request for the same file interrupts the
-    first.
-  - An error result keeps the user-file line first in the log.
-  - `renderScad` with a STEP file tessellates; with overrides it fails `invalid-parameter`.
-  - No interpreter: `python-missing`.
-  - `sidecarPath("x/bracket.b3d.py")` is `x/bracket.json`.
-- `apps/server/src/fork/model-preview-3d/python/realPython.test.ts` (skipped without
-  build123d)
-  - The runner's `inspect` on the PRODUCT.md example returns its five parameters.
-  - `render` produces a non-empty STL with a bounding box of 60 × 30 × 12 mm and
-    `manifold: true`; with colours on, a 3MF.
-  - `export-step` then `tessellate` gives the same bounding box within 0.05 mm.
-  - A model that imports a sibling module records it as a dependency.
-  - A model that raises reports `fixture.b3d.py:<line>`.
-- `apps/server/src/fork/model-preview-3d/ModelPreviewService.test.ts` (extend): `listModels`
-  includes `.b3d.py` only with `include`; plain `.py` files never appear.
-- `apps/server/src/fork/model-preview-3d/mcp.test.ts` (extend): `render_mesh` dispatches by
-  format; `export_step` refuses an `outputPath` outside the workspace and when
-  `agentToolEnabled` is false.
-- `apps/web/src/fork/model-preview-3d/formats.test.ts`: `renderCommandFor` returns the Python
-  command for `build123d` and the SCAD command for `scad` and `step`.
+Focused service and runner tests cover opt-in format listings and turn events, static signature inspection without executing source, dependency-aware caching, parameters and sets, STEP export, setup failure/cancellation, snapshot isolation and correct permission boundaries. Regressions confirm that cache-only lookups and PNG previews preserve last-used customizer values. The embedded Python helper exactly matches runner.py and passed an isolated Python 3.14.7 probe. build123d is absent on this host, so real CAD rendering, STEP tessellation/export, colors and managed install were not exercised. No host CAD dependency was installed.
 
-## Commands
+The final shared service, MCP, RPC and Python renderer integration run passed all 57 tests.
+The integrated MCP tests cover tool availability, disabled-agent gating, caller paths,
+restore conflicts and undo, assembly operations, STEP output and Python execution grants.
+RPC regressions verify that indirect Python execution cannot bypass terminal permission.
+The MCP regression allows trusted STEP previews in plan mode while refusing Python source execution.
+Targeted strict lint and affected package typechecks cover the shared integration.
+Browser, desktop/GPU and remote-client interaction checks remain unverified.
+
+The server bundle build passed. Its embedded Python helper matched `runner.py`; an isolated
+probe through Python 3.14.7 succeeded and reported build123d absent. No managed install or
+real build123d render/STEP roundtrip was performed.
+
+## Focused commands
 
 ```sh
-vp test run packages/contracts/src/fork/model-formats.test.ts \
-  apps/server/src/fork/model-preview-3d/python/inspect.test.ts \
-  apps/server/src/fork/model-preview-3d/python/environment.test.ts \
-  apps/server/src/fork/model-preview-3d/python/render.test.ts \
-  apps/server/src/fork/model-preview-3d/python/realPython.test.ts \
+./node_modules/.bin/vp test run packages/contracts/src/fork/model-preview-3d.test.ts \
+  apps/server/src/fork/model-preview-3d/pythonCad/runner.test.ts \
+  apps/server/src/fork/model-preview-3d/pythonCad/environment.test.ts \
+  apps/server/src/fork/model-preview-3d/pythonCad/render.test.ts \
+  apps/server/src/fork/model-preview-3d/turnModels.test.ts \
+  apps/web/src/fork/model-preview-3d/agentModels.test.ts \
   apps/server/src/fork/model-preview-3d/ModelPreviewService.test.ts \
   apps/server/src/fork/model-preview-3d/mcp.test.ts \
-  apps/web/src/fork/model-preview-3d/formats.test.ts
-vp lint packages/contracts/src/fork apps/server/src/fork/model-preview-3d \
-  apps/web/src/fork/model-preview-3d packages/client-runtime/src/fork/model-preview-3d.ts
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web typecheck
+  apps/server/src/fork/model-preview-3d/rpc.test.ts
 ```
+
+The affected package typechecks are `@t3tools/contracts`, `@t3tools/client-runtime`,
+`@t3tools/web` and `t3`. Run lint only on changed files, with `--deny-warnings`.
 
 ## Manual check
 

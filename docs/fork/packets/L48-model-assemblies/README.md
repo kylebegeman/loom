@@ -1,6 +1,6 @@
 # L48: Assemblies
 
-Status: Needs decision: the assembly file format and the v1 placement tools.
+Status: Implemented locally (`feat/model-history-assemblies-slicing-cad`).
 
 Approved by Kyle on 2026-10-10.
 
@@ -11,7 +11,7 @@ agent to write. The panel lists the parts with visibility, colour and isolate, m
 them with exact numbers and quarter turns, and pulls them apart with an exploded view (`E`).
 A fit check finds where parts intersect and measures the gap between chosen pairs against a
 required clearance, with pins on the problem areas. Every part reloads on its own when its file
-changes, SCAD parts render with their own parameters, and captures work as for single parts.
+changes, SCAD and build123d parts render with their own parameters, and captures work as for single parts.
 Agents create and edit assemblies, place parts relative to each other and run the same fit check
 through MCP tools.
 
@@ -19,7 +19,7 @@ through MCP tools.
 
 - In:
   - The `*.loom-assembly.json` format (version 1): parts with path, position, rotation, colour,
-    visibility, SCAD parameters and an optional explode direction; named clearance pairs.
+    visibility, source parameters and an optional explode direction; named clearance pairs.
   - Server: read, validate and write assemblies atomically with an expected revision; ordered
     operations (add, update, move, remove, align, clearances); list assemblies beside models.
   - The panel opens an assembly like a model: Parts, Fit, Markup and Views tabs; part list with
@@ -28,7 +28,7 @@ through MCP tools.
   - Fit check: triangle-triangle interference with an AABB broad phase and uniform grid, flush
     contact reported as touching, containment, and minimum clearance per chosen pair, run in
     L46's worker with a timeout and cancellation.
-  - Per-part live reload; SCAD parts rendered with their own parameters; captures, saved views
+  - Per-part live reload; SCAD and build123d parts rendered with their own parameters; captures, saved views
     and Markup keyed by the assembly path.
   - Agent tools `loom_model_preview_3d_assembly_update` and
     `loom_model_preview_3d_assembly_check`; editor actions `explode`, `isolate`, `select-part`.

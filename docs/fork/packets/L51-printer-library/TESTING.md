@@ -1,69 +1,36 @@
 # L51 testing
 
-Focused tests only. No repo-wide checks, no sleeps: the service tests await the effects they
-call.
+Focused checks only. No repository-wide checks or browser/computer-use runs.
 
-## Automated tests
+## Verification evidence (2026-10-10)
 
-- `packages/contracts/src/fork/model-printers.test.ts`
-  - `libraryProblems` flags duplicate printer and material ids, a `defaultMaterialId` not in
-    `materialIds`, a material id that does not exist, and a zone that leaves the bed.
-  - A library saved with an unknown future key still decodes (forward compatibility).
-  - `STARTER_MATERIALS` decode, have unique ids and null prices.
-  - `PrinterExport` round-trips through JSON.
-- `packages/contracts/src/fork/model-beds.test.ts` (extend the file L32 creates)
-  - Built-in ids equal the old `BUILD_PLATE_PRESETS` keys, in the same order, with the same
-    volumes (no saved setting changes meaning).
-  - `listBeds` with no options returns built-ins and Custom size, with a library adds user
-    printers, hides `hiddenBuiltIns`, and always includes the active bed.
-  - `activeBed` resolves a migrated id from the library and an unmigrated id from L33's
-    `customBeds` to the same bed, and falls back to Custom size for a missing id.
-  - `selectBed` never changes `customMm`.
-  - The total of built-ins and `USER_PRINTER_LIMIT` is at most L32's 64-bed cap.
-- `apps/server/src/fork/model-preview-3d/printerProfiles.test.ts`
-  - The H2D fixture chain flattens and gives 350 × 320 × 325, nozzle 0.4, and two zones
-    (offset 0 and 25, footprint 325 × 320, heights 320 and 325).
-  - The X1 Carbon fixture keeps its 18 × 28 excluded corner.
-  - A profile whose parent is missing fails with the "could not find" message.
-  - PrusaSlicer config: size from `bed_shape`, height from `max_print_height`, nozzles from a
-    comma list; a vendor bundle INI is refused; a centred delta `bed_shape` becomes a round bed
-    with its diameter and zero-based offsets.
-  - `shapeFromPolygon`: rectangle, circle, and an irregular outline with the bounding-box
-    warning.
-- `apps/server/src/fork/model-preview-3d/printers.test.ts`
-  - Migration: a settings row with two L33 custom beds and one hidden preset creates a library
-    with the same ids, kinds and hidden list; a second `library()` call does not rewrite it.
-  - No L33 fields: the library starts with only the starter materials.
-  - `update` with a stale `expectedVersion` fails with `conflict` and leaves storage unchanged.
-  - Deleting the active printer saves settings pointing at the default bed.
-- `apps/server/src/fork/model-preview-3d/store.test.ts` (extend): `getPrinters` on an empty
-  table is `None`; save then get round-trips.
-- `apps/server/src/fork/model-preview-3d/mcp.test.ts` (extend): the three tools refuse when
-  `agentToolEnabled` is false; `read_printer_profile` refuses a path outside the workspace.
-- `apps/web/src/fork/model-preview-3d/buildPlate.test.ts` (extend): `bedGroups` with a library
-  puts user entries under "Your printers"; `resolvePlate` returns `shape: "round"` for a round
-  printer.
-- `apps/web/src/fork/model-preview-3d/viewer/bed.test.ts` (extend): round `bedLines` stay
-  inside the circle.
+Core milestone: `3e5c894a44`. Shared viewer and service wiring is in the final integration milestone.
 
-## Commands
+79 focused tests across seven files passed for library/schema validation, profile parsing, migration, persistence, optimistic conflicts, preset compatibility and round-bed geometry. Shared service regressions also cover library/material persistence across restart. Installed-profile inheritance resolves through the shared slicer profile reader. Legacy customBeds and hiddenPresets remain accepted for older clients; after migration the versioned library is authoritative for the new UI.
+
+The integrated MCP tests cover tool availability, disabled-agent gating, caller paths,
+restore conflicts and undo, assembly operations, STEP output and Python execution grants.
+RPC regressions verify that indirect Python execution cannot bypass terminal permission.
+Targeted strict lint and affected package typechecks cover the shared integration.
+Browser, desktop/GPU and remote-client interaction checks remain unverified.
+
+## Focused commands
 
 ```sh
-vp test run packages/contracts/src/fork/model-printers.test.ts \
+./node_modules/.bin/vp test run packages/contracts/src/fork/model-printers.test.ts \
   packages/contracts/src/fork/model-beds.test.ts \
   apps/server/src/fork/model-preview-3d/printerProfiles.test.ts \
   apps/server/src/fork/model-preview-3d/printers.test.ts \
   apps/server/src/fork/model-preview-3d/store.test.ts \
-  apps/server/src/fork/model-preview-3d/mcp.test.ts \
   apps/web/src/fork/model-preview-3d/buildPlate.test.ts \
-  apps/web/src/fork/model-preview-3d/viewer/bed.test.ts
-vp lint packages/contracts/src/fork apps/server/src/fork/model-preview-3d \
-  apps/web/src/fork/model-preview-3d packages/client-runtime/src/fork/model-preview-3d.ts
-vp run --filter @t3tools/contracts typecheck
-vp run --filter t3 typecheck
-vp run --filter @t3tools/client-runtime typecheck
-vp run --filter @t3tools/web typecheck
+  apps/web/src/fork/model-preview-3d/viewer/bed.test.ts \
+  apps/server/src/fork/model-preview-3d/ModelPreviewService.test.ts \
+  apps/server/src/fork/model-preview-3d/mcp.test.ts \
+  apps/server/src/fork/model-preview-3d/rpc.test.ts
 ```
+
+The affected package typechecks are `@t3tools/contracts`, `@t3tools/client-runtime`,
+`@t3tools/web` and `t3`. Run lint only on changed files, with `--deny-warnings`.
 
 ## Manual check
 

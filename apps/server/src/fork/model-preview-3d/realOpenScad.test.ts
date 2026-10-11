@@ -269,7 +269,7 @@ realTest(
           Effect.provideService(McpInvocationContext, invocation),
         );
       expect(disabled.message).toContain("disabled");
-    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+    }).pipe(Effect.scoped, Effect.provide(Layer.merge(testLayer, callerLayer))),
   { timeout: 30_000 },
 );
 

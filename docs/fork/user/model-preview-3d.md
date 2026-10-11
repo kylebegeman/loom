@@ -11,7 +11,7 @@ writes a model** in **Settings > Loom > 3D model** to offer to open, open automa
 nothing. The picker and **3D model: Open models from the last turn** in the command palette
 let you return to those models later. Hide a turn's offer to dismiss it on this browser.
 
-Loom previews STL, 3MF, OBJ, glTF and GLB. Drag to orbit, drag with the middle or right
+Loom previews STL, 3MF, OBJ, glTF, GLB, OpenSCAD, build123d Python and STEP files. Drag to orbit, drag with the middle or right
 button to pan, and scroll to zoom. The floating tools choose a standard or saved view and
 toggle wireframe, the bed and axes. **Display > Orthographic** switches to a projection where
 parallel edges stay parallel, useful for checking alignment against a drawing. The **Bed** menu
@@ -19,9 +19,9 @@ in the viewport sets what the part rests on: a printer's build plate, a flat sur
 A4 sheet or a 1 m square, or a custom size, with a 10 mm grid, a 1 in grid or a plain surface.
 Surfaces have no height limit. The choice is saved for the environment, so the Part tab,
 variants and settings follow it. To keep a custom size, choose **Bed > Custom size**, enter its
-size and **Save as bed**. Named beds appear under Custom. **Manage beds** opens
-**Settings > Loom > 3D model > Beds** to rename, resize or delete them and hide unused presets.
-Save settings to apply those changes; the active preset stays visible.
+size and **Save as bed**. Named beds appear under Custom. **Manage printers** opens
+**Settings > Loom > 3D model > Printers** to rename, resize or delete them and hide unused presets.
+The active preset stays visible.
 Maximize the panel for a larger work area with the inspector alongside your part. In a narrow
 panel the inspector opens as a sheet below the viewport; expand it for long forms, then return
 to the viewport.
@@ -30,7 +30,8 @@ While the panel has focus, **F** fits the model, **O** and **H** choose orbit or
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
 **P** switches perspective and orthographic projection, **V** toggles overhang shading,
 **D** shows or hides the previous version, and **I** shows or hides the inspector.
-Press **L** to choose a face to rest on the bed. With the canvas itself focused, arrow keys
+Press **L** to choose a face to rest on the bed, **T** to open model history,
+and **[** or **]** to step through its turns. **Y** shows or hides sliced layers after an estimate. With the canvas itself focused, arrow keys
 orbit and **Shift + arrows** pan; they leave fields and menus to use their own arrows.
 The canvas names the file and describes its controls. Screen reader announcements report a
 loaded part's dimensions and bed fit, tool changes and capture results.
@@ -54,7 +55,7 @@ of view. Choose **Nothing** to remove it; hiding the bed leaves the reference vi
 
 The panel reloads when a file changes and keeps the camera. For glTF, buffers and textures
 must be below the model's directory, without parent-directory references. Close a tab to
-stop watching its file. STEP files belong in the optional Fabrication app. Long jobs show
+stop watching its file. STEP previews use Python CAD on the host. Long jobs show
 their current stage and elapsed time, and variant batches show completed counts. Your last
 preview stays visible while a replacement is prepared; use Cancel to stop a variant batch.
 
@@ -75,7 +76,7 @@ In **Settings > Loom > 3D model**, set the executable path if automatic detectio
 find it. Save an edited executable path before refreshing detection. Refresh detection after
 installing or changing the executable.
 
-The inspector has five tabs: **Customize** and **Variants** for SCAD files, then **Markup**,
+The inspector has five tabs: **Customize** and **Variants** for source files, then **Markup**,
 **Views** and **Part** for every model. A badge on a tab points to something that needs you,
 such as open change requests or a part that is larger than the bed.
 
@@ -109,6 +110,29 @@ prints that need the same filament in both nozzles. **Show nozzle zones** in the
 Loom settings hides the tint while keeping those fit checks. Position the part in your slicer;
 Loom centres the plate under the model. Clear render cache removes cached outputs.
 
+## Python CAD and STEP
+
+In **Settings > Loom > 3D model**, choose **Set up Python CAD** to install the host's managed
+build123d environment. Install uv first if setup shows manual commands, or select an existing
+Python interpreter with build123d installed. Setup, running build123d source and exporting STEP
+require terminal permission. STEP previews use the normal model permission.
+
+Open a `.b3d.py` file whose `model()` function returns a build123d part. Its customizer values
+and saved sets work through **Customize** and **Variants**, including live preview and undo.
+The renderer passes compatible customizer values to `model()`. **Part > Export STEP** saves
+an editable CAD export of the applied values. Open a STEP file directly for a mesh preview.
+When Python CAD is unavailable, a configured Fabrication link offers a fallback.
+
+## Printers and materials
+
+Use **Settings > Loom > 3D model > Printers** to add a printer or surface, duplicate a built-in
+entry, or import an exported Bambu Studio, OrcaSlicer or PrusaSlicer printer profile. Choose a
+printer from **Bed** to use its build volume and nozzle size. A surface checks only the footprint.
+
+Add materials with density and an optional price per kilogram, then assign them to your printer.
+Saved prices supply print-cost estimates. A missing price leaves cost unknown. Export the library
+for a backup or to import it into another environment; each environment keeps its own library.
+
 ## Show the agent your part
 
 **Capture** attaches the current view to the composer. Its menu attaches a four-view sheet
@@ -125,7 +149,7 @@ without attaching it to the composer. When the browser cannot copy images, inclu
 remote host, copy is disabled and Save PNG remains available. Measurement labels in captures
 use the selected display unit.
 
-Agents can call `loom_model_preview_3d_render` for SCAD, STL, 3MF and OBJ PNG views, logs and
+Agents can call `loom_model_preview_3d_render` for SCAD, build123d, STEP, STL, 3MF and OBJ PNG views, logs and
 geometry summaries. OpenSCAD runs on the environment host. **Let agents render models and propose variants** in
 settings turns every 3D model agent tool on or off, independently of the panel. While it is off,
 agents also cannot change 3D settings, including turning it back on. The tool returns host file paths
@@ -189,7 +213,7 @@ from earlier Loom versions open in perspective. Recalling a view from changed ge
 it. A review sheet captures up to four saved views as one image for the agent, with or without
 measurements, and restores your working view afterward.
 
-For SCAD, **Variants** stores design candidates without changing the active part. Add the current
+For OpenSCAD and build123d, **Variants** stores design candidates without changing the active part. Add the current
 values, a saved parameter set, or a parameter sweep that makes every combination of up to two
 parameters (up to six values each and twelve variants per batch). Keep up to twenty-four
 variants. Open a variant to rename it, edit its values, render it or **Use these values** in
@@ -203,6 +227,34 @@ Views, measurements, review sheets, variants and change requests are saved for t
 this environment and workspace. They survive closing the panel and are shared with other
 clients connected to the same workspace. Support generation remains separate from print checks.
 
+## Review earlier turns
+
+Choose **Model history** or press **T** to see the turns that changed this model or its dependencies.
+Select a turn to preview its checkpoint, or **Start** for the initial file. **Earlier** loads older
+turns. **Now** returns to the workspace. Editing and capture resume when you return to Now.
+Use **Compare** to overlay another version and see dimension and triangle-count differences.
+
+**Restore this version** replaces the workspace file. The dialog offers to restore differing
+included files too. **Undo** reverses the restore while those files still match the restored
+version. History needs a Git workspace and its saved checkpoints; removed checkpoints are
+unavailable. Accepted change requests link to the turn where they were resolved.
+
+## Place parts in an assembly
+
+Choose **New assembly** in the model picker, give it a workspace path ending in
+`.loom-assembly.json`, then **Add part**. Select a part to move or rotate it, align it to another
+part or the origin, or **Drop to bed**. Source parts keep their own parameter values.
+Hide, isolate or explode parts to inspect placement without changing their source files.
+**Markup** measures between parts and pins change requests; **Views** saves cameras and review
+sheets for the assembly. Collapse an exploded view before adding markup. A changed part or
+placement marks existing markup stale.
+
+Use **Fit > Check fit** to find intersections and contact. Add required clearances between
+pairs of parts to check their separation. Selecting a result frames the pair; changed files or
+placement mark the report out of date. Assembly placement and requirements are saved in the
+assembly file, so they travel with the workspace. Fit checks, alignment and drop-to-bed require
+terminal permission; viewing and ordinary placement edits use the normal model permissions.
+
 ## Check a part before printing
 
 Open **Part > Print check** for a report on the mesh, bodies, bed fit, first layer, overhangs,
@@ -213,14 +265,30 @@ shown pins appear in captures. **Check again** reruns the report, and **Cancel**
 check. A changed part keeps its old report marked out of date until the new check finishes.
 
 Set nozzle diameter, overhang limit and first-layer height in **Settings > Loom > 3D model**.
-The report uses the saved nozzle diameter.
+The selected printer supplies its nozzle diameter. The saved nozzle setting is used when the
+printer has no nozzle size.
 Thin walls below two nozzle widths and features below one nozzle width are flagged. The report
 helps locate problems before slicing; bridges can appear as overhangs, and a check that reaches
 its time budget reports which checks were incomplete.
 
 Agents can run `loom_model_preview_3d_check` without opening a panel and receive the same report.
-The check runs on the environment host for STL, OBJ, 3MF, glTF, GLB and SCAD renders. STEP needs
-the optional Fabrication app. Print checks are unavailable in the single-file `t3` executable.
+The check runs on the environment host for STL, OBJ, 3MF, glTF, GLB and source renders.
+STEP and build123d use the host's Python CAD environment. Print checks are unavailable in the single-file `t3` executable.
+
+## Estimate a print and inspect layers
+
+Install Bambu Studio, OrcaSlicer or PrusaSlicer on the environment host. In
+**Settings > Loom > 3D model**, choose the slicer and map the selected printer to machine,
+process and filament presets. Import exported JSON presets or a Prusa INI configuration when
+needed. Save the settings, then choose **Part > Print > Estimate print**.
+
+The estimate reports time, filament, support and cost when prices are available. After a source,
+parameter, orientation or profile change, choose **Estimate again** to refresh it. **Show layers**
+or **Y** opens the layer slider. Move it to inspect toolpaths up to that layer, then hide layers
+to return to the part. Variant cards can estimate their own applied values too.
+
+On a local desktop connection, **Open in slicer** opens the exported project. Web and remote
+connections offer a download instead. Review the project in the slicer before printing.
 
 ## Blender and remote work
 
@@ -230,7 +298,7 @@ add-on. Follow the [mcp-for-blender setup instructions](https://github.com/ahuja
 and verify that the configured executable exists. Export STL, OBJ or glTF into the workspace,
 then open the export in Loom.
 
-Model files and SCAD renders come from the selected environment, so the web and desktop
+Model files, source renders and slicing come from the selected environment, so the web and desktop
 panel works with remote hosts as well as local ones. OpenSCAD and Blender belong on the
 host that owns the workspace. Mobile has no 3D panel. Environments without Loom's 3D feature
 show the panel as unavailable.

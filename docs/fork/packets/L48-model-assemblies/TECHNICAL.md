@@ -65,7 +65,7 @@ export const AssemblyPart = Schema.Struct({
   /** Overrides the file's materials. null keeps them. */
   color: Schema.NullOr(AssemblyColor).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   visible: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  /** SCAD only: name -> OpenSCAD literal, as ScadRenderInput.overrides. */
+  /** SCAD or build123d: name -> compatible literal, as ScadRenderInput.overrides. */
   parameters: Schema.Record(label, Schema.String.check(Schema.isMaxLength(2000)))
     .check(Schema.isMaxProperties(256))
     .pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -393,8 +393,9 @@ change is needed for it.
 
 ### Permissions and capability
 
-- `clientRpcPermissions.ts` (`:24-31` block) and the server scopes: `updateAssembly` and
-  `checkAssembly` use `AuthOrchestrationOperateScope`; `assembly` is a read like `listModels`.
+- `updateAssembly` uses `AuthOrchestrationOperateScope`; operations that need rendered bounds
+  additionally require terminal access. `checkAssembly` uses `AuthTerminalOperateScope` because
+  assemblies can contain Python source parts. `assembly` is a read like `listModels`.
 - `apps/server/src/fork/features.ts`: add `"model-assemblies"` to `LOOM_SERVER_FEATURES`. The
   web shows "New assembly" and the Assemblies filter only when the server lists it.
 
@@ -404,23 +405,24 @@ change is needed for it.
 
 All under `apps/server/src/fork/model-preview-3d/`.
 
-| File                                          | Purpose                                                                             |
-| --------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `assembly.ts` (new)                           | `makeAssemblies(deps)`: `assembly`, `updateAssembly`, `checkAssembly`, list helper. |
-| `assemblyOps.ts` (new)                        | Pure `applyOperations(doc, ops, ctx)`; `ctx.bounds(partId, doc)` is an Effect.      |
-| `check/interfere.ts` (new, worker)            | Broad phase, triangle-triangle tests, contact classification, regions.              |
-| `check/distance.ts` (new, worker)             | Triangle-triangle distance and the bounded clearance search.                        |
-| `check/protocol.ts` (L46, extended)           | `BoundsRequest`, `AssemblyRequest` and their replies.                               |
-| `check/model-check-worker.ts` (L46, extended) | Dispatches on `request.kind`.                                                       |
+| File                          | Purpose                                                                                                  |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `assembly/service.ts`         | Assembly persistence, listing and atomic update operations.                                              |
+| `assembly/operations.ts`      | Ordered placement and clearance operations, with bounds supplied by the checker.                         |
+| `assembly/geometry.ts`        | Resolve meshes, render source parts and probe geometry revisions without rereading mesh bytes.           |
+| `assembly/checker.ts`         | Bounds and fit requests, revision caches and report assembly.                                            |
+| `check/assemblyChecks.ts`     | Broad phase, triangle distance, contact classification, containment and connected regions in the worker. |
+| `check/coordinator.ts`        | Shared print/assembly worker permit and request cancellation.                                            |
+| `check/protocol.ts`           | `BoundsRequest`, `AssemblyWorkerRequest` and typed replies.                                              |
+| `check/model-check-worker.ts` | Dispatch bounds, assembly and print requests.                                                            |
 
 ### Service factory
 
-`makeAssemblies(deps)` is created inside `make` in `ModelPreviewService.ts` and spread into the
-returned service, as L46 does with `makePrintChecker` and L51 with `makePrinterLibrary`. Deps are
-closures the service already has: `resolveWorkspace` (`:142-167`), `resolveFile` (`:168-178`),
-`renderScad` (`:587-622`), `protectStem` (`:135-139`), `metadata` (`:88-102`), `fs`, `path`,
-`entries`, the current `settings`, and from L46 `runCheckWorker`, the shared `jobs`, the
-one-permit `slot` and the cancellation map.
+`ModelPreviewService.make` creates the shared check coordinator, geometry resolver, checker
+and persistence service. The geometry resolver uses the existing file resolution, rendering,
+metadata and cache protection helpers. The checker receives geometry and revision callbacks;
+the persistence service receives bounds callbacks for placement. Print checks use the same
+coordinator, so assembly checks share its worker limit and cancellation path.
 
 ### Reading
 
@@ -436,7 +438,7 @@ one-permit `slot` and the cancellation map.
    360"). Then `validateAssembly`.
 5. Part infos, `concurrency: 8`: `resolvePartPath`, then `resolveFile` for existence, size and
    revision; the format comes from the service's `formats` map (`:71-80`). Errors are per part
-   and never fail the read. STEP parts get "STEP files belong in the Fabrication app.";
+   and never fail the read. STEP and build123d parts use L50's renderer;
    assembly files as parts get "Assemblies cannot contain other assemblies."
 
 ### Writing
@@ -470,7 +472,7 @@ the same code.
 - Mesh parts: read bytes as L46's checker does (format, size limit, `allowLarge` false, revision
   retry) and run the worker with `{ kind: "bounds", format, files, rotation: 9 numbers }`. The
   worker parses, transforms every vertex by the rotation and returns `{ min, max, triangles }`.
-- SCAD parts: `renderScad({ variantId: asmCheckVariant(file, part), file: partFile, overrides:
+- SCAD and build123d parts: `renderModel({ variantId: asmCheckVariant(file, part), file: partFile, overrides:
 part.parameters, parameterSet: part.parameterSet })`, then the same worker request on the
   render output under `protectStem`. With no rotation, `summary.boundingBox` from the render
   result is exact and the worker is skipped.
@@ -486,9 +488,9 @@ part: "on top of" would leave a gap. When the worker is unavailable (single-file
 `checkAssembly({ file, requestId?, pairs?, allowLarge?, force? })`:
 
 1. Read the assembly. Involved parts: both sides of every clearance and, when `pairs` is absent,
-   every visible part; else the parts named in `pairs`. Missing, STEP and failing parts are
-   listed in `skipped` and their pairs omitted.
-2. Geometry per involved part as in Bounds (SCAD through its own check variant). The total
+   every visible part; else the parts named in `pairs`. Missing and failing parts are
+   listed in `skipped` and their pairs omitted. STEP parts are tessellated through L50.
+2. Geometry per involved part as in Bounds (source files through their own check variant). The total
    triangle count is capped at L46's `PRINT_CHECK_MAX_TRIANGLES` (3,000,000): "These parts have
    too many triangles to check together (4,100,000). The limit is 3,000,000. Check fewer pairs."
 3. Key: `sha256([ASSEMBLY_CHECK_VERSION, parts.map(id, geometryRevision, position, rotation),
@@ -717,9 +719,9 @@ assemblies so `{ action: "inspector", name: "part" }` from an agent still lands 
   each, using the existing scrub field behaviour (`scrub.ts`) with steps of 1, Shift 10 and Alt
   0.1 mm and 15 degrees for rotation; buttons for a quarter turn about X, Y and Z (`move-part`
   `rotateBy`), "Drop to bed" and "Align to part..." (a small form: part, axis, mode, offset). A
-  SCAD part shows its parameters with the existing `Parameters.tsx` controls bound to the part's
+  SCAD or build123d part shows its parameters with the shared customizer controls bound to the part's
   `parameters`, committing on release. "Add part" opens the model list filtered to meshes and
-  SCAD files.
+  source CAD files.
 - `AssemblyFitSection.tsx` (new): the assembly's overall size and bed fit (L32's `fitOnBed`
   when present), clearance rows with "Add clearance" (two part selects, a millimetre field,
   optional label) and "Remove", "Check fit" with "Cancel", and the results: one row per reported

@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -11,6 +12,7 @@ import { makeStore } from "./store.ts";
 import { makePrinterLibrary } from "./printers.ts";
 import { layer as NodeServices } from "@effect/platform-node/NodeServices";
 const known = Schema.is(ModelPreviewError);
+const testLayer = Layer.provideMerge(SqlitePersistenceMemory, NodeServices);
 it.effect("migrates once, guards competing edits and resets deleted active printers", () =>
   Effect.gen(function* () {
     yield* runForkMigrationSet(ModelPreviewMigrations);
@@ -57,7 +59,7 @@ it.effect("migrates once, guards competing edits and resets deleted active print
       .pipe(Effect.flip);
     expect(known(conflict) && conflict.reason).toBe("conflict");
     expect(yield* store.getPrinters()).toEqual(Option.some(next));
-  }).pipe(Effect.provide(SqlitePersistenceMemory), Effect.provide(NodeServices)),
+  }).pipe(Effect.provide(testLayer)),
 );
 it.effect("reports corrupt library data instead of silently recreating it", () =>
   Effect.gen(function* () {
@@ -70,5 +72,5 @@ it.effect("reports corrupt library data instead of silently recreating it", () =
     });
     const failure = yield* service.printers().pipe(Effect.flip);
     expect(failure.reason).toBe("command-failed");
-  }).pipe(Effect.provide(SqlitePersistenceMemory), Effect.provide(NodeServices)),
+  }).pipe(Effect.provide(testLayer)),
 );

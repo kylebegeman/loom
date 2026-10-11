@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import { loadCaller, assertFullAccess } from "../../mcp/threadAccess.ts";
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
@@ -13,13 +14,157 @@ import { DEFAULT_RENDER_PROJECTION, View } from "./openscad.ts";
 export const ModelPreview3dToolkit = Toolkit.make(
   Tool.make("loom_model_preview_3d_editor", {
     description:
-      "Open, close, maximize and control the 3D editor: camera, standard views, display, navigation, section, selection tools, inspectors, refresh, saved views, captures and current state. Captures return a host PNG path. Lengths are in millimetres. display can show an everyday object for scale (reference), overhang shading, or the previous model version after a change (previous). Measure picks can snap to corners and edges (snap). Use tool with measure set to hole and one pick near a rim to save a hole diameter, returned as measurement. orientation supports auto, reset, bake, or face with one model-space point; tool lay-flat enables face picking. section.caps controls filled cuts; wall-thickness with one point returns a section-plane wall chord. display.findings shows or hides print-check pins.",
+      "Open, close, maximize and control the 3D editor: camera, standard views, display, navigation, section, selection tools, inspectors, refresh, saved views, captures and current state. Captures return a host PNG path. Lengths are in millimetres. display can show an everyday object for scale (reference), overhang shading, or the previous model version after a change (previous). Measure picks can snap to corners and edges (snap). Use tool with measure set to hole and one pick near a rim to save a hole diameter, returned as measurement. orientation supports auto, reset, bake, or face with one model-space point; tool lay-flat enables face picking. section.caps controls filled cuts; wall-thickness with one point returns a section-plane wall chord. display.findings shows or hides print-check pins. turn-history opens a checkpoint timeline; turn-compare shows another version as a ghost. layers shows sliced toolpaths. explode, isolate and select-part control assemblies.",
     parameters: Schema.Struct({ path: W.ModelFileRef.fields.path, command: W.ModelEditorAction }),
     success: W.ModelEditorResult,
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
     dependencies: [McpInvocationContext, ThreadManagementService],
   })
     .annotate(Tool.Title, "Control 3D editor")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_printers", {
+    description: "Read the environment printer and material library and built-in bed data.",
+    parameters: Tool.EmptyParams,
+    success: Schema.Struct({ library: W.PrinterLibrary, builtIns: Schema.Array(Schema.Unknown) }),
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext],
+  })
+    .annotate(Tool.Title, "3D: printers")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_save_printers", {
+    description:
+      "Save the printer and material library. Read first and pass expectedVersion to detect competing changes.",
+    parameters: W.PrinterLibraryUpdate,
+    success: W.PrinterLibrary,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: save printers")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_read_printer_profile", {
+    description:
+      "Read a workspace JSON machine profile or PrusaSlicer INI config into a draft for review. Does not save.",
+    parameters: Schema.Struct({ path: W.ModelFileRef.fields.path }),
+    success: W.PrinterProfileDraft,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext],
+  })
+    .annotate(Tool.Title, "3D: read printer profile")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_slice", {
+    description:
+      "Estimate print time, filament, support and cost with the mapped host slicer. Returns cached results on request. Never sends anything to a printer.",
+    parameters: Schema.Struct({
+      path: W.ModelFileRef.fields.path,
+      overrides: Schema.optionalKey(W.SliceInput.fields.overrides),
+      parameterSet: Schema.optionalKey(W.SliceInput.fields.parameterSet),
+      variantId: W.SliceInput.fields.variantId,
+      bedId: W.SliceInput.fields.bedId,
+      cachedOnly: W.SliceInput.fields.cachedOnly,
+    }),
+    success: W.SliceResult,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: slice")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_history", {
+    description:
+      "List thread checkpoints that changed this model or its inputs. Use checkpointId with render, restore_version or the editor history commands.",
+    parameters: Schema.Struct({
+      path: W.ModelFileRef.fields.path,
+      cursor: W.ModelHistoryInput.fields.cursor,
+      limit: W.ModelHistoryInput.fields.limit,
+    }),
+    success: W.ModelHistory,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext],
+  })
+    .annotate(Tool.Title, "3D: history")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_restore_version", {
+    description:
+      "Restore one model checkpoint, optionally with its dependencies, or undo the last restore using undoId. expectedContentKey detects a competing edit; read history first.",
+    parameters: Schema.Struct({
+      path: W.ModelFileRef.fields.path,
+      checkpointId: Schema.optionalKey(W.ModelHistoryVersion.fields.checkpointId),
+      undoId: Schema.optionalKey(Schema.String),
+      includeDependencies: Schema.optionalKey(Schema.Boolean),
+      expectedContentKey: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    }),
+    success: Schema.Struct({
+      undoId: Schema.NullOr(Schema.String),
+      restored: Schema.Array(Schema.String),
+    }),
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: restore version")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_assembly", {
+    description: "Read a repository assembly and its resolved part paths.",
+    parameters: Schema.Struct({ path: W.ModelFileRef.fields.path }),
+    success: W.AssemblyReadResult,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext],
+  })
+    .annotate(Tool.Title, "3D: assembly")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_assembly_update", {
+    description:
+      "Create or edit a repository assembly with atomic operations. Pass expectedRevision from a read to detect competing edits. Positions, rotations and clearances are in millimetres and degrees.",
+    parameters: Schema.Struct({
+      path: W.ModelFileRef.fields.path,
+      operations: Schema.Array(W.AssemblyOperation).check(
+        Schema.isMinLength(1),
+        Schema.isMaxLength(64),
+      ),
+      expectedRevision: Schema.optionalKey(Schema.String),
+      createOnly: Schema.optionalKey(Schema.Boolean),
+    }),
+    success: W.AssemblyReadResult,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: assembly update")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_assembly_check", {
+    description:
+      "Check assembly intersections, touching faces, containment and required clearances on the host. A sampled or incomplete result needs review.",
+    parameters: Schema.Struct({
+      path: W.ModelFileRef.fields.path,
+      ...W.AssemblyCheckOptions.fields,
+    }),
+    success: W.AssemblyCheckResult,
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: assembly check")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_model_preview_3d_export_step", {
+    description:
+      "Export a Python CAD model to a STEP file in the workspace. Optional outputPath chooses a workspace-relative destination.",
+    parameters: Schema.Struct({
+      path: W.ModelFileRef.fields.path,
+      overrides: Schema.optionalKey(W.ScadRenderInput.fields.overrides),
+      parameterSet: Schema.optionalKey(W.ScadRenderInput.fields.parameterSet),
+      outputPath: Schema.optionalKey(W.ModelFileRef.fields.path),
+    }),
+    success: Schema.Struct({ path: Schema.String, file: W.SignedFile }),
+    failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "3D: export step")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_status", {
@@ -35,7 +180,19 @@ export const ModelPreview3dToolkit = Toolkit.make(
   Tool.make("loom_model_preview_3d_list", {
     description: "List model files in this thread workspace.",
     parameters: Tool.EmptyParams,
-    success: Schema.Struct({ models: Schema.Array(W.ModelEntry), truncated: Schema.Boolean }),
+    success: Schema.Struct({
+      models: Schema.Array(W.ModelEntry),
+      assemblies: Schema.optionalKey(
+        Schema.Array(
+          Schema.Struct({
+            path: Schema.String,
+            sizeBytes: Schema.Number,
+            modifiedAt: Schema.String,
+          }),
+        ),
+      ),
+      truncated: Schema.Boolean,
+    }),
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
     dependencies: [McpInvocationContext],
   })
@@ -56,7 +213,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_parameters", {
-    description: "Read OpenSCAD customizer parameters and sets.",
+    description: "Read OpenSCAD or Python CAD customizer parameters and sets.",
     parameters: Schema.Struct({ path: W.ModelFileRef.fields.path }),
     success: W.ScadParameters,
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
@@ -192,9 +349,10 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_render", {
     description:
-      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary. fit.beds[].zone.reach is all-zones for shared nozzle reach, one-zone for the listed zoneIds, or whole-bed for the combined bed using the same filament in every nozzle. Set overhangs to also return overhang statistics: area beyond the angle from vertical, and the largest regions with their centres in model coordinates. overhangAngle defaults to the environment setting. Applies the model's saved Loom orientation unless orientation is none. Rendered PNGs remain unshaded; use an editor capture for overhang shading.",
+      "Render workspace SCAD, Python CAD, STEP, STL, 3MF or OBJ to PNG views. Python CAD uses *.b3d.py with def model(...) returning a build123d Shape; defaulted int, float, bool, str, Literal choices and numeric tuples become customizer parameters. Annotated metadata can supply min, max, step, group and description. checkpointId previews an earlier thread checkpoint. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary. fit.beds[].zone.reach is all-zones for shared nozzle reach, one-zone for the listed zoneIds, or whole-bed for the combined bed using the same filament in every nozzle. Set overhangs to also return overhang statistics: area beyond the angle from vertical, and the largest regions with their centres in model coordinates. overhangAngle defaults to the environment setting. Applies the model's saved Loom orientation unless orientation is none. Rendered PNGs remain unshaded; use an editor capture for overhang shading.",
     parameters: Schema.Struct({
       path: Schema.String,
+      checkpointId: Schema.optionalKey(W.ModelHistoryVersion.fields.checkpointId),
       views: Schema.optional(
         Schema.Array(View).check(Schema.isMinLength(1), Schema.isMaxLength(5)),
       ),
@@ -215,7 +373,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
       log: ScadRenderResult.fields.log,
     }),
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
-    dependencies: [McpInvocationContext],
+    dependencies: [McpInvocationContext, ThreadManagementService],
   })
     .annotate(Tool.Title, "Render 3D model")
     .annotate(Tool.Readonly, true)
@@ -248,8 +406,20 @@ const withAgentTools = <A, E, R>(
       return yield* use(service);
     }),
   );
+const cadAccess = (path: string) =>
+  /\.b3d\.py$/i.test(path)
+    ? loadCaller().pipe(
+        Effect.flatMap((caller) =>
+          assertFullAccess(
+            caller,
+            "Running Python CAD needs a full-access caller in default mode.",
+          ),
+        ),
+      )
+    : Effect.void;
 export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (input: {
   path: string;
+  checkpointId?: typeof W.ModelHistoryVersion.Type.checkpointId | undefined;
   views?: ReadonlyArray<typeof View.Type> | undefined;
   overrides?: Readonly<Record<string, string>> | undefined;
   projection?: W.ModelProjection | undefined;
@@ -258,6 +428,7 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
   overhangAngle?: number | undefined;
 }) {
   const threadId = yield* modelThread;
+  yield* cadAccess(input.path);
   return yield* withAgentTools((service) =>
     service.renderImages(
       { threadId, path: input.path },
@@ -265,6 +436,7 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
       input.overrides ?? {},
       input.projection ?? DEFAULT_RENDER_PROJECTION,
       {
+        ...(input.checkpointId ? { checkpointId: input.checkpointId } : {}),
         ...(input.overhangs ? { overhangs: { angle: input.overhangAngle } } : {}),
         ...(input.orientation ? { orientation: input.orientation } : {}),
       },
@@ -284,6 +456,128 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
           return yield* withAgentTools((service) => service.editorAction({ ...input, threadId }));
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
+      loom_model_preview_3d_printers: McpToolAccess.readsAsCaller(() =>
+        Effect.gen(function* () {
+          yield* modelThread;
+          return yield* withAgentTools((service) =>
+            service
+              .printers()
+              .pipe(
+                Effect.map((library) => ({
+                  library,
+                  builtIns: Object.values(W.BUILT_IN_PRINTERS),
+                })),
+              ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_save_printers: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          yield* modelThread;
+          return yield* withAgentTools((service) => service.updatePrinters(input));
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_read_printer_profile: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          return yield* withAgentTools((service) =>
+            service.readPrinterProfile({ threadId, path: input.path }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_slice: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const { path, overrides, parameterSet, ...options } = input;
+          yield* cadAccess(path);
+          return yield* withAgentTools((service) =>
+            service.slice({
+              file: { threadId, path },
+              overrides: overrides ?? {},
+              parameterSet: parameterSet ?? null,
+              ...options,
+            }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_history: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const { path, ...options } = input;
+          return yield* withAgentTools((service) =>
+            service.history({ file: { threadId, path }, ...options }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_restore_version: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const file = { threadId, path: input.path };
+          return yield* withAgentTools((service) =>
+            Effect.gen(function* () {
+              if (input.undoId && !input.checkpointId) {
+                yield* service.historyUndo({ file, undoId: input.undoId });
+                return { undoId: null, restored: [] as string[] };
+              }
+              if (!input.checkpointId || input.undoId)
+                return yield* new ModelPreviewError({
+                  reason: "invalid-parameter",
+                  message: "Choose either checkpointId or undoId.",
+                });
+              const expectedContentKey =
+                input.expectedContentKey !== undefined
+                  ? input.expectedContentKey
+                  : (yield* service.history({ file })).current.contentKey;
+              return yield* service.historyRestore({
+                file,
+                checkpointId: input.checkpointId,
+                expectedContentKey,
+                includeDependencies: input.includeDependencies ?? false,
+              });
+            }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_assembly: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          return yield* withAgentTools((service) =>
+            service.assembly({ threadId, path: input.path }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_assembly_update: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const { path, ...options } = input;
+          return yield* withAgentTools((service) =>
+            service.updateAssembly({ file: { threadId, path }, ...options }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_assembly_check: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const { path, ...options } = input;
+          return yield* withAgentTools((service) =>
+            service.checkAssembly({ file: { threadId, path }, ...options }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_model_preview_3d_export_step: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* modelThread;
+          const { path, overrides, parameterSet, outputPath } = input;
+          return yield* withAgentTools((service) =>
+            service.exportStepTo({
+              file: { threadId, path },
+              overrides: overrides ?? {},
+              parameterSet: parameterSet ?? null,
+              ...(outputPath ? { outputPath } : {}),
+            }),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
       loom_model_preview_3d_status: McpToolAccess.readsAsCaller((_input) =>
         Effect.gen(function* () {
           yield* modelThread;
@@ -293,7 +587,7 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
       loom_model_preview_3d_list: McpToolAccess.readsAsCaller((_input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
-          return yield* withAgentTools((service) => service.listModels(threadId));
+          return yield* withAgentTools((service) => service.listModels(threadId, ["build123d"]));
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_model_preview_3d_file: McpToolAccess.readsAsCaller((input) =>
@@ -340,8 +634,9 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
       loom_model_preview_3d_render_mesh: McpToolAccess.actsAsCaller((input) =>
         Effect.gen(function* () {
           const threadId = yield* modelThread;
+          yield* cadAccess(input.path);
           return yield* withAgentTools((service) =>
-            service.renderScad({
+            service.renderModel({
               file: { threadId, path: input.path },
               overrides: input.overrides,
               parameterSet: input.parameterSet,
@@ -392,7 +687,7 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
-      loom_model_preview_3d_render: McpToolAccess.readsAsCaller(
+      loom_model_preview_3d_render: McpToolAccess.actsAsCaller(
         (input: Parameters<typeof renderModelTool>[0]) =>
           renderModelTool(input).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),

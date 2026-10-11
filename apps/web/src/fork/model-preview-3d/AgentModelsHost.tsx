@@ -24,7 +24,7 @@ function AgentModelsStream({
   const result = useAtomValue(
     models.turnModelEvents({
       environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId },
+      input: { threadId: threadRef.threadId, include: ["build123d"] },
     }),
   );
   const event = Option.getOrNull(AsyncResult.value(result));

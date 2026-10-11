@@ -42,6 +42,9 @@ import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
 import { ProcessRunner, type ProcessRunOutput, type ProcessRunInput } from "../../processRunner.ts";
 const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
+const decodePythonRequest = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
 const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const output = (stderr = "", timedOut = false): ProcessRunOutput => ({
   stdout: "",
@@ -105,6 +108,7 @@ const setup = Effect.gen(function* () {
   const serverConfig = yield* Config.ServerConfig.pipe(Effect.provide(context));
   yield* runForkMigrationSet(ModelPreviewMigrations);
   let worktreePath: string | null = null;
+  let pythonRenders = 0;
   let renders = 0,
     timeout = false;
   let summaryJson = json({ geometry: { simple: true, facets: 12 } });
@@ -134,6 +138,73 @@ const setup = Effect.gen(function* () {
         if (input.command === "git") {
           gitCalls++;
           return yield* liveRunner.run(input).pipe(Effect.orDie);
+        }
+        if (input.args.includes("-I")) {
+          const request = yield* decodePythonRequest(input.stdin ?? "{}");
+          const command = input.args.at(-1);
+          const resultPath = String(request.resultPath);
+          if (command === "probe") {
+            yield* fs.writeFileString(
+              resultPath,
+              json({ ok: true, python: "3.13.7", build123d: "0.13.0", log: [] }),
+            );
+            return output();
+          }
+          if (command === "inspect") {
+            yield* fs.writeFileString(
+              resultPath,
+              json({
+                ok: true,
+                parameters: [
+                  {
+                    name: "width",
+                    group: "",
+                    description: null,
+                    kind: "number",
+                    defaultValue: "2",
+                    range: { min: 1, max: 10, step: 1 },
+                    options: null,
+                  },
+                ],
+                log: [],
+              }),
+            );
+            return output();
+          }
+          pythonRenders++;
+          runs.push(input);
+          const target = String(request.output);
+          if (duringRender) yield* duringRender;
+          if (block) {
+            yield* fs.writeFileString(target, "incomplete mesh");
+            const current = block;
+            block = null;
+            return yield* Deferred.succeed(current.started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() => Deferred.succeed(current.cancelled, undefined)),
+            );
+          }
+          if (timeout) return output("", true);
+          if (command === "export-step") yield* fs.writeFileString(target, "ISO-10303-21;");
+          else yield* fs.writeFile(target, binaryMesh([0, 0, 0, 10, 0, 0, 0, 10, 0]));
+          yield* fs.writeFileString(
+            String(request.depsPath),
+            `${target}: ${String(request.source)} ${path.join(root, "models/helper.py")}\n`,
+          );
+          yield* fs.writeFileString(
+            resultPath,
+            json({
+              ok: true,
+              log: [{ level: "echo", text: "Python model rendered" }],
+              summary: {
+                manifold: true,
+                facets: 1,
+                vertices: null,
+                boundingBox: { min: [0, 0, 0], max: [10, 10, 0] },
+              },
+            }),
+          );
+          return output();
         }
         if (input.args.includes("--version")) return output("OpenSCAD version 2026.10.05");
         if (input.args.includes("--help"))
@@ -229,6 +300,7 @@ const setup = Effect.gen(function* () {
     file,
     create,
     getRenders: () => renders,
+    getPythonRenders: () => pythonRenders,
     initGit: () => liveRunner.run({ command: "git", args: ["init", "--quiet"], cwd: root }),
     getGitCalls: () => gitCalls,
     getRefreshCalls: () => refreshCalls,
@@ -1062,6 +1134,7 @@ it.effect("maps current ready root checkpoints through a real Git workspace pref
     expect(result).toMatchObject({ turn: 3, checkpointId: "checkpoint-3", truncated: false });
     expect(result.models).toEqual([
       { path: "shape.scad", format: "scad", reason: "written", via: null },
+      { path: "part.step", format: "step", reason: "written", via: null },
       { path: "part.scad", format: "scad", reason: "dependency", via: "shape.scad" },
     ]);
     expect((yield* service.turnModels(t.file.threadId, RunId.make("run-2"))).models).toEqual([]);
@@ -1388,4 +1461,207 @@ it.effect("old settings updates retain named beds and later display and print se
       })).buildPlate.customBeds,
     ).toEqual([]);
   }).pipe(Effect.provide(testLayer), Effect.scoped),
+);
+
+it.effect(
+  "Python models opt into listings and share parameters, sets, dependency caching and STEP export",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create();
+      const file = { ...t.file, path: "models/bracket.b3d.py" };
+      yield* t.fs.writeFileString(
+        t.path.join(t.root, file.path),
+        "def model(width: int = 2): return width\n",
+      );
+      yield* t.fs.writeFileString(t.path.join(t.root, "models/helper.py"), "VALUE=1");
+      t.setEntries([file.path, "models/part.scad"]);
+      expect((yield* service.listModels(file.threadId)).models.map((m) => m.path)).toEqual([
+        "models/part.scad",
+      ]);
+      expect(
+        (yield* service.listModels(file.threadId, ["build123d"])).models.map((m) => m.format),
+      ).toEqual(["build123d", "scad"]);
+      yield* service.updateSettings({
+        ...(yield* service.getSettings()),
+        pythonPath: "fake-python",
+      });
+      expect((yield* service.status()).python.state).toBe("ready");
+      const parameters = yield* service.parameters(file);
+      expect(parameters.parameters[0]?.name).toBe("width");
+      yield* service.saveParameterSet(file, "Wide", { width: "6" });
+      expect(yield* t.fs.exists(t.path.join(t.root, "models/bracket.json"))).toBe(true);
+      const input = { file, overrides: {}, parameterSet: "Wide" };
+      const first = yield* service.renderPython(input),
+        cached = yield* service.renderPython(input);
+      expect(first.status).toBe("ok");
+      expect(cached.cached).toBe(true);
+      expect(cached.mesh?.revision).toBe(first.mesh?.revision);
+      expect((yield* service.parameters(file)).lastUsedSet).toBe("Wide");
+      const before = t.getPythonRenders();
+      yield* t.fs.writeFileString(t.path.join(t.root, "models/helper.py"), "VALUE=200");
+      expect((yield* service.renderPython(input)).cached).toBe(false);
+      expect(t.getPythonRenders()).toBe(before + 1);
+      const step = yield* service.exportStep(input);
+      expect(step.relativeUrl.endsWith(".step")).toBe(true);
+      expect((yield* service.exportStep(input)).revision).toBe(step.revision);
+      expect((yield* Effect.flip(service.renderScad(input))).reason).toBe("unsupported-format");
+    }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("STEP tessellation caches data and rejects source overrides", () =>
+  Effect.gen(function* () {
+    const t = yield* setup,
+      service = yield* t.create();
+    yield* service.updateSettings({ ...(yield* service.getSettings()), pythonPath: "fake-python" });
+    const input = {
+      file: { ...t.file, path: "models/part.step" },
+      overrides: {},
+      parameterSet: null,
+    };
+    const first = yield* service.renderScad(input);
+    expect(first.status).toBe("ok");
+    expect((yield* service.renderScad(input)).cached).toBe(true);
+    expect(
+      (yield* Effect.flip(service.renderScad({ ...input, overrides: { width: "3" } }))).reason,
+    ).toBe("invalid-parameter");
+    expect(t.getPythonRenders()).toBe(1);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("Python rendering rejects changed inputs and does not publish pending output", () =>
+  Effect.gen(function* () {
+    const t = yield* setup,
+      service = yield* t.create();
+    yield* service.updateSettings({ ...(yield* service.getSettings()), pythonPath: "fake-python" });
+    const file = { ...t.file, path: "models/bracket.b3d.py" },
+      absolute = t.path.join(t.root, file.path);
+    yield* t.fs.writeFileString(absolute, "def model(width: int = 2): return width\n");
+    t.setDuringRender(t.fs.writeFileString(absolute, "def model(width: int = 3): return width\n"));
+    const result = yield* service.renderPython({ file, overrides: {}, parameterSet: null });
+    expect(result.status).toBe("error");
+    expect(result.log.at(-1)?.text).toContain("inputs changed");
+    expect(
+      (yield* t.fs.readDirectory(t.path.join(t.stateDir, "fork/model-preview-3d/renders"))).filter(
+        (name) => name.endsWith(".stl"),
+      ),
+    ).toEqual([]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect(
+  "Python jobs cancel prior renders and keep variant parameters out of last-used values",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create();
+      yield* service.updateSettings({
+        ...(yield* service.getSettings()),
+        pythonPath: "fake-python",
+      });
+      const file = { ...t.file, path: "models/bracket.b3d.py" };
+      yield* t.fs.writeFileString(
+        t.path.join(t.root, file.path),
+        "def model(width: int = 2): return width\n",
+      );
+      const started = yield* Deferred.make<void>(),
+        cancelled = yield* Deferred.make<void>();
+      t.block(started, cancelled);
+      const first = yield* service
+        .renderPython({ file, overrides: { width: "3" }, parameterSet: null, variantId: "test" })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      const next = yield* service.renderPython({
+        file,
+        overrides: { width: "4" },
+        parameterSet: null,
+        variantId: "test",
+      });
+      yield* Deferred.await(cancelled);
+      expect(next.status).toBe("ok");
+      expect((yield* Fiber.join(first)).status).toBe("cancelled");
+      expect((yield* service.parameters(file)).lastUsed).toEqual({});
+    }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("turn model lookups and streams include Python only when the client opts in", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    yield* t.initGit();
+    const pythonPath = "models/bracket.b3d.py";
+    yield* t.fs.writeFileString(
+      t.path.join(t.root, pythonPath),
+      "def model(width: int = 2): return width\n",
+    );
+    t.setEntries([pythonPath, "models/part.stl"]);
+    const record = checkpoint(t.file.threadId, 1, [pythonPath, "models/part.stl"]);
+    t.setCheckpoints([record]);
+    t.setEvents(Stream.fromIterable([checkpointEvent(record)]));
+    const service = yield* t.create();
+    const old = yield* service.turnModels(t.file.threadId, record.runId);
+    expect(old.models.map((model) => model.format)).toEqual(["stl"]);
+    const modern = yield* service.turnModels(t.file.threadId, record.runId, ["build123d"]);
+    expect(modern.models.map((model) => model.format)).toEqual(["build123d", "stl"]);
+    const oldStream = yield* Stream.runCollect(service.turnModelEvents(t.file.threadId));
+    expect(oldStream[0]?.models.map((model) => model.format)).toEqual(["stl"]);
+    const modernStream = yield* Stream.runCollect(
+      service.turnModelEvents(t.file.threadId, ["build123d"]),
+    );
+    expect(modernStream[0]?.models.map((model) => model.format)).toEqual(["build123d", "stl"]);
+  }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect(
+  "integrated assembly and printer services persist edits and expose assembly discovery",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const service = yield* t.create();
+      const file = { ...t.file, path: "models/case.loom-assembly.json" };
+      const created = yield* service.updateAssembly({
+        file,
+        createOnly: true,
+        operations: [
+          { op: "set-name", name: "Board and case" },
+          { op: "add-part", id: "source", path: t.file.path, parameters: { width: "4" } },
+          { op: "add-part", id: "mesh", path: "models/part.stl", position: [0, 0, 5] },
+          { op: "set-clearance", id: "gap", a: "source", b: "mesh", requiredMm: 0.5 },
+        ],
+      });
+      expect(created.assembly.parts.map((part) => part.path)).toEqual(["part.scad", "part.stl"]);
+      expect(created.parts.map((part) => part.path)).toEqual([
+        "models/part.scad",
+        "models/part.stl",
+      ]);
+      t.setEntries([file.path, t.file.path]);
+      const listing = yield* service.listModels(file.threadId);
+      expect(listing.assemblies.map((entry) => entry.path)).toEqual([file.path]);
+      expect(listing.models.map((entry) => entry.path)).toEqual([t.file.path]);
+      const library = yield* service.printers();
+      const saved = yield* service.updatePrinters({
+        expectedVersion: library.version,
+        printers: library.printers,
+        hiddenBuiltIns: library.hiddenBuiltIns,
+        materials: library.materials.map((material) => ({ ...material, costPerKg: 31 })),
+      });
+      const restarted = yield* t.create();
+      expect(yield* restarted.assembly(file)).toEqual(created);
+      expect(yield* restarted.printers()).toEqual(saved);
+    }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("Python PNG previews preserve the customizer's last-used values", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    const file = { ...t.file, path: "models/bracket.b3d.py" };
+    yield* t.fs.writeFileString(
+      t.path.join(t.root, file.path),
+      "def model(width: int = 2): return width\n",
+    );
+    yield* service.updateSettings({ ...(yield* service.getSettings()), pythonPath: "fake-python" });
+    yield* service.renderPython({ file, overrides: { width: "4" }, parameterSet: null });
+    yield* service.renderImages(file, ["iso"], { width: "3" });
+    expect((yield* service.parameters(file)).lastUsed).toEqual({ width: "4" });
+  }).pipe(Effect.provide(testLayer)),
 );

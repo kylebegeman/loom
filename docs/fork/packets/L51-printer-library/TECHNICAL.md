@@ -218,9 +218,10 @@ it keep compiling. `buildPlateLabel(setting, library?)` is `activeBed(...).label
 No new settings field (Decision 2 in PRODUCT.md). If L33 has not landed, L51 adds exactly
 L33's `customBedId` (`Schema.NullOr(CustomBedId)` with a `null` decoding default) and nothing
 else. If L33 has landed, `customBeds` and `hiddenPresets` stay in `BuildPlateSetting` for the
-migration and for rollback, and are removed from `BuildPlateSettingUpdate` so no client or
-agent writes them again. Effect Schema strips unknown keys, so an older client that still
-sends them is ignored rather than rejected.
+migration, rollback and older clients. They remain accepted in `BuildPlateSettingUpdate`
+for compatibility. After migration the versioned printer library is authoritative for the
+new client; library editors write `updatePrinters`, and older-server clients retain L33's
+settings editor.
 
 ### RPC methods
 

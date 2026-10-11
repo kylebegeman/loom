@@ -1,6 +1,6 @@
 # L51: Printer library
 
-Status: Needs decision: library storage and the bed setting change.
+Status: Implemented locally (`feat/model-history-assemblies-slicing-cad`).
 
 Approved by Kyle on 2026-10-10.
 

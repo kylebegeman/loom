@@ -1,6 +1,6 @@
 import type { ModelFormat } from "@t3tools/contracts/fork";
 
-/** Formats the client viewer supports; STEP preview support belongs to L50. */
+/** Formats supported by direct loading or host rendering. */
 export const PREVIEWABLE_FORMATS: ReadonlySet<ModelFormat> = new Set([
   "stl",
   "3mf",
@@ -8,6 +8,8 @@ export const PREVIEWABLE_FORMATS: ReadonlySet<ModelFormat> = new Set([
   "glb",
   "gltf",
   "scad",
+  "step",
+  "build123d",
 ]);
 /** Literal include, import and surface inputs OpenSCAD can consume. */
 export const SCAD_INPUT_EXTENSIONS: ReadonlySet<string> = new Set([
