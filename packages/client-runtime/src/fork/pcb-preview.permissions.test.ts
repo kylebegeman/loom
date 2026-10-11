@@ -43,6 +43,7 @@ it.effect.each([
   "renderVariant",
   "cancelVariant",
   "enclosure",
+  "exportReference",
   "updateProjectSettings",
   "pinMap",
   "historyRestore",
@@ -56,10 +57,7 @@ it.effect.each([
       const command = createPcbPreviewAtoms(runtime)[method];
       const policy = createCommandPermissions(runtime, PCB_PREVIEW_WS_METHODS[method]);
       const scope =
-        method === "enclosure" ||
-        method === "pinMap" ||
-        method === "historyRestore" ||
-        method === "historyUndo"
+        method === "pinMap" || method === "historyRestore" || method === "historyUndo"
           ? AuthOrchestrationOperateScope
           : AuthTerminalOperateScope;
       const granted = scope === AuthTerminalOperateScope;

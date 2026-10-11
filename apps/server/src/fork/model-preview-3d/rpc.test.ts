@@ -73,6 +73,12 @@ it.effect(
           operations: [{ op: "align", id: "part", to: "origin", axis: "z", mode: "min" }],
         }),
       ];
+      const placement = operate[M.updateAssembly]({
+        file: { ...python, path: "kit.loom-assembly.json" },
+        operations: [{ op: "place-board", id: "board" }],
+      });
+      const placementFailure = yield* Effect.flip(placement);
+      expect(placementFailure._tag).toBe("EnvironmentAuthorizationError");
       for (const request of denied) {
         const failure = yield* Effect.flip(request.pipe(Effect.asVoid));
         expect(failure._tag).toBe("EnvironmentAuthorizationError");

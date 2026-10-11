@@ -8,6 +8,7 @@ import {
   type PcbInspection,
   type PcbEnclosureInput,
   type PcbEnclosureResult,
+  type PcbReferenceResult,
   type AssemblyOperation,
 } from "@t3tools/contracts/fork";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
@@ -39,6 +40,13 @@ const DIMENSIONS = [
   ["assumedHeightMm", "Missing model height", 10, 0, 100],
 ] as const;
 type Job = PcbEnclosureInput & { revision: number };
+const boardReferencePath = (reference: PcbReferenceResult) => {
+  if (!reference.relativePath)
+    throw new Error(
+      "This server did not return a workspace-relative board reference. Update the Loom server and retry.",
+    );
+  return reference.relativePath;
+};
 export function EnclosureTab({
   threadRef,
   design,
@@ -198,7 +206,11 @@ export function EnclosureTab({
         input: { threadId: threadRef.threadId, designId: design.id },
       });
       await assembly.apply([
-        { op: "swap-board", id: snapshot.assembly.enclosure.board, path: reference.relativePath! },
+        {
+          op: "swap-board",
+          id: snapshot.assembly.enclosure.board,
+          path: boardReferencePath(reference),
+        },
       ]);
     } catch (cause) {
       if (alive.current) setError(errorText(cause, "Could not update the board."));
@@ -220,8 +232,15 @@ export function EnclosureTab({
         caseId = slugId("case", [...ids, board]);
       const operations: AssemblyOperation[] = [
         ...(snapshot?.assembly.enclosure
-          ? [{ op: "swap-board" as const, id: board, path: reference.relativePath! }]
-          : [{ op: "add-part" as const, id: board, name: "Board", path: reference.relativePath! }]),
+          ? [{ op: "swap-board" as const, id: board, path: boardReferencePath(reference) }]
+          : [
+              {
+                op: "add-part" as const,
+                id: board,
+                name: "Board",
+                path: boardReferencePath(reference),
+              },
+            ]),
         { op: "add-part", id: caseId, name: "Case", path: casePath.trim() },
         { op: "set-enclosure", board, parts: [caseId] },
         { op: "place-board", id: board },
@@ -250,6 +269,11 @@ export function EnclosureTab({
     );
   return (
     <Scroll>
+      {!allowed && (
+        <Notice>
+          This connection does not permit running CAD tools to generate or update a case.
+        </Notice>
+      )}
       <Section title="Board reference">
         <p>
           The case follows this board's outline, mounting holes, component heights and edge
@@ -449,7 +473,13 @@ export function EnclosureTab({
                   variant="ghost"
                   size="xs"
                   disabled={busy || assembly.readOnly}
-                  onClick={() => void assembly.revert()}
+                  onClick={() => {
+                    setError(null);
+                    void assembly.revert().catch((cause: unknown) => {
+                      if (alive.current)
+                        setError(errorText(cause, "Could not undo the board change."));
+                    });
+                  }}
                 >
                   Undo board change
                 </Button>

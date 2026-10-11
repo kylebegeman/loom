@@ -113,6 +113,22 @@ it("clears local undo after an external save so Undo cannot erase another editor
   expect(state.canUndo).toBe(false);
   expect(state.snapshot?.revision).toBe("external");
 });
+it("keeps the save failure visible after refreshing an intervening edit", async () => {
+  await mount();
+  mocks.run.mockImplementation((command) =>
+    command === mocks.update
+      ? Promise.reject(new Error("The assembly changed. Reload and retry."))
+      : Promise.resolve(snapshot("external")),
+  );
+  await act(async () => {
+    await expect(state.apply([{ op: "set-name", name: "Saved" }])).rejects.toThrow(
+      "assembly changed",
+    );
+  });
+  expect(state.snapshot?.revision).toBe("external");
+  expect(state.error).toBe("The assembly changed. Reload and retry.");
+  expect(state.busy).toBe(false);
+});
 it("builds portable restore operations and guards Python checks before sending a command", async () => {
   const source = {
     ...snapshot("python"),
@@ -225,3 +241,13 @@ it.each(["board", "case"])(
     ).toContainEqual({ op: "clear-enclosure" });
   },
 );
+
+it("refuses board placement before sending a CAD-capable mutation without terminal permission", async () => {
+  mocks.terminal = false;
+  await mount();
+  const count = mocks.run.mock.calls.length;
+  await expect(state.apply([{ op: "place-board", id: "board" }])).rejects.toThrow(
+    "does not permit positioning",
+  );
+  expect(mocks.run).toHaveBeenCalledTimes(count);
+});

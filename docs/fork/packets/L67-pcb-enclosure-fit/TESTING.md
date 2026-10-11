@@ -13,11 +13,13 @@ Focused tests exercise the generated source, assembly operations and enclosure w
 | `packages/contracts/src/fork/model-assembly.test.ts`                   | Version 1 and version 2 compatibility, writer version selection and enclosure part validation.                                                                                                                                             |
 | `apps/server/src/fork/model-preview-3d/assembly/operations.test.ts`    | Requirement patches, rotated board placement, frame-preserving replacement and removing dangling enclosure references.                                                                                                                     |
 | `apps/server/src/fork/model-preview-3d/check/enclosure.test.ts`        | Synthetic wall and lid clearance, connector openings, solid, missing, displaced and embedded bosses, corrective moves, open meshes and closed hollow cavities. Floor samples omit drilled holes, whose boss contact is checked separately. |
+| `apps/server/src/fork/pcb-preview/rpc.test.ts`                         | Denied enclosure and reference-export calls cannot start CAD work; terminal grants reach the service.                                                                                                                                      |
+| `apps/web/src/fork/pcb-preview/EnclosureTab.interactions.test.tsx`     | CAD permission notices, legacy reference rejection before assembly writes, portable case creation and failed undo feedback.                                                                                                                |
 | `apps/web/src/fork/pcb-preview/enclosureState.test.ts`                 | Capability combinations, assembly path and stale board reference detection.                                                                                                                                                                |
-| `apps/web/src/fork/model-preview-3d/useAssembly.test.tsx`              | Existing save/undo behavior and restoring enclosure requirements after replacing either the board or a selected case part.                                                                                                                 |
-| `packages/client-runtime/src/fork/pcb-preview.permissions.test.ts`     | Enclosure commands respect destination environment grants.                                                                                                                                                                                 |
+| `apps/web/src/fork/model-preview-3d/useAssembly.test.tsx`              | Save/undo behavior, preserving failed-save errors after refresh, terminal permission for board placement, and restoring enclosure requirements after part replacement.                                                                     |
+| `packages/client-runtime/src/fork/pcb-preview.permissions.test.ts`     | Enclosure and reference-export commands require destination terminal grants.                                                                                                                                                               |
 
-The existing assembly checker, geometry and authorization tests also passed in the focused implementation runs. Contracts, client runtime, server and web package typechecks passed, along with lint of changed files. One existing editor completion-bridge test timed out on its first run and passed on rerun; it was not disabled or changed for L67.
+The existing assembly checker, geometry and authorization tests also passed in the focused implementation runs. Contracts, client runtime, server and web package typechecks passed, along with lint of changed files. The PCB editor completion test acquires its event stream before requesting an action, so asynchronous design resolution cannot race subscription setup.
 
 ## Real OpenSCAD proof
 
@@ -48,6 +50,8 @@ Run only the files affected by subsequent changes. These paths match the current
   apps/server/src/fork/model-preview-3d/assembly/operations.test.ts \
   apps/server/src/fork/model-preview-3d/check/enclosure.test.ts \
   packages/contracts/src/fork/model-assembly.test.ts \
+  apps/server/src/fork/pcb-preview/rpc.test.ts \
+  apps/web/src/fork/pcb-preview/EnclosureTab.interactions.test.tsx \
   apps/web/src/fork/pcb-preview/enclosureState.test.ts \
   apps/web/src/fork/model-preview-3d/useAssembly.test.tsx \
   packages/client-runtime/src/fork/pcb-preview.permissions.test.ts

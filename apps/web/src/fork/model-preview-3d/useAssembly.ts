@@ -149,8 +149,11 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
     async (operations: readonly AssemblyOperation[], remember = true) => {
       const current = latest.current;
       if (!current || !canEdit || current.readOnly) throw new Error("This assembly is read-only.");
-      if (!canTerminal && operations.some((operation) => operation.op === "align"))
-        throw new Error("This connection does not permit aligning assembly parts.");
+      if (
+        !canTerminal &&
+        operations.some((operation) => operation.op === "align" || operation.op === "place-board")
+      )
+        throw new Error("This connection does not permit positioning assembly parts.");
       if (saving.current) throw new Error("Wait for the current save to finish.");
       saving.current = true;
       setBusy(true);
@@ -175,8 +178,8 @@ export function useAssembly(threadRef: ScopedThreadRef, path: string, active: bo
           setUndoCount(undo.current.length);
         }
       } catch (cause) {
-        setError(message(cause));
         await refresh();
+        setError(message(cause));
         throw cause;
       } finally {
         saving.current = false;

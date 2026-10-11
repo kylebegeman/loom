@@ -273,8 +273,10 @@ W.PcbEnclosureResult, error: errors })` after `exportReference` (`:249-253`).
 
 ### `packages/contracts/src/fork/clientRpcPermissions.ts`
 
-`[P.enclosure]: AuthOrchestrationOperateScope`, beside `exportReference` (`:19`), because it
-runs the board export and writes workspace files.
+`[P.enclosure]: AuthTerminalOperateScope` and `[P.exportReference]: AuthTerminalOperateScope`,
+because both can execute CAD or circuit tools to export the board. Client permission atoms
+and server authorization use the same scope. Assembly `place-board`, like `align`, also
+requires terminal permission because it can render case geometry to compute bounds.
 
 ### L48's `packages/contracts/src/fork/model-assembly.ts` (fork-owned, phase B)
 

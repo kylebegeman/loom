@@ -84,7 +84,7 @@ export const makeModelPreviewRpcHandlers = (auth: ForkRpcAuth) =>
       [M.updateAssembly]: (input: Parameters<typeof service.updateAssembly>[0]) =>
         auth.effect(
           M.updateAssembly,
-          input.operations.some((op) => op.op === "align")
+          input.operations.some((op) => op.op === "align" || op.op === "place-board")
             ? withTerminal(service.updateAssembly(input))
             : service.updateAssembly(input),
         ),

@@ -38,8 +38,8 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [P.simulate]: AuthTerminalOperateScope,
   [P.library]: AuthOrchestrationReadScope,
   [P.updateLibrary]: AuthOrchestrationOperateScope,
-  [P.enclosure]: AuthOrchestrationOperateScope,
-  [P.exportReference]: AuthOrchestrationOperateScope,
+  [P.enclosure]: AuthTerminalOperateScope,
+  [P.exportReference]: AuthTerminalOperateScope,
   [P.workspaceUpdates]: AuthOrchestrationReadScope,
   [P.panelEvents]: AuthOrchestrationReadScope,
   [P.editorEvents]: AuthOrchestrationReadScope,
@@ -180,11 +180,17 @@ const denied = (scope: AuthEnvironmentScope) =>
 
 /** Authorization for fork handlers, bound to one connection. The server group instruments calls. */
 export const makeForkRpcAuth = (session: AuthenticatedSession) => ({
-  effect: <A, E, R>(method: ForkRpcMethod, effect: Effect.Effect<A, E, R>) => {
+  effect: <A, E, R>(
+    method: ForkRpcMethod,
+    effect: Effect.Effect<A, E, R>,
+  ): Effect.Effect<A, E | EnvironmentAuthorizationError, R> => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
     return session.scopes.includes(scope) ? effect : Effect.fail(denied(scope));
   },
-  stream: <A, E, R>(method: ForkRpcMethod, stream: Stream.Stream<A, E, R>) => {
+  stream: <A, E, R>(
+    method: ForkRpcMethod,
+    stream: Stream.Stream<A, E, R>,
+  ): Stream.Stream<A, E | EnvironmentAuthorizationError, R> => {
     const scope = FORK_RPC_REQUIRED_SCOPES[method];
     return session.scopes.includes(scope) ? stream : Stream.fail(denied(scope));
   },
