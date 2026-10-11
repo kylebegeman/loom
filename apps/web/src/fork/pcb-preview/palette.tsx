@@ -34,6 +34,15 @@ export const pcbPreviewPaletteSource: ForkCommandPaletteSource = {
             })),
             {
               kind: "action" as const,
+              value: "action:loom:pcb-preview:sweep",
+              title: "PCB: Sweep circuit parameters",
+              description: "Compare parameter candidates for a tscircuit design",
+              icon: <CircuitBoardIcon className="size-4" />,
+              searchTerms: ["pcb", "tscircuit", "variants", "sweep"],
+              run: async () => dispatchPcbAction(activeThreadRef, "sweep"),
+            },
+            {
+              kind: "action" as const,
               value: "action:loom:pcb-preview:request",
               title: "PCB preview: Request a change",
               description: "Ask for a change to the selected component, net or area",

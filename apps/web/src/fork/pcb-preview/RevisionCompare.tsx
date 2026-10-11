@@ -308,11 +308,15 @@ export function ComparisonImages({
   after,
   mode,
   opacity,
+  beforeLabel = "Previous board revision",
+  afterLabel = "Current board revision",
 }: {
   before: string;
   after: string;
   mode: Mode;
   opacity: number;
+  beforeLabel?: string;
+  afterLabel?: string;
 }) {
   const [urls, setUrls] = useState<string[]>([]);
   useEffect(() => {
@@ -326,11 +330,11 @@ export function ComparisonImages({
   }, [before, after]);
   return (
     <div className={k.comparison} data-mode={mode}>
-      {urls[0] && mode !== "after" && <img src={urls[0]} alt="Previous board revision" />}
+      {urls[0] && mode !== "after" && <img src={urls[0]} alt={beforeLabel} />}
       {urls[1] && mode !== "before" && (
         <img
           src={urls[1]}
-          alt="Current board revision"
+          alt={afterLabel}
           style={{
             opacity: mode === "overlay" ? opacity : 1,
             mixBlendMode: mode === "difference" ? "difference" : "normal",

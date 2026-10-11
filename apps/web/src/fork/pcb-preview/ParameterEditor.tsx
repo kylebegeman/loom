@@ -1,5 +1,7 @@
+import { VariantWorkbench } from "./VariantWorkbench";
+import type { VariantRequest } from "./variantBatch";
 import { randomUUID } from "~/lib/utils";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { CheckIcon, FileDiffIcon, RotateCcwIcon, SlidersHorizontalIcon } from "lucide-react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -22,7 +24,6 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { OperationStatus } from "./OperationStatus";
 import {
   Bar,
-  Chip,
   EmptyState,
   errorText,
   Footer,
@@ -32,7 +33,6 @@ import {
   SearchField,
   Section,
   Segmented,
-  useWrite,
 } from "./InspectorKit";
 import { diffHunks, lineDiff } from "./diff";
 import { ToolButton } from "./ToolButton";
@@ -46,15 +46,21 @@ export function ParameterEditor({
   designId,
   data,
   canSave,
-  onSave,
-  onRemove,
+  mutate,
+  executionAllowed,
+  sourceHash,
+  request,
+  onRequestConsumed,
 }: {
   threadRef: ScopedThreadRef;
   designId: string;
   data: PcbWorkspace;
   canSave: boolean;
-  onSave: (variant: PcbWorkspace["variants"][number]) => Promise<unknown>;
-  onRemove: (id: string) => Promise<unknown>;
+  mutate: (change: (data: PcbWorkspace) => PcbWorkspace) => Promise<unknown>;
+  executionAllowed: boolean;
+  sourceHash: string | null;
+  request?: VariantRequest | null | undefined;
+  onRequestConsumed?: (() => void) | undefined;
 }) {
   const target = {
     environmentId: threadRef.environmentId,
@@ -63,12 +69,21 @@ export function ParameterEditor({
   const result = useAtomValue(pcb.parameters(target)),
     schema = asyncValue(result);
   const [values, setValues] = useState<Record<string, Value>>({}),
-    [review, setReview] = useState<PcbApplyParametersResult | null>(null),
+    [review, setReview] = useState<
+      (PcbApplyParametersResult & { expectedSourceHash: string }) | null
+    >(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [name, setName] = useState(""),
     [query, setQuery] = useState("");
-  const write = useWrite("The variant could not be saved.");
+  useEffect(() => {
+    if (!sourceHash) return;
+    appAtomRegistry.refresh(
+      pcb.parameters({
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId, designId },
+      }),
+    );
+  }, [sourceHash, threadRef.environmentId, threadRef.threadId, designId]);
   if (!schema)
     return (
       <Scroll>
@@ -102,8 +117,8 @@ export function ParameterEditor({
     setReview(null);
     setError(null);
   };
-  const apply = async (preview: boolean) => {
-    if (busy) return;
+  const apply = async (preview: boolean, suppliedValues?: Record<string, Value>) => {
+    if (busy || !canSave) return;
     setBusy(true);
     setError(null);
     try {
@@ -111,13 +126,13 @@ export function ParameterEditor({
         ...target,
         input: {
           ...target.input,
-          values: Object.fromEntries(changed.map((p) => [p.key, current(p)])),
-          expectedSourceHash: schema.sourceHash,
+          values: suppliedValues ?? Object.fromEntries(changed.map((p) => [p.key, current(p)])),
+          expectedSourceHash: !preview && review ? review.expectedSourceHash : schema.sourceHash,
           preview,
           revision: randomUUID(),
         },
       });
-      setReview(output);
+      setReview({ ...output, expectedSourceHash: schema.sourceHash });
       if (output.applied) appAtomRegistry.refresh(pcb.parameters(target));
     } catch (e) {
       setError(errorText(e, "Parameters could not apply."));
@@ -146,71 +161,26 @@ export function ParameterEditor({
         </Bar>
       )}
       <Scroll>
-        <Section title="Variants" count={data.variants.length || undefined}>
-          {data.variants.length > 0 && (
-            <div className={k.chips}>
-              {data.variants.map((variant) => (
-                <Chip
-                  key={variant.id}
-                  pressed={schema.parameters.every((p) => variant.values[p.key] === current(p))}
-                  onClick={() =>
-                    edit(
-                      Object.fromEntries(
-                        Object.entries(variant.values).filter(([key]) =>
-                          schema.parameters.some((p) => p.key === key),
-                        ),
-                      ),
-                    )
-                  }
-                  onRemove={() => void write.run(() => onRemove(variant.id))}
-                  removeLabel={`Remove variant ${variant.name}`}
-                  disabled={busy || write.busy || !canSave}
-                >
-                  {variant.name}
-                </Chip>
-              ))}
-            </div>
-          )}
-          <form
-            className={k.inlineForm}
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!canSave || !name.trim()) return;
-              void write
-                .run(() =>
-                  onSave({
-                    id: randomUUID(),
-                    name: name.trim(),
-                    sourceHash: schema.sourceHash,
-                    values: snapshot(),
-                  }),
-                )
-                .then((saved) => saved && setName(""));
-            }}
-          >
-            <Input
-              size="sm"
-              aria-label="Variant name"
-              placeholder="Save these values as…"
-              disabled={write.busy}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Button
-              type="submit"
-              size="sm"
-              variant="outline"
-              disabled={!canSave || !name.trim() || write.busy}
-            >
-              Save variant
-            </Button>
-          </form>
-          {write.error && (
-            <p role="alert" className={k.error}>
-              {write.error}
-            </p>
-          )}
-        </Section>
+        <VariantWorkbench
+          threadRef={threadRef}
+          designId={designId}
+          schema={schema}
+          data={data}
+          currentValues={snapshot()}
+          sourceHash={sourceHash}
+          executionAllowed={executionAllowed}
+          canSave={canSave && !busy}
+          mutate={mutate}
+          request={request}
+          onRequestConsumed={onRequestConsumed}
+          onUse={(next) => {
+            const supported = Object.fromEntries(
+              Object.entries(next).filter(([key]) => schema.parameters.some((p) => p.key === key)),
+            );
+            edit(supported);
+            void apply(true, supported);
+          }}
+        />
         <Section title="Parameters" count={schema.parameters.length}>
           <div className={k.paramList}>
             {shown.map((p) => (
@@ -290,12 +260,16 @@ export function ParameterEditor({
             Reset
           </Button>
           {review && !review.applied ? (
-            <Button size="sm" disabled={busy} onClick={() => void apply(false)}>
+            <Button size="sm" disabled={busy || !canSave} onClick={() => void apply(false)}>
               <CheckIcon />
               Apply to source
             </Button>
           ) : (
-            <Button size="sm" disabled={busy || !changed.length} onClick={() => void apply(true)}>
+            <Button
+              size="sm"
+              disabled={busy || !canSave || !changed.length}
+              onClick={() => void apply(true)}
+            >
               <FileDiffIcon />
               Review change
             </Button>

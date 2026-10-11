@@ -2366,9 +2366,22 @@ it.effect("proposes validated agent variants atomically and enforces the saved l
   test(
     Effect.gen(function* () {
       const t = yield* variantFixture;
+      const ready = yield* Deferred.make<void>(),
+        published = yield* Deferred.make<import("@t3tools/contracts/fork").PcbWorkspace>();
+      const reader = yield* t.service.workspaceUpdates(t.input).pipe(
+        Stream.runForEach((value) =>
+          value.version === 0
+            ? Deferred.succeed(ready, undefined)
+            : Deferred.succeed(published, value),
+        ),
+        Effect.forkChild,
+      );
+      yield* Deferred.await(ready);
       const first = yield* t.service.proposeVariants(t.input, [
         { name: "Wide", values: { width: 35 } },
       ]);
+      expect(yield* Deferred.await(published)).toEqual(first);
+      yield* Fiber.interrupt(reader);
       expect(first.variants[0]).toMatchObject({
         origin: "agent",
         thumbnail: null,
@@ -2400,6 +2413,29 @@ it.effect("proposes validated agent variants atomically and enforces the saved l
           .pipe(Effect.flip)).message,
       ).toContain("24 variants");
       expect(yield* t.fs.readFileString(t.file)).toBe(t.source);
+    }),
+  ),
+);
+
+it.effect("rejects a variant whose source changes during the build", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* variantFixture;
+      const runner = ProcessRunner.of({
+        run: (input) =>
+          t.runner
+            .run(input)
+            .pipe(
+              Effect.tap(() =>
+                input.args.includes("circuit-json")
+                  ? t.fs.writeFileString(t.file, t.source + "\n// Edited while exporting\n")
+                  : Effect.void,
+              ),
+            ),
+      });
+      const service = yield* t.create(t.fs, runner);
+      expect((yield* service.renderVariant(t.request).pipe(Effect.flip)).reason).toBe("conflict");
+      expect(yield* t.fs.readFileString(t.file)).toBe(t.source + "\n// Edited while exporting\n");
     }),
   ),
 );

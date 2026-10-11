@@ -1,3 +1,4 @@
+import type { VariantRequest } from "./variantBatch";
 import { EnclosureTab } from "./EnclosureTab";
 import { announcement, describeSelection, type PcbAnnounceInput } from "./announce";
 import { usePcbHistory } from "./usePcbHistory";
@@ -385,8 +386,16 @@ export function DesignWorkspace({
       openTab("Compare");
     }
   };
+  const [variantRequest, setVariantRequest] = useState<VariantRequest | null>(null);
   const historyAction = useEffectEvent((action: import("./actions").PcbAction) => {
-    if (action === "history") toggleHistory();
+    if (action === "sweep") {
+      if (design.kind !== "tscircuit") {
+        setNotice({ tone: "error", text: "Parameter sweeps need a tscircuit design." });
+        return;
+      }
+      openTab("Parameters");
+      setVariantRequest({ id: randomUUID(), action: "sweep" });
+    } else if (action === "history") toggleHistory();
     else
       void stepHistory(action === "history-previous" ? -1 : 1).catch((error) =>
         setNotice({
@@ -1123,10 +1132,30 @@ export function DesignWorkspace({
           "finding",
           "markers",
           "changes",
+          "render-variants",
         ].includes(c.action)
       )
         throw new Error("These tools work on the current version.");
       switch (c.action) {
+        case "render-variants": {
+          if (design.kind !== "tscircuit") throw new Error("Variants need a tscircuit design.");
+          if (!executionAllowed)
+            throw new Error("Allow circuit code from the drawing to render variants.");
+          if (!preview.canRender)
+            throw new Error("Rendering variants needs terminal permission on this environment.");
+          if (!workbench.canEdit)
+            throw new Error("Workspace write permission is required to save editor changes.");
+          const ids =
+            c.ids ??
+            workbench.data.variants
+              .filter((v) => !v.thumbnail || v.renderedRevision !== preview.sourceHash)
+              .map((v) => v.id);
+          if (ids.some((id) => !workbench.data.variants.some((v) => v.id === id)))
+            throw new Error("A requested variant no longer exists.");
+          openTab("Parameters");
+          setVariantRequest({ id: randomUUID(), action: "render", ids });
+          return { message: `Rendering ${ids.length} variants in the panel.` };
+        }
         case "turn-history": {
           if (c.enabled === false) closeHistory();
           else if (!c.name) {
@@ -2606,6 +2635,10 @@ export function DesignWorkspace({
                 onLayers={setCustomLayers}
                 onShowBoard={() => chooseView("pcb")}
                 onFocusMark={(target, sheet, point) => focusPoint(target, point, sheet)}
+                // Batch result saves briefly raise pending without revoking permission.
+                canSaveVariants={!viewing && workbench.ready && workbench.canEdit}
+                variantRequest={variantRequest}
+                onVariantRequestConsumed={() => setVariantRequest(null)}
                 mutate={workbench.mutate}
                 onSaveView={async (name) => {
                   if (!drawingCurrent || !viewport.current?.isReady())

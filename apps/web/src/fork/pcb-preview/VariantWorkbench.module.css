@@ -1,0 +1,122 @@
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  min-width: 0;
+}
+.card h4 {
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.preview {
+  width: 100%;
+  height: 110px;
+  object-fit: contain;
+  background: var(--muted);
+  border-radius: 4px;
+}
+.placeholder {
+  display: grid;
+  place-items: center;
+  height: 110px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  background: var(--muted);
+  border-radius: 4px;
+}
+.note {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.tableWrap {
+  overflow: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.table th,
+.table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.table th {
+  font-weight: 600;
+}
+.select {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--background);
+  padding: 5px;
+  font-size: 12px;
+  max-width: 100%;
+}
+.axis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--border);
+  padding: 12px;
+  border-radius: 6px;
+}
+.axes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.comparison figure {
+  min-width: 0;
+}
+.comparison figcaption {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.comparison img {
+  width: 100%;
+  height: 240px;
+  object-fit: contain;
+}
+.facts {
+  font-size: 12px;
+  border-collapse: collapse;
+  width: 100%;
+}
+.facts th,
+.facts td {
+  padding: 6px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+@media (max-width: 480px) {
+  .comparison {
+    grid-template-columns: 1fr;
+  }
+  .comparison img {
+    height: 160px;
+  }
+}

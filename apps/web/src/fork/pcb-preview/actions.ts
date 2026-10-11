@@ -1,5 +1,5 @@
 import type { ScopedThreadRef } from "@t3tools/contracts";
-export type PcbAction = "history" | "history-previous" | "history-next";
+export type PcbAction = "sweep" | "history" | "history-previous" | "history-next";
 const listeners = new Set<{ ref: ScopedThreadRef; callback: (action: PcbAction) => void }>();
 export function onPcbAction(ref: ScopedThreadRef, callback: (action: PcbAction) => void) {
   const entry = { ref, callback };

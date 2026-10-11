@@ -1,3 +1,4 @@
+import type { VariantRequest } from "./variantBatch";
 import type { ReactNode } from "react";
 import {
   ActivityIcon,
@@ -256,6 +257,9 @@ export function InspectorFrame({
 
 export function ToolPanel({
   compareInitial,
+  variantRequest,
+  onVariantRequestConsumed,
+  canSaveVariants,
   tab,
   requestPanel,
   onConvertNote,
@@ -292,6 +296,9 @@ export function ToolPanel({
   onOpenChecks,
   onDraft,
 }: {
+  canSaveVariants?: boolean;
+  variantRequest?: VariantRequest | null;
+  onVariantRequestConsumed?: () => void;
   compareInitial?: { from: string; to: string; key: string } | undefined;
   tab: Exclude<InspectorTab, "Checks">;
   requestPanel?: ReactNode;
@@ -423,14 +430,16 @@ export function ToolPanel({
     case "Parameters":
       return (
         <ParameterEditor
+          key={JSON.stringify([threadRef.environmentId, threadRef.threadId, design.id])}
           threadRef={threadRef}
           designId={design.id}
           data={data}
-          canSave={canSave}
-          onRemove={(id) =>
-            mutate((d) => ({ ...d, variants: d.variants.filter((v) => v.id !== id) }))
-          }
-          onSave={(variant) => mutate((d) => ({ ...d, variants: [...d.variants, variant] }))}
+          canSave={canSaveVariants ?? canSave}
+          mutate={mutate}
+          executionAllowed={executionAllowed}
+          sourceHash={sourceHash}
+          request={variantRequest}
+          onRequestConsumed={onVariantRequestConsumed}
         />
       );
     case "Library":
