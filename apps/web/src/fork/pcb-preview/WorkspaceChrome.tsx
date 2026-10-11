@@ -337,6 +337,8 @@ export function WorkspaceMenu({
 }
 
 const SHORTCUTS = [
+  ["History", "T"],
+  ["Previous or next version", "[ / ]"],
   ["Request a change", "R"],
   ["Show changes since the last reload", "D"],
   ["Next, previous finding", ". / ,"],

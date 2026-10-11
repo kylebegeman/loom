@@ -7,7 +7,7 @@ import {
   useState,
 } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { CheckpointId, ScopedThreadRef } from "@t3tools/contracts";
 import { modelUrl } from "../model-preview-3d/state";
 import { pcb } from "./state";
 import { asyncValue, asyncError } from "./usePcbPreview";
@@ -45,6 +45,7 @@ export function Board3D({
   threadRef,
   designId,
   sourceHash,
+  checkpointId,
   handle,
   onCancel,
   onBuilt,
@@ -53,6 +54,7 @@ export function Board3D({
   threadRef: ScopedThreadRef;
   designId: string;
   sourceHash: string | null;
+  checkpointId?: CheckpointId | undefined;
   handle: React.Ref<Pcb3dHandle>;
   onCancel: () => void;
   /** The host has cached this revision, so Inspect can read component heights. */
@@ -67,10 +69,11 @@ export function Board3D({
       input: {
         threadId: threadRef.threadId,
         designId,
+        checkpointId,
         format: "glb",
         transport: "url",
         force: retry > 0,
-        revision: `${sourceHash ?? "initial"}:${retry}`,
+        revision: `${checkpointId ?? sourceHash ?? "initial"}:${retry}`,
       },
     }),
   );
@@ -88,7 +91,9 @@ export function Board3D({
   const [failure, setFailure] = useState<{ asset: typeof asset; message: string } | null>(null),
     [camera, setCamera] = useState<View | null>("iso");
   const error = failure?.asset === asset ? failure.message : null;
+  const retainedCamera = useRef<ReturnType<ModelViewer["snapshot"]> | null>(null);
   const clear = useCallback(() => {
+    if (viewer.current) retainedCamera.current = viewer.current.snapshot();
     viewer.current?.dispose();
     viewer.current = null;
   }, []);
@@ -103,6 +108,7 @@ export function Board3D({
             "The board exporter did not return a model file. Update the Loom server.",
           );
         const modelSource = modelUrl(threadRef.environmentId, asset.file.relativeUrl);
+        const previousCamera = retainedCamera.current;
         const created = createViewer(host.current);
         viewer.current = created;
         created.setGrid(false);
@@ -114,6 +120,7 @@ export function Board3D({
           return;
         }
         created.setModel(model, false);
+        if (previousCamera) created.restore(previousCamera);
         setLoaded(asset);
         setFailure(null);
       })

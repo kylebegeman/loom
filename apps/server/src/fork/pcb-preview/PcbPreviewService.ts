@@ -1,3 +1,5 @@
+import { makePcbHistory } from "./history.ts";
+import { isReferenceSource, designReferences } from "./designFiles.ts";
 import { CheckpointStore } from "../../checkpointing/CheckpointStore.ts";
 import { makeChangeRequests, type RequestActor } from "./changeRequests.ts";
 // @effect-diagnostics nodeBuiltinImport:off -- Crypto identities belong to the environment adapter.
@@ -113,6 +115,12 @@ const CIRCUIT_VERSION_TIMEOUT = "15 seconds";
 export class PcbPreviewService extends Context.Service<
   PcbPreviewService,
   {
+    readonly history: (input: W.PcbHistoryInput) => Effect.Effect<W.PcbHistory, PcbPreviewError>;
+    readonly historyRestore: (
+      input: W.PcbHistoryRestoreInput,
+      options?: { checkContent: boolean },
+    ) => Effect.Effect<W.PcbHistoryRestoreResult, PcbPreviewError>;
+    readonly historyUndo: (input: W.PcbHistoryUndoInput) => Effect.Effect<void, PcbPreviewError>;
     readonly reuseHardware: (
       input: typeof W.PcbReuseHardwareInput.Type,
     ) => Effect.Effect<typeof W.PcbReuseHardwareResult.Type, PcbPreviewError>;
@@ -665,19 +673,9 @@ export const make = Effect.gen(function* () {
           );
         // Follow explicit local references beyond the package/design folder. Never
         // traverse installed packages or host-global KiCad libraries.
-        const textSource =
-          resolved.design.kind === "tscircuit"
-            ? /\.(?:[cm]?[jt]sx?|json)$/.test(child)
-            : child.endsWith(".kicad_sch") || child === "sym-lib-table" || child === "fp-lib-table";
-        if (textSource && Number(info.size) <= MAX_SVG_BYTES) {
+        if (isReferenceSource(resolved.design.kind, child) && Number(info.size) <= MAX_SVG_BYTES) {
           const text = yield* fs.readFileString(canonical).pipe(Effect.mapError(ioFailure));
-          const references =
-            resolved.design.kind === "tscircuit"
-              ? Array.from(text.matchAll(/["'`]((?:\.\.?\/)[^"'`\r\n]+)["'`]/g), (m) => m[1]!)
-              : Array.from(
-                  text.matchAll(/(?:\(property\s+"Sheetfile"\s+"|\(uri\s+")([^"\n]+)"/gi),
-                  (m) => m[1]!,
-                );
+          const references = designReferences(resolved.design.kind, text);
           for (const reference of references) {
             const expanded = reference.replaceAll("${KIPRJMOD}", resolved.cwd);
             if (expanded.includes("${")) continue;
@@ -701,6 +699,11 @@ export const make = Effect.gen(function* () {
       }
     }
     return { dirs, sourceHash: hashKey(...records.sort()), files: [...new Set(files)].sort() };
+  });
+  const pcbHistory = yield* makePcbHistory({
+    historyDir: path.join(config.stateDir, "fork", "pcb-preview", "history"),
+    resolve: (i) => checked(resolveDesign(i)),
+    snapshot: sourceSnapshot,
   });
   const byteSize = Effect.fn("PcbPreview.byteSize")(function* (directory: string) {
     let bytes = 0;
@@ -801,6 +804,7 @@ export const make = Effect.gen(function* () {
     input: PcbRenderInput,
     resolved: ResolvedDesign,
     snapshot: { dirs: string[]; sourceHash: string },
+    frozen = false,
   ) {
     const tool = yield* requiredTool(resolved);
     const preset = input.view === "schematic" ? "front" : (input.layers ?? "front");
@@ -928,12 +932,17 @@ export const make = Effect.gen(function* () {
     let circuitInspection: W.PcbInspection | undefined;
     if (resolved.design.kind === "tscircuit") {
       const jsonPath = path.join(temporary, "circuit.json");
-      const build = yield* asset({
-        threadId: input.threadId,
-        designId: input.designId,
-        format: "circuit-json",
-        force: input.force,
-      }).pipe(
+      const build = yield* assetFor(
+        {
+          threadId: input.threadId,
+          designId: input.designId,
+          format: "circuit-json",
+          force: input.force,
+        },
+        resolved,
+        snapshot,
+        frozen,
+      ).pipe(
         Effect.catch((cause) =>
           isPreviewError(cause) && cause.reason === "unsupported-view"
             ? Effect.succeed({ error: cause })
@@ -985,7 +994,7 @@ export const make = Effect.gen(function* () {
         ...base,
         outcome: result.timedOut ? "timed-out" : "failed",
       } satisfies PcbRenderResult;
-    if ((yield* sourceSnapshot(resolved)).sourceHash !== snapshot.sourceHash)
+    if (!frozen && (yield* sourceSnapshot(resolved)).sourceHash !== snapshot.sourceHash)
       return {
         ...base,
         outcome: "failed",
@@ -1071,23 +1080,30 @@ export const make = Effect.gen(function* () {
     return value;
   });
   const render = Effect.fn("PcbPreview.render")(function* (input: PcbRenderInput) {
-    const resolved = yield* resolveDesign(input),
-      snapshot = yield* sourceSnapshot(resolved);
-    const jobKey = hashKey(
-      resolved.workspaceKey,
-      input.designId,
-      snapshot.sourceHash,
-      input.view,
-      input.layerNames
-        ? input.layerNames.join(",")
-        : input.view === "schematic"
-          ? "front"
-          : (input.layers ?? "front"),
-      String(input.force ?? false),
-    );
-    return yield* renderJobs.run(
-      jobKey,
-      checked(Effect.scoped(runRender(input, resolved, snapshot))),
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const version = input.checkpointId
+          ? yield* pcbHistory.versionDesign({ ...input, checkpointId: input.checkpointId })
+          : null;
+        const resolved = version?.resolved ?? (yield* resolveDesign(input));
+        const snapshot = version?.snapshot ?? (yield* sourceSnapshot(resolved));
+        const jobKey = hashKey(
+          resolved.workspaceKey,
+          input.designId,
+          snapshot.sourceHash,
+          input.view,
+          input.layerNames
+            ? input.layerNames.join(",")
+            : input.view === "schematic"
+              ? "front"
+              : (input.layers ?? "front"),
+          String(input.force ?? false),
+        );
+        return yield* renderJobs.run(
+          jobKey,
+          checked(Effect.scoped(runRender(input, resolved, snapshot, !!version))),
+        );
+      }),
     );
   });
   const readSheet = Effect.fn("PcbPreview.readSheet")(function* (input: PcbReadSheetInput) {
@@ -1893,6 +1909,7 @@ export const make = Effect.gen(function* () {
     input: W.PcbAssetInput,
     resolved: ResolvedDesign,
     snapshot: { sourceHash: string },
+    frozen = false,
   ) {
     return yield* Effect.scoped(
       Effect.gen(function* () {
@@ -2051,7 +2068,7 @@ export const make = Effect.gen(function* () {
             );
           yield* fs.writeFile(output, normalized);
         }
-        if ((yield* sourceSnapshot(resolved)).sourceHash !== snapshot.sourceHash)
+        if (!frozen && (yield* sourceSnapshot(resolved)).sourceHash !== snapshot.sourceHash)
           return yield* failure(
             "conflict",
             "The design changed while exporting. Retry for the current revision.",
@@ -2091,9 +2108,12 @@ export const make = Effect.gen(function* () {
       }),
     );
   });
-  const asset = Effect.fn("PcbPreview.asset")(function* (input: W.PcbAssetInput) {
-    const resolved = yield* resolveDesign(input),
-      snapshot = yield* sourceSnapshot(resolved);
+  const assetFor = Effect.fn("PcbPreview.assetFor")(function* (
+    input: W.PcbAssetInput,
+    resolved: ResolvedDesign,
+    snapshot: { sourceHash: string },
+    frozen = false,
+  ) {
     const jobKey = hashKey(
       resolved.workspaceKey,
       input.designId,
@@ -2102,7 +2122,19 @@ export const make = Effect.gen(function* () {
       input.transport ?? "url",
       String(input.force ?? false),
     );
-    return yield* assetJobs.run(jobKey, checked(runAsset(input, resolved, snapshot)));
+    return yield* assetJobs.run(jobKey, checked(runAsset(input, resolved, snapshot, frozen)));
+  });
+  const asset = Effect.fn("PcbPreview.asset")(function* (input: W.PcbAssetInput) {
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const version = input.checkpointId
+          ? yield* pcbHistory.versionDesign({ ...input, checkpointId: input.checkpointId })
+          : null;
+        const resolved = version?.resolved ?? (yield* resolveDesign(input));
+        const snapshot = version?.snapshot ?? (yield* sourceSnapshot(resolved));
+        return yield* assetFor(input, resolved, snapshot, !!version);
+      }),
+    );
   });
   const fabPackages = yield* makeFabPackages<ResolvedDesign>({
     cacheDir,
@@ -2454,29 +2486,32 @@ export const make = Effect.gen(function* () {
   });
   const revisions = Effect.fn("PcbPreview.revisions")(function* (input: W.PcbInspectInput) {
     const resolved = yield* resolveDesign(input);
+    const page = yield* pcbHistory.history({ ...input, limit: 40 });
+    if (page.unavailable) return [];
+    const tracked = yield* pcbHistory.tracked(input);
     const commits = yield* git(resolved.root, [
       "log",
       "-40",
       "--format=%H%x09%s",
       "--",
-      input.designId,
-      ...(resolved.design.boardPath ? [resolved.design.boardPath] : []),
-      ...(resolved.design.schematicPath ? [resolved.design.schematicPath] : []),
+      ...tracked,
     ]).pipe(Effect.orElseSucceed(() => ""));
-    const refs = yield* git(resolved.root, [
-      "for-each-ref",
-      "--count=40",
-      "--sort=-creatordate",
-      "--format=%(refname)%09%(subject)",
-      "refs/t3/",
-    ]).pipe(Effect.orElseSucceed(() => ""));
-    return [...commits.trim().split("\n"), ...refs.trim().split("\n")]
-      .filter(Boolean)
-      .map((l) => {
-        const [ref, ...label] = l.split("\t");
-        return { ref: ref!, label: label.join("\t") };
-      })
-      .slice(0, 80);
+    return [
+      ...page.versions
+        .filter((version) => version.present)
+        .map((version) => ({
+          ref: version.ref,
+          label: version.runId ? `Turn ${version.turn}` : "Start",
+        })),
+      ...commits
+        .trim()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [ref, ...label] = line.split("\t");
+          return { ref: ref!, label: label.join("\t") };
+        }),
+    ].slice(0, 80);
   });
   const compare = Effect.fn("PcbPreview.compare")(function* (input: W.PcbCompareInput) {
     return yield* Effect.scoped(
@@ -3121,6 +3156,9 @@ export const make = Effect.gen(function* () {
       ),
   });
   return PcbPreviewService.of({
+    history: pcbHistory.history,
+    historyRestore: (i, options) => storageLock.withPermit(pcbHistory.restore(i, options)),
+    historyUndo: (i) => storageLock.withPermit(pcbHistory.undo(i)),
     ...turnDesignMethods,
     turnDesignEvents: (i) =>
       turnDesignMethods

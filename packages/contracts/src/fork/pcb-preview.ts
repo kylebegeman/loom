@@ -27,6 +27,9 @@ import {
 } from "../baseSchemas.ts";
 
 export const PCB_PREVIEW_WS_METHODS = {
+  history: "loom.pcb-preview.history",
+  historyRestore: "loom.pcb-preview.historyRestore",
+  historyUndo: "loom.pcb-preview.historyUndo",
   fabPackage: "loom.pcb-preview.fabPackage",
   fabPackages: "loom.pcb-preview.fabPackages",
   fabPackageZip: "loom.pcb-preview.fabPackageZip",
@@ -146,6 +149,7 @@ export const PcbListDesignsResult = Schema.Struct({
 export type PcbListDesignsResult = typeof PcbListDesignsResult.Type;
 
 export const PcbRenderInput = Schema.Struct({
+  checkpointId: Schema.optional(CheckpointId),
   threadId: ThreadId,
   designId: TrimmedNonEmptyString,
   view: PcbView,
@@ -322,6 +326,7 @@ export class PcbPreviewError extends Schema.TaggedError<PcbPreviewError>()("PcbP
     "thread-not-found",
     "workspace-missing",
     "design-not-found",
+    "version-not-found",
     "path-outside-workspace",
     "tool-missing",
     "tool-too-old",
@@ -354,6 +359,21 @@ export type PcbLatestChecksResult = typeof PcbLatestChecksResult.Type;
 const errors = Schema.Union([PcbPreviewError, EnvironmentAuthorizationError]);
 
 export const PcbPreviewRpcGroup = RpcGroup.make(
+  Rpc.make(PCB_PREVIEW_WS_METHODS.history, {
+    payload: W.PcbHistoryInput,
+    success: W.PcbHistory,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.historyRestore, {
+    payload: W.PcbHistoryRestoreInput,
+    success: W.PcbHistoryRestoreResult,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.historyUndo, {
+    payload: W.PcbHistoryUndoInput,
+    success: Schema.Void,
+    error: errors,
+  }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.print, {
     payload: PcbPrintInput,
     success: PcbPrintResult,

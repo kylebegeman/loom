@@ -231,6 +231,7 @@ export function InspectorFrame({
 }
 
 export function ToolPanel({
+  compareInitial,
   tab,
   requestPanel,
   onConvertNote,
@@ -267,6 +268,7 @@ export function ToolPanel({
   onOpenChecks,
   onDraft,
 }: {
+  compareInitial?: { from: string; to: string; key: string } | undefined;
   tab: Exclude<InspectorTab, "Checks">;
   requestPanel?: ReactNode;
   onConvertNote?: ((id: string) => void) | undefined;
@@ -368,7 +370,14 @@ export function ToolPanel({
         />
       );
     case "Compare":
-      return <RevisionCompare threadRef={threadRef} designId={design.id} onSelect={onSelect} />;
+      return (
+        <RevisionCompare
+          initial={compareInitial}
+          threadRef={threadRef}
+          designId={design.id}
+          onSelect={onSelect}
+        />
+      );
     case "Simulate":
       return (
         <SimulationEditor

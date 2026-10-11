@@ -8,6 +8,8 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [P.historyRestore]: AuthOrchestrationOperateScope,
+  [P.historyUndo]: AuthOrchestrationOperateScope,
   [P.pinMap]: AuthOrchestrationOperateScope,
   [P.reuseHardware]: AuthOrchestrationOperateScope,
   [P.inspect]: AuthTerminalOperateScope,

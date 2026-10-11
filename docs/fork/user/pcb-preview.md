@@ -153,3 +153,11 @@ Choose **…**, **Create fab package…**, or open **Fabrication**. Select Gener
 For JLCPCB rotation corrections, add a `JLCPCB Rotation Offset` field to a part, or add lines such as `SOIC.*,90` to `fab/rotations.csv`. Part fields take precedence. Check rotations, polarity and pin 1 in the fab's placement preview. Missing part numbers or assembly metadata appear in the checklist.
 
 The preview currently shows a **board plot of the packaged layers** for KiCad. It warns if the saved board has changed; inspect the exported zip in your fab's viewer before ordering. Loom does not upload or order. To ignore generated folders in Git while keeping your rotation rules, add `/fab/*/` to `.gitignore` yourself.
+
+## Design history
+
+Press `T` or use History to view the versions saved at the end of this thread's turns in a Git workspace. Use `[` and `]` to step between versions, switch between schematic, board and 3D, or compare a version with the current files. Historical views are read-only. Back to current returns to your saved files.
+
+Restore this version replaces the board, project and schematics together and offers one Undo. Supporting libraries and assets, and removal of files added since that version, are optional and off by default. Close KiCad before restoring. Compare lists this thread's turns alongside the design's Git commits.
+
+Agents can use `loom_pcb_history` and `loom_pcb_restore_version`, or `t3 pcb history` and `t3 pcb restore_version`. Pass a history checkpoint ID to render or export an earlier version. Historical 3D previews use the component models installed on the environment today.

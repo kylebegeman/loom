@@ -1,6 +1,6 @@
 # L66: PCB history
 
-Status: Ready to build
+Status: Implemented locally (`feat/pcb-units-presets-stats-print-capture`).
 
 Approved by Kyle on 2026-10-10.
 

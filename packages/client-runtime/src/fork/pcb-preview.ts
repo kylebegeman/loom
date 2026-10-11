@@ -70,6 +70,15 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     staleTimeMs: 0,
   });
   return {
+    history: createEnvironmentRpcCommand(runtime, { label: "loom:pcb-history", tag: M.history }),
+    historyRestore: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-history-restore",
+      tag: M.historyRestore,
+    }),
+    historyUndo: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-history-undo",
+      tag: M.historyUndo,
+    }),
     fabPackages,
     loadFabPackages: createEnvironmentRpcCommand(runtime, {
       label: "loom:pcb-packages-load",

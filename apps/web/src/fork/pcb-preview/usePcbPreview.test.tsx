@@ -11,6 +11,10 @@ const mocked = vi.hoisted(() => ({
   watch: vi.fn(),
   checkEvents: vi.fn(),
   latestChecks: vi.fn(),
+  fabCapabilities: vi.fn(),
+  latestFabCheck: vi.fn(),
+  latestReview: vi.fn(),
+  projectSettings: vi.fn(),
   render: { permissionAtom: vi.fn(), resultAtom: vi.fn() },
   readSheet: { resultAtom: vi.fn() },
   check: { permissionAtom: vi.fn(), resultAtom: vi.fn() },
@@ -90,6 +94,13 @@ beforeEach(() => {
   registry = AtomRegistry.make();
   renderer = null;
   const permitted = Atom.make(true);
+  for (const method of [
+    mocked.fabCapabilities,
+    mocked.latestFabCheck,
+    mocked.latestReview,
+    mocked.projectSettings,
+  ])
+    method.mockReturnValue(Atom.make(AsyncResult.success(null)));
   mocked.watch.mockReturnValue(watch);
   mocked.checkEvents.mockReturnValue(activity);
   registry.set(activity, AsyncResult.success({ running: null, paused: [], ranAt: {} }));

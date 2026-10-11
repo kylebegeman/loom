@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { SignedFile } from "./model-preview-3d.ts";
 import { ModelCamera } from "./model-workspace.ts";
-import { NonNegativeInt, ThreadId } from "../baseSchemas.ts";
+import { CheckpointId, PositiveInt, RunId, NonNegativeInt, ThreadId } from "../baseSchemas.ts";
 const text = (max = 200) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
 const finite = Schema.Number.check(Schema.isFinite());
 const list = <S extends Schema.Top>(item: S, max: number) =>
@@ -280,6 +280,7 @@ export const PcbWorkspaceUpdate = Schema.Struct({
 });
 export type PcbWorkspaceUpdate = typeof PcbWorkspaceUpdate.Type;
 export const PcbAssetInput = Schema.Struct({
+  checkpointId: Schema.optional(CheckpointId),
   threadId: ThreadId,
   designId: text(1024),
   format: Schema.Literals(["glb", "circuit-json", "spice"]),
@@ -362,6 +363,96 @@ export const PcbComparison = Schema.Struct({
   log: Schema.String,
 });
 export type PcbComparison = typeof PcbComparison.Type;
+export const PCB_HISTORY_PAGE_MAX = 50;
+
+export const PcbHistoryInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: text(1024),
+  /** Exclusive upper bound on the turn number; omit or null for the newest page. */
+  cursor: Schema.optional(Schema.NullOr(PositiveInt)),
+  limit: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: PCB_HISTORY_PAGE_MAX })),
+  ),
+});
+export type PcbHistoryInput = typeof PcbHistoryInput.Type;
+
+export const PcbHistoryVersion = Schema.Struct({
+  checkpointId: CheckpointId,
+  /** Null for the thread's starting state. */
+  runId: Schema.NullOr(RunId),
+  /** The chat's turn number (appRunOrdinal); 0 is the thread's start. */
+  turn: NonNegativeInt,
+  capturedAt: Schema.DateTimeUtc,
+  /** The checkpoint ref. loom.pcb-preview.compare accepts it as from or to. */
+  ref: text(200),
+  /** Whether the design's entry file exists at this version. */
+  present: Schema.Boolean,
+  /** Whether the version has a board and a schematic, from ls-tree of the stem group. */
+  views: Schema.Struct({ pcb: Schema.Boolean, schematic: Schema.Boolean }),
+  /** Hash over path and blob id of today's design set at this version; null if absent. */
+  contentKey: Schema.NullOr(Schema.String),
+  /** Workspace-relative paths of today's set that this turn changed. Empty for the start. */
+  changed: list(Schema.String, 20),
+});
+export type PcbHistoryVersion = typeof PcbHistoryVersion.Type;
+
+export const PcbHistory = Schema.Struct({
+  /** Newest first. The start, when listed, is last on the final page. */
+  versions: list(PcbHistoryVersion, PCB_HISTORY_PAGE_MAX),
+  nextCursor: Schema.NullOr(PositiveInt),
+  /** The thread's latest ready turn number, for "turn 5 of 9". */
+  latestTurn: Schema.NullOr(PositiveInt),
+  current: Schema.Struct({ contentKey: Schema.NullOr(Schema.String) }),
+  /** True while a run of the thread is not terminal. */
+  threadRunning: Schema.Boolean,
+  /** Why there can be no history; null when history is available. */
+  unavailable: Schema.NullOr(Schema.Literals(["not-git"])),
+});
+export type PcbHistory = typeof PcbHistory.Type;
+
+export const PcbHistoryRestoreInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: text(1024),
+  checkpointId: CheckpointId,
+  /** Also write supporting files (libraries, tables, assets) that differ. */
+  includeSupporting: Schema.Boolean,
+  /** Also delete design files that exist today but not at the version. */
+  removeAdded: Schema.Boolean,
+  /** current.contentKey from the history the client showed. */
+  expectedContentKey: Schema.NullOr(Schema.String),
+  /** Return the plan without writing. */
+  dryRun: Schema.optional(Schema.Boolean),
+});
+export type PcbHistoryRestoreInput = typeof PcbHistoryRestoreInput.Type;
+
+export const PcbHistoryRestorePlan = Schema.Struct({
+  /** Design files that differ from today, written by every restore. */
+  design: list(Schema.String, 2000),
+  /** Supporting files that differ; written only with includeSupporting. */
+  supporting: list(Schema.String, 2000),
+  /** Design files today that the version does not have; removed only with removeAdded. */
+  added: list(Schema.String, 2000),
+  /** KiCad lock files (~name.ext.lck) found beside design files. */
+  editorLocks: list(Schema.String, 50),
+});
+export type PcbHistoryRestorePlan = typeof PcbHistoryRestorePlan.Type;
+
+export const PcbHistoryRestoreResult = Schema.Struct({
+  plan: PcbHistoryRestorePlan,
+  /** Null for dry runs and when nothing differed. */
+  undoId: Schema.NullOr(Schema.String),
+  written: list(Schema.String, 4000),
+  removed: list(Schema.String, 2000),
+});
+export type PcbHistoryRestoreResult = typeof PcbHistoryRestoreResult.Type;
+
+export const PcbHistoryUndoInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: text(1024),
+  undoId: text(100),
+});
+export type PcbHistoryUndoInput = typeof PcbHistoryUndoInput.Type;
+
 export const PcbRevisions = list(Schema.Struct({ ref: text(), label: Schema.String }), 100);
 export const PcbParameter = Schema.Struct({
   key: text(100),
@@ -511,6 +602,8 @@ export const PcbEditorAction = Schema.Struct({
     "forward",
     "tool",
     "open-tools",
+    "turn-history",
+    "turn-compare",
     "load-view",
     "camera",
     "snapshot",
@@ -554,6 +647,14 @@ export const PcbEditorResult = Schema.Struct({
   path: Schema.optional(Schema.String),
   state: Schema.optional(
     Schema.Struct({
+      turnHistory: Schema.optional(
+        Schema.Struct({
+          open: Schema.Boolean,
+          checkpointId: Schema.NullOr(CheckpointId),
+          turn: Schema.NullOr(NonNegativeInt),
+          latestTurn: Schema.NullOr(PositiveInt),
+        }),
+      ),
       view: Schema.Literals(["pcb", "schematic"]),
       sheet: Schema.String,
       three: Schema.Boolean,

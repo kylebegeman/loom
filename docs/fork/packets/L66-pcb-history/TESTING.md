@@ -92,3 +92,9 @@ git merge-tree --write-tree --name-only --no-messages HEAD "$tag"
 ```
 
 After merging, `scripts/fork/loom.sh integrate nightly --dry-run`.
+
+## Local implementation verification (2026-10-11)
+
+Focused PCB history, design-set, shared model-history regression, PCB service, MCP, authorization, contract, permission and history-helper tests passed. Render tests use real Git and fake CAD exporters, including historical signed GLB and sheet reads. Restore tests cover conflict refusal, optional removal with undo, staging failure and rollback after a second rename fails. Contracts, client-runtime, server and web typechecks and strict lint for changed files passed.
+
+The shared helpers use L49's implemented `model-preview-3d/history/{helpers,git,restore}.ts` layout. No CAD tools, browsers, screen readers or remote clients were launched; the manual checks above remain unverified.

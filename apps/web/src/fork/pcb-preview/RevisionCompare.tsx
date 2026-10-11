@@ -47,10 +47,12 @@ export function RevisionCompare({
   threadRef,
   designId,
   onSelect,
+  initial,
 }: {
   threadRef: ScopedThreadRef;
   designId: string;
   onSelect: (reference: string) => void;
+  initial?: { from: string; to: string; key: string } | undefined;
 }) {
   const listId = useId();
   const revisions = asyncValue(
@@ -88,6 +90,13 @@ export function RevisionCompare({
     }
     setError(asyncError(response));
     setJob(null);
+  }
+  const [initialKey, setInitialKey] = useState<string | null>(null);
+  if (initial && initial.key !== initialKey) {
+    setInitialKey(initial.key);
+    setFrom(initial.from);
+    setTo(initial.to);
+    setJob({ from: initial.from, to: initial.to, revision: initial.key });
   }
   const compare = () => {
     if (!busy && canCompare && from.trim()) {

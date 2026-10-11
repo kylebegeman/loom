@@ -1,3 +1,4 @@
+import { CheckpointScopeId, CheckpointRef, NodeId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { writeZip } from "./zipWriter.ts";
 import { VcsUnsupportedOperationError } from "@t3tools/contracts";
@@ -5,6 +6,7 @@ import { CheckpointStore } from "../../checkpointing/CheckpointStore.ts";
 import type {
   OrchestrationV2ThreadProjection,
   OrchestrationV2Checkpoint,
+  OrchestrationV2CheckpointScope,
 } from "@t3tools/contracts";
 import { RunId, CheckpointId } from "@t3tools/contracts";
 import { expect, it, describe } from "@effect/vitest";
@@ -156,9 +158,16 @@ const setup = Effect.gen(function* () {
   const context = yield* Layer.build(Config.layerTest(root, state));
   const paths = yield* WorkspacePaths.make;
   let checkpointRecords: readonly OrchestrationV2Checkpoint[] = [];
+  let checkpointScopes: readonly OrchestrationV2CheckpointScope[] = [];
   const queries = partial<ProjectionStore.ProjectionStoreV2["Service"]>({
     getThreadRecords: () =>
-      Effect.succeed(partial<OrchestrationV2ThreadProjection>({ checkpoints: checkpointRecords })),
+      Effect.succeed(
+        partial<OrchestrationV2ThreadProjection>({
+          checkpoints: checkpointRecords,
+          checkpointScopes,
+          runs: [],
+        }),
+      ),
     getThread: () =>
       Effect.succeed(partial<OrchestrationV2AppThread>({ projectId, worktreePath: worktree })),
   });
@@ -235,6 +244,13 @@ const setup = Effect.gen(function* () {
     stateDir: (yield* Config.ServerConfig.pipe(Effect.provide(context))).stateDir,
     create,
     calls,
+    setHistory: (
+      records: readonly OrchestrationV2Checkpoint[],
+      scopes: readonly OrchestrationV2CheckpointScope[],
+    ) => {
+      checkpointRecords = records;
+      checkpointScopes = scopes;
+    },
     setReviewNetlist: (source: string) => {
       reviewNetlist = source;
     },
@@ -2095,6 +2111,94 @@ it.effect("fabrication reuse includes rotation rules and rejects concurrent sour
           n.startsWith(".pending"),
         ),
       ).toEqual([]);
+    }),
+  ),
+);
+
+it.effect("renders and exports a checkpoint without reading the live project", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const native = yield* NativeProcesses.make().pipe(Effect.provide(NodeServices.layer));
+      const git = (args: readonly string[]) =>
+        native
+          .run({ command: "git", args, cwd: t.root })
+          .pipe(
+            Effect.tap((result) => Effect.sync(() => expect(result.code, result.stderr).toBe(0))),
+          );
+      yield* git(["init", "-q"]);
+      yield* git(["config", "user.email", "pcb-history@example.test"]);
+      yield* git(["config", "user.name", "PCB tests"]);
+      yield* git(["add", "board.kicad_pro", "board.kicad_pcb", "board.kicad_sch"]);
+      yield* git(["commit", "-qm", "baseline"]);
+      const threadId = t.input.threadId,
+        scopeId = CheckpointScopeId.make("scope"),
+        nodeId = NodeId.make("node"),
+        checkpointId = CheckpointId.make("cp"),
+        ref = CheckpointRef.make("refs/t3/tests/pcb");
+      yield* git(["update-ref", ref, "HEAD"]);
+      t.setHistory(
+        [
+          {
+            id: checkpointId,
+            threadId,
+            scopeId,
+            runId: RunId.make("run"),
+            nodeId,
+            parentCheckpointId: null,
+            ordinalWithinScope: 1,
+            appRunOrdinal: 1,
+            ref,
+            status: "ready",
+            files: [{ path: "board.kicad_pcb", kind: "modified", additions: 1, deletions: 0 }],
+            capturedAt: DateTime.makeUnsafe(1000),
+          },
+        ],
+        [
+          {
+            id: scopeId,
+            threadId,
+            runId: null,
+            nodeId,
+            parentScopeId: null,
+            providerThreadId: null,
+            kind: "root_run",
+            ordinalWithinParent: 0,
+            advancesAppRunCount: true,
+            cwd: t.root,
+            createdAt: DateTime.makeUnsafe(0),
+          },
+        ],
+      );
+      yield* t.fs.writeFileString(t.path.join(t.root, "board.kicad_sch"), "live change");
+      const service = yield* t.create(
+        t.fs,
+        ProcessRunner.of({
+          run: (input) => (input.command === "git" ? native.run(input) : t.runner.run(input)),
+        }),
+      );
+      const rendered = yield* service.render({ ...t.input, checkpointId });
+      expect(rendered.outcome).toBe("ok");
+      expect(t.calls.find((call) => call.args.includes("svg"))?.cwd).toContain("history/trees");
+      expect(
+        (yield* service.readSheet({
+          threadId,
+          renderKey: rendered.renderKey,
+          sheetId: rendered.sheets[0]!.id,
+        })).svg,
+      ).toContain("<svg");
+      const asset = yield* service.asset({
+        threadId,
+        designId: t.input.designId,
+        checkpointId,
+        format: "glb",
+      });
+      expect(asset.file?.relativeUrl).toContain("/api/");
+      expect(
+        (yield* service.revisions({ threadId, designId: t.input.designId })).some(
+          (version) => version.label === "Turn 1",
+        ),
+      ).toBe(true);
     }),
   ),
 );

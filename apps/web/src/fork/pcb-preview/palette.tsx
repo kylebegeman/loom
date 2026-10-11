@@ -1,3 +1,4 @@
+import { dispatchPcbAction, type PcbAction } from "./actions";
 import { requestPcbChange } from "./requestCommands";
 import { CircuitBoardIcon } from "lucide-react";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "~/rightPanelStore";
@@ -16,6 +17,21 @@ export const pcbPreviewPaletteSource: ForkCommandPaletteSource = {
     return [
       ...(open
         ? [
+            ...(
+              [
+                ["history", "Toggle history"],
+                ["history-previous", "Previous version"],
+                ["history-next", "Next version"],
+              ] satisfies Array<[PcbAction, string]>
+            ).map(([action, label]) => ({
+              kind: "action" as const,
+              value: `action:loom:pcb-preview:${action}`,
+              title: `PCB: ${label}`,
+              description: "View this design across the thread's turns",
+              icon: <CircuitBoardIcon className="size-4" />,
+              searchTerms: ["pcb", "history", "turn"],
+              run: async () => dispatchPcbAction(activeThreadRef, action),
+            })),
             {
               kind: "action" as const,
               value: "action:loom:pcb-preview:request",

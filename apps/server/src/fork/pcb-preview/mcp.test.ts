@@ -760,3 +760,57 @@ it.effect(
       }),
     ),
 );
+
+it.effect(
+  "history restore requires a checkpoint or undo id and preserves agent conflict choices",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        let checked: boolean | undefined;
+        const { toolkit, threads } = yield* fixture({
+          historyRestore: (input, options) => {
+            checked = options?.checkContent;
+            expect(input.threadId).toBe(threadId);
+            return Effect.succeed({
+              plan: { design: [], supporting: [], added: [], editorLocks: [] },
+              undoId: null,
+              written: [],
+              removed: [],
+            });
+          },
+        });
+        const invoke = (input: {
+          designId: string;
+          action: "plan" | "restore" | "undo";
+          checkpointId?: string;
+          expectedContentKey?: string;
+        }) =>
+          toolkit
+            .handle("loom_pcb_restore_version", input)
+            .pipe(
+              Effect.flatMap(Stream.runCollect),
+              Effect.provideService(McpInvocationContext, scope),
+              Effect.provideService(ThreadManagementService, threads),
+            );
+        expect(
+          JSON.stringify(
+            yield* invoke({ designId: "main.kicad_pro", action: "plan" }).pipe(Effect.flip),
+          ),
+        ).toContain("invalid-parameters");
+        expect(
+          JSON.stringify(
+            yield* invoke({ designId: "main.kicad_pro", action: "undo" }).pipe(Effect.flip),
+          ),
+        ).toContain("invalid-parameters");
+        yield* invoke({ designId: "main.kicad_pro", action: "restore", checkpointId: "cp" });
+        expect(checked).toBe(false);
+        yield* invoke({
+          designId: "main.kicad_pro",
+          action: "restore",
+          checkpointId: "cp",
+          expectedContentKey: "key",
+        });
+        expect(checked).toBe(true);
+      }),
+    ),
+);

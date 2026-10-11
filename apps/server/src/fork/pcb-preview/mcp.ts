@@ -12,6 +12,46 @@ import { PcbPreviewService } from "./PcbPreviewService.ts";
 const design = { designId: W.PcbInspectInput.fields.designId };
 const failure = Schema.Union([W.PcbPreviewError, OrchestratorMcpFailure]);
 export const PcbToolkit = Toolkit.make(
+  Tool.make("loom_pcb_history", {
+    description:
+      "List the thread's turns that changed a PCB design's files, newest first. Each version has a checkpointId for loom_pcb_render, loom_pcb_asset, loom_pcb_restore_version and the editor's turn-history action, and a ref for loom_pcb_compare.",
+    parameters: Schema.Struct({
+      ...design,
+      cursor: W.PcbHistoryInput.fields.cursor,
+      limit: W.PcbHistoryInput.fields.limit,
+    }),
+    success: W.PcbHistory,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "List PCB design history")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_restore_version", {
+    description:
+      "Restore a PCB design's files from an earlier turn as one workspace write, preview the files a restore would touch, or undo a restore. plan and restore need checkpointId; undo needs the undoId restore returned. includeSupporting also writes libraries and assets; removeAdded deletes design files added since. Pass expectedContentKey (history.current.contentKey) to refuse if the files changed meanwhile.",
+    parameters: Schema.Struct({
+      ...design,
+      action: Schema.Literals(["plan", "restore", "undo"]),
+      checkpointId: W.PcbAssetInput.fields.checkpointId,
+      undoId: Schema.optional(Schema.String),
+      includeSupporting: Schema.optional(Schema.Boolean),
+      removeAdded: Schema.optional(Schema.Boolean),
+      expectedContentKey: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+    success: Schema.Struct({
+      plan: Schema.NullOr(W.PcbHistoryRestorePlan),
+      undoId: Schema.NullOr(Schema.String),
+      written: Schema.Array(Schema.String),
+      removed: Schema.Array(Schema.String),
+      message: Schema.String,
+    }),
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Restore PCB design version")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, true),
   Tool.make("loom_pcb_reuse_hardware", {
     description:
       "Copy an entry's explicitly linked local assets into this thread workspace. Immutable content folders preserve originals; link every required companion file before importing multi-file CAD designs.",
@@ -25,7 +65,7 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_editor", {
     description:
-      "Control the visible PCB editor: show changes since the last reload (changes), fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. finding steps next/previous or selects a finding id; markers shows/hides pins; snapshot lists current surface findings. layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
+      "Control the visible PCB editor: show changes since the last reload (changes), fit, zoom, pan, navigate back/forward, select components and nets, set layers, linked/3D modes, tool dock, measurements and annotation tools, load views, or capture PNG or SVG with format and PNG scale 1 or 2. Returns an acknowledgement and a host image path for captures. Points, pan offsets and lengths are in millimetres. finding steps next/previous or selects a finding id; markers shows/hides pins; snapshot lists current surface findings. turn-history shows history or a version (name = checkpoint id or current); turn-compare compares the shown version with another (name = checkpoint id or current). layers accepts name: a built-in preset id (assembly-front, assembly-back, copper-only, fab-review, silkscreen-check) or a saved layer set name.",
     parameters: Schema.Struct({ ...design, command: W.PcbEditorAction }),
     success: W.PcbEditorResult,
     failure,
@@ -80,9 +120,11 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_render", {
-    description: "Build schematic or board SVG previews with custom layers.",
+    description:
+      "Build schematic or board SVG previews with custom layers. Pass checkpointId from loom_pcb_history to build an earlier version.",
     parameters: Schema.Struct({
       ...design,
+      checkpointId: W.PcbRenderInput.fields.checkpointId,
       view: W.PcbRenderInput.fields.view,
       layers: W.PcbRenderInput.fields.layers,
       layerNames: W.PcbRenderInput.fields.layerNames,
@@ -339,9 +381,10 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_asset", {
     description:
-      "Export a real GLB board, Circuit JSON or SPICE netlist. GLB defaults to a signed, streamable file URL; transport=inline returns bounded base64. Other formats return text.",
+      "Export a real GLB board, Circuit JSON or SPICE netlist. GLB defaults to a signed, streamable file URL; transport=inline returns bounded base64. Other formats return text. Pass checkpointId from loom_pcb_history to build an earlier version.",
     parameters: Schema.Struct({
       ...design,
+      checkpointId: W.PcbAssetInput.fields.checkpointId,
       format: W.PcbAssetInput.fields.format,
       transport: W.PcbAssetInput.fields.transport,
       force: W.PcbAssetInput.fields.force,
@@ -354,7 +397,8 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_revisions", {
-    description: "List design Git commits and agent checkpoints.",
+    description:
+      "List this thread's turns that changed the design and the design's recent Git commits, for loom_pcb_compare.",
     parameters: Schema.Struct(design),
     success: W.PcbRevisions,
     failure,
@@ -485,6 +529,65 @@ export const pcbHandlers = McpToolAccess.toLayer(
               ),
             );
           }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_history: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) => service.history({ ...input, threadId })),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_restore_version: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              Effect.gen(function* () {
+                if (input.action === "undo") {
+                  if (!input.undoId)
+                    return yield* new W.PcbPreviewError({
+                      reason: "invalid-parameters",
+                      message: "Undo needs undoId.",
+                    });
+                  yield* service.historyUndo({
+                    threadId,
+                    designId: input.designId,
+                    undoId: input.undoId,
+                  });
+                  return {
+                    plan: null,
+                    undoId: null,
+                    written: [],
+                    removed: [],
+                    message: "Restore undone.",
+                  };
+                }
+                if (!input.checkpointId)
+                  return yield* new W.PcbPreviewError({
+                    reason: "invalid-parameters",
+                    message: "Plan and restore need checkpointId from loom_pcb_history.",
+                  });
+                const result = yield* service.historyRestore(
+                  {
+                    threadId,
+                    designId: input.designId,
+                    checkpointId: input.checkpointId,
+                    includeSupporting: input.includeSupporting ?? false,
+                    removeAdded: input.removeAdded ?? false,
+                    expectedContentKey: input.expectedContentKey ?? null,
+                    dryRun: input.action === "plan",
+                  },
+                  { checkContent: input.expectedContentKey !== undefined },
+                );
+                return {
+                  ...result,
+                  message: input.action === "plan" ? "Restore plan ready." : "Design restored.",
+                };
+              }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       loom_pcb_status: McpToolAccess.readsAsCaller((_input) =>
         Effect.gen(function* () {

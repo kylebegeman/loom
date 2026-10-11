@@ -1,3 +1,10 @@
+import { usePcbHistory } from "./usePcbHistory";
+import { HistoryStrip } from "./HistoryStrip";
+import { RestoreDesignDialog } from "./RestoreDesignDialog";
+import { historyChips, stepChip, viewingLabel } from "./history";
+import { onPcbAction } from "./actions";
+import { CheckpointId, type CheckpointId as CheckpointIdType } from "@t3tools/contracts";
+import type { PcbHistoryVersion } from "@t3tools/contracts/fork";
 import { FabricationTab, type FabOutputPreview } from "./FabricationTab";
 import { GerberPreview } from "./GerberPreview";
 import { RequestPins } from "./RequestPins";
@@ -28,6 +35,7 @@ import {
 } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
+  HistoryIcon,
   CheckIcon,
   ChevronDownIcon,
   CircuitBoardIcon,
@@ -151,7 +159,7 @@ const PRESET_LABELS: Record<PcbLayerPreset, string> = {
   back: "Back copper",
   all: "All copper",
 };
-type Notice = { tone: "info" | "error"; text: string };
+type Notice = { tone: "info" | "error"; text: string; persistent?: boolean };
 
 export function DesignWorkspace({
   threadRef,
@@ -174,6 +182,12 @@ export function DesignWorkspace({
   onDiscover: () => void;
   onClose: () => void;
 }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewing, setViewing] = useState<PcbHistoryVersion | null>(null);
+  const [restoreTarget, setRestoreTarget] = useState<PcbHistoryVersion | null>(null);
+  const [historyUndo, setHistoryUndo] = useState<{ id: string; label: string } | null>(null);
+  const [compareInitial, setCompareInitial] = useState<{ from: string; to: string; key: string }>();
+  const canRestore = useAtomValue(pcb.historyRestore.permissionAtom(threadRef.environmentId));
   const saved = usePcbPreferences((s) => s.selections[preferenceKey]);
   const unit = useLengthUnit();
   const setLengthUnit = usePcbPreferences((s) => s.setLengthUnit);
@@ -242,7 +256,7 @@ export function DesignWorkspace({
       null,
     );
   useEffect(() => {
-    if (notice?.tone !== "info") return;
+    if (notice?.tone !== "info" || notice.persistent) return;
     const timeout = setTimeout(() => setNotice(null), 5000);
     return () => clearTimeout(timeout);
   }, [notice]);
@@ -256,7 +270,94 @@ export function DesignWorkspace({
     design.kind === "kicad" && view === "pcb" && customLayers
       ? customLayers.map((l) => l.name)
       : undefined;
-  const preview = usePcbPreview(threadRef, design, view, layers, trusted, layerNames, !three);
+  const preview = usePcbPreview(
+    threadRef,
+    design,
+    view,
+    layers,
+    trusted,
+    layerNames,
+    !three && (!viewing || viewing.present),
+    viewing?.checkpointId,
+  );
+  const history = usePcbHistory({
+    threadRef,
+    path: design.id,
+    active: historyOpen || !!viewing,
+    liveRevision: preview.sourceHash,
+    selected: viewing?.checkpointId ?? null,
+  });
+  const showHistoryVersion = (id: CheckpointIdType | "now", version?: PcbHistoryVersion) => {
+    if (viewport.current && preview.display)
+      restoreView.current = { sheet: preview.display.sheetId, camera: viewport.current.snapshot() };
+    setMode("select");
+    setPoints([]);
+    setLinked(false);
+    setOutputs(null);
+    setSelected(null);
+    setNet(null);
+    setActiveFinding(null);
+    setViewing(
+      id === "now"
+        ? null
+        : (version ??
+            history.pages
+              .flatMap((page) => page.versions)
+              .find((version) => version.checkpointId === id) ??
+            null),
+    );
+    setHistoryOpen(true);
+  };
+  const closeHistory = () => {
+    showHistoryVersion("now");
+    setHistoryOpen(false);
+  };
+  const toggleHistory = () => {
+    if (historyOpen) closeHistory();
+    else setHistoryOpen(true);
+  };
+  const stepHistory = async (direction: -1 | 1) => {
+    setHistoryOpen(true);
+    let pages = [...history.pages];
+    if (!pages.length) {
+      const page = await runPcbCommand(pcb.history, {
+        environmentId: threadRef.environmentId,
+        input: { threadId: threadRef.threadId, designId: design.id },
+      });
+      history.includePage(page);
+      pages = [page];
+    }
+    const next = stepChip(
+      historyChips(pages, viewing?.checkpointId ?? null),
+      viewing?.checkpointId ?? "now",
+      direction,
+    );
+    if (next)
+      showHistoryVersion(
+        next,
+        next === "now"
+          ? undefined
+          : pages.flatMap((page) => page.versions).find((version) => version.checkpointId === next),
+      );
+    else if (direction === -1 && pages.at(-1)?.nextCursor) history.loadEarlier();
+  };
+  const compareVersion = () => {
+    if (viewing?.present) {
+      setCompareInitial({ from: viewing.ref, to: "", key: randomUUID() });
+      openTab("Compare");
+    }
+  };
+  const historyAction = useEffectEvent((action: import("./actions").PcbAction) => {
+    if (action === "history") toggleHistory();
+    else
+      void stepHistory(action === "history-previous" ? -1 : 1).catch((error) =>
+        setNotice({
+          tone: "error",
+          text: error instanceof Error ? error.message : "Could not load history.",
+        }),
+      );
+  });
+  useEffect(() => onPcbAction(threadRef, historyAction), [threadRef]);
   const refreshPreview = () => {
     if (three) board3d.current?.refresh();
     else preview.refresh();
@@ -272,7 +373,7 @@ export function DesignWorkspace({
     inspection: workbench.inspection,
     display: preview.display,
     customLayers,
-    suspended: three,
+    suspended: three || !!viewing,
   });
   if (workbench.inspection && design.kind === "kicad") {
     const reconciled = reconcileLayerChoice(customLayers, workbench.inspection.layers, layers);
@@ -347,10 +448,12 @@ export function DesignWorkspace({
     !!preview.display &&
     preview.display.view === view &&
     preview.display.sheetId === preview.selectedSheet &&
-    (!preview.sourceHash || preview.display.sourceHash === preview.sourceHash) &&
+    (viewing
+      ? preview.display.requestKey === preview.requestKey
+      : !preview.sourceHash || preview.display.sourceHash === preview.sourceHash) &&
     !preview.rendering &&
     !preview.loadingSheet;
-  const canMark = workbench.canEdit && workbench.ready;
+  const canMark = !viewing && workbench.canEdit && workbench.ready;
   const pendingFocus = useRef<{ point: PcbPoint; view: PcbView; sheet?: string } | null>(null);
   const focusPoint = (target: PcbView, point: PcbPoint, sheet?: string) => {
     setThree(false);
@@ -948,7 +1051,60 @@ export function DesignWorkspace({
         if (!board3d.current || !three) throw new Error("Open a loaded 3D board for this action.");
         return board3d.current;
       };
+      if (
+        viewing &&
+        ["capture", "tool", "select", "net", "load-view", "finding", "markers", "changes"].includes(
+          c.action,
+        )
+      )
+        throw new Error("These tools work on the current version.");
       switch (c.action) {
+        case "turn-history": {
+          if (c.enabled === false) closeHistory();
+          else if (!c.name) {
+            if (c.enabled === true) setHistoryOpen(true);
+            else toggleHistory();
+          } else if (c.name === "current") showHistoryVersion("now");
+          else {
+            const id = CheckpointId.make(c.name);
+            let pages = [...history.pages];
+            let version = pages
+              .flatMap((page) => page.versions)
+              .find((version) => version.checkpointId === id);
+            let cursor: number | null = null;
+            while (!version) {
+              const page: import("@t3tools/contracts/fork").PcbHistory = await runPcbCommand(
+                pcb.history,
+                {
+                  environmentId: threadRef.environmentId,
+                  input: { threadId: threadRef.threadId, designId: design.id, cursor },
+                },
+              );
+              history.includePage(page);
+              pages.push(page);
+              version = page.versions.find((version) => version.checkpointId === id);
+              if (!page.nextCursor) break;
+              cursor = page.nextCursor;
+            }
+            if (!version) throw new Error("Turn not found. List versions with loom_pcb_history.");
+            showHistoryVersion(id, version);
+          }
+          break;
+        }
+        case "turn-compare": {
+          if (!viewing) throw new Error("View a version with turn-history first.");
+          const target =
+            c.name && c.name !== "current"
+              ? history.pages
+                  .flatMap((page) => page.versions)
+                  .find((version) => version.checkpointId === c.name)
+              : null;
+          if (c.name && c.name !== "current" && !target)
+            throw new Error("Turn not found. List versions with loom_pcb_history.");
+          setCompareInitial({ from: viewing.ref, to: target?.ref ?? "", key: randomUUID() });
+          openTab("Compare");
+          break;
+        }
         case "refresh":
           if (three) model().refresh();
           else preview.refresh();
@@ -1185,6 +1341,12 @@ export function DesignWorkspace({
         state:
           c.action === "snapshot" || c.action === "changes"
             ? {
+                turnHistory: {
+                  open: historyOpen,
+                  checkpointId: viewing?.checkpointId ?? null,
+                  turn: viewing?.turn ?? null,
+                  latestTurn: history.latestTurn,
+                },
                 view,
                 sheet: preview.selectedSheet,
                 three,
@@ -1425,7 +1587,13 @@ export function DesignWorkspace({
       {!three && preview.rendering && (
         <OperationStatus
           key={preview.requestKey}
-          label={view === "schematic" ? "Building schematic" : "Building board"}
+          label={
+            viewing
+              ? `Loading ${viewing.turn ? `turn ${viewing.turn}` : "the start"}...`
+              : view === "schematic"
+                ? "Building schematic"
+                : "Building board"
+          }
           detail={
             design.kind === "tscircuit"
               ? "Evaluating circuit code and routing the board."
@@ -1501,6 +1669,32 @@ export function DesignWorkspace({
           <div className={styles.noticeRow}>
             {notice.tone === "info" && <CheckIcon aria-hidden="true" />}
             <p>{notice.text}</p>
+            {historyUndo && (
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => {
+                  const undo = historyUndo;
+                  setHistoryUndo(null);
+                  void runPcbCommand(pcb.historyUndo, {
+                    environmentId: threadRef.environmentId,
+                    input: { threadId: threadRef.threadId, designId: design.id, undoId: undo.id },
+                  })
+                    .then(() => {
+                      history.refresh();
+                      setNotice({ tone: "info", text: "Restore undone." });
+                    })
+                    .catch((error) =>
+                      setNotice({
+                        tone: "error",
+                        text: error instanceof Error ? error.message : "Undo failed.",
+                      }),
+                    );
+                }}
+              >
+                Undo
+              </Button>
+            )}
             <ToolButton label="Dismiss" onClick={() => setNotice(null)}>
               <XIcon />
             </ToolButton>
@@ -1649,129 +1843,138 @@ export function DesignWorkspace({
       ))}
     </div>
   );
-  const primaryDrawing = preview.display ? (
-    <SvgViewport
-      key={`${preview.display.view}:${preview.display.layers}:${preview.display.sheetId}`}
-      svg={preview.display.svg}
-      label={preview.display.label}
-      busy={preview.rendering || preview.loadingSheet}
-      kind={preview.display.view}
-      handle={viewport}
-      extra={<ShortcutHelp />}
-      onReady={() => {
-        notifyDrawing();
-        if (restoreView.current && preview.display?.sheetId === restoreView.current.sheet) {
-          viewport.current?.restore(restoreView.current.camera);
-          restoreView.current = null;
-        } else if (
-          pendingFocus.current &&
-          preview.display?.view === pendingFocus.current.view &&
-          (!pendingFocus.current.sheet || preview.display?.sheetId === pendingFocus.current.sheet)
-        ) {
-          viewport.current?.focus(pendingFocus.current.point);
-          pendingFocus.current = null;
+  const primaryDrawing =
+    viewing && !viewing.present ? (
+      <CanvasState
+        icon={<HistoryIcon />}
+        title="Design not created yet"
+      >{`${design.name} did not exist after turn ${viewing.turn}.`}</CanvasState>
+    ) : preview.display ? (
+      <SvgViewport
+        key={`${preview.display.view}:${preview.display.layers}:${preview.display.sheetId}`}
+        svg={preview.display.svg}
+        label={preview.display.label}
+        busy={preview.rendering || preview.loadingSheet}
+        kind={preview.display.view}
+        handle={viewport}
+        extra={<ShortcutHelp />}
+        onReady={() => {
+          notifyDrawing();
+          if (restoreView.current && preview.display?.sheetId === restoreView.current.sheet) {
+            viewport.current?.restore(restoreView.current.camera);
+            restoreView.current = null;
+          } else if (
+            pendingFocus.current &&
+            preview.display?.view === pendingFocus.current.view &&
+            (!pendingFocus.current.sheet || preview.display?.sheetId === pendingFocus.current.sheet)
+          ) {
+            viewport.current?.focus(pendingFocus.current.point);
+            pendingFocus.current = null;
+          }
+        }}
+        onBox={
+          mode === "request" && canMark
+            ? (box: PcbBounds) => beginRequest({ kind: "area", box })
+            : undefined
         }
-      }}
-      onBox={
-        mode === "request" && canMark
-          ? (box: PcbBounds) => beginRequest({ kind: "area", box })
-          : undefined
-      }
-      onPick={
-        drawingCurrent &&
-        (mode === "select" || (workbench.canEdit && workbench.ready && workbench.pending === 0))
-          ? pick
-          : undefined
-      }
-      layered={preview.display.view === "pcb" && !!preview.display.result.sheets[0]?.layer}
-      overlays={
-        <>
-          {changes.shown &&
-            changes.pair &&
-            changes.pair.after.sourceHash === preview.display.sourceHash && (
-              <ChangeHighlights
-                set={changes.set}
-                regions={changes.regions}
+        onPick={
+          !viewing &&
+          drawingCurrent &&
+          (mode === "select" || (workbench.canEdit && workbench.ready && workbench.pending === 0))
+            ? pick
+            : undefined
+        }
+        layered={preview.display.view === "pcb" && !!preview.display.result.sheets[0]?.layer}
+        overlays={
+          !viewing && (
+            <>
+              {changes.shown &&
+                changes.pair &&
+                changes.pair.after.sourceHash === preview.display.sourceHash && (
+                  <ChangeHighlights
+                    set={changes.set}
+                    regions={changes.regions}
+                    view={view}
+                    sheet={preview.selectedSheet}
+                    before={changes.pair.before.inspection}
+                    after={changes.pair.after}
+                  />
+                )}
+              <RequestPins
+                requests={
+                  pendingRequest
+                    ? [...workbench.data.requests, pendingRequest]
+                    : workbench.data.requests
+                }
+                inspection={workbench.inspection}
                 view={view}
                 sheet={preview.selectedSheet}
-                before={changes.pair.before.inspection}
-                after={changes.pair.after}
+                only={captureOnly}
               />
-            )}
-          <RequestPins
-            requests={
-              pendingRequest
-                ? [...workbench.data.requests, pendingRequest]
-                : workbench.data.requests
-            }
-            inspection={workbench.inspection}
-            view={view}
-            sheet={preview.selectedSheet}
-            only={captureOnly}
-          />
-          <DrawingOverlays
-            data={workbench.data}
-            sourceHash={preview.display.sourceHash}
-            view={preview.display.view}
-            sheet={preview.display.sheetId}
-            selected={selected}
-            net={net}
-            components={
-              workbench.inspection?.sourceHash === preview.display.sourceHash
-                ? workbench.inspection.components
-                : []
-            }
-            pending={points}
-            unit={unit}
-          />
-          {checkMarkers && preview.display.view === view && (
-            <CheckMarkers
-              addedIds={markerReport?.delta?.added}
-              findings={drawingFindings}
-              activeId={visibleActiveFinding}
-              activePoints={activePoints}
-              stale={markersStale}
-              excludedIds={excludedFindingIds}
+              <DrawingOverlays
+                data={workbench.data}
+                sourceHash={preview.display.sourceHash}
+                view={preview.display.view}
+                sheet={preview.display.sheetId}
+                selected={selected}
+                net={net}
+                components={
+                  workbench.inspection?.sourceHash === preview.display.sourceHash
+                    ? workbench.inspection.components
+                    : []
+                }
+                pending={points}
+                unit={unit}
+              />
+              {checkMarkers && preview.display.view === view && (
+                <CheckMarkers
+                  addedIds={markerReport?.delta?.added}
+                  findings={drawingFindings}
+                  activeId={visibleActiveFinding}
+                  activePoints={activePoints}
+                  stale={markersStale}
+                  excludedIds={excludedFindingIds}
+                />
+              )}
+            </>
+          )
+        }
+      >
+        {preview.display.view === "pcb" &&
+          preview.display.result.sheets[0]?.layer &&
+          preview.display.result.sheets.map((sheet) => (
+            <LayerSheet
+              key={sheet.id}
+              threadRef={threadRef}
+              renderKey={preview.display!.renderKey}
+              sheetId={sheet.id}
+              revision={preview.display!.requestKey}
+              onSvg={changes.onSvg}
+              opacity={
+                customLayers?.find((l) => l.name === sheet.layer)?.visible
+                  ? customLayers.find((l) => l.name === sheet.layer)!.opacity
+                  : 0
+              }
             />
-          )}
-        </>
-      }
-    >
-      {preview.display.view === "pcb" &&
-        preview.display.result.sheets[0]?.layer &&
-        preview.display.result.sheets.map((sheet) => (
-          <LayerSheet
-            key={sheet.id}
-            threadRef={threadRef}
-            renderKey={preview.display!.renderKey}
-            sheetId={sheet.id}
-            revision={preview.display!.requestKey}
-            onSvg={changes.onSvg}
-            opacity={
-              customLayers?.find((l) => l.name === sheet.layer)?.visible
-                ? customLayers.find((l) => l.name === sheet.layer)!.opacity
-                : 0
-            }
-          />
-        ))}
-    </SvgViewport>
-  ) : !preview.rendering && !preview.loadingSheet && !preview.watching ? (
-    <CanvasState
-      icon={<CircuitBoardIcon />}
-      title={preview.cancelled ? "Preview cancelled" : "No preview yet"}
-      actions={
-        <Button size="sm" onClick={refreshPreview} disabled={!preview.canRender}>
-          Build preview
-        </Button>
-      }
-    >
-      <p>Build a drawing of the saved design.</p>
-    </CanvasState>
-  ) : (
-    <div className={styles.placeholder} aria-hidden="true">
-      <CircuitBoardIcon />
-    </div>
-  );
+          ))}
+      </SvgViewport>
+    ) : !preview.rendering && !preview.loadingSheet && !preview.watching ? (
+      <CanvasState
+        icon={<CircuitBoardIcon />}
+        title={preview.cancelled ? "Preview cancelled" : "No preview yet"}
+        actions={
+          <Button size="sm" onClick={refreshPreview} disabled={!preview.canRender}>
+            Build preview
+          </Button>
+        }
+      >
+        <p>Build a drawing of the saved design.</p>
+      </CanvasState>
+    ) : (
+      <div className={styles.placeholder} aria-hidden="true">
+        <CircuitBoardIcon />
+      </div>
+    );
   return (
     <div
       className={styles.workspace}
@@ -1780,6 +1983,28 @@ export function DesignWorkspace({
       tabIndex={-1}
       aria-label="PCB workspace"
       onKeyDown={(event) => {
+        if (
+          !event.defaultPrevented &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !(
+            event.target instanceof HTMLElement &&
+            event.target.closest(
+              "input, textarea, select, [contenteditable=true], [role=menu], [role=dialog]",
+            )
+          ) &&
+          (event.key === "[" || event.key === "]")
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          void stepHistory(event.key === "[" ? -1 : 1).catch((error) =>
+            setNotice({
+              tone: "error",
+              text: error instanceof Error ? error.message : "Could not load history.",
+            }),
+          );
+          return;
+        }
         if (
           event.defaultPrevented ||
           event.metaKey ||
@@ -1792,7 +2017,7 @@ export function DesignWorkspace({
         )
           return;
         const key = event.key.toLowerCase();
-        const drawingTools = !three && !blocked;
+        const drawingTools = !three && !blocked && !viewing;
         if (key === "escape" && mode !== "select") cancelTool();
         else if (key === "escape" && activeFinding) {
           setActiveFinding(null);
@@ -1802,6 +2027,7 @@ export function DesignWorkspace({
         else if (key === "2" && surfaces.pcb) chooseSurface("pcb");
         else if (key === "3" && surfaces["3d"]) chooseSurface("3d");
         else if (key === "i") toggleTools();
+        else if (key === "t") toggleHistory();
         else if (key === "." && drawingTools) stepFindings(1);
         else if (key === "," && drawingTools) stepFindings(-1);
         else if (key === "c" && drawingTools) setCheckMarkers(!checkMarkers);
@@ -1819,6 +2045,14 @@ export function DesignWorkspace({
       <header className={styles.docBar}>
         <DesignMenu design={design} listing={listing} onSelect={onSelect} onDiscover={onDiscover} />
         <div className={styles.docActions}>
+          <ToolButton
+            label="History"
+            hint="History (T)"
+            aria-pressed={historyOpen}
+            onClick={toggleHistory}
+          >
+            <HistoryIcon />
+          </ToolButton>
           {changes.chip && (
             <ChangesChip changes={changes} onComponent={selectComponent} onNet={selectNet} />
           )}
@@ -1827,7 +2061,7 @@ export function DesignWorkspace({
           )}
           <CaptureMenu
             three={three}
-            disabled={!!blocked || (three ? false : !drawingCurrent)}
+            disabled={!!viewing || !!blocked || (three ? false : !drawingCurrent)}
             busy={captureBusy}
             canCopy={canCopyImages()}
             scale={pngScale}
@@ -1839,9 +2073,13 @@ export function DesignWorkspace({
             canRefresh={!blocked && preview.canRender}
             electronicsUrl={electronics}
             canExport={
-              !!design.boardPath && executionAllowed && preview.canRender && design.toolAvailable
+              !viewing &&
+              !!design.boardPath &&
+              executionAllowed &&
+              preview.canRender &&
+              design.toolAvailable
             }
-            canPrint={!!design.boardPath && executionAllowed && printPermission}
+            canPrint={!viewing && !!design.boardPath && executionAllowed && printPermission}
             trusted={design.kind === "tscircuit" && trusted}
             onRefresh={refreshPreview}
             onExport={() => setExportOpen(true)}
@@ -1944,6 +2182,7 @@ export function DesignWorkspace({
               <Board3D
                 threadRef={threadRef}
                 designId={design.id}
+                checkpointId={viewing?.checkpointId}
                 sourceHash={preview.sourceHash}
                 handle={board3d}
                 onCancel={() => setThree(false)}
@@ -1961,7 +2200,7 @@ export function DesignWorkspace({
                 {contextShelf}
                 {toolShelf}
               </div>
-              {linked && (
+              {linked && !viewing && (
                 <LinkedDrawing
                   captureOnly={captureOnly}
                   changes={changes}
@@ -1986,7 +2225,18 @@ export function DesignWorkspace({
             onExpand={() => setExpanded((v) => !v)}
             onClose={() => openTab(null)}
           >
-            {tab === "Fabrication" ? (
+            {viewing &&
+            [
+              "Inspect",
+              "Checks",
+              "Simulate",
+              "Parameters",
+              "Fabrication",
+              "Requests",
+              "Library",
+            ].includes(tab) ? (
+              <p className="p-4 text-sm">These tools work on the current version.</p>
+            ) : tab === "Fabrication" ? (
               <FabricationTab
                 threadRef={threadRef}
                 design={design}
@@ -2048,6 +2298,7 @@ export function DesignWorkspace({
               />
             ) : (
               <ToolPanel
+                compareInitial={compareInitial}
                 key={tab}
                 tab={tab}
                 requestPanel={
@@ -2106,8 +2357,10 @@ export function DesignWorkspace({
                 onMeasure={measureHeights}
                 onOpenChecks={tabs.includes("Checks") ? () => openTab("Checks") : undefined}
                 onDraft={draftBoardStats}
-                canSave={workbench.ready && workbench.canEdit && workbench.pending === 0}
-                canSaveView={!three && drawingCurrent}
+                canSave={
+                  !viewing && workbench.ready && workbench.canEdit && workbench.pending === 0
+                }
+                canSaveView={!viewing && !three && drawingCurrent}
                 canMark={canMark && !blocked}
                 data={workbench.data}
                 view={view}
@@ -2190,7 +2443,50 @@ export function DesignWorkspace({
           onTab={openTab}
         />
       </div>
+      {historyOpen && (
+        <HistoryStrip
+          chips={history.chips}
+          viewing={viewing?.checkpointId ?? null}
+          hasEarlier={!!history.pages.at(-1)?.nextCursor}
+          loading={history.status === "loading"}
+          error={history.error}
+          unavailable={history.unavailable}
+          canRestore={canRestore}
+          onEarlier={history.loadEarlier}
+          onView={showHistoryVersion}
+          onCompare={compareVersion}
+          onRestore={() => setRestoreTarget(viewing)}
+          onClose={closeHistory}
+        />
+      )}
+      {restoreTarget && (
+        <RestoreDesignDialog
+          threadRef={threadRef}
+          designId={design.id}
+          version={restoreTarget}
+          contentKey={history.current?.contentKey ?? null}
+          threadRunning={history.threadRunning}
+          onClose={() => setRestoreTarget(null)}
+          onConflict={history.refresh}
+          onRestored={(result) => {
+            const label = `Restored ${design.name} from ${restoreTarget.turn ? `turn ${restoreTarget.turn}` : "the start"}.`;
+            setHistoryUndo(result.undoId ? { id: result.undoId, label } : null);
+            setRestoreTarget(null);
+            showHistoryVersion("now");
+            history.refresh();
+            setNotice({ tone: "info", text: label, persistent: true });
+          }}
+        />
+      )}
       <footer className={styles.statusBar}>
+        {viewing && (
+          <>
+            <span>{viewingLabel(viewing.turn, history.latestTurn)}</span>
+            <button className={styles.statusChip} onClick={() => showHistoryVersion("now")}>
+              Back to current
+            </button>
+          </>
+        )}
         <span className={styles.state} data-state={state}>
           <span className={styles.stateDot} aria-hidden="true" />
           {state === "error"

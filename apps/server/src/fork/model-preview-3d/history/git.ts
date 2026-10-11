@@ -113,7 +113,7 @@ export const makeHistoryGit = Effect.gen(function* () {
     options: { recursive?: boolean } = {},
   ) {
     if (paths.length === 0) return [];
-    if (paths.some((value) => !safeRepoPath(value)))
+    if (paths.some((value) => value !== "." && !safeRepoPath(value)))
       return yield* new ModelPreviewError({
         reason: "invalid-path",
         message: "Choose files inside the workspace.",
@@ -174,6 +174,10 @@ export const makeHistoryGit = Effect.gen(function* () {
       return yield* failure();
     return new Map(present.map((relative, i) => [`${prefix ?? ""}${relative}`, oids[i]!]));
   });
-  return { repoPrefix, repoRoot, treeOid, treeOids, lsTree, materialize, hashObjects };
+  const hashFile = (root: string, absolute: string, relative: string) =>
+    checked(root, ["hash-object", `--path=${relative}`, "--", absolute]).pipe(
+      Effect.map((oid) => oid.trim()),
+    );
+  return { repoPrefix, repoRoot, treeOid, treeOids, lsTree, materialize, hashObjects, hashFile };
 });
 export type HistoryGit = Effect.Success<typeof makeHistoryGit>;

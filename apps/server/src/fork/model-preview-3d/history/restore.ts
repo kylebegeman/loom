@@ -94,10 +94,66 @@ export const makeHistoryRestore = (options: {
         { discard: true },
       );
     });
+    // Stage every byte before committing any destination. Backups remain until all writes succeed.
+    const transaction = Effect.fn("ModelHistory.restoreTransaction")(function* (
+      targets: ReadonlyArray<{ target: string; source: string | null; mode: number }>,
+      backups: ReadonlyArray<{ backup: string | null; mode: number }>,
+      dir: string,
+    ) {
+      const staged: Array<string | null> = [];
+      let committed = 0;
+      yield* Effect.gen(function* () {
+        for (const entry of targets) {
+          if (entry.source === null) {
+            staged.push(null);
+            continue;
+          }
+          yield* fs.makeDirectory(path.dirname(entry.target), { recursive: true });
+          const temporary = path.join(
+            path.dirname(entry.target),
+            `.${path.basename(entry.target)}.loom-restore-${NodeCrypto.randomUUID()}`,
+          );
+          staged.push(temporary);
+          yield* fs.copyFile(entry.source, temporary);
+          yield* fs.chmod(temporary, entry.mode & 0o777);
+        }
+        for (let index = 0; index < targets.length; index++) {
+          const target = targets[index]!.target;
+          const temporary = staged[index];
+          if (temporary === null) yield* fs.remove(target, { force: true });
+          else yield* fs.rename(temporary!, target);
+          committed++;
+        }
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.gen(function* () {
+            for (let index = committed - 1; index >= 0; index--) {
+              const previous = backups[index]!;
+              if (previous.backup === null)
+                yield* fs.remove(targets[index]!.target, { force: true });
+              else
+                yield* write(
+                  path.join(dir, "files", previous.backup),
+                  targets[index]!.target,
+                  previous.mode,
+                );
+            }
+            return yield* Effect.fail(cause);
+          }),
+        ),
+        Effect.ensuring(
+          Effect.forEach(
+            staged.filter((value) => value !== null),
+            (file) => fs.remove(file, { force: true }).pipe(Effect.ignore),
+            { discard: true },
+          ),
+        ),
+      );
+    });
     const restore = (input: {
       root: string;
       file: ModelFileRef;
-      entries: ReadonlyArray<{ path: string; source: string; mode: number }>;
+      entries: ReadonlyArray<{ path: string; source: string | null; mode: number }>;
     }) =>
       lock.withPermit(
         Effect.uninterruptible(
@@ -107,138 +163,158 @@ export const makeHistoryRestore = (options: {
                 Effect.map((target) => ({ ...entry, target })),
               ),
             );
+            if (new Set(targets.map((entry) => entry.target)).size !== targets.length)
+              return yield* fail("invalid-path", "Several files resolve to the same destination.");
             const id: string = NodeCrypto.randomUUID();
             const dir = path.join(options.undoDir, id);
             yield* fs.makeDirectory(path.join(dir, "files"), { recursive: true });
-            const backups = yield* Effect.forEach(targets, (entry, index) =>
-              Effect.gen(function* () {
-                const present = yield* fs.exists(entry.target);
-                const backup = present ? String(index) : null;
-                const mode = present ? (yield* fs.stat(entry.target)).mode : 0;
-                if (backup !== null)
-                  yield* fs.copyFile(entry.target, path.join(dir, "files", backup));
-                return {
-                  path: entry.path,
-                  backup,
-                  mode,
-                  restoredOid: null,
-                  target: entry.target,
-                  restoredMode: entry.mode & 0o777,
-                };
-              }),
-            );
-            const manifest: UndoManifest = {
-              id,
-              root: input.root,
-              threadId: input.file.threadId,
-              modelPath: input.file.path,
-              createdAt: DateTime.toEpochMillis(yield* DateTime.now),
-              entries: backups,
-            };
-            yield* fs.writeFileString(path.join(dir, "manifest.json"), encode(manifest));
-            yield* Effect.gen(function* () {
-              for (const target of targets) yield* write(target.source, target.target, target.mode);
-              const prefix = (yield* options.git.repoPrefix(input.root)) ?? "";
-              const hashes = yield* options.git.hashObjects(
-                input.root,
-                targets.map((target) => target.path),
+            return yield* Effect.gen(function* () {
+              const backups = yield* Effect.forEach(targets, (entry, index) =>
+                Effect.gen(function* () {
+                  const present = yield* fs.exists(entry.target);
+                  const backup = present ? String(index) : null;
+                  const mode = present ? (yield* fs.stat(entry.target)).mode : 0;
+                  if (backup !== null)
+                    yield* fs.copyFile(entry.target, path.join(dir, "files", backup));
+                  return {
+                    path: entry.path,
+                    backup,
+                    mode,
+                    restoredOid: null,
+                    target: entry.target,
+                    restoredMode: entry.mode & 0o777,
+                  };
+                }),
+              );
+              const manifest: UndoManifest = {
+                id,
+                root: input.root,
+                threadId: input.file.threadId,
+                modelPath: input.file.path,
+                createdAt: DateTime.toEpochMillis(yield* DateTime.now),
+                entries: backups,
+              };
+              // Hash staged sources before writing, so no fallible Git command follows the commit.
+              const hashes = yield* Effect.forEach(targets, (entry) =>
+                entry.source === null
+                  ? Effect.succeed(null)
+                  : options.git.hashFile(input.root, entry.source, entry.path),
               );
               const complete: UndoManifest = {
                 ...manifest,
-                entries: manifest.entries.map((entry) => ({
+                entries: manifest.entries.map((entry, index) => ({
                   ...entry,
-                  restoredOid: hashes.get(prefix + entry.path) ?? null,
+                  restoredOid: hashes[index]!,
                 })),
               };
               yield* fs.writeFileString(path.join(dir, "manifest.json"), encode(complete));
+              yield* transaction(targets, backups, dir);
+              yield* prune().pipe(Effect.ignore);
+              return { undoId: id, restored: targets.map((target) => target.path) };
             }).pipe(
-              Effect.catch((cause) =>
-                Effect.gen(function* () {
-                  // A failed multi-file restore puts every preflighted destination back before reporting failure.
-                  for (let index = targets.length - 1; index >= 0; index--) {
-                    const previous = backups[index]!;
-                    const target = targets[index]!.target;
-                    if (previous.backup === null) yield* fs.remove(target, { force: true });
-                    else
-                      yield* write(path.join(dir, "files", previous.backup), target, previous.mode);
-                  }
-                  yield* fs.remove(dir, { recursive: true, force: true });
-                  return yield* Effect.fail(cause);
-                }),
+              Effect.onError(() =>
+                fs.remove(dir, { recursive: true, force: true }).pipe(Effect.ignore),
               ),
             );
-            yield* prune();
-            return { undoId: id, restored: targets.map((target) => target.path) };
           }),
         ),
       );
     const undo = (input: { root: string; file: ModelFileRef; undoId: string }) =>
-      lock.withPermit(
-        Effect.uninterruptible(
-          Effect.gen(function* () {
-            if (!/^[0-9a-f-]{36}$/.test(input.undoId))
-              return yield* fail("not-found", "This restore can no longer be undone.");
-            const dir = path.join(options.undoDir, input.undoId);
-            const manifest = yield* fs.readFileString(path.join(dir, "manifest.json")).pipe(
-              Effect.flatMap(decode),
-              Effect.mapError(() => fail("not-found", "This restore can no longer be undone.")),
-            );
-            if (
-              manifest.id !== input.undoId ||
-              manifest.root !== input.root ||
-              manifest.threadId !== input.file.threadId ||
-              manifest.modelPath !== input.file.path ||
-              DateTime.toEpochMillis(yield* DateTime.now) - manifest.createdAt > HISTORY_UNDO_TTL_MS
-            )
-              return yield* fail("not-found", "This restore can no longer be undone.");
-            const targets = yield* Effect.forEach(manifest.entries, (entry) =>
-              destination(input.root, entry.path),
-            );
-            if (targets.some((target, index) => target !== manifest.entries[index]!.target))
-              return yield* fail(
-                "conflict",
-                "The model path changed after the restore, so Undo would overwrite newer work.",
+      Effect.scoped(
+        lock.withPermit(
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              if (!/^[0-9a-f-]{36}$/.test(input.undoId))
+                return yield* fail("not-found", "This restore can no longer be undone.");
+              const dir = path.join(options.undoDir, input.undoId);
+              const manifest = yield* fs.readFileString(path.join(dir, "manifest.json")).pipe(
+                Effect.flatMap(decode),
+                Effect.mapError(() => fail("not-found", "This restore can no longer be undone.")),
               );
-            const modes = yield* Effect.forEach(targets, (target) =>
-              fs.stat(target).pipe(
-                Effect.map((info) => info.mode & 0o777),
-                Effect.orElseSucceed(() => null),
-              ),
-            );
-            if (modes.some((mode, index) => mode !== manifest.entries[index]!.restoredMode))
-              return yield* fail(
-                "conflict",
-                "The model changed after the restore, so Undo would overwrite newer work.",
-              );
-            const prefix = (yield* options.git.repoPrefix(input.root)) ?? "";
-            const hashes = yield* options.git.hashObjects(
-              input.root,
-              manifest.entries.map((entry) => entry.path),
-            );
-            if (
-              manifest.entries.some(
-                (entry) => (hashes.get(prefix + entry.path) ?? null) !== entry.restoredOid,
-              )
-            )
-              return yield* fail(
-                "conflict",
-                "The model changed after the restore, so Undo would overwrite newer work.",
-              );
-            // Validate every backup before making the first write.
-            for (const entry of manifest.entries)
               if (
-                entry.backup !== null &&
-                (!/^\d+$/.test(entry.backup) ||
-                  !(yield* fs.exists(path.join(dir, "files", entry.backup))))
+                manifest.id !== input.undoId ||
+                manifest.root !== input.root ||
+                manifest.threadId !== input.file.threadId ||
+                manifest.modelPath !== input.file.path ||
+                DateTime.toEpochMillis(yield* DateTime.now) - manifest.createdAt >
+                  HISTORY_UNDO_TTL_MS
               )
                 return yield* fail("not-found", "This restore can no longer be undone.");
-            for (let index = 0; index < manifest.entries.length; index++) {
-              const entry = manifest.entries[index]!;
-              if (entry.backup === null) yield* fs.remove(targets[index]!, { force: true });
-              else yield* write(path.join(dir, "files", entry.backup), targets[index]!, entry.mode);
-            }
-            yield* fs.remove(dir, { recursive: true, force: true });
-          }),
+              const targets = yield* Effect.forEach(manifest.entries, (entry) =>
+                destination(input.root, entry.path),
+              );
+              if (targets.some((target, index) => target !== manifest.entries[index]!.target))
+                return yield* fail(
+                  "conflict",
+                  "The model path changed after the restore, so Undo would overwrite newer work.",
+                );
+              const modes = yield* Effect.forEach(targets, (target) =>
+                fs.stat(target).pipe(
+                  Effect.map((info) => info.mode & 0o777),
+                  Effect.orElseSucceed(() => null),
+                ),
+              );
+              if (
+                modes.some(
+                  (mode, index) =>
+                    mode !==
+                    (manifest.entries[index]!.restoredOid === null
+                      ? null
+                      : manifest.entries[index]!.restoredMode),
+                )
+              )
+                return yield* fail(
+                  "conflict",
+                  "The model changed after the restore, so Undo would overwrite newer work.",
+                );
+              const prefix = (yield* options.git.repoPrefix(input.root)) ?? "";
+              const hashes = yield* options.git.hashObjects(
+                input.root,
+                manifest.entries.map((entry) => entry.path),
+              );
+              if (
+                manifest.entries.some(
+                  (entry) => (hashes.get(prefix + entry.path) ?? null) !== entry.restoredOid,
+                )
+              )
+                return yield* fail(
+                  "conflict",
+                  "The model changed after the restore, so Undo would overwrite newer work.",
+                );
+              // Validate every backup before making the first write.
+              for (const entry of manifest.entries)
+                if (
+                  entry.backup !== null &&
+                  (!/^\d+$/.test(entry.backup) ||
+                    !(yield* fs.exists(path.join(dir, "files", entry.backup))))
+                )
+                  return yield* fail("not-found", "This restore can no longer be undone.");
+              // Undo uses the same transaction, with a temporary backup of the restored state.
+              const currentDir = yield* fs.makeTempDirectoryScoped({
+                directory: options.undoDir,
+                prefix: "undo-pending-",
+              });
+              yield* fs.makeDirectory(path.join(currentDir, "files"));
+              const currentBackups = yield* Effect.forEach(targets, (target, index) =>
+                Effect.gen(function* () {
+                  const present = yield* fs.exists(target);
+                  if (present)
+                    yield* fs.copyFile(target, path.join(currentDir, "files", String(index)));
+                  return { backup: present ? String(index) : null, mode: modes[index] ?? 0 };
+                }),
+              );
+              yield* transaction(
+                manifest.entries.map((entry, index) => ({
+                  target: targets[index]!,
+                  source: entry.backup === null ? null : path.join(dir, "files", entry.backup),
+                  mode: entry.mode,
+                })),
+                currentBackups,
+                currentDir,
+              );
+              yield* fs.remove(dir, { recursive: true, force: true });
+            }),
+          ),
         ),
       );
     yield* prune();

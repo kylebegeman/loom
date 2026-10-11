@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AsyncResult, Atom } from "effect/reactivity";
 import * as Option from "effect/Option";
 import * as Cause from "effect/Cause";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { CheckpointId, ScopedThreadRef } from "@t3tools/contracts";
 import type {
   PcbDesign,
   PcbView,
@@ -42,6 +42,7 @@ export function usePcbPreview(
   trusted: boolean,
   layerNames?: readonly string[],
   visible = true,
+  checkpointId?: CheckpointId,
 ) {
   const { environmentId, threadId } = threadRef;
   const canRender = useAtomValue(pcb.render.permissionAtom(environmentId));
@@ -53,7 +54,14 @@ export function usePcbPreview(
   const [revision, setRevision] = useState(0),
     [cancelledKey, setCancelledKey] = useState<string | null>(null),
     [forceKey, setForceKey] = useState<string | null>(null);
-  const requestKey = JSON.stringify([design.id, sourceHash, view, layers, revision, layerNames]);
+  const requestKey = JSON.stringify([
+    design.id,
+    checkpointId ?? sourceHash,
+    view,
+    layers,
+    revision,
+    layerNames,
+  ]);
   if (forceKey !== null && forceKey !== requestKey) setForceKey(null);
   const allowed =
     previewAction({
@@ -74,6 +82,7 @@ export function usePcbPreview(
             threadId,
             designId: design.id,
             view,
+            checkpointId,
             layers,
             ...(layerNames ? { layerNames } : {}),
             revision: requestKey,
@@ -296,7 +305,9 @@ export function usePcbPreview(
     refresh: () => {
       setCancelledKey(null);
       const next = revision + 1;
-      setForceKey(JSON.stringify([design.id, sourceHash, view, layers, next, layerNames]));
+      setForceKey(
+        JSON.stringify([design.id, checkpointId ?? sourceHash, view, layers, next, layerNames]),
+      );
       setRevision(next);
     },
     cancelRender: () => setCancelledKey(requestKey),
