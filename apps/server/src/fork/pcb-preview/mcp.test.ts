@@ -611,3 +611,72 @@ it.effect("review and waiver settings reach the caller's service", () =>
     }),
   ),
 );
+
+it.effect("fab tools preserve the caller and catalog save needs environment write", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const catalog = {
+        version: 0,
+        builtIns: [],
+        entries: [],
+        defaultId: "jlcpcb-standard",
+        skipped: [],
+      };
+      const { toolkit, threads } = yield* fixture({
+        fabCapabilities: () => Effect.succeed(catalog),
+        updateFabCapabilities: (input) => {
+          expect(input.expectedVersion).toBe(0);
+          return Effect.succeed(catalog);
+        },
+        fabCheck: (input) => {
+          expect(input).toEqual({
+            threadId,
+            designId: "board.kicad_pro",
+            fabId: "jlcpcb-standard",
+          });
+          return Effect.fail(new PcbPreviewError({ reason: "invalid-report", message: "fixture" }));
+        },
+        latestFabCheck: (input) => {
+          expect(input.threadId).toBe(threadId);
+          return Effect.succeed(null);
+        },
+      });
+      const invoke = (name: Parameters<typeof toolkit.handle>[0], input: Record<string, unknown>) =>
+        toolkit
+          .handle(name, input)
+          .pipe(
+            Effect.flatMap(Stream.runCollect),
+            Effect.provideService(McpInvocationContext, scope),
+            Effect.provideService(ThreadManagementService, threads),
+          );
+      yield* invoke("loom_pcb_fab_capabilities", {});
+      yield* invoke("loom_pcb_save_fab_capabilities", {
+        expectedVersion: 0,
+        entries: [],
+        defaultId: null,
+      });
+      yield* invoke("loom_pcb_fab_check", {
+        designId: "board.kicad_pro",
+        fabId: "jlcpcb-standard",
+      }).pipe(Effect.flip);
+      yield* invoke("loom_pcb_latest_fab_check", { designId: "board.kicad_pro" });
+      const denied = yield* fixture(
+        { updateFabCapabilities: () => Effect.die("must not save") },
+        "approval-required",
+      );
+      const error = yield* denied.toolkit
+        .handle("loom_pcb_save_fab_capabilities", {
+          expectedVersion: 0,
+          entries: [],
+          defaultId: null,
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, scope),
+          Effect.provideService(ThreadManagementService, denied.threads),
+          Effect.flip,
+        );
+      expect(error._tag).toBe("OrchestratorMcpFailure");
+    }),
+  ),
+);

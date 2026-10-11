@@ -1673,3 +1673,162 @@ it.effect(
       }),
     ),
 );
+
+it.effect(
+  "fab profiles round-trip with version conflicts, immutable built-ins and lenient old storage",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup,
+          service = yield* t.create();
+        const catalog = yield* service.fabCapabilities();
+        expect(catalog.defaultId).toBe("jlcpcb-standard");
+        expect(catalog.builtIns).toHaveLength(5);
+        const entry = { ...catalog.builtIns[0]!, id: "custom", name: "My fab" };
+        const saved = yield* service.updateFabCapabilities({
+          expectedVersion: 0,
+          entries: [entry],
+          defaultId: entry.id,
+        });
+        expect(saved.version).toBe(1);
+        expect((yield* service.fabCapabilities()).defaultId).toBe(entry.id);
+        expect(
+          (yield* service
+            .updateFabCapabilities({ expectedVersion: 0, entries: [], defaultId: null })
+            .pipe(Effect.flip)).reason,
+        ).toBe("conflict");
+        for (const invalid of [
+          catalog.builtIns[0]!,
+          { ...entry, sourceUrl: "https://user:secret@example.com" },
+        ])
+          expect(
+            (yield* service
+              .updateFabCapabilities({ expectedVersion: 1, entries: [invalid], defaultId: null })
+              .pipe(Effect.flip)).reason,
+          ).toBe("invalid-parameters");
+        expect(
+          (yield* service
+            .updateFabCapabilities({ expectedVersion: 1, entries: [entry], defaultId: "missing" })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid-parameters");
+        yield* t.fs.writeFileString(
+          t.path.join(t.stateDir, "fork", "pcb-preview", "workspaces", "fab-capabilities.json"),
+          JSON.stringify({ version: 2, entries: [entry, { id: "bad" }], defaultId: entry.id }),
+        );
+        const lenient = yield* service.fabCapabilities();
+        expect(lenient.entries).toHaveLength(1);
+        expect(lenient.skipped).toEqual(["bad"]);
+        yield* service.updateFabCapabilities({ expectedVersion: 2, entries: [], defaultId: null });
+        expect((yield* service.fabCapabilities()).defaultId).toBe("jlcpcb-standard");
+      }),
+    ),
+);
+it.effect(
+  "fab check stages isolated constraints, persists classified results and cleans up failures",
+  () =>
+    test(
+      Effect.gen(function* () {
+        const t = yield* setup;
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_pro"),
+          JSON.stringify({
+            board: { design_settings: { rules: { min_clearance: 1, min_track_width: 1 } } },
+          }),
+        );
+        yield* t.fs.writeFileString(
+          t.path.join(t.root, "board.kicad_dru"),
+          '(version 1)\n(rule "mine" (constraint clearance (min 1mm)))',
+        );
+        const original = yield* Effect.forEach(
+          ["board.kicad_pcb", "board.kicad_pro", "board.kicad_dru"],
+          (file) => t.fs.readFileString(t.path.join(t.root, file)),
+        );
+        let directory = "";
+        const runner = ProcessRunner.of({
+          run: (input) =>
+            Effect.gen(function* () {
+              if (input.args.includes("drc")) {
+                const board = input.args.at(-1)!;
+                directory = t.path.dirname(board);
+                expect(directory).not.toBe(t.root);
+                expect(input.args).toContain("--refill-zones");
+                expect(input.args).not.toContain("--save-board");
+                expect(input.args).not.toContain("--schematic-parity");
+                const project = JSON.parse(
+                  yield* t.fs.readFileString(board.replace(/\.kicad_pcb$/, ".kicad_pro")),
+                );
+                expect(project.board.design_settings.rules.min_clearance).toBe(0);
+                const rules = yield* t.fs.readFileString(
+                  board.replace(/\.kicad_pcb$/, ".kicad_dru"),
+                );
+                expect(rules.indexOf('rule "mine"')).toBeLessThan(
+                  rules.indexOf('rule "loom_fab_track"'),
+                );
+              }
+              return yield* t.runner.run(input);
+            }).pipe(Effect.orDie),
+        });
+        t.setResult(5);
+        const service = yield* t.create(t.fs, runner);
+        const input = {
+          threadId: t.input.threadId,
+          designId: t.input.designId,
+          fabId: "jlcpcb-standard",
+        };
+        const result = yield* service.fabCheck(input);
+        expect(result.outcome).toBe("violations");
+        expect(result.violations[0]?.rule).toBe("space");
+        expect((yield* service.latestFabCheck(input))?.ranAt).toBe(result.ranAt);
+        expect(yield* t.fs.exists(directory)).toBe(false);
+        expect(
+          yield* Effect.forEach(["board.kicad_pcb", "board.kicad_pro", "board.kicad_dru"], (file) =>
+            t.fs.readFileString(t.path.join(t.root, file)),
+          ),
+        ).toEqual(original);
+        expect(
+          (yield* service.fabCheck({ ...input, fabId: "missing" }).pipe(Effect.flip)).reason,
+        ).toBe("invalid-parameters");
+        expect(
+          (yield* service.fabCheck({ ...input, designId: "blink.circuit.tsx" }).pipe(Effect.flip))
+            .reason,
+        ).toBe("unsupported-view");
+        t.setResult(1);
+        expect((yield* service.fabCheck(input)).outcome).toBe("failed");
+        expect(yield* t.fs.exists(directory)).toBe(false);
+        t.setResult(0, true);
+        expect((yield* service.fabCheck(input)).outcome).toBe("timed-out");
+        expect(yield* t.fs.exists(directory)).toBe(false);
+      }),
+    ),
+);
+it.effect("fab check on KiCad 9 leaves zones as saved and interruption removes its copy", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup;
+      const started = yield* Deferred.make<void>(),
+        stopped = yield* Deferred.make<void>();
+      let directory = "";
+      const runner = ProcessRunner.of({
+        run: (input) => {
+          if (input.args[0] === "version") return Effect.succeed(output(0, "9.0.9"));
+          if (input.args.includes("drc"))
+            return Effect.gen(function* () {
+              expect(input.args).not.toContain("--refill-zones");
+              directory = t.path.dirname(input.args.at(-1)!);
+              yield* Deferred.succeed(started, undefined);
+              return yield* Effect.never;
+            }).pipe(Effect.onInterrupt(() => Deferred.succeed(stopped, undefined)));
+          return t.runner.run(input);
+        },
+      });
+      const service = yield* t.create(t.fs, runner);
+      const fiber = yield* service
+        .fabCheck({ threadId: t.input.threadId, designId: t.input.designId })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(fiber);
+      yield* Deferred.await(stopped);
+      expect(yield* t.fs.exists(directory)).toBe(false);
+    }),
+  ),
+);

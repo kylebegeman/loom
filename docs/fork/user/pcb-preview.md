@@ -139,3 +139,9 @@ When an agent changes a design, choose **Open board** in its changed-files card.
 After a design reloads, press **D** or choose **Changed** to highlight parts, connections and drawing areas that changed since the previous view. The list can focus a part or net; dismissing hides it until the next change. Agents can read the same list through the editor snapshot.
 
 Select a component or net and press **R** to request a change. With nothing selected, drag an area. Add the marked capture and request to your draft, or save requests and select up to ten in **Requests** for one batch. An agent can mark a request ready for review, but only you can accept or reopen it. **Compare** uses the revision when you asked and freezes the result on acceptance when Git capture succeeds. Without Git, use the reference image and **Capture now**. Notes can become requests from Marks; deleting that request does not restore the note.
+
+## Check a fab's limits
+
+In **Checks**, choose **Fab**, select a manufacturer profile and run the check. Findings show features below its limits and possible cost drivers. Limits include their sources and checked dates. Cost drivers are estimates to review when ordering.
+
+Use **Fab capabilities** there or in PCB settings to duplicate a built-in profile, edit your own limits and choose a default. Profiles belong to the connected environment. Changing a board or profile marks previous results out of date. Fab checks currently need a KiCad board and run on a temporary copy.

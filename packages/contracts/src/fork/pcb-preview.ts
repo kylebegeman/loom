@@ -5,6 +5,7 @@ import {
   PcbReviewSettings,
   PcbReviewSettingsUpdate,
 } from "./pcb-review.ts";
+import * as Fab from "./pcb-fab.ts";
 import { PcbPinMapInput, PcbPinMapResult } from "./pcb-pin-map.ts";
 import * as W from "./pcb-workspace.ts";
 import { PcbPrintInput, PcbPrintResult } from "./pcb-print.ts";
@@ -26,6 +27,11 @@ import {
 } from "../baseSchemas.ts";
 
 export const PCB_PREVIEW_WS_METHODS = {
+  fabCapabilities: "loom.pcb-preview.fabCapabilities",
+  updateFabCapabilities: "loom.pcb-preview.updateFabCapabilities",
+  fabCheck: "loom.pcb-preview.fabCheck",
+  latestFabCheck: "loom.pcb-preview.latestFabCheck",
+
   turnDesigns: "loom.pcb-preview.turnDesigns",
   turnDesignEvents: "loom.pcb-preview.turnDesignEvents",
   review: "loom.pcb-preview.review",
@@ -479,6 +485,26 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
     success: PcbTurnDesigns,
     error: errors,
     stream: true,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.fabCapabilities, {
+    payload: Schema.Struct({}),
+    success: Fab.PcbFabCatalog,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.updateFabCapabilities, {
+    payload: Fab.PcbFabCapabilitiesUpdate,
+    success: Fab.PcbFabCatalog,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.fabCheck, {
+    payload: Fab.PcbFabCheckInput,
+    success: Fab.PcbFabCheckResult,
+    error: errors,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.latestFabCheck, {
+    payload: Fab.PcbFabCheckInput,
+    success: Schema.NullOr(Fab.PcbFabCheckResult),
+    error: errors,
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.review, {
     payload: PcbReviewInput,

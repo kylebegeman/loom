@@ -100,6 +100,8 @@ import { makeTurnFiles } from "../turnFiles.ts";
 import { makeTurnDesigns } from "./turnDesigns.ts";
 import { isPcbSource } from "./sourceFiles.ts";
 import { makePinMap } from "./pinMap.ts";
+import { makeFabCatalog, isPlainHttpUrl } from "./fabData.ts";
+import { makeFabChecks } from "./fabCheckRunner.ts";
 import { makeProjectSettings } from "./projectSettings.ts";
 import { kicadReviewModel, circuitJsonReviewModel } from "./reviewModel.ts";
 import { runReview, applyReviewWaivers, REVIEW_RULES_VERSION } from "./reviewRules.ts";
@@ -189,6 +191,16 @@ export class PcbPreviewService extends Context.Service<
     readonly turnDesignEvents: (input: {
       threadId: ThreadId;
     }) => Stream.Stream<W.PcbTurnDesigns, PcbPreviewError>;
+    readonly fabCapabilities: () => Effect.Effect<W.PcbFabCatalog, PcbPreviewError>;
+    readonly updateFabCapabilities: (
+      input: W.PcbFabCapabilitiesUpdate,
+    ) => Effect.Effect<W.PcbFabCatalog, PcbPreviewError>;
+    readonly fabCheck: (
+      input: W.PcbFabCheckInput,
+    ) => Effect.Effect<W.PcbFabCheckResult, PcbPreviewError>;
+    readonly latestFabCheck: (
+      input: W.PcbFabCheckInput,
+    ) => Effect.Effect<W.PcbFabCheckResult | null, PcbPreviewError>;
     readonly review: (input: W.PcbReviewInput) => Effect.Effect<W.PcbReviewResult, PcbPreviewError>;
     readonly latestReview: (
       input: W.PcbReviewInput,
@@ -1499,6 +1511,19 @@ export const make = Effect.gen(function* () {
     lock: storageLock,
     checkpoints,
   });
+  const fabCatalog = yield* makeFabCatalog(path.join(workbenchDir, "fab-capabilities.json"));
+  const fabChecks = yield* makeFabChecks<ResolvedDesign>(
+    { checksDir, cacheLock },
+    {
+      resolve: (input) => checked(resolveDesign(input)),
+      snapshot: (r) => checked(sourceSnapshot(r)),
+      tool: (r) => checked(requiredTool(r)),
+      catalog: checked(fabCatalog.read),
+      safePath: (root, relative) => checked(safePath(root, relative)),
+      run: (tool, args, cwd, timeout) => checked(run(tool, args, cwd, timeout)),
+      prune: checked(prune()),
+    },
+  );
   const libraryFile = path.join(workbenchDir, "hardware-library.json");
   const library = () =>
     readState(libraryFile, decodeLibraryJson, () => ({ version: 0, items: starterHardware }));
@@ -1529,13 +1554,7 @@ export const make = Effect.gen(function* () {
         for (const item of next.items) {
           for (const link of [item.documentationUrl, item.purchaseUrl, item.sourceUrl])
             if (link) {
-              let valid = false;
-              try {
-                const url = new URL(link);
-                valid =
-                  ["http:", "https:"].includes(url.protocol) && !url.username && !url.password;
-              } catch {}
-              if (!valid)
+              if (!isPlainHttpUrl(link))
                 return yield* failure(
                   "invalid-parameters",
                   "Library links must use HTTP or HTTPS without credentials.",
@@ -3121,6 +3140,10 @@ export const make = Effect.gen(function* () {
     projectSettings: (i) => checked(projectSettings(i)),
     updateProjectSettings: (i) => checked(updateProjectSettings(i)),
     checkEvents,
+    fabCapabilities: () => checked(fabCatalog.read),
+    updateFabCapabilities: (i) => checked(fabCatalog.update(i)),
+    fabCheck: (i) => checked(fabChecks.run(i)),
+    latestFabCheck: (i) => checked(fabChecks.latest(i)),
     review: (i) => checked(review(i)).pipe(Effect.map((value) => value as W.PcbReviewResult)),
     latestReview: (i) => checked(latestReview(i)),
     check: (i) => checked(check(i)).pipe(Effect.map((value) => value as PcbCheckResult)),

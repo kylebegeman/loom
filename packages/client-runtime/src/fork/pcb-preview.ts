@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import {
   PCB_PREVIEW_WS_METHODS as M,
+  type PcbFabCheckInput,
   type PcbReviewInput,
   type PcbRenderInput,
   type PcbCheckInput,
@@ -27,6 +28,16 @@ import type { Atom } from "effect/reactivity";
 
 /** Document-lived jobs cancel when their result atom loses its last subscriber. */
 export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>) {
+  const fabCapabilities = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:pcb-fabs",
+    tag: M.fabCapabilities,
+    staleTimeMs: 0,
+  });
+  const latestFabCheck = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "loom:pcb-fab-check",
+    tag: M.latestFabCheck,
+    staleTimeMs: 0,
+  });
   const latestReview = createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "loom:pcb-review",
     tag: M.latestReview,
@@ -71,6 +82,40 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
       label: "loom:pcb-turn-design-events",
       tag: M.turnDesignEvents,
       idleTtlMs: 0,
+    }),
+    loadFabCapabilities: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-fabs-load",
+      tag: M.fabCapabilities,
+    }),
+    fabCapabilities,
+    latestFabCheck,
+    updateFabCapabilities: createEnvironmentRpcCommand(runtime, {
+      label: "loom:pcb-fabs-save",
+      tag: M.updateFabCapabilities,
+      onSuccess: ({ environmentId }, registry) =>
+        Effect.sync(() => registry.refresh(fabCapabilities({ environmentId, input: {} }))),
+    }),
+    fabCheck: createEnvironmentRpcCommand<
+      R,
+      E,
+      typeof M.fabCheck,
+      PcbFabCheckInput & { revision?: number }
+    >(runtime, {
+      label: "loom:pcb-fab-check-run",
+      tag: M.fabCheck,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(
+            latestFabCheck({
+              environmentId,
+              input: {
+                threadId: input.threadId,
+                designId: input.designId,
+                ...(input.fabId ? { fabId: input.fabId } : {}),
+              },
+            }),
+          ),
+        ),
     }),
     latestReview,
     review: createEnvironmentRpcCommand<

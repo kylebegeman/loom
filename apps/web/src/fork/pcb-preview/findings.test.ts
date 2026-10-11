@@ -154,3 +154,24 @@ it("review markers use each surface's anchor and ignored state", () => {
   expect(reviewFindings(ignored, "pcb", { showExcluded: false })).toEqual([]);
   expect(reviewFindings(ignored, "pcb", { showExcluded: true })[0]?.excluded).toBe(true);
 });
+
+it("fab markers keep a separate identity from DRC findings", () => {
+  const report = {
+    outcome: "violations" as const,
+    violations: [
+      {
+        id: "drc-1",
+        type: "clearance",
+        group: "violation" as const,
+        severity: "error" as const,
+        description: "gap",
+        excluded: false,
+        items: [{ uuid: "one", description: "pad", x: 1, y: 2 }],
+      },
+    ],
+  };
+  const fab = checkFindings(report, "fab", { showExcluded: false });
+  expect(fab[0]?.id).toBe("fab:drc-1");
+  expect(fab[0]?.source).toBe("fab");
+  expect(checkFindings(report, "drc", { showExcluded: false })[0]?.id).toBe("drc-1");
+});

@@ -1,6 +1,8 @@
 # L64: Fab capabilities and manufacturability check
 
-Status: Ready to build
+Status: Implemented locally
+
+Implemented on `feat/pcb-units-presets-stats-print-capture`. Focused profile, classification, service, interruption, marker, MCP and permission checks cover the host and client contracts. Real-client, remote and real-KiCad checks remain pending.
 
 Approved by Kyle on 2026-10-10.
 

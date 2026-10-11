@@ -2,6 +2,8 @@
 
 Focused tests, no repo-wide checks, no sleeps.
 
+Local verification: focused profile, rules, facts, cost drivers, service, interruption, MCP, marker and permission tests; strict scoped lint; contracts, client-runtime, server and web typechecks. KiCad is absent, so real-tool and real-client checks remain pending.
+
 ## Automated tests
 
 | File                                                                  | Covers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |

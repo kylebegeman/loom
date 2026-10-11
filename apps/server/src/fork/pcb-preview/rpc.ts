@@ -9,6 +9,11 @@ export const makePcbPreviewRpcHandlers = (auth: ForkRpcAuth) =>
     return PcbPreviewRpcGroup.of({
       [M.turnDesigns]: (i) => auth.effect(M.turnDesigns, service.turnDesigns(i)),
       [M.turnDesignEvents]: (i) => auth.stream(M.turnDesignEvents, service.turnDesignEvents(i)),
+      [M.fabCapabilities]: () => auth.effect(M.fabCapabilities, service.fabCapabilities()),
+      [M.updateFabCapabilities]: (i) =>
+        auth.effect(M.updateFabCapabilities, service.updateFabCapabilities(i)),
+      [M.fabCheck]: (i) => auth.effect(M.fabCheck, service.fabCheck(i)),
+      [M.latestFabCheck]: (i) => auth.effect(M.latestFabCheck, service.latestFabCheck(i)),
       [M.review]: (i) => auth.effect(M.review, service.review(i)),
       [M.latestReview]: (i) => auth.effect(M.latestReview, service.latestReview(i)),
       [M.pinMap]: (i) => auth.effect(M.pinMap, service.pinMap(i)),

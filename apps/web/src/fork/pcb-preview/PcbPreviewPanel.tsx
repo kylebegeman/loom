@@ -373,14 +373,18 @@ export function DesignWorkspace({
       ...checkFindings(preview.checks.erc, "erc", { showExcluded }),
       ...checkFindings(preview.checks.drc, "drc", { showExcluded }),
       ...reviewFindings(preview.review, view, { showExcluded }),
+      ...checkFindings(preview.fabCheck, "fab", { showExcluded }),
     ],
-    [preview.checks, preview.review, view, showExcluded],
+    [preview.checks, preview.review, preview.fabCheck, view, showExcluded],
   );
   const surfaceFindings = useMemo(
     () =>
       orderFindings(
         allFindings.filter(
-          (f) => f.source === "review" || f.source === (view === "schematic" ? "erc" : "drc"),
+          (f) =>
+            f.source === "review" ||
+            (f.source === "fab" && view === "pcb") ||
+            f.source === (view === "schematic" ? "erc" : "drc"),
         ),
         view === "schematic"
           ? preview.good?.view === "schematic"
@@ -405,7 +409,10 @@ export function DesignWorkspace({
   const markerReport = preview.checks[view === "schematic" ? "erc" : "drc"];
   const markersStale =
     (!!markerReport && markerReport.sourceHash !== preview.display?.sourceHash) ||
-    (!!preview.review && preview.review.sourceHash !== preview.display?.sourceHash);
+    (!!preview.review && preview.review.sourceHash !== preview.display?.sourceHash) ||
+    (view === "pcb" &&
+      !!preview.fabCheck &&
+      preview.fabCheck.sourceHash !== preview.display?.sourceHash);
   const visibleActiveFinding = surfaceFindings.some((f) => f.id === activeFinding)
     ? activeFinding
     : null;
@@ -1968,6 +1975,15 @@ export function DesignWorkspace({
           >
             {tab === "Checks" ? (
               <ChecksSection
+                boardStats={workbench.inspection?.stats}
+                fabResult={preview.fabCheck}
+                fabCatalog={preview.fabCatalog}
+                fabId={preview.fabId}
+                onFabId={preview.setFabId}
+                fabLoading={preview.fabLoading}
+                fabError={preview.fabError}
+                onFabRefresh={preview.refreshFab}
+                onFabLocate={(point) => focusPoint("pcb", point)}
                 review={preview.review}
                 reviewLoading={preview.reviewLoading}
                 reviewError={preview.reviewError}

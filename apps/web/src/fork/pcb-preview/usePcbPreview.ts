@@ -13,6 +13,7 @@ import type {
   PcbCheckKind,
   PcbCheckResult,
   PcbReviewResult,
+  PcbFabCheckResult,
   PcbCheckActivity,
 } from "@t3tools/contracts/fork";
 import { pcb } from "./state";
@@ -22,6 +23,7 @@ const idleRender = Atom.make(AsyncResult.initial<PcbRenderResult, never>());
 const idleSheet = Atom.make(AsyncResult.initial<PcbReadSheetResult, never>());
 const idleChecks = Atom.make(AsyncResult.success<readonly PcbCheckResult[]>([]));
 const idleActivity = Atom.make(AsyncResult.initial<PcbCheckActivity, never>());
+const idleFabCheck = Atom.make(AsyncResult.initial<PcbFabCheckResult | null, never>());
 const idleReview = Atom.make(AsyncResult.initial<PcbReviewResult | null, never>());
 const idleCheck = Atom.make(AsyncResult.initial<PcbCheckResult, never>());
 export const asyncValue = <A, E>(result: AsyncResult.AsyncResult<A, E>) =>
@@ -157,6 +159,27 @@ export function usePcbPreview(
       ? pcb.latestChecks({ environmentId, input: { threadId, designId: design.id } })
       : idleChecks,
   );
+  const fabCatalogState = useAtomValue(pcb.fabCapabilities({ environmentId, input: {} }));
+  const fabCatalog = asyncValue(fabCatalogState);
+  const [selectedFabId, setSelectedFabId] = useState<string | null>(null);
+  const fabId =
+    selectedFabId &&
+    [...(fabCatalog?.builtIns ?? []), ...(fabCatalog?.entries ?? [])].some(
+      (f) => f.id === selectedFabId,
+    )
+      ? selectedFabId
+      : fabCatalog?.defaultId;
+  const fabLoaded = useAtomValue(
+    visible && fabId
+      ? pcb.latestFabCheck({ environmentId, input: { threadId, designId: design.id, fabId } })
+      : idleFabCheck,
+  );
+  const fabResult = asyncValue(fabLoaded);
+  const refreshFab = useAtomRefresh(
+    fabId
+      ? pcb.latestFabCheck({ environmentId, input: { threadId, designId: design.id, fabId } })
+      : idleFabCheck,
+  );
   const reviewTarget = { environmentId, input: { threadId, designId: design.id } };
   const reviewLoaded = useAtomValue(visible ? pcb.latestReview(reviewTarget) : idleReview);
   const refreshReview = useAtomRefresh(pcb.latestReview(reviewTarget));
@@ -215,6 +238,13 @@ export function usePcbPreview(
     setJob(null);
   }
   return {
+    fabCheck: fabResult,
+    fabCatalog,
+    fabId,
+    setFabId: setSelectedFabId,
+    fabLoading: fabLoaded.waiting || fabLoaded._tag === "Initial",
+    fabError: asyncError(fabLoaded) ?? asyncError(fabCatalogState),
+    refreshFab,
     review: reviewResult,
     reviewLoading: reviewLoaded.waiting || reviewLoaded._tag === "Initial",
     reviewError: asyncError(reviewLoaded),

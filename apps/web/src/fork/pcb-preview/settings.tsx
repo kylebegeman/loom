@@ -1,3 +1,4 @@
+import { FabSettings } from "./FabSettings";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
@@ -75,6 +76,7 @@ function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }
         )}
         {asyncError(result) && <p role="alert">{asyncError(result)}</p>}
       </div>
+      <FabSettings environmentId={environmentId} />
       <Tool name="KiCad CLI" status={info?.kicad} url="https://www.kicad.org/download/" />
       <Tool
         name="tscircuit CLI"

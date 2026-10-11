@@ -193,5 +193,5 @@ testing notes retain client, real-tool and physical-print checks.
 
 L52 is also implemented locally, with focused checks and pending real-client/CAD verification.
 The agent loop, L58, L53, L59, L60 and L69, and schematic review L68 are implemented locally.
-The active fabrication collection is L64 and L65. The larger systems follow: L66, L61, L67, L70, with L63 alongside whichever touches the same UI. The selected
+L64 fabrication capability checks are implemented locally. L65 fabrication packages are active. The larger systems follow: L66, L61, L67, L70, with L63 alongside whichever touches the same UI. The selected
 scope and outstanding packet decisions are unchanged.

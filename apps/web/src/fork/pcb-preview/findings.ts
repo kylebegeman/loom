@@ -8,8 +8,11 @@ import type {
 /** Marker metadata stays local; the shared wire finding contains only drawing information. */
 export type DrawingFinding = PcbFinding & { excluded: boolean; otherPoints: readonly PcbPoint[] };
 export function checkFindings(
-  result: PcbCheckResult | undefined,
-  source: "erc" | "drc",
+  result:
+    | { outcome: string; violations: readonly PcbCheckResult["violations"][number][] }
+    | null
+    | undefined,
+  source: "erc" | "drc" | "fab",
   { showExcluded }: { showExcluded: boolean },
 ): DrawingFinding[] {
   if (!result || result.outcome === "failed" || result.outcome === "timed-out") return [];
@@ -21,7 +24,7 @@ export function checkFindings(
     if (!points[0]) return [];
     return [
       {
-        id: v.id ?? `${source}-${index}`,
+        id: source === "fab" ? `fab:${v.id ?? index}` : (v.id ?? `${source}-${index}`),
         source,
         severity: v.severity,
         message: v.description,

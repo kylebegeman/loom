@@ -127,6 +127,48 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "PCB: print")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_fab_capabilities", {
+    description: "List built-in and user fab capabilities, their checked dates and the default.",
+    parameters: Tool.EmptyParams,
+    success: W.PcbFabCatalog,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: fab capabilities")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_save_fab_capabilities", {
+    description:
+      "Save user fab entries and a default with optimistic versioning. Duplicate built-ins using a new id.",
+    parameters: W.PcbFabCapabilitiesUpdate,
+    success: W.PcbFabCatalog,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: save fab capabilities")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_fab_check", {
+    description:
+      "Run KiCad DRC with a fab profile on a temporary copy. The design files are unchanged. Includes qualitative cost drivers.",
+    parameters: Schema.Struct({ ...design, fabId: W.PcbFabCheckInput.fields.fabId }),
+    success: W.PcbFabCheckResult,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: fab check")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_latest_fab_check", {
+    description: "Read the last fabrication check for this design and fab.",
+    parameters: Schema.Struct({ ...design, fabId: W.PcbFabCheckInput.fields.fabId }),
+    success: Schema.NullOr(W.PcbFabCheckResult),
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "PCB: latest fab check")
+    .annotate(Tool.Readonly, true)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_review", {
     description:
       "Run eight deterministic schematic review heuristics: I2C pull-ups, decoupling, ESD, floating inputs, reset bias, LED resistors, drivers and regulator ratings. Each finding explains why. Reuses unchanged saved results. Configure rules or ignore findings with loom_pcb_check_settings.",
@@ -485,6 +527,42 @@ export const pcbHandlers = McpToolAccess.toLayer(
           const threadId = yield* thread;
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) => service.pinMap({ ...input, threadId })),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_fab_capabilities: McpToolAccess.readsAsCaller((_input) =>
+        Effect.gen(function* () {
+          yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) => service.fabCapabilities()),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_save_fab_capabilities: McpToolAccess.writesEnvironment((input) =>
+        Effect.gen(function* () {
+          yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) => service.updateFabCapabilities(input)),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_fab_check: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.fabCheck({ ...input, threadId }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_latest_fab_check: McpToolAccess.readsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.latestFabCheck({ ...input, threadId }),
+            ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
