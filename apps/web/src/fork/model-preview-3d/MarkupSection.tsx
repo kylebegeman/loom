@@ -93,6 +93,7 @@ export type MarkupActions = {
   onReview: (annotation: ModelAnnotation) => Promise<string>;
   onShow: (annotation: ModelAnnotation) => void;
   onCopy: (text: string) => void;
+  onViewTurn?: (resolved: NonNullable<ModelAnnotation["resolvedIn"]>) => void;
 };
 
 function Composer({
@@ -401,12 +402,24 @@ function RequestDetail({
           <>
             <span className={styles["model-preview-status"]}>
               <span className={styles["model-state-dot"]} data-tone="ready" />
-              Accepted
+              {annotation.resolvedIn
+                ? `Accepted in turn ${annotation.resolvedIn.turn}`
+                : "Accepted"}
             </span>
+            {annotation.resolvedIn && actions.onViewTurn && (
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() => actions.onViewTurn?.(annotation.resolvedIn!)}
+              >
+                View turn {annotation.resolvedIn.turn}
+              </Button>
+            )}
             <div className="flex-1" />
             <Button
               variant="outline"
               size="xs"
+              disabled={blocked}
               onClick={() => save({ status: "open", reviewedRevision: sourceRevision })}
             >
               Reopen
