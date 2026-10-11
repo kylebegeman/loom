@@ -618,6 +618,7 @@ it.effect("assembly edits preserve atomic operations and revision conflicts", ()
       revision: "saved-revision",
       readOnly: false,
       assembly: {
+        enclosure: null,
         format: "loom-assembly",
         version: 1,
         units: "mm",

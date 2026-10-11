@@ -24,6 +24,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "model-slicer-bridge",
   "model-python-cad",
   "pcb-preview",
+  "pcb-enclosure-fit",
   "project-lifecycle",
   "apple-build-tooling",
   "device-qa",

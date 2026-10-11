@@ -37,3 +37,5 @@ export * from "./model-history.ts";
 export * from "./pcb-pin-map.ts";
 
 export * from "./pcb-changes.ts";
+
+export * from "./pcb-enclosure.ts";

@@ -1,3 +1,4 @@
+import { EnclosureStarterParamsInput } from "./pcb-enclosure.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { SignedFile } from "./model-preview-3d.ts";
@@ -569,6 +570,7 @@ export const PcbReferenceInput = Schema.Struct({
 });
 export type PcbReferenceInput = typeof PcbReferenceInput.Type;
 export const PcbReferenceResult = Schema.Struct({
+  relativePath: Schema.optional(text(4096)),
   path: text(4096),
   metadataPath: text(4096),
   sourceHash: text(),
@@ -780,3 +782,38 @@ export const PcbReuseHardwareResult = Schema.Struct({
   ),
   directory: text(4096),
 });
+
+export const PcbEnclosureInput = Schema.Struct({
+  threadId: ThreadId,
+  designId: text(1024),
+  /** Workspace-relative. Default: "<design dir>/<stem>-enclosure". */
+  outputDir: Schema.optional(text(1024)),
+  params: Schema.optional(EnclosureStarterParamsInput), // every field optional
+  build123d: Schema.optional(Schema.Boolean),
+  overwrite: Schema.optional(Schema.Boolean),
+  preview: Schema.optional(Schema.Boolean),
+});
+export const PcbEnclosureResult = Schema.Struct({
+  reference: Schema.NullOr(PcbReferenceResult), // null for preview
+  assembly: Schema.NullOr(Schema.Struct({ path: text(4096), created: Schema.Boolean })),
+  files: Schema.Array(
+    Schema.Struct({
+      path: text(4096), // workspace-relative
+      language: Schema.Literals(["openscad", "build123d"]),
+      written: Schema.Boolean,
+      source: Schema.NullOr(Schema.String.check(Schema.isMaxLength(2_000_000))), // preview only
+    }),
+  ),
+  plan: Schema.Struct({
+    outerMm: Schema.Tuple([finite, finite, finite]),
+    innerMm: Schema.Tuple([finite, finite, finite]),
+    standoffs: Schema.Int,
+    cutouts: Schema.Array(text(100)), // connector references
+    partsAboveMm: finite,
+    partsBelowMm: finite,
+  }),
+  warnings: Schema.Array(Schema.String),
+});
+
+export type PcbEnclosureInput = typeof PcbEnclosureInput.Type;
+export type PcbEnclosureResult = typeof PcbEnclosureResult.Type;

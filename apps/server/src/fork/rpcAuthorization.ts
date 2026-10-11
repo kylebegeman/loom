@@ -38,6 +38,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [P.simulate]: AuthTerminalOperateScope,
   [P.library]: AuthOrchestrationReadScope,
   [P.updateLibrary]: AuthOrchestrationOperateScope,
+  [P.enclosure]: AuthOrchestrationOperateScope,
   [P.exportReference]: AuthOrchestrationOperateScope,
   [P.workspaceUpdates]: AuthOrchestrationReadScope,
   [P.panelEvents]: AuthOrchestrationReadScope,

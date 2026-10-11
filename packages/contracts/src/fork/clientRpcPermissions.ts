@@ -20,6 +20,7 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [P.changeRequest]: AuthOrchestrationOperateScope,
   [P.updateLibrary]: AuthOrchestrationOperateScope,
   [P.applyParameters]: AuthOrchestrationOperateScope,
+  [P.enclosure]: AuthOrchestrationOperateScope,
   [P.exportReference]: AuthOrchestrationOperateScope,
   [P.editorAction]: AuthOrchestrationOperateScope,
   [P.completeEditorAction]: AuthOrchestrationOperateScope,

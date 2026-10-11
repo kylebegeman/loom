@@ -1,3 +1,4 @@
+import { checkEnclosure } from "./enclosure.ts";
 import { ASSEMBLY_MAX_REGIONS, type AssemblyPairResult } from "@t3tools/contracts/fork";
 import type { AssemblyWorkerRequest, AssemblyWorkerCore, AssemblyWorkerPart } from "./protocol.ts";
 import {
@@ -438,7 +439,19 @@ export const runAssemblyChecks = (request: AssemblyWorkerRequest): AssemblyWorke
     };
     if (pair.clearanceId || status !== "clear" || !pairComplete) pairs.push(result);
   }
+  const board = request.enclosure ? loaded.get(request.enclosure.board) : null;
+  const enclosure =
+    request.enclosure && board
+      ? checkEnclosure(
+          request.enclosure,
+          board.part.matrix,
+          new Map([...loaded].map(([id, v]) => [id, v.mesh])),
+          pairs,
+        )
+      : undefined;
+  if (enclosure) complete &&= enclosure.complete;
   return {
+    ...(enclosure ? { enclosure } : {}),
     parts: [...loaded.values()].map(({ part, mesh }) => ({
       id: part.id,
       geometryRevision: part.geometryRevision,

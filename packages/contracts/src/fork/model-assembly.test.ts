@@ -25,7 +25,7 @@ it("defaults portable assembly fields and leaves newer documents readable", () =
     parameterSet: null,
     explode: null,
   });
-  expect(decode({ ...result, version: 2, enclosure: { boardPartId: "pcb" } }).version).toBe(2);
+  expect(decode({ ...result, version: 3, enclosure: null }).version).toBe(3);
   expect(() =>
     doc([{ id: "case", name: "Case", path: "case.stl", position: [Infinity, 0, 0] }]),
   ).toThrow();

@@ -46,6 +46,7 @@ export const PCB_PREVIEW_WS_METHODS = {
   pinMap: "loom.pcb-preview.pinMap",
   reuseHardware: "loom.pcb-preview.reuseHardware",
   status: "loom.pcb-preview.status",
+  enclosure: "loom.pcb-preview.enclosure",
   exportReference: "loom.pcb-preview.exportReference",
   workspaceUpdates: "loom.pcb-preview.workspaceUpdates",
   panelEvents: "loom.pcb-preview.panelEvents",
@@ -401,6 +402,11 @@ export const PcbPreviewRpcGroup = RpcGroup.make(
     success: W.PcbEditorEvent,
     error: errors,
     stream: true,
+  }),
+  Rpc.make(PCB_PREVIEW_WS_METHODS.enclosure, {
+    payload: W.PcbEnclosureInput,
+    success: W.PcbEnclosureResult,
+    error: errors,
   }),
   Rpc.make(PCB_PREVIEW_WS_METHODS.exportReference, {
     payload: W.PcbReferenceInput,

@@ -98,11 +98,12 @@ it.effect(
       expect(yield* fs.readFileString(`${root}/${file.path}`)).toBe(before);
       const newer = JSON.stringify({
         format: "loom-assembly",
-        version: 2,
+        version: 3,
         name: "Future",
         parts: [],
         clearances: [],
-        enclosure: { boardPartId: "pcb", extra: { preserved: true } },
+        enclosure: null,
+        extra: { preserved: true },
       });
       yield* fs.writeFileString(`${root}/${file.path}`, newer);
       expect((yield* service.assembly(file)).readOnly).toBe(true);

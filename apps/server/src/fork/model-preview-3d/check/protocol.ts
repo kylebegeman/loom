@@ -52,6 +52,7 @@ export type BoundsReply =
   | Extract<CheckReply, { ok: false }>;
 export type AssemblyWorkerRequest = {
   readonly kind: "assembly";
+  readonly enclosure?: import("./enclosure.ts").EnclosureRequest;
   readonly parts: readonly AssemblyWorkerPart[];
   readonly pairs: readonly {
     readonly a: string;
@@ -67,7 +68,7 @@ export type AssemblyWorkerRequest = {
 };
 export type AssemblyWorkerCore = Pick<
   import("@t3tools/contracts/fork").AssemblyCheckReport,
-  "parts" | "pairs" | "summary" | "complete" | "durationMs"
+  "parts" | "pairs" | "summary" | "complete" | "durationMs" | "enclosure"
 >;
 export type AssemblyWorkerReply =
   | { readonly ok: true; readonly core: AssemblyWorkerCore }

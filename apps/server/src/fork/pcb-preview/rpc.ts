@@ -26,6 +26,7 @@ export const makePcbPreviewRpcHandlers = (auth: ForkRpcAuth) =>
       [M.pinMap]: (i) => auth.effect(M.pinMap, service.pinMap(i)),
       [M.reuseHardware]: (i) => auth.effect(M.reuseHardware, service.reuseHardware(i)),
       [M.workspaceUpdates]: (i) => auth.stream(M.workspaceUpdates, service.workspaceUpdates(i)),
+      [M.enclosure]: (i) => auth.effect(M.enclosure, service.enclosure(i)),
       [M.exportReference]: (i) => auth.effect(M.exportReference, service.exportReference(i)),
       [M.panelEvents]: (i) => auth.stream(M.panelEvents, service.panelEvents(i.threadId)),
       [M.editorEvents]: (i) => auth.stream(M.editorEvents, service.editorEvents(i)),

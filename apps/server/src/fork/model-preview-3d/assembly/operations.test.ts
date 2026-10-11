@@ -58,3 +58,72 @@ it.effect("rejects an invalid later operation without changing the input", () =>
     expect(empty.parts).toEqual([]);
   }),
 );
+it.effect(
+  "configures requirements, places a rotated board, swaps its frame and clears dangling enclosure ids",
+  () =>
+    Effect.gen(function* () {
+      const features: import("../../pcb-preview/enclosure/features.ts").BoardFeatures = {
+        revision: "r",
+        kind: "kicad",
+        frame: { sx: 1, sy: -1, ox: 0, oy: 0, matched: 3, mirrored: false },
+        body: { top: 1.6, bottom: 0, box: { min: [0, 0, 0], max: [60, 40, 1.6] } },
+        outline: {
+          outer: 0,
+          source: "bounds",
+          loops: [
+            [
+              [0, 0],
+              [60, 0],
+              [60, 40],
+              [0, 40],
+            ],
+          ],
+        },
+        parts: [],
+        holes: [],
+        connectors: [],
+        warnings: [],
+      };
+      const ctx = {
+        ...context,
+        features: (p: import("@t3tools/contracts/fork").AssemblyPart) =>
+          Effect.succeed(
+            p.path.includes("new")
+              ? {
+                  ...features,
+                  frame: { ...features.frame, ox: 10 },
+                  body: { ...features.body, bottom: -1 },
+                }
+              : features,
+          ),
+      };
+      let doc = yield* applyOperations(
+        empty,
+        [
+          { op: "add-part", id: "board", path: "board.glb" },
+          { op: "add-part", id: "case", path: "case.stl" },
+          {
+            op: "set-enclosure",
+            board: "board",
+            parts: ["case"],
+            requirements: { wallGapMm: 0.8 },
+          },
+          { op: "set-enclosure", board: "board", requirements: { lidGapMm: 2 } },
+          { op: "place-board", id: "board", quarterTurns: 1, zMm: 3 },
+        ],
+        ctx,
+      );
+      expect(doc.version).toBe(2);
+      expect(doc.enclosure?.requirements).toMatchObject({ wallGapMm: 0.8, lidGapMm: 2 });
+      expect(doc.parts[0]?.position).toEqual([25, -25, 3]);
+      doc = yield* applyOperations(doc, [{ op: "swap-board", id: "board", path: "new.glb" }], ctx);
+      expect(doc.parts[0]?.position[0]).toBeCloseTo(25);
+      expect(doc.parts[0]?.position[1]).toBeCloseTo(-35);
+      expect(doc.parts[0]?.position[2]).toBe(4);
+      doc = yield* applyOperations(doc, [{ op: "remove-part", id: "case" }], ctx);
+      expect(doc.enclosure?.parts).toEqual([]);
+      doc = yield* applyOperations(doc, [{ op: "remove-part", id: "board" }], ctx);
+      expect(doc.enclosure).toBeNull();
+      expect(doc.version).toBe(1);
+    }),
+);

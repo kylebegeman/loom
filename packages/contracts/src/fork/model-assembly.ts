@@ -1,11 +1,16 @@
+import {
+  EnclosureRequirements,
+  EnclosureRequirementsPatch,
+  EnclosureReport,
+} from "./pcb-enclosure.ts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ModelFormat } from "./model-preview-3d.ts";
 import { ModelPoint } from "./model-workspace.ts";
 
 export const ASSEMBLY_SUFFIX = ".loom-assembly.json";
-export const ASSEMBLY_FILE_VERSION = 1;
-export const ASSEMBLY_CHECK_VERSION = 1;
+export const ASSEMBLY_FILE_VERSION = 2;
+export const ASSEMBLY_CHECK_VERSION = 2;
 export const ASSEMBLY_MAX_PARTS = 32;
 export const ASSEMBLY_MAX_CLEARANCES = 32;
 export const ASSEMBLY_MAX_OPERATIONS = 64;
@@ -49,7 +54,19 @@ export const AssemblyClearance = Schema.Struct({
   label: Schema.NullOr(label).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 
+export const AssemblyEnclosure = Schema.Struct({
+  board: AssemblyId,
+  parts: Schema.Array(AssemblyId)
+    .check(Schema.isMaxLength(ASSEMBLY_MAX_PARTS))
+    .pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  requirements: EnclosureRequirements.pipe(
+    Schema.withDecodingDefault(Effect.succeed(Schema.decodeUnknownSync(EnclosureRequirements)({}))),
+  ),
+});
 export const ModelAssembly = Schema.Struct({
+  enclosure: Schema.NullOr(AssemblyEnclosure).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
   format: Schema.Literal("loom-assembly"),
   version: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
   units: Schema.Literal("mm").pipe(Schema.withDecodingDefault(Effect.succeed("mm" as const))),
@@ -64,6 +81,20 @@ export const ModelAssembly = Schema.Struct({
 
 const Axis = Schema.Literals(["x", "y", "z"]);
 export const AssemblyOperation = Schema.Union([
+  Schema.Struct({
+    op: Schema.Literal("set-enclosure"),
+    board: AssemblyId,
+    parts: Schema.optional(AssemblyEnclosure.fields.parts),
+    requirements: Schema.optional(EnclosureRequirementsPatch),
+  }),
+  Schema.Struct({ op: Schema.Literal("clear-enclosure") }),
+  Schema.Struct({
+    op: Schema.Literal("place-board"),
+    id: AssemblyId,
+    quarterTurns: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 }))),
+    zMm: Schema.optional(mm),
+  }),
+  Schema.Struct({ op: Schema.Literal("swap-board"), id: AssemblyId, path: Schema.String }),
   Schema.Struct({
     op: Schema.Literal("add-part"),
     path: Schema.String, // workspace-relative, as everywhere else in the 3D tools
@@ -149,6 +180,7 @@ export const AssemblyPairResult = Schema.Struct({
   complete: Schema.Boolean,
 });
 export const AssemblyCheckReport = Schema.Struct({
+  enclosure: Schema.optional(EnclosureReport),
   version: Schema.Int,
   assemblyRevision: Schema.String,
   key: Schema.String, // cache key; the panel compares it to mark results stale
@@ -262,6 +294,16 @@ export function validateAssembly(
     const pair = [clearance.a, clearance.b].sort().join("\0");
     if (pairs.has(pair)) return { path: at, message: "Keep one clearance per part pair." };
     pairs.add(pair);
+  }
+  if (doc.enclosure) {
+    const board = doc.parts.find((p) => p.id === doc.enclosure!.board);
+    if (!board || !/\.glb$/i.test(board.path))
+      return { path: "enclosure.board", message: "Choose an existing GLB board part." };
+    if (
+      new Set(doc.enclosure.parts).size !== doc.enclosure.parts.length ||
+      doc.enclosure.parts.some((id) => id === board.id || !ids.has(id))
+    )
+      return { path: "enclosure.parts", message: "Choose unique case parts other than the board." };
   }
   return null;
 }

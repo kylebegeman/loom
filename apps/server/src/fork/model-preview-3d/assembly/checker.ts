@@ -1,3 +1,4 @@
+import type { BoardFeatures } from "../../pcb-preview/enclosure/features.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
@@ -26,6 +27,11 @@ const hash = (value: unknown) =>
   NodeCrypto.createHash("sha256").update(json(value)).digest("hex").slice(0, 24);
 const fail = (message: string) => new ModelPreviewError({ reason: "invalid-parameter", message });
 export const makeAssemblyChecker = (deps: {
+  features?: (
+    file: ModelFileRef,
+    part: AssemblyPart,
+    requirements: import("@t3tools/contracts/fork").EnclosureRequirements,
+  ) => Effect.Effect<BoardFeatures, ModelPreviewError>;
   assembly: (file: ModelFileRef) => Effect.Effect<AssemblyReadResult, ModelPreviewError>;
   geometry: (
     file: ModelFileRef,
@@ -124,6 +130,40 @@ export const makeAssemblyChecker = (deps: {
         pair.clearanceId = clearance.id;
         pair.requiredMm = clearance.requiredMm;
       }
+      const caseParts = doc.enclosure
+        ? doc.parts
+            .filter(
+              (p) =>
+                p.visible &&
+                p.id !== doc.enclosure!.board &&
+                (!doc.enclosure!.parts.length || doc.enclosure!.parts.includes(p.id)),
+            )
+            .map((p) => p.id)
+        : [];
+      if (doc.enclosure) for (const id of caseParts) addPair(doc.enclosure.board, id);
+      const boardPart = doc.enclosure ? byId.get(doc.enclosure.board) : null;
+      const featureResult =
+        deps.features && doc.enclosure && boardPart
+          ? yield* Effect.result(deps.features(input.file, boardPart, doc.enclosure.requirements))
+          : null;
+      const enclosure = featureResult
+        ? featureResult._tag === "Success"
+          ? {
+              board: doc.enclosure!.board,
+              caseParts,
+              features: featureResult.success,
+              requirements: doc.enclosure!.requirements,
+            }
+          : null
+        : null;
+      const enclosureKey = [
+        enclosure,
+        featureResult
+          ? featureResult._tag === "Failure"
+            ? featureResult.failure.message
+            : null
+          : null,
+      ];
       const needed = new Set([...pairIds.values()].flatMap((p) => [p.a, p.b])),
         parts: AssemblyWorkerPart[] = [],
         skipped: AssemblyCheckReport["skipped"][number][] = [];
@@ -139,6 +179,7 @@ export const makeAssemblyChecker = (deps: {
         if (revisions.every((revision) => revision !== null)) {
           const key = hash([
             ASSEMBLY_CHECK_VERSION,
+            enclosureKey,
             snapshot.revision,
             selectedParts.map((part, i) => [
               part.id,
@@ -175,6 +216,7 @@ export const makeAssemblyChecker = (deps: {
         ),
         key = hash([
           ASSEMBLY_CHECK_VERSION,
+          enclosureKey,
           snapshot.revision,
           parts.map((p) => [p.id, p.geometryRevision, p.matrix]),
           pairs,
@@ -191,6 +233,7 @@ export const makeAssemblyChecker = (deps: {
           Effect.gen(function* () {
             const request: AssemblyWorkerRequest = {
                 kind: "assembly",
+                ...(enclosure ? { enclosure } : {}),
                 parts,
                 pairs,
                 limits: {
@@ -208,8 +251,18 @@ export const makeAssemblyChecker = (deps: {
               checkedAt: DateTime.formatIso(yield* DateTime.now),
               cached: false,
               ...reply.core,
-              complete: reply.core.complete && !skipped.length,
-              skipped,
+              complete:
+                reply.core.complete &&
+                !skipped.length &&
+                (featureResult ? featureResult._tag === "Success" : true),
+              skipped: featureResult
+                ? featureResult._tag === "Failure"
+                  ? [
+                      ...skipped,
+                      { id: doc.enclosure!.board, reason: featureResult.failure.message },
+                    ]
+                  : skipped
+                : skipped,
             };
             reports.set(key, report);
             while (reports.size > 16) reports.delete(reports.keys().next().value!);

@@ -1,3 +1,6 @@
+import { makeEnclosure } from "./enclosure/service.ts";
+import { readGlbDocument } from "./enclosure/readJson.ts";
+import { kicadOutline, circuitOutline } from "./outline.ts";
 import { makePcbHistory } from "./history.ts";
 import { isReferenceSource, designReferences } from "./designFiles.ts";
 import { CheckpointStore } from "../../checkpointing/CheckpointStore.ts";
@@ -173,6 +176,9 @@ export class PcbPreviewService extends Context.Service<
     readonly workspaceUpdates: (
       input: W.PcbInspectInput,
     ) => Stream.Stream<W.PcbWorkspace, PcbPreviewError>;
+    readonly enclosure: (
+      input: W.PcbEnclosureInput,
+    ) => Effect.Effect<W.PcbEnclosureResult, PcbPreviewError>;
     readonly exportReference: (
       input: W.PcbReferenceInput,
     ) => Effect.Effect<W.PcbReferenceResult, PcbPreviewError>;
@@ -2948,18 +2954,75 @@ export const make = Effect.gen(function* () {
         }),
       ),
     );
-  const exportReference = Effect.fn("PcbPreview.exportReference")(function* (
-    input: W.PcbReferenceInput,
-  ) {
+  const referenceData = Effect.fn("PcbPreview.referenceData")(function* (input: W.PcbInspectInput) {
+    const resolved = yield* resolveDesign(input);
+    if (resolved.design.kind === "kicad" && !resolved.design.boardPath)
+      return yield* failure("unsupported-view", "Add a board file to check an enclosure.");
     const exported = yield* asset({ ...input, format: "glb", transport: "url" }),
-      targetThreadId = input.targetThreadId ?? input.threadId,
-      target = yield* workspace(targetThreadId),
       inspection = yield* inspect(input);
     if (inspection.sourceHash !== exported.sourceHash)
       return yield* failure(
         "conflict",
         "The board changed while preparing its reference. Retry for a consistent revision.",
       );
+    if (!("file" in exported) || !exported.file)
+      return yield* failure("render-not-found", "The board reference export is unavailable.");
+    const parts = exported.file.relativeUrl.split("/"),
+      file = yield* resolveSignedRequest(parts.at(-2)!, parts.at(-1)!);
+    let outline: ReturnType<typeof kicadOutline> = null;
+    if (resolved.design.kind === "kicad") {
+      const boardPath = yield* safePath(resolved.root, resolved.design.boardPath!);
+      const source = yield* smallSource(boardPath);
+      outline = yield* Effect.try({
+        try: () => {
+          const board = parseSexp(source)[0];
+          return Array.isArray(board) ? kicadOutline(board) : null;
+        },
+        catch: () => failure("invalid-report", "The board outline could not be read."),
+      });
+    } else {
+      const circuit = yield* asset({ ...input, format: "circuit-json" });
+      if (circuit.sourceHash !== exported.sourceHash)
+        return yield* failure("conflict", "The board changed while preparing its reference.");
+      outline = circuitOutline(
+        yield* decodeJson(circuit.data).pipe(
+          Effect.mapError(() => failure("invalid-report", "Invalid Circuit JSON.")),
+        ),
+      );
+    }
+    const metadata: W.PcbReferenceMetadata = {
+      format: W.PCB_REFERENCE_FORMAT,
+      version: W.PCB_REFERENCE_VERSION,
+      kind: resolved.design.kind,
+      designId: input.designId,
+      sourceHash: exported.sourceHash,
+      units: "mm",
+      glbUnits: "metres",
+      bounds: inspection.bounds,
+      thickness: inspection.thickness,
+      outline,
+      mountingHoles: inspection.mountingHoles.map((h) => ({
+        ...h,
+        plated: h.plated ?? false,
+        footprint: h.footprint ?? "",
+      })),
+      components: inspection.components.map((c) => ({
+        reference: c.reference,
+        value: c.value,
+        footprint: c.footprint,
+        position: c.pcb ?? null,
+      })),
+      note: "Verify connector clearances, component heights and mounting holes against the exact board revision before fabrication.",
+    };
+    return { file, metadata };
+  });
+  const exportReference = Effect.fn("PcbPreview.exportReference")(function* (
+    input: W.PcbReferenceInput,
+  ) {
+    const data = yield* referenceData(input),
+      targetThreadId = input.targetThreadId ?? input.threadId,
+      target = yield* workspace(targetThreadId);
+    const exported = { sourceHash: data.metadata.sourceHash };
     const canonical = yield* ensureWorkspaceDirectory(
       target.root,
       path.join(".loom", "pcb-references"),
@@ -2990,35 +3053,42 @@ export const make = Effect.gen(function* () {
           prefix: "pending-reference-",
         });
         const staged = path.join(temporary, "board.glb");
-        if (!("file" in exported) || !exported.file)
-          return yield* failure("render-not-found", "The board reference export is unavailable.");
-        const parts = exported.file.relativeUrl.split("/");
-        const source = yield* resolveSignedRequest(parts.at(-2)!, parts.at(-1)!);
-        yield* fs.copyFile(source, staged);
+        yield* fs.copyFile(data.file, staged);
         yield* fs.rename(staged, file);
       }),
     );
     yield* writeFileStringAtomically({
       filePath: metadataPath,
-      contents: encodeJson({
-        designId: input.designId,
-        sourceHash: exported.sourceHash,
-        units: "mm",
-        glbUnits: "metres",
-        bounds: inspection.bounds,
-        thickness: inspection.thickness,
-        mountingHoles: inspection.mountingHoles,
-        components: inspection.components.map((c) => ({
-          reference: c.reference,
-          value: c.value,
-          footprint: c.footprint,
-          position: c.pcb ?? null,
-        })),
-        note: "Verify connector clearances, component heights and mounting holes against the exact board revision before fabrication.",
-      }),
+      contents: encodeJson(data.metadata),
     });
     yield* entries.refresh(target.root);
-    return { path: file, metadataPath, sourceHash: exported.sourceHash, targetThreadId };
+    return {
+      path: file,
+      relativePath: path.relative(target.root, file).split(path.sep).join("/"),
+      metadataPath,
+      sourceHash: exported.sourceHash,
+      targetThreadId,
+    };
+  });
+
+  const enclosure = yield* makeEnclosure({
+    referenceData: (i) =>
+      checked(
+        referenceData(i).pipe(
+          Effect.flatMap((data) =>
+            readGlbDocument(data.file).pipe(
+              Effect.map((json) => ({ ...data, json })),
+              Effect.mapError(() =>
+                failure("invalid-report", "The board reference has invalid GLB data."),
+              ),
+            ),
+          ),
+        ),
+      ),
+    exportReference: (i) => checked(exportReference(i)),
+    workspace: (i) => checked(workspace(i.threadId)),
+    directory: (root, relative) => checked(ensureWorkspaceDirectory(root, relative)),
+    refresh: (root) => checked(entries.refresh(root)),
   });
 
   const reuseHardware = Effect.fn("PcbPreview.reuseHardware")(function* (
@@ -3176,6 +3246,7 @@ export const make = Effect.gen(function* () {
         Stream.mapError((c) => (c._tag === "PcbPreviewError" ? c : ioFailure())),
       ),
     reuseHardware: (i) => checked(reuseHardware(i)),
+    enclosure: (i) => checked(enclosure(i)),
     exportReference: (i) => checked(exportReference(i)),
     panelEvents: (id) =>
       panelEvents(id).pipe(Stream.mapError((e) => (isPreviewError(e) ? e : ioFailure()))),

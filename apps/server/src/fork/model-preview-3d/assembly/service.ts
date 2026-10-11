@@ -1,3 +1,4 @@
+import type { BoardFeatures } from "../../pcb-preview/enclosure/features.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeCrypto from "node:crypto";
 import * as Effect from "effect/Effect";
@@ -36,6 +37,10 @@ export const makeAssemblies = (deps: {
     { root: string; absolute: string; info: FileSystem.File.Info },
     ModelPreviewError
   >;
+  features?: (
+    file: ModelFileRef,
+    part: ModelAssembly["parts"][number],
+  ) => Effect.Effect<BoardFeatures, ModelPreviewError>;
   metadata: (info: FileSystem.File.Info) => { revision: string };
   boundsOf: (
     file: ModelFileRef,
@@ -167,6 +172,7 @@ export const makeAssemblies = (deps: {
               "The assembly changed since you read it. Read it again and retry.",
             );
           const doc = current?.assembly ?? {
+            enclosure: null,
             format: "loom-assembly" as const,
             version: ASSEMBLY_FILE_VERSION,
             units: "mm" as const,
@@ -176,6 +182,12 @@ export const makeAssemblies = (deps: {
           };
           const next = yield* applyOperations(doc, input.operations, {
             assemblyPath: input.file.path,
+            ...(deps.features
+              ? {
+                  features: (part: ModelAssembly["parts"][number]) =>
+                    deps.features!(input.file, part),
+                }
+              : {}),
             addPath: (partPath) =>
               deps.resolveFile({ ...input.file, path: partPath }).pipe(
                 Effect.flatMap(() =>

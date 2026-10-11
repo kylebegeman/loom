@@ -34,6 +34,7 @@ const snapshot: AssemblyReadResult = {
   readOnly: false,
   parts: [],
   assembly: {
+    enclosure: null,
     format: "loom-assembly",
     version: 1,
     units: "mm",

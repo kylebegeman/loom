@@ -70,6 +70,12 @@ export function createPcbPreviewAtoms<R, E>(runtime: Atom.AtomRuntime<Environmen
     staleTimeMs: 0,
   });
   return {
+    enclosure: createEnvironmentRpcCommand<
+      R,
+      E,
+      typeof M.enclosure,
+      import("@t3tools/contracts/fork").PcbEnclosureInput
+    >(runtime, { label: "loom:pcb-enclosure", tag: M.enclosure }),
     history: createEnvironmentRpcCommand(runtime, { label: "loom:pcb-history", tag: M.history }),
     historyRestore: createEnvironmentRpcCommand(runtime, {
       label: "loom:pcb-history-restore",

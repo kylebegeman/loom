@@ -120,7 +120,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_assembly_update", {
     description:
-      "Create or edit a repository assembly with atomic operations. Pass expectedRevision from a read to detect competing edits. Positions, rotations and clearances are in millimetres and degrees.",
+      "Create or edit a repository assembly with atomic operations. Pass expectedRevision from a read to detect competing edits. Positions, rotations and clearances are in millimetres and degrees. set-enclosure configures board, case parts and requirements; clear-enclosure removes them; place-board centres a board over the case; swap-board preserves its drawing-frame placement.",
     parameters: Schema.Struct({
       path: W.ModelFileRef.fields.path,
       operations: Schema.Array(W.AssemblyOperation).check(
@@ -139,7 +139,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_assembly_check", {
     description:
-      "Check assembly intersections, touching faces, containment and required clearances on the host. A sampled or incomplete result needs review.",
+      "Check assembly intersections, touching faces, containment and required clearances on the host. Enclosure assemblies also report wall, lid/floor, connector and standoff findings, with a suggested board move when the mounting holes agree. A sampled or incomplete result needs review.",
     parameters: Schema.Struct({
       path: W.ModelFileRef.fields.path,
       ...W.AssemblyCheckOptions.fields,
@@ -460,14 +460,12 @@ export const modelPreview3dHandlers = McpToolAccess.toLayer(
         Effect.gen(function* () {
           yield* modelThread;
           return yield* withAgentTools((service) =>
-            service
-              .printers()
-              .pipe(
-                Effect.map((library) => ({
-                  library,
-                  builtIns: Object.values(W.BUILT_IN_PRINTERS),
-                })),
-              ),
+            service.printers().pipe(
+              Effect.map((library) => ({
+                library,
+                builtIns: Object.values(W.BUILT_IN_PRINTERS),
+              })),
+            ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),
       ),

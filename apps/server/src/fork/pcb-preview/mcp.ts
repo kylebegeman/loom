@@ -74,6 +74,24 @@ export const PcbToolkit = Toolkit.make(
     .annotate(Tool.Title, "Control PCB editor")
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_pcb_enclosure", {
+    description:
+      "Generate a parametric OpenSCAD tray, lid and standoffs from a saved board, plus build123d when supported. Creates the board's assembly with enclosure fit requirements. preview=true returns sources without writing. Edited files are preserved unless overwrite=true.",
+    parameters: Schema.Struct({
+      ...design,
+      outputDir: W.PcbEnclosureInput.fields.outputDir,
+      params: W.PcbEnclosureInput.fields.params,
+      build123d: W.PcbEnclosureInput.fields.build123d,
+      overwrite: W.PcbEnclosureInput.fields.overwrite,
+      preview: W.PcbEnclosureInput.fields.preview,
+    }),
+    success: W.PcbEnclosureResult,
+    failure,
+    dependencies: [McpInvocationContext, ThreadManagementService],
+  })
+    .annotate(Tool.Title, "Generate a board case")
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
   Tool.make("loom_pcb_export_reference", {
     description:
       "Save a real GLB and mechanical revision metadata in this thread workspace or a specified destination thread workspace. Other threads can use these files as enclosure references. Creates files only on request.",
@@ -514,6 +532,16 @@ export const pcbHandlers = McpToolAccess.toLayer(
           return yield* withForkRuntime(
             Effect.flatMap(PcbPreviewService, (service) =>
               service.editorAction({ ...input, threadId }),
+            ),
+          );
+        }).pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      loom_pcb_enclosure: McpToolAccess.actsAsCaller((input) =>
+        Effect.gen(function* () {
+          const threadId = yield* thread;
+          return yield* withForkRuntime(
+            Effect.flatMap(PcbPreviewService, (service) =>
+              service.enclosure({ ...input, threadId }),
             ),
           );
         }).pipe(Effect.provideService(ForkRuntime, runtime)),

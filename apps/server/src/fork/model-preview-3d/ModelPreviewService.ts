@@ -1,3 +1,4 @@
+import { makeBoardFeatures } from "./assembly/boardFeatures.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import { makeEditorBridge } from "../editorBridge.ts";
 import type {
@@ -1289,10 +1290,12 @@ export const make = Effect.gen(function* () {
     assembly: (file: ModelFileRef) => Effect.Effect<AssemblyReadResult, ModelPreviewError>;
     updateAssembly: Effect.Success<ReturnType<typeof makeAssemblies>>["updateAssembly"];
   };
+  const features = yield* makeBoardFeatures((file) => checked(resolveFile(file)));
   const assemblyChecker = yield* makeAssemblyChecker({
     assembly: (file) => assemblies.assembly(file),
     geometry: assemblyGeometry.geometry,
     geometryRevision: assemblyGeometry.revisionOf,
+    features,
     coordinator,
   });
   assemblies = yield* makeAssemblies({
@@ -1300,6 +1303,7 @@ export const make = Effect.gen(function* () {
     resolveFile: (file) => checked(resolveFile(file)),
     metadata,
     boundsOf: assemblyChecker.boundsOf,
+    features,
   });
   const slicer = yield* makeSlicer({
     stateDir: path.join(config.stateDir, "fork", "model-preview-3d"),
