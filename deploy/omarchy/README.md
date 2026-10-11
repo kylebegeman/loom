@@ -50,7 +50,8 @@ are retained in `~/.local/state/loom-os/backups`.
 
 The keys are `Super+Ctrl+Alt+L` for Loom, `Super+Ctrl+Alt+O` for Office,
 `Super+Ctrl+Alt+A` for Atlas when configured, and `Super+Ctrl+Alt+N` for Office clipboard
-capture. These app chords preserve Omarchy 4’s standard utility shortcuts. The existing
+capture, and `Super+Ctrl+Alt+F` for Find in apps when a portable app CLI is
+configured. These app chords preserve Omarchy 4’s standard utility shortcuts. The existing
 Agent shortcut remains available through Switchboard.
 Review them against any additional personal bindings before reloading. The menu adds
 LoomOS with the same applications and capture action. User content outside the

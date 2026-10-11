@@ -324,11 +324,25 @@ done
   const bindingsConf = NodePath.join(p.config, "hypr/bindings.conf");
   const lua = await read(bindingsLua),
     conf = await read(bindingsConf);
+  const finderEnabled = ["office", "atlas"].some(
+    (app) => config[`${app}Cli`] && config[`${app}Url`],
+  );
+  if (finderEnabled) {
+    writes.set(NodePath.join(p.root, "find-terminal"), {
+      content: `#!/bin/bash\nprintf '\\033]0;Find in apps\\007'\n${shellQuote(p.bin)} find --inline "$@"\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
+      mode: 0o755,
+    });
+    writes.set(NodePath.join(p.data, "applications/loom-os-find.desktop"), {
+      content: `[Desktop Entry]\nType=Application\nName=Find in apps\nComment=Search Office and Atlas\nExec=${desktopArg(p.bin)} find\nIcon=system-search\nTerminal=false\nCategories=Utility;\n`,
+      mode: 0o644,
+    });
+  }
   const bindings = [
     ["L", "Loom", "open loom"],
     ["O", "Office", "open office"],
     ...(config.atlasUrl ? [["A", "Atlas", "open atlas"]] : []),
     ["N", "Capture in Office", "capture office --clipboard"],
+    ...(finderEnabled ? [["F", "Find in apps", "find"]] : []),
   ];
   const patches = [];
   if (lua !== null) {
@@ -425,6 +439,15 @@ done
       action: command("pack rollback --terminal"),
     };
     entries["update.loomos"] = { label: "LoomOS integration", target: "loomos.maintenance" };
+    if (finderEnabled) {
+      entries["loomos.find"] = { label: "Find in apps", action: command("find") };
+      for (const app of ["office", "atlas"])
+        if (config[`${app}Cli`] && config[`${app}Url`])
+          entries[`loomos.find-${app}`] = {
+            label: `Search ${appNames[app]}`,
+            action: command(`find ${app}`),
+          };
+    }
     entries["loomos.capture"] = {
       label: "Capture in Office",
       action: command("capture office --clipboard"),
@@ -777,6 +800,239 @@ export function officeCaptureUrl(config, { title = "", text = "", url = "" }) {
   return capture.href;
 }
 
+// Search text never becomes shell code, browser navigation or an AI prompt.
+export function searchCommand(app, query, config, env = process.env) {
+  if (!["office", "atlas"].includes(app) || !config[`${app}Cli`] || !config[`${app}Url`])
+    throw new Error("Configure the app CLI and reachable origin first.");
+  const limit = app === "office" ? 500 : 200;
+  const length = app === "office" ? [...query].length : Buffer.byteLength(query);
+  if (!query.trim() || length > limit || /[\p{Cc}\p{Cf}]/u.test(query))
+    throw new Error(
+      `Search needs a query without control characters, up to ${limit} ${app === "office" ? "characters" : "UTF-8 bytes"}.`,
+    );
+  return {
+    command: config[`${app}Cli`],
+    args: [
+      app,
+      app === "office" ? "search" : "sources-list",
+      "--query",
+      query,
+      "--limit",
+      "20",
+      "--json",
+    ],
+    env: { ...env, API_URL: config[`${app}Url`] },
+  };
+}
+const terminalText = (value, limit = 2000) =>
+  typeof value === "string" ? value.replace(/[\p{Cc}\p{Cf}]/gu, " ").slice(0, limit) : "";
+export function finderResults(app, page) {
+  const items = app === "office" ? page?.items : page?.sources;
+  if (!Array.isArray(items) || items.length > 20)
+    throw new Error("The app returned an unsupported search response.");
+  const results = items.map((item, index) => {
+    const source = app === "office" ? item : item?.source;
+    const id = app === "office" ? item?.reference?.id : source?.id;
+    if (!source || typeof id !== "string" || !id || typeof source.title !== "string")
+      throw new Error("The app returned an unsupported search result.");
+    const title = terminalText(source.title, 200) || "Untitled";
+    const kind = terminalText(app === "office" ? item.app : source.project, 80);
+    const text =
+      app === "office"
+        ? terminalText(item.snippet)
+        : [
+            terminalText(source.project),
+            ...(Array.isArray(source.topics)
+              ? source.topics.map((v) => terminalText(v, 100)).slice(0, 20)
+              : []),
+          ]
+            .filter(Boolean)
+            .join(" · ");
+    return { label: `${index + 1}. ${title}${kind ? ` (${kind})` : ""}`, title, text };
+  });
+  return {
+    results,
+    more: Boolean(app === "office" ? page.nextCursor : page.next),
+  };
+}
+async function readSearch(spec) {
+  return new Promise((resolve, reject) => {
+    NodeChildProcess.execFile(
+      spec.command,
+      spec.args,
+      {
+        env: spec.env,
+        timeout: 15000,
+        maxBuffer: 2 * 1024 * 1024,
+        encoding: "utf8",
+      },
+      (error, stdout) => {
+        // CLI stderr may contain authentication details. Keep diagnostics local to its own login flow.
+        if (error)
+          return reject(
+            new Error(
+              "Search could not reach the app or its CLI session. Check connections or sign in to the CLI.",
+            ),
+          );
+        try {
+          resolve(JSON.parse(stdout));
+        } catch {
+          reject(new Error("The app returned an unsupported search response."));
+        }
+      },
+    );
+  });
+}
+async function finderChoice(args, env) {
+  return new Promise((resolve, reject) => {
+    const child = NodeChildProcess.spawn("gum", args, {
+      env,
+      stdio: ["inherit", "pipe", "inherit"],
+    });
+    let stdout = "";
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+    });
+    child.once("error", () =>
+      reject(
+        new Error(
+          "The native picker is unavailable. Search remains available with loom-os search.",
+        ),
+      ),
+    );
+    child.once("exit", (code) => {
+      if ([1, 130].includes(code)) resolve(null);
+      else if (code === 0) resolve(stdout.replace(/\r?\n$/, ""));
+      else reject(new Error("The native picker could not be opened."));
+    });
+  });
+}
+async function copyFinderText(text, env) {
+  const child = NodeChildProcess.spawn("wl-copy", [], { env, stdio: ["pipe", "ignore", "ignore"] });
+  await new Promise((resolve, reject) => {
+    const failure = () => reject(new Error("Could not copy text to the Wayland clipboard."));
+    child.once("error", failure);
+    child.stdin.once("error", failure);
+    child.once("exit", (code) => (code === 0 ? resolve() : failure()));
+    child.stdin.end(text);
+  });
+}
+export async function nativeFinder(config, env, initialApp, dependencies = {}) {
+  const choose =
+    dependencies.choose ??
+    ((header, choices) => finderChoice(["choose", "--header", header, "--", ...choices], env));
+  const input =
+    dependencies.input ??
+    ((app) =>
+      finderChoice(
+        [
+          "input",
+          "--header",
+          `Search ${appNames[app]}`,
+          "--placeholder",
+          app === "office" ? "Words, phrases or Office filters" : "Source title, project or topic",
+          "--char-limit",
+          app === "office" ? "500" : "200",
+        ],
+        env,
+      ));
+  const search = dependencies.search ?? readSearch;
+  const copy = dependencies.copy ?? ((text) => copyFinderText(text, env));
+  const show = dependencies.show ?? console.log;
+  const open = dependencies.open ?? ((app) => main(["open", app], env));
+  const login = dependencies.login ?? ((app) => main(["login", app], env));
+  const apps = ["office", "atlas"].filter((app) => config[`${app}Cli`] && config[`${app}Url`]);
+  if (!apps.length || (initialApp && !apps.includes(initialApp)))
+    throw new Error("Configure the app CLI and reachable origin first.");
+  while (true) {
+    const selected =
+      initialApp ?? (await choose("Find in apps", [...apps.map((app) => appNames[app]), "Close"]));
+    const app = initialApp ?? apps.find((app) => appNames[app] === selected);
+    if (!app) return;
+    const query = await input(app);
+    if (query === null) return;
+    let page;
+    show(`Searching ${appNames[app]}…`);
+    try {
+      page = finderResults(app, await search(searchCommand(app, query, config, env)));
+    } catch (error) {
+      show(terminalText(error.message));
+      const recovery = await choose(`Search ${appNames[app]}`, [
+        "Search again",
+        "Sign in to CLI",
+        "Connection status",
+        "Close",
+      ]);
+      if (recovery === "Sign in to CLI") {
+        try {
+          await login(app);
+        } catch {
+          show("CLI sign-in did not finish. Try again when the app is reachable.");
+        }
+      } else if (recovery === "Connection status") {
+        try {
+          await (dependencies.connections ?? (() => main(["doctor", "--human"], env)))();
+        } catch {
+          show("Connection checks did not finish. Use LoomOS > AI and connections.");
+        }
+      } else if (recovery !== "Search again") return;
+      continue;
+    }
+    show(
+      page.results.length
+        ? `${page.results.length} results${page.more ? "; showing the first page. Refine your query for more." : "."}`
+        : "No matches. Try different words.",
+    );
+    if (app === "atlas") show("Atlas searches library titles, projects and topics.");
+    while (true) {
+      const selectedResult = await choose(`Search ${appNames[app]}`, [
+        ...page.results.map((r) => r.label),
+        "Copy query and open app",
+        "Search again",
+        "Close",
+      ]);
+      if (!selectedResult || selectedResult === "Close") return;
+      if (selectedResult === "Search again") break;
+      if (selectedResult === "Copy query and open app") {
+        try {
+          await copy(query);
+          await open(app);
+        } catch (error) {
+          show(terminalText(error.message));
+          continue;
+        }
+        return;
+      }
+      const result = page.results.find((r) => r.label === selectedResult);
+      if (!result) return;
+      show(`${result.title}\n${result.text || "No excerpt available."}`);
+      show(
+        "Open the item using search inside the app. Opening the app focuses its existing window.",
+      );
+      const action = await choose("Search result", [
+        "Copy excerpt",
+        "Copy title and open app",
+        "Back to results",
+        "Close",
+      ]);
+      if (!action || action === "Close") return;
+      try {
+        if (action === "Copy excerpt") {
+          await copy(`${result.title}\n${result.text}`);
+          show("Copied.");
+        } else if (action === "Copy title and open app") {
+          await copy(result.title);
+          await open(app);
+          return;
+        }
+      } catch (error) {
+        show(terminalText(error.message));
+      }
+    }
+  }
+}
+
 function parseArgs(args) {
   const options = {},
     positional = [];
@@ -797,7 +1053,7 @@ function parseArgs(args) {
   return { options, positional };
 }
 const print = (value) => console.log(JSON.stringify(value, null, 2));
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -877,6 +1133,27 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "find") {
+    const inline = rest.includes("--inline");
+    const apps = rest.filter((arg) => arg !== "--inline");
+    if (
+      apps.length > 1 ||
+      (apps[0] && !["office", "atlas"].includes(apps[0])) ||
+      rest.filter((arg) => arg === "--inline").length > 1
+    )
+      throw new Error("Usage: loom-os find [office|atlas]");
+    if (inline) {
+      if (!process.stdin.isTTY) throw new Error("The native finder needs an interactive terminal.");
+      await nativeFinder(config, env, apps[0]);
+    } else {
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-find", NodePath.join(p.root, "find-terminal"), ...apps],
+        { env },
+      );
+    }
+    return;
+  }
   if (action === "connections") {
     const { options, positional } = parseArgs(rest);
     if (
@@ -1149,20 +1426,12 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     const [app, ...query] = rest;
     if (!["office", "atlas"].includes(app) || !config[`${app}Cli`] || !config[`${app}Url`])
       throw new Error("Configure the app CLI and reachable origin first.");
-    const argv =
-      action === "login"
-        ? ["login"]
-        : [
-            app,
-            app === "office" ? "search" : "sources-list",
-            "--query",
-            query.join(" "),
-            "--limit",
-            "20",
-            "--json",
-          ];
-    if (action === "search" && !query.length) throw new Error("Search needs a query.");
-    await run(config[`${app}Cli`], argv, { env: { ...env, API_URL: config[`${app}Url`] } });
+    if (action === "login")
+      await run(config[`${app}Cli`], ["login"], { env: { ...env, API_URL: config[`${app}Url`] } });
+    else {
+      const spec = searchCommand(app, query.join(" "), config, env);
+      await run(spec.command, spec.args, { env: spec.env });
+    }
     return;
   }
   throw new Error(`Unknown command: ${action}. Run loom-os help.`);

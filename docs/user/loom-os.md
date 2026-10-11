@@ -41,7 +41,17 @@ loom-os search atlas "project research"
 loom-os capture atlas --title "Research" --text "A source worth keeping"
 ```
 
-Search returns the app's JSON results. Atlas capture saves a private source tagged
+Choose **Find in apps** from the launcher or LoomOS menu, or press
+`Super+Ctrl+Alt+F`. You can also run `loom-os find office` or `loom-os find atlas`.
+The native picker shows up to 20 results: Office searches ordinary records, while
+Atlas searches source titles, projects and topics. Select a result to read its
+excerpt or metadata, then copy it or copy its title and open the app. Opening
+focuses the existing app window; use the copied text in the app's own search to
+open an item. Search again refines the query. Escape or Close cancels without
+opening an app or copying anything. Search requires a reachable server and a
+separate CLI sign-in; browser login alone does not authorize the CLI.
+
+The terminal `loom-os search` command returns the app's JSON results. Atlas capture saves a private source tagged
 `omarchy`. Its server must be reachable from this machine.
 
 ## AI routing and health

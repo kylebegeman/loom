@@ -7,6 +7,9 @@ import * as NodeTest from "node:test";
 import {
   appCommand,
   focusExistingApp,
+  finderResults,
+  nativeFinder,
+  searchCommand,
   install,
   main,
   officeCaptureUrl,
@@ -924,5 +927,263 @@ test("native rollback confirmation cancels safely and a failed review never offe
   NodeAssert.equal(
     await NodeFSP.readFile(log, "utf8"),
     `pack status --human\npack rollback --dry-run\nconfirm\npack rollback --expected-sha256 ${"0".repeat(64)}\n`,
+  );
+});
+
+const officePage = {
+  items: [
+    {
+      reference: { id: "note-1", kind: "note" },
+      app: "notes",
+      title: "Project notes",
+      snippet: "A matched excerpt",
+    },
+  ],
+  nextCursor: "next-page",
+};
+const atlasPage = {
+  sources: [
+    {
+      source: {
+        id: "source-1",
+        title: "Project research",
+        project: "Loom",
+        topics: ["Linux", "Omarchy"],
+      },
+    },
+  ],
+  next: "",
+};
+
+function finderFixture(choices, queries = ["project"]) {
+  const events = [];
+  return {
+    events,
+    dependencies: {
+      choose: async (header, options) => {
+        events.push(["choose", header, options]);
+        NodeAssert.ok(choices.length, "Unexpected additional action");
+        const choice = choices.shift();
+        NodeAssert.ok(
+          choice === null || options.includes(choice),
+          `Invalid fixture choice: ${choice}`,
+        );
+        return choice;
+      },
+      input: async (app) => {
+        events.push(["input", app]);
+        return queries.shift() ?? null;
+      },
+      search: async (spec) => {
+        events.push(["search", spec]);
+        return spec.args[0] === "office" ? officePage : atlasPage;
+      },
+      copy: async (text) => {
+        events.push(["copy", text]);
+      },
+      open: async (app) => {
+        events.push(["open", app]);
+      },
+      login: async (app) => {
+        events.push(["login", app]);
+      },
+      show: (text) => {
+        events.push(["show", text]);
+      },
+    },
+  };
+}
+
+test("finder uses exact app contracts, bounded literal argv and endpoint", async (t) => {
+  const f = await fixture(t);
+  const query = '$(touch /tmp/never) "quoted" & --query';
+  const spec = searchCommand("office", query, f.config, f.env);
+  NodeAssert.equal(spec.command, f.config.officeCli);
+  NodeAssert.equal(spec.env.API_URL, f.config.officeUrl);
+  NodeAssert.deepEqual(spec.args, [
+    "office",
+    "search",
+    "--query",
+    query,
+    "--limit",
+    "20",
+    "--json",
+  ]);
+  NodeAssert.equal(searchCommand("atlas", "research", f.config, f.env).args[1], "sources-list");
+  for (const query of ["", " ", "\x1b[31m", "a\u202Eb", "a".repeat(501)])
+    NodeAssert.throws(() => searchCommand("office", query, f.config, f.env));
+  NodeAssert.throws(() => searchCommand("atlas", "é".repeat(101), f.config, f.env));
+  NodeAssert.equal(
+    searchCommand("atlas", "é".repeat(100), f.config, f.env).args[3],
+    "é".repeat(100),
+  );
+  NodeAssert.throws(() => searchCommand("atlas", "x", { ...f.config, atlasCli: undefined }, f.env));
+});
+
+test("finder reads Office excerpts and Atlas metadata with accurate pagination", () => {
+  NodeAssert.deepEqual(finderResults("office", officePage), {
+    more: true,
+    results: [
+      { label: "1. Project notes (notes)", title: "Project notes", text: "A matched excerpt" },
+    ],
+  });
+  NodeAssert.deepEqual(finderResults("atlas", atlasPage), {
+    more: false,
+    results: [
+      {
+        label: "1. Project research (Loom)",
+        title: "Project research",
+        text: "Loom · Linux · Omarchy",
+      },
+    ],
+  });
+  const unsafe = {
+    items: [0, 1].map(() => ({
+      reference: { id: "x" },
+      title: "--title\x1b]0;spoof\x07\n",
+      snippet: "\x1b[31m\u202Esecret",
+    })),
+  };
+  const results = finderResults("office", unsafe).results;
+  NodeAssert.notEqual(results[0].label, results[1].label);
+  NodeAssert.ok(!/[\p{Cc}\p{Cf}]/u.test(results[0].title + results[0].text));
+  for (const page of [
+    {},
+    { items: "bad" },
+    { items: [{ title: "x" }] },
+    { items: Array(21).fill(officePage.items[0]) },
+  ])
+    NodeAssert.throws(() => finderResults("office", page));
+});
+
+test("finder cancellation never opens apps, writes clipboard, logs in or searches again", async (t) => {
+  const f = await fixture(t);
+  for (const [app, choices, queries, searches] of [
+    [undefined, [null], ["project"], 0],
+    ["office", [], [null], 0],
+    ["office", [null], ["project"], 1],
+    ["office", ["1. Project notes (notes)", null], ["project"], 1],
+  ]) {
+    const flow = finderFixture(choices, queries);
+    await nativeFinder(f.config, f.env, app, flow.dependencies);
+    NodeAssert.equal(flow.events.filter(([type]) => type === "search").length, searches);
+    NodeAssert.ok(!flow.events.some(([type]) => ["open", "copy", "login"].includes(type)));
+  }
+});
+
+test("finder previews, copies and focuses only the explicitly selected app", async (t) => {
+  const f = await fixture(t);
+  const flow = finderFixture([
+    "Atlas",
+    "1. Project research (Loom)",
+    "Copy excerpt",
+    "1. Project research (Loom)",
+    "Copy title and open app",
+  ]);
+  await nativeFinder(f.config, f.env, undefined, flow.dependencies);
+  NodeAssert.deepEqual(
+    flow.events.filter(([type]) => ["copy", "open"].includes(type)),
+    [
+      ["copy", "Project research\nLoom · Linux · Omarchy"],
+      ["copy", "Project research"],
+      ["open", "atlas"],
+    ],
+  );
+  NodeAssert.equal(
+    flow.events.find(([type]) => type === "search")[1].env.API_URL,
+    f.config.atlasUrl,
+  );
+});
+
+test("empty finder results can refine the query and return the literal query to the app", async (t) => {
+  const f = await fixture(t);
+  const query = '"literal" $(command) & spaces';
+  const flow = finderFixture(["Search again", "Copy query and open app"], ["missing", query]);
+  flow.dependencies.search = async (spec) => {
+    flow.events.push(["search", spec]);
+    return { items: [] };
+  };
+  await nativeFinder(f.config, f.env, "office", flow.dependencies);
+  NodeAssert.equal(flow.events.filter(([type]) => type === "search").length, 2);
+  NodeAssert.deepEqual(
+    flow.events.filter(([type]) => ["copy", "open"].includes(type)),
+    [
+      ["copy", query],
+      ["open", "office"],
+    ],
+  );
+  NodeAssert.ok(
+    flow.events.some(([type, text]) => type === "show" && text.startsWith("No matches")),
+  );
+});
+
+test("finder errors require explicit retry or sign-in and clipboard failure prevents launch", async (t) => {
+  const f = await fixture(t);
+  const flow = finderFixture(["Sign in to CLI", "Close"], ["x", "x"]);
+  flow.dependencies.search = async () => {
+    throw new Error("Unavailable");
+  };
+  await nativeFinder(f.config, f.env, "office", flow.dependencies);
+  NodeAssert.deepEqual(
+    flow.events.filter(([type]) => ["login", "open", "copy"].includes(type)),
+    [["login", "office"]],
+  );
+  const failedCopy = finderFixture(["Copy query and open app", "Close"]);
+  failedCopy.dependencies.copy = async () => {
+    throw new Error("Clipboard unavailable");
+  };
+  await nativeFinder(f.config, f.env, "office", failedCopy.dependencies);
+  NodeAssert.ok(!failedCopy.events.some(([type]) => type === "open"));
+});
+
+test("finder captures CLI JSON privately and hides raw failed-command diagnostics", async (t) => {
+  const f = await fixture(t);
+  await NodeFSP.writeFile(
+    f.config.officeCli,
+    `#!${process.execPath}\nconsole.error('private-token-should-not-appear');process.exit(1);\n`,
+    { mode: 0o755 },
+  );
+  const failed = finderFixture(["Close"]);
+  delete failed.dependencies.search;
+  await nativeFinder(f.config, f.env, "office", failed.dependencies);
+  NodeAssert.ok(JSON.stringify(failed.events).includes("Search could not reach"));
+  NodeAssert.ok(!JSON.stringify(failed.events).includes("private-token-should-not-appear"));
+  await NodeFSP.writeFile(
+    f.config.officeCli,
+    `#!${process.execPath}\nconsole.log(JSON.stringify(${JSON.stringify(officePage)}));\n`,
+    { mode: 0o755 },
+  );
+  const success = finderFixture(["Close"]);
+  delete success.dependencies.search;
+  await nativeFinder(f.config, f.env, "office", success.dependencies);
+  NodeAssert.ok(
+    success.events.some(
+      ([type, text]) => type === "show" && text.includes("showing the first page"),
+    ),
+  );
+});
+
+test("finder installation supplies launcher, native menu and a matching removable shortcut", async (t) => {
+  const f = await fixture(t);
+  await install(f.config, { env: f.env });
+  NodeAssert.ok(
+    (await NodeFSP.readFile(f.bindingsFile, "utf8")).includes("SUPER + CTRL + ALT + F"),
+  );
+  NodeAssert.ok((await NodeFSP.readFile(f.menuFile, "utf8")).includes('"loomos.find-office"'));
+  NodeAssert.ok(
+    (await NodeFSP.readFile(NodePath.join(f.p.root, "find-terminal"), "utf8")).includes(
+      'find --inline "$@"',
+    ),
+  );
+  await install({ ...f.config, officeCli: undefined, atlasCli: undefined }, { env: f.env });
+  NodeAssert.ok(
+    !(await NodeFSP.readFile(f.bindingsFile, "utf8")).includes("SUPER + CTRL + ALT + F"),
+  );
+  await NodeAssert.rejects(NodeFSP.readFile(NodePath.join(f.p.root, "find-terminal")), {
+    code: "ENOENT",
+  });
+  await NodeAssert.rejects(
+    NodeFSP.readFile(NodePath.join(f.p.data, "applications/loom-os-find.desktop")),
+    { code: "ENOENT" },
   );
 });
