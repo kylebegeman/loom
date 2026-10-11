@@ -266,3 +266,35 @@ realTest(
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
   { timeout: 30_000 },
 );
+
+realTest(
+  "computes headless overhang statistics for a T shape and removes its analysis mesh",
+  () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      yield* t.fs.writeFileString(
+        t.path.join(t.root, "overhang.scad"),
+        "union() { translate([4,4,0]) cube([2,2,10]); translate([0,0,10]) cube([10,10,2]); }\n",
+      );
+      const result = yield* t.service.renderImages(
+        { ...t.file, path: "overhang.scad" },
+        ["iso"],
+        {},
+        "orthographic",
+        { overhangs: { angle: 45 } },
+      );
+      expect(result.overhangs?.overhangAreaMm2).toBeCloseTo(96);
+      expect(result.overhangs?.regions[0]?.centre).toEqual([
+        expect.closeTo(5, 6),
+        expect.closeTo(5, 6),
+        expect.closeTo(10, 6),
+      ]);
+      expect(result.overhangs?.oriented).toBe(false);
+      expect(
+        (yield* t.fs.readDirectory(t.path.dirname(result.images[0]!.path))).some((name) =>
+          name.endsWith(".overhangs.stl"),
+        ),
+      ).toBe(false);
+    }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  { timeout: 30_000 },
+);

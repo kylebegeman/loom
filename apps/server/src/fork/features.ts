@@ -8,6 +8,8 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "model-units",
   "model-scale-references",
   "model-capture-export",
+  "model-nozzle-zones",
+  "model-overhangs",
   "pcb-preview",
   "project-lifecycle",
   "apple-build-tooling",

@@ -7,6 +7,7 @@ import type {
   ModelMeasurement,
   ModelAnnotation,
   BuildPlatePattern,
+  ZoneRect,
 } from "@t3tools/contracts/fork";
 import {
   ACESFilmicToneMapping,
@@ -25,6 +26,8 @@ import {
   DirectionalLight,
   Group,
   Mesh,
+  InstancedMesh,
+  Matrix4,
   MOUSE,
   TOUCH,
   Object3D,
@@ -41,6 +44,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { observeResize } from "~/lib/observeResize";
 import { markerScale, syncOrthographic } from "./projection";
 import { createReference, placeReference } from "./references";
+import { createOverhangShading } from "./overhangs";
+import { createZoneStrips } from "./zones";
 import { createBed } from "./bed";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
@@ -63,6 +68,7 @@ export function createViewer(host: HTMLElement) {
   const scene = new Scene(),
     camera = new PerspectiveCamera(40, 1, 0.01, 1000000),
     ortho = new OrthographicCamera();
+  const shading = createOverhangShading();
   let projection: ModelProjection = "perspective";
   camera.up.set(0, 0, 1);
   const renderer = new WebGLRenderer({
@@ -79,7 +85,9 @@ export function createViewer(host: HTMLElement) {
   scene.environment = environment.texture;
   room.dispose();
   pmrem.dispose();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const pixelRatio = Math.min(window.devicePixelRatio, 2);
+  renderer.setPixelRatio(pixelRatio);
+  shading.setPixelRatio(pixelRatio);
   host.append(renderer.domElement);
   renderer.domElement.setAttribute(
     "aria-label",
@@ -362,7 +370,9 @@ export function createViewer(host: HTMLElement) {
     axes: AxesHelper | null = null,
     sceneRadius = 1,
     reference: ReturnType<typeof createReference> = null,
-    referenceKind: ScaleReference = "none";
+    referenceKind: ScaleReference = "none",
+    overhangPositions: Float32Array | null = null,
+    unsupportedMaterials = false;
   const updateSceneRadius = () => {
     const bounds = box.clone();
     if (bed) bounds.union(new Box3().setFromObject(bed.object));
@@ -387,6 +397,7 @@ export function createViewer(host: HTMLElement) {
     dark = false,
     axesVisible = false,
     wireframe = false,
+    overhangs = false,
     navigationMode: NavigationMode = "orbit";
   let onNavigate: (() => void) | null = null;
   const navigationStarted = () => onNavigate?.();
@@ -431,6 +442,7 @@ export function createViewer(host: HTMLElement) {
     dark = document.documentElement.classList.contains("dark");
     scene.background = new Color(dark ? 0x151920 : 0xf1f3f5);
     bed?.setTheme(dark);
+    shading.setTheme(dark);
     requestRender();
   };
   const themeObserver = new MutationObserver(theme);
@@ -451,14 +463,20 @@ export function createViewer(host: HTMLElement) {
     controls.update();
     requestRender();
   };
-  const applyWireframe = () =>
+  const applyWireframe = () => {
+    shading.setEnabled(overhangs && !wireframe);
     model?.traverse((object) => {
       if (object instanceof Mesh)
         for (const material of Array.isArray(object.material) ? object.material : [object.material])
           if ("wireframe" in material) material.wireframe = wireframe;
     });
+  };
   /** Draws a width × depth bed in mm with the chosen pattern, replacing the current one. */
-  const setBed = (footprint: readonly [number, number], pattern: BuildPlatePattern) => {
+  const setBed = (
+    footprint: readonly [number, number],
+    pattern: BuildPlatePattern,
+    strips: readonly ZoneRect[] = [],
+  ) => {
     if (bed) {
       helpers.remove(bed.object);
       bed.dispose();
@@ -470,6 +488,20 @@ export function createViewer(host: HTMLElement) {
         material.dispose();
     }
     bed = createBed(footprint[0], footprint[1], pattern);
+    if (strips.length) {
+      const zones = createZoneStrips(footprint, strips);
+      bed.object.add(zones.object);
+      const setTheme = bed.setTheme,
+        dispose = bed.dispose;
+      bed.setTheme = (dark) => {
+        setTheme(dark);
+        zones.setTheme(dark);
+      };
+      bed.dispose = () => {
+        dispose();
+        zones.dispose();
+      };
+    }
     bed.setTheme(dark);
     bed.object.visible = gridVisible;
     placeBed();
@@ -499,6 +531,7 @@ export function createViewer(host: HTMLElement) {
   };
   const snapshot = (): ModelCamera => ({
     projection,
+    overhangs,
     position: camera.position.toArray(),
     target: controls.target.toArray(),
     near: camera.near,
@@ -512,6 +545,58 @@ export function createViewer(host: HTMLElement) {
   return {
     snapshot,
     activeCamera,
+    overhangInput() {
+      if (!model) return null;
+      if (overhangPositions) return overhangPositions;
+      model.updateMatrixWorld(true);
+      const meshes: { mesh: Mesh; vertices: number; instances: number }[] = [];
+      let vertices = 0;
+      model.traverse((object) => {
+        if (!(object instanceof Mesh)) return;
+        const positions = object.geometry.getAttribute("position");
+        if (!positions) return;
+        const count = Math.floor((object.geometry.index?.count ?? positions.count) / 3) * 3;
+        const instances = object instanceof InstancedMesh ? object.count : 1;
+        meshes.push({ mesh: object, vertices: count, instances });
+        vertices += count * instances;
+      });
+      overhangPositions = new Float32Array(vertices * 3);
+      const vertex = new Vector3(),
+        instance = new Matrix4(),
+        matrix = new Matrix4();
+      let offset = 0;
+      for (const { mesh, vertices, instances } of meshes) {
+        for (let instanceIndex = 0; instanceIndex < instances; instanceIndex++) {
+          matrix.copy(mesh.matrixWorld);
+          if (mesh instanceof InstancedMesh) {
+            mesh.getMatrixAt(instanceIndex, instance);
+            matrix.multiply(instance);
+          }
+          // Mirrored nodes reverse winding; Three flips front faces to keep the exterior outward.
+          const mirrored = matrix.determinant() < 0;
+          for (let index = 0; index < vertices; index++) {
+            const corner = index % 3;
+            const sourceIndex = mirrored && corner !== 0 ? index + (corner === 1 ? 1 : -1) : index;
+            mesh.getVertexPosition(mesh.geometry.index?.getX(sourceIndex) ?? sourceIndex, vertex);
+            vertex.applyMatrix4(matrix).toArray(overhangPositions, offset);
+            offset += 3;
+          }
+        }
+      }
+      return overhangPositions;
+    },
+    unsupportedOverhangMaterials() {
+      return unsupportedMaterials;
+    },
+    setOverhangs(value: boolean) {
+      overhangs = value;
+      shading.setEnabled(value && !wireframe);
+      requestRender();
+    },
+    setOverhangAngle(degrees: number) {
+      shading.setAngle(degrees);
+      requestRender();
+    },
     setProjection(value: ModelProjection) {
       projection = value;
       scaleMarkers();
@@ -568,6 +653,7 @@ export function createViewer(host: HTMLElement) {
     restore(state: ReturnType<typeof snapshot>) {
       restoring = true;
       projection = state.projection;
+      overhangs = state.overhangs;
       camera.position.fromArray(state.position);
       controls.target.fromArray(state.target);
       camera.near = state.near;
@@ -600,6 +686,16 @@ export function createViewer(host: HTMLElement) {
       }
       model = next;
       box = stats.box;
+      overhangPositions = null;
+      unsupportedMaterials = false;
+      shading.setBedZ(box.min.z);
+      model.traverse((object) => {
+        if (object instanceof Mesh)
+          for (const material of Array.isArray(object.material)
+            ? object.material
+            : [object.material])
+            if (!shading.patch(material)) unsupportedMaterials = true;
+      });
       placeBed();
       updateSceneRadius();
       scene.add(model);
@@ -683,6 +779,7 @@ export function createViewer(host: HTMLElement) {
       try {
         if (four) projection = "orthographic";
         renderer.setPixelRatio(1);
+        shading.setPixelRatio(1);
         renderer.setSize(four ? 800 : 1200, four ? 600 : output.height, false);
         camera.aspect = four ? 4 / 3 : aspect;
         camera.updateProjectionMatrix();
@@ -718,6 +815,7 @@ export function createViewer(host: HTMLElement) {
         camera.far = far;
         camera.updateProjectionMatrix();
         renderer.setPixelRatio(pixelRatio);
+        shading.setPixelRatio(pixelRatio);
         renderer.setSize(size.x, size.y, false);
         controls.update();
         restoring = wasRestoring;
@@ -745,6 +843,7 @@ export function createViewer(host: HTMLElement) {
       renderer.domElement.removeEventListener("mousedown", preventAutoscroll);
       controls.dispose();
       if (model) disposeModel(model);
+      overhangPositions = null;
       bed?.dispose();
       reference?.dispose();
       if (axes) {

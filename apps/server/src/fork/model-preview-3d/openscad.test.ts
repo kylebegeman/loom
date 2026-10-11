@@ -4,6 +4,7 @@ import {
   detectedInfo,
   parseVersion,
   renderArgs,
+  meshArgs,
   pngArgs,
   parseLog,
   parseSummary,
@@ -47,6 +48,35 @@ describe("OpenSCAD command boundary", () => {
         (line) => line.level,
       ),
     ).toEqual(["echo", "warning", "error", "trace", "info"]);
+  });
+  it("exports analysis geometry as binary STL with matching backend and literal overrides", () => {
+    const input = {
+      source: "part.scad",
+      output: "analysis.stl",
+      info: detectedInfo("openscad", "2026.10.05", "--backend Manifold"),
+      settings: { ...DEFAULT_MODEL_PREVIEW_SETTINGS, renderColors: true, backend: "cgal" as const },
+      overrides: { width: "3", label: '"test"' },
+    };
+    expect(meshArgs(input)).toEqual([
+      "-o",
+      "analysis.stl",
+      "--export-format",
+      "binstl",
+      "--backend=cgal",
+      "-D",
+      'label="test"',
+      "-D",
+      "width=3",
+      "part.scad",
+    ]);
+    expect(meshArgs({ ...input, settings: DEFAULT_MODEL_PREVIEW_SETTINGS })).toContain(
+      "--backend=manifold",
+    );
+    expect(
+      meshArgs({ ...input, info: detectedInfo("openscad", "2021.01", "") }).some((arg) =>
+        arg.startsWith("--backend"),
+      ),
+    ).toBe(false);
   });
   it("renders orthographic by default and perspective on request", () => {
     expect(pngArgs("part.scad", "part.png", "iso")).toContain("--projection=o");

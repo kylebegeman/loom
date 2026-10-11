@@ -1,12 +1,28 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+export type BedZone = {
+  readonly id: string;
+  readonly label: string;
+  readonly footprintMm: readonly [number, number];
+  /** From the bed's front-left corner, X right and Y back. */
+  readonly offsetMm: readonly [number, number];
+  /** Absent means the bed's height. */
+  readonly heightMm?: number;
+};
+
+export type ZoneRect = {
+  readonly offsetMm: readonly [number, number];
+  readonly footprintMm: readonly [number, number];
+};
+
 type BuildPlatePreset = {
   readonly label: string;
   readonly kind: "printer" | "surface";
   /** X, Y and Z in mm. A surface has no height limit, so its Z is null. */
   readonly volumeMm: readonly [number, number, number | null];
   readonly note: string | null;
+  readonly zones?: readonly BedZone[];
 };
 
 /**
@@ -19,12 +35,44 @@ export const BUILD_PLATE_PRESETS = {
     label: "Bambu Lab H2D",
     kind: "printer",
     volumeMm: [350, 320, 325],
+    zones: [
+      {
+        id: "left",
+        label: "Left nozzle",
+        footprintMm: [325, 320],
+        offsetMm: [0, 0],
+        heightMm: 320,
+      },
+      {
+        id: "right",
+        label: "Right nozzle",
+        footprintMm: [325, 320],
+        offsetMm: [25, 0],
+        heightMm: 325,
+      },
+    ],
     note: "Left nozzle: 325 × 320 × 320 mm. Right nozzle: 325 × 320 × 325 mm. Both nozzles: 300 × 320 × 320 mm.",
   },
   "bambu-h2c": {
     label: "Bambu Lab H2C",
     kind: "printer",
     volumeMm: [330, 320, 325],
+    zones: [
+      {
+        id: "left",
+        label: "Left nozzle",
+        footprintMm: [325, 320],
+        offsetMm: [0, 0],
+        heightMm: 320,
+      },
+      {
+        id: "right",
+        label: "Right nozzle",
+        footprintMm: [305, 320],
+        offsetMm: [25, 0],
+        heightMm: 325,
+      },
+    ],
     note: "Left nozzle: 325 × 320 × 320 mm. Right nozzle: 305 × 320 × 325 mm. Both nozzles: 300 × 320 × 320 mm.",
   },
   "bambu-x1-p1-a1": {
@@ -97,6 +145,7 @@ export const BuildPlateSetting = Schema.Struct({
     Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 })),
     Schema.Number.check(Schema.isBetween({ minimum: 10, maximum: 2000 })),
   ]),
+  showZones: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   pattern: BuildPlatePattern.pipe(Schema.withDecodingDefault(Effect.succeed("grid-mm" as const))),
 });
 
@@ -112,6 +161,7 @@ export type Bed = {
   readonly kind: "printer" | "surface" | "custom";
   readonly volumeMm: BedVolume;
   readonly note: string | null;
+  readonly zones?: readonly BedZone[];
 };
 
 /** Every bed the user can choose, in menu order: printers, surfaces, custom. */
@@ -183,6 +233,113 @@ export const fitOnBed = (size: readonly [number, number, number], volume: BedVol
   };
 };
 
+const lowestZoneHeight = (zones: readonly BedZone[], bedHeight: number | null) => {
+  const heights = zones
+    .map((zone) => zone.heightMm ?? bedHeight)
+    .filter((height) => height !== null);
+  return heights.length ? Math.min(...heights) : null;
+};
+
+/** The rectangle every nozzle reaches, at the lowest available nozzle height. */
+export const sharedZone = (
+  zones: readonly BedZone[],
+  bedHeight: number | null,
+): (ZoneRect & { readonly heightMm: number | null }) | null => {
+  if (!zones.length) return null;
+  const x = Math.max(...zones.map((zone) => zone.offsetMm[0]));
+  const y = Math.max(...zones.map((zone) => zone.offsetMm[1]));
+  const width = Math.min(...zones.map((zone) => zone.offsetMm[0] + zone.footprintMm[0])) - x;
+  const depth = Math.min(...zones.map((zone) => zone.offsetMm[1] + zone.footprintMm[1])) - y;
+  return width > FIT_TOLERANCE_MM && depth > FIT_TOLERANCE_MM
+    ? {
+        offsetMm: [x, y],
+        footprintMm: [width, depth],
+        heightMm: lowestZoneHeight(zones, bedHeight),
+      }
+    : null;
+};
+
+/** Each nozzle rectangle minus the shared rectangle, split into non-overlapping slabs. */
+export const singleZoneStrips = (
+  zones: readonly BedZone[],
+): readonly (ZoneRect & { readonly zoneId: string })[] => {
+  const common = sharedZone(zones, null);
+  return zones.flatMap((zone) => {
+    if (!common)
+      return [{ zoneId: zone.id, offsetMm: zone.offsetMm, footprintMm: zone.footprintMm }];
+    const [x, y] = zone.offsetMm;
+    const [width, depth] = zone.footprintMm;
+    const [cx, cy] = common.offsetMm;
+    const [cw, cd] = common.footprintMm;
+    const slabs: ZoneRect[] = [
+      { offsetMm: [x, y], footprintMm: [cx - x, depth] },
+      { offsetMm: [cx + cw, y], footprintMm: [x + width - cx - cw, depth] },
+      { offsetMm: [cx, y], footprintMm: [cw, cy - y] },
+      { offsetMm: [cx, cy + cd], footprintMm: [cw, y + depth - cy - cd] },
+    ];
+    return slabs
+      .filter((slab) => slab.footprintMm.every((size) => size > FIT_TOLERANCE_MM))
+      .map((slab) => ({ ...slab, zoneId: zone.id }));
+  });
+};
+
+export type ZoneFit =
+  | { readonly reach: "all-zones" }
+  | { readonly reach: "one-zone"; readonly zoneIds: readonly string[] }
+  | { readonly reach: "whole-bed" };
+export type BedFitResult = {
+  readonly fit: BedFit;
+  readonly zone: ZoneFit | null;
+  readonly withinMm: BedVolume;
+};
+
+/** Refine the outer volume by shared nozzle reach, single nozzles, then the whole plate. */
+export const fitBed = (
+  size: readonly [number, number, number],
+  bed: { readonly volumeMm: BedVolume; readonly zones?: readonly BedZone[] },
+): BedFitResult => {
+  const zones = bed.zones;
+  if (!zones?.length)
+    return { fit: fitOnBed(size, bed.volumeMm), zone: null, withinMm: bed.volumeMm };
+  const common = sharedZone(zones, bed.volumeMm[2]);
+  const candidates: BedFitResult[] = [];
+  if (common) {
+    const withinMm: BedVolume = [...common.footprintMm, common.heightMm];
+    const fit = fitOnBed(size, withinMm);
+    const result = { fit, zone: { reach: "all-zones" as const }, withinMm };
+    if (fit.status !== "too-big") return result;
+    candidates.push(result);
+  }
+  const single = zones.map((zone) => {
+    const withinMm: BedVolume = [...zone.footprintMm, zone.heightMm ?? bed.volumeMm[2]];
+    return { fit: fitOnBed(size, withinMm), withinMm, id: zone.id };
+  });
+  const fitting = single.filter((candidate) => candidate.fit.status !== "too-big");
+  if (fitting.length) {
+    const selected = fitting.find((candidate) => candidate.fit.status === "fits") ?? fitting[0]!;
+    return {
+      fit: selected.fit,
+      withinMm: selected.withinMm,
+      zone: { reach: "one-zone", zoneIds: fitting.map((candidate) => candidate.id) },
+    };
+  }
+  candidates.push(...single.map(({ fit, withinMm }) => ({ fit, withinMm, zone: null })));
+  const withinMm: BedVolume = [
+    bed.volumeMm[0],
+    bed.volumeMm[1],
+    lowestZoneHeight(zones, bed.volumeMm[2]),
+  ];
+  const fit = fitOnBed(size, withinMm);
+  if (fit.status !== "too-big") return { fit, zone: { reach: "whole-bed" }, withinMm };
+  candidates.push({ fit, zone: null, withinMm });
+  const overage = (candidate: BedFitResult) =>
+    candidate.fit.status === "too-big" ? candidate.fit.overMm.reduce((sum, mm) => sum + mm, 0) : 0;
+  const closest = candidates.reduce((best, candidate) =>
+    overage(candidate) < overage(best) ? candidate : best,
+  );
+  return { ...closest, zone: null };
+};
+
 const mm = Schema.Number.check(Schema.isFinite());
 export const BedFitSummary = Schema.Struct({
   /** World-space part size in millimetres (X, Y, Z). */
@@ -196,6 +353,14 @@ export const BedFitSummary = Schema.Struct({
       volumeMm: Schema.Tuple([mm, mm, Schema.NullOr(mm)]),
       fit: Schema.Literals(["fits", "fits-rotated", "too-big"]),
       overMm: Schema.NullOr(Schema.Tuple([mm, mm, mm])),
+      zone: Schema.optionalKey(
+        Schema.NullOr(
+          Schema.Struct({
+            reach: Schema.Literals(["all-zones", "one-zone", "whole-bed"]),
+            zoneIds: Schema.Array(Schema.String),
+          }),
+        ),
+      ),
     }),
   ).check(Schema.isMaxLength(64)),
 });
@@ -209,7 +374,7 @@ export const bedFitSummary = (
   sizeMm: size,
   activeBedId: activeBed(setting).id,
   beds: listBeds(setting).map((bed) => {
-    const fit = fitOnBed(size, bed.volumeMm);
+    const { fit, zone } = fitBed(size, bed);
     return {
       id: bed.id,
       label: bed.label,
@@ -217,6 +382,13 @@ export const bedFitSummary = (
       volumeMm: bed.volumeMm,
       fit: fit.status,
       overMm: fit.status === "too-big" ? fit.overMm : null,
+      ...(bed.zones?.length
+        ? {
+            zone: zone
+              ? { reach: zone.reach, zoneIds: zone.reach === "one-zone" ? zone.zoneIds : [] }
+              : null,
+          }
+        : {}),
     };
   }),
 });

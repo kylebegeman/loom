@@ -177,6 +177,7 @@ function exportedView(): ModelSavedView {
       near: 0.1,
       far: 100,
       wireframe: false,
+      overhangs: false,
       gridVisible: true,
       axesVisible: false,
       navigationMode: "orbit",

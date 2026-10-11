@@ -15,6 +15,7 @@ import {
   DEFAULT_MODEL_PREVIEW_SETTINGS,
   bedFitSummary,
   type ModelProjection,
+  type OverhangStats,
 } from "@t3tools/contracts/fork";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
@@ -123,6 +124,10 @@ it.effect("renders with default or explicit projection and passes bed fit throug
   Effect.gen(function* () {
     const threadId = ThreadId.make("render-thread");
     const fit = bedFitSummary([10, 20, 30], DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate);
+    expect(fit.beds.find((bed) => bed.id === "bambu-h2d")?.zone).toEqual({
+      reach: "all-zones",
+      zoneIds: [],
+    });
     const projections: Array<ModelProjection | undefined> = [];
     const service = partial<ModelPreviewService["Service"]>({
       getSettings: () => Effect.succeed(DEFAULT_MODEL_PREVIEW_SETTINGS),
@@ -183,6 +188,57 @@ it.effect("renders with default or explicit projection and passes bed fit throug
       fit,
     );
   }).pipe(Effect.scoped),
+);
+
+it.effect("forwards overhang requests and returns statistics through the tool schema", () =>
+  Effect.gen(function* () {
+    const stats: OverhangStats = {
+      thresholdDegrees: 50,
+      totalAreaMm2: 20,
+      overhangAreaMm2: 4,
+      overhangPercent: 20,
+      facets: 12,
+      oriented: false,
+      regions: [{ areaMm2: 4, centre: [1, 1, 3], heightMm: [3, 3] }],
+    };
+    const service = partial<ModelPreviewService["Service"]>({
+      getSettings: () => Effect.succeed(DEFAULT_MODEL_PREVIEW_SETTINGS),
+      renderImages: (_file, _views, _overrides, _projection, options) => {
+        expect(options).toEqual({ overhangs: { angle: 50 } });
+        return Effect.succeed({ images: [], summary: null, log: [], fit: null, overhangs: stats });
+      },
+    });
+    const invocation = {
+      environmentId: EnvironmentId.make("test"),
+      thread: {
+        threadId: ThreadId.make("overhang-thread"),
+        providerSessionId: "session",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+      },
+      client: undefined,
+      requestNamespace: "model-test",
+      capabilities: new Set<McpCapability>(),
+      issuedAt: 0,
+    };
+    const result = yield* renderModelTool({
+      path: "part.scad",
+      overhangs: true,
+      overhangAngle: 50,
+    }).pipe(
+      Effect.provideService(McpInvocationContext, invocation),
+      Effect.provideService(
+        ForkRuntime,
+        Context.make(ModelPreviewService, service) as unknown as Context.Context<ForkServices>,
+      ),
+    );
+    expect(result.overhangs).toEqual(stats);
+    expect((yield* decodeRenderResult(result)).overhangs).toEqual(stats);
+    const decodeParams = Schema.decodeEffect(
+      ModelPreview3dToolkit.tools.loom_model_preview_3d_render.parametersSchema,
+    );
+    yield* Effect.flip(decodeParams({ path: "part.scad", overhangs: true, overhangAngle: 25 }));
+    yield* Effect.flip(decodeParams({ path: "part.scad", overhangAngle: 45.5 }));
+  }),
 );
 
 it.effect(

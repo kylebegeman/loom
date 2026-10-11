@@ -74,6 +74,24 @@ export function renderArgs(input: {
   args.push("-d", input.deps, input.source);
   return args;
 }
+/** Geometry export for host analysis, with the same backend and literals as PNG rendering. */
+export function meshArgs(input: {
+  source: string;
+  output: string;
+  info: OpenScadInfo;
+  settings: ModelPreviewSettings;
+  overrides: Readonly<Record<string, string>>;
+}) {
+  const args = ["-o", input.output, "--export-format", "binstl"];
+  if (input.info.supportsManifold)
+    args.push(`--backend=${input.settings.backend === "cgal" ? "cgal" : "manifold"}`);
+  for (const [name, value] of Object.entries(input.overrides).toSorted(([a], [b]) =>
+    a.localeCompare(b),
+  ))
+    args.push("-D", `${name}=${value}`);
+  args.push(input.source);
+  return args;
+}
 export const DEFAULT_RENDER_PROJECTION: ModelProjection = "orthographic";
 export const pngArgs = (
   source: string,

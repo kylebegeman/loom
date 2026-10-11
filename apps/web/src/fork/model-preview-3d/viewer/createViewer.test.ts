@@ -1,5 +1,14 @@
 import {
   BoxGeometry,
+  BufferGeometry,
+  Float32BufferAttribute,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicMaterial,
+  Material,
+  ShaderLib,
+  type WebGLRenderer,
   Box3,
   Mesh,
   MeshStandardMaterial,
@@ -13,6 +22,7 @@ import {
   TOUCH,
 } from "three";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { overhangStats } from "@t3tools/contracts/fork";
 const doubles = vi.hoisted(() => ({
   renderer: null as unknown,
   controls: null as unknown,
@@ -601,4 +611,164 @@ it("updates existing measurement labels and captures without rebuilding millimet
   expect(context.fillText).toHaveBeenCalledWith("1.00 in", 0, 0.5);
   viewer.dispose();
   vi.restoreAllMocks();
+});
+
+function compileOverhangs(material: Material) {
+  const shader = {
+    vertexShader: ShaderLib.standard.vertexShader,
+    fragmentShader: ShaderLib.standard.fragmentShader,
+    uniforms: { ...ShaderLib.standard.uniforms },
+  } as Parameters<Material["onBeforeCompile"]>[0];
+  material.onBeforeCompile(shader, {} as WebGLRenderer);
+  return shader.uniforms;
+}
+
+it("restores overhang shading, suppresses it in wireframe and coalesces angle changes", () => {
+  const viewer = createViewer(host());
+  const geometry = new BoxGeometry(20, 30, 40);
+  geometry.translate(0, 0, 7);
+  const material = new MeshStandardMaterial();
+  viewer.setModel(new Mesh(geometry, material), false);
+  const uniforms = compileOverhangs(material);
+  expect(uniforms.loomOverhangBedZ!.value).toBe(-13);
+  expect(viewer.snapshot().overhangs).toBe(false);
+  viewer.restore({ ...viewer.snapshot(), overhangs: true });
+  expect(uniforms.loomOverhangEnabled!.value).toBe(true);
+  viewer.setWireframe(true);
+  expect(uniforms.loomOverhangEnabled!.value).toBe(false);
+  expect(viewer.snapshot().overhangs).toBe(true);
+  viewer.setWireframe(false);
+  expect(uniforms.loomOverhangEnabled!.value).toBe(true);
+  flushFrame();
+  gpu.render.mockClear();
+  const version = material.version;
+  viewer.setOverhangAngle(50);
+  viewer.setOverhangAngle(60);
+  expect(uniforms.loomOverhangSin!.value).toBeCloseTo(Math.sin((60 * Math.PI) / 180));
+  expect(material.version).toBe(version);
+  expect(frames.size).toBe(1);
+  flushFrame();
+  expect(gpu.render).toHaveBeenCalledOnce();
+  expect(frames.size).toBe(0);
+  viewer.setOverhangs(false);
+  expect(uniforms.loomOverhangEnabled!.value).toBe(false);
+  viewer.dispose();
+});
+
+it("lazily caches indexed geometry in normalized millimetres and resets on replacement", () => {
+  const viewer = createViewer(host());
+  expect(viewer.overhangInput()).toBeNull();
+  const geometry = new BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new Float32BufferAttribute([0, 0, 0, 0.002, 0, 0, 0, 0.003, 0], 3),
+  );
+  geometry.setIndex([0, 1, 2, 2, 1, 0]);
+  const mesh = new Mesh(geometry, new MeshStandardMaterial());
+  const readVertex = vi.spyOn(mesh, "getVertexPosition");
+  mesh.position.set(0.001, 0, 0);
+  const nested = new Group();
+  nested.position.set(0.001, 0.002, 0.003);
+  nested.add(mesh);
+  const root = new Group();
+  root.rotation.x = Math.PI / 2;
+  root.scale.setScalar(1000);
+  root.add(nested);
+  viewer.setModel(root, false);
+  viewer.setBed([350, 320], "grid-mm");
+  viewer.setReference("hand");
+  expect(readVertex).not.toHaveBeenCalled();
+  const positions = viewer.overhangInput()!;
+  const expected = [2, -3, 2, 4, -3, 2, 2, -3, 5, 2, -3, 5, 4, -3, 2, 2, -3, 2];
+  expect(positions).toHaveLength(expected.length);
+  expected.forEach((value, index) => expect(positions[index]).toBeCloseTo(value, 5));
+  expect(readVertex).toHaveBeenCalledTimes(6);
+  expect(viewer.overhangInput()).toBe(positions);
+  expect(readVertex).toHaveBeenCalledTimes(6);
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), true);
+  const replacement = viewer.overhangInput();
+  expect(replacement).not.toBe(positions);
+  expect(replacement).toHaveLength(12 * 9);
+  readVertex.mockRestore();
+  viewer.dispose();
+});
+
+it("expands instance transforms into the same world coordinates used by shading", () => {
+  const viewer = createViewer(host());
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new Float32BufferAttribute([0, 0, 0, 1, 0, 0, 0, 1, 0], 3));
+  const mesh = new InstancedMesh(geometry, new MeshStandardMaterial(), 2);
+  mesh.position.set(10, 20, 30);
+  mesh.setMatrixAt(0, new Matrix4().makeTranslation(1, 2, 3));
+  mesh.setMatrixAt(1, new Matrix4().makeTranslation(4, 5, 6));
+  viewer.setModel(mesh, false);
+  expect(Array.from(viewer.overhangInput()!)).toEqual([
+    11, 22, 33, 12, 22, 33, 11, 23, 33, 14, 25, 36, 15, 25, 36, 14, 26, 36,
+  ]);
+  viewer.dispose();
+});
+
+it("reports unsupported model materials and clears the warning on replacement", () => {
+  const viewer = createViewer(host());
+  viewer.setModel(
+    new Mesh(new BoxGeometry(), [new MeshStandardMaterial(), new MeshBasicMaterial()]),
+    false,
+  );
+  expect(viewer.unsupportedOverhangMaterials()).toBe(true);
+  viewer.setModel(new Mesh(new BoxGeometry(), new MeshStandardMaterial()), true);
+  viewer.setReference("hand");
+  viewer.setBed([350, 320], "grid-mm");
+  expect(viewer.unsupportedOverhangMaterials()).toBe(false);
+  viewer.dispose();
+});
+
+it("parents nozzle strips to the bed and releases their resources on replacement and close", () => {
+  const viewer = createViewer(host());
+  const geometry = new BoxGeometry(40, 20, 10);
+  geometry.translate(30, 50, 10);
+  viewer.setModel(new Mesh(geometry, new MeshStandardMaterial()), false);
+  const strips = [{ offsetMm: [0, 0], footprintMm: [30, 320] }] as const;
+  viewer.setBed([350, 320], "grid-mm", strips);
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  const zones = scene.getObjectByName("nozzle-zones")!;
+  const strip = zones.children[0] as Mesh;
+  expect(zones.parent?.name).toBe("bed");
+  expect(zones.parent?.position.toArray()).toEqual([30, 50, 5]);
+  expect(strip.getWorldPosition(new Vector3()).toArray()).toEqual([-130, 50, 5]);
+  expect((strip.material as MeshBasicMaterial).color.getHex()).toBe(0x262236);
+  viewer.setGrid(false);
+  expect(zones.parent?.visible).toBe(false);
+  viewer.setGrid(true);
+  expect(zones.parent?.visible).toBe(true);
+  const next = new BoxGeometry(40, 20, 10);
+  next.translate(60, 80, 30);
+  viewer.setModel(new Mesh(next, new MeshStandardMaterial()), true);
+  flushFrame();
+  expect(zones.parent?.position.toArray()).toEqual([60, 80, 25]);
+  const disposeGeometry = vi.spyOn(strip.geometry, "dispose");
+  const disposeMaterial = vi.spyOn(strip.material as MeshBasicMaterial, "dispose");
+  viewer.setBed([350, 320], "grid-mm", strips);
+  expect(disposeGeometry).toHaveBeenCalledOnce();
+  expect(disposeMaterial).toHaveBeenCalledOnce();
+  const replacement = scene.getObjectByName("nozzle-zones")!.children[0] as Mesh;
+  const closeGeometry = vi.spyOn(replacement.geometry, "dispose");
+  const closeMaterial = vi.spyOn(replacement.material as MeshBasicMaterial, "dispose");
+  viewer.dispose();
+  expect(closeGeometry).toHaveBeenCalledOnce();
+  expect(closeMaterial).toHaveBeenCalledOnce();
+});
+
+it("preserves outward facet normals for mirrored glTF nodes", () => {
+  const viewer = createViewer(host());
+  const mesh = new Mesh(new BoxGeometry(20, 30, 40), new MeshStandardMaterial());
+  const root = new Group();
+  root.scale.set(-1, 1, 1);
+  root.add(mesh);
+  viewer.setModel(root, false);
+  const stats = overhangStats(viewer.overhangInput()!, { thresholdDegrees: 45 });
+  expect(stats.totalAreaMm2).toBe(5200);
+  expect(stats.overhangAreaMm2).toBe(0);
+  expect(stats.regions).toEqual([]);
+  viewer.dispose();
 });

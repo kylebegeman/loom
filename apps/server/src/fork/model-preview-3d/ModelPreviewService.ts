@@ -11,6 +11,8 @@ import * as NodeOS from "node:os";
 import {
   ModelPreviewError,
   bedFitSummary,
+  OverhangStats,
+  overhangStats,
   type ModelWorkspaceOperation,
   type ModelWorkspace,
   type ModelVariant,
@@ -52,17 +54,20 @@ import {
   parseLog,
   parseSummary,
   renderArgs,
+  meshArgs,
   pngArgs,
   DEFAULT_RENDER_PROJECTION,
   type ModelView,
 } from "./openscad.ts";
 import { cacheKey, pruneList, createStemProtection } from "./renderCache.ts";
 import { threeMfScale } from "./threeMfUnits.ts";
+import { parseBinaryStl } from "./overhangMesh.ts";
 
 const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const error = (reason: ModelPreviewError["reason"], message: string) =>
   new ModelPreviewError({ reason, message });
 const isModelPreviewError = Schema.is(ModelPreviewError);
+const isOverhangAngle = Schema.is(OverhangStats.fields.thresholdDegrees);
 const mapError = (cause: unknown) =>
   isModelPreviewError(cause)
     ? cause
@@ -1109,6 +1114,7 @@ export const make = Effect.gen(function* () {
       views: ReadonlyArray<ModelView>,
       overrides: Readonly<Record<string, string>>,
       projection: ModelProjection = DEFAULT_RENDER_PROJECTION,
+      options: { readonly overhangs?: { readonly angle?: number | undefined } } = {},
     ) =>
       checked(
         Effect.gen(function* () {
@@ -1121,6 +1127,12 @@ export const make = Effect.gen(function* () {
                       return yield* error(
                         "command-failed",
                         "Agent rendering is disabled in Loom settings.",
+                      );
+                    const angle = options.overhangs?.angle ?? settings.overhangAngleDegrees;
+                    if (options.overhangs && !isOverhangAngle(angle))
+                      return yield* error(
+                        "invalid-parameter",
+                        "Overhang angles must be whole degrees from 30 to 70.",
                       );
                     const resolved = yield* resolveFile(file),
                       format = formats[path.extname(file.path).toLowerCase()];
@@ -1151,7 +1163,7 @@ export const make = Effect.gen(function* () {
                     // The PNGs stay for the agent to read; the import wrapper and summary do not.
                     yield* Effect.addFinalizer(() =>
                       Effect.forEach(
-                        [".scad", ".summary.json"],
+                        [".scad", ".summary.json", ".overhangs.stl"],
                         (suffix) =>
                           fs.remove(imageStem + suffix, { force: true }).pipe(Effect.ignore),
                         { discard: true },
@@ -1176,6 +1188,41 @@ export const make = Effect.gen(function* () {
                         overrides,
                       );
                     let log: ScadRenderResult["log"] = [];
+                    let overhangs: OverhangStats | undefined;
+                    if (options.overhangs) {
+                      const target = imageStem + ".overhangs.stl";
+                      const result = yield* runner.run({
+                        command: info.path,
+                        args: meshArgs({ source, output: target, info, settings, overrides }),
+                        cwd: path.dirname(resolved.absolute),
+                        timeout: `${settings.renderTimeoutSeconds} seconds`,
+                        timeoutBehavior: "timedOutResult",
+                        outputMode: "truncate",
+                        maxOutputBytes: 512 * 1024,
+                      });
+                      if (result.timedOut)
+                        return yield* error(
+                          "timeout",
+                          `Exporting overhang geometry timed out after ${settings.renderTimeoutSeconds} s.`,
+                        );
+                      const exportLog = parseLog(result.stderr);
+                      log = [...log, ...exportLog].slice(-500);
+                      if (
+                        result.code !== 0 ||
+                        exportLog.some((line) => line.level === "error") ||
+                        !(yield* fs.exists(target))
+                      )
+                        return yield* error(
+                          "command-failed",
+                          "Could not export the model for overhang statistics.",
+                        );
+                      const bytes = yield* fs.readFile(target);
+                      overhangs = yield* Effect.try({
+                        try: () =>
+                          overhangStats(parseBinaryStl(bytes), { thresholdDegrees: angle }),
+                        catch: mapError,
+                      });
+                    }
                     const summaryPath = path.join(cacheDir, `${runId}.summary.json`);
                     const images = yield* Effect.forEach([...new Set(views)], (view) =>
                       Effect.gen(function* () {
@@ -1255,7 +1302,7 @@ export const make = Effect.gen(function* () {
                       size && size.every((mm) => Number.isFinite(mm) && mm >= 0)
                         ? bedFitSummary(size, settings.buildPlate)
                         : null;
-                    return { images, log, summary, fit };
+                    return { images, log, summary, fit, ...(overhangs ? { overhangs } : {}) };
                   }),
                 ),
               )

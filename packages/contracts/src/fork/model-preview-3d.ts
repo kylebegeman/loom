@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import { ScaleReference } from "./model-scale.ts";
+import { OVERHANG_ANGLE } from "./model-overhangs.ts";
 import * as Editor from "./model-editor.ts";
 import { BuildPlateSetting } from "./model-beds.ts";
 import { ModelWorkspace, ModelWorkspaceOperation } from "./model-workspace.ts";
@@ -153,6 +154,10 @@ export const ModelPreviewSettings = Schema.Struct({
   /** Display only. Saved lengths and tool inputs and outputs stay in millimetres. */
   displayUnits: DisplayUnits.pipe(Schema.withDecodingDefault(Effect.succeed("mm" as const))),
   scaleReference: ScaleReference.pipe(Schema.withDecodingDefault(Effect.succeed("none" as const))),
+  /** Downward face tilt from vertical, in degrees. */
+  overhangAngleDegrees: Schema.Int.check(
+    Schema.isBetween({ minimum: OVERHANG_ANGLE.minimum, maximum: OVERHANG_ANGLE.maximum }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(OVERHANG_ANGLE.default))),
   fabricationUrl: Schema.NullOr(
     Schema.String.check(
       Schema.makeFilter(
@@ -206,9 +211,15 @@ export const DEFAULT_MODEL_PREVIEW_SETTINGS: ModelPreviewSettings = {
   renderTimeoutSeconds: 120,
   renderColors: false,
   maxFileMegabytes: 150,
-  buildPlate: { preset: "bambu-h2d", customMm: [350, 320, 325], pattern: "grid-mm" },
+  buildPlate: {
+    preset: "bambu-h2d",
+    customMm: [350, 320, 325],
+    pattern: "grid-mm",
+    showZones: true,
+  },
   displayUnits: "mm",
   scaleReference: "none",
+  overhangAngleDegrees: OVERHANG_ANGLE.default,
   fabricationUrl: null,
   agentToolEnabled: true,
 };

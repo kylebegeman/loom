@@ -9,6 +9,8 @@ import {
   type ModelPreviewSettings,
   type ScaleReference,
   SCALE_REFERENCE_LABELS,
+  activeBed,
+  sharedZone,
 } from "@t3tools/contracts/fork";
 import { Input } from "~/components/ui/input";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
@@ -21,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "~/components/ui/select";
+import { Switch } from "~/components/ui/switch";
 import { toastManager } from "~/components/ui/toast";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import {
@@ -30,7 +33,7 @@ import {
   buildPlateNote,
   resolveBuildVolume,
 } from "./buildPlate";
-import { Segmented } from "./controls";
+import { Segmented, Tip } from "./controls";
 import { models, runModelCommand } from "./state";
 import { formatLength, formatLengths, fromMm, toMm, useDisplayUnitsControl } from "./units";
 
@@ -105,6 +108,7 @@ export function useScaleReference(
 const samePlate = (a: BuildPlateSetting, b: BuildPlateSetting) =>
   a.preset === b.preset &&
   a.pattern === b.pattern &&
+  a.showZones === b.showZones &&
   a.customMm.every((value, axis) => value === b.customMm[axis]);
 
 /**
@@ -216,6 +220,8 @@ export function BedPicker({
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const volume = resolveBuildVolume(plate);
   const note = buildPlateNote(plate);
+  const zones = activeBed(plate).zones ?? [];
+  const common = sharedZone(zones, volume[2]);
   const label = buildPlateLabel(plate);
   return (
     <Popover>
@@ -269,6 +275,29 @@ export function BedPicker({
             value={plate.pattern}
             onChange={(pattern) => void save({ ...plate, pattern })}
           />
+          {zones.length > 0 && (
+            <Tip
+              label={
+                canSave
+                  ? "Tint the areas reached by one nozzle only."
+                  : "This connection cannot change model settings."
+              }
+            >
+              <label
+                className="flex items-center justify-between gap-3 text-xs"
+                tabIndex={canSave ? undefined : 0}
+              >
+                Show nozzle zones
+                <Switch
+                  size="sm"
+                  aria-label="Show nozzle zones"
+                  checked={plate.showZones}
+                  disabled={!canSave}
+                  onCheckedChange={(showZones) => void save({ ...plate, showZones })}
+                />
+              </label>
+            </Tip>
+          )}
           <fieldset disabled={!canSaveUnits}>
             <Segmented
               label="Units"
@@ -301,10 +330,34 @@ export function BedPicker({
             </Select>
           </label>
         </fieldset>
+        {zones.length > 0 && (
+          <div className={styles["model-zone-legend"]}>
+            {common && (
+              <div>
+                {plate.showZones && (
+                  <span className={styles["model-zone-swatch"]} aria-hidden="true" />
+                )}
+                <span>
+                  Both nozzles{" "}
+                  {formatLengths([...common.footprintMm, common.heightMm], units, { trim: true })}
+                </span>
+              </div>
+            )}
+            <div>
+              {plate.showZones && (
+                <span className={styles["model-zone-swatch"]} data-single aria-hidden="true" />
+              )}
+              <span>One nozzle only</span>
+            </div>
+          </div>
+        )}
         <p className="mt-3 text-muted-foreground text-xs leading-relaxed">
           {formatLengths(volume, units, { trim: true })}
           {volume[2] === null ? ", no height limit." : "."}
           {note ? ` ${note}` : ""}
+          {zones.length > 0
+            ? " Move parts in the slicer; Loom centres the plate under the part."
+            : ""}
           {canSave ? "" : " This connection cannot change model settings."}
         </p>
       </PopoverPopup>

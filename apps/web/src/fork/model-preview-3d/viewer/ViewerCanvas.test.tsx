@@ -15,6 +15,7 @@ import ViewerCanvas from "./ViewerCanvas";
 
 const camera: ReturnType<ModelViewer["snapshot"]> = {
   projection: "perspective",
+  overhangs: false,
   position: [40, -50, 60],
   target: [5, 10, 15],
   near: 0.01,
@@ -48,12 +49,14 @@ function makeViewer() {
     setProjection: vi.fn(),
     setReference: vi.fn(),
     setLengthFormat: vi.fn(),
+    setOverhangs: vi.fn(),
+    setOverhangAngle: vi.fn(),
   };
 }
 const viewerRef = { current: null as ModelViewer | null };
 const savedViewRef = { current: null as typeof camera | null };
 const callbacks = { onStats: vi.fn(), onProgress: vi.fn(), onError: vi.fn() };
-const PLATE = { volume: [350, 320, 325], pattern: "grid-mm" } as const;
+const PLATE = { volume: [350, 320, 325], pattern: "grid-mm", showZones: true, zones: [] } as const;
 async function mount() {
   await act(async () => {
     renderer = create(

@@ -7,6 +7,10 @@ import {
   BUILD_PLATE_PRESETS,
   BuildPlateSetting,
   fitOnBed,
+  fitBed,
+  sharedZone,
+  singleZoneStrips,
+  type BedZone,
   listBeds,
   selectBed,
 } from "./model-beds.ts";
@@ -17,6 +21,7 @@ const setting: BuildPlateSetting = {
   preset: "bambu-h2d",
   customMm: [100, 200, 300],
   pattern: "grid-inch",
+  showZones: true,
 };
 
 it("fits exact boundaries and accepts the existing numerical tolerance", () => {
@@ -108,4 +113,136 @@ it("summarizes every bed with nullable overage and decodes through the wire sche
   expect(() =>
     decodeBedFitSummary({ ...summary, beds: Array(65).fill(summary.beds[0]) }),
   ).toThrow();
+});
+
+it.each([
+  {
+    size: [250, 250, 100],
+    fit: { status: "fits" },
+    zone: { reach: "all-zones" },
+    withinMm: [300, 320, 320],
+  },
+  {
+    size: [310, 310, 100],
+    fit: { status: "fits" },
+    zone: { reach: "one-zone", zoneIds: ["left", "right"] },
+    withinMm: [325, 320, 320],
+  },
+  {
+    size: [200, 200, 323],
+    fit: { status: "fits" },
+    zone: { reach: "one-zone", zoneIds: ["right"] },
+    withinMm: [325, 320, 325],
+  },
+  {
+    size: [340, 200, 100],
+    fit: { status: "fits" },
+    zone: { reach: "whole-bed" },
+    withinMm: [350, 320, 320],
+  },
+  {
+    size: [340, 200, 324],
+    fit: { status: "too-big", overMm: [0, 0, 4] },
+    zone: null,
+    withinMm: [350, 320, 320],
+  },
+  {
+    size: [200, 200, 330],
+    fit: { status: "too-big", overMm: [0, 0, 5] },
+    zone: null,
+    withinMm: [325, 320, 325],
+  },
+  {
+    size: [320, 290, 100],
+    fit: { status: "fits-rotated" },
+    zone: { reach: "all-zones" },
+    withinMm: [300, 320, 320],
+  },
+] as const)("refines H2D fit by nozzle reach and height for $size", ({ size, ...expected }) => {
+  expect(fitBed(size, BUILD_PLATE_PRESETS["bambu-h2d"])).toEqual(expected);
+});
+
+it("uses the H2C's narrower right nozzle and preserves ordinary bed fit", () => {
+  expect(fitBed([310, 310, 100], BUILD_PLATE_PRESETS["bambu-h2c"]).zone).toEqual({
+    reach: "one-zone",
+    zoneIds: ["left"],
+  });
+  const bed = BUILD_PLATE_PRESETS["sheet-a4"];
+  expect(fitBed([200, 290, 5000], bed)).toEqual({
+    fit: { status: "fits-rotated" },
+    zone: null,
+    withinMm: bed.volumeMm,
+  });
+});
+
+it("prefers an unturned single-nozzle fit while reporting every fitting nozzle", () => {
+  const zones: readonly BedZone[] = [
+    { id: "wide", label: "Wide", footprintMm: [100, 50], offsetMm: [0, 0] },
+    { id: "deep", label: "Deep", footprintMm: [50, 100], offsetMm: [80, 0] },
+  ];
+  expect(fitBed([40, 90, 10], { volumeMm: [130, 100, 50], zones })).toEqual({
+    fit: { status: "fits" },
+    zone: { reach: "one-zone", zoneIds: ["wide", "deep"] },
+    withinMm: [50, 100, 50],
+  });
+});
+
+it("derives the shared area and front-left single-nozzle strips", () => {
+  for (const preset of ["bambu-h2d", "bambu-h2c"] as const) {
+    const bed = BUILD_PLATE_PRESETS[preset];
+    expect(sharedZone(bed.zones, bed.volumeMm[2])).toEqual({
+      offsetMm: [25, 0],
+      footprintMm: [300, 320],
+      heightMm: 320,
+    });
+    expect(singleZoneStrips(bed.zones)).toEqual([
+      { zoneId: "left", offsetMm: [0, 0], footprintMm: [25, 320] },
+      { zoneId: "right", offsetMm: [325, 0], footprintMm: [preset === "bambu-h2d" ? 25 : 5, 320] },
+    ]);
+  }
+});
+
+it("subtracts all four slabs, omits a contained zone and handles nonoverlap", () => {
+  const zones: readonly BedZone[] = [
+    { id: "outer", label: "Outer", footprintMm: [100, 100], offsetMm: [0, 0] },
+    { id: "inner", label: "Inner", footprintMm: [40, 30], offsetMm: [20, 25] },
+  ];
+  expect(sharedZone(zones, 200)?.heightMm).toBe(200);
+  expect(singleZoneStrips(zones)).toEqual([
+    { zoneId: "outer", offsetMm: [0, 0], footprintMm: [20, 100] },
+    { zoneId: "outer", offsetMm: [60, 0], footprintMm: [40, 100] },
+    { zoneId: "outer", offsetMm: [20, 0], footprintMm: [40, 25] },
+    { zoneId: "outer", offsetMm: [20, 55], footprintMm: [40, 45] },
+  ]);
+  const separated = [zones[0]!, { ...zones[1]!, offsetMm: [100, 100] as const }];
+  expect(sharedZone(separated, null)).toBeNull();
+  expect(singleZoneStrips(separated)).toEqual(
+    separated.map(({ id, offsetMm, footprintMm }) => ({ zoneId: id, offsetMm, footprintMm })),
+  );
+  expect(sharedZone([], 200)).toBeNull();
+  expect(singleZoneStrips([])).toEqual([]);
+});
+
+it("includes zone reach only for zoned beds in the agent summary", () => {
+  const summary = bedFitSummary([310, 310, 100], setting);
+  expect(summary.beds.find((bed) => bed.id === "bambu-h2d")?.zone).toEqual({
+    reach: "one-zone",
+    zoneIds: ["left", "right"],
+  });
+  expect(summary.beds.find((bed) => bed.id === "bambu-h2c")?.zone).toEqual({
+    reach: "one-zone",
+    zoneIds: ["left"],
+  });
+  expect(summary.beds.filter((bed) => bed.zone !== undefined)).toHaveLength(2);
+  expect(decodeBedFitSummary(JSON.parse(JSON.stringify(summary)))).toEqual(summary);
+  expect(
+    bedFitSummary([200, 200, 330], setting).beds.find((bed) => bed.id === "bambu-h2d")?.zone,
+  ).toBeNull();
+});
+
+it("defaults old settings to visible zones and retains an explicit hidden preference", () => {
+  const decode = Schema.decodeUnknownSync(BuildPlateSetting);
+  expect(decode({ preset: setting.preset, customMm: setting.customMm }).showZones).toBe(true);
+  expect(decode({ ...setting, showZones: false }).showZones).toBe(false);
+  expect(selectBed({ ...setting, showZones: false }, "bambu-h2c").showZones).toBe(false);
 });

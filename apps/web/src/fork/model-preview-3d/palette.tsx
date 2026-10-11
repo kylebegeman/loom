@@ -2,7 +2,7 @@ import { BoxIcon } from "lucide-react";
 import type { ForkCommandPaletteSource } from "../commandPalette/registry";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { forkPanelSurface } from "../panels/registry";
-import { dispatchModelAction } from "./actions";
+import { dispatchModelAction, modelOverhangsShown } from "./actions";
 export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
   id: "model-preview-3d",
   items: ({ activeThreadRef, loomFeatures, modelFiles }) => {
@@ -52,12 +52,20 @@ export const modelPreview3dPaletteSource: ForkCommandPaletteSource = {
         ],
       },
       ...(
-        ["capture", "capture-four", "rerender", "toggle-units", "copy-view", "save-view"] as const
+        [
+          "capture",
+          "capture-four",
+          "rerender",
+          "toggle-units",
+          "copy-view",
+          "save-view",
+          "toggle-overhangs",
+        ] as const
       ).map((action) => ({
         ...base,
         kind: "action" as const,
         value: `action:loom:model-preview-3d:${action}`,
-        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG" }[action]}`,
+        title: `3D model: ${{ capture: "Capture view", "capture-four": "Capture four views", rerender: "Re-render", "toggle-units": "Switch units", "copy-view": "Copy view image", "save-view": "Save view as PNG", "toggle-overhangs": modelOverhangsShown(activeThreadRef) ? "Hide overhangs" : "Show overhangs" }[action]}`,
         run: async () => {
           dispatchModelAction(activeThreadRef, action);
         },

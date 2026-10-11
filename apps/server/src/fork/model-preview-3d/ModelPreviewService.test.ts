@@ -24,7 +24,7 @@ import * as ProjectStore from "../../orchestration-v2/ProjectStore.ts";
 import type { OrchestrationV2AppThread } from "@t3tools/contracts";
 import { WorkspaceEntries } from "../../workspace/WorkspaceEntries.ts";
 import { ServerSecretStore } from "../../auth/ServerSecretStore.ts";
-import { ProcessRunner, type ProcessRunOutput } from "../../processRunner.ts";
+import { ProcessRunner, type ProcessRunOutput, type ProcessRunInput } from "../../processRunner.ts";
 const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 const json = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const output = (stderr = "", timedOut = false): ProcessRunOutput => ({
@@ -46,6 +46,20 @@ function partial<A extends object>(methods: Partial<A>): A {
     },
   });
 }
+const binaryMesh = (positions: readonly number[]) => {
+  const count = positions.length / 9;
+  const bytes = new Uint8Array(84 + count * 50);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(80, count, true);
+  for (let triangle = 0; triangle < count; triangle++)
+    for (let coordinate = 0; coordinate < 9; coordinate++)
+      view.setFloat32(
+        84 + triangle * 50 + 12 + coordinate * 4,
+        positions[triangle * 9 + coordinate]!,
+        true,
+      );
+  return bytes;
+};
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem,
     path = yield* Path.Path,
@@ -80,6 +94,11 @@ const setup = Effect.gen(function* () {
   let summaryJson = json({ geometry: { simple: true, facets: 12 } });
   let supportsSummary = true;
   const projections: string[] = [];
+  const runs: ProcessRunInput[] = [];
+  let overhangMesh: Uint8Array = binaryMesh([
+    0, 0, 1, 0, 2, 1, 2, 0, 1, 2, 0, 1, 0, 2, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  ]);
+  let exportFailure: "timeout" | "error" | "missing" | null = null;
   let duringRender: Effect.Effect<void, PlatformError> | null = null;
   let block: { started: Deferred.Deferred<void>; cancelled: Deferred.Deferred<void> } | null = null;
   const runner = ProcessRunner.of({
@@ -92,6 +111,7 @@ const setup = Effect.gen(function* () {
           );
         if (input.args.includes("--help-export")) return output("color-mode model");
         renders++;
+        runs.push(input);
         const projection = input.args.find((arg) => arg.startsWith("--projection="));
         if (projection) projections.push(projection);
         if (duringRender) yield* duringRender;
@@ -106,7 +126,12 @@ const setup = Effect.gen(function* () {
         }
         if (timeout) return output("", true);
         const target = input.args[input.args.indexOf("-o") + 1]!;
-        yield* fs.writeFileString(target, "mesh bytes");
+        if (target.endsWith(".overhangs.stl")) {
+          if (exportFailure === "timeout") return output("", true);
+          if (exportFailure === "missing") return output();
+          yield* fs.writeFile(target, overhangMesh);
+          if (exportFailure === "error") return output("ERROR: Could not evaluate model");
+        } else yield* fs.writeFileString(target, "mesh bytes");
         const deps = input.args.indexOf("-d");
         if (deps >= 0)
           yield* fs.writeFileString(
@@ -165,6 +190,13 @@ const setup = Effect.gen(function* () {
     create,
     getRenders: () => renders,
     getProjections: () => projections,
+    getRuns: () => runs,
+    setOverhangMesh: (bytes: Uint8Array) => {
+      overhangMesh = bytes;
+    },
+    failOverhangExport: (failure: typeof exportFailure) => {
+      exportFailure = failure;
+    },
     setSummary: (text: string) => {
       summaryJson = text;
     },
@@ -403,7 +435,12 @@ it.effect("agent rendering checks summary extents against the environment's save
     const service = yield* t.create();
     yield* service.updateSettings({
       ...(yield* service.getSettings()),
-      buildPlate: { preset: "custom", customMm: [100, 150, 75], pattern: "grid-mm" },
+      buildPlate: {
+        preset: "custom",
+        customMm: [100, 150, 75],
+        pattern: "grid-mm",
+        showZones: true,
+      },
     });
     t.setSummary(
       json({
@@ -422,6 +459,129 @@ it.effect("agent rendering checks summary extents against the environment's save
       overMm: null,
     });
     expect(result.fit?.beds.find((bed) => bed.id === "bambu-h2d")?.fit).toBe("fits");
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("agent rendering reports H2D nozzle reach alongside fit", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    t.setSummary(json({ geometry: { bounding_box: { min: [0, 0, 0], max: [340, 200, 100] } } }));
+    const result = yield* service.renderImages(t.file, ["iso"], {});
+    expect(result.fit?.beds.find((bed) => bed.id === "bambu-h2d")).toMatchObject({
+      fit: "fits",
+      zone: { reach: "whole-bed" },
+    });
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("agent overhang statistics add exactly one matching binary export and remove it", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    yield* service.updateSettings({
+      ...(yield* service.getSettings()),
+      overhangAngleDegrees: 55,
+      backend: "cgal",
+      renderColors: true,
+    });
+    const plain = yield* service.renderImages(t.file, ["iso", "front"], { width: "3" });
+    expect(plain).not.toHaveProperty("overhangs");
+    expect(t.getRuns()).toHaveLength(2);
+    const result = yield* service.renderImages(
+      t.file,
+      ["iso", "front"],
+      { width: "3" },
+      "perspective",
+      { overhangs: {} },
+    );
+    expect(t.getRuns()).toHaveLength(5);
+    const meshRun = t.getRuns()[2]!;
+    expect(meshRun.args).toContain("binstl");
+    expect(meshRun.args).toContain("--backend=cgal");
+    expect(meshRun.args).toContain("width=3");
+    expect(meshRun.timeout).toBe("120 seconds");
+    expect(meshRun.cwd).toContain("models");
+    expect(result.overhangs).toMatchObject({
+      thresholdDegrees: 55,
+      totalAreaMm2: 4,
+      overhangAreaMm2: 4,
+      overhangPercent: 100,
+      facets: 3,
+      oriented: false,
+      regions: [{ areaMm2: 4, centre: [1, 1, 1], heightMm: [1, 1] }],
+    });
+    expect(
+      (yield* t.fs.readDirectory(t.path.join(t.stateDir, "fork/model-preview-3d/renders"))).every(
+        (name) => name.endsWith(".png"),
+      ),
+    ).toBe(true);
+    const explicit = yield* service.renderImages(t.file, ["iso"], {}, "orthographic", {
+      overhangs: { angle: 40 },
+    });
+    expect(explicit.overhangs?.thresholdDegrees).toBe(40);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("overhang export normalizes each import wrapper and returns actionable failures", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    for (const format of ["stl", "obj", "3mf"]) {
+      const result = yield* service.renderImages(
+        { ...t.file, path: `models/part.${format}` },
+        ["iso"],
+        {},
+        "orthographic",
+        { overhangs: { angle: 45 } },
+      );
+      expect(result.overhangs?.overhangAreaMm2).toBe(4);
+      const mesh = t.getRuns().at(-2)!;
+      expect(mesh.args).toContain("binstl");
+      expect(mesh.args.at(-1)).toMatch(/\.scad$/);
+      expect(yield* t.fs.exists(mesh.args.at(-1)!)).toBe(false);
+    }
+    expect(
+      (yield* Effect.flip(
+        service.renderImages(t.file, ["iso"], {}, "orthographic", { overhangs: { angle: 25 } }),
+      )).reason,
+    ).toBe("invalid-parameter");
+    for (const failure of ["timeout", "error", "missing"] as const) {
+      t.failOverhangExport(failure);
+      const result = yield* Effect.flip(
+        service.renderImages(t.file, ["iso"], {}, "orthographic", { overhangs: {} }),
+      );
+      expect(result.reason).toBe(failure === "timeout" ? "timeout" : "command-failed");
+    }
+    t.failOverhangExport(null);
+    t.setOverhangMesh(new Uint8Array(12));
+    expect(
+      (yield* Effect.flip(
+        service.renderImages(t.file, ["iso"], {}, "orthographic", { overhangs: {} }),
+      )).message,
+    ).toContain("STL");
+    expect(
+      (yield* t.fs.readDirectory(t.path.join(t.stateDir, "fork/model-preview-3d/renders"))).every(
+        (name) => name.endsWith(".png"),
+      ),
+    ).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("interrupting an overhang export removes partial geometry and the import wrapper", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    const started = yield* Deferred.make<void>();
+    const cancelled = yield* Deferred.make<void>();
+    t.block(started, cancelled);
+    const running = yield* service
+      .renderImages({ ...t.file, path: "models/part.stl" }, ["iso"], {}, "orthographic", {
+        overhangs: {},
+      })
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(started);
+    yield* Fiber.interrupt(running);
+    yield* Deferred.await(cancelled);
+    expect(
+      yield* t.fs.readDirectory(t.path.join(t.stateDir, "fork/model-preview-3d/renders")),
+    ).toEqual([]);
   }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 it.effect("agent rendering omits fit for unsupported or invalid geometry summaries", () =>

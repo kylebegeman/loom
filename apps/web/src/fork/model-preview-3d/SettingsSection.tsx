@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ModelPreviewSettings,
+  activeBed,
   type DisplayUnits,
   type ScaleReference,
   SCALE_REFERENCE_LABELS,
@@ -18,6 +19,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Input } from "~/components/ui/input";
+import { Switch } from "~/components/ui/switch";
 import { Button } from "~/components/ui/button";
 import {
   Select,
@@ -290,6 +292,23 @@ function SettingsForm({
             </Select>
           }
         />
+        {!!activeBed(settings.buildPlate).zones?.length && (
+          <SettingsRow
+            title="Show nozzle zones"
+            description="Tint areas that only one nozzle reaches. Fit checks always use nozzle limits."
+            control={
+              <Switch
+                size="sm"
+                aria-label="Show nozzle zones"
+                disabled={!canSave}
+                checked={settings.buildPlate.showZones}
+                onCheckedChange={(showZones) =>
+                  set("buildPlate", { ...settings.buildPlate, showZones })
+                }
+              />
+            }
+          />
+        )}
         <SettingsRow
           title="Show for scale"
           description="An everyday object beside the part, included in captures when visible."

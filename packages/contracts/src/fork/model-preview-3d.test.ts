@@ -2,9 +2,11 @@ import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 import { DEFAULT_MODEL_PREVIEW_SETTINGS, ModelPreviewSettings } from "./model-preview-3d.ts";
 import { ModelEditorAction } from "./model-editor.ts";
+import { ModelCamera } from "./model-workspace.ts";
 
 const decodeSettings = Schema.decodeUnknownSync(ModelPreviewSettings);
 const decodeEditor = Schema.decodeUnknownSync(ModelEditorAction);
+const decodeCamera = Schema.decodeUnknownSync(ModelCamera);
 const legacySettings = {
   openscadPath: null,
   backend: "auto",
@@ -40,4 +42,26 @@ it("lets agents show or remove known scale references and rejects unknown ones",
   expect(decodeEditor({ action: "display", reference: "hand" }).reference).toBe("hand");
   expect(decodeEditor({ action: "display", reference: "none" }).reference).toBe("none");
   expect(() => decodeEditor({ action: "display", reference: "ruler" })).toThrow();
+});
+
+it("loads old overhang preferences and validates the threshold and camera toggle", () => {
+  expect(decodeSettings(legacySettings).overhangAngleDegrees).toBe(45);
+  for (const angle of [29, 71, 45.5])
+    expect(() => decodeSettings({ ...legacySettings, overhangAngleDegrees: angle })).toThrow();
+  expect(decodeSettings({ ...legacySettings, overhangAngleDegrees: 70 }).overhangAngleDegrees).toBe(
+    70,
+  );
+  const oldCamera = {
+    position: [1, 2, 3],
+    target: [0, 0, 0],
+    near: 0.1,
+    far: 1000,
+    wireframe: false,
+    gridVisible: true,
+    axesVisible: false,
+    navigationMode: "orbit",
+    section: { enabled: false, axis: "z", offset: 0, flipped: false },
+  };
+  expect(decodeCamera(oldCamera).overhangs).toBe(false);
+  expect(decodeEditor({ action: "display", overhangs: true }).overhangs).toBe(true);
 });

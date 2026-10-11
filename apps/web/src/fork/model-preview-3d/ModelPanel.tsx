@@ -13,6 +13,8 @@ import {
   useState,
 } from "react";
 import { Link } from "@tanstack/react-router";
+import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "~/state/entities";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
@@ -31,6 +33,7 @@ import {
 } from "lucide-react";
 import {
   bedFitSummary,
+  OVERHANG_ANGLE,
   type ModelProjection,
   type ModelEntry,
   type ModelPreviewSettings,
@@ -63,7 +66,9 @@ import {
   type InspectorBadge,
   type InspectorTab,
 } from "./ModelInspector";
-import { bedFit, resolvePlate } from "./buildPlate";
+import { fitPlate, resolvePlate } from "./buildPlate";
+import { OverhangLegend } from "./OverhangLegend";
+import { useOverhangAngleSetting } from "./overhangSettings";
 import { BedPicker, useScaleReference } from "./BedPicker";
 import { DisplayUnitsProvider, formatLengths, unitName, useDisplayUnitsSetting } from "./units";
 import {
@@ -114,13 +119,19 @@ function ModelFile({
   const readSettings = useCallback(() => latestSettings.current, []);
   const unitsControl = useDisplayUnitsSetting(threadRef.environmentId, settings, readSettings);
   const referenceControl = useScaleReference(threadRef.environmentId, settings, readSettings);
+  const angleControl = useOverhangAngleSetting(threadRef.environmentId, settings, readSettings);
+  const configs = useServerConfigs();
+  const adjustableOverhangs = loomFeaturesOf(
+    configs.get(threadRef.environmentId)?.environment.capabilities,
+  ).includes("model-overhangs");
   const displaySettings = useMemo(
     () => ({
       ...settings,
       displayUnits: unitsControl.units,
       scaleReference: referenceControl.reference,
+      overhangAngleDegrees: angleControl.angle,
     }),
-    [settings, unitsControl.units, referenceControl.reference],
+    [settings, unitsControl.units, referenceControl.reference, angleControl.angle],
   );
   useLayoutEffect(() => {
     latestSettings.current = displaySettings;
@@ -161,6 +172,7 @@ function ModelFile({
     [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit"),
     [display, setDisplay] = useState({
       wireframe: false,
+      overhangs: false,
       grid: true,
       axes: false,
       projection: "perspective" as ModelProjection,
@@ -174,6 +186,7 @@ function ModelFile({
   const recall = (camera: ModelCamera, refit: boolean) => {
     setDisplay({
       wireframe: camera.wireframe,
+      overhangs: camera.overhangs,
       grid: camera.gridVisible,
       axes: camera.axesVisible,
       projection: camera.projection,
@@ -253,6 +266,7 @@ function ModelFile({
             break;
           case "display":
             get();
+            if (c.overhangs !== undefined) get().setOverhangs(c.overhangs);
             if (c.reference !== undefined) {
               if (!referenceControl.canSave)
                 throw new Error("This connection cannot change model settings.");
@@ -262,6 +276,7 @@ function ModelFile({
             setDisplay((d) => ({
               ...d,
               ...(c.wireframe === undefined ? {} : { wireframe: c.wireframe }),
+              ...(c.overhangs === undefined ? {} : { overhangs: c.overhangs }),
               ...(c.grid === undefined ? {} : { grid: c.grid }),
               ...(c.axes === undefined ? {} : { axes: c.axes }),
               ...(c.projection === undefined ? {} : { projection: c.projection }),
@@ -755,18 +770,24 @@ function ModelFile({
   };
   useEffect(() => {
     if (!visible) return;
-    return onModelAction(threadRef, (action) => {
-      if (action === "rerender") setRevision((value) => value + 1);
-      else if (action === "toggle-units") {
-        if (!unitsControl.canSave) return;
-        const next = unitsControl.units === "mm" ? "in" : "mm";
-        unitsControl.setUnits(next);
-        toastManager.add({ type: "success", title: `Lengths in ${unitName(next)}` });
-      } else if (action === "copy-view" || action === "save-view") {
-        void exportCapture(false, action === "copy-view" ? "copy" : "save");
-      } else void capture(action === "capture-four");
-    });
-  }, [visible, threadRef, capture, exportCapture, unitsControl]);
+    return onModelAction(
+      threadRef,
+      (action) => {
+        if (action === "toggle-overhangs")
+          setDisplay((value) => ({ ...value, overhangs: !value.overhangs }));
+        else if (action === "rerender") setRevision((value) => value + 1);
+        else if (action === "toggle-units") {
+          if (!unitsControl.canSave) return;
+          const next = unitsControl.units === "mm" ? "in" : "mm";
+          unitsControl.setUnits(next);
+          toastManager.add({ type: "success", title: `Lengths in ${unitName(next)}` });
+        } else if (action === "copy-view" || action === "save-view") {
+          void exportCapture(false, action === "copy-view" ? "copy" : "save");
+        } else void capture(action === "capture-four");
+      },
+      () => display.overhangs,
+    );
+  }, [visible, threadRef, capture, exportCapture, unitsControl, display.overhangs]);
   const displayedError =
     watchError ??
     error ??
@@ -804,7 +825,7 @@ function ModelFile({
     );
   const issues =
     render?.log.filter((line) => line.level === "error" || line.level === "warning").length ?? 0;
-  const plateFit = stats ? bedFit(stats.size, volume) : "fits";
+  const plateFit = stats ? fitPlate(stats.size, plate).fit.status : "fits";
   const unapplied =
     session && !session.automatic && session.hasUnapplied
       ? changedParameters(session.data.parameters, session.values, session.applied).length
@@ -879,6 +900,7 @@ function ModelFile({
             }));
           else if (key === "g") setDisplay((value) => ({ ...value, grid: !value.grid }));
           else if (key === "a") setDisplay((value) => ({ ...value, axes: !value.axes }));
+          else if (key === "v") setDisplay((value) => ({ ...value, overhangs: !value.overhangs }));
           else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
           else if (key === "-" && stats) viewer.current?.zoom(1.2);
           else return;
@@ -975,6 +997,9 @@ function ModelFile({
                     navigationMode={navigationMode}
                     display={display}
                     reference={referenceControl.reference}
+                    overhangAngleDegrees={
+                      adjustableOverhangs ? angleControl.angle : OVERHANG_ANGLE.default
+                    }
                     onNavigate={onNavigate}
                     section={editing.section}
                     measurements={editing.measurements}
@@ -1036,6 +1061,19 @@ function ModelFile({
               onWireframe={(wireframe) => setDisplay((value) => ({ ...value, wireframe }))}
               onGrid={(grid) => setDisplay((value) => ({ ...value, grid }))}
               onAxes={(axes) => setDisplay((value) => ({ ...value, axes }))}
+              onOverhangs={(overhangs) => setDisplay((value) => ({ ...value, overhangs }))}
+              overhangLegend={
+                display.overhangs && stats ? (
+                  <OverhangLegend
+                    viewerRef={viewer}
+                    sourceRevision={geometryRevision}
+                    angleControl={angleControl}
+                    adjustable={adjustableOverhangs}
+                    wireframe={display.wireframe}
+                    onHide={() => setDisplay((value) => ({ ...value, overhangs: false }))}
+                  />
+                ) : undefined
+              }
             />
             <NavigationTools
               mode={navigationMode}
@@ -1283,7 +1321,7 @@ function ModelFile({
           {plateFit !== "fits" && (
             <button className={styles["model-status-warning"]} onClick={() => openTab("part")}>
               <TriangleAlertIcon />
-              {plateFit === "rotated" ? "Fits if rotated 90°" : "Larger than the bed"}
+              {plateFit === "fits-rotated" ? "Fits if rotated 90°" : "Larger than the bed"}
             </button>
           )}
           <span

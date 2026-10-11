@@ -17,7 +17,8 @@ import {
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
-  fitOnBed,
+  singleZoneStrips,
+  type ZoneRect,
   type BuildPlatePresetId,
   type ModelPreviewSettings,
   type ScadRenderResult,
@@ -37,7 +38,15 @@ import {
 } from "~/components/ui/menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { meshStats } from "./viewer/load";
-import { bedGroups, buildPlateLabel, describeFit, type BuildVolume } from "./buildPlate";
+import {
+  bedGroups,
+  buildPlateLabel,
+  describeFit,
+  describeZoneFit,
+  fitPlate,
+  resolvePlate,
+  type BuildVolume,
+} from "./buildPlate";
 import { useBuildPlate } from "./BedPicker";
 import { BedFitList } from "./BedFitList";
 import { formatLength, formatLengths, useDisplayUnits } from "./units";
@@ -181,10 +190,12 @@ function PlateFit({
   size,
   volume,
   fits,
+  strips,
 }: {
   size: readonly number[];
   volume: BuildVolume;
   fits: boolean;
+  strips: readonly ZoneRect[];
 }) {
   const units = useDisplayUnits();
   const [bx, by, bz] = volume;
@@ -217,6 +228,16 @@ function PlateFit({
           stroke="var(--border)"
           strokeWidth={1.5}
         />
+        {strips.map((strip) => (
+          <rect
+            key={`${strip.offsetMm.join()}-${strip.footprintMm.join()}`}
+            x={ox + strip.offsetMm[0]}
+            y={oy + by - strip.offsetMm[1] - strip.footprintMm[1]}
+            width={strip.footprintMm[0]}
+            height={strip.footprintMm[1]}
+            fill="var(--model-zone-fill)"
+          />
+        ))}
         <g stroke="var(--border)" strokeWidth={0.8}>
           {lines.map(({ key, ...line }) => (
             <line key={key} {...line} />
@@ -359,11 +380,14 @@ export function PartSection({
         <EmptyNote>Dimensions appear when the model loads.</EmptyNote>
       </div>
     );
+  const plate = resolvePlate(settings.buildPlate);
+  const result = fitPlate(stats.size, plate);
+  const { fit, withinMm } = result;
+  const zone = describeZoneFit(result, plate.zones, (mm) => formatLength(mm, units));
   const over = stats.size.map((value, axis) => {
-    const limit = volume[axis];
+    const limit = withinMm[axis];
     return limit === null || limit === undefined ? 0 : value - limit;
   });
-  const fit = fitOnBed(stats.size, volume);
   const fits = fit.status === "fits";
   const rotated = fit.status === "fits-rotated";
   const manifold = render?.summary?.manifold;
@@ -399,10 +423,15 @@ export function PartSection({
           <div className="flex-1" />
           <PrinterMenu environmentId={environmentId} settings={settings} />
         </div>
-        <PlateFit size={stats.size} volume={volume} fits={fits} />
+        <PlateFit
+          size={stats.size}
+          volume={volume}
+          fits={fits}
+          strips={plate.showZones ? singleZoneStrips(plate.zones) : []}
+        />
         <p className={styles["model-fit-advice"]}>
           {fits ? (
-            `${formatLength(Math.min(...over.map((value, axis) => (volume[axis] === null ? Infinity : -value))), units, { digits: 0 })} of clearance on the tightest axis.`
+            `${formatLength(Math.min(...over.map((value, axis) => (withinMm[axis] === null ? Infinity : -value))), units, { digits: 0 })} of clearance on the tightest axis.`
           ) : rotated ? (
             "It fits if you rotate it 90° on the plate."
           ) : (
@@ -411,6 +440,7 @@ export function PartSection({
               or choose a larger bed. You can still preview and capture it.
             </>
           )}
+          {zone ? ` ${zone.long}` : ""}
         </p>
       </div>
       <BedFitList environmentId={environmentId} settings={settings} size={stats.size} />

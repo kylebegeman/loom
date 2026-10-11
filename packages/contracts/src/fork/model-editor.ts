@@ -56,6 +56,7 @@ export const ModelEditorAction = Schema.Struct({
   projection: Schema.optional(ModelProjection),
   reference: Schema.optional(ScaleReference),
   wireframe: Schema.optional(Schema.Boolean),
+  overhangs: Schema.optional(Schema.Boolean),
   grid: Schema.optional(Schema.Boolean),
   axes: Schema.optional(Schema.Boolean),
   four: Schema.optional(Schema.Boolean),

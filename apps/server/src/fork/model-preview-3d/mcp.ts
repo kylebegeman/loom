@@ -181,7 +181,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_render", {
     description:
-      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary.",
+      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary. fit.beds[].zone.reach is all-zones for shared nozzle reach, one-zone for the listed zoneIds, or whole-bed for the combined bed using the same filament in every nozzle. Set overhangs to also return overhang statistics: area beyond the angle from vertical, and the largest regions with their centres in model coordinates. overhangAngle defaults to the environment setting. Rendered PNGs remain unshaded; use an editor capture for overhang shading.",
     parameters: Schema.Struct({
       path: Schema.String,
       views: Schema.optional(
@@ -189,11 +189,14 @@ export const ModelPreview3dToolkit = Toolkit.make(
       ),
       overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
       projection: Schema.optional(W.ModelProjection),
+      overhangs: Schema.optional(Schema.Boolean),
+      overhangAngle: Schema.optional(W.OverhangStats.fields.thresholdDegrees),
     }),
     success: Schema.Struct({
       images: Schema.Array(Schema.Struct({ view: View, path: Schema.String })),
       summary: ScadRenderResult.fields.summary,
       fit: Schema.NullOr(W.BedFitSummary),
+      overhangs: Schema.optional(W.OverhangStats),
       log: ScadRenderResult.fields.log,
     }),
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
@@ -235,6 +238,8 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
   views?: ReadonlyArray<typeof View.Type> | undefined;
   overrides?: Readonly<Record<string, string>> | undefined;
   projection?: W.ModelProjection | undefined;
+  overhangs?: boolean | undefined;
+  overhangAngle?: number | undefined;
 }) {
   const threadId = yield* modelThread;
   return yield* withAgentTools((service) =>
@@ -243,6 +248,7 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
       input.views ?? ["iso", "front", "top", "right"],
       input.overrides ?? {},
       input.projection ?? DEFAULT_RENDER_PROJECTION,
+      input.overhangs ? { overhangs: { angle: input.overhangAngle } } : {},
     ),
   );
 });

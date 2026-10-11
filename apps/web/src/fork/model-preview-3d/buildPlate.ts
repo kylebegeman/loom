@@ -2,6 +2,10 @@ import {
   activeBed,
   listBeds,
   fitOnBed,
+  fitBed,
+  sharedZone,
+  type BedZone,
+  type BedFitResult,
   type BedFit as SharedBedFit,
   type BedVolume,
   type BuildPlatePattern,
@@ -12,11 +16,68 @@ export type BuildVolume = BedVolume;
 export const resolveBuildVolume = (setting: BuildPlateSetting): BuildVolume =>
   activeBed(setting).volumeMm;
 /** What a viewer draws and fit checks use: the bed's volume and the pattern on its surface. */
-export type Plate = { readonly volume: BuildVolume; readonly pattern: BuildPlatePattern };
+export type Plate = {
+  readonly volume: BuildVolume;
+  readonly pattern: BuildPlatePattern;
+  readonly zones: readonly BedZone[];
+  readonly showZones: boolean;
+};
 export const resolvePlate = (setting: BuildPlateSetting): Plate => ({
   volume: resolveBuildVolume(setting),
   pattern: setting.pattern,
+  zones: activeBed(setting).zones ?? [],
+  showZones: setting.showZones,
 });
+/** Fit against nozzle reach even when the plate's zone tint is hidden. */
+export const fitPlate = (size: readonly [number, number, number], plate: Plate): BedFitResult =>
+  fitBed(size, { volumeMm: plate.volume, zones: plate.zones });
+
+/** Nozzle constraints for fit cards and bed lists, including a required quarter turn. */
+export const describeZoneFit = (
+  result: BedFitResult,
+  zones: readonly BedZone[],
+  format: (mm: number) => string,
+): { short: string; long: string } | null => {
+  if (!zones.length || !result.zone) return null;
+  const all = zones.length === 2 ? "both" : "every";
+  const rotated = result.fit.status === "fits-rotated";
+  const prefix = rotated ? "Fits rotated" : "Fits";
+  let short: string;
+  let long: string;
+  switch (result.zone.reach) {
+    case "all-zones":
+      short = zones.length === 2 ? "Both nozzles" : "Every nozzle";
+      long = `${prefix}, with ${zones.length === 2 ? "either or both nozzles" : "any or every nozzle"}.`;
+      break;
+    case "one-zone": {
+      const available = zones.filter(
+        (zone) => result.zone?.reach === "one-zone" && result.zone.zoneIds.includes(zone.id),
+      );
+      short =
+        available.length === 1
+          ? `${available[0]!.label} only`
+          : `${zones.length === 2 ? "Either nozzle" : "Some nozzles"}, not ${all}`;
+      long =
+        available.length === 1
+          ? `${prefix}${rotated ? ", with the" : " the"} ${available[0]!.label.toLowerCase()} only.`
+          : `${prefix}, with ${zones.length === 2 ? "either nozzle" : "some nozzles"}, not ${all}.`;
+      const common = sharedZone(zones, result.withinMm[2]);
+      if (common) {
+        const dimensions = [
+          ...common.footprintMm,
+          ...(common.heightMm === null ? [] : [common.heightMm]),
+        ];
+        long += ` Printing with ${all} nozzles needs ${dimensions.map(format).join(" × ")}.`;
+      }
+      break;
+    }
+    case "whole-bed":
+      short = `Same filament in ${all} nozzles`;
+      long = `${prefix}${rotated ? ", only" : " only"} with the same filament in ${all} nozzles.`;
+      break;
+  }
+  return { short: rotated ? `${short}, rotated` : short, long };
+};
 export const buildPlateLabel = (setting: BuildPlateSetting) =>
   setting.preset === "custom" ? "Custom bed" : activeBed(setting).label;
 /** Extra limits worth knowing, such as per-nozzle reach on a dual-nozzle printer. */

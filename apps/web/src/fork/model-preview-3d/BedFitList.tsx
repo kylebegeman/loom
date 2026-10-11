@@ -2,13 +2,13 @@ import { useMemo } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   activeBed,
-  fitOnBed,
+  fitBed,
   listBeds,
   selectBed,
   type ModelPreviewSettings,
 } from "@t3tools/contracts/fork";
 import { useBuildPlate } from "./BedPicker";
-import { describeFit } from "./buildPlate";
+import { describeFit, describeZoneFit } from "./buildPlate";
 import { formatLength, formatLengths, useDisplayUnits } from "./units";
 import { Chip, SectionHead, Tip } from "./controls";
 import styles from "./workspace.module.css";
@@ -32,11 +32,11 @@ export function BedFitList({
   const units = useDisplayUnits();
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const rows = useMemo(
-    () => listBeds(plate).map((bed) => ({ bed, fit: fitOnBed(size, bed.volumeMm) })),
+    () => listBeds(plate).map((bed) => ({ bed, result: fitBed(size, bed) })),
     [size, plate],
   );
   const activeId = activeBed(plate).id;
-  const count = rows.filter(({ fit }) => fit.status !== "too-big").length;
+  const count = rows.filter(({ result }) => result.fit.status !== "too-big").length;
   const summary = (
     <Chip>
       Fits {count} of {rows.length}
@@ -59,7 +59,11 @@ export function BedFitList({
           <ul>
             {rows
               .filter(({ bed }) => bed.kind === group.kind)
-              .map(({ bed, fit }) => {
+              .map(({ bed, result }) => {
+                const { fit } = result;
+                const zone = describeZoneFit(result, bed.zones ?? [], (mm) =>
+                  formatLength(mm, units),
+                );
                 const active = bed.id === activeId;
                 const content = (
                   <>
@@ -77,7 +81,7 @@ export function BedFitList({
                         </span>
                       ) : (
                         <Chip {...(fit.status === "fits" ? { tone: "success" as const } : {})}>
-                          {describeFit(fit, (mm) => formatLength(mm, units))}
+                          {zone?.short ?? describeFit(fit, (mm) => formatLength(mm, units))}
                         </Chip>
                       )}
                     </span>

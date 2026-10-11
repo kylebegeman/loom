@@ -11,6 +11,7 @@ it("snapshots every named view before encoding and immediately restores the user
     near: 0.1,
     far: 1000,
     wireframe: false,
+    overhangs: false,
     gridVisible: true,
     axesVisible: false,
     navigationMode: "orbit",

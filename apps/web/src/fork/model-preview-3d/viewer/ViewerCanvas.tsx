@@ -8,7 +8,7 @@ import type {
   ModelAnnotation,
 } from "@t3tools/contracts/fork";
 import { useEffect, useRef } from "react";
-import type { ModelFormat } from "@t3tools/contracts/fork";
+import { singleZoneStrips, type ModelFormat } from "@t3tools/contracts/fork";
 import { formatLength, useDisplayUnits } from "../units";
 import type { Plate } from "../buildPlate";
 import { createViewer, type ModelViewer, type NavigationMode } from "./createViewer";
@@ -37,6 +37,7 @@ export default function ViewerCanvas({
   onCamera,
   camera,
   reference = "none",
+  overhangAngleDegrees = 45,
 }: {
   section?: ModelSection;
   measurements?: readonly ModelMeasurement[];
@@ -47,6 +48,7 @@ export default function ViewerCanvas({
   onCamera?: (camera: ModelCamera) => void;
   camera?: ModelCamera | null;
   reference?: ScaleReference;
+  overhangAngleDegrees?: number;
   url: string;
   format: ModelFormat;
   plate: Plate;
@@ -57,7 +59,13 @@ export default function ViewerCanvas({
   onError: (message: string) => void;
   onProgress: (message: string | null) => void;
   navigationMode?: NavigationMode;
-  display?: { wireframe: boolean; grid: boolean; axes: boolean; projection: ModelProjection };
+  display?: {
+    wireframe: boolean;
+    grid: boolean;
+    axes: boolean;
+    projection: ModelProjection;
+    overhangs: boolean;
+  };
   onNavigate?: () => void;
 }) {
   const units = useDisplayUnits();
@@ -73,6 +81,7 @@ export default function ViewerCanvas({
     camera,
     reference,
     units,
+    overhangAngleDegrees,
   });
   useEffect(() => {
     options.current = {
@@ -85,6 +94,7 @@ export default function ViewerCanvas({
       camera,
       reference,
       units,
+      overhangAngleDegrees,
     };
   }, [
     navigationMode,
@@ -96,6 +106,7 @@ export default function ViewerCanvas({
     camera,
     reference,
     units,
+    overhangAngleDegrees,
   ]);
   useEffect(() => {
     if (!host.current) return;
@@ -117,8 +128,15 @@ export default function ViewerCanvas({
     };
   }, [viewerRef, savedViewRef, onError]);
   useEffect(() => {
-    viewerRef.current?.setBed([plate.volume[0], plate.volume[1]], plate.pattern);
+    viewerRef.current?.setBed(
+      [plate.volume[0], plate.volume[1]],
+      plate.pattern,
+      plate.showZones ? singleZoneStrips(plate.zones) : [],
+    );
   }, [plate, viewerRef]);
+  useEffect(() => {
+    viewerRef.current?.setOverhangAngle(overhangAngleDegrees);
+  }, [overhangAngleDegrees, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setReference(reference);
   }, [reference, viewerRef]);
@@ -154,7 +172,9 @@ export default function ViewerCanvas({
           viewerRef.current.setGrid(options.current.display.grid);
           viewerRef.current.setAxes(options.current.display.axes);
           viewerRef.current.setProjection(options.current.display.projection);
+          viewerRef.current.setOverhangs(options.current.display.overhangs);
         }
+        viewerRef.current.setOverhangAngle(options.current.overhangAngleDegrees);
         viewerRef.current.setReference(options.current.reference);
         viewerRef.current.setLengthFormat((mm) => formatLength(mm, options.current.units));
         if (options.current.section) viewerRef.current.setSection(options.current.section);
@@ -194,6 +214,7 @@ export default function ViewerCanvas({
     viewerRef.current?.setGrid(display.grid);
     viewerRef.current?.setAxes(display.axes);
     viewerRef.current?.setProjection(display.projection);
+    viewerRef.current?.setOverhangs(display.overhangs);
   }, [viewerRef, display]);
   useEffect(() => {
     if (section) viewerRef.current?.setSection(section);

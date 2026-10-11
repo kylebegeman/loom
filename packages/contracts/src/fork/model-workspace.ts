@@ -20,6 +20,7 @@ export const ModelCamera = Schema.Struct({
   near: finite,
   far: finite,
   wireframe: Schema.Boolean,
+  overhangs: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   gridVisible: Schema.Boolean,
   axesVisible: Schema.Boolean,
   navigationMode: Schema.Literals(["orbit", "pan"]),

@@ -148,6 +148,9 @@ export function ViewTools({
 }
 export function DisplayTools({
   bed,
+  overhangLegend,
+  overhangs,
+  onOverhangs,
   wireframe,
   grid,
   axes,
@@ -159,6 +162,9 @@ export function DisplayTools({
 }: {
   /** The bed picker, shown before the display menu. */
   bed?: ReactNode;
+  overhangLegend?: ReactNode;
+  overhangs: boolean;
+  onOverhangs: (value: boolean) => void;
   wireframe: boolean;
   grid: boolean;
   axes: boolean;
@@ -198,9 +204,14 @@ export function DisplayTools({
               Orthographic
               <MenuShortcut>P</MenuShortcut>
             </MenuCheckboxItem>
+            <MenuCheckboxItem checked={overhangs} onCheckedChange={onOverhangs}>
+              Overhangs
+              <MenuShortcut>V</MenuShortcut>
+            </MenuCheckboxItem>
           </MenuGroup>
         </MenuPopup>
       </Menu>
+      {overhangLegend}
     </div>
   );
 }
@@ -215,6 +226,7 @@ const HELP = [
   ["Wireframe, bed, axes", "W, G, A"],
   ["Inspector", "I"],
   ["Perspective, orthographic", "P"],
+  ["Overhangs", "V"],
 ] as const;
 export function NavigationTools({
   mode,
