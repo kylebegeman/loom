@@ -161,3 +161,9 @@ Press `T` or use History to view the versions saved at the end of this thread's 
 Restore this version replaces the board, project and schematics together and offers one Undo. Supporting libraries and assets, and removal of files added since that version, are optional and off by default. Close KiCad before restoring. Compare lists this thread's turns alongside the design's Git commits.
 
 Agents can use `loom_pcb_history` and `loom_pcb_restore_version`, or `t3 pcb history` and `t3 pcb restore_version`. Pass a history checkpoint ID to render or export an earlier version. Historical 3D previews use the component models installed on the environment today.
+
+## Measure the 3D board
+
+Open **3D**, press `P` for orthographic projection, and use **Display** to hide board layers or component sides. Open **Section plane** to cut through the board and its parts. **Measure** (`M`) measures two points; switch to **Height** for clearance above or below the board. Hold Alt while clicking for a free point. **Heights** lists component heights, including leads below the board, and selecting a row draws that height. Measurements clear when the board reloads or you leave 3D; display settings stay while the workspace is open.
+
+Agents can use the PCB editor's `display`, `section`, `measure` and `height` actions. For example, `t3 pcb editor '{"designId":"board.kicad_pcb","command":{"action":"height","reference":"J1"}}'` reads J1's height in a loaded, current 3D view. `snapshot` reports the display settings, measurements and component heights.

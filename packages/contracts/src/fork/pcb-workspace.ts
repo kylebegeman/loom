@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { SignedFile } from "./model-preview-3d.ts";
-import { ModelCamera } from "./model-workspace.ts";
+import { ModelCamera, ModelPoint, ModelProjection, ModelSection } from "./model-workspace.ts";
 import { CheckpointId, PositiveInt, RunId, NonNegativeInt, ThreadId } from "../baseSchemas.ts";
 const text = (max = 200) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
 const finite = Schema.Number.check(Schema.isFinite());
@@ -575,6 +575,56 @@ export const PcbReferenceResult = Schema.Struct({
   targetThreadId: ThreadId,
 });
 export type PcbReferenceResult = typeof PcbReferenceResult.Type;
+const layer3dState = Schema.Literals(["shown", "hidden", "unavailable"]);
+/** Display state of the 3D board's part groups. */
+export const Pcb3dLayers = Schema.Struct({
+  board: layer3dState,
+  soldermask: layer3dState,
+  copper: layer3dState,
+  silkscreen: layer3dState,
+  topComponents: layer3dState,
+  bottomComponents: layer3dState,
+});
+export type Pcb3dLayers = typeof Pcb3dLayers.Type;
+/** Editor input: only the groups to change. */
+export const Pcb3dLayersPatch = Schema.Struct({
+  board: Schema.optional(Schema.Boolean),
+  soldermask: Schema.optional(Schema.Boolean),
+  copper: Schema.optional(Schema.Boolean),
+  silkscreen: Schema.optional(Schema.Boolean),
+  topComponents: Schema.optional(Schema.Boolean),
+  bottomComponents: Schema.optional(Schema.Boolean),
+});
+export const Pcb3dSide = Schema.Literals(["front", "back"]);
+export const Pcb3dSnap = Schema.Literals(["vertex", "midpoint", "edge", "face", "free"]);
+/** A distance between two points, or a height (start on the board face, end at the point). */
+export const Pcb3dMeasurement = Schema.Struct({
+  kind: Schema.Literals(["distance", "height"]),
+  start: ModelPoint,
+  end: ModelPoint,
+  lengthMm: finite,
+  snaps: Schema.optional(Schema.Tuple([Pcb3dSnap, Pcb3dSnap])),
+  side: Schema.optional(Pcb3dSide),
+  reference: Schema.optional(text()),
+});
+export type Pcb3dMeasurement = typeof Pcb3dMeasurement.Type;
+const extreme = Schema.NullOr(
+  Schema.Struct({ heightMm: finite, reference: Schema.NullOr(text()) }),
+);
+export const Pcb3dHeights = Schema.Struct({
+  boardThicknessMm: finite,
+  /** Highest point of any part above the board's top face. */
+  above: extreme,
+  /** Lowest point of any part below the board's bottom face, leads included. */
+  below: extreme,
+  parts: list(
+    Schema.Struct({ reference: text(), side: Pcb3dSide, aboveMm: finite, belowMm: finite }),
+    100,
+  ),
+  partCount: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+export type Pcb3dHeights = typeof Pcb3dHeights.Type;
+
 export const PcbEditorAction = Schema.Struct({
   requestId: Schema.optional(text()),
   action: Schema.Literals([
@@ -611,6 +661,10 @@ export const PcbEditorAction = Schema.Struct({
     "open",
     "close",
     "maximize",
+    "display",
+    "section",
+    "measure",
+    "height",
   ]),
   camera: Schema.optional(ModelCamera),
   cameraView: Schema.optional(Schema.Literals(["iso", "top", "front", "right"])),
@@ -628,6 +682,14 @@ export const PcbEditorAction = Schema.Struct({
   attachToDraft: Schema.optional(Schema.Boolean),
   name: Schema.optional(Schema.String),
   text: Schema.optional(Schema.String.check(Schema.isMaxLength(2000))),
+  projection: Schema.optional(ModelProjection),
+  section: Schema.optional(ModelSection),
+  layers3d: Schema.optional(Pcb3dLayersPatch),
+  points: Schema.optional(
+    Schema.Array(ModelPoint).check(Schema.isMinLength(1), Schema.isMaxLength(2)),
+  ),
+  snap: Schema.optional(Schema.Boolean),
+  side: Schema.optional(Pcb3dSide),
 });
 export type PcbEditorAction = typeof PcbEditorAction.Type;
 export const PcbEditorInput = Schema.Struct({
@@ -643,10 +705,19 @@ export const PcbEditorEvent = Schema.Struct({
 });
 export type PcbEditorEvent = typeof PcbEditorEvent.Type;
 export const PcbEditorResult = Schema.Struct({
+  measurement3d: Schema.optional(Pcb3dMeasurement),
   message: Schema.String,
   path: Schema.optional(Schema.String),
   state: Schema.optional(
     Schema.Struct({
+      tool3d: Schema.optional(Schema.Literals(["none", "distance", "height"])),
+      layers3d: Schema.optional(Pcb3dLayers),
+      measurements3d: Schema.optional(list(Pcb3dMeasurement, 20)),
+      heights: Schema.optional(Schema.NullOr(Pcb3dHeights)),
+      sectionCaps: Schema.optional(
+        Schema.Literals(["filled", "partial", "off", "open-mesh", "none", "checking"]),
+      ),
+      snap3d: Schema.optional(Schema.Literals(["idle", "building", "ready", "off", "failed"])),
       turnHistory: Schema.optional(
         Schema.Struct({
           open: Schema.Boolean,
@@ -686,6 +757,7 @@ export const PcbEditorResult = Schema.Struct({
 });
 export type PcbEditorResult = typeof PcbEditorResult.Type;
 export const PcbCompleteEditorInput = Schema.Struct({
+  measurement3d: Schema.optional(Pcb3dMeasurement),
   threadId: ThreadId,
   designId: text(1024),
   requestId: text(),

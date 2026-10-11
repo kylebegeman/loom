@@ -39,7 +39,7 @@ import type { NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
 import { Scrub, Segmented } from "./controls";
 import type { ExportAction } from "./captureExport";
-import { fromMm, toMm, useDisplayUnits } from "./units";
+import { useDisplayUnits } from "./units";
 import type { SectionCapState } from "./viewer/sectionCaps";
 
 /** Feature-owned controls for the floating 3D tool shelves. */
@@ -530,6 +530,8 @@ const AXES = [
 ] as const;
 /** Section plane controls, shown over the viewport while a section is active. */
 export function SectionStrip({
+  removeKey = "S",
+  lengthUnit,
   section,
   bounds,
   onChange,
@@ -537,6 +539,8 @@ export function SectionStrip({
   capsState,
   wireframe,
 }: {
+  removeKey?: string | null;
+  lengthUnit?: "mm" | "mil" | "in";
   section: ModelSection;
   capsState?: SectionCapState;
   wireframe?: boolean;
@@ -545,14 +549,16 @@ export function SectionStrip({
   onChange: (section: ModelSection) => void;
   onRemove: () => void;
 }) {
-  const units = useDisplayUnits();
+  const preference = useDisplayUnits(),
+    units = lengthUnit ?? preference;
+  const scale = units === "mil" ? 0.0254 : units === "in" ? 25.4 : 1;
   const range = { min: Math.floor(bounds.min), max: Math.ceil(bounds.max), step: 0.5 };
   const displayRange =
-    units === "in"
+    units !== "mm"
       ? {
-          min: Math.floor(fromMm(bounds.min, units) * 100) / 100,
-          max: Math.ceil(fromMm(bounds.max, units) * 100) / 100,
-          step: 0.02,
+          min: Math.floor((bounds.min / scale) * 100) / 100,
+          max: Math.ceil((bounds.max / scale) * 100) / 100,
+          step: units === "mil" ? 10 : 0.02,
         }
       : range;
   return (
@@ -580,11 +586,11 @@ export function SectionStrip({
       />
       <div className={styles["model-section-value"]}>
         <Scrub
-          value={fromMm(section.offset, units)}
+          value={section.offset / scale}
           range={displayRange}
           label="Section offset"
           unit={units}
-          onChange={(offset) => onChange({ ...section, offset: toMm(offset, units) })}
+          onChange={(offset) => onChange({ ...section, offset: offset * scale })}
         />
       </div>
       <ModelTool
@@ -614,7 +620,11 @@ export function SectionStrip({
           <LayersIcon />
         </ModelTool>
       )}
-      <ModelTool label="Remove section" kbd="S" onClick={onRemove}>
+      <ModelTool
+        label="Remove section"
+        {...(removeKey ? { kbd: removeKey } : {})}
+        onClick={onRemove}
+      >
         <XIcon />
       </ModelTool>
     </div>

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { BoxGeometry, Group, Mesh, MeshStandardMaterial } from "three";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { RegistryContext } from "@effect/atom-react";
@@ -12,6 +13,16 @@ const mocks = vi.hoisted(() => ({
   load: vi.fn(),
   dispose: vi.fn(),
   viewer: {
+    setLengthFormat: vi.fn(),
+    setProjection: vi.fn(),
+    setSection: vi.fn(),
+    setPickMode: vi.fn(),
+    setOverlays: vi.fn(),
+    invalidate: vi.fn(),
+    onSnapStatus: vi.fn(),
+    onSectionCapsStatus: vi.fn(),
+    onObjectPick: vi.fn(),
+    snapPointDetailed: vi.fn(async (point) => ({ point, kind: "free" })),
     setGrid: vi.fn(),
     setAxes: vi.fn(),
     setModel: vi.fn(),
@@ -27,7 +38,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("./state", () => ({ pcb: { asset: { resultAtom: mocks.asset } } }));
 vi.mock("../model-preview-3d/state", () => ({ modelUrl: () => "/board.glb" }));
-vi.mock("../model-preview-3d/viewer/createViewer", () => ({ createViewer: () => mocks.viewer }));
+vi.mock("../model-preview-3d/viewer/createViewer", () => ({
+  createViewer: () => mocks.viewer,
+  shownIn: () => true,
+}));
 vi.mock("../model-preview-3d/viewer/load", () => ({
   loadModel: mocks.load,
   disposeModel: mocks.dispose,
@@ -57,7 +71,11 @@ beforeEach(() => {
   root = createRoot(host);
   registry = AtomRegistry.make();
   mocks.asset.mockReturnValue(response);
-  mocks.load.mockResolvedValue({ model: true });
+  const model = new Group(),
+    material = new MeshStandardMaterial();
+  material.name = "board";
+  model.add(new Mesh(new BoxGeometry(20, 10, 1.6), material));
+  mocks.load.mockResolvedValue(model);
 });
 afterEach(async () => {
   await act(async () => root.unmount());
@@ -95,4 +113,81 @@ it("refreshes the 3D asset and prevents stale captures during an export", async 
   expect(() => handle.current!.capture()).toThrow("Wait for the 3D board");
   await act(async () => root.unmount());
   expect(mocks.viewer.dispose).toHaveBeenCalledOnce();
+});
+it("measures snapped picks, bounds transient measurements and restores controlled display", async () => {
+  const onDisplay = vi.fn();
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D
+          threadRef={{
+            environmentId: EnvironmentId.make("env"),
+            threadId: ThreadId.make("thread"),
+          }}
+          designId="board"
+          sourceHash="one"
+          handle={handle}
+          onCancel={vi.fn()}
+          onDisplay={onDisplay}
+        />
+      </RegistryContext.Provider>,
+    ),
+  );
+  await act(async () => handle.current!.chooseTool("distance"));
+  await act(async () => mocks.viewer.setPickMode.mock.lastCall![1]([[0, 0, 0]], "vertex"));
+  await act(async () => mocks.viewer.setPickMode.mock.lastCall![1]([[3, 4, 0]], "free"));
+  expect(handle.current!.state().measurements3d[0]).toMatchObject({
+    lengthMm: 5,
+    snaps: ["vertex", "free"],
+  });
+  for (let i = 0; i < 20; i++)
+    await act(async () => {
+      await handle.current!.measure(
+        [
+          [i, 0, 0],
+          [i + 1, 0, 0],
+        ],
+        false,
+      );
+    });
+  expect(handle.current!.state().measurements3d).toHaveLength(20);
+  expect(handle.current!.state().measurements3d[0]!.start).toEqual([0, 0, 0]);
+  await act(async () => handle.current!.clearMeasurements());
+  expect(handle.current!.state().measurements3d).toHaveLength(0);
+  expect(() => handle.current!.displayLayers({ copper: false })).toThrow("no separate copper");
+  const camera = {
+    ...handle.current!.snapshot(),
+    projection: "orthographic" as const,
+    section: { enabled: true, axis: "z" as const, offset: 0, flipped: false, caps: true },
+  };
+  await act(async () => handle.current!.restore(camera));
+  expect(onDisplay).toHaveBeenCalledWith(
+    expect.objectContaining({ projection: "orthographic", section: camera.section }),
+  );
+});
+it("keeps measurement tools read-only in historical boards", async () => {
+  await act(async () =>
+    root.render(
+      <RegistryContext.Provider value={registry}>
+        <Board3D
+          threadRef={{
+            environmentId: EnvironmentId.make("env"),
+            threadId: ThreadId.make("thread"),
+          }}
+          designId="board"
+          sourceHash="one"
+          handle={handle}
+          onCancel={vi.fn()}
+          readOnly
+        />
+      </RegistryContext.Provider>,
+    ),
+  );
+  expect(() => handle.current!.chooseTool("distance")).toThrow("current version");
+  await expect(
+    handle.current!.measure([
+      [0, 0, 0],
+      [1, 0, 0],
+    ]),
+  ).rejects.toThrow("current version");
 });

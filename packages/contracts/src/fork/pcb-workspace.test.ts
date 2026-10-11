@@ -2,12 +2,16 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PcbEditorAction,
+  PcbCompleteEditorInput,
   PcbWorkspace,
   PcbWorkspaceInput,
   PcbEditorResult,
   PcbChangeRequest,
 } from "./pcb-workspace.ts";
 
+const readEditorAction = Schema.decodeUnknownSync(PcbEditorAction);
+const readEditorCompletion = Schema.decodeUnknownSync(PcbCompleteEditorInput);
 const decode = Schema.decodeUnknownSync(Schema.fromJsonString(PcbWorkspace));
 const decodeEditorResult = Schema.decodeUnknownSync(PcbEditorResult);
 const encode = Schema.encodeSync(PcbWorkspace);
@@ -157,4 +161,53 @@ it("decodes requests saved without optional metadata", () => {
     resolvedRef: null,
     resolvedAt: null,
   });
+});
+
+it("decodes 3D editor tools and bounded points while retaining old actions", async () => {
+  const read = readEditorAction;
+  expect(read({ action: "snapshot" })).toEqual({ action: "snapshot" });
+  expect(
+    read({ action: "display", layers3d: { copper: false }, projection: "orthographic" }).projection,
+  ).toBe("orthographic");
+  expect(() => read({ action: "measure", points: [] })).toThrow();
+  expect(() =>
+    read({
+      action: "measure",
+      points: [
+        [0, 0, 0],
+        [1, 1, 1],
+        [2, 2, 2],
+      ],
+    }),
+  ).toThrow();
+  const measurement3d = {
+    kind: "distance",
+    start: [0, 0, 0],
+    end: [3, 4, 0],
+    lengthMm: 5,
+    snaps: ["free", "vertex"],
+  };
+  const completion = readEditorCompletion({
+    threadId: "thread",
+    designId: "board",
+    requestId: "request",
+    message: "Measured",
+    measurement3d,
+    state: {
+      view: "pcb",
+      sheet: "board",
+      three: true,
+      linked: false,
+      selected: null,
+      net: null,
+      camera: null,
+      drawingCamera: null,
+      layers: [],
+      measurements3d: [measurement3d],
+      tool3d: "distance",
+      sectionCaps: "checking",
+      snap3d: "ready",
+    },
+  });
+  expect(completion.measurement3d).toEqual(measurement3d);
 });

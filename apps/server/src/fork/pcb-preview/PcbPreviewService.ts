@@ -2941,6 +2941,7 @@ export const make = Effect.gen(function* () {
           const result = {
             message: input.message,
             ...(input.state ? { state: input.state } : {}),
+            ...(input.measurement3d ? { measurement3d: input.measurement3d } : {}),
             ...(imagePath ? { path: imagePath } : {}),
           };
           return result;

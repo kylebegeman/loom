@@ -352,7 +352,23 @@ const SHORTCUTS = [
   ["Tools panel", "I"],
   ["Cancel tool, then close panel", "Esc"],
 ] as const;
-export function ShortcutHelp() {
+export const SHORTCUTS_3D = [
+  ["Schematic, Board, 3D", "1 / 2 / 3"],
+  ["History", "T"],
+  ["Previous or next version", "[ / ]"],
+  ["Projection", "P"],
+  ["Measure", "M"],
+  ["Free point without snapping", "Alt + click"],
+  ["Orbit", "Drag"],
+  ["Zoom", "Scroll"],
+  ["Tools panel", "I"],
+  ["Cancel tool, then close tools", "Esc"],
+] as const;
+export function ShortcutHelp({
+  rows = SHORTCUTS,
+}: {
+  rows?: readonly (readonly [string, string])[];
+}) {
   return (
     <Popover>
       <PopoverTrigger render={<button className={styles.tool} aria-label="Keyboard shortcuts" />}>
@@ -361,7 +377,7 @@ export function ShortcutHelp() {
       <PopoverPopup side="top" width="md">
         <PopoverTitle>Work with the drawing</PopoverTitle>
         <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-xs">
-          {SHORTCUTS.map(([label, keys]) => (
+          {rows.map(([label, keys]) => (
             <div key={label} className="contents">
               <dt className="text-muted-foreground">{label}</dt>
               <dd>{keys}</dd>

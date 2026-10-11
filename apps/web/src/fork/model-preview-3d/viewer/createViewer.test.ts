@@ -238,7 +238,7 @@ it("surface picking respects clipping, disables navigation and removes pointer l
   const event = { button: 0, clientX: 300, clientY: 200, pointerId: 1 } as PointerEvent;
   pointerHandlers.pointerdown!(event);
   pointerHandlers.pointerup!(event);
-  expect(callback).toHaveBeenCalledWith([[1, 2, 3]]);
+  expect(callback).toHaveBeenCalledWith([[1, 2, 3]], "free");
   expect(rayCamera.mock.calls[0]![1]).toBeInstanceOf(OrthographicCamera);
   viewer.setNavigationMode("pan");
   expect(gpu.domElement.style.cursor).toBe("crosshair");
@@ -449,7 +449,7 @@ it("picks visible orthographic faces behind the eye when zoomed inside the model
   const event = { button: 0, clientX: 300, clientY: 200, pointerId: 1 } as PointerEvent;
   pointerHandlers.pointerdown!(event);
   pointerHandlers.pointerup!(event);
-  expect(callback).toHaveBeenCalledWith([[0, 0, 10]]);
+  expect(callback).toHaveBeenCalledWith([[0, 0, 10]], "free");
   viewer.dispose();
 });
 
@@ -547,7 +547,7 @@ it("cannot pick a reference but still picks the model beside it", () => {
   viewer.restore({ ...viewer.snapshot(), position: [0, 0, 100], target: [0, 0, 0] });
   pointerHandlers.pointerdown!(event);
   pointerHandlers.pointerup!(event);
-  expect(callback).toHaveBeenCalledWith([[0, 0, 5]]);
+  expect(callback).toHaveBeenCalledWith([[0, 0, 5]], "free");
   viewer.dispose();
 });
 
@@ -891,7 +891,7 @@ it("clips previous geometry without changing fit, picking or current geometry st
   const event = { button: 0, clientX: 300, clientY: 200, pointerId: 1 } as PointerEvent;
   pointerHandlers.pointerdown!(event);
   pointerHandlers.pointerup!(event);
-  expect(callback).toHaveBeenCalledWith([[0, 0, 5]]);
+  expect(callback).toHaveBeenCalledWith([[0, 0, 5]], "free");
   expect(viewer.overhangInput()).toHaveLength(12 * 9);
   viewer.dispose();
 });
@@ -997,7 +997,7 @@ it("coalesces hover, snaps release positions and cancels pending hover when Alt 
   expect(gpu.render).not.toHaveBeenCalled();
   pointerHandlers.pointerdown!(event);
   pointerHandlers.pointerup!(event);
-  expect(pick).toHaveBeenLastCalledWith([[10, 10, 10]]);
+  expect(pick).toHaveBeenLastCalledWith([[10, 10, 10]], "vertex");
   pointerHandlers.pointermove!(event);
   pointerHandlers.pointermove!({
     button: event.button,
@@ -1021,7 +1021,7 @@ it("coalesces hover, snaps release positions and cancels pending hover when Alt 
     pointerId: event.pointerId,
     altKey: true,
   } as PointerEvent);
-  expect(pick).toHaveBeenLastCalledWith([[9.7, 9.7, 10]]);
+  expect(pick).toHaveBeenLastCalledWith([[9.7, 9.7, 10]], "free");
   viewer.dispose();
   hits.mockRestore();
 });
@@ -1298,5 +1298,42 @@ it("uses capture pixel ratio for section hatching and restores it after capture 
   await expect(viewer.capture(false)).rejects.toThrow("capture draw failed");
   expect(shader.uniforms.loomSectionHatch!.value).toBe(12);
   expect(ratio).toBe(2);
+  viewer.dispose();
+});
+
+it("skips hidden ancestors for picks and snaps and coalesces visibility redraws", async () => {
+  const viewer = createViewer(host()),
+    root = new Group(),
+    hidden = new Group(),
+    near = new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial()),
+    far = new Mesh(new BoxGeometry(2, 2, 2), new MeshStandardMaterial());
+  hidden.add(near);
+  root.add(hidden, far);
+  far.position.x = 10;
+  viewer.setModel(root, false);
+  await viewer.snapPoint([1, 1, 1]);
+  hidden.visible = false;
+  expect((await viewer.snapPointDetailed([1, 1, 1], 0.5)).kind).toBe("free");
+  const callback = vi.fn();
+  viewer.setPickMode("measure", callback);
+  const hits = vi.spyOn(Raycaster.prototype, "intersectObject").mockReturnValue([
+    { distance: 1, point: new Vector3(1, 1, 1), object: near },
+    { distance: 2, point: new Vector3(11, 1, 1), object: far },
+  ] as ReturnType<Raycaster["intersectObject"]>);
+  const event = {
+    button: 0,
+    clientX: 300,
+    clientY: 200,
+    pointerId: 1,
+    altKey: true,
+  } as PointerEvent;
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(callback).toHaveBeenCalledWith([[11, 1, 1]], "free");
+  flushFrame();
+  viewer.invalidate();
+  viewer.invalidate();
+  expect(frames.size).toBe(1);
+  hits.mockRestore();
   viewer.dispose();
 });

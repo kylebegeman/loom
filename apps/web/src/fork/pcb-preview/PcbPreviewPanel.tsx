@@ -137,6 +137,8 @@ import {
 import { TrueScalePrintDialog } from "./TrueScalePrintDialog";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { appendSummary, checkSummary } from "./summary";
+import { defaultBoardDisplay } from "./board3dParts";
+import type { Pcb3dMeasurement } from "@t3tools/contracts/fork";
 import type { Pcb3dHandle } from "./Board3D";
 import type { PcbViewportHandle } from "./SvgViewport";
 const Board3D = lazy(() => import("./Board3D").then((m) => ({ default: m.Board3D })));
@@ -229,6 +231,7 @@ export function DesignWorkspace({
     [printOpen, setPrintOpen] = useState(false),
     [exportBusy, setExportBusy] = useState(false),
     [measuringHeights, setMeasuringHeights] = useState(false);
+  const [display3d, setDisplay3d] = useState(defaultBoardDisplay);
   const [pinMapFor, setPinMapFor] = useState<string | null>(null);
   const [requestForm, setRequestForm] = useState<{
     id: string;
@@ -1041,6 +1044,7 @@ export function DesignWorkspace({
       const c = request.command;
       let png: string | undefined;
       let svg: string | undefined;
+      let measurement3d: Pcb3dMeasurement | undefined;
       let settledChanges: ReturnType<typeof changes.state> | undefined;
       const drawing = () => {
         if (!viewport.current?.isReady() || !preview.display || three)
@@ -1048,14 +1052,24 @@ export function DesignWorkspace({
         return viewport.current;
       };
       const model = () => {
-        if (!board3d.current || !three) throw new Error("Open a loaded 3D board for this action.");
+        if (!board3d.current?.isReady() || !three)
+          throw new Error("Open a loaded 3D board for this action.");
         return board3d.current;
       };
       if (
         viewing &&
-        ["capture", "tool", "select", "net", "load-view", "finding", "markers", "changes"].includes(
-          c.action,
-        )
+        [
+          "capture",
+          "tool",
+          "measure",
+          "height",
+          "select",
+          "net",
+          "load-view",
+          "finding",
+          "markers",
+          "changes",
+        ].includes(c.action)
       )
         throw new Error("These tools work on the current version.");
       switch (c.action) {
@@ -1202,6 +1216,30 @@ export function DesignWorkspace({
           break;
         case "snapshot":
           break;
+        case "display": {
+          const viewer = model();
+          if (c.layers3d) viewer.displayLayers(c.layers3d);
+          if (c.projection) setDisplay3d((current) => ({ ...current, projection: c.projection! }));
+          break;
+        }
+        case "section":
+          model();
+          if (c.section) setDisplay3d((current) => ({ ...current, section: c.section! }));
+          else
+            setDisplay3d((current) => ({
+              ...current,
+              section: { ...current.section, enabled: c.enabled ?? !current.section.enabled },
+            }));
+          break;
+        case "measure":
+          if (c.enabled === false) model().clearMeasurements();
+          else if (c.points) measurement3d = await model().measure(c.points, c.snap ?? true);
+          else model().chooseTool("distance");
+          break;
+        case "height":
+          if (c.reference || c.point || c.points) measurement3d = model().height(c);
+          else model().chooseTool("height");
+          break;
         case "camera":
           if (c.camera) model().restore(c.camera);
           else if (c.cameraView) model().setView(c.cameraView);
@@ -1262,6 +1300,12 @@ export function DesignWorkspace({
           setLinked(false);
           break;
         case "tool":
+          if (three) {
+            if (c.name !== "select" && c.name !== "distance" && c.name !== "height")
+              throw new Error("Choose select, distance or height in 3D.");
+            model().chooseTool(c.name === "select" ? "none" : c.name);
+            break;
+          }
           if (TOOLS.some((t) => t.id === c.name)) {
             chooseTool(c.name as Tool);
             if (c.text !== undefined) setNote(c.text);
@@ -1338,6 +1382,7 @@ export function DesignWorkspace({
       return {
         png,
         svg,
+        measurement3d,
         state:
           c.action === "snapshot" || c.action === "changes"
             ? {
@@ -1354,6 +1399,7 @@ export function DesignWorkspace({
                 selected,
                 net,
                 camera: three && board3d.current?.isReady() ? model().snapshot() : null,
+                ...(three && board3d.current?.isReady() ? model().state() : {}),
                 drawingCamera: !three && viewport.current ? viewport.current.snapshot() : null,
                 layers: customLayers ?? [],
                 ...(activeLayerSet
@@ -1389,7 +1435,7 @@ export function DesignWorkspace({
       };
     };
     void execute()
-      .then(({ png, svg, state }) =>
+      .then(({ png, svg, state, measurement3d }) =>
         runPcbCommand(pcb.completeEditorAction, {
           environmentId: threadRef.environmentId,
           input: {
@@ -1400,6 +1446,7 @@ export function DesignWorkspace({
             ...(state ? { state } : {}),
             ...(png ? { png } : {}),
             ...(svg ? { svg } : {}),
+            ...(measurement3d ? { measurement3d } : {}),
           },
         }),
       )
@@ -2022,7 +2069,14 @@ export function DesignWorkspace({
         else if (key === "escape" && activeFinding) {
           setActiveFinding(null);
           setFindingStatus("");
-        } else if (key === "escape" && tab) openTab(null);
+        } else if (
+          key === "escape" &&
+          three &&
+          board3d.current?.isReady() &&
+          board3d.current.state().tool3d !== "none"
+        )
+          board3d.current.chooseTool("none");
+        else if (key === "escape" && tab) openTab(null);
         else if (key === "1" && surfaces.schematic) chooseSurface("schematic");
         else if (key === "2" && surfaces.pcb) chooseSurface("pcb");
         else if (key === "3" && surfaces["3d"]) chooseSurface("3d");
@@ -2032,6 +2086,15 @@ export function DesignWorkspace({
         else if (key === "," && drawingTools) stepFindings(-1);
         else if (key === "c" && drawingTools) setCheckMarkers(!checkMarkers);
         else if (key === "v" && drawingTools) chooseTool("select");
+        else if (key === "p" && three && board3d.current?.isReady())
+          setDisplay3d((current) => ({
+            ...current,
+            projection: current.projection === "perspective" ? "orthographic" : "perspective",
+          }));
+        else if (key === "m" && three && !viewing && board3d.current?.isReady())
+          board3d.current.chooseTool(
+            board3d.current.state().tool3d === "none" ? "distance" : "none",
+          );
         else if (key === "m" && drawingTools && canMark) chooseTool("distance");
         else if (key === "a" && drawingTools && canMark) chooseTool("angle");
         else if (key === "d" && drawingTools && changes.pair) changes.show(!changes.shown);
@@ -2185,6 +2248,11 @@ export function DesignWorkspace({
                 checkpointId={viewing?.checkpointId}
                 sourceHash={preview.sourceHash}
                 handle={board3d}
+                display={display3d}
+                onDisplay={setDisplay3d}
+                inspection={workbench.inspection}
+                onSelect={selectComponent}
+                readOnly={!!viewing}
                 onCancel={() => setThree(false)}
                 onBuilt={(hash) => {
                   if (hash === preview.sourceHash || !preview.sourceHash) refreshInspection();

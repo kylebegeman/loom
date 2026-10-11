@@ -77,3 +77,7 @@ Upstream T3 server: the PCB panel is unavailable.
 
 Run `scripts/fork/loom.sh check` and the merge preview in [SEAMS.md](./SEAMS.md); expect no
 conflicts. After merge to `main`, Kyle runs `scripts/fork/loom.sh integrate nightly --dry-run`.
+
+## Local implementation verification
+
+Focused geometry, measurement, inherited visibility, viewer, contract, editor bridge and MCP checks passed (127 tests). Web, contracts and server typechecks passed, with scoped lint. Browser, real CAD, screen-reader, performance and remote checks remain unverified. No browser or development server was started.

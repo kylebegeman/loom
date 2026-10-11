@@ -628,6 +628,9 @@
   font-size: 12px;
 }
 .board3d {
+  --model-line: var(--pcb-line);
+  --model-surface: var(--pcb-surface);
+  --model-shadow: var(--pcb-shadow);
   position: absolute;
   inset: 0;
 }
@@ -979,4 +982,24 @@
   .paneLabel {
     font-size: 11px;
   }
+}
+
+.boardMeasureHint {
+  top: 12px;
+  right: 12px;
+  max-width: min(300px, calc(100% - 160px));
+}
+.heightRow {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  text-align: left;
+  border-radius: 4px;
+}
+.heightRow:hover {
+  background: var(--muted);
+}
+.heightRow:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
 }

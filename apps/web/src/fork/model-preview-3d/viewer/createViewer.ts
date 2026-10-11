@@ -100,6 +100,14 @@ type ViewerMark = {
 };
 const MARK_BLUE = 0x3984ff;
 
+/** Visibility is inherited by drawing, but Three's raycaster still hits hidden descendants. */
+export function shownIn(object: Object3D, root: Object3D | null = null) {
+  for (let node: Object3D | null = object; node; node = node.parent) {
+    if (!node.visible) return false;
+    if (node === root) return true;
+  }
+  return true;
+}
 /** One coalesced frame per interaction. OrbitControls damping stays disabled. */
 export function createViewer(host: HTMLElement) {
   const scene = new Scene(),
@@ -186,7 +194,7 @@ export function createViewer(host: HTMLElement) {
   };
   let section: ModelSection = { enabled: false, axis: "z", offset: 0, flipped: false, caps: true };
   let pickMode: "measure" | "annotate" | "lay-flat" | null = null;
-  let onPick: ((points: ModelPoint[]) => void) | null = null;
+  let onPick: ((points: ModelPoint[], snap?: Snap["kind"] | "free") => void) | null = null;
   let onCircle: ((circle: CircleFit | null) => void) | null = null;
   let measureMode: "distance" | "hole" = "distance";
   let snapState: SnapStatus = "idle",
@@ -317,7 +325,10 @@ export function createViewer(host: HTMLElement) {
     } else raycaster.far = Infinity;
     const hit = raycaster
       .intersectObject(model, true)
-      .find((hit) => !section.enabled || plane.distanceToPoint(hit.point) >= 0);
+      .find(
+        (hit) =>
+          shownIn(hit.object, model) && (!section.enabled || plane.distanceToPoint(hit.point) >= 0),
+      );
     const capped = capPoint(hit?.distance ?? Infinity);
     if (capped && pickMode !== "lay-flat")
       return { point: capped.toArray(), mesh: null, faceIndex: -1 };
@@ -556,7 +567,11 @@ export function createViewer(host: HTMLElement) {
             ? { kind: "face" as const, point: hit.point, edge: null }
             : snappedHit(hit);
         if (measureMode === "hole") onCircle?.(circleToModel(circleHit(hit, snap)));
-        else onPick?.([worldToModel(new Vector3(...snap.point))]);
+        else
+          onPick?.(
+            [worldToModel(new Vector3(...snap.point))],
+            event.altKey || snapState !== "ready" ? "free" : snap.kind,
+          );
       } else if (measureMode === "hole") onCircle?.(null);
     }
     down = null;
@@ -1087,6 +1102,33 @@ export function createViewer(host: HTMLElement) {
     navigationMode,
     section,
   });
+  const snapAtPoint = async (point: ModelPoint, radiusMm = 1) => {
+    await prepareSnapping();
+    let best: Snap | null = null,
+      distance = Infinity;
+    for (const [mesh, topology] of topologies) {
+      if (!shownIn(mesh, model)) continue;
+      const snap = snapNearPoint(topology, modelToWorld(point).toArray(), radiusMm);
+      if (
+        snap.kind === "face" ||
+        (section.enabled && plane.distanceToPoint(new Vector3(...snap.point)) < 0)
+      )
+        continue;
+      const d = new Vector3(...snap.point).distanceTo(modelToWorld(point));
+      if (
+        !best ||
+        (snap.kind === "vertex" && best.kind !== "vertex") ||
+        (snap.kind === best.kind && d < distance)
+      ) {
+        best = snap;
+        distance = d;
+      }
+    }
+    return {
+      point: best ? worldToModel(new Vector3(...best.point)) : point,
+      kind: best?.kind ?? ("free" as const),
+    };
+  };
   return {
     nudge(n: Nudge) {
       if (!model) return;
@@ -1387,27 +1429,13 @@ export function createViewer(host: HTMLElement) {
       callback?.(snapState);
     },
     async snapPoint(point: ModelPoint, radiusMm = 1): Promise<ModelPoint> {
-      await prepareSnapping();
-      let best: Snap | null = null,
-        distance = Infinity;
-      for (const topology of topologies.values()) {
-        const snap = snapNearPoint(topology, modelToWorld(point).toArray(), radiusMm);
-        if (
-          snap.kind === "face" ||
-          (section.enabled && plane.distanceToPoint(new Vector3(...snap.point)) < 0)
-        )
-          continue;
-        const d = new Vector3(...snap.point).distanceTo(modelToWorld(point));
-        if (
-          !best ||
-          (snap.kind === "vertex" && best.kind !== "vertex") ||
-          (snap.kind === best.kind && d < distance)
-        ) {
-          best = snap;
-          distance = d;
-        }
-      }
-      return best ? worldToModel(new Vector3(...best.point)) : point;
+      return (await snapAtPoint(point, radiusMm)).point;
+    },
+    snapPointDetailed: snapAtPoint,
+    invalidate() {
+      caps.syncTransforms();
+      updateCaps();
+      requestRender();
     },
     async circleNear(point: ModelPoint, radiusMm = 1): Promise<CircleFit | null> {
       await prepareSnapping();

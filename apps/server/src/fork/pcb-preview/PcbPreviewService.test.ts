@@ -2202,3 +2202,49 @@ it.effect("renders and exports a checkpoint without reading the live project", (
     }),
   ),
 );
+
+it.effect("returns a 3D measurement to the editor caller through the completion bridge", () =>
+  test(
+    Effect.gen(function* () {
+      const t = yield* setup,
+        service = yield* t.create();
+      const received = yield* Deferred.make<import("@t3tools/contracts/fork").PcbEditorEvent>();
+      const reader = yield* service
+        .editorEvents({ threadId: t.input.threadId, designId: t.input.designId })
+        .pipe(
+          Stream.tap((event) => Deferred.succeed(received, event)),
+          Stream.runDrain,
+          Effect.forkChild({ startImmediately: true }),
+        );
+      const job = yield* service
+        .editorAction({
+          threadId: t.input.threadId,
+          designId: t.input.designId,
+          command: {
+            action: "measure",
+            points: [
+              [0, 0, 0],
+              [3, 4, 0],
+            ],
+          },
+        })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      const event = yield* Deferred.await(received);
+      const measurement3d = {
+        kind: "distance" as const,
+        start: [0, 0, 0] as const,
+        end: [3, 4, 0] as const,
+        lengthMm: 5,
+      };
+      yield* service.completeEditorAction({
+        threadId: t.input.threadId,
+        designId: t.input.designId,
+        requestId: event.requestId,
+        message: "Measured",
+        measurement3d,
+      });
+      expect((yield* Fiber.join(job)).measurement3d).toEqual(measurement3d);
+      yield* Fiber.interrupt(reader);
+    }),
+  ),
+);
