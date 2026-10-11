@@ -1,6 +1,6 @@
 # L38 implementation
 
-Base: `feat/model-bed-picker` (or `main` once it merges). Commit after each step with
+Implementation branch: `feat/model-follow-ghost-snap`, stacked after the L34/L36/L45 batch. Commit after each step with
 `feat(fork-model-measure-snap): ...`. Every step leaves the tree compiling and tests passing.
 Paths below are relative to `apps/web/src/fork/model-preview-3d/` unless written in full.
 
@@ -38,7 +38,7 @@ Paths below are relative to `apps/web/src/fork/model-preview-3d/` unless written
 1. Create `viewer/snapTopology.worker.ts`: `onmessage` receives
    `{ id, positions: Float32Array, index: Uint32Array | null }`, calls `buildTopology`, posts
    `{ id, topology }` with all arrays in the transfer list, or `{ id, error }`.
-2. In `snap.ts`, add `buildTopologies(meshes, signal)`: spawns one worker (imported with
+2. In `snapTopology.ts`, add `buildTopologies(meshes, signal)`: spawns one worker (imported with
    `?worker`), sends each mesh's world-space positions (apply `matrixWorld`, copy), resolves a
    `Map<Mesh, Topology>`, terminates the worker when done or aborted. Fall back to calling
    `buildTopology` inline when `typeof Worker === "undefined"`.

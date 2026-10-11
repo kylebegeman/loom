@@ -72,7 +72,5 @@ the panel already loads, so the feature behaves the same over LAN, Tailscale and
 
 ## Decisions needed from Kyle
 
-None blocking. One recommendation to confirm: ship v1 without the difference tint. The ghost
-already shows added and removed material; the tint needs a worker, a size cap and vertex colours
-on the current model (which conflicts with coloured 3MF parts), and is designed in TECHNICAL.md
-as a phase 2 if the ghost alone proves not enough.
+None. The approved v1 scope uses the previous shape without difference tint. The optional tint
+in TECHNICAL.md remains future work.

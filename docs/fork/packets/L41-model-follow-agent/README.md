@@ -1,6 +1,8 @@
 # L41: Follow the agent's models
 
-Status: Ready to build
+Status: Implemented locally (`feat/model-follow-ghost-snap`).
+
+Focused evidence and remaining client checks: [TESTING.md](./TESTING.md).
 
 Approved by Kyle on 2026-10-10.
 
@@ -40,7 +42,7 @@ as changed when the turn edited a file it includes or imports.
 - Remote: works over LAN, Tailscale and T3 Connect. The client sends a thread and run id and
   gets back a short list of paths; mesh bytes still load over the signed file route.
 - Upstream T3 server: the chip and the setting are hidden because the environment lacks the
-  `model-preview-3d` capability.
+  `model-follow-agent` capability (along with the base `model-preview-3d` capability).
 
 ## Extension points used
 

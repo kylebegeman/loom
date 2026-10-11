@@ -49,9 +49,12 @@ No old Loom equivalent. L23 opens models only from the picker, the palette and t
   https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Include_Statement
 - **OpenSCAD `import()` formats.** STL, OFF, OBJ, AMF, 3MF, DXF, SVG and PDF (newer builds); JSON
   as data in development snapshots; relative paths resolve against the importing script; PNG
-  heightmaps load with `surface()`. CSV is not supported (issue #6358 asks for raw text import).
+  and ASCII `.dat` or `.txt` heightmaps load with `surface()`. CSV is not supported (issue #6358 asks for raw text import).
   Verified: https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Importing_Geometry and
   https://github.com/openscad/openscad/issues/6358
+- **OpenSCAD ASCII heightmaps.** `surface()` reads text files containing whitespace-separated
+  height values as well as PNGs, so literal `.dat` and `.txt` references are dependency inputs.
+  https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/3D_Modelling/Other#Surface
 - **OpenSCAD dependency output.** `-d file` writes Makefile-style dependencies; L23 already uses
   it. Verified: https://en.wikibooks.org/wiki/OpenSCAD_User_Manual/Using_OpenSCAD_in_a_command_line_environment
 

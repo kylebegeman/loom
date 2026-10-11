@@ -171,11 +171,13 @@ export const SCAD_INPUT_EXTENSIONS: ReadonlySet<string> = new Set([
   ".pdf",
   ".png",
   ".json",
+  ".dat",
+  ".txt",
 ]);
 ```
 
 `import()` reads the geometry formats, PDF and (in development snapshots) JSON data, and
-`surface()` reads PNG (REFERENCES.md). CSV is not an `import()` format, so it is not listed.
+`surface()` reads PNG and ASCII heightmaps (`.dat` or `.txt`, REFERENCES.md). CSV is not an `import()` format, so it is not listed.
 
 ### SCAD reference parser (shared with L49)
 
@@ -205,8 +207,8 @@ Implementation notes:
 - `import` and `surface`: `/\b(import|surface)\s*\(\s*(?:file\s*=\s*)?"((?:[^"\\\n]|\\.)*)"/g`.
   Only literal string arguments count; `import(name)` with a variable is skipped.
 - Resolution is relative to the including file's directory. OpenSCAD searches that directory
-  first, then `OPENSCADPATH` and its library folders (REFERENCES.md). Only the first is inside
-  the workspace, which is the only place an agent's checkpoint can change.
+  first, then `OPENSCADPATH` and its library folders (REFERENCES.md). Resolved paths are canonicalized and checked against the workspace; absolute paths inside
+  it can count, while external paths and escaping symlinks are excluded.
 
 ### Turn models
 
@@ -223,11 +225,12 @@ Add to `ModelPreviewService` (`make`, `:103`) a `turnModels(threadId, runId)` me
    PCB service (`apps/server/src/fork/pcb-preview/PcbPreviewService.ts:1860-1880`).
 2. **Checkpoint.** `queries.getThreadRecords(threadId, ["checkpoints"])`
    (`apps/server/src/orchestration-v2/ProjectionStore.ts:364`). A turn checkpoint has
-   `runId !== null`, `appRunOrdinal !== null` and `status === "ready"`; capture only ever writes
+   `runId !== null`, `appRunOrdinal !== null` and `status === "ready"`; the production capture path writes
    those for root runs (`CheckpointCaptureService.ts:63-135`), and baselines have both fields
-   null (`CheckpointService.ts:340`). With a `runId`, pick that run's checkpoint. With `null`,
+   null (`CheckpointService.ts:340`). This uses the capture path's `appRunOrdinal` invariant;
+   it does not separately validate a scope-kind field. With a `runId`, pick that run's checkpoint. With `null`,
    walk the 20 newest turn checkpoints by `appRunOrdinal` and return the first with models.
-3. **Map files.** `modelsForFiles(root, prefix, files)`:
+3. **Map files.** `modelsForCheckpoint(threadId, root, prefix, checkpoint)`:
    - Keep paths that start with the prefix and strip it. Drop the rest (outside the workspace).
    - A kept path whose format is in `PREVIEWABLE_FORMATS` is `{ reason: "written", via: null }`.
    - If any kept path has an extension in `SCAD_INPUT_EXTENSIONS`, find its dependents (below)
@@ -250,16 +253,20 @@ Add to `ModelPreviewService` (`make`, `:103`) a `turnModels(threadId, runId)` me
    - Close transitively: if `b.scad` includes `c.scad` and `a.scad` includes `b.scad`, a change
      to `c.scad` adds both. Stop at 200 dependents.
      The scan only runs when a changed file has a SCAD input extension, so a turn that edited only
-     TypeScript costs one projection read.
+     TypeScript costs one projection read. For a unary lookup, refresh workspace entries once
+     only when changed SCAD input paths need a dependency scan; do the same per applicable
+     stream event. Code-only events do not refresh the index.
 
 `turnModelEvents(threadId)` is
 `threads.streamDomainEvents` (`ThreadManagementService.ts:382`) filtered to
 `checkpoint.captured` events for this thread whose payload is a ready turn checkpoint with
 non-empty `files`, mapped with the same helpers, and filtered to results with models. It begins
-with `resolveWorkspace` so an unknown thread fails like `watch` does. The service yields
-`ThreadManagementService` in `make`; `ProjectLifecycleService` already does the same from the
-same fork layer (`apps/server/src/fork/project-lifecycle/ProjectLifecycleService.ts:209`,
-`:1282`), so `ForkLayer.ts:25` needs no change.
+with `resolveWorkspace` so an unknown thread fails like `watch` does. Checkpoint selection, repository-prefix caching and the filtered event stream live in
+`apps/server/src/fork/turnFiles.ts`, shared with L59. `makeTurnFiles` reads the projection store,
+thread management service and process runner from the existing fork layer, so `ForkLayer.ts`
+needs no new provider. The model service owns format mapping and bounded SCAD dependency
+scanning. Conditional workspace-entry refresh keeps newly written dependency parents visible without
+forcing an index refresh for code-only turns.
 
 ### RPC handlers
 
@@ -314,10 +321,11 @@ New `agentModels.ts`:
   The picker (`ModelPicker.tsx:123-126`) and palette (`palette.tsx:44-47`) already set the title
   inline; switch them and `Shortcuts.tsx:38` to this helper. Today `Shortcuts.tsx` opens
   agent-requested tabs without a title, so they read "3D model" (`surface.tsx:19-20`).
-- `openModels(threadRef, paths, mode)`: `mode` is `"focus"` (chip click, palette, picker) or
-  `"background"`. Focus calls `openSurface` for the first path, which activates it and counts
-  as a user choice, then adds the rest in the background. Background adds tabs without
-  activating (next section). At most 8 paths are opened; callers pass the rest to the picker.
+- `openModels(threadRef, paths, mode)`: focus is for a chip click, palette or picker and calls
+  `openSurface` for the first path as a user choice, then adds the rest in the background.
+  Automatic opening and background additions use the store's public `setState`, preserving
+  `userActionRevisionByThreadKey`. At most 8 paths are opened; larger explicit requests open
+  the picker filtered to that turn.
 - `hasModelTab(threadRef)`: the thread's panel `isOpen` and at least one surface with
   `kind === "fork" && panelId === "model-preview-3d"`.
 
@@ -351,9 +359,11 @@ ever adds a public non-activating open, switch to it.
 
 When a turn edits at least 3 files or 50 lines, upstream opens and activates the diff
 (`ChatView.tsx:5797-5835`, `ChatView.logic.ts:183-205`), even over a 3D tab. L41 does not change
-that. In "open" mode with a closed panel, L41 calls `openSurface` for the first model when the
-turn's event arrives; whichever of the two lands second wins the active tab, and the other is a
-background tab. Both outcomes are fine. Do not try to sequence them.
+that. Automatic model opening must preserve `userActionRevisionByThreadKey`; `openSurface`
+increments it and would incorrectly suppress the turn's proactive diff. The fork's automatic
+path uses public `setState` to open and activate the first model without recording a user
+choice. Whichever automatic update lands second can activate its surface, leaving the other
+as a background tab. Explicit chip, picker and palette actions still use `openSurface`.
 
 ### Turn chip (packet seam)
 
@@ -376,7 +386,7 @@ packet seam renders the fork component as the group's first child:
 
 - Reads `useRouteThread()` (`apps/web/src/fork/routeThread.ts`), the environment's
   `loomFeatures` and the settings query. Renders null without a thread, without the
-  `model-preview-3d` feature, with `agentModels === "off"`, or when dismissed.
+  `model-preview-3d` and `model-follow-agent` features, with `agentModels === "off"`, or when dismissed.
 - Renders null unless some file in `files` has a previewable or SCAD input extension (a pure
   `mayAffectModels(paths)` helper in `agentModels.ts`). Only then does it read
   `models.turnModels({ environmentId, input: { threadId, runId } })`. Turn cards that changed
@@ -387,7 +397,9 @@ packet seam renders the fork component as the group's first child:
   "Open bracket.scad"; two to 8: "Open 3 models"; more: "Show 12 models", which opens the panel
   on the picker with the turn filter (below). The label span uses the same
   `hidden @[24rem]/changed-files:inline` class as "Open diff" (`:107`), so narrow cards show the
-  icon only. Tooltip: the model paths, one per line, or "Models changed by this turn".
+  icon only. Tooltip: the model paths, one per line. `truncated` can mean incomplete dependency
+  discovery, not merely more than 50 models, so the chip never invents an extra count; the
+  tooltip and filtered picker say that some models may be omitted.
 - A dismiss `Button size="icon-xs" variant="ghost-muted"` with `XIcon`, tooltip
   "Hide for this turn", writes the dismissal key.
 - Click: `openModels(threadRef, paths, "focus")`.
@@ -406,8 +418,9 @@ that finish while the thread is open produce background tabs.
 For each new `TurnModels`:
 
 1. `written` models not open as tabs: if `hasModelTab`, add them as background tabs (max 8). In
-   "open" mode with no model tab, `openModels(..., "focus")`.
+   "open" mode with no model tab, use the automatic opening path that preserves user choice history.
 2. Models already open as tabs: add their paths to the changed-marks store with the turn number.
+   New background tabs are marked too; viewing one clears its dot.
 3. Remember `{ runId, turn, models }` as the thread's latest agent models for the picker section.
 
 The host renders nothing. The subscription's latest-value semantics can drop an event if two
@@ -423,7 +436,7 @@ selector hook. Add an optional field to `ForkPanelDefinition`
 
 ```ts
   /** Optional tab icon for one surface; defaults to `icon`. */
-  readonly TabIcon?: ComponentType<{ surface: ForkRightPanelSurface; className?: string }>;
+  readonly TabIcon?: ComponentType<{ surface: ForkRightPanelSurface; threadRef: ScopedThreadRef; className?: string }>;
 ```
 
 and use it in `ForkSurfaceIcon` (`apps/web/src/fork/panels/surface.tsx:22-25`) when present.
@@ -436,11 +449,13 @@ visible (`ModelPanel.tsx`, the `visible` prop at `:90-100`).
 
 - `ModelPicker.tsx`: above the file grid, a section "Changed by the agent" headed "Turn 6",
   listing that turn's models as rows that open with `modelSurface`. Its data is the host's
-  latest record for the thread, or one `loadTurnModels` call with `runId: null` on mount when
-  there is none. A picker surface has no resource id (`ModelPanel.tsx:1170`), so "Show 12
-  models" passes the run through a session-only `pickerTurn` entry in `agentModelMarks.ts`
+  latest record for the thread while one fresh `loadTurnModels` call with `runId: null` runs
+  on each opening and refresh. This remains current when Do nothing has stopped the stream;
+  a late older lookup cannot replace a newer remembered turn. A picker surface has no resource
+  id (`ModelPanel.tsx:1170`), so "Show 12 models" passes the run through a session-only `pickerTurn` entry in `agentModelMarks.ts`
   (`Record<threadKey, RunId>`), set before `openSurface` and cleared when the picker unmounts.
-  The section then shows that run instead of the latest.
+  The section and file grid then show that run instead of the latest; Show all model files
+  clears the filter. The explicit picker section remains available in Do nothing mode.
 - `palette.tsx`: an action "3D model: Open models from the last turn" that calls
   `loadTurnModels` with `runId: null` and opens up to 8. With no models it shows a toast
   "The agent has not changed a model in this thread."
@@ -463,15 +478,15 @@ An agent that wants a model on screen already calls `loom_model_preview_3d_edito
 
 ## Performance
 
-- Server: one projection read per lookup; a `git rev-parse` once per workspace; the SCAD scan
+- Server: one projection read per lookup; a cached `git rev-parse` per workspace; the SCAD scan
   only for turns that changed a SCAD input, at most 500 files of 256 KiB, cached by revision.
   The stream does work only on `checkpoint.captured`, once per turn.
 - Wire: `TurnModels` is at most 50 short paths. The chip queries only cards whose files include
   a candidate extension. Query atoms dedupe repeated renders of the same card.
 - Client: no animation, no polling. The dot is static. At most 8 background tabs per turn, and
   a hidden model tab releases its mesh 60 s after it is hidden (`ModelPanel.tsx:470-478`).
-  Check during implementation whether hidden right panel surfaces mount at all; if they do and
-  load their mesh, defer `ModelFile`'s first load until the tab is first visible.
+  The right panel mounts only the active surface, so newly added background tabs download
+  nothing until selected.
 - Remote: mesh bytes still go through signed URLs; nothing new crosses the WebSocket besides the
   path lists.
 

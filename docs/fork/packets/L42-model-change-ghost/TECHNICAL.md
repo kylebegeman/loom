@@ -46,6 +46,10 @@ export function createGhost(
 - `parent` is typed `Object3D` (the shared definition calls it `scene`), so a viewer can group
   its ghosts.
 
+Shared original materials, textures and decoded image resources are released once when
+ownership transfers. Ghost geometries are deduplicated on clear and its shared material is
+released once. The retained triangle count includes active `InstancedMesh` instances.
+
 The ghost is never inside `model`, so picking (`createViewer.ts:123`), fit and `box`
 (`setModel`, line 526) and dimensions ignore it with no extra code.
 
@@ -111,15 +115,22 @@ and a hidden one is not.
 
 ### Panel (`ModelPanel.tsx`)
 
-- `viewer/ViewerCanvas.tsx`: optional props `keepPrevious` and `previousShown`, applied in
-  effects like `display` (line 162) and once after load.
+- `viewer/ViewerCanvas.tsx`: optional `keepPrevious` and `previousShown` default false.
+  `sourceRevision` identifies the successfully loaded model: after an unchanged revision
+  replaces the mesh, the canvas clears the retained object before calling `onStats`. The
+  revision ref is reset when the viewer is released. The panel also clears a previous version
+  when a cached SCAD render reports the already loaded revision without changing its URL, so
+  this rule does not depend on another download. Retention and visibility are read from
+  current options immediately before `setModel`, so a pending download uses the latest choice.
 - New state in `ModelPanel`:
   - `previous: { revision: string; size: Vector3Tuple; triangles: number } | null`
   - `previousShown: boolean`
   - `changed: "chip" | "dismissed" | null`
+  - `previousTooLarge`: whether the replaced mesh exceeded the retention budget
   - `reloadCause = useRef<"watch" | null>(null)`
-- At line 461, inside the `seen.watched !== watched` branch, set `reloadCause.current = "watch"`
-  (not for a `loadKey`-only change, which is a settings change).
+- Compare successful watcher revision values in a layout effect. Only a change between two
+  non-null revisions sets `reloadCause.current = "watch"`; atom loading transitions and the
+  first watch value do not count. Settings-only changes never set the watch cause.
 - `onStats` (line 485): before storing the new stats, compare the outgoing
   `{ geometryRevision, stats }` with the incoming revision (`mesh?.revision`):
   - Same revision, or no outgoing stats: `viewer.current?.clearPrevious()`, `previous = null`.
@@ -127,7 +138,10 @@ and a hidden one is not.
   - Otherwise `previous = { revision: geometryRevision, size: stats.size, triangles }`.
   - If `reloadCause.current === "watch"` and a previous now exists, `changed = "chip"`. Reset
     `reloadCause`.
-    Read the outgoing values through a ref so the callback's dependencies stay `[mesh?.revision]`.
+    Read outgoing metadata through `loadedGeometry`, keeping the callback's dependencies
+    `[mesh?.revision]`. `previousGeometry` is a pure helper: it rejects first load, failed
+    retention and unchanged revisions. Hidden release resets the metadata as well as disposing
+    the viewer.
 - Toggle function `togglePrevious()` sets `previousShown`; it is a no-op without `previous`.
 - Key handler (line 718): `else if (key === "d" && previous) togglePrevious();`, next to the
   `a` line (763).
@@ -140,7 +154,8 @@ and a hidden one is not.
 - `DisplayTools` (`WorkspaceTools.tsx:147`): optional prop
   `previous?: { available: boolean; shown: boolean; note: string | null; onChange(v): void }`;
   append a `MenuCheckboxItem` "Previous version" with `MenuShortcut` D after "Axes". Disabled
-  with the note when not available. Append `["Previous version", "D"]` to `HELP` (line 197).
+  with the note when not available. The cap note describes the outgoing mesh; a large incoming
+  part may still compare with a smaller retained version. Append `["Previous version", "D"]` to `HELP` (line 197).
 - Palette: add `"toggle-previous"` to `ModelAction` (`actions.ts:2`), a palette item
   "3D model: Show or hide previous version" in `palette.tsx` beside capture and re-render, and
   handle it in the `onModelAction` listener (`ModelPanel.tsx:653`).

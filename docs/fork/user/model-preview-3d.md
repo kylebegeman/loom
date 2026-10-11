@@ -4,6 +4,13 @@ Open **3D model** from the right-panel launcher or its + menu, then search the w
 for a file. Each selected file gets its own tab. The command palette offers the same file
 list; optional shortcuts for opening the panel and capturing a view are in Keybindings.
 
+After an agent turn changes a model, its changed files card offers to open it, including SCAD
+parts affected by an included file. With a model panel already open, newly written models
+arrive as background tabs and changed tabs show a dot until viewed. Choose **When an agent
+writes a model** in **Settings > Loom > 3D model** to offer to open, open automatically, or do
+nothing. The picker and **3D model: Open models from the last turn** in the command palette
+let you return to those models later. Hide a turn's offer to dismiss it on this browser.
+
 Loom previews STL, 3MF, OBJ, glTF and GLB. Drag to orbit, drag with the middle or right
 button to pan, and scroll to zoom. The floating tools choose a standard or saved view and
 toggle wireframe, the bed and axes. **Display > Orthographic** switches to a projection where
@@ -19,7 +26,7 @@ to the viewport.
 While the panel has focus, **F** fits the model, **O** and **H** choose orbit or pan,
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
 **P** switches perspective and orthographic projection, **V** toggles overhang shading,
-and **I** shows or hides the inspector.
+**D** shows or hides the previous version, and **I** shows or hides the inspector.
 The help button beside the zoom controls lists every shortcut.
 Choose **Units** in the Bed menu or **Settings > Loom > 3D model** to display lengths in
 millimetres or decimal inches. The command palette's **3D model: Switch units** changes the
@@ -43,6 +50,14 @@ must be below the model's directory, without parent-directory references. Close 
 stop watching its file. STEP files belong in the optional Fabrication app. Long jobs show
 their current stage and elapsed time, and variant batches show completed counts. Your last
 preview stays visible while a replacement is prepared; use Cancel to stop a variant batch.
+
+After a file change, **Show previous** or **D** overlays the replaced shape in translucent grey.
+**Part** shows dimension changes beside each axis. Parameter edits keep a previous version too;
+use **D** or **Display > Previous version** to compare it. Only the last replaced version is
+kept, and captures include it while shown. A reload of the same revision leaves nothing to
+compare. Previous versions over 1 million triangles are released, as are versions in a closed
+tab or a panel hidden for more than a minute. Dismissing the change hint leaves the comparison
+available.
 
 ## OpenSCAD
 
@@ -134,7 +149,13 @@ overhangs** or press **V** to turn it off.
 The tool rail on the left of the viewport measures (**M**), annotates (**N**) and adds a section
 plane (**S**). Press **Esc** or **Done** to put a tool down. Measurements appear under
 **Markup** with the distance and each axis delta; hide or delete one when it is no longer
-needed. A changed mesh marks previous measurements stale; re-measure before relying on them.
+needed. Measure snaps to corners, edge midpoints and sharp edges; hover markers show the next
+pick. Hold **Alt** while clicking to pick freely. Choose **Hole** in the Measure hint and click
+a rim, pin or smooth hole wall to save its diameter and centre. Polygonal holes of 22 sides or
+fewer also show the across-flats size. Copy value on a hole copies its diameter. Snapping and
+hole fitting are unavailable above 1 million triangles, while free distance picks still work.
+A changed mesh marks previous measurements stale; **Measure again** returns to the matching
+Distance or Hole mode.
 The section plane strip chooses the X, Y or Z axis, the offset and which side to keep. Section
 planes change the view, not the model file.
 
@@ -184,8 +205,10 @@ Agents can use `loom_model_preview_3d_*` tools to inspect files, render meshes, 
 parameter sets and workspace tools, propose variants, and operate the visible editor. Camera,
 picking, marked captures, customizer history and draft preparation use the connected client.
 Host rendering and saved state remain available without opening the editor. Agents can change
-projection, overhang shading or a scale reference through the editor's display action; its
-snapshot reports the current camera and bed-fit results for the loaded model. Settings tools
+projection, overhang shading, a scale reference or the previous version through the editor's
+display action; its snapshot reports the current camera, bed-fit results and available previous
+version. Measure picks can snap to corners and edges. Choose Hole mode then pick near a rim to
+save a diameter and read the returned measurement. Settings tools
 can change the display unit and overhang threshold, while tool inputs and outputs keep lengths
 in millimetres and areas in square millimetres.
 

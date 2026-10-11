@@ -124,10 +124,13 @@ export function buildTopology(positions: Float32Array, index: Uint32Array | null
   `SHARP_ANGLE_DEGREES` (three.js `EdgesGeometry` uses the same test with a 1 degree default).
 - Region: union-find over non-sharp edges, compressed to dense ids.
 
-The worker (`viewer/snapTopology.worker.ts`, imported with Vite's `?worker` suffix) receives one
-message per mesh `{ positions, index }`, with positions already transformed by
-`mesh.matrixWorld` and copied, and posts the `Topology` back with every array transferred. If
-`Worker` is unavailable (tests, old WebViews) the viewer calls `buildTopology` directly.
+The worker host (`viewer/snapTopology.ts`) imports `viewer/snapTopology.worker.ts` with Vite's
+`?worker` suffix and sends one message per mesh with copied world-space positions and a null
+index. Indexed and instanced meshes are expanded in source triangle order; raycast face and instance ids address the same
+triangles. Input positions and every result array are transferred. The worker is terminated on
+completion, failure or cancellation, and replacement invalidates pending results. If `Worker`
+is unavailable, the host calls `buildTopology` directly. Keeping worker orchestration separate
+from `snap.ts` makes pure topology tests independent of the browser.
 
 ### Queries (`viewer/snap.ts`)
 
@@ -178,8 +181,7 @@ export type CircleFit = {
   Without an edge (wall click), collect the boundary edges of the hit triangle's region (one
   pass over `region`), chain them into loops, fit each, and keep the passing loop nearest the
   hit.
-- `fitCircle`: drop vertices with a turning angle under 1 degree, require at least 5 (OpenSCAD
-  never makes fewer than 5 fragments), take the Newell normal, project onto the plane, solve the
+- `fitCircle`: drop vertices with a turning angle under 1 degree, require at least 5 after merging (rejecting ordinary rectangular outlines), take the Newell normal, project onto the plane, solve the
   Kåsa algebraic fit (a 3 × 3 linear system), and accept only when the maximum distance from the
   plane is at most `max(0.02 r, 0.01 mm)` and the RMS radial residual is at most `0.05 r`.
   Polygon vertices from OpenSCAD lie exactly on the circle, so the fit is exact for them; Kåsa's
@@ -212,8 +214,8 @@ Additive only; the factory keeps its shape.
   editor command), `onSnapStatus(callback)` for the hint.
 - `drawOverlay` (line 242): for `kind === "circle"` with `circle`, draw a 64-segment `LineLoop`
   in the circle's plane, a centre dot, and the label `Ø${diameter.toFixed(2)} mm` at the centre.
-  For distances, change the label at line 260 from `toFixed(1)` to `toFixed(2)` so it matches
-  the Markup row (`MarkupSection.tsx:485`).
+  Both distance and diameter labels use the shared length formatter with two millimetre
+  decimals (three for inches), including hover previews and captures, matching Markup.
 
 ### Hover layer (`viewer/snapOverlay.ts`)
 

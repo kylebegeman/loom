@@ -1,6 +1,8 @@
 # L42: Show the previous version after a change
 
-Status: Ready to build.
+Status: Implemented locally (`feat/model-follow-ghost-snap`).
+
+Focused evidence and remaining client checks: [TESTING.md](./TESTING.md).
 
 Approved by Kyle on 2026-10-10.
 

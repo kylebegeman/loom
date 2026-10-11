@@ -1,6 +1,6 @@
 # L42 implementation
 
-Base: `feat/model-bed-picker` (or `main` once it merges). Commit after each step with
+Implementation branch: `feat/model-follow-ghost-snap`, stacked after the L34/L36/L45 batch. Commit after each step with
 `feat(fork-model-change-ghost): ...`. Paths are relative to
 `apps/web/src/fork/model-preview-3d/` unless written in full.
 

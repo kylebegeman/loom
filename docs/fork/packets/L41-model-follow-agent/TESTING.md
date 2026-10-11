@@ -1,5 +1,33 @@
 # L41 testing
 
+## Results
+
+Implementation branch: `feat/model-follow-ghost-snap`, 2026-10-10. Code milestone:
+`b0742acf26` implements follow-agent opening, previous-version retention and snapping/holes,
+with the coupled contracts, client integrations and L41 seam.
+
+| Focused set                                                                                                                                                                         | Result                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `ModelPreviewService.test.ts`, `store.test.ts`, `workspace.test.ts`, `scadIncludes.test.ts`, `turnModels.test.ts`, contracts `model-preview-3d.test.ts`, `rpcAuthorization.test.ts` | 55 passed across 7 files. |
+| `agentModels.test.ts`, `AgentModelsHost.test.tsx`                                                                                                                                   | 19 passed across 2 files. |
+
+The passing regressions include preserving proactive diff eligibility during automatic
+opening, separate explicit user choices, bounded/deduplicated tabs, mode and capability
+gating, turn scoping, SCAD dependencies and text heightmaps, symlink handling and conditional
+workspace-index refresh. Shared service and schema tests also cover the other two slices.
+
+The integrated L41/L42/L38 batch passed **156 focused tests across 19 files**, counted once:
+55 backend/schema/authorization tests, 19 follow-agent client tests, 58 shared snapping/viewer
+and editing tests, and 24 ghost/canvas/inspector/loader/metadata regressions. One existing 3MF
+loader test was skipped because `DOMParser` is unavailable in the Node test environment.
+
+Strict lint passed on changed files, and contracts, client-runtime, web and server typechecks
+passed. The L41 seam-marker/manifest check and `git diff --check` passed.
+
+Browser/desktop and remote-client interaction, actual GPU rendering and image inspection,
+large-mesh profiling, the full `loom.sh check` and upstream integration rehearsals remain
+unrun. The manual steps below are a validation plan, not completed checks.
+
 Focused tests, no repo-wide checks, no sleeps.
 
 ## Automated tests
@@ -10,10 +38,13 @@ Focused tests, no repo-wide checks, no sleeps.
 | `apps/server/src/fork/model-preview-3d/turnModels.test.ts` (new)                    | Pure mapping: the repository prefix is stripped and files outside it are dropped; previewable formats are "written", STEP is not; a changed `gear.scad` marks `bracket.scad` that includes it as "dependency" with `via: "gear.scad"`; transitive includes (a includes b includes c, c changed) mark both; a SCAD that is itself written is not repeated as a dependency; ordering is written first, then dependencies by path; the cap of 50 sets `truncated`; include cycles terminate.                                                                                                   |
 | `apps/server/src/fork/model-preview-3d/ModelPreviewService.test.ts` (update)        | `turnModels` with a fake projection store and a temp Git repo whose workspace is a subdirectory: picks the run's ready checkpoint, ignores baselines (`runId` null) and stale checkpoints, returns no models for a non-Git workspace, drops a model deleted after the turn, and with `runId: null` returns the newest turn that changed a model. `turnModelEvents` with a `Stream.make` of domain events (the pattern in `apps/server/src/fork/code-graph/reactor.test.ts:38-41`): emits for this thread's checkpoint with a model, skips other threads, empty `files` and code-only turns. |
 | `packages/contracts/src/fork/model-preview-3d.test.ts` (new)                        | A stored settings record without `agentModels` decodes with `"offer"`; an unknown mode fails to decode. If L41 adds `modelFormatOf`: `part.STL` is `"stl"`, `a.stp` is `"step"`, `notes.txt` and `Makefile` are null.                                                                                                                                                                                                                                                                                                                                                                       |
-| `apps/server/src/fork/rpcAuthorization.test.ts` (existing exhaustive check)         | Fails if a method lacks a scope row; no new test, it must keep passing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `apps/web/src/fork/model-preview-3d/agentModels.test.ts` (new)                      | `mayAffectModels` (true for `.stl`, `.scad`, `.svg`; false for `.ts`); `modelSurface` id and basename title; the background helper adds surfaces without changing `activeSurfaceId`, does nothing when the panel is closed, skips surfaces already present, and leaves `userActionRevisionByThreadKey` unchanged; dismissal storage caps at 200 and survives a malformed stored value.                                                                                                                                                                                                      |
+| `apps/server/src/fork/rpcAuthorization.test.ts` (updated authorization coverage)    | The exhaustive scope-table check still passes; added assertions allow turn-model unary and stream reads with the read grant and reject both without it before running the query effect.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `apps/web/src/fork/model-preview-3d/agentModels.test.ts` (new)                      | `mayAffectModels` (true for `.stl`, `.scad`, `.svg`, `.dat` and `.txt`; false for `.ts`); `modelSurface` id and basename title; the background helper adds surfaces without changing `activeSurfaceId`, does nothing when the panel is closed, skips surfaces already present, and leaves `userActionRevisionByThreadKey` unchanged; automatic opening preserves that revision and allows the same turn's proactive diff, while explicit opening records a user choice; dismissal storage caps at 200 and survives a malformed stored value.                                                |
 
-No component markup tests. The chip and host are thin over tested helpers.
+`AgentModelsHost.test.tsx` verifies old-server and draft-thread gating, environment/thread
+scoping, checkpoint deduplication, stopping the stream and clearing dots in Do nothing mode,
+and rejection of a previous thread's late result. These exercise effects and store behavior;
+there are no component markup snapshots.
 
 ## Commands
 
@@ -23,7 +54,8 @@ vp test run apps/server/src/fork/model-preview-3d/scadIncludes.test.ts \
   apps/server/src/fork/model-preview-3d/ModelPreviewService.test.ts \
   apps/server/src/fork/rpcAuthorization.test.ts \
   packages/contracts/src/fork/model-preview-3d.test.ts \
-  apps/web/src/fork/model-preview-3d/agentModels.test.ts
+  apps/web/src/fork/model-preview-3d/agentModels.test.ts \
+  apps/web/src/fork/model-preview-3d/AgentModelsHost.test.tsx
 vp lint packages/contracts/src/fork packages/client-runtime/src/fork \
   apps/server/src/fork/model-preview-3d apps/web/src/fork/model-preview-3d \
   apps/web/src/fork/panels apps/web/src/components/chat/ChangedFilesTree.tsx

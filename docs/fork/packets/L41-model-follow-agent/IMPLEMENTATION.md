@@ -5,8 +5,7 @@ Ordered steps for one agent. Each step leaves the tree compiling.
 ## Before starting
 
 Read AGENTS.md, FORK.md, the packets README, CONVENTIONS.md, MODEL-3D-FOLLOW-UPS.md and this
-folder. Start from `main` once `feat/model-bed-picker` has merged, otherwise from that branch
-(`8676e099e5`). Check whether `apps/server/src/fork/model-preview-3d/scadIncludes.ts` exists:
+folder. The implementation branch is `feat/model-follow-ghost-snap`, stacked after L34/L36/L45. Check whether `apps/server/src/fork/model-preview-3d/scadIncludes.ts` exists:
 if L49 landed first, step 2 is done. For manual checks, seed the worktree's `.t3` with
 `vp run migrate-dev-db` and use a Git workspace containing a few `.scad` files, one of which
 includes another.
@@ -42,8 +41,8 @@ includes another.
 5. **Atoms.** Add `turnModels`, `loadTurnModels` and `turnModelEvents` to
    `packages/client-runtime/src/fork/model-preview-3d.ts`.
 6. **Opening helpers and titles.** Create `apps/web/src/fork/model-preview-3d/agentModels.ts`
-   with `modelSurface`, `openModels`, `hasModelTab`, `mayAffectModels` and the background-tab
-   `setState` helper, plus `agentModels.test.ts`. Switch `ModelPicker.tsx:123-126`,
+   with `modelSurface`, `openModels`, `hasModelTab`, `mayAffectModels` and the background and automatic-open
+   `setState` helpers, plus `agentModels.test.ts`. Switch `ModelPicker.tsx:123-126`,
    `palette.tsx:44-47` and `Shortcuts.tsx:38` to `modelSurface`. This alone fixes the
    "3D model" title on agent-opened tabs; commit it separately
    (`fix(fork-model-follow-agent): title tabs the agent opens`).
