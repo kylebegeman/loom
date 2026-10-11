@@ -89,3 +89,23 @@ manage Serve; initial setup may require local administrator authentication.
 Revoke a paired device in the host's **Settings → Connections**. To remove the
 HTTPS route, run `tailscale serve --https=443 off`, replacing `443` with the port
 you selected. This leaves local Loom and the background service running.
+
+## Appearance and integration maintenance
+
+Choose **LoomOS → Appearance → Iris Dark** or **Iris Light** to change the skin
+through the normal Omarchy theme flow. These actions appear when the Iris themes
+are installed. **About LoomOS** keeps the native system overview and gradient wordmark.
+
+Open **LoomOS → Maintenance → Installed integration**, also available from
+**Update → LoomOS integration**, to see this machine's profile, theme, installed
+pack version and retained rollback. It checks the retained bundles and whether
+the installed runtime still matches. The CLI equivalents are `loom-os pack status`
+for JSON and `loom-os pack status --human` for readable output. This inspection
+works without a network connection.
+
+**Restore previous integration** opens a review in the native terminal and defaults
+to **No**. Confirm only after checking the version and plan. If the rollback target
+changes after review, the action stops and asks for a fresh review. It restores the
+integration pack while preserving your chosen theme, app data, credentials and
+running background agents. An interrupted update must be finished with its exact
+reviewed bundle before choosing another release.

@@ -863,3 +863,66 @@ test("native health inspection opens the diagnostic terminal without touching se
     await missing(f.env.LOOM_OS_TEST_RECORD);
   }
 });
+
+test("native rollback confirmation cancels safely and a failed review never offers or applies rollback", async (t) => {
+  const f = await fixture(t);
+  await install(f.config, { env: f.env });
+  const bin = NodePath.join(f.root, "tools");
+  await NodeFSP.mkdir(bin);
+  const log = NodePath.join(f.root, "rollback.log");
+  await NodeFSP.writeFile(
+    f.p.bin,
+    `#!/bin/bash\nprintf '%s\\n' "$*" >> "$LOOM_OS_ROLLBACK_LOG"\nif [[ "$*" == 'pack rollback --dry-run' ]]; then printf '%s\\n' '{"sha256":"${"0".repeat(64)}"}'; exit "$LOOM_OS_PREFLIGHT_EXIT"; fi\n`,
+    { mode: 0o755 },
+  );
+  await NodeFSP.writeFile(
+    NodePath.join(bin, "gum"),
+    `#!/bin/bash\nprintf '%s\\n' confirm >> "$LOOM_OS_ROLLBACK_LOG"\nexit "$LOOM_OS_CONFIRM_EXIT"\n`,
+    { mode: 0o755 },
+  );
+  const { spawn } = await import("node:child_process");
+  async function invoke(preflight, confirm) {
+    const child = spawn("/bin/bash", [NodePath.join(f.p.root, "pack-rollback-terminal")], {
+      env: {
+        ...f.env,
+        PATH: `${bin}:${f.env.PATH}`,
+        LOOM_OS_ROLLBACK_LOG: log,
+        LOOM_OS_PREFLIGHT_EXIT: String(preflight),
+        LOOM_OS_CONFIRM_EXIT: String(confirm),
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (part) => {
+      output += part;
+    });
+    child.stderr.on("data", (part) => {
+      output += part;
+    });
+    child.stdin.end("\n");
+    const exit = await new Promise((resolve, reject) => {
+      child.once("error", reject);
+      child.once("close", resolve);
+    });
+    return { exit, output };
+  }
+  const cancelled = await invoke(0, 1);
+  NodeAssert.equal(cancelled.exit, 0);
+  NodeAssert.match(cancelled.output, /Cancelled/);
+  NodeAssert.equal(
+    await NodeFSP.readFile(log, "utf8"),
+    "pack status --human\npack rollback --dry-run\nconfirm\n",
+  );
+  await NodeFSP.writeFile(log, "");
+  NodeAssert.equal((await invoke(1, 0)).exit, 1);
+  NodeAssert.equal(
+    await NodeFSP.readFile(log, "utf8"),
+    "pack status --human\npack rollback --dry-run\n",
+  );
+  await NodeFSP.writeFile(log, "");
+  NodeAssert.equal((await invoke(0, 0)).exit, 0);
+  NodeAssert.equal(
+    await NodeFSP.readFile(log, "utf8"),
+    `pack status --human\npack rollback --dry-run\nconfirm\npack rollback --expected-sha256 ${"0".repeat(64)}\n`,
+  );
+});

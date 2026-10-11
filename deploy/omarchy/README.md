@@ -240,9 +240,13 @@ machine, verify and review the update before applying it:
 node deploy/omarchy/release.mjs verify /absolute/loom-pack-20261011 SHA256
 node deploy/omarchy/release.mjs install /absolute/loom-pack-20261011 SHA256 --dry-run
 node deploy/omarchy/release.mjs install /absolute/loom-pack-20261011 SHA256
+loom-os pack status --human
 loom-os pack rollback --dry-run
 loom-os pack rollback
 ```
+
+The native LoomOS maintenance menu exposes release inspection and reviewed rollback;
+see [Using LoomOS](../../docs/user/loom-os.md#appearance-and-integration-maintenance).
 
 First commission the chosen profile with `install.sh` above; pack releases reuse
 that machine's current configuration. Releases retain immutable copies and the

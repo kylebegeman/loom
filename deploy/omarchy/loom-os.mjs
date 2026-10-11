@@ -277,6 +277,14 @@ export async function installationPlan(config, env = process.env, packDir = sour
     content: `#!/bin/bash\nprintf '\\033]0;Check connections\\007'\n${shellQuote(p.bin)} doctor --human\nstatus=$?\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
     mode: 0o755,
   });
+  writes.set(NodePath.join(p.root, "pack-status-terminal"), {
+    content: `#!/bin/bash\nprintf '\\033]0;LoomOS integration\\007'\n${shellQuote(p.bin)} pack status --human\nstatus=$?\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
+    mode: 0o755,
+  });
+  writes.set(NodePath.join(p.root, "pack-rollback-terminal"), {
+    content: `#!/bin/bash\nprintf '\\033]0;Restore LoomOS integration\\007'\nstatus=0\nif ${shellQuote(p.bin)} pack status --human && plan=$(${shellQuote(p.bin)} pack rollback --dry-run); then\n  printf '%s\\n' "$plan"\n  reviewed_sha=$(printf '%s' "$plan" | node -p 'JSON.parse(require("node:fs").readFileSync(0, "utf8")).sha256') || exit 1\n  printf '\\nThis restores the previous integration. App data, your theme and background agents are preserved.\\n'\n  if command -v gum >/dev/null 2>&1; then\n    if gum confirm --default=false 'Restore the previous LoomOS integration?'; then\n      ${shellQuote(p.bin)} pack rollback --expected-sha256 "$reviewed_sha"\n      status=$?\n    else\n      printf '%s\\n' 'Cancelled. No changes applied.'\n    fi\n  else\n    printf '%s\\n' 'The native confirmation utility is unavailable. Run loom-os pack rollback manually after reviewing the plan.'\n    status=1\n  fi\nelse\n  status=$?\nfi\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
+    mode: 0o755,
+  });
   const pairingEnabled =
     config.profile === "workstation" && config.serverExecutable && config.serverBaseDir;
   if (pairingEnabled)
@@ -341,6 +349,34 @@ export async function installationPlan(config, env = process.env, packDir = sour
         continue;
       entries[`loomos.${app}`] = { label: name, action: command(`open ${app}`) };
     }
+    entries["about"] = { label: "About LoomOS" };
+    entries["loomos.appearance"] = {
+      label: "Appearance",
+      description: "Iris colors with Omarchy's native shell",
+    };
+    for (const mode of ["dark", "light"]) {
+      const theme = `loom-iris-${mode}`;
+      const directory = NodePath.join(p.home, ".config/omarchy/themes", theme);
+      const current = NodePath.join(p.home, ".local/state/omarchy/current/theme.name");
+      entries[`loomos.appearance.${mode}`] = {
+        label: `Iris ${mode === "dark" ? "Dark" : "Light"}`,
+        when: `[[ -d ${shellQuote(directory)} ]]`,
+        checked: `[[ "$(cat ${shellQuote(current)} 2>/dev/null)" == ${shellQuote(theme)} ]]`,
+        action: `omarchy-theme-set ${shellQuote(theme)}`,
+      };
+    }
+    entries["loomos.maintenance"] = { label: "Maintenance" };
+    entries["loomos.maintenance.status"] = {
+      label: "Installed integration",
+      description: "Version, machine profile, theme and retained rollback",
+      action: command("pack status --terminal"),
+    };
+    entries["loomos.maintenance.rollback"] = {
+      label: "Restore previous integration",
+      description: "Review and confirm a rollback without interrupting agents",
+      action: command("pack rollback --terminal"),
+    };
+    entries["update.loomos"] = { label: "LoomOS integration", target: "loomos.maintenance" };
     entries["loomos.capture"] = {
       label: "Capture in Office",
       action: command("capture office --clipboard"),
@@ -712,7 +748,7 @@ function parseArgs(args) {
   return { options, positional };
 }
 const print = (value) => console.log(JSON.stringify(value, null, 2));
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run]  (previous integration release)\nstatus\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -723,7 +759,22 @@ export async function main(args = process.argv.slice(2), env = process.env) {
   const p = paths(env);
   if (action === "pack") {
     const release = await import("./release.mjs");
-    print(await release.main(rest));
+    if (["status", "rollback"].includes(rest[0]) && rest[1] === "--terminal") {
+      if (rest.length !== 2)
+        throw new Error("Use pack status --terminal or pack rollback --terminal.");
+      await run(
+        "omarchy-launch-tui",
+        [
+          `--app-id=org.omarchy.loom-pack-${rest[0]}`,
+          NodePath.join(p.root, `pack-${rest[0]}-terminal`),
+        ],
+        { env },
+      );
+      return;
+    }
+    const result = await release.main(rest, env);
+    if (typeof result === "string") console.log(result);
+    else print(result);
     return;
   }
   if (action === "uninstall") {
