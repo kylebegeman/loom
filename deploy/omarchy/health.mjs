@@ -1,0 +1,234 @@
+import { execFile } from "node:child_process";
+import { usageMaxAgeMs } from "./ai.mjs";
+
+function execute(file, args, env) {
+  return new Promise((resolve) =>
+    execFile(
+      file,
+      args,
+      { env, timeout: 20_000, maxBuffer: 256 * 1024, encoding: "utf8" },
+      (error, stdout) =>
+        resolve({ exit: error ? (typeof error.code === "number" ? error.code : null) : 0, stdout }),
+    ),
+  );
+}
+const record = (id, title, state, detail, repair = null) => ({ id, title, state, detail, repair });
+const safeText = (value) =>
+  typeof value === "string" && value.length <= 2048 && !/[\x00-\x1f\x7f]/.test(value);
+
+export async function collectConnections(
+  config,
+  env,
+  { request = fetch, command = execute, now = Date.now() } = {},
+) {
+  const endpoints = {},
+    diagnostics = [];
+  const appChecks = Object.entries({
+    office: config.officeUrl,
+    ...(config.atlasUrl ? { atlas: config.atlasUrl } : {}),
+  }).map(async ([id, origin]) => {
+    const title = id === "office" ? "Office" : "Atlas";
+    try {
+      const response = await request(`${origin}/app/`, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(4000),
+      });
+      endpoints[id] = response.status;
+      await response.body?.cancel();
+      const reachable = response.ok || [301, 302, 303, 307, 308].includes(response.status);
+      const signIn = response.status === 401 || response.status === 403;
+      return record(
+        id,
+        title,
+        reachable ? "ok" : signIn ? "warning" : "error",
+        reachable
+          ? "The app server is reachable; sign-in stays in the app."
+          : signIn
+            ? "The server is reachable and requires app sign-in."
+            : `The app returned HTTP ${response.status}.`,
+        reachable
+          ? null
+          : signIn
+            ? `Open ${title} and use its existing account.`
+            : `Check ${title}'s server and retry. Local app storage is preserved.`,
+      );
+    } catch {
+      endpoints[id] = "unreachable";
+      return record(
+        id,
+        title,
+        "error",
+        "The app server is unreachable.",
+        `Check network access and ${title}'s server, then retry. Local app storage is preserved.`,
+      );
+    }
+  });
+  const cacheCheck = async () => {
+    if (!config.switchboardStatusUrl)
+      return config.switchboardUrl
+        ? record(
+            "switchboard-cache",
+            "Shared AI limits",
+            "warning",
+            "The cached status endpoint is not configured.",
+            "Configure Switchboard's private cached status URL.",
+          )
+        : null;
+    try {
+      const response = await request(config.switchboardStatusUrl, {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(4000),
+      });
+      endpoints.switchboard = response.status;
+      if (!response.ok) {
+        await response.body?.cancel();
+        return record(
+          "switchboard-cache",
+          "Shared AI limits",
+          "error",
+          `The cached status endpoint returned HTTP ${response.status}.`,
+          "Check Tailscale and Dorothy's private dashboard.",
+        );
+      }
+      const status = await response.json(),
+        age = now - Date.parse(status?.updatedAt);
+      const valid =
+        Number.isFinite(age) &&
+        age >= -60_000 &&
+        age <= usageMaxAgeMs &&
+        Array.isArray(status?.accounts);
+      return record(
+        "switchboard-cache",
+        "Shared AI limits",
+        valid ? "ok" : "warning",
+        valid
+          ? "The shared cached status is fresh."
+          : "The cached status is stale or invalid; its limits should not be trusted.",
+        valid
+          ? null
+          : "Open Switchboard and inspect the controller on Dorothy. Local checks do not refresh provider usage.",
+      );
+    } catch {
+      endpoints.switchboard = "unreachable";
+      return record(
+        "switchboard-cache",
+        "Shared AI limits",
+        "error",
+        "The cached status endpoint is unreachable or unreadable.",
+        "Check Tailscale and Dorothy's private dashboard, then retry.",
+      );
+    }
+  };
+  const clientCheck = async () => {
+    if (!config.switchboardUrl && !config.switchboardCli) return [];
+    if (!config.switchboardUrl || !config.switchboardCli)
+      return [
+        record(
+          "switchboard-client",
+          "OS AI routing",
+          "error",
+          "The gateway or client executable is not configured.",
+          "Configure both switchboard-url and switchboard-cli.",
+        ),
+      ];
+    try {
+      const result = await command(
+        config.switchboardCli,
+        ["client", "doctor", "--json", "--expected-url", config.switchboardUrl],
+        env,
+      );
+      const report = JSON.parse(result.stdout);
+      if (
+        !Array.isArray(report.checks) ||
+        !report.checks.length ||
+        !report.checks.every(
+          (check) =>
+            safeText(check.id) &&
+            check.id.startsWith("client-") &&
+            safeText(check.title) &&
+            safeText(check.detail) &&
+            ["ok", "warning", "error"].includes(check.state) &&
+            (check.repair === null || safeText(check.repair)),
+        )
+      )
+        throw new Error();
+      return report.checks.map(({ id, title, state, detail, repair }) => ({
+        id,
+        title,
+        state,
+        detail,
+        repair,
+      }));
+    } catch {
+      return [
+        record(
+          "switchboard-client",
+          "OS AI routing",
+          "error",
+          "The client diagnostic could not be read.",
+          "Run switchboard client doctor; update the installed portable client if this command is unavailable.",
+        ),
+      ];
+    }
+  };
+  const serviceCheck = async () => {
+    if (config.profile !== "workstation") return null;
+    if (!config.serverExecutable || !config.serverBaseDir)
+      return record(
+        "workstation",
+        "Background Loom",
+        "warning",
+        "No workstation server is configured.",
+        "Configure the custom server and explicitly install its service when you want background agents.",
+      );
+    try {
+      const result = await command("systemctl", ["--user", "is-active", "t3code.service"], env);
+      const active = result.exit === 0 && result.stdout.trim() === "active";
+      return record(
+        "workstation",
+        "Background Loom",
+        active ? "ok" : "error",
+        active
+          ? "The workstation service is running."
+          : "The workstation service is stopped or could not be inspected.",
+        active
+          ? null
+          : "Run loom-os service status. Review active work before installing or restarting its service.",
+      );
+    } catch {
+      return record(
+        "workstation",
+        "Background Loom",
+        "error",
+        "The user service manager could not be inspected.",
+        "Run loom-os service status in your normal user session.",
+      );
+    }
+  };
+  const [apps, cache, clients, service] = await Promise.all([
+    Promise.all(appChecks),
+    cacheCheck(),
+    clientCheck(),
+    serviceCheck(),
+  ]);
+  diagnostics.push(...apps, ...(cache ? [cache] : []), ...clients, ...(service ? [service] : []));
+  return { endpoints, diagnostics };
+}
+export function connectionSummary(report) {
+  return {
+    errors: report.diagnostics.filter((check) => check.state === "error").length,
+    warnings: report.diagnostics.filter((check) => check.state === "warning").length,
+  };
+}
+export function formatConnections(report) {
+  const { errors, warnings } = connectionSummary(report);
+  return [
+    `Connections: ${errors} errors, ${warnings} warnings`,
+    ...report.diagnostics.flatMap((check) => [
+      `[${check.state.toUpperCase()}] ${check.title}: ${check.detail}`,
+      ...(check.repair ? [`  Next: ${check.repair}`] : []),
+    ]),
+  ].join("\n");
+}

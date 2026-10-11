@@ -1,0 +1,46 @@
+{
+  "irisVersion": "0.6.48",
+  "irisSha256": "39504287c8eced42145059ec20451a654f63b140f622f96a42e3848011b74a2e",
+  "themeRoles": {
+    "background": "bg",
+    "foreground": "ink",
+    "accent": "accent",
+    "selection": "accent-soft",
+    "selection_foreground": "ink",
+    "muted": "muted",
+    "dark_background": "band",
+    "darker_background": "band",
+    "lighter_background": "paper",
+    "dark_foreground": "muted",
+    "light_foreground": "muted",
+    "bright_foreground": "ink",
+    "red": "danger",
+    "green": "success",
+    "yellow": "warning",
+    "blue": "info",
+    "magenta": "accent",
+    "orange": "ember",
+    "cyan": "tag-teal",
+    "brown": "ember",
+    "bright_red": "tag-red",
+    "bright_green": "tag-green",
+    "bright_yellow": "tag-gold",
+    "bright_blue": "tag-blue",
+    "bright_magenta": "tag-plum",
+    "bright_cyan": "tag-teal",
+    "hyprland_active_border": "line-strong",
+    "hyprland_inactive_border": "line"
+  },
+  "identity": "Approved banded LOOM wordmark, small Loom OS caption, no emblem",
+  "artworkIrisVersion": "0.6.48",
+  "themes": {
+    "dark": {
+      "name": "loom-iris-dark",
+      "wordmarkSha256": "7bebc5d97f612f82ac8bd89280a26b18f1af6bd40c2530b7dd3b3a991a32a16e"
+    },
+    "light": {
+      "name": "loom-iris-light",
+      "wordmarkSha256": "59c554d34614d24ec744cdce391f4d1d96314f5897e378591ea846e3ebb974e9"
+    }
+  }
+}

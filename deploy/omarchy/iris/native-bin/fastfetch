@@ -1,0 +1,7 @@
+#!/usr/bin/bash
+# Loom OS Iris wordmark color adapter.
+adapter="$HOME/.local/lib/loom-os/iris/terminal_colors.py"
+if [[ -r "$adapter" ]]; then
+  exec /usr/bin/python3 "$adapter" fastfetch "$@"
+fi
+exec /usr/bin/fastfetch "$@"
