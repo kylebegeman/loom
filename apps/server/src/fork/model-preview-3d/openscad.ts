@@ -1,4 +1,9 @@
-import type { ModelPreviewSettings, OpenScadInfo, ScadRenderResult } from "@t3tools/contracts/fork";
+import type {
+  ModelPreviewSettings,
+  ModelProjection,
+  OpenScadInfo,
+  ScadRenderResult,
+} from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 
 export const parseVersion = (text: string): string | null =>
@@ -69,14 +74,20 @@ export function renderArgs(input: {
   args.push("-d", input.deps, input.source);
   return args;
 }
-export const pngArgs = (source: string, output: string, view: ModelView) => [
+export const DEFAULT_RENDER_PROJECTION: ModelProjection = "orthographic";
+export const pngArgs = (
+  source: string,
+  output: string,
+  view: ModelView,
+  projection: ModelProjection = DEFAULT_RENDER_PROJECTION,
+) => [
   "-o",
   output,
   "--render",
   "--imgsize=1024,768",
   "--autocenter",
   "--viewall",
-  "--projection=p",
+  `--projection=${projection === "orthographic" ? "o" : "p"}`,
   `--camera=${viewCamera[view]}`,
   source,
 ];

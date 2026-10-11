@@ -1,5 +1,6 @@
 import type {
   ModelCamera,
+  ModelProjection,
   ModelPoint,
   ModelSection,
   ModelMeasurement,
@@ -52,7 +53,7 @@ export default function ViewerCanvas({
   onError: (message: string) => void;
   onProgress: (message: string | null) => void;
   navigationMode?: NavigationMode;
-  display?: { wireframe: boolean; grid: boolean; axes: boolean };
+  display?: { wireframe: boolean; grid: boolean; axes: boolean; projection: ModelProjection };
   onNavigate?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null),
@@ -127,6 +128,7 @@ export default function ViewerCanvas({
           viewerRef.current.setWireframe(options.current.display.wireframe);
           viewerRef.current.setGrid(options.current.display.grid);
           viewerRef.current.setAxes(options.current.display.axes);
+          viewerRef.current.setProjection(options.current.display.projection);
         }
         if (options.current.section) viewerRef.current.setSection(options.current.section);
         if (options.current.camera) viewerRef.current.restore(options.current.camera);
@@ -164,6 +166,7 @@ export default function ViewerCanvas({
     viewerRef.current?.setWireframe(display.wireframe);
     viewerRef.current?.setGrid(display.grid);
     viewerRef.current?.setAxes(display.axes);
+    viewerRef.current?.setProjection(display.projection);
   }, [viewerRef, display]);
   useEffect(() => {
     if (section) viewerRef.current?.setSection(section);

@@ -9,7 +9,7 @@ import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
-import { View } from "./openscad.ts";
+import { DEFAULT_RENDER_PROJECTION, View } from "./openscad.ts";
 export const ModelPreview3dToolkit = Toolkit.make(
   Tool.make("loom_model_preview_3d_editor", {
     description:
@@ -180,17 +180,19 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_render", {
     description:
-      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part.",
+      "Render a workspace SCAD, STL, 3MF or OBJ to PNG views. Returns host paths, geometry summary and logs. Read the PNGs to inspect the part. Projection defaults to orthographic; pass perspective for a perspective view. Includes a fit summary for the user's beds (sizes in mm), or null when this OpenSCAD build gives no geometry summary.",
     parameters: Schema.Struct({
       path: Schema.String,
       views: Schema.optional(
         Schema.Array(View).check(Schema.isMinLength(1), Schema.isMaxLength(5)),
       ),
       overrides: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+      projection: Schema.optional(W.ModelProjection),
     }),
     success: Schema.Struct({
       images: Schema.Array(Schema.Struct({ view: View, path: Schema.String })),
       summary: ScadRenderResult.fields.summary,
+      fit: Schema.NullOr(W.BedFitSummary),
       log: ScadRenderResult.fields.log,
     }),
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
@@ -231,6 +233,7 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
   path: string;
   views?: ReadonlyArray<typeof View.Type> | undefined;
   overrides?: Readonly<Record<string, string>> | undefined;
+  projection?: W.ModelProjection | undefined;
 }) {
   const threadId = yield* modelThread;
   return yield* withAgentTools((service) =>
@@ -238,6 +241,7 @@ export const renderModelTool = Effect.fn("ModelPreview.renderTool")(function* (i
       { threadId, path: input.path },
       input.views ?? ["iso", "front", "top", "right"],
       input.overrides ?? {},
+      input.projection ?? DEFAULT_RENDER_PROJECTION,
     ),
   );
 });

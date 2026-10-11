@@ -77,6 +77,9 @@ const setup = Effect.gen(function* () {
   let worktreePath: string | null = null;
   let renders = 0,
     timeout = false;
+  let summaryJson = json({ geometry: { simple: true, facets: 12 } });
+  let supportsSummary = true;
+  const projections: string[] = [];
   let duringRender: Effect.Effect<void, PlatformError> | null = null;
   let block: { started: Deferred.Deferred<void>; cancelled: Deferred.Deferred<void> } | null = null;
   const runner = ProcessRunner.of({
@@ -84,9 +87,13 @@ const setup = Effect.gen(function* () {
       Effect.gen(function* () {
         if (input.args.includes("--version")) return output("OpenSCAD version 2026.10.05");
         if (input.args.includes("--help"))
-          return output("--backend Manifold --summary-file --help-export");
+          return output(
+            `--backend Manifold ${supportsSummary ? "--summary-file" : ""} --help-export`,
+          );
         if (input.args.includes("--help-export")) return output("color-mode model");
         renders++;
+        const projection = input.args.find((arg) => arg.startsWith("--projection="));
+        if (projection) projections.push(projection);
         if (duringRender) yield* duringRender;
         if (block) {
           yield* fs.writeFileString(input.args[input.args.indexOf("-o") + 1]!, "incomplete mesh");
@@ -107,11 +114,7 @@ const setup = Effect.gen(function* () {
             `${target}: ${path.join(root, file.path)} ${path.join(root, "models/shape.scad")}\n`,
           );
         const summary = input.args.indexOf("--summary-file");
-        if (summary >= 0)
-          yield* fs.writeFileString(
-            input.args[summary + 1]!,
-            json({ geometry: { simple: true, facets: 12 } }),
-          );
+        if (summary >= 0) yield* fs.writeFileString(input.args[summary + 1]!, summaryJson);
         return output('ECHO: "done"');
       }).pipe(Effect.orDie),
   });
@@ -161,6 +164,13 @@ const setup = Effect.gen(function* () {
     file,
     create,
     getRenders: () => renders,
+    getProjections: () => projections,
+    setSummary: (text: string) => {
+      summaryJson = text;
+    },
+    disableSummary: () => {
+      supportsSummary = false;
+    },
     setDuringRender: (effect: Effect.Effect<void, PlatformError>) => {
       duringRender = effect;
     },
@@ -364,8 +374,12 @@ it.effect(
         );
         expect(result.images.map((image) => image.view)).toEqual(["iso", "front", "top", "right"]);
         expect(result.summary?.facets).toBe(12);
+        expect(result.fit).toBeNull();
         expect(result.log.some((line) => line.level === "echo")).toBe(true);
       }
+      expect(t.getProjections()).toEqual(Array.from({ length: 16 }, () => "--projection=o"));
+      yield* service.renderImages(t.file, ["iso"], {}, "perspective");
+      expect(t.getProjections().at(-1)).toBe("--projection=p");
       const renders = t.path.join(t.stateDir, "fork", "model-preview-3d", "renders");
       expect((yield* t.fs.readDirectory(renders)).filter((name) => !name.endsWith(".png"))).toEqual(
         [],
@@ -382,6 +396,73 @@ it.effect(
         (yield* service.fileUrl({ ...t.file, path: "models/part.stl" })).sizeBytes,
       ).toBeGreaterThan(0);
     }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("agent rendering checks summary extents against the environment's saved beds", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    yield* service.updateSettings({
+      ...(yield* service.getSettings()),
+      buildPlate: { preset: "custom", customMm: [100, 150, 75], pattern: "grid-mm" },
+    });
+    t.setSummary(
+      json({
+        geometry: {
+          facets: 12,
+          bounding_box: { min: [-50, -50, 20], max: [90, 40, 80] },
+        },
+      }),
+    );
+    const restarted = yield* t.create();
+    const result = yield* restarted.renderImages(t.file, ["iso"], {});
+    expect(result.fit).toMatchObject({ sizeMm: [140, 90, 60], activeBedId: "custom" });
+    expect(result.fit?.beds.find((bed) => bed.id === "custom")).toMatchObject({
+      volumeMm: [100, 150, 75],
+      fit: "fits-rotated",
+      overMm: null,
+    });
+    expect(result.fit?.beds.find((bed) => bed.id === "bambu-h2d")?.fit).toBe("fits");
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("agent rendering omits fit for unsupported or invalid geometry summaries", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    for (const summary of [
+      "not json",
+      "{}",
+      '{"geometry":{"bounding_box":{"min":[0,0],"max":[10,10,10]}}}',
+      '{"geometry":{"bounding_box":{"min":[0,0,0],"max":[-1,10,10]}}}',
+      '{"geometry":{"bounding_box":{"min":[0,0,0],"max":[1e400,10,10]}}}',
+      '{"geometry":{"bounding_box":{"min":[-1e308,0,0],"max":[1e308,10,10]}}}',
+    ]) {
+      t.setSummary(summary);
+      expect((yield* service.renderImages(t.file, ["iso"], {})).fit).toBeNull();
+    }
+    t.disableSummary();
+    const unsupported = yield* t.create();
+    const result = yield* unsupported.renderImages(t.file, ["iso"], {});
+    expect(result.summary).toBeNull();
+    expect(result.fit).toBeNull();
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
+);
+it.effect("interrupting an agent image render removes its wrapper and partial PNG", () =>
+  Effect.gen(function* () {
+    const t = yield* setup;
+    const service = yield* t.create();
+    const started = yield* Deferred.make<void>();
+    const cancelled = yield* Deferred.make<void>();
+    t.block(started, cancelled);
+    const running = yield* service
+      .renderImages({ ...t.file, path: "models/part.stl" }, ["iso"], {}, "perspective")
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(started);
+    yield* Fiber.interrupt(running);
+    yield* Deferred.await(cancelled);
+    expect(
+      yield* t.fs.readDirectory(t.path.join(t.stateDir, "fork/model-preview-3d/renders")),
+    ).toEqual([]);
+  }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 it.effect("clearing cache cancels renders and leaves no partial output", () =>
   Effect.gen(function* () {

@@ -222,7 +222,11 @@ realTest(
       };
       for (const name of ["bracket.scad", "cuboid.stl", "cuboid.obj", "inch-cube.3mf"]) {
         const results = yield* toolkit
-          .handle("loom_model_preview_3d_render", { path: name, views: ["iso", "top"] })
+          .handle("loom_model_preview_3d_render", {
+            path: name,
+            views: ["iso", "top"],
+            projection: "orthographic",
+          })
           .pipe(
             Effect.flatMap(Stream.runCollect),
             Effect.provideService(McpInvocationContext, invocation),
@@ -233,6 +237,9 @@ realTest(
           throw new Error("MCP render failed");
         expect(result.result.images).toHaveLength(2);
         expect(result.result.summary?.facets).toBeGreaterThan(0);
+        expect(result.result.fit?.activeBedId).toBe(
+          (yield* t.service.getSettings()).buildPlate.preset,
+        );
         if (name === "bracket.scad") expect(result.result.summary?.manifold).toBe(true);
         if (name === "inch-cube.3mf")
           expect(result.result.summary?.boundingBox?.max).toEqual([25.4, 25.4, 25.4]);

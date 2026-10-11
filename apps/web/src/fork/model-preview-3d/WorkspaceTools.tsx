@@ -149,6 +149,8 @@ export function DisplayTools({
   wireframe,
   grid,
   axes,
+  orthographic,
+  onOrthographic,
   onWireframe,
   onGrid,
   onAxes,
@@ -158,6 +160,8 @@ export function DisplayTools({
   wireframe: boolean;
   grid: boolean;
   axes: boolean;
+  orthographic: boolean;
+  onOrthographic: (value: boolean) => void;
   onWireframe: (value: boolean) => void;
   onGrid: (value: boolean) => void;
   onAxes: (value: boolean) => void;
@@ -188,6 +192,10 @@ export function DisplayTools({
               Axes
               <MenuShortcut>A</MenuShortcut>
             </MenuCheckboxItem>
+            <MenuCheckboxItem checked={orthographic} onCheckedChange={onOrthographic}>
+              Orthographic
+              <MenuShortcut>P</MenuShortcut>
+            </MenuCheckboxItem>
           </MenuGroup>
         </MenuPopup>
       </Menu>
@@ -204,6 +212,7 @@ const HELP = [
   ["Section plane", "S"],
   ["Wireframe, bed, axes", "W, G, A"],
   ["Inspector", "I"],
+  ["Perspective, orthographic", "P"],
 ] as const;
 export function NavigationTools({
   mode,

@@ -1,5 +1,6 @@
 import type {
   ModelCamera,
+  ModelProjection,
   ModelPoint,
   ModelSection,
   ModelMeasurement,
@@ -27,6 +28,7 @@ import {
   TOUCH,
   Object3D,
   PerspectiveCamera,
+  OrthographicCamera,
   PMREMGenerator,
   Scene,
   Vector2,
@@ -36,6 +38,7 @@ import {
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { observeResize } from "~/lib/observeResize";
+import { markerScale, syncOrthographic } from "./projection";
 import { createBed } from "./bed";
 import { disposeModel, meshStats } from "./load";
 import { fitDistance, STANDARD_VIEWS, viewDirection, type View } from "./views";
@@ -50,7 +53,9 @@ const MARK_BLUE = 0x3984ff;
 /** One coalesced frame per interaction. OrbitControls damping stays disabled. */
 export function createViewer(host: HTMLElement) {
   const scene = new Scene(),
-    camera = new PerspectiveCamera(40, 1, 0.01, 1000000);
+    camera = new PerspectiveCamera(40, 1, 0.01, 1000000),
+    ortho = new OrthographicCamera();
+  let projection: ModelProjection = "perspective";
   camera.up.set(0, 0, 1);
   const renderer = new WebGLRenderer({
     antialias: true,
@@ -112,13 +117,19 @@ export function createViewer(host: HTMLElement) {
   const pick = (event: PointerEvent): ModelPoint | null => {
     if (!model) return null;
     const rect = renderer.domElement.getBoundingClientRect();
+    const viewCamera = activeCamera();
     raycaster.setFromCamera(
       new Vector2(
         ((event.clientX - rect.left) / rect.width) * 2 - 1,
         (-(event.clientY - rect.top) / rect.height) * 2 + 1,
       ),
-      camera,
+      viewCamera,
     );
+    if (viewCamera instanceof OrthographicCamera) {
+      // Three starts ortho rays at the eye plane, but our visible frustum extends behind it.
+      raycaster.ray.origin.addScaledVector(raycaster.ray.direction, viewCamera.near);
+      raycaster.far = viewCamera.far - viewCamera.near;
+    } else raycaster.far = Infinity;
     const hit = raycaster
       .intersectObject(model, true)
       .find((hit) => !section.enabled || plane.distanceToPoint(hit.point) >= 0);
@@ -186,8 +197,9 @@ export function createViewer(host: HTMLElement) {
   const placeMarks = () => {
     const width = host.clientWidth,
       height = host.clientHeight;
+    const viewCamera = activeCamera();
     for (const mark of marks) {
-      projected.copy(mark.position).project(camera);
+      projected.copy(mark.position).project(viewCamera);
       mark.element.hidden = projected.z < -1 || projected.z > 1;
       const x = ((projected.x + 1) / 2) * width,
         y = ((1 - projected.y) / 2) * height;
@@ -234,7 +246,7 @@ export function createViewer(host: HTMLElement) {
         sizeAttenuation: false,
       }),
     );
-    marker.scale.setScalar(0.015);
+    marker.scale.setScalar(markerScale(projection, camera.position.distanceTo(controls.target)));
     marker.position.fromArray(point);
     marker.renderOrder = 10;
     overlay.add(marker);
@@ -283,8 +295,9 @@ export function createViewer(host: HTMLElement) {
     height: number,
   ) => {
     const scale = 1.25;
+    const viewCamera = activeCamera();
     for (const mark of marks) {
-      projected.copy(mark.position).project(camera);
+      projected.copy(mark.position).project(viewCamera);
       if (projected.z < -1 || projected.z > 1) continue;
       const px = x + ((projected.x + 1) / 2) * width,
         py = y + ((1 - projected.y) / 2) * height;
@@ -329,7 +342,24 @@ export function createViewer(host: HTMLElement) {
   let model: Object3D | null = null,
     box = new Box3(),
     bed: ReturnType<typeof createBed> | null = null,
-    axes: AxesHelper | null = null;
+    axes: AxesHelper | null = null,
+    sceneRadius = 1;
+  const updateSceneRadius = () => {
+    const bounds = box.clone();
+    if (bed) bounds.union(new Box3().setFromObject(bed.object));
+    sceneRadius = Math.max(bounds.getSize(new Vector3()).length() / 2, 0.5);
+  };
+  const scaleMarkers = () => {
+    const scale = markerScale(projection, camera.position.distanceTo(controls.target));
+    for (const object of overlay.children)
+      if (object instanceof Sprite) object.scale.setScalar(scale);
+  };
+  const activeCamera = () => {
+    camera.updateMatrixWorld(true);
+    if (projection === "perspective") return camera;
+    syncOrthographic(ortho, camera, controls.target, sceneRadius);
+    return ortho;
+  };
   let frame: number | null = null,
     disposed = false,
     visible = true,
@@ -350,7 +380,8 @@ export function createViewer(host: HTMLElement) {
   };
   const render = () => {
     if (disposed || !visible) return;
-    renderer.render(scene, camera);
+    scaleMarkers();
+    renderer.render(scene, activeCamera());
     placeMarks();
   };
   const requestRender = () => {
@@ -422,6 +453,7 @@ export function createViewer(host: HTMLElement) {
     bed.setTheme(dark);
     bed.object.visible = gridVisible;
     placeBed();
+    updateSceneRadius();
     helpers.add(bed.object);
     axes = new AxesHelper(Math.min(...footprint) / 4);
     axes.visible = axesVisible;
@@ -439,6 +471,7 @@ export function createViewer(host: HTMLElement) {
     }
   };
   const snapshot = (): ModelCamera => ({
+    projection,
     position: camera.position.toArray(),
     target: controls.target.toArray(),
     near: camera.near,
@@ -451,6 +484,12 @@ export function createViewer(host: HTMLElement) {
   });
   return {
     snapshot,
+    activeCamera,
+    setProjection(value: ModelProjection) {
+      projection = value;
+      scaleMarkers();
+      requestRender();
+    },
     setPickMode(mode: typeof pickMode, callback: typeof onPick) {
       pointerCancel();
       pickMode = mode;
@@ -492,6 +531,7 @@ export function createViewer(host: HTMLElement) {
     },
     restore(state: ReturnType<typeof snapshot>) {
       restoring = true;
+      projection = state.projection;
       camera.position.fromArray(state.position);
       controls.target.fromArray(state.target);
       camera.near = state.near;
@@ -525,6 +565,7 @@ export function createViewer(host: HTMLElement) {
       model = next;
       box = stats.box;
       placeBed();
+      updateSceneRadius();
       scene.add(model);
       applyWireframe();
       applySection();
@@ -577,7 +618,9 @@ export function createViewer(host: HTMLElement) {
         target = controls.target.clone(),
         aspect = camera.aspect,
         near = camera.near,
-        far = camera.far;
+        far = camera.far,
+        originalProjection = projection,
+        wasRestoring = restoring;
       const output = document.createElement("canvas");
       output.width = four ? 1600 : 1200;
       output.height = four ? 1200 : Math.max(1, Math.round(1200 / aspect));
@@ -585,14 +628,17 @@ export function createViewer(host: HTMLElement) {
       if (!context) throw new Error("Image capture is unavailable.");
       const controlsEnabled = controls.enabled;
       controls.enabled = false;
+      restoring = true;
       try {
+        if (four) projection = "orthographic";
         renderer.setPixelRatio(1);
         renderer.setSize(four ? 800 : 1200, four ? 600 : output.height, false);
         camera.aspect = four ? 4 / 3 : aspect;
         camera.updateProjectionMatrix();
         for (const [index, view] of (four ? STANDARD_VIEWS : [null]).entries()) {
           if (view) setView(view);
-          renderer.render(scene, camera);
+          scaleMarkers();
+          renderer.render(scene, activeCamera());
           const x = four ? (index % 2) * 800 : 0,
             y = four ? Math.floor(index / 2) * 600 : 0;
           context.drawImage(renderer.domElement, x, y);
@@ -612,6 +658,7 @@ export function createViewer(host: HTMLElement) {
           ),
         );
       } finally {
+        projection = originalProjection;
         controls.enabled = controlsEnabled;
         camera.position.copy(position);
         controls.target.copy(target);
@@ -622,6 +669,8 @@ export function createViewer(host: HTMLElement) {
         renderer.setPixelRatio(pixelRatio);
         renderer.setSize(size.x, size.y, false);
         controls.update();
+        restoring = wasRestoring;
+        scaleMarkers();
         requestRender();
       }
     },

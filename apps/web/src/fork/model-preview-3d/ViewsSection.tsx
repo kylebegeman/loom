@@ -224,13 +224,18 @@ export function ViewsSection({
                   ) : (
                     <div className={styles["model-row-name"]}>{view.name}</div>
                   )}
-                  {(section.enabled || active || view.sourceRevision !== sourceRevision) && (
+                  {(section.enabled ||
+                    active ||
+                    view.sourceRevision !== sourceRevision ||
+                    view.camera.projection === "orthographic") && (
                     <div className={styles["model-row-detail"]}>
                       {section.enabled
                         ? `Section ${section.axis.toUpperCase()} at ${section.offset.toFixed(1)} mm`
                         : active
                           ? "Current view"
-                          : "Saved on an earlier version, refits on open"}
+                          : view.sourceRevision !== sourceRevision
+                            ? "Saved on an earlier version, refits on open"
+                            : "Orthographic"}
                     </div>
                   )}
                 </div>

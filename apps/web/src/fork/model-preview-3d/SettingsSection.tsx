@@ -200,7 +200,7 @@ function SettingsForm({
               <SelectValue>{buildPlateLabel(settings.buildPlate)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
-              {bedGroups(settings.buildPlate.customMm).map((group) => (
+              {bedGroups(settings.buildPlate).map((group) => (
                 <SelectGroup key={group.label}>
                   <SelectGroupLabel>{group.label}</SelectGroupLabel>
                   {group.options.map((option) => (

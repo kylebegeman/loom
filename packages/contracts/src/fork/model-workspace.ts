@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 const text = (max: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(max));
 const finite = Schema.Number.check(Schema.isFinite());
@@ -8,7 +9,12 @@ export const ModelSection = Schema.Struct({
   offset: finite,
   flipped: Schema.Boolean,
 });
+export const ModelProjection = Schema.Literals(["perspective", "orthographic"]);
+export type ModelProjection = typeof ModelProjection.Type;
 export const ModelCamera = Schema.Struct({
+  projection: ModelProjection.pipe(
+    Schema.withDecodingDefault(Effect.succeed("perspective" as const)),
+  ),
   position: ModelPoint,
   target: ModelPoint,
   near: finite,

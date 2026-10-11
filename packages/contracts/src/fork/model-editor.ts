@@ -1,6 +1,13 @@
 import * as Schema from "effect/Schema";
 import { ThreadId } from "../baseSchemas.ts";
-import { ModelCamera, ModelSection, ModelVariant, ModelPoint } from "./model-workspace.ts";
+import {
+  ModelCamera,
+  ModelSection,
+  ModelVariant,
+  ModelPoint,
+  ModelProjection,
+} from "./model-workspace.ts";
+import { BedFitSummary } from "./model-beds.ts";
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
 export const ModelEditorAction = Schema.Struct({
   action: Schema.Literals([
@@ -45,6 +52,7 @@ export const ModelEditorAction = Schema.Struct({
   values: Schema.optional(ModelVariant.fields.values),
   camera: Schema.optional(ModelCamera),
   section: Schema.optional(ModelSection),
+  projection: Schema.optional(ModelProjection),
   wireframe: Schema.optional(Schema.Boolean),
   grid: Schema.optional(Schema.Boolean),
   axes: Schema.optional(Schema.Boolean),
@@ -68,6 +76,7 @@ export const ModelEditorState = Schema.Struct({
   pendingPoint: Schema.NullOr(ModelPoint),
   pendingRegion: Schema.NullOr(Schema.Array(ModelPoint).check(Schema.isMaxLength(64))),
   loading: Schema.Boolean,
+  fit: Schema.optional(BedFitSummary),
   parameters: Schema.NullOr(
     Schema.Struct({
       values: ModelVariant.fields.values,

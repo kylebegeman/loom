@@ -48,6 +48,11 @@ describe("OpenSCAD command boundary", () => {
       ),
     ).toEqual(["echo", "warning", "error", "trace", "info"]);
   });
+  it("renders orthographic by default and perspective on request", () => {
+    expect(pngArgs("part.scad", "part.png", "iso")).toContain("--projection=o");
+    expect(pngArgs("part.scad", "part.png", "iso", "orthographic")).toContain("--projection=o");
+    expect(pngArgs("part.scad", "part.png", "iso", "perspective")).toContain("--projection=p");
+  });
   it("parses incomplete geometry summaries defensively", () => {
     expect(parseSummary('{"geometry":{"simple":true,"facets":12}}')).toMatchObject({
       manifold: true,

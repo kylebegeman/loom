@@ -5,6 +5,7 @@ import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
 import * as Stream from "effect/Stream";
+import * as Schema from "effect/Schema";
 import type { McpCapability } from "../../mcp/McpInvocationContext.ts";
 import * as Layer from "effect/Layer";
 import { EnvironmentId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
@@ -12,11 +13,17 @@ import {
   ModelPreviewError,
   EMPTY_MODEL_WORKSPACE,
   DEFAULT_MODEL_PREVIEW_SETTINGS,
+  bedFitSummary,
+  type ModelProjection,
 } from "@t3tools/contracts/fork";
 import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import { ForkRuntime, type ForkServices } from "../ForkRuntime.ts";
 import { ModelPreviewService } from "./ModelPreviewService.ts";
 import { ModelPreview3dToolkit, modelPreview3dHandlers, renderModelTool } from "./mcp.ts";
+const decodeRenderResult = Schema.decodeEffect(
+  ModelPreview3dToolkit.tools.loom_model_preview_3d_render.successSchema,
+);
+
 function partial<A extends object>(methods: Partial<A>): A {
   return new Proxy(methods as A, {
     get(target, key) {
@@ -110,6 +117,72 @@ it.effect(
         expect(results).toMatchObject({ reason: state });
       }
     }).pipe(Effect.scoped),
+);
+
+it.effect("renders with default or explicit projection and passes bed fit through", () =>
+  Effect.gen(function* () {
+    const threadId = ThreadId.make("render-thread");
+    const fit = bedFitSummary([10, 20, 30], DEFAULT_MODEL_PREVIEW_SETTINGS.buildPlate);
+    const projections: Array<ModelProjection | undefined> = [];
+    const service = partial<ModelPreviewService["Service"]>({
+      getSettings: () => Effect.succeed(DEFAULT_MODEL_PREVIEW_SETTINGS),
+      renderImages: (file, views, overrides, projection) => {
+        expect(file).toEqual({ threadId, path: "part.scad" });
+        expect(views).toEqual(["iso"]);
+        expect(overrides).toEqual({ width: "3" });
+        projections.push(projection);
+        return Effect.succeed({ images: [], summary: null, log: [], fit });
+      },
+    });
+    const toolkit = yield* ModelPreview3dToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(modelPreview3dHandlers).pipe(
+          Layer.provide(callerLayer),
+          Layer.provide(
+            Layer.succeed(
+              ForkRuntime,
+              Context.make(
+                ModelPreviewService,
+                service,
+              ) as unknown as Context.Context<ForkServices>,
+            ),
+          ),
+        ),
+      ),
+    );
+    for (const projection of [undefined, "orthographic", "perspective"] as const) {
+      const results = yield* toolkit
+        .handle("loom_model_preview_3d_render", {
+          path: "part.scad",
+          views: ["iso"],
+          overrides: { width: "3" },
+          ...(projection ? { projection } : {}),
+        })
+        .pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.provideService(McpInvocationContext, {
+            environmentId: EnvironmentId.make("test"),
+            thread: {
+              threadId,
+              providerSessionId: "session",
+              providerInstanceId: ProviderInstanceId.make("codex"),
+            },
+            client: undefined,
+            requestNamespace: "model-test",
+            capabilities: new Set<McpCapability>(),
+            issuedAt: 0,
+          }),
+        );
+      expect(results[0]).toMatchObject({ isFailure: false, result: { fit } });
+    }
+    expect(projections).toEqual(["orthographic", "orthographic", "perspective"]);
+    expect(
+      (yield* decodeRenderResult({ images: [], summary: null, log: [], fit: null })).fit,
+    ).toBeNull();
+    expect((yield* decodeRenderResult({ images: [], summary: null, log: [], fit })).fit).toEqual(
+      fit,
+    );
+  }).pipe(Effect.scoped),
 );
 
 it.effect(

@@ -2,6 +2,7 @@ import { expect, it } from "@effect/vitest";
 import { EMPTY_MODEL_WORKSPACE, type ModelCamera } from "@t3tools/contracts/fork";
 import { applyWorkspaceOperation } from "./workspace.ts";
 const camera: ModelCamera = {
+  projection: "perspective",
   position: [10, 10, 10],
   target: [0, 0, 0],
   near: 0.1,

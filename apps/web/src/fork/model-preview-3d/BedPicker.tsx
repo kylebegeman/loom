@@ -153,7 +153,7 @@ export function BedPicker({
               <SelectValue>{label}</SelectValue>
             </SelectTrigger>
             <SelectPopup alignItemWithTrigger={false}>
-              {bedGroups(plate.customMm).map((group) => (
+              {bedGroups(plate).map((group) => (
                 <SelectGroup key={group.label}>
                   <SelectGroupLabel>{group.label}</SelectGroupLabel>
                   {group.options.map((option) => (

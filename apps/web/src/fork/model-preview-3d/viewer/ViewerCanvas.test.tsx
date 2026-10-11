@@ -14,6 +14,7 @@ vi.mock("./load", () => ({ loadModel, disposeModel }));
 import ViewerCanvas from "./ViewerCanvas";
 
 const camera: ReturnType<ModelViewer["snapshot"]> = {
+  projection: "perspective",
   position: [40, -50, 60],
   target: [5, 10, 15],
   near: 0.01,
@@ -44,6 +45,7 @@ function makeViewer() {
     setWireframe: vi.fn(),
     setGrid: vi.fn(),
     setAxes: vi.fn(),
+    setProjection: vi.fn(),
   };
 }
 const viewerRef = { current: null as ModelViewer | null };

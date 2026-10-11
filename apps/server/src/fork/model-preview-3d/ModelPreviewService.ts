@@ -10,11 +10,13 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeOS from "node:os";
 import {
   ModelPreviewError,
+  bedFitSummary,
   type ModelWorkspaceOperation,
   type ModelWorkspace,
   type ModelVariant,
   type ModelFileRef,
   type ModelPreviewSettings,
+  type ModelProjection,
   type ModelEntry,
   type ScadRenderInput,
   ScadRenderResult,
@@ -51,6 +53,7 @@ import {
   parseSummary,
   renderArgs,
   pngArgs,
+  DEFAULT_RENDER_PROJECTION,
   type ModelView,
 } from "./openscad.ts";
 import { cacheKey, pruneList, createStemProtection } from "./renderCache.ts";
@@ -1105,6 +1108,7 @@ export const make = Effect.gen(function* () {
       file: ModelFileRef,
       views: ReadonlyArray<ModelView>,
       overrides: Readonly<Record<string, string>>,
+      projection: ModelProjection = DEFAULT_RENDER_PROJECTION,
     ) =>
       checked(
         Effect.gen(function* () {
@@ -1182,7 +1186,7 @@ export const make = Effect.gen(function* () {
                             ? Effect.void
                             : fs.remove(target, { force: true }).pipe(Effect.ignore),
                         );
-                        const args = pngArgs(source, target, view);
+                        const args = pngArgs(source, target, view, projection);
                         if (info.supportsSummary)
                           args.splice(
                             args.length - 1,
@@ -1235,13 +1239,23 @@ export const make = Effect.gen(function* () {
                       }),
                     );
                     yield* prune();
-                    return {
-                      images,
-                      log,
-                      summary: parseSummary(
-                        yield* fs.readFileString(summaryPath).pipe(Effect.orElseSucceed(() => "")),
-                      ),
-                    };
+                    const summary = parseSummary(
+                      yield* fs.readFileString(summaryPath).pipe(Effect.orElseSucceed(() => "")),
+                    );
+                    const box = summary?.boundingBox;
+                    const size =
+                      box && box.min.length === 3 && box.max.length === 3
+                        ? ([
+                            box.max[0]! - box.min[0]!,
+                            box.max[1]! - box.min[1]!,
+                            box.max[2]! - box.min[2]!,
+                          ] as const)
+                        : null;
+                    const fit =
+                      size && size.every((mm) => Number.isFinite(mm) && mm >= 0)
+                        ? bedFitSummary(size, settings.buildPlate)
+                        : null;
+                    return { images, log, summary, fit };
                   }),
                 ),
               )

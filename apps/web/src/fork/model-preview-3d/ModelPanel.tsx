@@ -29,6 +29,8 @@ import {
   XIcon,
 } from "lucide-react";
 import {
+  bedFitSummary,
+  type ModelProjection,
   type ModelEntry,
   type ModelPreviewSettings,
   type ModelSavedView,
@@ -131,7 +133,12 @@ function ModelFile({
     [activeView, setActiveView] = useState<View | null>("iso"),
     [activeViewId, setActiveViewId] = useState<string | null>(null),
     [navigationMode, setNavigationMode] = useState<NavigationMode>("orbit"),
-    [display, setDisplay] = useState({ wireframe: false, grid: true, axes: false });
+    [display, setDisplay] = useState({
+      wireframe: false,
+      grid: true,
+      axes: false,
+      projection: "perspective" as ModelProjection,
+    });
   const [variantActivity, setVariantActivity] = useState<OperationProgress | null>(null);
   const [session, setSession] = useState<ScadSession | null>(null);
   const [geometryRevision, setGeometryRevision] = useState("");
@@ -139,7 +146,12 @@ function ModelFile({
   const perform = editing.perform;
   const { copyToClipboard } = useCopyToClipboard();
   const recall = (camera: ModelCamera, refit: boolean) => {
-    setDisplay({ wireframe: camera.wireframe, grid: camera.gridVisible, axes: camera.axesVisible });
+    setDisplay({
+      wireframe: camera.wireframe,
+      grid: camera.gridVisible,
+      axes: camera.axesVisible,
+      projection: camera.projection,
+    });
     setNavigationMode(camera.navigationMode);
     editing.setSection(camera.section);
     viewer.current?.restore(camera);
@@ -220,6 +232,7 @@ function ModelFile({
               ...(c.wireframe === undefined ? {} : { wireframe: c.wireframe }),
               ...(c.grid === undefined ? {} : { grid: c.grid }),
               ...(c.axes === undefined ? {} : { axes: c.axes }),
+              ...(c.projection === undefined ? {} : { projection: c.projection }),
             }));
             break;
           case "navigation":
@@ -395,6 +408,7 @@ function ModelFile({
                   pendingPoint: editing.pendingPoint,
                   pendingRegion: editing.pendingRegion,
                   loading: loadingFile || (!stats && !error),
+                  ...(stats ? { fit: bedFitSummary(stats.size, settings.buildPlate) } : {}),
                   parameters: session
                     ? {
                         values: session.values,
@@ -759,6 +773,11 @@ function ModelFile({
         else if (key === "o") setNavigationMode("orbit");
         else if (key === "i") setInspectorOpen((value) => !value);
         else if (key === "w") setDisplay((value) => ({ ...value, wireframe: !value.wireframe }));
+        else if (key === "p")
+          setDisplay((value) => ({
+            ...value,
+            projection: value.projection === "perspective" ? "orthographic" : "perspective",
+          }));
         else if (key === "g") setDisplay((value) => ({ ...value, grid: !value.grid }));
         else if (key === "a") setDisplay((value) => ({ ...value, axes: !value.axes }));
         else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
@@ -899,6 +918,13 @@ function ModelFile({
           <DisplayTools
             bed={<BedPicker environmentId={threadRef.environmentId} settings={settings} />}
             {...display}
+            orthographic={display.projection === "orthographic"}
+            onOrthographic={(orthographic) =>
+              setDisplay((value) => ({
+                ...value,
+                projection: orthographic ? "orthographic" : "perspective",
+              }))
+            }
             onWireframe={(wireframe) => setDisplay((value) => ({ ...value, wireframe }))}
             onGrid={(grid) => setDisplay((value) => ({ ...value, grid }))}
             onAxes={(axes) => setDisplay((value) => ({ ...value, axes }))}

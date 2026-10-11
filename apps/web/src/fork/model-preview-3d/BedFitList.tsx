@@ -1,0 +1,110 @@
+import { useMemo } from "react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import {
+  activeBed,
+  fitOnBed,
+  listBeds,
+  selectBed,
+  type ModelPreviewSettings,
+} from "@t3tools/contracts/fork";
+import { useBuildPlate } from "./BedPicker";
+import { describeFit, formatVolume } from "./buildPlate";
+import { Chip, SectionHead, Tip } from "./controls";
+import styles from "./workspace.module.css";
+
+const GROUPS = [
+  { kind: "printer", label: "Printers" },
+  { kind: "surface", label: "Surfaces" },
+  { kind: "custom", label: "Custom" },
+] as const;
+
+/** Compare the loaded part with every bed and choose the environment's active bed. */
+export function BedFitList({
+  environmentId,
+  settings,
+  size,
+}: {
+  environmentId: EnvironmentId;
+  settings: ModelPreviewSettings;
+  size: readonly [number, number, number];
+}) {
+  const { plate, canSave, save } = useBuildPlate(environmentId, settings);
+  const rows = useMemo(
+    () => listBeds(plate).map((bed) => ({ bed, fit: fitOnBed(size, bed.volumeMm) })),
+    [size, plate],
+  );
+  const activeId = activeBed(plate).id;
+  const count = rows.filter(({ fit }) => fit.status !== "too-big").length;
+  const summary = (
+    <Chip>
+      Fits {count} of {rows.length}
+    </Chip>
+  );
+  return (
+    <section className={styles["model-bed-fit-list"]} aria-label="Which beds fit?">
+      <SectionHead title="Which beds fit?">
+        {canSave ? (
+          summary
+        ) : (
+          <Tip label="This connection cannot change model settings.">
+            <span tabIndex={0}>{summary}</span>
+          </Tip>
+        )}
+      </SectionHead>
+      {GROUPS.map((group) => (
+        <div key={group.kind} className={styles["model-bed-fit-group"]}>
+          <h4>{group.label}</h4>
+          <ul>
+            {rows
+              .filter(({ bed }) => bed.kind === group.kind)
+              .map(({ bed, fit }) => {
+                const active = bed.id === activeId;
+                const content = (
+                  <>
+                    <span className={styles["model-bed-fit-name"]}>
+                      <span className={styles["model-row-name"]}>{bed.label}</span>
+                      <span className={styles["model-row-detail"]}>
+                        {formatVolume(bed.volumeMm)} mm
+                      </span>
+                    </span>
+                    <span className={styles["model-bed-fit-status"]}>
+                      {active && <Chip>Active</Chip>}
+                      {fit.status === "too-big" ? (
+                        <span className={styles["model-bed-fit-over"]}>
+                          {describeFit(fit, (mm) => `${mm.toFixed(1)} mm`)}
+                        </span>
+                      ) : (
+                        <Chip {...(fit.status === "fits" ? { tone: "success" as const } : {})}>
+                          {describeFit(fit, (mm) => `${mm.toFixed(1)} mm`)}
+                        </Chip>
+                      )}
+                    </span>
+                  </>
+                );
+                return (
+                  <li key={bed.id}>
+                    {canSave ? (
+                      <button
+                        type="button"
+                        className={styles["model-bed-fit-row"]}
+                        aria-pressed={active}
+                        data-active={active}
+                        disabled={active}
+                        onClick={() => void save(selectBed(plate, bed.id))}
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div className={styles["model-bed-fit-row"]} data-active={active}>
+                        {content}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}

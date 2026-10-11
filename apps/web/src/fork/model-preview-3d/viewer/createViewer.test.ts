@@ -5,6 +5,9 @@ import {
   Texture,
   Vector3,
   Raycaster,
+  OrthographicCamera,
+  PerspectiveCamera,
+  Sprite,
   MOUSE,
   TOUCH,
 } from "three";
@@ -198,6 +201,8 @@ it("surface picking respects clipping, disables navigation and removes pointer l
   const viewer = createViewer(host());
   viewer.setModel(new Mesh(new BoxGeometry(10, 10, 10), new MeshStandardMaterial()), false);
   viewer.setSection({ enabled: true, axis: "z", offset: 0, flipped: false });
+  viewer.setProjection("orthographic");
+  const rayCamera = vi.spyOn(Raycaster.prototype, "setFromCamera");
   const callback = vi.fn();
   viewer.setPickMode("measure", callback);
   expect((doubles.controls as { enabled: boolean }).enabled).toBe(false);
@@ -211,6 +216,7 @@ it("surface picking respects clipping, disables navigation and removes pointer l
   pointerHandlers.pointerdown!(event);
   pointerHandlers.pointerup!(event);
   expect(callback).toHaveBeenCalledWith([[1, 2, 3]]);
+  expect(rayCamera.mock.calls[0]![1]).toBeInstanceOf(OrthographicCamera);
   viewer.setNavigationMode("pan");
   expect(gpu.domElement.style.cursor).toBe("crosshair");
   viewer.setPickMode(null, null);
@@ -223,6 +229,7 @@ it("surface picking respects clipping, disables navigation and removes pointer l
     expect.any(Function),
   );
   hits.mockRestore();
+  rayCamera.mockRestore();
 });
 
 it("cancels unfinished picks when tools change", () => {
@@ -243,35 +250,46 @@ it("cancels unfinished picks when tools change", () => {
   vi.restoreAllMocks();
 });
 
-it("restores the working camera before asynchronous image encoding finishes", async () => {
-  let finish: BlobCallback | null = null;
-  const bitmap = {
-    width: 0,
-    height: 0,
-    getContext: () => ({ drawImage: vi.fn(), fillRect: vi.fn(), fillText: vi.fn() }),
-    toBlob: (callback: BlobCallback) => {
-      finish = callback;
-    },
-  };
-  vi.stubGlobal("document", {
-    documentElement: { classList: { contains: () => true } },
-    createElement: () => bitmap,
-  });
-  Object.assign(gpu, {
-    getSize: (size: import("three").Vector2) => size.set(600, 400),
-    getPixelRatio: () => 1,
-  });
-  const viewer = createViewer(host());
-  viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
-  viewer.setView("front");
-  const original = viewer.snapshot();
-  const capture = viewer.capture(true);
-  expect(viewer.snapshot()).toEqual(original);
-  expect((doubles.controls as { enabled: boolean }).enabled).not.toBe(false);
-  finish!(new Blob(["png"]));
-  await capture;
-  viewer.dispose();
-});
+it.each(["perspective", "orthographic"] as const)(
+  "captures four orthographic views and restores %s before encoding finishes",
+  async (projection) => {
+    let finish: BlobCallback | null = null;
+    const bitmap = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage: vi.fn(), fillRect: vi.fn(), fillText: vi.fn() }),
+      toBlob: (callback: BlobCallback) => {
+        finish = callback;
+      },
+    };
+    vi.stubGlobal("document", {
+      documentElement: { classList: { contains: () => true } },
+      createElement: () => bitmap,
+    });
+    Object.assign(gpu, {
+      getSize: (size: import("three").Vector2) => size.set(600, 400),
+      getPixelRatio: () => 1,
+    });
+    const viewer = createViewer(host());
+    viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
+    viewer.setView("front");
+    viewer.setProjection(projection);
+    const original = viewer.snapshot();
+    const onCamera = vi.fn();
+    viewer.onCameraChange(onCamera);
+    gpu.render.mockClear();
+    const capture = viewer.capture(true);
+    expect(gpu.render).toHaveBeenCalledTimes(4);
+    for (const [, viewCamera] of gpu.render.mock.calls)
+      expect(viewCamera).toBeInstanceOf(OrthographicCamera);
+    expect(onCamera).not.toHaveBeenCalled();
+    expect(viewer.snapshot()).toEqual(original);
+    expect((doubles.controls as { enabled: boolean }).enabled).not.toBe(false);
+    finish!(new Blob(["png"]));
+    await capture;
+    viewer.dispose();
+  },
+);
 
 it("places the bed under the model's footprint without moving the model", () => {
   const viewer = createViewer(host());
@@ -288,5 +306,123 @@ it("places the bed under the model's footprint without moving the model", () => 
   flushFrame();
   expect(scene.getObjectsByProperty("name", "bed")).toHaveLength(1);
   expect(scene.getObjectByName("bed")!.position.toArray()).toEqual([50, 20, 5]);
+  viewer.dispose();
+});
+
+it("switches projection without moving the rig and restores each saved projection", () => {
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
+  const perspective = viewer.snapshot();
+  viewer.setProjection("orthographic");
+  const orthographic = viewer.snapshot();
+  expect(orthographic).toEqual({ ...perspective, projection: "orthographic" });
+  expect(viewer.activeCamera()).toBeInstanceOf(OrthographicCamera);
+  viewer.restore(perspective);
+  expect(viewer.snapshot()).toEqual(perspective);
+  expect(viewer.activeCamera()).toBeInstanceOf(PerspectiveCamera);
+  viewer.restore(orthographic);
+  expect(viewer.snapshot()).toEqual(orthographic);
+  flushFrame();
+  expect(frames.size).toBe(0);
+  viewer.dispose();
+});
+
+it("keeps orthographic dots the same screen size through zoom and restores perspective sizing", () => {
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: () => ({
+      getContext: () => ({ arc: vi.fn(), fill: vi.fn(), stroke: vi.fn() }),
+    }),
+  });
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
+  viewer.setOverlays([], [], [0, 0, 0]);
+  viewer.setProjection("orthographic");
+  flushFrame();
+  const scene = gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  const dots = scene.getObjectsByProperty("type", "Sprite") as Sprite[];
+  expect(dots).toHaveLength(1);
+  const camera = viewer.activeCamera() as OrthographicCamera;
+  const screenSize = dots[0]!.scale.x / camera.top;
+  viewer.zoom(0.5);
+  flushFrame();
+  expect(dots[0]!.scale.x / camera.top).toBeCloseTo(screenSize);
+  viewer.setProjection("perspective");
+  flushFrame();
+  expect(dots[0]!.scale.x).toBe(0.015);
+  viewer.dispose();
+});
+
+it("restores projection, framing and navigation when capturing fails", async () => {
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: () => ({
+      getContext: () => ({ drawImage: vi.fn() }),
+    }),
+  });
+  Object.assign(gpu, {
+    getSize: (size: import("three").Vector2) => size.set(600, 400),
+    getPixelRatio: () => 2,
+  });
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
+  viewer.setView("right");
+  viewer.setNavigationMode("pan");
+  const original = viewer.snapshot();
+  gpu.render.mockImplementationOnce(() => {
+    throw new Error("Capture renderer failed");
+  });
+  await expect(viewer.capture(true)).rejects.toThrow("Capture renderer failed");
+  expect(viewer.snapshot()).toEqual(original);
+  expect((doubles.controls as { enabled: boolean }).enabled).not.toBe(false);
+  expect(gpu.setPixelRatio).toHaveBeenLastCalledWith(2);
+  expect(gpu.setSize).toHaveBeenLastCalledWith(600, 400, false);
+  viewer.dispose();
+});
+
+it.each(["perspective", "orthographic"] as const)(
+  "captures the current view using %s",
+  async (projection) => {
+    vi.stubGlobal("document", {
+      documentElement: { classList: { contains: () => true } },
+      createElement: () => ({
+        getContext: () => ({ drawImage: vi.fn() }),
+        toBlob: (callback: BlobCallback) => callback(new Blob(["png"])),
+      }),
+    });
+    Object.assign(gpu, {
+      getSize: (size: import("three").Vector2) => size.set(600, 400),
+      getPixelRatio: () => 1,
+    });
+    const viewer = createViewer(host());
+    viewer.setModel(new Mesh(new BoxGeometry(10, 20, 30), new MeshStandardMaterial()), false);
+    viewer.setProjection(projection);
+    const original = viewer.snapshot();
+    gpu.render.mockClear();
+    await viewer.capture(false);
+    expect(gpu.render).toHaveBeenCalledOnce();
+    expect(gpu.render.mock.calls[0]![1]).toBeInstanceOf(
+      projection === "orthographic" ? OrthographicCamera : PerspectiveCamera,
+    );
+    expect(viewer.snapshot()).toEqual(original);
+    viewer.dispose();
+  },
+);
+
+it("picks visible orthographic faces behind the eye when zoomed inside the model", () => {
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial()), false);
+  viewer.restore({
+    ...viewer.snapshot(),
+    projection: "orthographic",
+    position: [0, 0, 2],
+    target: [0, 0, 0],
+  });
+  const callback = vi.fn();
+  viewer.setPickMode("measure", callback);
+  const event = { button: 0, clientX: 300, clientY: 200, pointerId: 1 } as PointerEvent;
+  pointerHandlers.pointerdown!(event);
+  pointerHandlers.pointerup!(event);
+  expect(callback).toHaveBeenCalledWith([[0, 0, 10]]);
   viewer.dispose();
 });

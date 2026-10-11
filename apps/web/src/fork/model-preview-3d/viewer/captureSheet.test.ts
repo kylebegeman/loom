@@ -5,6 +5,7 @@ import type { ModelCamera, ModelSavedView } from "@t3tools/contracts/fork";
 
 it("snapshots every named view before encoding and immediately restores the user's camera", async () => {
   const original: ModelCamera = {
+    projection: "perspective",
     position: [1, 2, 3],
     target: [0, 0, 0],
     near: 0.1,
@@ -52,7 +53,7 @@ it("snapshots every named view before encoding and immediately restores the user
       id: "a",
       name: "Front",
       sourceRevision: "mesh",
-      camera: { ...original, position: [4, 5, 6] },
+      camera: { ...original, projection: "orthographic", position: [4, 5, 6] },
     },
     { id: "b", name: "Top", sourceRevision: "mesh", camera: { ...original, position: [7, 8, 9] } },
   ] as ModelSavedView[];

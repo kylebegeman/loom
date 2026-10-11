@@ -16,10 +16,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type {
-  BuildPlatePresetId,
-  ModelPreviewSettings,
-  ScadRenderResult,
+import {
+  fitOnBed,
+  type BuildPlatePresetId,
+  type ModelPreviewSettings,
+  type ScadRenderResult,
 } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import {
@@ -36,8 +37,15 @@ import {
 } from "~/components/ui/menu";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import type { meshStats } from "./viewer/load";
-import { bedGroups, buildPlateLabel, bedFit, formatVolume, type BuildVolume } from "./buildPlate";
+import {
+  bedGroups,
+  buildPlateLabel,
+  describeFit,
+  formatVolume,
+  type BuildVolume,
+} from "./buildPlate";
 import { useBuildPlate } from "./BedPicker";
+import { BedFitList } from "./BedFitList";
 import { Chip, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
 
 export type InspectorTab = "customize" | "variants" | "markup" | "views" | "part";
@@ -171,7 +179,6 @@ export function InspectorTabs({
 }
 
 const AXES = ["Width", "Depth", "Height"] as const;
-const OVER = ["wide", "deep", "tall"] as const;
 const PLATE_GRID_MM = 50;
 
 /** Top view of the part on the plate, to scale, plus a height gauge. */
@@ -297,7 +304,7 @@ function PrinterMenu({
           value={plate.preset}
           onValueChange={(next: BuildPlatePresetId) => void save({ ...plate, preset: next })}
         >
-          {bedGroups(plate.customMm).map((group) => (
+          {bedGroups(plate).map((group) => (
             <MenuGroup key={group.label}>
               <MenuGroupLabel>{group.label}</MenuGroupLabel>
               {group.options.map((option) => (
@@ -358,9 +365,9 @@ export function PartSection({
     const limit = volume[axis];
     return limit === null || limit === undefined ? 0 : value - limit;
   });
-  const fit = bedFit(stats.size, volume);
-  const fits = fit === "fits";
-  const rotated = fit === "rotated";
+  const fit = fitOnBed(stats.size, volume);
+  const fits = fit.status === "fits";
+  const rotated = fit.status === "fits-rotated";
   const manifold = render?.summary?.manifold;
   return (
     <div className={styles["model-inspector-scroll"]}>
@@ -398,23 +405,17 @@ export function PartSection({
         <p className={styles["model-fit-advice"]}>
           {fits ? (
             `${Math.min(...over.map((value, axis) => (volume[axis] === null ? Infinity : -value))).toFixed(0)} mm of clearance on the tightest axis.`
+          ) : rotated ? (
+            "It fits if you rotate it 90° on the plate."
           ) : (
             <>
-              <strong>
-                {over
-                  .flatMap((value, axis) =>
-                    value > 1e-6 ? [`${value.toFixed(1)} mm too ${OVER[axis]}`] : [],
-                  )
-                  .join(", ")}
-                .
-              </strong>{" "}
-              {rotated
-                ? "It fits if you rotate it 90° on the plate."
-                : "Split the part or choose a larger bed. You can still preview and capture it."}
+              <strong>{describeFit(fit, (mm) => `${mm.toFixed(1)} mm`)}.</strong> Split the part or
+              choose a larger bed. You can still preview and capture it.
             </>
           )}
         </p>
       </div>
+      <BedFitList environmentId={environmentId} settings={settings} size={stats.size} />
       <dl className={styles["model-facts"]}>
         <dt>Triangles</dt>
         <dd>{stats.triangles.toLocaleString()}</dd>
