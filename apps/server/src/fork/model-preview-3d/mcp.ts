@@ -13,7 +13,7 @@ import { DEFAULT_RENDER_PROJECTION, View } from "./openscad.ts";
 export const ModelPreview3dToolkit = Toolkit.make(
   Tool.make("loom_model_preview_3d_editor", {
     description:
-      "Open, close, maximize and control the 3D editor: camera, standard views, display, navigation, section, selection tools, inspectors, refresh, saved views, captures and current state. Captures return a host PNG path.",
+      "Open, close, maximize and control the 3D editor: camera, standard views, display, navigation, section, selection tools, inspectors, refresh, saved views, captures and current state. Captures return a host PNG path. Lengths are in millimetres. display can show an everyday object for scale (reference).",
     parameters: Schema.Struct({ path: W.ModelFileRef.fields.path, command: W.ModelEditorAction }),
     success: W.ModelEditorResult,
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),
@@ -140,7 +140,8 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Readonly, true)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_save_settings", {
-    description: "Update 3D preview settings, including build volume and OpenSCAD path.",
+    description:
+      "Update 3D preview settings, including build volume, OpenSCAD path, scale reference and display units. displayUnits only changes what the user sees; every tool reads and writes millimetres.",
     parameters: Schema.Struct({ settings: W.ModelPreviewSettings }),
     success: W.ModelPreviewSettings,
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),

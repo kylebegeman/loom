@@ -1,5 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as SqlClient from "effect/sql/SqlClient";
 import { layerMemory as SqlitePersistenceMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import { ModelPreviewMigrations } from "./migrations.ts";
@@ -61,4 +62,37 @@ it.effect("reads legacy main-checkout parameters only as a fallback to scoped va
       lastUsedSet: null,
     });
   }).pipe(Effect.provide(SqlitePersistenceMemory)),
+);
+
+it.effect(
+  "loads legacy display settings and round-trips units and scale without changing lengths",
+  () =>
+    Effect.gen(function* () {
+      yield* runForkMigrationSet(ModelPreviewMigrations);
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* makeStore;
+      const defaults = yield* store.getSettings();
+      const legacy = JSON.stringify({
+        openscadPath: defaults.openscadPath,
+        backend: defaults.backend,
+        renderTimeoutSeconds: defaults.renderTimeoutSeconds,
+        renderColors: defaults.renderColors,
+        maxFileMegabytes: defaults.maxFileMegabytes,
+        buildPlate: defaults.buildPlate,
+        fabricationUrl: defaults.fabricationUrl,
+        agentToolEnabled: defaults.agentToolEnabled,
+      });
+      yield* sql`INSERT INTO fork_model_preview_3d_settings (key,value_json) VALUES ('settings', ${legacy})`;
+      expect(yield* store.getSettings()).toEqual(defaults);
+      const settings = {
+        ...defaults,
+        displayUnits: "in" as const,
+        scaleReference: "hand" as const,
+      };
+      yield* store.updateSettings(settings);
+      expect(yield* store.getSettings()).toEqual(settings);
+      expect((yield* store.getSettings()).buildPlate.customMm).toEqual(
+        defaults.buildPlate.customMm,
+      );
+    }).pipe(Effect.provide(SqlitePersistenceMemory)),
 );

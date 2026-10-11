@@ -2,6 +2,9 @@ import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   ModelPreviewSettings,
+  type DisplayUnits,
+  type ScaleReference,
+  SCALE_REFERENCE_LABELS,
   type BuildPlatePattern,
   type BuildPlatePresetId,
   type ModelPreviewStatus,
@@ -28,14 +31,10 @@ import {
 import { useServerConfigs } from "~/state/entities";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { OperationStatus } from "./OperationStatus";
-import {
-  BUILD_PLATE_PATTERNS,
-  bedGroups,
-  buildPlateLabel,
-  buildPlateNote,
-  formatVolume,
-} from "./buildPlate";
+import { BUILD_PLATE_PATTERNS, bedGroups, buildPlateLabel, buildPlateNote } from "./buildPlate";
 import { models, runModelCommand } from "./state";
+import { DisplayUnitsProvider, formatLengths } from "./units";
+import { CustomBedSize } from "./BedPicker";
 
 const validateSettings = Schema.decodeSync(ModelPreviewSettings);
 const BACKENDS = [
@@ -88,260 +87,306 @@ function SettingsForm({
       appAtomRegistry.refresh(models.status({ environmentId, input: {} }));
     }, "Settings saved.");
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
-        <p className="text-sm text-muted-foreground">
-          These settings apply to the selected environment. OpenSCAD runs on that host.
-        </p>
-        {!info && status.waiting && <OperationStatus label="Detecting OpenSCAD" />}
-        <p className="text-sm">
-          {info?.openscad.path
-            ? `OpenSCAD ${info.openscad.version ?? "unknown version"} · ${info.openscad.supportsManifold ? "Manifold available" : "CGAL"} · ${info.openscad.supportsSummary ? "Geometry summaries available" : "No geometry summaries"}`
-            : "OpenSCAD was not detected. Mesh previews still work."}{" "}
-          <a
-            href="https://openscad.org/downloads.html#snapshots"
-            target="_blank"
-            rel="noreferrer"
-            className="underline"
-          >
-            Get a development snapshot
-          </a>
-        </p>
-      </div>
-      <SettingsRow
-        title="OpenSCAD executable"
-        description="Leave blank to search PATH and macOS applications."
-      >
-        <div className="flex flex-col gap-2 pb-2">
-          <Input
-            aria-label="OpenSCAD executable"
-            value={settings.openscadPath ?? ""}
-            onChange={(event) => set("openscadPath", event.target.value || null)}
-          />
+    <DisplayUnitsProvider
+      value={{
+        units: settings.displayUnits,
+        setUnits: (units) => set("displayUnits", units),
+        canSave,
+      }}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 px-3 pt-3 sm:px-4">
+          <p className="text-sm text-muted-foreground">
+            These settings apply to the selected environment. OpenSCAD runs on that host.
+          </p>
+          {!info && status.waiting && <OperationStatus label="Detecting OpenSCAD" />}
+          <p className="text-sm">
+            {info?.openscad.path
+              ? `OpenSCAD ${info.openscad.version ?? "unknown version"} · ${info.openscad.supportsManifold ? "Manifold available" : "CGAL"} · ${info.openscad.supportsSummary ? "Geometry summaries available" : "No geometry summaries"}`
+              : "OpenSCAD was not detected. Mesh previews still work."}{" "}
+            <a
+              href="https://openscad.org/downloads.html#snapshots"
+              target="_blank"
+              rel="noreferrer"
+              className="underline"
+            >
+              Get a development snapshot
+            </a>
+          </p>
         </div>
-      </SettingsRow>
-      <SettingsRow
-        title="Render backend"
-        control={
-          <Select
-            value={settings.backend}
-            onValueChange={(next) => {
-              if (next) set("backend", next);
-            }}
-          >
-            <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Render backend">
-              <SelectValue>
-                {BACKENDS.find(({ value }) => value === settings.backend)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {BACKENDS.map(({ value, label }) => (
-                <SelectItem key={value} value={value}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        }
-      />
-      <SettingsRow
-        title="Render timeout (seconds)"
-        control={
-          <Input
-            aria-label="Render timeout"
-            type="number"
-            size="sm"
-            className="w-full sm:w-24"
-            min={1}
-            max={600}
-            value={settings.renderTimeoutSeconds}
-            onChange={(event) => set("renderTimeoutSeconds", Number(event.target.value))}
-          />
-        }
-      />
-      <SettingsRow
-        title="Render colors"
-        description="Export SCAD as 3MF to preserve model colors."
-        control={
-          <input
-            aria-label="Render colors"
-            type="checkbox"
-            checked={settings.renderColors}
-            onChange={(event) => set("renderColors", event.target.checked)}
-          />
-        }
-      />
-      <SettingsRow
-        title="Maximum file size (MB)"
-        control={
-          <Input
-            aria-label="Maximum file size"
-            type="number"
-            size="sm"
-            className="w-full sm:w-24"
-            min={1}
-            max={2048}
-            value={settings.maxFileMegabytes}
-            onChange={(event) => set("maxFileMegabytes", Number(event.target.value))}
-          />
-        }
-      />
-      <SettingsRow
-        title="Bed"
-        description="The plate under the model and the size fit checks use."
-        control={
-          <Select
-            value={settings.buildPlate.preset}
-            onValueChange={(next: BuildPlatePresetId | null) => {
-              if (next) set("buildPlate", { ...settings.buildPlate, preset: next });
-            }}
-          >
-            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed">
-              <SelectValue>{buildPlateLabel(settings.buildPlate)}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {bedGroups(settings.buildPlate).map((group) => (
-                <SelectGroup key={group.label}>
-                  <SelectGroupLabel>{group.label}</SelectGroupLabel>
-                  {group.options.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      <span className="flex w-full items-center gap-4">
-                        <span className="flex-1">{option.label}</span>
-                        <span className="text-muted-foreground text-xs tabular-nums">
-                          {formatVolume(option.volumeMm)} mm
+        <SettingsRow
+          title="OpenSCAD executable"
+          description="Leave blank to search PATH and macOS applications."
+        >
+          <div className="flex flex-col gap-2 pb-2">
+            <Input
+              aria-label="OpenSCAD executable"
+              value={settings.openscadPath ?? ""}
+              onChange={(event) => set("openscadPath", event.target.value || null)}
+            />
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          title="Render backend"
+          control={
+            <Select
+              value={settings.backend}
+              onValueChange={(next) => {
+                if (next) set("backend", next);
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Render backend">
+                <SelectValue>
+                  {BACKENDS.find(({ value }) => value === settings.backend)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {BACKENDS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          title="Render timeout (seconds)"
+          control={
+            <Input
+              aria-label="Render timeout"
+              type="number"
+              size="sm"
+              className="w-full sm:w-24"
+              min={1}
+              max={600}
+              value={settings.renderTimeoutSeconds}
+              onChange={(event) => set("renderTimeoutSeconds", Number(event.target.value))}
+            />
+          }
+        />
+        <SettingsRow
+          title="Render colors"
+          description="Export SCAD as 3MF to preserve model colors."
+          control={
+            <input
+              aria-label="Render colors"
+              type="checkbox"
+              checked={settings.renderColors}
+              onChange={(event) => set("renderColors", event.target.checked)}
+            />
+          }
+        />
+        <SettingsRow
+          title="Maximum file size (MB)"
+          control={
+            <Input
+              aria-label="Maximum file size"
+              type="number"
+              size="sm"
+              className="w-full sm:w-24"
+              min={1}
+              max={2048}
+              value={settings.maxFileMegabytes}
+              onChange={(event) => set("maxFileMegabytes", Number(event.target.value))}
+            />
+          }
+        />
+        <SettingsRow
+          title="Units"
+          description="Lengths shown in the 3D panel. Models and agent tools stay in millimetres."
+          control={
+            <Select
+              disabled={!canSave}
+              value={settings.displayUnits}
+              onValueChange={(next: DisplayUnits | null) => {
+                if (next) set("displayUnits", next);
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Units">
+                <SelectValue>
+                  {settings.displayUnits === "in" ? "Inches" : "Millimetres"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem value="mm">Millimetres</SelectItem>
+                <SelectItem value="in">Inches</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          title="Bed"
+          description="The plate under the model and the size fit checks use."
+          control={
+            <Select
+              value={settings.buildPlate.preset}
+              onValueChange={(next: BuildPlatePresetId | null) => {
+                if (next) set("buildPlate", { ...settings.buildPlate, preset: next });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed">
+                <SelectValue>{buildPlateLabel(settings.buildPlate)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {bedGroups(settings.buildPlate).map((group) => (
+                  <SelectGroup key={group.label}>
+                    <SelectGroupLabel>{group.label}</SelectGroupLabel>
+                    {group.options.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        <span className="flex w-full items-center gap-4">
+                          <span className="flex-1">{option.label}</span>
+                          <span className="text-muted-foreground text-xs tabular-nums">
+                            {formatLengths(option.volumeMm, settings.displayUnits, { trim: true })}
+                          </span>
                         </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ))}
-            </SelectPopup>
-          </Select>
-        }
-      />
-      {settings.buildPlate.preset === "custom" ? (
-        <div className="flex gap-2 px-3 sm:px-4">
-          {(["X", "Y", "Z"] as const).map((axis, index) => (
-            <label key={axis}>
-              {axis} mm
-              <Input
-                aria-label={`Custom bed ${axis}`}
-                type="number"
-                min={10}
-                max={2000}
-                value={settings.buildPlate.customMm[index]}
-                onChange={(event) => {
-                  const customMm: [number, number, number] = [...settings.buildPlate.customMm];
-                  customMm[index] = Number(event.target.value);
-                  set("buildPlate", { ...settings.buildPlate, customMm });
-                }}
-              />
-            </label>
-          ))}
-        </div>
-      ) : (
-        buildPlateNote(settings.buildPlate) && (
-          <p className="px-3 text-xs text-muted-foreground sm:px-4">
-            {buildPlateNote(settings.buildPlate)}
-          </p>
-        )
-      )}
-      <SettingsRow
-        title="Bed pattern"
-        control={
-          <Select
-            value={settings.buildPlate.pattern}
-            onValueChange={(next: BuildPlatePattern | null) => {
-              if (next) set("buildPlate", { ...settings.buildPlate, pattern: next });
-            }}
-          >
-            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed pattern">
-              <SelectValue>
-                {
-                  BUILD_PLATE_PATTERNS.find(({ value }) => value === settings.buildPlate.pattern)
-                    ?.name
-                }
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {BUILD_PLATE_PATTERNS.map((pattern) => (
-                <SelectItem key={pattern.value} value={pattern.value}>
-                  {pattern.name}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        }
-      />
-      <SettingsRow title="Fabrication app URL" description="Optional link for STEP files.">
-        <div className="flex flex-col gap-2 pb-2">
-          <Input
-            aria-label="Fabrication app URL"
-            type="url"
-            value={settings.fabricationUrl ?? ""}
-            onChange={(event) => set("fabricationUrl", event.target.value || null)}
-          />
-        </div>
-      </SettingsRow>
-      <SettingsRow
-        title="Let agents render models and propose variants"
-        description="Enable shared tools for model PNG views and parameter proposals in the variant workbench."
-        control={
-          <input
-            aria-label="Let agents render models and propose variants"
-            type="checkbox"
-            checked={settings.agentToolEnabled}
-            onChange={(event) => set("agentToolEnabled", event.target.checked)}
-          />
-        }
-      />
-      <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
-        <div className="flex flex-wrap gap-2">
-          <Button
-            disabled={busy !== null || !canSave}
-            title={
-              canSave ? undefined : "This connection requires permission to edit model settings."
-            }
-            onClick={() => void save()}
-          >
-            Save settings
-          </Button>
-          <Button
-            variant="outline"
-            disabled={busy !== null}
-            onClick={() =>
-              void act(async () => {
-                if (settings.openscadPath !== initial.openscadPath)
-                  throw new Error("Save the executable path before refreshing detection.");
-                setDetection(
-                  await runModelCommand(models.detect, { environmentId, input: { refresh: true } }),
-                );
-              }, "Detection refreshed.")
-            }
-          >
-            Refresh detection
-          </Button>
-          <Button
-            variant="outline"
-            disabled={busy !== null || !canSave}
-            onClick={() =>
-              void act(
-                () => runModelCommand(models.clearCache, { environmentId, input: {} }),
-                "Render cache cleared.",
-              )
-            }
-          >
-            Clear render cache
-          </Button>
-        </div>
-        {busy && <OperationStatus label={busy} />}
-        {message && (
-          <p role={failed ? "alert" : "status"} className="text-sm">
-            {message}
-          </p>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        {settings.buildPlate.preset === "custom" ? (
+          <div className="px-3 sm:px-4">
+            <CustomBedSize
+              key={`${settings.buildPlate.customMm.join()}:${settings.displayUnits}`}
+              value={settings.buildPlate.customMm}
+              onCommit={(customMm) => set("buildPlate", { ...settings.buildPlate, customMm })}
+            />
+          </div>
+        ) : (
+          buildPlateNote(settings.buildPlate) && (
+            <p className="px-3 text-xs text-muted-foreground sm:px-4">
+              {buildPlateNote(settings.buildPlate)}
+            </p>
+          )
         )}
+        <SettingsRow
+          title="Bed pattern"
+          control={
+            <Select
+              value={settings.buildPlate.pattern}
+              onValueChange={(next: BuildPlatePattern | null) => {
+                if (next) set("buildPlate", { ...settings.buildPlate, pattern: next });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Bed pattern">
+                <SelectValue>
+                  {
+                    BUILD_PLATE_PATTERNS.find(({ value }) => value === settings.buildPlate.pattern)
+                      ?.name
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {BUILD_PLATE_PATTERNS.map((pattern) => (
+                  <SelectItem key={pattern.value} value={pattern.value}>
+                    {pattern.name}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          title="Show for scale"
+          description="An everyday object beside the part, included in captures when visible."
+          control={
+            <Select
+              disabled={!canSave}
+              value={settings.scaleReference}
+              onValueChange={(next: ScaleReference | null) => {
+                if (next) set("scaleReference", next);
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Show for scale">
+                <SelectValue>{SCALE_REFERENCE_LABELS[settings.scaleReference]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(SCALE_REFERENCE_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow title="Fabrication app URL" description="Optional link for STEP files.">
+          <div className="flex flex-col gap-2 pb-2">
+            <Input
+              aria-label="Fabrication app URL"
+              type="url"
+              value={settings.fabricationUrl ?? ""}
+              onChange={(event) => set("fabricationUrl", event.target.value || null)}
+            />
+          </div>
+        </SettingsRow>
+        <SettingsRow
+          title="Let agents render models and propose variants"
+          description="Enable shared tools for model PNG views and parameter proposals in the variant workbench."
+          control={
+            <input
+              aria-label="Let agents render models and propose variants"
+              type="checkbox"
+              checked={settings.agentToolEnabled}
+              onChange={(event) => set("agentToolEnabled", event.target.checked)}
+            />
+          }
+        />
+        <div className="flex flex-col gap-3 px-3 pb-3 sm:px-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              disabled={busy !== null || !canSave}
+              title={
+                canSave ? undefined : "This connection requires permission to edit model settings."
+              }
+              onClick={() => void save()}
+            >
+              Save settings
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy !== null}
+              onClick={() =>
+                void act(async () => {
+                  if (settings.openscadPath !== initial.openscadPath)
+                    throw new Error("Save the executable path before refreshing detection.");
+                  setDetection(
+                    await runModelCommand(models.detect, {
+                      environmentId,
+                      input: { refresh: true },
+                    }),
+                  );
+                }, "Detection refreshed.")
+              }
+            >
+              Refresh detection
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy !== null || !canSave}
+              onClick={() =>
+                void act(
+                  () => runModelCommand(models.clearCache, { environmentId, input: {} }),
+                  "Render cache cleared.",
+                )
+              }
+            >
+              Clear render cache
+            </Button>
+          </div>
+          {busy && <OperationStatus label={busy} />}
+          {message && (
+            <p role={failed ? "alert" : "status"} className="text-sm">
+              {message}
+            </p>
+          )}
+        </div>
       </div>
-    </div>
+    </DisplayUnitsProvider>
   );
 }
 function EnvironmentSettings({ environmentId }: { environmentId: EnvironmentId }) {

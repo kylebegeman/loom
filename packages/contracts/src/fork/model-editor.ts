@@ -8,6 +8,7 @@ import {
   ModelProjection,
 } from "./model-workspace.ts";
 import { BedFitSummary } from "./model-beds.ts";
+import { ScaleReference } from "./model-scale.ts";
 const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024));
 export const ModelEditorAction = Schema.Struct({
   action: Schema.Literals([
@@ -53,6 +54,7 @@ export const ModelEditorAction = Schema.Struct({
   camera: Schema.optional(ModelCamera),
   section: Schema.optional(ModelSection),
   projection: Schema.optional(ModelProjection),
+  reference: Schema.optional(ScaleReference),
   wireframe: Schema.optional(Schema.Boolean),
   grid: Schema.optional(Schema.Boolean),
   axes: Schema.optional(Schema.Boolean),

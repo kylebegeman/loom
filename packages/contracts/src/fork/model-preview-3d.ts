@@ -1,3 +1,5 @@
+import * as Effect from "effect/Effect";
+import { ScaleReference } from "./model-scale.ts";
 import * as Editor from "./model-editor.ts";
 import { BuildPlateSetting } from "./model-beds.ts";
 import { ModelWorkspace, ModelWorkspaceOperation } from "./model-workspace.ts";
@@ -138,6 +140,9 @@ export const ScadRenderResult = Schema.Struct({
   ),
 });
 
+export const DisplayUnits = Schema.Literals(["mm", "in"]);
+export type DisplayUnits = typeof DisplayUnits.Type;
+
 export const ModelPreviewSettings = Schema.Struct({
   openscadPath: Schema.NullOr(Schema.String),
   backend: Schema.Literals(["auto", "manifold", "cgal"]),
@@ -145,6 +150,9 @@ export const ModelPreviewSettings = Schema.Struct({
   renderColors: Schema.Boolean, // 3MF output with colors; default false (binary STL)
   maxFileMegabytes: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 2048 })), // default 150
   buildPlate: BuildPlateSetting, // default H2D, custom 350 x 320 x 325, 10 mm grid
+  /** Display only. Saved lengths and tool inputs and outputs stay in millimetres. */
+  displayUnits: DisplayUnits.pipe(Schema.withDecodingDefault(Effect.succeed("mm" as const))),
+  scaleReference: ScaleReference.pipe(Schema.withDecodingDefault(Effect.succeed("none" as const))),
   fabricationUrl: Schema.NullOr(
     Schema.String.check(
       Schema.makeFilter(
@@ -199,6 +207,8 @@ export const DEFAULT_MODEL_PREVIEW_SETTINGS: ModelPreviewSettings = {
   renderColors: false,
   maxFileMegabytes: 150,
   buildPlate: { preset: "bambu-h2d", customMm: [350, 320, 325], pattern: "grid-mm" },
+  displayUnits: "mm",
+  scaleReference: "none",
   fabricationUrl: null,
   agentToolEnabled: true,
 };
