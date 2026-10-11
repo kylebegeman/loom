@@ -2,12 +2,9 @@
 
 ## Extension points created by this packet
 
-None. The changed files card slot has one consumer, so by the rule in
-[EXTENSION-POINTS.md](../EXTENSION-POINTS.md#shared-points-considered-and-declined) it stays a
-packet seam. Promote it to a registry (like `apps/web/src/fork/diffHeader/registry.ts`) when a
-second packet wants a turn action. L59 wants one and specifies that registry,
-`ext-changed-files`, pending Kyle's decision; once approved, use it and skip the seam below.
-
+L59 created `ext-changed-files` when PCB follow became the second consumer of the card header.
+The model chip now registers in `apps/web/src/fork/changedFiles/registry.ts` and receives the
+saved route thread from the shared wrapper. There is no packet-specific card seam.
 L41 refines `ext-panels` inside its fork-owned files only: an optional `TabIcon` on
 `ForkPanelDefinition` (`apps/web/src/fork/panels/types.ts`) used by `ForkSurfaceIcon`
 (`apps/web/src/fork/panels/surface.tsx`). No upstream line changes. Add one sentence to the
@@ -15,28 +12,8 @@ L41 refines `ext-panels` inside its fork-owned files only: an optional `TabIcon`
 
 ## Packet seams
 
-| File                                                | Marker                     | Lines | Why                                                                                                                                                                                                                                         |
-| --------------------------------------------------- | -------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/components/chat/ChangedFilesTree.tsx` | `fork: model-follow-agent` | 2     | Import `ModelTurnChip` after the last import (`:17`), and render `<ModelTurnChip runId={runId} files={files} />` as the first child of the header action group (`:67`). Only this card knows a turn's run id and file list in the timeline. |
-
-```diff
- import { MorphIcon } from "~/components/MorphIcon";
-+import { ModelTurnChip } from "~/fork/model-preview-3d/ModelTurnChip"; // fork: model-follow-agent
-```
-
-```diff
-         <div className="flex shrink-0 items-center gap-1">
-+          <ModelTurnChip runId={runId} files={files} /> {/* fork: model-follow-agent */}
-           {hasDirectories && (
-```
-
-Run `vp fmt` on the file afterwards. If the formatter splits the JSX line, put the marker on its
-own line directly above the element instead (CONVENTIONS.md, "Seams"). The component renders
-null against servers without the `model-preview-3d` feature, so upstream behavior is unchanged
-there.
-
-The file is busy upstream (19 commits since July), but the two lines sit at the top of the
-import list and at the start of a flex group; conflicts, if any, will be on the marked lines.
+None. See [ext-changed-files](../EXTENSION-POINTS.md#18-changed-files-card-header-ext-changed-files)
+for the two shared card lines and their existence check.
 
 ## Fork-owned shared files edited
 
@@ -72,17 +49,5 @@ Expected: exit status 0, or a conflict listed only in `ChangedFilesTree.tsx` on 
 
 ## FORK.md rows
 
-Add a paragraph under "Packet seams":
-
-```md
-L41 renders the 3D model turn chip at the start of the changed files card's header actions in
-`apps/web/src/components/chat/ChangedFilesTree.tsx` (`fork: model-follow-agent`, 2 marker
-lines). The chip renders nothing without Loom's 3D feature. See the
-[L41 packet](docs/fork/packets/L41-model-follow-agent/SEAMS.md).
-```
-
-Add to `docs/fork/seams.tsv`:
-
-```
-apps/web/src/components/chat/ChangedFilesTree.tsx	model-follow-agent	2
-```
+The historical `model-follow-agent` header markers were replaced by `ext-changed-files`.
+FORK.md and `docs/fork/seams.tsv` record the shared extension point, with two marker lines.

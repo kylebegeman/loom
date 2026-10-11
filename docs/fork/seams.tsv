@@ -67,5 +67,5 @@ apps/mobile/src/lib/threadActivity.test.ts	compaction-recovery	1
 apps/web/src/components/device/DevicePanel.tsx	device-qa	2
 apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
 apps/server/scripts/migrate-dev-db.ts	dev-db	2
-apps/web/src/components/chat/ChangedFilesTree.tsx	model-follow-agent	2
+apps/web/src/components/chat/ChangedFilesTree.tsx	ext-changed-files	2
 apps/server/vite.config.ts	model-print-check	1

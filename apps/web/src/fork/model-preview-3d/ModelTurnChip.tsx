@@ -9,7 +9,6 @@ import { BoxIcon, XIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useServerConfigs } from "~/state/entities";
-import { useRouteThread } from "../routeThread";
 import { models } from "./state";
 import {
   MAX_AGENT_MODEL_TABS,
@@ -113,19 +112,18 @@ function ConfiguredModelTurnChip({
 
 /** Candidate-only query: changed code cards keep their existing diff path without an extra RPC. */
 export function ModelTurnChip({
+  threadRef,
   runId,
   files,
 }: {
+  threadRef: ScopedThreadRef;
   runId: RunId;
   files: readonly { path: string }[];
 }) {
-  const route = useRouteThread();
   const configs = useServerConfigs();
-  if (!route || route.isDraft || !mayAffectModels(files.map((file) => file.path))) return null;
-  const features = loomFeaturesOf(
-    configs.get(route.threadRef.environmentId)?.environment.capabilities,
-  );
+  if (!mayAffectModels(files.map((file) => file.path))) return null;
+  const features = loomFeaturesOf(configs.get(threadRef.environmentId)?.environment.capabilities);
   if (!features.includes("model-preview-3d") || !features.includes("model-follow-agent"))
     return null;
-  return <ConfiguredModelTurnChip threadRef={route.threadRef} runId={runId} />;
+  return <ConfiguredModelTurnChip threadRef={threadRef} runId={runId} />;
 }

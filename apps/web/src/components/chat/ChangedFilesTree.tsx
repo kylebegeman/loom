@@ -15,7 +15,8 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { MiddleTruncate } from "../ui/middle-truncate";
 import { MorphIcon } from "~/components/MorphIcon";
-import { ModelTurnChip } from "~/fork/model-preview-3d/ModelTurnChip"; // fork: model-follow-agent
+// fork: ext-changed-files
+import { ForkChangedFilesActions } from "~/fork/changedFiles/ForkChangedFilesActions";
 
 const EMPTY_DIRECTORY_OVERRIDES: Record<string, boolean> = {};
 
@@ -66,7 +67,8 @@ export const ChangedFilesCard = memo(function ChangedFilesCard(props: {
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          <ModelTurnChip runId={runId} files={files} /> {/* fork: model-follow-agent */}
+          {/* fork: ext-changed-files */}
+          <ForkChangedFilesActions runId={runId} files={files} />
           {hasDirectories && (
             <Tooltip>
               <TooltipTrigger

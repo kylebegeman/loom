@@ -2942,3 +2942,16 @@ read `useServerConfigs().get(environmentId)?.environment.capabilities` and pass 
 - **`loom.sh` coverage.** `loom.sh check` verifies seams against `docs/fork/seams.tsv` but
   does not yet regenerate the route tree or typecheck `apps/mobile` (CONVENTIONS.md, "What
   `loom.sh` does not do yet").
+
+## 18. Changed files card header (`ext-changed-files`)
+
+L41 and L59 share the header of `ChangedFilesCard`. The upstream card imports and renders
+`ForkChangedFilesActions` in two marked lines; the registry in `apps/web/src/fork/changedFiles/registry.ts`
+provides components with the route's saved `threadRef`, the card's `runId` and its file list.
+Components gate their own feature, candidate files and user setting. The wrapper returns null
+without router context so upstream static card tests keep working. Register a packet once in
+`FORK_CHANGED_FILES_ACTIONS`; no additional card seam is needed.
+
+Existence check: `test -f apps/web/src/fork/changedFiles/registry.ts` and
+`git grep -c 'fork: ext-changed-files' -- apps/web/src/components/chat/ChangedFilesTree.tsx`
+prints 2. Run the existing ChangedFilesTree tests when altering the seam.
