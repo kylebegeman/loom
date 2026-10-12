@@ -19,7 +19,8 @@ import {
 // Validate the actual Go producer outputs, not independently maintained JSON copies.
 const args = process.argv.slice(2);
 if (args.length !== 2) throw Error("Usage: node verify-app-integration.mjs OFFICE_ROOT ATLAS_ROOT");
-const execute = NodeUtil.promisify(NodeChildProcess.execFile);
+const execFile = NodeUtil.promisify(NodeChildProcess.execFile);
+const execute = (file, args, options = {}) => execFile(file, args, { timeout: 120000, ...options });
 const temporary = await NodeFSP.realpath(
   await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-app-contract-")),
 );
@@ -65,7 +66,7 @@ try {
         { HOME: temporary },
         dependencies,
       );
-      NodeAssert.equal(capture.reviewed, app === "office");
+      NodeAssert.equal(capture.reviewed, true);
       NodeAssert.equal(manifest.capabilities.links.supported, true);
       const reference =
         app === "office"
@@ -180,16 +181,45 @@ if (args.some(arg => arg.startsWith('--app='))) FS.writeFileSync(process.env.LOO
         NodeAssert.equal(destination.origin, invocation.origin);
         NodeAssert.equal(destination.searchParams.get("id"), reference.id);
         NodeAssert.ok(destination.searchParams.get("loomHandoff"));
-        if (app === "atlas") {
-          await execute(
+        const gum = NodePath.join(root, "gum");
+        await NodeFSP.writeFile(
+          gum,
+          `#!${process.execPath}
+const header=process.argv[process.argv.indexOf('--header')+1];
+console.log(header === 'Capture' ? 'Choose destination' : ${JSON.stringify(app === "office" ? "Office Note" : "Atlas Research source")});
+`,
+          { mode: 0o755 },
+        );
+        await NodeFSP.rm(env.LOOM_CONTRACT_BROWSER_RECORD);
+        await execute(
+          "python3",
+          [
+            "-c",
+            "import os,pty,sys,select,time,signal\npid,fd=pty.fork()\nif pid==0: os.execvpe(sys.argv[1],sys.argv[1:],os.environ)\ndeadline=time.monotonic()+20\nwhile time.monotonic()<deadline:\n ready,_,_=select.select([fd],[],[],0.1)\n if ready:\n  try: data=os.read(fd,4096)\n  except OSError: data=b''\n  if data: os.write(1,data)\n done,status=os.waitpid(pid,os.WNOHANG)\n if done: os.close(fd); sys.exit(os.waitstatus_to_exitcode(status))\nos.kill(pid,signal.SIGTERM); os.waitpid(pid,0); os.close(fd); sys.exit(124)",
             paths(env).bin,
-            ["capture", app, "--title", "Synthetic", "--text", "Literal $(text)"],
-            { env },
-          );
-          const saved = JSON.parse(await NodeFSP.readFile(record, "utf8"));
-          NodeAssert.equal(saved.args[1], "sources-capture");
-          NodeAssert.equal(saved.args[5], "Literal $(text)");
+            "capture",
+            app,
+            "--inline",
+            "--title",
+            "Synthetic",
+            "--text",
+            "Literal $(text)",
+          ],
+          { env: { ...env, PATH: root + NodePath.delimiter + env.PATH } },
+        );
+        let reviewed;
+        const captureDeadline = Date.now() + 5000;
+        while (!reviewed) {
+          try {
+            reviewed = JSON.parse(await NodeFSP.readFile(env.LOOM_CONTRACT_BROWSER_RECORD, "utf8"));
+          } catch (error) {
+            if (error.code !== "ENOENT" || Date.now() > captureDeadline) throw error;
+          }
         }
+        const reviewURL = new URL(reviewed.args.find((arg) => arg.startsWith("--app=")).slice(6));
+        NodeAssert.equal(reviewURL.pathname, "/app/share");
+        NodeAssert.equal(reviewURL.search, "");
+        NodeAssert.ok(reviewURL.hash.startsWith("#loomCapture=v1."));
       } finally {
         await new Promise((resolve) => server.close(resolve));
       }
@@ -198,7 +228,7 @@ if (args.some(arg => arg.startsWith('--app='))) FS.writeFileSync(process.env.LOO
         app,
         version: manifest.version,
         search: search.args.slice(0, 2),
-        capture: app === "office" ? "in-app review" : capture.args.slice(0, 2),
+        capture: "in-app review",
         offline: manifest.offline,
         installedDispatchVerified: true,
         exactItemResolutionAndLaunchVerified: true,

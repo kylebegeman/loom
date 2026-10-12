@@ -395,26 +395,25 @@ test("native search forwards the correct app origin and preserves query words as
   ]);
 });
 
-test("Atlas native capture uses a private source and explicit Omarchy topic without running AI", async (t) => {
+test("Atlas capture opens the native review picker without a direct write or AI command", async (t) => {
   const f = await fixture(t);
-  await legacyServer(t, f.config);
   await install(f.config, { env: f.env });
+  const tui = NodePath.join(f.root, "omarchy-launch-tui");
+  await NodeFSP.copyFile(f.config.browserExecutable, tui);
+  await NodeFSP.chmod(tui, 0o755);
+  f.env.PATH = f.root + NodePath.delimiter + f.env.PATH;
   const text = "Synthetic text with $literal and `literal`.";
   await main(["capture", "atlas", "--title", "Synthetic capture", "--text", text], f.env);
   const recorded = JSON.parse(await NodeFSP.readFile(f.env.LOOM_OS_TEST_RECORD, "utf8"));
-  NodeAssert.equal(recorded.origin, f.config.atlasUrl);
+  NodeAssert.equal(recorded.origin, null);
   NodeAssert.deepEqual(recorded.args, [
+    "--app-id=org.omarchy.loom-capture",
+    NodePath.join(f.p.root, "capture-terminal"),
     "atlas",
-    "sources-capture",
     "--title",
     "Synthetic capture",
     "--text",
     text,
-    "--audience",
-    "private",
-    "--topics",
-    "omarchy",
-    "--json",
   ]);
 });
 

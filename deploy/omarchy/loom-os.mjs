@@ -240,7 +240,7 @@ const shortcutActions = [
   ["open-loom", "L", "Loom", "open loom"],
   ["open-office", "O", "Office", "open office"],
   ["open-atlas", "A", "Atlas", "open atlas"],
-  ["capture-office", "N", "Capture in Office", "capture office --clipboard"],
+  ["capture-office", "N", "Capture in apps", "capture --clipboard"],
   ["find", "F", "Find in apps", "find"],
   ["actions", "SPACE", "Loom actions", "actions"],
 ];
@@ -876,6 +876,20 @@ done
   const bindingsConf = NodePath.join(p.config, "hypr/bindings.conf");
   const lua = await read(bindingsLua),
     conf = await read(bindingsConf);
+  if (config.officeUrl || config.atlasUrl) {
+    writes.set(NodePath.join(p.root, "capture.mjs"), {
+      content: await NodeFSP.readFile(NodePath.join(packDir, "capture.mjs"), "utf8"),
+      mode: 0o600,
+    });
+    writes.set(NodePath.join(p.root, "capture-terminal"), {
+      content: `#!/bin/bash\nprintf '\\033]0;Capture in apps\\007'\n${shellQuote(p.bin)} capture --inline "$@"\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
+      mode: 0o755,
+    });
+    writes.set(NodePath.join(p.data, "applications/loom-os-capture.desktop"), {
+      content: `[Desktop Entry]\nType=Application\nName=Capture in apps\nComment=Preview clipboard text and choose Office or Atlas\nExec=${desktopArg(p.bin)} capture --clipboard\nIcon=edit-paste\nTerminal=false\nCategories=Utility;\n`,
+      mode: 0o644,
+    });
+  }
   const finderEnabled = ["office", "atlas"].some(
     (app) => config[`${app}Cli`] && config[`${app}Url`],
   );
@@ -1023,8 +1037,12 @@ done
         }
     }
     entries["loomos.capture"] = {
-      label: "Capture in Office",
-      action: command("capture office --clipboard"),
+      label: "Capture in apps",
+      action: command("capture --clipboard"),
+    };
+    entries["loomos.capture-selected"] = {
+      label: "Capture selected text",
+      action: command("capture --selected"),
     };
     entries["loomos.health"] = {
       label: "Check connections",
@@ -1559,6 +1577,12 @@ export function validateAppIntegration(value, app) {
         (app === "office" &&
           (cap.format !== "review-in-app-v1" || !cap.path || cap.reviewed !== true)) ||
         (app === "atlas" &&
+          !(
+            cap.format === "review-in-app-v1" &&
+            cap.path === "/app/share" &&
+            cap.reviewed === true &&
+            cap.handoff === "loom-capture-review-v1"
+          ) &&
           (cap.format !== "private-source-v1" ||
             cap.operation?.id !== "atlas.sources.capture" ||
             cap.operation.effect !== "write" ||
@@ -1721,8 +1745,6 @@ export async function integratedCaptureCommand(
   if ([title, text, url].some((value) => typeof value !== "string" || value.includes("\0")))
     throw Error("Capture needs text without NUL characters.");
   if (!title.trim() && !text.trim() && !url) throw Error("Capture needs text, title, or a URL.");
-  if (app === "atlas" && (!config.atlasCli || !title.trim() || !text.trim()))
-    throw Error("Atlas capture needs a configured CLI/endpoint, --title and --text.");
   if (url) {
     const parsed = new URL(url);
     if (
@@ -1757,6 +1779,22 @@ export async function integratedCaptureCommand(
       throw Error(
         `Capture ${field} exceeds the app limit of ${cap[`${field}Limit`]} ${cap.captureUnit}.`,
       );
+  if (cap.handoff === "loom-capture-review-v1") {
+    const { captureEnvelope, reviewedCaptureCommand } = await import("./capture.mjs");
+    const envelope = captureEnvelope(
+      app,
+      payload.target ?? (app === "office" ? "note" : "source"),
+      { title, text, url },
+      cap,
+    );
+    return {
+      ...reviewedCaptureCommand(envelope, cap, config, env),
+      integrationState: report.state,
+      reviewed: true,
+    };
+  }
+  if (app === "atlas")
+    throw Error("Update Atlas to enable reviewed capture. Capture inside the app meanwhile.");
   if (app === "office") {
     const target = new URL(cap.path, config.officeUrl);
     for (const [key, value] of Object.entries({ title, text, url }))
@@ -1767,25 +1805,6 @@ export async function integratedCaptureCommand(
       reviewed: true,
     };
   }
-  return {
-    command: config.atlasCli,
-    args: [
-      ...cap.operation.command,
-      "--title",
-      title,
-      "--text",
-      text,
-      ...(url ? ["--url", url] : []),
-      "--audience",
-      "private",
-      "--topics",
-      "omarchy",
-      "--json",
-    ],
-    env: { ...env, API_URL: config.atlasUrl },
-    integrationState: report.state,
-    reviewed: false,
-  };
 }
 
 const officeItemKinds = new Set([
@@ -2418,12 +2437,20 @@ export function loomActionCatalog(config, context = {}) {
   }
   add(
     "capture-office",
-    "Capture in Office",
-    "Save clipboard text as a note, reminder or Desk draft",
-    ["capture", "office", "--clipboard"],
-    configured("officeUrl") && !missing.has("browserExecutable"),
-    "Configure Office and restore the browser before capturing clipboard text.",
+    "Capture in apps",
+    "Preview clipboard text, then save to Office or Atlas",
+    ["capture", "--clipboard"],
+    (configured("officeUrl") || configured("atlasUrl")) && !missing.has("browserExecutable"),
+    "Configure Office or Atlas and restore the browser before capturing.",
     "Super+Ctrl+Alt+N",
+  );
+  add(
+    "capture-selected",
+    "Capture selected text",
+    "Preview selected text, then save to Office or Atlas",
+    ["capture", "--selected"],
+    (configured("officeUrl") || configured("atlasUrl")) && !missing.has("browserExecutable"),
+    "Configure Office or Atlas and restore the browser before capturing.",
   );
   add(
     "ask-ai",
@@ -2893,7 +2920,18 @@ function parseArgs(args) {
       continue;
     }
     const key = args[i].slice(2);
-    if (["dry-run", "clipboard", "help", "terminal", "human", "enable-status"].includes(key))
+    if (
+      [
+        "dry-run",
+        "clipboard",
+        "selected",
+        "inline",
+        "help",
+        "terminal",
+        "human",
+        "enable-status",
+      ].includes(key)
+    )
       options[key] = true;
     else {
       if (!args[i + 1] || args[i + 1].startsWith("--"))
@@ -3062,7 +3100,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3564,29 +3602,44 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       );
     return;
   }
+  if (action === "capture-watch") {
+    const { watchCapture } = await import("./capture.mjs");
+    if (rest.length !== 2) throw Error("Invalid capture watcher.");
+    await watchCapture(rest[0], rest[1], config, env);
+    return;
+  }
   if (action === "capture") {
-    const { options, positional } = parseArgs(rest),
-      app = positional[0];
-    let text = options.text || "";
-    if (options.clipboard) {
-      const result = NodeChildProcess.spawnSync("wl-paste", ["--no-newline"], {
-        encoding: "utf8",
-        maxBuffer: 64 * 1024,
-        timeout: 3000,
-      });
-      if (result.error || result.status !== 0)
-        throw new Error("Could not read text from the Wayland clipboard.");
-      text = result.stdout;
+    const { options, positional } = parseArgs(rest);
+    if (
+      positional.length > 1 ||
+      (positional[0] && !["office", "atlas"].includes(positional[0])) ||
+      Object.keys(options).some(
+        (k) => !["inline", "clipboard", "selected", "title", "text", "url"].includes(k),
+      ) ||
+      (options.clipboard && options.selected)
+    )
+      throw Error(
+        "Use capture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL].",
+      );
+    if (!options.inline) {
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-capture", NodePath.join(p.root, "capture-terminal"), ...rest],
+        { env },
+      );
+      return;
     }
-    const spec = await integratedCaptureCommand(
-      app,
-      { title: options.title, text, url: options.url },
-      config,
-      env,
-    );
-    await run(spec.command, spec.args, {
-      env: app === "atlas" ? await appCliEnvironment(app, config.atlasUrl, spec.env) : env,
-      detached: app === "office",
+    if (!process.stdin.isTTY) throw Error("Capture review needs an interactive terminal.");
+    const { nativeCapture } = await import("./capture.mjs");
+    await nativeCapture(config, env, {
+      initialApp: positional[0],
+      selected: !!options.selected,
+      payload: {
+        ...options,
+        clipboard:
+          !!options.clipboard ||
+          (!options.text && !options.url && !options.title && !options.selected),
+      },
     });
     return;
   }

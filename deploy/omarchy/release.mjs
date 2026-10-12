@@ -7,7 +7,8 @@ import { paths, validateConfig } from "./loom-os.mjs";
 
 const source = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const digest = (bytes) => NodeCrypto.createHash("sha256").update(bytes).digest("hex");
-const packFiles = ["loom-os.mjs", "ai.mjs", "health.mjs", "install.sh", "release.mjs"];
+const requiredPackFiles = ["loom-os.mjs", "ai.mjs", "health.mjs", "install.sh", "release.mjs"];
+const packFiles = [...requiredPackFiles, "capture.mjs"];
 const statusFiles = ["manifest.json", "LoomStatus.qml", "StatusModel.js"];
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 async function ordinary(path, directory = false) {
@@ -50,8 +51,17 @@ export async function buildRelease(output, version, sourceDir = source) {
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
+    const includedPackFiles = [];
+    for (const name of packFiles) {
+      try {
+        await ordinary(NodePath.join(sourceDir, name));
+        includedPackFiles.push(name);
+      } catch (error) {
+        if (name !== "capture.mjs" || error.code !== "ENOENT") throw error;
+      }
+    }
     const entries = [
-      ...packFiles.map((name) => ["pack/" + name, NodePath.join(sourceDir, name)]),
+      ...includedPackFiles.map((name) => ["pack/" + name, NodePath.join(sourceDir, name)]),
       ...statusEntries,
       ...(await tree(NodePath.join(sourceDir, "iris"))).map((name) => [
         "iris/" + name,
@@ -120,7 +130,7 @@ export async function verifyRelease(directory, expected) {
   const expectedFiles = Object.keys(manifest.files).sort();
   if (
     JSON.stringify(actual) !== JSON.stringify(expectedFiles) ||
-    !packFiles.every((file) => manifest.files["pack/" + file]) ||
+    !requiredPackFiles.every((file) => manifest.files["pack/" + file]) ||
     !manifest.files["iris/manifest.json"] ||
     (statusFiles.some((file) => manifest.files["pack/status/" + file]) &&
       !statusFiles.every((file) => manifest.files["pack/status/" + file]))
@@ -162,7 +172,9 @@ export async function releaseStatus({ env = process.env } = {}) {
       verified = manifest.version === record.version;
       if (installed && verified) {
         matchesInstalled = true;
-        for (const name of packFiles.filter((name) => name !== "install.sh")) {
+        for (const name of packFiles.filter(
+          (name) => name !== "install.sh" && manifest.files["pack/" + name],
+        )) {
           await ordinary(NodePath.join(p.root, name));
           if (
             digest(await NodeFSP.readFile(NodePath.join(p.root, name))) !==
@@ -282,6 +294,7 @@ async function adoptInstalled(p, directory, releases) {
         await ordinary(NodePath.join(p.root, name));
         bytes = await NodeFSP.readFile(NodePath.join(p.root, name));
       } catch (e) {
+        if (e.code === "ENOENT" && name === "capture.mjs") continue;
         if (e.code !== "ENOENT" || !["install.sh", "release.mjs"].includes(name)) throw e;
         bytes = await NodeFSP.readFile(NodePath.join(directory, "pack", name));
       }

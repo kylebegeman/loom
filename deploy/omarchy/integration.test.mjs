@@ -291,29 +291,12 @@ test("capture negotiates review, private-source saving and length units without 
   NodeAssert.ok(
     office.args.some((arg) => arg.includes("/app/share?title=Save&text=Literal+%26+text")),
   );
-  const atlas = await integratedCaptureCommand(
-    "atlas",
-    { title: "Save", text: "Literal $(text)", url: "https://example.test/evidence" },
-    config,
-    env,
-    { discover: discover(declaration()) },
+  await NodeAssert.rejects(
+    integratedCaptureCommand("atlas", { title: "Save", text: "Literal $(text)" }, config, env, {
+      discover: discover(declaration()),
+    }),
+    /Update Atlas/,
   );
-  NodeAssert.equal(atlas.reviewed, false);
-  NodeAssert.deepEqual(atlas.args, [
-    "atlas",
-    "sources-capture",
-    "--title",
-    "Save",
-    "--text",
-    "Literal $(text)",
-    "--url",
-    "https://example.test/evidence",
-    "--audience",
-    "private",
-    "--topics",
-    "omarchy",
-    "--json",
-  ]);
   await NodeAssert.rejects(
     integratedCaptureCommand("atlas", { title: "é".repeat(101), text: "text" }, config, env, {
       discover: discover(declaration()),
