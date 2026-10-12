@@ -91,3 +91,24 @@ it("ignores malformed saved handoffs", async () => {
   state.openWorkspaceHandoff(source);
   expect(state.useWorkspaceHandoff.getState().source).toEqual(source);
 });
+
+it("reopens a completed handoff without creating a second continuation", async () => {
+  const state = await import("./state");
+  state.openWorkspaceHandoff(source);
+  state.useWorkspaceHandoff.setState({
+    requestId: offer.requestId,
+    destinationKey: "destination-host/destination-project",
+    offer,
+    receipt,
+    sourceResult: { sourceSettled: true, reason: "settled" },
+    phase: "done",
+    open: false,
+  });
+  state.openWorkspaceHandoff(source);
+  expect(state.useWorkspaceHandoff.getState()).toMatchObject({
+    requestId: offer.requestId,
+    receipt,
+    phase: "done",
+    open: true,
+  });
+});

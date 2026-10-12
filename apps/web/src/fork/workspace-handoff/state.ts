@@ -71,8 +71,7 @@ export function openWorkspaceHandoff(source: ScopedThreadRef) {
   }
   if (
     previous.source?.environmentId === source.environmentId &&
-    previous.source.threadId === source.threadId &&
-    previous.phase !== "done"
+    previous.source.threadId === source.threadId
   )
     useWorkspaceHandoff.setState({ open: true });
   else

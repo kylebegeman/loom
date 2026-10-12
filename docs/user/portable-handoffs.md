@@ -59,7 +59,9 @@ stay on the source host. The destination uses that host's project model and runt
 
 If preparation fails, the source remains available. Retry the saved handoff to reuse completed
 steps and avoid sending the continuation twice. Starting over keeps any prepared destination
-thread; review it before beginning another attempt.
+thread; review it before beginning another attempt. After completion, reopening the handoff returns
+to the existing continuation. You can start a new handoff if the original thread remains active or
+you resume work there.
 
 After preparation, Loom settles the source only if it has remained unchanged and has no local
 application data or ignored files other than dependency folders. Otherwise, it keeps the source

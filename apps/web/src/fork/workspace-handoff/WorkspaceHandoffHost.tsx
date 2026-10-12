@@ -19,7 +19,7 @@ import {
   SelectPopup,
   SelectItem,
 } from "~/components/ui/select";
-import { useProjects, useServerConfigs } from "~/state/entities";
+import { useProjects, useServerConfigs, useThreadShell } from "~/state/entities";
 import { runLaneCommand } from "../project-lifecycle/state";
 import { FEATURE, handoff, useWorkspaceHandoff } from "./state";
 
@@ -35,6 +35,7 @@ const labels = {
 function HandoffContent() {
   const state = useWorkspaceHandoff();
   const source = state.source!;
+  const sourceShell = useThreadShell(source);
   const projects = useProjects();
   const configs = useServerConfigs();
   const navigate = useNavigate();
@@ -47,13 +48,18 @@ function HandoffContent() {
   const selected = destinations.find(
     (project) => `${project.environmentId}/${project.id}` === state.destinationKey,
   );
+  const destination = state.receipt
+    ? { environmentId: state.receipt.destinationEnvironmentId, id: state.receipt.projectId }
+    : selected;
   const sourceAllowed = useAtomValue(handoff.offer.permissionAtom(source.environmentId));
   const destinationAllowed = useAtomValue(
-    handoff.prepare.permissionAtom(selected?.environmentId ?? source.environmentId),
+    handoff.prepare.permissionAtom(destination?.environmentId ?? source.environmentId),
   );
   const allowed = (state.sourceResult !== null || sourceAllowed) && destinationAllowed;
+  const canStartNew =
+    sourceAllowed && sourceShell !== null && sourceShell.settledOverride !== "settled";
   const go = async () => {
-    if (!selected || running || !allowed) return;
+    if (!destination || running || !allowed) return;
     setRunning(true);
     useWorkspaceHandoff.setState({ error: null });
     try {
@@ -66,8 +72,8 @@ function HandoffContent() {
           }),
         prepare: (offer) =>
           runLaneCommand(handoff.prepare, {
-            environmentId: selected.environmentId,
-            input: { offer, projectId: selected.id },
+            environmentId: destination.environmentId,
+            input: { offer, projectId: destination.id },
           }),
         finish: (offer, receipt) =>
           runLaneCommand(handoff.finish, {
@@ -76,7 +82,7 @@ function HandoffContent() {
           }),
         resume: (offer, receipt) =>
           runLaneCommand(handoff.resume, {
-            environmentId: selected.environmentId,
+            environmentId: destination.environmentId,
             input: { offer, receipt },
           }),
         progress: (phase, attempt) => {
@@ -131,7 +137,13 @@ function HandoffContent() {
             onValueChange={(value) => useWorkspaceHandoff.setState({ destinationKey: value ?? "" })}
           >
             <SelectTrigger id="handoff-destination" aria-label="Destination project">
-              <SelectValue placeholder="Choose a project on another host" />
+              <SelectValue placeholder="Choose a project on another host">
+                {selected
+                  ? `${configs.get(selected.environmentId)?.environment.label ?? "Connected host"} · ${selected.title}`
+                  : state.receipt
+                    ? "Saved destination"
+                    : undefined}
+              </SelectValue>
             </SelectTrigger>
             <SelectPopup>
               {destinations.map((project) => (
@@ -146,13 +158,16 @@ function HandoffContent() {
           </Select>
           {destinations.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              Connect another Loom host and add this repository there. It will appear here once that
-              host supports handoff.
+              {state.receipt
+                ? "Reconnect the destination host to finish this saved handoff."
+                : "Connect another Loom host and add this repository there. It will appear here once that host supports handoff."}
             </p>
           )}
-          {!allowed && (
+          {state.phase !== "done" && !allowed && (
             <p className="text-sm text-muted-foreground">
-              Workspace operation permission is required on both hosts.
+              {state.sourceResult === null && !sourceAllowed
+                ? "Workspace operation permission is required on the original host."
+                : "Workspace operation permission is required on the destination host."}
             </p>
           )}
           {state.offer && (
@@ -163,7 +178,7 @@ function HandoffContent() {
                 : "Conversation context will be included."}
             </p>
           )}
-          {running && (
+          {(running || state.phase === "done") && (
             <p role="status" className="text-sm">
               {labels[state.phase]}
             </p>
@@ -176,14 +191,21 @@ function HandoffContent() {
           {state.sourceResult && (
             <p className="text-sm text-muted-foreground">{state.sourceResult.reason}</p>
           )}
+          {state.error && state.sourceResult?.sourceSettled && (
+            <p className="text-sm text-muted-foreground">
+              Retry to deliver to the prepared conversation. The original is already settled, and
+              its history is preserved.
+            </p>
+          )}
         </div>
         <DialogFooter>
-          {state.receipt && (
+          {state.receipt && state.phase !== "done" && (
             <Button variant="outline" onClick={openDestination} disabled={running}>
               Open destination
             </Button>
           )}
-          {state.error && (
+          {((state.error && !state.sourceResult?.sourceSettled) ||
+            (state.phase === "done" && canStartNew)) && (
             <Button
               variant="outline"
               disabled={running}
@@ -198,16 +220,18 @@ function HandoffContent() {
                 })
               }
             >
-              Start over
+              {state.phase === "done" ? "New handoff" : "Start over"}
             </Button>
           )}
           {state.phase !== "done" && (
-            <Button onClick={() => void go()} disabled={running || !selected || !allowed}>
+            <Button onClick={() => void go()} disabled={running || !destination || !allowed}>
               {running
                 ? labels[state.phase]
-                : state.error
-                  ? "Retry handoff"
-                  : "Prepare and continue"}
+                : state.sourceResult
+                  ? "Retry continuation"
+                  : state.error
+                    ? "Retry handoff"
+                    : "Prepare and continue"}
             </Button>
           )}
           {state.phase === "done" && (

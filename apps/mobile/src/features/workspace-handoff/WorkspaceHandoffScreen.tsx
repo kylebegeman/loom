@@ -21,7 +21,7 @@ import { AppText } from "../../components/AppText";
 import { MaterialButton } from "../../components/MaterialButton";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { appAtomRegistry } from "../../state/atom-registry";
-import { useProjects, useServerConfigs } from "../../state/entities";
+import { useProjects, useServerConfigs, useThreadShell } from "../../state/entities";
 import { uuidv4 } from "../../lib/uuid";
 import { runtime } from "../../lib/runtime";
 import * as MobileDatabase from "../../persistence/mobile-database";
@@ -44,6 +44,10 @@ export function WorkspaceHandoffScreen({
 }: StaticScreenProps<{ environmentId: string; threadId: string }>) {
   const sourceEnvironmentId = EnvironmentId.make(route.params.environmentId);
   const sourceThreadId = ThreadId.make(route.params.threadId);
+  const sourceShell = useThreadShell({
+    environmentId: sourceEnvironmentId,
+    threadId: sourceThreadId,
+  });
   const projects = useProjects();
   const configs = useServerConfigs();
   const navigation = useNavigation();
@@ -62,11 +66,16 @@ export function WorkspaceHandoffScreen({
   const selected = destinations.find(
     (project) => `${project.environmentId}/${project.id}` === attempt?.destinationKey,
   );
+  const destination = attempt?.receipt
+    ? { environmentId: attempt.receipt.destinationEnvironmentId, id: attempt.receipt.projectId }
+    : selected;
   const sourceAllowed = useAtomValue(handoff.offer.permissionAtom(sourceEnvironmentId));
   const destinationAllowed = useAtomValue(
-    handoff.prepare.permissionAtom(selected?.environmentId ?? sourceEnvironmentId),
+    handoff.prepare.permissionAtom(destination?.environmentId ?? sourceEnvironmentId),
   );
   const allowed = (attempt?.sourceResult != null || sourceAllowed) && destinationAllowed;
+  const canStartNew =
+    sourceAllowed && sourceShell !== null && sourceShell.settledOverride !== "settled";
   useEffect(() => {
     let alive = true;
     void runtime
@@ -111,7 +120,7 @@ export function WorkspaceHandoffScreen({
     setAttempt(record);
   };
   const go = async () => {
-    if (!attempt || !selected || running || !allowed) return;
+    if (!attempt || !destination || running || !allowed) return;
     setRunning(true);
     setError(null);
     const run = async <W, A, E>(
@@ -132,13 +141,16 @@ export function WorkspaceHandoffScreen({
           }),
         prepare: (offer) =>
           run(handoff.prepare, {
-            environmentId: selected.environmentId,
-            input: { offer, projectId: selected.id },
+            environmentId: destination.environmentId,
+            input: { offer, projectId: destination.id },
           }),
         finish: (offer, receipt) =>
           run(handoff.finish, { environmentId: sourceEnvironmentId, input: { offer, receipt } }),
         resume: (offer, receipt) =>
-          run(handoff.resume, { environmentId: selected.environmentId, input: { offer, receipt } }),
+          run(handoff.resume, {
+            environmentId: destination.environmentId,
+            input: { offer, receipt },
+          }),
         progress: async (step, partial) => {
           await save({ ...attempt, ...partial, completed: step === "done" });
           setPhase(step);
@@ -202,12 +214,15 @@ export function WorkspaceHandoffScreen({
         })}
         {destinations.length === 0 && (
           <AppText className="text-foreground-muted">
-            Connect another Loom host and add this repository there. It will appear once that host
-            supports handoff.
+            {attempt?.receipt
+              ? "Reconnect the destination host to finish this saved handoff."
+              : "Connect another Loom host and add this repository there. It will appear once that host supports handoff."}
           </AppText>
         )}
       </View>
-      {running && <AppText accessibilityLiveRegion="polite">{labels[phase]}</AppText>}
+      {(running || phase === "done") && (
+        <AppText accessibilityLiveRegion="polite">{labels[phase]}</AppText>
+      )}
       {error && (
         <AppText accessibilityRole="alert" className="text-danger">
           {error}
@@ -216,43 +231,65 @@ export function WorkspaceHandoffScreen({
       {attempt?.sourceResult && (
         <AppText className="text-foreground-muted">{attempt.sourceResult.reason}</AppText>
       )}
-      {!allowed && (
+      {error && attempt?.sourceResult?.sourceSettled && (
         <AppText className="text-foreground-muted">
-          Workspace operation permission is required on both hosts.
+          Retry to deliver to the prepared conversation. The original is already settled, and its
+          history is preserved.
+        </AppText>
+      )}
+      {phase !== "done" && !allowed && (
+        <AppText className="text-foreground-muted">
+          {attempt?.sourceResult == null && !sourceAllowed
+            ? "Workspace operation permission is required on the original host."
+            : "Workspace operation permission is required on the destination host."}
         </AppText>
       )}
       {phase !== "done" && (
         <MaterialButton
-          label={running ? labels[phase] : error ? "Retry handoff" : "Prepare and continue"}
+          label={
+            running
+              ? labels[phase]
+              : attempt?.sourceResult
+                ? "Retry continuation"
+                : error
+                  ? "Retry handoff"
+                  : "Prepare and continue"
+          }
           tone="primary"
-          disabled={!attempt || !selected || !allowed}
+          disabled={!attempt || !destination || !allowed}
           loading={running}
           onPress={() => void go()}
         />
       )}
       {attempt?.receipt && (
-        <MaterialButton label="Open destination" disabled={running} onPress={openDestination} />
-      )}
-      {error && attempt && (
         <MaterialButton
-          label="Start over"
+          label={phase === "done" ? "Continue on destination" : "Open destination"}
+          tone={phase === "done" ? "primary" : "secondary"}
           disabled={running}
-          onPress={() => {
-            void save({
-              requestId: uuidv4(),
-              destinationKey: attempt.destinationKey,
-              offer: null,
-              receipt: null,
-              sourceResult: null,
-            })
-              .then(() => {
-                setError(null);
-                setPhase("idle");
-              })
-              .catch(() => setError("Could not save the new handoff."));
-          }}
+          onPress={openDestination}
         />
       )}
+      {attempt &&
+        ((error && !attempt.sourceResult?.sourceSettled) || (phase === "done" && canStartNew)) && (
+          <MaterialButton
+            label={phase === "done" ? "New handoff" : "Start over"}
+            disabled={running}
+            onPress={() => {
+              void save({
+                requestId: uuidv4(),
+                destinationKey: attempt.destinationKey,
+                offer: null,
+                receipt: null,
+                sourceResult: null,
+              })
+                .then(() => {
+                  setError(null);
+                  setPhase("idle");
+                })
+                .catch(() => setError("Could not save the new handoff."));
+            }}
+          />
+        )}
     </ScrollView>
   );
 }
