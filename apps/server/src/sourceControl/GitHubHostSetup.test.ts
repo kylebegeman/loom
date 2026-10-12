@@ -32,7 +32,7 @@ esac
 `,
   );
   yield* fs.chmod(gh, 0o755);
-  const service = yield* Setup.make.pipe(
+  const service = yield* Setup.make().pipe(
     Effect.provideService(HostProcess.HomeDirectory, home),
     Effect.provideService(HostProcess.Environment, { PATH: `${bin}:/usr/bin:/bin` }),
     Effect.provide(Layer.merge(FetchHttpClient.layer, ProcessRunner.layer)),
@@ -109,7 +109,7 @@ it.layer(NodeServices.layer)("GitHub host setup", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const home = yield* fs.makeTempDirectoryScoped();
-      const service = yield* Setup.make.pipe(
+      const service = yield* Setup.make().pipe(
         Effect.provideService(HostProcess.HomeDirectory, home),
         Effect.provideService(HostProcess.Environment, { PATH: `${home}/empty` }),
         Effect.provideService(

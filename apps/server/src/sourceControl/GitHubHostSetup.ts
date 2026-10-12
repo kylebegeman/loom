@@ -141,7 +141,7 @@ export class GitHubHostSetup extends Context.Service<
   }
 >()("t3/sourceControl/GitHubHostSetup") {}
 
-export const make = Effect.gen(function* () {
+export const make = Effect.fnUntraced(function* (releases: typeof RELEASES = RELEASES) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const process = yield* ProcessRunner.ProcessRunner;
@@ -213,7 +213,7 @@ export const make = Effect.gen(function* () {
       );
   });
   const install = Effect.fn("GitHubHostSetup.install")(function* () {
-    const release = RELEASES[`${platform}-${arch}`];
+    const release = releases[`${platform}-${arch}`];
     if (!release) return yield* new GitHubHostSetupError({ reason: "unsupported-platform" });
     yield* fs
       .makeDirectory(path.dirname(destination), { recursive: true })
@@ -247,7 +247,6 @@ export const make = Effect.gen(function* () {
             }),
           ),
           Stream.run(fs.sink(archive, { flag: "wx", mode: 0o600 })),
-          Effect.timeout("5 minutes"),
         );
         if (hash.digest("hex") !== release.sha256)
           return yield* new GitHubHostSetupError({ reason: "installation-failed" });
@@ -300,6 +299,7 @@ export const make = Effect.gen(function* () {
         return destination;
       }),
     ).pipe(
+      Effect.timeout("5 minutes"),
       Effect.mapError((cause) =>
         isSetupError(cause)
           ? cause
@@ -363,4 +363,4 @@ export const make = Effect.gen(function* () {
   });
   return GitHubHostSetup.of({ status, setup });
 });
-export const layer = Layer.effect(GitHubHostSetup, make).pipe(Layer.provide(ProcessRunner.layer));
+export const layer = Layer.effect(GitHubHostSetup, make()).pipe(Layer.provide(ProcessRunner.layer));
