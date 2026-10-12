@@ -184,3 +184,16 @@ On mobile, use **Settings → Source control** to change selected environment de
 T3 Code only pulls when it can fast-forward and the checkout has no changed files, untracked files,
 or local commits. It skips checkouts on another branch or without an upstream. If a checkout has
 local work, resolve it yourself before automatic pulls can resume.
+
+## Repeatable project initialization
+
+A project's setup action can install dependencies, initialize its development database
+and load sample data in one command. Store that command in `t3.json` with
+`runOnWorktreeCreate: true` and `async: false`, then import the action in the project's
+Actions settings. Initialization finishes before the agent starts, and its progress and
+failures appear in the conversation. Setup runs for new launches in an existing checkout
+as well as for new worktrees, so make the command safe to repeat and preserve existing data.
+
+Keep a reset command as an ordinary project action for restoring known test data.
+Choose the isolated development instance explicitly; resetting fixtures should never
+reset an instance that holds real application data.

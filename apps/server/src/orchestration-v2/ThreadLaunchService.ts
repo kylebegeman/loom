@@ -306,7 +306,7 @@ const make = Effect.gen(function* () {
     );
 
     const reused = input.reusedWorktree;
-    const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
+    const createdWorktree = input.workspaceStrategy.type === "worktree";
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
@@ -318,11 +318,11 @@ const make = Effect.gen(function* () {
         stages: ["fetch", "checkout", "setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
-    } else if (reused !== undefined) {
+    } else {
       yield* setupTracker.begin({
         threadId,
         branch: input.workspaceStrategy.branch ?? null,
-        baseRef: reused.baseRef,
+        baseRef: reused?.baseRef ?? null,
         stages: ["setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
@@ -546,14 +546,9 @@ const make = Effect.gen(function* () {
           projectId: input.projectId,
           projectCwd: project.workspaceRoot,
           worktreePath: cwd,
-          ...(tracked
-            ? {
-                observeCompletion: {
-                  onOutputLine: (line: string) =>
-                    setupTracker.appendTail(threadId, "setup-script", line),
-                },
-              }
-            : {}),
+          observeCompletion: {
+            onOutputLine: (line: string) => setupTracker.appendTail(threadId, "setup-script", line),
+          },
           project: {
             id: project.id,
             workspaceRoot: project.workspaceRoot,
@@ -629,11 +624,15 @@ const make = Effect.gen(function* () {
             cancelled ? "cancelled" : "failed",
             cancelled ? null : failureDetail(Cause.squash(cause)),
           );
+          if (cancelled && setupTerminalId)
+            yield* terminals
+              .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
+              .pipe(Effect.ignore);
           // A cancelled setup leaves nothing behind. A failed one keeps a worktree
           // the thread recorded, so a retry reuses it, and removes one it never
           // recorded, which a retry would otherwise duplicate.
-          if (tracked && createdWorktreePath && (cancelled || !workspaceRecorded)) {
-            if (setupTerminalId)
+          if (createdWorktree && createdWorktreePath && (cancelled || !workspaceRecorded)) {
+            if (!cancelled && setupTerminalId)
               yield* terminals
                 .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
                 .pipe(Effect.ignore);
