@@ -103,6 +103,7 @@ function makeRegistry(input: {
         layerRegistry,
         layerProcess,
         ServerSourceControlHost.layer.pipe(
+          Layer.provide(NodeServices.layer),
           Layer.provide(
             Layer.mergeAll(
               layerProcess,
