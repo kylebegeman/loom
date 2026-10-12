@@ -1,3 +1,4 @@
+import type { WorkspaceHandoffService } from "./workspace-handoff/WorkspaceHandoffService.ts";
 import type { PcbPreviewService } from "./pcb-preview/PcbPreviewService.ts";
 import type { ModelPreviewService } from "./model-preview-3d/ModelPreviewService.ts";
 import type { ProjectLifecycleService } from "./project-lifecycle/ProjectLifecycleService.ts";
@@ -14,7 +15,8 @@ export type ForkServices =
   | ProjectLifecycleService
   | AppleBuildService
   | DeviceQaService
-  | CodeGraphService;
+  | CodeGraphService
+  | WorkspaceHandoffService;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

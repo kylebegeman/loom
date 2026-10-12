@@ -1,3 +1,4 @@
+import { WorkspaceHandoffScreen } from "./features/workspace-handoff/WorkspaceHandoffScreen";
 import {
   createV5StackNavigator as createNativeStackNavigator,
   createV5SheetStackNavigator,
@@ -699,6 +700,11 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ThreadRouteScreen,
       linking: THREAD_LINKING_PREFIX,
       options: GLASS_HEADER_OPTIONS,
+    }),
+    WorkspaceHandoff: createNativeStackScreen({
+      screen: WorkspaceHandoffScreen,
+      linking: "handoff/:environmentId/:threadId",
+      options: SOLID_HEADER_OPTIONS,
     }),
     ThreadTerminal: createNativeStackScreen({
       screen: ThreadTerminalRouteScreen,

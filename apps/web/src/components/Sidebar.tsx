@@ -1,3 +1,5 @@
+import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { type EnvironmentId } from "@t3tools/contracts";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";
 import { CollapsibleSectionHeader } from "./ui/collapsible-section-header";
@@ -4633,6 +4635,10 @@ export default function Sidebar() {
               isRegeneratingTitle,
               isRunning: !threadRuntimeCanArchive(thread.runtime),
               supports: {
+                workspaceHandoff: supportsLoomFeature(
+                  serverConfigs.get(thread.environmentId)?.environment.capabilities,
+                  "workspace-handoff",
+                ),
                 settlement: supportsSettlement,
                 autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: supportsSnooze,
@@ -4655,6 +4661,9 @@ export default function Sidebar() {
           return;
         }
         switch (clicked.value) {
+          case "workspace-handoff":
+            openWorkspaceHandoff(threadRef);
+            return;
           case "filter-by-project":
             // This item is the only scope control here, so picking the
             // already-scoped project again is the way back to all projects.

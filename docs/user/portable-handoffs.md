@@ -42,3 +42,26 @@ attachments reserve 4,096 each for their references. Existing context is estimat
 activity when usage telemetry is unavailable. Known smaller windows still constrain the handoff.
 These are fallback estimates, not exact token counts. Image resolution, custom models, and hidden
 native context can differ, so the provider may still reject an input.
+
+## Continue on another machine
+
+In Loom, use **Continue on another machine** from a thread's menu or the command palette.
+Connect the destination host and add a project for the same repository there first. Both hosts
+need workspace operation permission, and the destination needs Git access and a working provider.
+Stop the source thread and its background work, commit local changes, and publish the branch
+before starting.
+
+Loom prepares a separate destination workspace at the published commit and waits for workspace
+setup to succeed. It then starts a linked conversation with the original request and recent
+conversation context. The original conversation, attachments, provider session, and checkpoints
+stay on the source host. The destination uses that host's project model and runtime settings.
+
+If preparation fails, the source remains available. Retry the saved handoff to reuse completed
+steps and avoid sending the continuation twice. Starting over keeps any prepared destination
+thread; review it before beginning another attempt.
+
+After preparation, Loom settles the source only if it has remained unchanged and has no local
+application data or ignored files other than dependency folders. Otherwise, it keeps the source
+active and explains what was retained. Source checkout cleanup follows that host's Storage
+settings. Databases, local configuration, credentials, and other application data are not moved;
+use reproducible development fixtures or a separate backup and restore workflow when needed.

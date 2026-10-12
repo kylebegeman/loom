@@ -1,3 +1,4 @@
+import { WorkspaceHandoffHost } from "./workspace-handoff/WorkspaceHandoffHost";
 import { PcbPreviewCommandHost } from "./pcb-preview/commands";
 import { ModelPreview3dShortcuts } from "./model-preview-3d/Shortcuts";
 import { ProjectLifecycleHost } from "./project-lifecycle/StorageHost";
@@ -18,6 +19,7 @@ const FORK_ROOT_COMPONENTS: ReadonlyArray<{
   { id: "file-outline-shortcuts", Component: FileOutlineShortcuts },
   { id: "model-preview-3d-shortcuts", Component: ModelPreview3dShortcuts },
   { id: "pcb-preview-commands", Component: PcbPreviewCommandHost },
+  { id: "workspace-handoff-host", Component: WorkspaceHandoffHost },
   { id: "project-lifecycle-host", Component: ProjectLifecycleHost },
   { id: "apple-build-tooling-shortcuts", Component: AppleBuildToolingShortcuts },
   { id: "device-qa-shortcuts", Component: DeviceQaShortcuts },

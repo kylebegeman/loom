@@ -35,3 +35,23 @@ export function threadHasQueuedTurnStart(
     toMillis(thread.latestRunCompletedAt),
   ].every((value) => value === null || value < messageAtMs);
 }
+
+/** Idle workspaces have no live or queued work, including detached background commands. */
+export function threadWorkspaceIdle(
+  thread: Parameters<typeof threadHasQueuedTurnStart>[0] &
+    Pick<
+      OrchestrationV2ThreadShell,
+      "activeRunId" | "pendingBackgroundTasks" | "pendingRuntimeRequest"
+    >,
+  now: number,
+): boolean {
+  return (
+    thread.activeRunId === null &&
+    ["idle", "completed", "interrupted", "failed", "cancelled", "rolled_back"].includes(
+      thread.status,
+    ) &&
+    (thread.pendingBackgroundTasks?.length ?? 0) === 0 &&
+    thread.pendingRuntimeRequest === null &&
+    !threadHasQueuedTurnStart(thread, now)
+  );
+}

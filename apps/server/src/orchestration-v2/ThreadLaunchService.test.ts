@@ -513,6 +513,86 @@ it.effect("provisions independent launches concurrently instead of behind a glob
   }),
 );
 
+it.effect.each([0, 17])(
+  "destination preparation waits for async setup ending with $0",
+  (exitCode) =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const finished = yield* Deferred.make<{ exitCode: number; durationMs: number }>();
+      const returned = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        runSetup: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            return {
+              status: "started" as const,
+              async: true,
+              scriptId: "setup",
+              scriptName: "Setup",
+              scriptCommand: "setup",
+              terminalId: "setup-terminal",
+              cwd: "/repo",
+              completion: Deferred.await(finished),
+            };
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const launch = yield* launches
+          .launch({
+            ...launchInput({
+              command: `command:await:${exitCode}`,
+              thread: `thread:await:${exitCode}`,
+            }),
+            waitForPreparation: true,
+          })
+          .pipe(
+            Effect.tap(() => Deferred.succeed(returned, undefined)),
+            Effect.forkChild,
+          );
+        yield* Deferred.await(entered);
+        assert.equal(yield* Deferred.isDone(returned), false);
+        yield* Deferred.succeed(finished, { exitCode, durationMs: 1 });
+        if (exitCode === 0) {
+          yield* Fiber.join(launch);
+          assert.equal(yield* Deferred.isDone(returned), true);
+        } else
+          assert.equal((yield* Fiber.join(launch).pipe(Effect.flip)).operation, "run-setup-script");
+      }).pipe(Effect.provide(harness.layer));
+    }),
+);
+
+it.effect("retries awaited setup in the same empty destination worktree", () => {
+  let attempts = 0;
+  const harness = makeHarness({
+    runSetup: () =>
+      Effect.sync(() => ({
+        status: "started" as const,
+        async: true,
+        scriptId: "setup",
+        scriptName: "Setup",
+        scriptCommand: "setup",
+        terminalId: "setup-terminal",
+        cwd: "/repo-worktrees/feature",
+        completion: Effect.succeed({ exitCode: ++attempts === 1 ? 17 : 0, durationMs: 1 }),
+      })),
+  });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const input = {
+      ...launchInput({ command: "command:await:retry", thread: "thread:await:retry" }),
+      workspaceStrategy: { type: "worktree" as const, baseRef: "main", branch: "handoff/retry" },
+      waitForPreparation: true,
+    };
+    assert.equal((yield* launches.launch(input).pipe(Effect.flip)).operation, "run-setup-script");
+    const result = yield* launches.launch(input);
+    assert.equal(result.projection.thread.worktreePath, "/repo-worktrees/feature");
+    assert.equal(result.projection.thread.branch, "handoff/retry");
+    assert.equal(attempts, 2);
+    assert.equal(harness.createWorktree.mock.calls.length, 1);
+  }).pipe(Effect.provide(harness.layer));
+});
+
 it.effect.each(
   [
     { type: "root" } as const,

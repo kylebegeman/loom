@@ -83,6 +83,8 @@ export interface ThreadLaunchInput {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
+  /** Returns only after workspace setup succeeds; used before releasing another host. */
+  readonly waitForPreparation?: boolean;
   readonly initialMessage?: ThreadLaunchInitialMessage;
   readonly importedNativeThread?: {
     readonly ref: {
@@ -99,7 +101,7 @@ export interface ThreadLaunchInput {
 /** What workspace preparation reads from a launch; a retry rebuilds it from the run. */
 type PreparationInput = Pick<
   ThreadLaunchInput,
-  "commandId" | "projectId" | "workspaceStrategy" | "initialMessage"
+  "commandId" | "projectId" | "workspaceStrategy" | "initialMessage" | "waitForPreparation"
 > & {
   /**
    * Set when a retry reuses the worktree its failed attempt created and
@@ -575,14 +577,14 @@ const make = Effect.gen(function* () {
               status: completion.exitCode === 0 ? "done" : "failed",
               detail: `exited with ${completion.exitCode ?? "no exit code"}`,
             });
-            if (completion.exitCode !== 0 && !setup.async)
+            if (completion.exitCode !== 0 && (!setup.async || input.waitForPreparation === true))
               return yield* mapError(
                 input,
                 "run-setup-script",
                 threadId,
               )(`Setup script exited with ${completion.exitCode ?? "no exit code"}.`);
           });
-          if (setup.async) {
+          if (setup.async && input.waitForPreparation !== true) {
             awaitAsyncSetup = awaitCompletion.pipe(
               Effect.catchCause((cause) =>
                 setupTracker.stage(threadId, "setup-script", {
@@ -595,6 +597,12 @@ const make = Effect.gen(function* () {
             yield* awaitCompletion;
           }
         } else {
+          if (input.waitForPreparation === true)
+            return yield* mapError(
+              input,
+              "run-setup-script",
+              threadId,
+            )("Setup did not provide a completion result.");
           yield* setupTracker.stageStatus(threadId, "setup-script", "done");
         }
       } else {
@@ -725,7 +733,7 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
     runId: RunId | null,
   ) {
-    yield* prepareInBackground(input, threadId, runId).pipe(
+    const preparation = prepareInBackground(input, threadId, runId).pipe(
       Effect.onError((cause) =>
         failPreparedRun(
           input,
@@ -734,10 +742,10 @@ const make = Effect.gen(function* () {
           Cause.hasInterruptsOnly(cause) ? "Worktree setup cancelled." : Cause.squash(cause),
         ),
       ),
-      Effect.ignoreCause,
       Effect.ensuring(releasePreparation(input.commandId)),
-      Effect.forkIn(preparationScope),
     );
+    if (input.waitForPreparation === true) yield* preparation;
+    else yield* preparation.pipe(Effect.ignoreCause, Effect.forkIn(preparationScope));
   });
 
   const launch: ThreadLaunchService["Service"]["launch"] = Effect.fn("ThreadLaunchService.launch")(
@@ -916,18 +924,26 @@ const make = Effect.gen(function* () {
         const runIsPreparing =
           runId !== null &&
           projection.runs.some((run) => run.id === runId && run.status === "preparing");
-        const shouldSchedule = runId === null ? Option.isNone(launchReceipt) : runIsPreparing;
+        // An accepted create does not mean setup succeeded. Awaited launches can
+        // retry setup only while the destination thread still has no work.
+        const retryEmptyPreparation =
+          input.waitForPreparation === true &&
+          runId === null &&
+          projection.messages.length === 0 &&
+          projection.runs.length === 0;
+        const shouldSchedule =
+          runId === null ? Option.isNone(launchReceipt) || retryEmptyPreparation : runIsPreparing;
         // A retried root launch prepares the folder its first attempt bound, so
         // a Scratch thread keeps its own. Other root launches bind no folder.
         const boundWorktreePath = projection.thread.worktreePath;
         const preparationStrategy: ThreadLaunchWorkspaceStrategy =
           Option.isSome(launchReceipt) &&
-          workspaceStrategy.type === "root" &&
+          (workspaceStrategy.type === "root" || retryEmptyPreparation) &&
           boundWorktreePath !== null
             ? {
                 type: "existing_worktree",
                 worktreePath: boundWorktreePath,
-                branch: workspaceStrategy.branch,
+                branch: projection.thread.branch ?? undefined,
               }
             : workspaceStrategy;
         if (shouldSchedule) {
@@ -945,7 +961,16 @@ const make = Effect.gen(function* () {
                     );
               if (preparationStillRequired) {
                 yield* schedulePreparation(
-                  { ...input, workspaceStrategy: preparationStrategy },
+                  {
+                    ...input,
+                    workspaceStrategy: preparationStrategy,
+                    ...(retryEmptyPreparation &&
+                    Option.isSome(launchReceipt) &&
+                    workspaceStrategy.type === "worktree" &&
+                    boundWorktreePath !== null
+                      ? { reusedWorktree: { baseRef: workspaceStrategy.baseRef } }
+                      : {}),
+                  },
                   threadId,
                   runId,
                 );
@@ -953,6 +978,12 @@ const make = Effect.gen(function* () {
                 yield* releasePreparation(input.commandId);
               }
             }).pipe(Effect.onError(() => releasePreparation(input.commandId)));
+          } else if (input.waitForPreparation === true) {
+            return yield* mapError(
+              input,
+              "run-setup-script",
+              threadId,
+            )("Workspace preparation is already running. Retry after it finishes.");
           }
         }
 
