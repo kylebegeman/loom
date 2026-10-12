@@ -49,6 +49,7 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import * as NativeResources from "./NativeWorkloadResources.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
@@ -318,6 +319,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     }) => Effect.Effect<void>;
     readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;
     readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean>;
+    readonly scopeCloseGate?: Effect.Effect<void>;
     readonly hangSessionScopeClose?: boolean;
     readonly startTurn?: Effect.Effect<void>;
     readonly beforeUnload?: Effect.Effect<void>;
@@ -341,7 +343,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     (options.scopeCloseReached === undefined
       ? Effect.void
       : Deferred.succeed(options.scopeCloseReached, undefined)
-    ).pipe(Effect.andThen(Effect.never)),
+    ).pipe(Effect.andThen(options.scopeCloseGate ?? Effect.never)),
   );
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: ProviderInstanceId.make("codex"),
@@ -465,6 +467,8 @@ function layerTest(input: {
   };
   readonly hasPendingBackgroundWork?: Effect.Effect<boolean>;
   readonly hasPendingBackgroundWorkForThread?: Effect.Effect<boolean>;
+  readonly nativeResources?: NativeResources.NativeWorkloadResources["Service"];
+  readonly scopeCloseGate?: Effect.Effect<void>;
   readonly hangSessionScopeClose?: boolean;
   readonly startTurn?: Effect.Effect<void>;
   readonly beforeUnload?: Effect.Effect<void>;
@@ -493,6 +497,7 @@ function layerTest(input: {
       ...(input.hasPendingBackgroundWorkForThread === undefined
         ? {}
         : { hasPendingBackgroundWorkForThread: input.hasPendingBackgroundWorkForThread }),
+      ...(input.scopeCloseGate === undefined ? {} : { scopeCloseGate: input.scopeCloseGate }),
       ...(input.hangSessionScopeClose === undefined
         ? {}
         : { hangSessionScopeClose: input.hangSessionScopeClose }),
@@ -536,6 +541,9 @@ function layerTest(input: {
           layerProviderEventIngestorTest,
           layerConfiguredMcpRegistry,
           layerTestStores,
+          ...(input.nativeResources === undefined
+            ? []
+            : [Layer.succeed(NativeResources.NativeWorkloadResources, input.nativeResources)]),
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
         ),
@@ -4722,4 +4730,214 @@ it.effect(
       });
       assert.isFalse(denied?.capabilities?.has("device"));
     }),
+);
+
+const openResourceFixture = Effect.gen(function* () {
+  const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+  const eventSink = yield* EventSink.EventSinkV2;
+  const ids = yield* IdAllocator.IdAllocatorV2;
+  const projection = yield* ProjectionStore.ProjectionStoreV2;
+  const now = yield* DateTime.now;
+  const threadId = ThreadId.make("mini-resource-test");
+  const providerSessionId = yield* ids.allocate.providerSession({
+    providerInstanceId: modelSelection.instanceId,
+    threadId,
+  });
+  yield* eventSink.write({
+    events: [yield* makeThreadCreatedEvent({ idAllocator: ids, threadId, now })],
+  });
+  const open = manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+  const runtime = yield* open;
+  const runId = ids.derive.run({ threadId, ordinal: 1 });
+  const providerThread = makeProviderThread({ idAllocator: ids, threadId, providerSessionId, now });
+  const appThread = (yield* projection.getThreadProjection(threadId)).thread;
+  const messageId = yield* ids.allocate.message({ threadId, ordinal: 1 });
+  const startTurn = (target: typeof runtime) =>
+    target.startTurn({
+      appThread,
+      threadId,
+      runId,
+      runOrdinal: 1,
+      providerTurnOrdinal: 1,
+      attemptId: ids.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+      rootNodeId: ids.derive.rootNode({ runId }),
+      providerThread,
+      message: {
+        createdBy: "user",
+        creationSource: "web",
+        messageId,
+        text: "resource test",
+        attachments: [],
+      },
+      modelSelection,
+      runtimePolicy,
+    });
+  return { manager, runtime, startTurn, open, providerSessionId, providerThread, ids, threadId };
+});
+
+it.effect("Mini admission holds the provider and cancellation clears the waiting turn", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const acquiring = yield* Deferred.make<void>();
+    const idle = yield* Deferred.make<void>();
+    let started = false;
+    const resources = NativeResources.NativeWorkloadResources.of({
+      enabled: true,
+      acquire: () => Deferred.succeed(acquiring, undefined).pipe(Effect.andThen(Effect.never)),
+      releaseIdle: () => Deferred.succeed(idle, undefined).pipe(Effect.asVoid),
+      releaseSession: () => Effect.void,
+    });
+    yield* Effect.gen(function* () {
+      const f = yield* openResourceFixture;
+      const fiber = yield* f.startTurn(f.runtime).pipe(Effect.forkChild);
+      yield* Deferred.await(acquiring);
+      assert.isFalse(started);
+      yield* Fiber.interrupt(fiber);
+      yield* Deferred.await(idle);
+      yield* f.manager.release({
+        providerSessionId: f.providerSessionId,
+        reason: "manual_shutdown",
+      });
+      assert.equal((yield* Ref.get(state)).closeCount, 1);
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 1000,
+          nativeResources: resources,
+          hasPendingBackgroundWork: Effect.succeed(false),
+          startTurn: Effect.sync(() => {
+            started = true;
+          }),
+        }),
+      ),
+    );
+  }),
+);
+
+it.effect.each([false, true, undefined])(
+  "Mini terminal capacity retention with background probe %s",
+  (background) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const terminalObserved = yield* Deferred.make<void>();
+      let idleReleases = 0;
+      const groups: string[] = [];
+      const resources = NativeResources.NativeWorkloadResources.of({
+        enabled: true,
+        acquire: (id) =>
+          Effect.sync(() => {
+            groups.push(id);
+          }),
+        releaseIdle: () =>
+          Effect.sync(() => {
+            idleReleases++;
+          }),
+        releaseSession: (id) =>
+          Effect.sync(() => {
+            assert.equal(id, groups[0]);
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const f = yield* openResourceFixture;
+        const subscription = yield* f.runtime.subscribeEvents!;
+        yield* subscription.events.pipe(
+          Stream.tap((event) =>
+            event.type === "turn.terminal"
+              ? Deferred.succeed(terminalObserved, undefined)
+              : Effect.void,
+          ),
+          Stream.runDrain,
+          Effect.forkScoped,
+        );
+        yield* f.startTurn(f.runtime);
+        const queue = (yield* Ref.get(state)).eventQueues.get(String(f.providerSessionId))!;
+        yield* Queue.offer(queue, {
+          type: "turn.terminal",
+          driver: CODEX_DRIVER,
+          providerThreadId: f.providerThread.id,
+          providerTurnId: f.ids.derive.providerTurn({
+            driver: CODEX_DRIVER,
+            nativeTurnId: "mini-turn",
+          }),
+          runOrdinal: 1,
+          status: "completed",
+          failure: null,
+          threadDisposition: "reusable",
+        });
+        yield* Deferred.await(terminalObserved);
+        assert.equal(idleReleases, background === false ? 1 : 0);
+        yield* f.manager.release({
+          providerSessionId: f.providerSessionId,
+          reason: "manual_shutdown",
+        });
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 1000,
+            nativeResources: resources,
+            ...(background === undefined
+              ? {}
+              : { hasPendingBackgroundWork: Effect.succeed(background) }),
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect("late provider teardown releases only its original runtime generation", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const closeReached = yield* Deferred.make<void>();
+    const closeGate = yield* Deferred.make<void>();
+    const released = yield* Deferred.make<void>();
+    const acquired: string[] = [];
+    const releases: string[] = [];
+    const resources = NativeResources.NativeWorkloadResources.of({
+      enabled: true,
+      acquire: (id) =>
+        Effect.sync(() => {
+          acquired.push(id);
+        }),
+      releaseIdle: () => Effect.void,
+      releaseSession: (id) =>
+        Effect.sync(() => {
+          releases.push(id);
+        }).pipe(Effect.andThen(Deferred.succeed(released, undefined)), Effect.asVoid),
+    });
+    yield* Effect.gen(function* () {
+      const f = yield* openResourceFixture;
+      yield* f.startTurn(f.runtime);
+      const releasing = yield* f.manager
+        .release({ providerSessionId: f.providerSessionId, reason: "manual_shutdown" })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(closeReached);
+      yield* TestClock.adjust("35 seconds");
+      yield* Fiber.join(releasing);
+      assert.deepEqual(releases, []);
+      const replacement = yield* f.open;
+      yield* f.startTurn(replacement);
+      assert.notEqual(acquired[0], acquired[1]);
+      yield* Deferred.succeed(closeGate, undefined);
+      yield* Deferred.await(released);
+      assert.deepEqual(releases, [acquired[0]]);
+      yield* f.manager.release({
+        providerSessionId: f.providerSessionId,
+        reason: "manual_shutdown",
+      });
+      assert.deepEqual(releases, acquired);
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 1000,
+          nativeResources: resources,
+          hangSessionScopeClose: true,
+          scopeCloseReached: closeReached,
+          scopeCloseGate: Deferred.await(closeGate),
+        }),
+      ),
+    );
+  }),
 );

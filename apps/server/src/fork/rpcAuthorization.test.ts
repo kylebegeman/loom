@@ -4,12 +4,14 @@ import {
   AuthOrchestrationOperateScope,
   AuthTerminalOperateScope,
   AuthSessionId,
+  AuthEnvironmentMaintainScope,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
   ForkRpcGroup,
   GITHUB_HOST_SETUP_WS_METHODS as GH,
   WORKSPACE_HANDOFF_WS_METHODS as H,
+  MINI_OFFLOAD_WS_METHODS as O,
   MODEL_PREVIEW_3D_WS_METHODS as M,
   PCB_PREVIEW_WS_METHODS as P,
 } from "@t3tools/contracts/fork";
@@ -176,4 +178,46 @@ it.effect(
         ["ABCD-EFGH"],
       );
     }),
+);
+
+it.effect("Mini workers require admin maintenance and job dispatch requires terminal access", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("mini-permission-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    let invoked = false;
+    const work = Effect.sync(() => {
+      invoked = true;
+      return "executed";
+    });
+    for (const method of [O.register, O.setEnabled, O.prepare]) {
+      const error = yield* auth([AuthOrchestrationReadScope, AuthTerminalOperateScope])
+        .effect(method, work)
+        .pipe(Effect.flip);
+      expect(error.requiredScope).toBe(AuthEnvironmentMaintainScope);
+      expect(invoked).toBe(false);
+      expect(yield* auth([AuthEnvironmentMaintainScope]).effect(method, work)).toBe("executed");
+      invoked = false;
+    }
+    for (const method of [O.submit, O.recover, O.cancel]) {
+      const error = yield* auth([AuthOrchestrationReadScope, AuthOrchestrationOperateScope])
+        .effect(method, work)
+        .pipe(Effect.flip);
+      expect(error.requiredScope).toBe(AuthTerminalOperateScope);
+      expect(invoked).toBe(false);
+      expect(yield* auth([AuthTerminalOperateScope]).effect(method, work)).toBe("executed");
+      invoked = false;
+    }
+    for (const method of [O.workers, O.list, O.inspect, O.patch, O.artifacts, O.check]) {
+      const error = yield* auth([]).effect(method, work).pipe(Effect.flip);
+      expect(error.requiredScope).toBe(AuthOrchestrationReadScope);
+      expect(invoked).toBe(false);
+      expect(yield* auth([AuthOrchestrationReadScope]).effect(method, work)).toBe("executed");
+      invoked = false;
+    }
+  }),
 );

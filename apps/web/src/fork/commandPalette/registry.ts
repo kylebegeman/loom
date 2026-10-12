@@ -1,4 +1,5 @@
 import { workspaceHandoffPaletteSource } from "../workspace-handoff/palette";
+import { miniOffloadPaletteSource } from "../mini-offload/palette";
 import { pcbPreviewPaletteSource } from "../pcb-preview/palette";
 import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
 import { projectLifecyclePaletteSource } from "../project-lifecycle/palette";
@@ -46,6 +47,7 @@ export interface ForkCommandPaletteSource {
 
 /** One line per packet. */
 export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSource> = [
+  miniOffloadPaletteSource,
   fileOutlinePaletteSource,
   // snippetsPaletteSource,
   modelPreview3dPaletteSource,

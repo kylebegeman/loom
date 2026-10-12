@@ -3,6 +3,9 @@ import * as GitHubHostSetup from "../sourceControl/GitHubHostSetup.ts";
 import { FetchHttpClient } from "effect/http";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as WorkspaceHandoff from "./workspace-handoff/WorkspaceHandoffService.ts";
+import * as MiniSsh from "./mini-offload/MiniSshTransport.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as MiniOffload from "./mini-offload/MiniOffloadService.ts";
 import { PcbPreviewHttpRoutes } from "./pcb-preview/http.ts";
 import * as PcbPreview from "./pcb-preview/PcbPreviewService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -27,6 +30,11 @@ const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   GitHubSetupFlow.layer.pipe(
     Layer.provide(GitHubHostSetup.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  ),
+  MiniOffload.layer.pipe(
+    Layer.provide(
+      Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
+    ),
   ),
   SwitchboardLive,
   WorkspaceHandoff.layer.pipe(

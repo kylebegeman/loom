@@ -37,6 +37,8 @@ import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationServic
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as NativeResources from "./NativeWorkloadResources.ts";
 import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryService.ts";
 import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
@@ -126,6 +128,7 @@ const layerProviderSwitchServiceProvided = ProviderSwitchService.layer.pipe(
 );
 
 const layerProviderSessionManagerProvided = ProviderSessionManager.layer.pipe(
+  Layer.provide(NativeResources.layer.pipe(Layer.provide(ProcessRunner.layer))),
   Layer.provide(
     Layer.mergeAll(
       layerProviderAdapterRegistryProvided,

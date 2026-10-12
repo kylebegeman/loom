@@ -1,5 +1,6 @@
 import { GitHubHostSetupToolkit, githubHostSetupHandlers } from "../github-host-setup/mcp.ts";
 import { WorkspaceHandoffToolkit, workspaceHandoffHandlers } from "../workspace-handoff/mcp.ts";
+import { MiniOffloadToolkit, miniOffloadHandlers } from "../mini-offload/mcp.ts";
 import type { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
 import { ModelPreview3dToolkit, modelPreview3dHandlers } from "../model-preview-3d/mcp.ts";
 import { PcbToolkit, pcbHandlers } from "../pcb-preview/mcp.ts";
@@ -20,6 +21,12 @@ export const FORK_MCP_TOOLKITS = [
     handlers: workspaceHandoffHandlers,
     register: (register: typeof toolkitRegistration) =>
       register(WorkspaceHandoffToolkit, workspaceHandoffHandlers),
+  },
+  {
+    toolkit: MiniOffloadToolkit,
+    handlers: miniOffloadHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(MiniOffloadToolkit, miniOffloadHandlers),
   },
   {
     toolkit: PcbToolkit,

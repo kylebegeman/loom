@@ -1,3 +1,4 @@
+import { MiniOffloadSettingsSection } from "../mini-offload/settings";
 import { PcbPreviewSettingsSection } from "../pcb-preview/settings";
 import type { ComponentType } from "react";
 import { ModelPreviewSettingsSection } from "../model-preview-3d/SettingsSection";
@@ -12,6 +13,7 @@ export interface ForkSettingsSection {
   readonly Component: ComponentType;
 }
 export const FORK_SETTINGS_SECTIONS: ReadonlyArray<ForkSettingsSection> = [
+  { id: "mini-offload", title: "Command workers", Component: MiniOffloadSettingsSection },
   { id: "pcb-preview", title: "PCB preview", Component: PcbPreviewSettingsSection },
   { id: "model-preview-3d", title: "3D model", Component: ModelPreviewSettingsSection },
   { id: "project-lifecycle", title: "Storage", Component: ProjectLifecycleSettingsSection },

@@ -1,6 +1,10 @@
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
+  "mini-offload",
+  "mini-offload-outputs",
+  "mini-worker-readiness",
+  "mini-shared-resources",
   "switchboard",
   "model-preview-3d",
   "model-ortho-camera",

@@ -12,8 +12,10 @@ import type { RpcSession } from "../rpc/session.ts";
 import { describe, expect, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
 import {
+  AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
   AuthSettingsWriteScope,
+  AuthEnvironmentMaintainScope,
   AuthTerminalOperateScope, // fork: pcb-preview
   AuthSourceControlWriteScope,
   ThreadId,
@@ -51,8 +53,22 @@ const grant = (allowed: boolean): AuthSessionState => ({
     sessionCookieName: "test",
   },
   // fork: pcb-preview
-  scopes: allowed ? [AuthOrchestrationOperateScope, AuthTerminalOperateScope] : [],
-  permissions: allowed ? [AuthOrchestrationOperateScope, AuthTerminalOperateScope] : [],
+  scopes: allowed
+    ? [
+        AuthOrchestrationReadScope,
+        AuthOrchestrationOperateScope,
+        AuthTerminalOperateScope,
+        AuthEnvironmentMaintainScope,
+      ]
+    : [],
+  permissions: allowed
+    ? [
+        AuthOrchestrationReadScope,
+        AuthOrchestrationOperateScope,
+        AuthTerminalOperateScope,
+        AuthEnvironmentMaintainScope,
+      ]
+    : [],
 });
 const runtime = Atom.runtime(
   Layer.succeed(EnvironmentRegistry, {

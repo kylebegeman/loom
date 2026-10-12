@@ -1,6 +1,7 @@
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "@t3tools/contracts/fork";
 import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
 import { makeWorkspaceHandoffRpcHandlers } from "./workspace-handoff/rpc.ts";
+import { makeMiniOffloadRpcHandlers } from "./mini-offload/rpc.ts";
 import { makePcbPreviewRpcHandlers } from "./pcb-preview/rpc.ts";
 import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
 import { makeProjectLifecycleRpcHandlers } from "./project-lifecycle/rpc.ts";
@@ -33,6 +34,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
             Effect.succeed({ features: LOOM_SERVER_FEATURES, serverVersion: packageJson.version }),
           ),
         [FORK_WS_METHODS.limits]: () => auth.effect(FORK_WS_METHODS.limits, readSwitchboardLimits),
+        ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),
         ...(yield* withForkRuntime(makePcbPreviewRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeModelPreviewRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeProjectLifecycleRpcHandlers(auth))),

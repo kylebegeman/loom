@@ -11,6 +11,7 @@ import {
   type PreviewAutomationStatus,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
+import * as TestClock from "effect/testing/TestClock";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -1565,6 +1566,50 @@ it.live("a desktop page that comes back reconnects without waiting for a viewer"
       // Without a viewer or agent, the server drives the page again, so its URL keeps reaching clients.
       while (desktopConnections.length < 2) yield* Effect.yieldNow;
       expect(desktopConnections).toHaveLength(2);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect("a stalled snapshot releases its tab and preserves the host for the next request", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker, tabId } = yield* ready;
+      const original = contexts[0]!;
+      const started = Promise.withResolvers<void>();
+      const send = original.sessions[0]!.send;
+      const previous = send.getMockImplementation()!;
+      send.mockImplementation(async (method, input) => {
+        if (method === "Page.captureScreenshot") {
+          started.resolve();
+          return new Promise(() => {});
+        }
+        return previous(method, input);
+      });
+      const stalled = yield* broker
+        .invoke<PreviewAutomationSnapshot>({
+          scope,
+          operation: "snapshot",
+          tabId,
+          input: {},
+          timeoutMs: 1000,
+        })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* TestClock.adjust("1 second");
+      expect(original.page.isClosed()).toBe(true);
+      expect(yield* Fiber.join(stalled)).toMatchObject({
+        _tag: "PreviewAutomationTimeoutError",
+        remoteTag: "PreviewAutomationTimeoutError",
+      });
+      const recovered = yield* broker.invoke<PreviewAutomationSnapshot>({
+        scope,
+        operation: "snapshot",
+        tabId,
+        input: {},
+        timeoutMs: 1000,
+      });
+      expect(recovered.title).toBe("test page");
+      expect(contexts).toHaveLength(2);
     }),
   ).pipe(Effect.provide(layer)),
 );

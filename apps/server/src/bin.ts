@@ -17,7 +17,12 @@ if (
   })
 ) {
   const command = process.argv[2];
-  if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
+  if (command === "runtime-capabilities") {
+    const { LOOM_SERVER_FEATURES } = await import("./fork/features.ts");
+    process.stdout.write(
+      JSON.stringify({ schema_version: 1, features: LOOM_SERVER_FEATURES }) + "\n",
+    );
+  } else if (command === "acp-mcp-bridge" || command === "acp-mcp-call") {
     const { runAcpMcpCliFastPath } = await import("./mcp/AcpMcpStdioBridge.ts");
     await runAcpMcpCliFastPath(command, process.argv.slice(3));
   } else {

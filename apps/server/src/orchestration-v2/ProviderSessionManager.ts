@@ -50,6 +50,7 @@ import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as NativeResources from "./NativeWorkloadResources.ts";
 
 const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const DEFAULT_MAX_IDLE_PIN_MS = 4 * 60 * 60 * 1000;
@@ -341,6 +342,16 @@ export const layerWithOptions = (
   Layer.effect(
     ProviderSessionManagerV2,
     Effect.gen(function* () {
+      const nativeResources = yield* Effect.serviceOption(NativeResources.NativeWorkloadResources);
+      const resourceGroups = new WeakMap<ProviderAdapter.ProviderAdapterV2SessionRuntime, string>();
+      let resourceGeneration = 0;
+      const resourceGroup = (runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime) => {
+        const existing = resourceGroups.get(runtime);
+        if (existing !== undefined) return existing;
+        const group = `${runtime.providerSessionId}:${++resourceGeneration}`;
+        resourceGroups.set(runtime, group);
+        return group;
+      };
       const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistryV2;
       const fileSystem = yield* FileSystem.FileSystem;
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
@@ -430,7 +441,13 @@ export const layerWithOptions = (
         readonly providerSessionId: ProviderSessionId;
         readonly threadId: ThreadId;
       }) => `${input.providerSessionId}\u0000${input.threadId}`;
-      const idleTimeoutMs = Math.max(1, options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS);
+      const idleTimeoutMs = Math.max(
+        1,
+        options.idleTimeoutMs ??
+          (Option.isSome(nativeResources) && nativeResources.value.enabled
+            ? 60_000
+            : DEFAULT_IDLE_TIMEOUT_MS),
+      );
       const maxIdlePinMs = Math.max(0, options.maxIdlePinMs ?? DEFAULT_MAX_IDLE_PIN_MS);
       interface PreparedMcpCredential {
         readonly mcpCredentialId: string | undefined;
@@ -901,9 +918,11 @@ export const layerWithOptions = (
       const closeScopeWithin = (
         scope: Scope.Closeable,
         annotations: { readonly providerSessionId?: ProviderSessionId; readonly reason: string },
+        onClosed: Effect.Effect<void> = Effect.void,
       ) =>
         Effect.gen(function* () {
           const closeFiber = yield* Scope.close(scope, Exit.void).pipe(
+            Effect.andThen(onClosed),
             Effect.exit,
             Effect.forkDetach({ startImmediately: true }),
           );
@@ -961,10 +980,15 @@ export const layerWithOptions = (
                       input.detail ?? `Provider session released: ${input.reason}.`,
                     );
                   }
-                  const closeExit = yield* closeScopeWithin(entry.scope, {
-                    providerSessionId: input.providerSessionId,
-                    reason: input.reason,
-                  });
+                  const closeExit = yield* closeScopeWithin(
+                    entry.scope,
+                    { providerSessionId: input.providerSessionId, reason: input.reason },
+                    Option.isSome(nativeResources)
+                      ? nativeResources.value
+                          .releaseSession(resourceGroup(entry.runtime))
+                          .pipe(logReleaseFailure(input.providerSessionId))
+                      : Effect.void,
+                  );
                   const records = {
                     entry,
                     reason: input.reason,
@@ -1426,6 +1450,7 @@ export const layerWithOptions = (
         providerSessionId: ProviderSessionId,
         providerThreadId: ProviderThreadId,
         runOrdinal: number,
+        expectedRuntime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
       ) =>
         withActivityError(
           providerSessionId,
@@ -1434,7 +1459,7 @@ export const layerWithOptions = (
             const now = yield* Clock.currentTimeMillis;
             yield* Ref.update(sessions, (current) => {
               const entry = current.get(key);
-              if (entry === undefined) {
+              if (entry === undefined || entry.runtime !== expectedRuntime) {
                 return current;
               }
               const busyTurns = new Set(entry.busyTurns);
@@ -1447,6 +1472,21 @@ export const layerWithOptions = (
               });
               return updated;
             });
+            if (Option.isSome(nativeResources)) {
+              const entry = (yield* Ref.get(sessions)).get(key);
+              if (entry?.runtime === expectedRuntime) {
+                const background =
+                  entry.runtime.hasPendingBackgroundWork === undefined
+                    ? true
+                    : yield* entry.runtime.hasPendingBackgroundWork.pipe(
+                        Effect.catchCause(() => Effect.succeed(true)),
+                      );
+                if (!background)
+                  yield* nativeResources.value
+                    .releaseIdle(resourceGroup(entry.runtime), entry.busyTurns)
+                    .pipe(logReleaseFailure(providerSessionId));
+              }
+            }
             yield* scheduleIdleReleaseInternal(providerSessionId);
             yield* scheduleThreadUnload(providerSessionId, providerThreadId);
           }),
@@ -1829,12 +1869,40 @@ export const layerWithOptions = (
                     ),
                   ),
                   () =>
-                    runtime.startTurn(input).pipe(turnMetrics("send", input.modelSelection.model)),
+                    (Option.isSome(nativeResources)
+                      ? nativeResources.value
+                          .acquire(
+                            resourceGroup(runtime),
+                            busyTurnKey(input.providerThread.id, input.runOrdinal),
+                            input.runtimePolicy.cwd,
+                          )
+                          .pipe(
+                            Effect.mapError(
+                              (cause) =>
+                                new ProviderAdapter.ProviderAdapterTurnStartError({
+                                  driver: runtime.driver,
+                                  threadId: input.threadId,
+                                  providerThreadId: input.providerThread.id,
+                                  runId: input.runId,
+                                  cause,
+                                }),
+                            ),
+                          )
+                      : Effect.void
+                    ).pipe(
+                      Effect.andThen(() => runtime.startTurn(input)),
+                      turnMetrics("send", input.modelSelection.model),
+                    ),
                   (_, exit) =>
                     Exit.isFailure(exit)
                       ? observeActivity(
                           providerSessionId,
-                          markIdle(providerSessionId, input.providerThread.id, input.runOrdinal),
+                          markIdle(
+                            providerSessionId,
+                            input.providerThread.id,
+                            input.runOrdinal,
+                            runtime,
+                          ),
                         )
                       : Effect.void,
                 ),
@@ -1906,6 +1974,7 @@ export const layerWithOptions = (
                     entry.runtime.providerSessionId,
                     event.providerThreadId,
                     event.runOrdinal,
+                    entry.runtime,
                   )
                 : touchActivity(entry.runtime.providerSessionId, { providerActivity: true }),
             ).pipe(

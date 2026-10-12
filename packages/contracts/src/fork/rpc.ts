@@ -1,5 +1,6 @@
 import { GitHubHostSetupRpcGroup, GITHUB_HOST_SETUP_WS_METHODS } from "./github-host-setup.ts";
 import { WorkspaceHandoffRpcGroup } from "./workspace-handoff.ts";
+import { MiniOffloadRpcGroup } from "./mini-offload.ts";
 import { PcbPreviewRpcGroup, PCB_PREVIEW_WS_METHODS } from "./pcb-preview.ts";
 import { ModelPreview3dRpcGroup, MODEL_PREVIEW_3D_WS_METHODS } from "./model-preview-3d.ts";
 import { ProjectLifecycleRpcGroup, PROJECT_LIFECYCLE_WS_METHODS } from "./project-lifecycle.ts";
@@ -37,6 +38,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  MiniOffloadRpcGroup,
   SwitchboardRpcGroup,
   ModelPreview3dRpcGroup,
   PcbPreviewRpcGroup,

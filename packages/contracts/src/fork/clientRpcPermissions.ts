@@ -1,5 +1,7 @@
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "./github-host-setup.ts";
 import { WORKSPACE_HANDOFF_WS_METHODS as H } from "./workspace-handoff.ts";
+import { MINI_OFFLOAD_WS_METHODS as O } from "./mini-offload.ts";
+import { AuthOrchestrationReadScope, AuthEnvironmentMaintainScope } from "../auth.ts";
 import { PCB_PREVIEW_WS_METHODS as P } from "./pcb-preview.ts";
 import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "../auth.ts";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "./model-preview-3d.ts";
@@ -12,6 +14,14 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [GH.start]: AuthTerminalOperateScope,
   [GH.cancel]: AuthTerminalOperateScope,
+  [O.register]: AuthEnvironmentMaintainScope,
+  [O.setEnabled]: AuthEnvironmentMaintainScope,
+  [O.submit]: AuthTerminalOperateScope,
+  [O.recover]: AuthTerminalOperateScope,
+  [O.cancel]: AuthTerminalOperateScope,
+  [O.artifacts]: AuthOrchestrationReadScope,
+  [O.check]: AuthOrchestrationReadScope,
+  [O.prepare]: AuthEnvironmentMaintainScope,
   [P.historyRestore]: AuthOrchestrationOperateScope,
   [P.historyUndo]: AuthOrchestrationOperateScope,
   [P.pinMap]: AuthOrchestrationOperateScope,

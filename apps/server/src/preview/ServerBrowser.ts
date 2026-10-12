@@ -1971,6 +1971,27 @@ const make = Effect.gen(function* () {
       try: () => runOperation(request).finally(() => markUsed(request)),
       catch: ServerBrowserPage.toOperationError,
     }).pipe(
+      // CDP captures and page evaluation can outlive Playwright's locator timeouts.
+      // Release a stalled agent tab before the broker evicts the whole host. Keep
+      // its manager session/profile and never replay the timed-out action.
+      Effect.timeoutOrElse({
+        duration: request.timeoutMs,
+        orElse: () =>
+          Effect.suspend(() => {
+            const tab =
+              request.tabId === undefined
+                ? undefined
+                : tabs.get(tabKey(request.threadId, request.tabId));
+            if (tab && tab.control.agentCanActNow(request.agentSessionId ?? ""))
+              dropTab(tab, false);
+            return Effect.fail(
+              new ServerBrowserPage.ServerBrowserOperationError(
+                "PreviewAutomationTimeoutError",
+                `Browser ${request.operation} did not finish within ${request.timeoutMs}ms. Its agent tab will reconnect on the next request; the action was not replayed.`,
+              ),
+            );
+          }),
+      }),
       Effect.match({
         onSuccess: (result) => ({ ok: true as const, result }),
         onFailure: (error) => ({

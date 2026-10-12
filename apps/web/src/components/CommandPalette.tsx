@@ -2225,6 +2225,28 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
+    value: "action:computers",
+    searchTerms: [
+      "open computers",
+      "machines",
+      "environments",
+      "runner",
+      "Orange Pi",
+      "Mini",
+      "Mac",
+      "Linux",
+      "connect",
+    ],
+    title: "Open computers",
+    description: "Choose a computer for your next agent",
+    icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/computers" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
     value: "action:usage",
     searchTerms: ["usage", "use", "tokens", "cost", "spend", "limits", "stats", "analytics"],
     title: "Open usage",

@@ -1,5 +1,7 @@
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "@t3tools/contracts/fork";
 import { WORKSPACE_HANDOFF_WS_METHODS as H } from "@t3tools/contracts/fork";
+import { MINI_OFFLOAD_WS_METHODS as O } from "@t3tools/contracts/fork";
+import { AuthEnvironmentMaintainScope } from "@t3tools/contracts";
 import { PCB_PREVIEW_WS_METHODS as P } from "@t3tools/contracts/fork";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
 import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
@@ -25,6 +27,18 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [GH.cancel]: AuthTerminalOperateScope,
   // Watching exposes an active device code, which can authorize host Git access.
   [GH.watch]: AuthTerminalOperateScope,
+  [O.workers]: AuthOrchestrationReadScope,
+  [O.register]: AuthEnvironmentMaintainScope,
+  [O.setEnabled]: AuthEnvironmentMaintainScope,
+  [O.submit]: AuthTerminalOperateScope,
+  [O.recover]: AuthTerminalOperateScope,
+  [O.cancel]: AuthTerminalOperateScope,
+  [O.list]: AuthOrchestrationReadScope,
+  [O.inspect]: AuthOrchestrationReadScope,
+  [O.patch]: AuthOrchestrationReadScope,
+  [O.artifacts]: AuthOrchestrationReadScope,
+  [O.check]: AuthOrchestrationReadScope,
+  [O.prepare]: AuthEnvironmentMaintainScope,
   [P.history]: AuthOrchestrationReadScope,
   [P.historyRestore]: AuthOrchestrationOperateScope,
   [P.historyUndo]: AuthOrchestrationOperateScope,
