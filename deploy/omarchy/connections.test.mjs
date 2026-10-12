@@ -6,7 +6,7 @@ import {
   nativeGuidedConnections,
   connectionCommand,
 } from "./connections.mjs";
-import { validateAppIntegration } from "./loom-os.mjs";
+import { validateAppIntegration, searchSecret } from "./loom-os.mjs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -266,4 +266,19 @@ test("bounded subprocess wrapper withholds stderr and passes secrets over stdin"
     await connectionCommand(process.execPath, [script], process.env, "fixture-private-key"),
     { exit: 0, stdout: "done\n" },
   );
+});
+
+test("forgetting an absent search key succeeds; unavailable Secret Service still fails", async (t) => {
+  const dir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-secret-clear-"));
+  t.after(() => NodeFSP.rm(dir, { recursive: true, force: true }));
+  const helper = NodePath.join(dir, "secret-tool");
+  await NodeFSP.writeFile(helper, `#!${process.execPath}\nprocess.exitCode=1;\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: dir };
+  await NodeAssert.doesNotReject(searchSecret("clear", "office", config.officeUrl, env));
+  await NodeFSP.writeFile(
+    helper,
+    `#!${process.execPath}\nconsole.error('Cannot connect to Secret Service');process.exitCode=1;\n`,
+    { mode: 0o755 },
+  );
+  await NodeAssert.rejects(searchSecret("clear", "office", config.officeUrl, env), /secret store/);
 });

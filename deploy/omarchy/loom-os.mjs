@@ -2728,9 +2728,13 @@ export async function searchSecret(operation, app, origin, env, key) {
         ...(operation === "store" ? ["--label", `${appNames[app]} search on LoomOS`] : []),
         ...searchSecretArgs(app, origin),
       ],
-      { env, stdio: ["pipe", "pipe", "ignore"] },
+      { env, stdio: ["pipe", "pipe", "pipe"] },
     );
     let value = "";
+    let hadDiagnostic = false;
+    child.stderr.on("data", () => {
+      hadDiagnostic = true;
+    });
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
       value += chunk;
@@ -2744,11 +2748,13 @@ export async function searchSecret(operation, app, origin, env, key) {
       reject(new Error("The desktop secret store is unavailable."));
     });
     child.stdin.once("error", () => {});
-    child.once("exit", (code) => {
+    child.once("close", (code) => {
       clearTimeout(timer);
-      if (code === 0) resolve(value.replace(/\r?\n$/, ""));
+      if (code === 0 || (operation === "clear" && code === 1 && !hadDiagnostic))
+        // secret-tool returns 1 without stderr when no matching key exists.
+        resolve(value.replace(/\r?\n$/, ""));
       else if (operation === "lookup") resolve("");
-      else reject(new Error("The desktop secret store could not save this connection."));
+      else reject(new Error("The desktop secret store could not update this connection."));
     });
     child.stdin.end(key ?? "");
   });
