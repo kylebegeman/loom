@@ -8,7 +8,13 @@ import { paths, validateConfig } from "./loom-os.mjs";
 const source = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
 const digest = (bytes) => NodeCrypto.createHash("sha256").update(bytes).digest("hex");
 const requiredPackFiles = ["loom-os.mjs", "ai.mjs", "health.mjs", "install.sh", "release.mjs"];
-const packFiles = [...requiredPackFiles, "capture.mjs", "connections.mjs", "availability.mjs"];
+const packFiles = [
+  ...requiredPackFiles,
+  "capture.mjs",
+  "connections.mjs",
+  "availability.mjs",
+  "notifications.mjs",
+];
 const statusFiles = ["manifest.json", "LoomStatus.qml", "StatusModel.js"];
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 async function ordinary(path, directory = false) {
@@ -58,7 +64,9 @@ export async function buildRelease(output, version, sourceDir = source) {
         includedPackFiles.push(name);
       } catch (error) {
         if (
-          !["capture.mjs", "connections.mjs", "availability.mjs"].includes(name) ||
+          !["capture.mjs", "connections.mjs", "availability.mjs", "notifications.mjs"].includes(
+            name,
+          ) ||
           error.code !== "ENOENT"
         )
           throw error;
@@ -300,7 +308,7 @@ async function adoptInstalled(p, directory, releases) {
       } catch (e) {
         if (
           e.code === "ENOENT" &&
-          ["capture.mjs", "connections.mjs", "availability.mjs"].includes(name)
+          ["capture.mjs", "connections.mjs", "availability.mjs", "notifications.mjs"].includes(name)
         )
           continue;
         if (e.code !== "ENOENT" || !["install.sh", "release.mjs"].includes(name)) throw e;

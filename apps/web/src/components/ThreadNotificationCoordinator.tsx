@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
+import { deliverDesktopNotification } from "../notificationDelivery";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
@@ -30,12 +31,26 @@ export function ThreadNotificationCoordinator() {
   const inAppNotificationsEnabled = useClientSettings(
     (settings) => settings.inAppNotificationsEnabled,
   );
+  const previews = useClientSettings((settings) => settings.notificationPreviewsEnabled);
   const pending = useRef(
     new Map<string, { environmentId: EnvironmentId; notification: Notification }>(),
   );
   const onNotification = useCallback((environmentId: EnvironmentId, notification: Notification) => {
     pending.current.get(notification.tag)?.notification.close();
     pending.current.set(notification.tag, { environmentId, notification });
+    notification.addEventListener("close", () => {
+      if (pending.current.get(notification.tag)?.notification !== notification) return;
+      pending.current.delete(notification.tag);
+      setNotificationBadge(pending.current.size);
+    });
+    setNotificationBadge(pending.current.size);
+  }, []);
+
+  const onClear = useCallback((tag: string) => {
+    const value = pending.current.get(tag);
+    if (!value) return;
+    value.notification.close();
+    pending.current.delete(tag);
     setNotificationBadge(pending.current.size);
   }, []);
 
@@ -50,22 +65,27 @@ export function ThreadNotificationCoordinator() {
     if (count !== pending.current.size) setNotificationBadge(pending.current.size);
   }, [environmentIds]);
 
+  const clearPending = useCallback(() => {
+    for (const { notification } of pending.current.values()) notification.close();
+    pending.current.clear();
+    setNotificationBadge(0);
+  }, []);
+
   useEffect(() => {
-    const clear = () => {
-      for (const { notification } of pending.current.values()) notification.close();
-      pending.current.clear();
-      setNotificationBadge(0);
-    };
-    clear();
+    if (!previews) clearPending();
+  }, [previews, clearPending]);
+
+  useEffect(() => {
+    clearPending();
     if (!hasDesktopNotifications(mode)) return;
-    const unsubscribe = window.desktopBridge?.onNotificationBadgeClear?.(clear);
-    window.addEventListener("focus", clear);
+    const unsubscribe = window.desktopBridge?.onNotificationBadgeClear?.(clearPending);
+    window.addEventListener("focus", clearPending);
     return () => {
       unsubscribe?.();
-      window.removeEventListener("focus", clear);
-      clear();
+      window.removeEventListener("focus", clearPending);
+      clearPending();
     };
-  }, [mode]);
+  }, [mode, clearPending]);
 
   useEffect(() => {
     if (!hasNotificationSound(mode)) return;
@@ -84,6 +104,7 @@ export function ThreadNotificationCoordinator() {
       key={environmentId}
       environmentId={environmentId}
       onNotification={onNotification}
+      onClear={onClear}
     />
   ));
 }
@@ -97,9 +118,11 @@ interface NotificationState {
 function EnvironmentNotifications({
   environmentId,
   onNotification,
+  onClear,
 }: {
   environmentId: EnvironmentId;
   onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
+  onClear: (tag: string) => void;
 }) {
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
   // The shell reducer keeps the thread list and unchanged thread objects
@@ -118,6 +141,7 @@ function EnvironmentNotifications({
 
   useEffect(() => {
     if (threads === null) {
+      for (const id of previous.current.keys()) onClear(`${environmentId}:${id}`);
       previous.current.clear();
       return;
     }
@@ -135,7 +159,7 @@ function EnvironmentNotifications({
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
       const attention =
         status === "input" || status === "approval" || status === "failed" || status === "limited"
-          ? `${thread.latestRun?.runId ?? ""}:${status}`
+          ? `${thread.latestRun?.runId ?? ""}:${rawThread.pendingRuntimeRequest?.id ?? ""}:${status}`
           : null;
       const completedAt = Date.parse(thread.latestRun?.completedAt ?? "");
       // Commands left running (a dev server) read as ready; subagents and monitors wait.
@@ -146,6 +170,14 @@ function EnvironmentNotifications({
           ? completedAt
           : (prior?.completion ?? null);
       next.set(thread.id, { raw: rawThread, attention, completion });
+      if (
+        prior &&
+        (thread.archivedAt !== null ||
+          attention !== prior.attention ||
+          rawThread.latestRunId !== prior.raw.latestRunId ||
+          completion !== prior.completion)
+      )
+        onClear(`${environmentId}:${thread.id}`);
       if (!prior || thread.archivedAt !== null) continue;
       const kind =
         attention && attention !== prior.attention
@@ -212,25 +244,57 @@ function EnvironmentNotifications({
         Notification.permission !== "granted"
       )
         continue;
-      try {
-        const notification = new Notification(title, {
-          body: thread.title,
-          tag: `${environmentId}:${thread.id}`,
-          silent: true,
-        });
-        onNotification(environmentId, notification);
-        notification.addEventListener("click", () => {
-          notification.close();
-          window.focus();
-          void navigate({
-            to: "/$environmentId/$threadId",
-            params: { environmentId, threadId: thread.id },
-          });
-        });
-      } catch {
-        // Some browsers expose Notification but reject desktop presentation.
-      }
+      previous.current.set(thread.id, next.get(thread.id)!);
+      deliverDesktopNotification(
+        `${environmentId}:${thread.id}:${rawThread.latestRunId}:${attention ?? completion}`,
+        () => {
+          const latest = previous.current.get(thread.id);
+          if (
+            !latest ||
+            latest.raw.archivedAt !== null ||
+            latest.attention !== attention ||
+            latest.completion !== completion ||
+            latest.raw.latestRunId !== rawThread.latestRunId ||
+            !hasDesktopNotifications(getClientSettings().notificationMode) ||
+            (document.visibilityState === "visible" && document.hasFocus())
+          )
+            return false;
+          try {
+            const notification = new Notification(title, {
+              body: getClientSettings().notificationPreviewsEnabled
+                ? thread.title
+                : "Open Loom to review this thread.",
+              tag: `${environmentId}:${thread.id}`,
+              silent: true,
+            });
+            onNotification(environmentId, notification);
+            notification.addEventListener("click", () => {
+              notification.close();
+              const latest = previous.current.get(thread.id);
+              if (
+                !hasDesktopNotifications(getClientSettings().notificationMode) ||
+                !latest ||
+                latest.raw.archivedAt !== null ||
+                latest.attention !== attention ||
+                latest.completion !== completion ||
+                latest.raw.latestRunId !== rawThread.latestRunId
+              )
+                return;
+              window.focus();
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: thread.id },
+              });
+            });
+            return true;
+          } catch {
+            // Some browsers expose Notification but reject desktop presentation.
+            return false;
+          }
+        },
+      );
     }
+    for (const id of previous.current.keys()) if (!next.has(id)) onClear(`${environmentId}:${id}`);
     previous.current = next;
   }, [
     activeEnvironmentId,
@@ -240,6 +304,7 @@ function EnvironmentNotifications({
     mode,
     navigate,
     onNotification,
+    onClear,
     threads,
   ]);
 

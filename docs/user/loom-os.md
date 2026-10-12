@@ -80,6 +80,25 @@ Office capture supports 200 characters of title, 4,000 of text and 2,048 of link
 It asks you to review the content before saving and preserves the intent through
 login. It does not fetch the supplied link.
 
+## Notifications and focus
+
+Choose **LoomOS → Notifications and focus**, or search for Notifications in Loom actions.
+Focus quiets native banners through Omarchy's Do Not Disturb. Resume native banners reverses
+that choice. Native notification history remains available, and each app keeps its own history.
+App sounds, permissions, privacy and quiet schedules remain in the owning app.
+
+Office's bell and All alerts manage its delivery rules. Atlas's bell has explicit desktop alert
+controls for work while its client is open, with private previews by default. Loom's
+**Settings → General** controls thread notifications and title previews on this device.
+A notification opens its current record or thread for review and grants no approval.
+Accepted remote push copies may remain in system history after their originating work changes.
+
+```sh
+loom-os notifications --json
+loom-os notifications focus on
+loom-os notifications focus off
+```
+
 ## Set up connections
 
 Open **Loom connections** from the app launcher or choose **LoomOS → AI and

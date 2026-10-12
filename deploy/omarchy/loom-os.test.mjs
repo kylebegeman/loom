@@ -1393,3 +1393,17 @@ test("device connection opens the actual CLI approval URL once and blocks other 
     NodeAssert.deepEqual(opened, link.startsWith(f.config.atlasUrl) ? [link] : []);
   }
 });
+
+test("installed configure retains its status sources and updates an app launcher without losing personal integration", async (t) => {
+  const f = await fixture(t);
+  await install(f.config, { env: f.env });
+  const executable = NodePath.join(f.root, "replacement-loom");
+  await NodeFSP.copyFile(f.config.loomExecutable, executable);
+  await NodeFSP.chmod(executable, 0o755);
+  await install({ ...f.config, loomExecutable: executable }, { env: f.env, packDir: f.p.root });
+  NodeAssert.equal(
+    JSON.parse(await NodeFSP.readFile(f.p.configFile, "utf8")).loomExecutable,
+    executable,
+  );
+  NodeAssert.ok((await NodeFSP.readFile(f.bindingsFile, "utf8")).startsWith(f.originalBindings));
+});

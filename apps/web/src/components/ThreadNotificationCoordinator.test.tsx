@@ -100,10 +100,18 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (
     select: (
-      settings: Pick<ClientSettings, "notificationMode" | "inAppNotificationsEnabled">,
+      settings: Pick<
+        ClientSettings,
+        "notificationMode" | "inAppNotificationsEnabled" | "notificationPreviewsEnabled"
+      >,
     ) => unknown,
-  ) => select({ notificationMode: state.mode, inAppNotificationsEnabled: state.inApp }),
-  getClientSettings: () => ({ notificationMode: state.mode }),
+  ) =>
+    select({
+      notificationMode: state.mode,
+      inAppNotificationsEnabled: state.inApp,
+      notificationPreviewsEnabled: true,
+    }),
+  getClientSettings: () => ({ notificationMode: state.mode, notificationPreviewsEnabled: true }),
 }));
 vi.mock("../state/environments", () => ({
   useEnvironmentIds: () => ["env-1"],
@@ -156,6 +164,8 @@ beforeEach(() => {
     background: [],
   });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // Present synchronously; notificationDelivery.test.ts covers Web Locks coordination.
+  vi.stubGlobal("navigator", {});
   vi.stubGlobal("window", new EventTarget());
   vi.stubGlobal("document", {
     get visibilityState() {

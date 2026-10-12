@@ -561,6 +561,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
         ? ["Thread notifications"]
         : []),
+      ...(settings.notificationPreviewsEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.notificationPreviewsEnabled
+        ? ["Notification previews"]
+        : []),
       ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
         ? ["In-app notifications"]
         : []),
@@ -718,6 +722,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
       settings.notificationMode,
+      settings.notificationPreviewsEnabled,
       settings.inAppNotificationsEnabled,
       settings.wordWrap,
       followSystem,
@@ -794,6 +799,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
+      notificationPreviewsEnabled: DEFAULT_UNIFIED_SETTINGS.notificationPreviewsEnabled,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,

@@ -383,6 +383,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
+    id: "notification-previews",
+    title: "Notification previews",
+    to: "/settings/general",
+    searchTerms: ["privacy titles system alerts desktop"],
+  },
+  {
     id: "thread-notifications",
     title: "Thread notifications",
     to: "/settings/general",

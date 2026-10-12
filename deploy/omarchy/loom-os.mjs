@@ -825,6 +825,10 @@ export async function installationPlan(
     content: await NodeFSP.readFile(NodePath.join(packDir, "availability.mjs"), "utf8"),
     mode: 0o644,
   });
+  writes.set(NodePath.join(p.root, "notifications.mjs"), {
+    content: await NodeFSP.readFile(NodePath.join(packDir, "notifications.mjs"), "utf8"),
+    mode: 0o644,
+  });
   for (const action of [
     "shortcuts",
     "readability",
@@ -832,6 +836,7 @@ export async function installationPlan(
     "app-integration",
     "setup",
     "availability",
+    "notifications",
   ]) {
     writes.set(NodePath.join(p.root, action + "-terminal"), {
       content: `#!/bin/bash\nprintf '\\033]0;Loom ${action}\\007'\n${shellQuote(p.bin)} ${action} ${["compatibility", "app-integration"].includes(action) ? "--human" : "--inline"}\nstatus=$?\n${["compatibility", "app-integration"].includes(action) ? "printf '\\nPress Enter to close. '; read -r _\n" : ""}exit "$status"\n`,
@@ -969,13 +974,17 @@ done
   }
   const menuFile = NodePath.join(p.config, "omarchy/extensions/omarchy-menu.jsonc");
   const menu = await read(menuFile);
+  // Keep the installed command self-contained for later configure operations.
+  for (const name of ["manifest.json", "LoomStatus.qml", "StatusModel.js"]) {
+    const value = {
+      content: await NodeFSP.readFile(NodePath.join(packDir, "status", name), "utf8"),
+      mode: 0o644,
+    };
+    writes.set(NodePath.join(p.root, "status", name), value);
+    if (lua !== null)
+      writes.set(NodePath.join(p.config, "omarchy/plugins/loom.status", name), value);
+  }
   if (lua !== null) {
-    for (const name of ["manifest.json", "LoomStatus.qml", "StatusModel.js"]) {
-      writes.set(NodePath.join(p.config, "omarchy/plugins/loom.status", name), {
-        content: await NodeFSP.readFile(NodePath.join(packDir, "status", name), "utf8"),
-        mode: 0o644,
-      });
-    }
     const entries = { loomos: { label: "LoomOS", description: "Your apps and native utilities" } };
     for (const [app, name] of Object.entries(appNames)) {
       if (
@@ -1012,6 +1021,11 @@ done
       };
     if (aiEnabled)
       entries["loomos.connections.ask-ai"] = { label: "Ask AI", action: command("agent") };
+    entries["loomos.notifications"] = {
+      label: "Notifications and focus",
+      description: "Native banners, app privacy and actionable alerts",
+      action: command("notifications"),
+    };
     entries["loomos.appearance"] = {
       label: "Appearance",
       description: "Iris colors with Omarchy's native shell",
@@ -2492,6 +2506,13 @@ export function loomActionCatalog(config, context = {}) {
     "Super+Shift+A",
   );
   add(
+    "notifications",
+    "Notifications and focus",
+    "Quiet native banners and app-owned alert controls",
+    ["notifications"],
+    ["alerts", "privacy", "focus", "quiet", "reminders", "approval"],
+  );
+  add(
     "availability",
     "What works now",
     "Inspect saved reading, offline writing, live search, AI and workstation access",
@@ -3148,7 +3169,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3369,6 +3390,27 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         ],
         { env },
       );
+    return;
+  }
+  if (action === "notifications") {
+    const notifications = await import("./notifications.mjs");
+    if (rest.length === 2 && rest[0] === "focus" && ["on", "off"].includes(rest[1])) {
+      print(await notifications.setNotificationFocus(rest[1] === "on", env));
+    } else if (rest.length === 1 && rest[0] === "--json") {
+      print(await notifications.notificationStatus(env));
+    } else if (rest.length === 1 && rest[0] === "--inline") {
+      if (!process.stdin.isTTY) throw Error("Notification controls need an interactive terminal.");
+      await notifications.nativeNotifications(config, env);
+    } else if (!rest.length) {
+      await run(
+        "omarchy-launch-tui",
+        [
+          "--app-id=org.omarchy.loom-notifications",
+          NodePath.join(p.root, "notifications-terminal"),
+        ],
+        { env },
+      );
+    } else throw Error("Usage: loom-os notifications [--json|focus on|focus off]");
     return;
   }
   if (action === "availability") {

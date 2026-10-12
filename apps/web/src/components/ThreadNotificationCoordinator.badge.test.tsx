@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
+  previews: false,
   inApp: false,
   toast: vi.fn(),
   shells: new Map(),
@@ -27,9 +28,21 @@ vi.mock("../state/environments", () => ({
 }));
 vi.mock("../hooks/useSettings", () => ({
   useClientSettings: (
-    select: (settings: { notificationMode: string; inAppNotificationsEnabled: boolean }) => unknown,
-  ) => select({ notificationMode: state.mode, inAppNotificationsEnabled: state.inApp }),
-  getClientSettings: () => ({ notificationMode: state.mode }),
+    select: (settings: {
+      notificationMode: string;
+      inAppNotificationsEnabled: boolean;
+      notificationPreviewsEnabled: boolean;
+    }) => unknown,
+  ) =>
+    select({
+      notificationMode: state.mode,
+      inAppNotificationsEnabled: state.inApp,
+      notificationPreviewsEnabled: state.previews,
+    }),
+  getClientSettings: () => ({
+    notificationMode: state.mode,
+    notificationPreviewsEnabled: state.previews,
+  }),
 }));
 vi.mock("../threadNotifications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../threadNotifications")>()),
@@ -147,6 +160,7 @@ async function render() {
 beforeEach(() => {
   vi.clearAllMocks();
   state.mode = "notifications";
+  state.previews = false;
   state.inApp = false;
   state.environmentIds = ["one", "two"];
   state.shells.set("one", shell());
@@ -157,6 +171,7 @@ beforeEach(() => {
   TestNotification.sent = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("Notification", TestNotification);
+  vi.stubGlobal("navigator", {});
   vi.stubGlobal("window", Object.assign(new EventTarget(), { focus: vi.fn() }));
   vi.stubGlobal(
     "document",
@@ -315,3 +330,43 @@ it("badges background failures with in-app notifications enabled", async () => {
   expect(state.badge).toHaveBeenLastCalledWith(1);
   expect(state.toast).not.toHaveBeenCalled();
 });
+
+it("keeps thread titles private by default and clears existing previews when disabled", async () => {
+  await render();
+  complete();
+  await render();
+  expect(TestNotification.sent[0]!.options).toMatchObject({
+    body: "Open Loom to review this thread.",
+    silent: true,
+  });
+  state.previews = true;
+  await render();
+  complete("two");
+  await render();
+  expect(TestNotification.sent.at(-1)!.options.body).toBe("Test thread");
+  const preview = TestNotification.sent.at(-1)!;
+  state.previews = false;
+  await render();
+  expect(preview.close).toHaveBeenCalled();
+});
+
+it.each(["resolved", "archived", "removed"])(
+  "withdraws obsolete approval banners when %s and rejects stale clicks",
+  async (condition) => {
+    await render();
+    state.shells.set("one", shell({ hasPendingApprovals: true }));
+    await render();
+    const notification = TestNotification.sent[0]!;
+    state.shells.set(
+      "one",
+      condition === "removed"
+        ? { status: "live", snapshot: Option.some({ threads: [] }) }
+        : shell({ archivedAt: condition === "archived" ? "2026-09-13T08:00:00Z" : null }),
+    );
+    await render();
+    expect(notification.close).toHaveBeenCalled();
+    expect(state.badge).toHaveBeenLastCalledWith(0);
+    notification.dispatchEvent(new Event("click"));
+    expect(state.navigate).not.toHaveBeenCalled();
+  },
+);
