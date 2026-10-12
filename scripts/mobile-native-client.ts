@@ -173,7 +173,19 @@ const command = Effect.fn("nativeClient.command")(function* (
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const environment = yield* HostProcess.Environment;
-  const spawn = yield* resolveSpawnCommand(program === "adb" ? yield* resolveAdb : program, args);
+  const path = yield* Path.Path;
+  const executable =
+    program === "vp"
+      ? path.join(
+          (yield* roots).repo,
+          "node_modules",
+          ".bin",
+          (yield* HostProcess.Platform) === "win32" ? "vp.cmd" : "vp",
+        )
+      : program === "adb"
+        ? yield* resolveAdb
+        : program;
+  const spawn = yield* resolveSpawnCommand(executable, args);
   const child = yield* spawner.spawn(
     ChildProcess.make(spawn.command, spawn.args, {
       shell: spawn.shell,
