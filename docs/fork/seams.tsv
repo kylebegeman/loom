@@ -70,3 +70,9 @@ apps/web/src/components/RightPanelTabs.tsx	panel-picker	6
 apps/server/scripts/migrate-dev-db.ts	dev-db	2
 apps/web/src/components/chat/ChangedFilesTree.tsx	ext-changed-files	2
 apps/server/vite.config.ts	model-print-check	1
+
+apps/server/src/config.ts	mini-managed-projects	1
+apps/server/src/cli/config.ts	mini-managed-projects	1
+apps/server/src/project/ManagedProjectFolders.ts	mini-managed-projects	1
+apps/server/src/cli/config.test.ts	mini-managed-projects	1
+apps/server/src/project/ManagedProjectFolders.test.ts	mini-managed-projects	1

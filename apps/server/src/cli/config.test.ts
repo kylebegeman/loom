@@ -1,3 +1,4 @@
+// fork: mini-managed-projects
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -1227,3 +1228,75 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       }),
   );
 });
+
+const managedRootFlags = (base: string) => ({
+  mode: Option.some("web" as const),
+  port: Option.some(0),
+  baseDir: Option.some(base),
+  host: Option.none<string>(),
+  cwd: Option.none<string>(),
+  devUrl: Option.none<URL>(),
+  noBrowser: Option.none<boolean>(),
+  bootstrapFd: Option.none<number>(),
+  autoBootstrapProjectFromCwd: Option.none<boolean>(),
+  logWebSocketEvents: Option.none<boolean>(),
+  tailscaleServeEnabled: Option.none<boolean>(),
+  tailscaleServePort: Option.none<number>(),
+});
+
+it.effect("separates managed project/worktree storage from the existing server home", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const base = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssd-config-home-" });
+    const root = yield* fs.realPath(
+      yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssd-config-projects-" }),
+    );
+    const config = yield* resolveServerConfig(managedRootFlags(base), Option.none()).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          NetService.layer,
+          ConfigProvider.layer(
+            ConfigProvider.fromEnv({
+              env: { T3CODE_MANAGED_PROJECTS_ROOT: root },
+            }),
+          ),
+        ),
+      ),
+    );
+    assert.equal(config.managedProjectsRoot, root);
+    assert.equal(config.baseDir, base);
+    assert.equal(config.dbPath, path.join(base, "userdata", "statev2.sqlite"));
+    assert.equal(config.worktreesDir, path.join(root, "worktrees"));
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "rejects relative, missing and aliased managed roots rather than using the server home",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const base = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ssd-config-invalid-" });
+      const root = yield* fs.realPath(base);
+      const alias = path.join(root, "alias");
+      yield* fs.symlink(root, alias);
+      for (const folder of ["   ", "relative", path.join(root, "missing"), alias]) {
+        const exit = yield* resolveServerConfig(managedRootFlags(base), Option.none()).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              NetService.layer,
+              ConfigProvider.layer(
+                ConfigProvider.fromEnv({
+                  env: { T3CODE_MANAGED_PROJECTS_ROOT: folder },
+                }),
+              ),
+            ),
+          ),
+          Effect.exit,
+        );
+        assert.equal(exit._tag, "Failure", folder);
+      }
+      assert.isFalse(yield* fs.exists(path.join(root, "missing")));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

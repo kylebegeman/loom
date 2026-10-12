@@ -132,6 +132,11 @@ const EnvServerConfig = Config.all({
   port: Config.Port("T3CODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
   host: Config.String("T3CODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
   t3Home: Config.String("T3CODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  managedProjectsRoot: Config.String("T3CODE_MANAGED_PROJECTS_ROOT").pipe(
+    // fork: mini-managed-projects
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
   devUrl: Config.URL("VITE_DEV_SERVER_URL").pipe(Config.option, Config.map(Option.getOrUndefined)),
   devAllowedOrigins: Config.String("T3CODE_DEV_ALLOWED_ORIGINS").pipe(
     Config.withDefault(""),
@@ -329,8 +334,26 @@ export const resolveServerConfig = (
     );
     const rawCwd = Option.getOrElse(normalizedFlags.cwd, () => process.cwd());
     const cwd = path.resolve(yield* expandHomePath(rawCwd.trim()));
+    let managedProjectsRoot: string | undefined;
+    if (env.managedProjectsRoot !== undefined) {
+      const folder = env.managedProjectsRoot.trim();
+      if (!path.isAbsolute(folder)) {
+        return yield* new CliError.UserError({
+          cause: "T3CODE_MANAGED_PROJECTS_ROOT must be an existing absolute canonical directory.",
+        });
+      }
+      const canonical = yield* fs.realPath(folder);
+      const info = yield* fs.stat(canonical);
+      if (canonical !== path.normalize(folder) || info.type !== "Directory") {
+        return yield* new CliError.UserError({
+          cause: "T3CODE_MANAGED_PROJECTS_ROOT must be an existing absolute canonical directory.",
+        });
+      }
+      managedProjectsRoot = canonical;
+    }
     const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
       baseDirIsExplicit: Option.isSome(explicitBaseDir),
+      ...(managedProjectsRoot === undefined ? {} : { managedProjectsRoot }),
     });
     // An interactive CLI must not start over a discovered server. Lifetime locking
     // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
@@ -460,6 +483,7 @@ export const resolveServerConfig = (
       port,
       cwd,
       baseDir,
+      ...(managedProjectsRoot === undefined ? {} : { managedProjectsRoot }),
       ...derivedPaths,
       serverTracePath,
       host,

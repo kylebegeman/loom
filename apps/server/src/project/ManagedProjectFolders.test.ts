@@ -1,3 +1,4 @@
+// fork: mini-managed-projects
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
@@ -58,6 +59,7 @@ const layerEnrichment = ProjectEnrichmentService.layer.pipe(
 const layerRealGit = GitVcsDriver.layer.pipe(Layer.provide(VcsProcess.layer));
 
 interface HarnessOptions {
+  readonly managedProjectsRoot?: string;
   /** The processes repository detection runs, such as a machine with no Git. */
   readonly vcsProcess?: Layer.Layer<VcsProcess.VcsProcess>;
   /** A git driver for failures real git cannot produce on demand. */
@@ -89,7 +91,21 @@ const layer = (baseDir: string, options?: HarnessOptions) =>
     Layer.provideMerge(options?.git ?? layerRealGit),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(ServerSettings.layerTest()),
-    Layer.provideMerge(ServerConfig.layerTest(baseDir, baseDir)),
+    Layer.provideMerge(
+      Layer.effect(
+        ServerConfig.ServerConfig,
+        ServerConfig.ServerConfig.pipe(
+          Effect.map((config) =>
+            options?.managedProjectsRoot === undefined
+              ? config
+              : {
+                  ...config,
+                  managedProjectsRoot: options.managedProjectsRoot,
+                },
+          ),
+        ),
+      ).pipe(Layer.provide(ServerConfig.layerTest(baseDir, baseDir))),
+    ),
     Layer.provideMerge(NodeServices.layer),
   );
 
@@ -602,4 +618,50 @@ it.effect("removes the folder when the repository cannot be made", () =>
       }),
     },
   ),
+);
+
+it.effect(
+  "puts Scratch and named projects in the configured root and keeps old folders intact",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "t3-managed-override-" }),
+      );
+      yield* withScratch(
+        ({ baseDir }) =>
+          withGitEnv(
+            TEST_IDENTITY,
+            Effect.gen(function* () {
+              yield* fs.makeDirectory(path.join(baseDir, "scratch"));
+              yield* fs.writeFileString(path.join(baseDir, "scratch", "keep.txt"), "original");
+              const folders = yield* ManagedProjectFolders.ManagedProjectFolders;
+              assert.equal(
+                Option.getOrThrow(yield* folders.scratchRoot),
+                path.join(root, "scratch"),
+              );
+              const { projectId } = yield* folders.ensureScratchProject;
+              const threadFolder = Option.getOrThrow(
+                yield* folders.folderForThread({
+                  projectId,
+                  threadId: ThreadId.make("ssd-scratch-thread"),
+                  text: "Use the SSD",
+                }),
+              );
+              assert.isTrue(threadFolder.startsWith(path.join(root, "scratch") + path.sep));
+              assert.isTrue(yield* fs.exists(threadFolder));
+              const named = yield* folders.createNamedProject({ name: "SSD Project" });
+              assert.equal(named.workspaceRoot, path.join(root, "projects", "ssd-project"));
+              assert.isUndefined(named.commitError);
+              assert.equal(
+                yield* fs.readFileString(path.join(baseDir, "scratch", "keep.txt")),
+                "original",
+              );
+              assert.isFalse(yield* fs.exists(path.join(baseDir, "projects")));
+            }),
+          ),
+        { managedProjectsRoot: root },
+      );
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

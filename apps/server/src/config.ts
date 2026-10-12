@@ -56,6 +56,7 @@ export interface ServerDerivedPaths {
 
 export interface DeriveServerPathsOptions {
   readonly baseDirIsExplicit?: boolean;
+  readonly managedProjectsRoot?: string; // fork: mini-managed-projects
 }
 
 /**
@@ -87,6 +88,8 @@ export class ServerConfig extends Context.Service<
     readonly host: string | undefined;
     readonly cwd: string;
     readonly baseDir: string;
+    /** Optional canonical root for newly managed projects, Scratch and worktrees. */
+    readonly managedProjectsRoot?: string;
     readonly staticDir: string | undefined;
     readonly devUrl: URL | undefined;
     readonly devAuthToken?: Redacted.Redacted<string> | undefined;
@@ -153,7 +156,7 @@ export const deriveServerPaths = Effect.fn(function* (
     settingsPath: join(stateDir, "settings.json"),
     environmentThemesDir: join(stateDir, "themes"),
     providerStatusCacheDir,
-    worktreesDir: join(baseDir, "worktrees"),
+    worktreesDir: join(options.managedProjectsRoot ?? baseDir, "worktrees"),
     attachmentsDir,
     browserArtifactsDir: join(stateDir, "browser-artifacts"),
     logsDir,

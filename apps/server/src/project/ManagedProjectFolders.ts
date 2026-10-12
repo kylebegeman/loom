@@ -243,6 +243,7 @@ const make = Effect.gen(function* () {
   const git = yield* GitVcsDriver.GitVcsDriver;
   const projects = yield* ProjectService.ProjectService;
   const crypto = yield* Crypto.Crypto;
+  const managedRoot = config.managedProjectsRoot ?? config.baseDir; // fork: mini-managed-projects
 
   /**
    * Claims the first free folder among `folderFor(1)`, `folderFor(2)`, ...,
@@ -278,10 +279,10 @@ const make = Effect.gen(function* () {
   // failures hide Scratch rather than failing callers. An interrupted probe
   // invalidates the cache so the next caller probes again.
   const [probe, invalidate] = yield* Effect.cachedInvalidateWithTTL(
-    gitWorkflow.isRepository(config.baseDir).pipe(
+    gitWorkflow.isRepository(managedRoot).pipe(
       Effect.catchIf(isGitMissing, () => Effect.succeed(false)),
       Effect.map((isRepository) =>
-        isRepository ? Option.none<string>() : Option.some(path.resolve(config.baseDir, "scratch")),
+        isRepository ? Option.none<string>() : Option.some(path.resolve(managedRoot, "scratch")),
       ),
       Effect.catchCause((cause) =>
         Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed(Option.none<string>()),
@@ -390,7 +391,7 @@ const make = Effect.gen(function* () {
   // Projects started from just a name live beside Scratch and worktrees, away
   // from folders the user organizes by hand. A nested repository is fine here
   // (unlike Scratch) because each project gets its own `git init`.
-  const namedProjectsRoot = path.resolve(config.baseDir, "projects");
+  const namedProjectsRoot = path.resolve(managedRoot, "projects");
 
   const claimNamedFolder = Effect.fn("ManagedProjectFolders.claimNamedFolder")(function* (
     name: string,
