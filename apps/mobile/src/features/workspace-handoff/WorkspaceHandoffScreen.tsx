@@ -175,7 +175,11 @@ export function WorkspaceHandoffScreen({
       });
   };
   return (
-    <ScrollView className="flex-1 bg-screen" contentContainerStyle={{ padding: 20, gap: 16 }}>
+    <ScrollView
+      className="flex-1 bg-screen"
+      contentInsetAdjustmentBehavior="automatic"
+      contentContainerStyle={{ padding: 20, gap: 16 }}
+    >
       <AppText className="text-xl font-t3-medium">Continue on another machine</AppText>
       <AppText className="text-foreground-muted">
         Prepare published code and workspace setup first. The original conversation keeps its full
