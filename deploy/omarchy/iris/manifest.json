@@ -1,6 +1,6 @@
 {
-  "irisVersion": "0.6.48",
-  "irisSha256": "39504287c8eced42145059ec20451a654f63b140f622f96a42e3848011b74a2e",
+  "irisVersion": "0.6.51",
+  "irisSha256": "2b88d3e455d0f5f7174a2952483292753c4f019bc49e2ef81dfa80fd7f42ffcd",
   "themeRoles": {
     "background": "bg",
     "foreground": "ink",
@@ -41,6 +41,339 @@
     "light": {
       "name": "loom-iris-light",
       "wordmarkSha256": "59c554d34614d24ec744cdce391f4d1d96314f5897e378591ea846e3ebb974e9"
+    }
+  },
+  "palette": "plum",
+  "tokenSource": "tokens.json",
+  "shellRoles": {
+    "bar": {
+      "background": "band",
+      "text": "ink",
+      "active": "danger"
+    },
+    "controls": {
+      "normal-border": "line",
+      "hover-cursor-border": "line",
+      "focus-border": "muted"
+    },
+    "hyprland": {
+      "active-border": "line-strong",
+      "active-border-foreground": "line-strong"
+    },
+    "popups": {
+      "background": "paper",
+      "text": "ink",
+      "border": "line"
+    },
+    "tooltip": {
+      "background": "paper",
+      "text": "ink",
+      "border": "line"
+    },
+    "notifications": {
+      "background": "paper",
+      "text": "ink",
+      "border": "line"
+    },
+    "launcher": {
+      "background": "paper",
+      "text": "ink",
+      "border": "line"
+    },
+    "menu": {
+      "background": "paper",
+      "text": "ink",
+      "border": "line"
+    },
+    "polkit": {
+      "background": "paper",
+      "text": "ink",
+      "border": "line"
+    },
+    "lock": {
+      "background": "paper",
+      "text": "ink",
+      "placeholder": "muted",
+      "text-error": "danger",
+      "border": "line-strong",
+      "border-active": "line-strong"
+    }
+  },
+  "t3Roles": {
+    "chrome": "bg",
+    "toolbar": "paper",
+    "toolbarForeground": "ink",
+    "toolbarBorder": "line",
+    "text": "ink",
+    "border": "line",
+    "focus": "accent",
+    "sidebar": "band",
+    "sidebarForeground": "ink",
+    "sidebarBorder": "line",
+    "sidebarRowHover": "soft",
+    "sidebarRowActive": "paper",
+    "sidebarRowSelected": "accent-soft",
+    "error": "danger",
+    "warning": "warning",
+    "codeBackground": "paper",
+    "codeForeground": "ink",
+    "terminalBackground": "bg",
+    "terminalForeground": "ink",
+    "terminalCursor": "ink",
+    "terminalSelection": "accent-soft",
+    "terminalScrollbar": "line",
+    "terminalScrollbarHover": "line-strong"
+  },
+  "terminalContrastMinimum": 4.5,
+  "adaptations": {
+    "dark": {},
+    "light": {
+      "bright_blue": {
+        "role": "tag-blue",
+        "from": "#3a67d0",
+        "to": "#3762c6",
+        "mixWith": "#000000",
+        "amount": 0.05
+      },
+      "bright_cyan": {
+        "role": "tag-teal",
+        "from": "#16848a",
+        "to": "#137378",
+        "mixWith": "#000000",
+        "amount": 0.13
+      },
+      "bright_green": {
+        "role": "tag-green",
+        "from": "#2e8a53",
+        "to": "#277547",
+        "mixWith": "#000000",
+        "amount": 0.15
+      },
+      "bright_red": {
+        "role": "tag-red",
+        "from": "#c8423c",
+        "to": "#b83d37",
+        "mixWith": "#000000",
+        "amount": 0.08
+      },
+      "bright_yellow": {
+        "role": "tag-gold",
+        "from": "#a07a00",
+        "to": "#826300",
+        "mixWith": "#000000",
+        "amount": 0.19
+      },
+      "brown": {
+        "role": "ember",
+        "from": "#b44417",
+        "to": "#b24317",
+        "mixWith": "#000000",
+        "amount": 0.01
+      },
+      "cyan": {
+        "role": "tag-teal",
+        "from": "#16848a",
+        "to": "#137378",
+        "mixWith": "#000000",
+        "amount": 0.13
+      },
+      "orange": {
+        "role": "ember",
+        "from": "#b44417",
+        "to": "#b24317",
+        "mixWith": "#000000",
+        "amount": 0.01
+      }
+    }
+  },
+  "contrast": {
+    "dark": {
+      "ink": {
+        "minimum": 4.5,
+        "ratio": 13.272
+      },
+      "muted": {
+        "minimum": 4.5,
+        "ratio": 7.129
+      },
+      "accent": {
+        "minimum": 4.5,
+        "ratio": 7.572
+      },
+      "danger": {
+        "minimum": 4.5,
+        "ratio": 7.204
+      },
+      "success": {
+        "minimum": 4.5,
+        "ratio": 8.424
+      },
+      "warning": {
+        "minimum": 4.5,
+        "ratio": 10.15
+      },
+      "info": {
+        "minimum": 4.5,
+        "ratio": 8.493
+      },
+      "selection": {
+        "minimum": 4.5,
+        "ratio": 10.867
+      },
+      "terminal.blue": {
+        "minimum": 4.5,
+        "ratio": 8.493
+      },
+      "terminal.bright_blue": {
+        "minimum": 4.5,
+        "ratio": 7.582
+      },
+      "terminal.bright_cyan": {
+        "minimum": 4.5,
+        "ratio": 8.55
+      },
+      "terminal.bright_green": {
+        "minimum": 4.5,
+        "ratio": 8.375
+      },
+      "terminal.bright_magenta": {
+        "minimum": 4.5,
+        "ratio": 7.454
+      },
+      "terminal.bright_red": {
+        "minimum": 4.5,
+        "ratio": 6.644
+      },
+      "terminal.bright_yellow": {
+        "minimum": 4.5,
+        "ratio": 9.235
+      },
+      "terminal.brown": {
+        "minimum": 4.5,
+        "ratio": 7.209
+      },
+      "terminal.cyan": {
+        "minimum": 4.5,
+        "ratio": 8.55
+      },
+      "terminal.green": {
+        "minimum": 4.5,
+        "ratio": 8.424
+      },
+      "terminal.magenta": {
+        "minimum": 4.5,
+        "ratio": 7.572
+      },
+      "terminal.orange": {
+        "minimum": 4.5,
+        "ratio": 7.209
+      },
+      "terminal.red": {
+        "minimum": 4.5,
+        "ratio": 7.204
+      },
+      "terminal.yellow": {
+        "minimum": 4.5,
+        "ratio": 10.15
+      },
+      "keyboard-focus": {
+        "minimum": 3.0,
+        "ratio": 7.129
+      }
+    },
+    "light": {
+      "ink": {
+        "minimum": 4.5,
+        "ratio": 12.589
+      },
+      "muted": {
+        "minimum": 4.5,
+        "ratio": 4.823
+      },
+      "accent": {
+        "minimum": 4.5,
+        "ratio": 9.429
+      },
+      "danger": {
+        "minimum": 4.5,
+        "ratio": 5.252
+      },
+      "success": {
+        "minimum": 4.5,
+        "ratio": 4.86
+      },
+      "warning": {
+        "minimum": 4.5,
+        "ratio": 5.117
+      },
+      "info": {
+        "minimum": 4.5,
+        "ratio": 5.185
+      },
+      "selection": {
+        "minimum": 4.5,
+        "ratio": 11.595
+      },
+      "terminal.blue": {
+        "minimum": 4.5,
+        "ratio": 5.185
+      },
+      "terminal.bright_blue": {
+        "minimum": 4.5,
+        "ratio": 4.562
+      },
+      "terminal.bright_cyan": {
+        "minimum": 4.5,
+        "ratio": 4.53
+      },
+      "terminal.bright_green": {
+        "minimum": 4.5,
+        "ratio": 4.566
+      },
+      "terminal.bright_magenta": {
+        "minimum": 4.5,
+        "ratio": 4.527
+      },
+      "terminal.bright_red": {
+        "minimum": 4.5,
+        "ratio": 4.519
+      },
+      "terminal.bright_yellow": {
+        "minimum": 4.5,
+        "ratio": 4.551
+      },
+      "terminal.brown": {
+        "minimum": 4.5,
+        "ratio": 4.583
+      },
+      "terminal.cyan": {
+        "minimum": 4.5,
+        "ratio": 4.53
+      },
+      "terminal.green": {
+        "minimum": 4.5,
+        "ratio": 4.86
+      },
+      "terminal.magenta": {
+        "minimum": 4.5,
+        "ratio": 9.429
+      },
+      "terminal.orange": {
+        "minimum": 4.5,
+        "ratio": 4.583
+      },
+      "terminal.red": {
+        "minimum": 4.5,
+        "ratio": 5.252
+      },
+      "terminal.yellow": {
+        "minimum": 4.5,
+        "ratio": 5.117
+      },
+      "keyboard-focus": {
+        "minimum": 3.0,
+        "ratio": 4.823
+      }
     }
   }
 }

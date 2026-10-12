@@ -1,12 +1,14 @@
 {
   "bar": {
     "background": "#e9e6ec",
-    "text": "#27222b"
+    "text": "#27222b",
+    "active": "#b32342"
   },
   "controls": {
     "normal-border": "#dcd7df",
     "hover-cursor-border": "#dcd7df",
-    "focus-border": "#9a929c"
+    "focus-border": "#68616e",
+    "focus-border-alpha": 1.0
   },
   "hyprland": {
     "active-border": "#9a929c",

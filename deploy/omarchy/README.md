@@ -305,7 +305,23 @@ again. This works independently of the currently installed CLI.
 The bundle's `iris/` directory contains the approved skin installer, palette,
 gradient wordmark and terminal adapters. For a new Omarchy machine, install that
 skin explicitly with `python3 BUNDLE/iris/install.py --mode dark` (or `light`).
-It records a private backup and rollback path. Theme changes and protected
+It records a private backup and rollback path. The desktop must be unlocked for
+appearance installation. Restore an appearance with
+`python3 ~/.local/lib/loom-os/iris/install.py --rollback BACKUP_PATH`; pack rollback
+preserves the selected appearance and is a separate operation.
+
+The skin pins canonical Iris `tokens.json` with its version and SHA256 in
+`iris/manifest.json`. Regenerate from a checked Iris source with
+`python3 deploy/omarchy/iris/generate.py --tokens /path/to/iris/tokens.json` and
+verify with `python3 deploy/omarchy/iris/generate.py --check`. The pack gate also
+checks generation, source provenance and the approved artwork hashes. Terminal
+text shades derive from Iris with recorded black/white mixes when needed to reach
+4.5:1 on the nominal palette surfaces. Neutral keyboard focus uses an opaque
+outline without changing geometry. These palette checks do not certify arbitrary
+wallpaper blends, ANSI black-on-black, or app-owned content. Approved pixel
+wordmarks are preserved separately from palette generation.
+
+Theme changes and protected
 boot/login publication remain separate from routine pack updates, so an update
 cannot unexpectedly replace your chosen appearance or require sudo. Reuse the
 skin's printed `loom-branding.sh` only when publishing changed protected assets.

@@ -66,6 +66,11 @@ def finish_art(theme: Path) -> None:
 
 def install(bundle: Path,mode: str|None) -> None:
     home=Path.home();env=session_env()
+    lock=json.loads(run('omarchy-shell','lock','status',env=env))
+    if any(lock.get(key) for key in ('locked','secure','requested','pending')):
+        raise ValueError('Unlock the desktop normally before installing an appearance')
+    if (bundle/'generate.py').is_file():
+        subprocess.run([sys.executable,str(bundle/'generate.py'),'--check'],check=True)
     if not Path('/usr/share/omarchy').is_dir():
         raise ValueError('Run the installer on the Omarchy machine')
     current=home/'.local/state/omarchy/current'
@@ -83,7 +88,10 @@ def install(bundle: Path,mode: str|None) -> None:
     library=home/'.local/lib/loom-os/iris'
     hook=home/'.config/omarchy/hooks/theme-set.d/90-loom-iris.sh'
     branding=home/'.config/omarchy/branding'
-    files=[hook,branding/'screensaver.txt',branding/'about.txt',branding/'about-gradient.txt']
+    library_files=('apply.py','install.py','manifest.json','terminal_colors.py','publish-terminal-colors.sh','tokens.json')
+    files=[hook,branding/'screensaver.txt',branding/'about.txt',branding/'about-gradient.txt',home/'loom-branding.sh',
+           *(library/name for name in library_files),
+           *(library/'native-bin'/file.name for file in (bundle/'native-bin').iterdir() if file.is_file())]
     metadata={'previousTheme':old_theme,'selectedTheme':f'loom-iris-{mode}','files':{},'themes':{}}
     preserved=['.config/omarchy/shell.json','.config/omarchy/shell.toml','.config/hypr/looknfeel.lua','.config/hypr/bindings.lua']
     metadata['preservedSettings']={key:hashlib.sha256((home/key).read_bytes()).hexdigest() for key in preserved if (home/key).is_file()}
@@ -124,7 +132,7 @@ def install(bundle: Path,mode: str|None) -> None:
             shutil.rmtree(destination)
         staging.rename(destination)
     library.mkdir(parents=True,exist_ok=True)
-    for file in ('apply.py','install.py','manifest.json','terminal_colors.py','publish-terminal-colors.sh'):
+    for file in library_files:
         atomic_write(library/file,(bundle/file).read_bytes())
     (library/'publish-terminal-colors.sh').chmod(0o755)
     shutil.copytree(bundle/'native-bin',library/'native-bin',dirs_exist_ok=True)
@@ -182,13 +190,14 @@ def rollback(backup: Path) -> None:
             shutil.copy2(backup/'files'/key,dest)
         else:
             dest.unlink(missing_ok=True)
-    subprocess.run(['omarchy-theme-set',metadata['previousTheme']],env=session_env(),check=True)
     for name,existed in metadata['themes'].items():
         dest=home/'.config/omarchy/themes'/name
         if dest.exists():
             shutil.rmtree(dest)
         if existed:
             shutil.copytree(backup/'themes'/name,dest)
+    # The publisher and theme-set hook must see restored themes and library bytes.
+    subprocess.run(['omarchy-theme-set',metadata['previousTheme']],env=session_env(),check=True)
     t3=metadata.get('managedT3')
     if t3:
         managed=home/'.local/share/loom-os/t3'

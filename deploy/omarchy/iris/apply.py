@@ -22,7 +22,16 @@ def atomic_write(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def merge_colors(source: str, overrides: dict[str,dict[str,str]]) -> str:
+def merge_colors(source: str, overrides: dict[str,dict[str,str|float]]) -> str:
+    # Only this opacity belongs to the skin. Typography, geometry and all other
+    # non-color settings stay with Omarchy and the user.
+    for section, values in overrides.items():
+        for key, value in values.items():
+            if (section, key) == ('controls', 'focus-border-alpha'):
+                if type(value) not in (float, int) or not 0 <= value <= 1:
+                    raise ValueError('Invalid focus border opacity')
+            elif not isinstance(value, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', value):
+                raise ValueError(f'Non-color override: {section}.{key}')
     before=tomllib.loads(source)
     remaining={section:dict(values) for section,values in overrides.items()}
     lines=[]
@@ -38,8 +47,6 @@ def merge_colors(source: str, overrides: dict[str,dict[str,str]]) -> str:
         if assignment and assignment[1] in remaining.get(section,{}):
             key=assignment[1]
             value=remaining[section].pop(key)
-            if not re.fullmatch(r'#[0-9a-fA-F]{6}',value):
-                raise ValueError(f'Non-color override: {section}.{key}')
             line=f'{key} = {json.dumps(value)}'
         lines.append(line)
     for key,value in remaining.get(section,{}).items():
@@ -57,8 +64,6 @@ def merge_colors(source: str, overrides: dict[str,dict[str,str]]) -> str:
     for section,values in overrides.items():
         for key,value in values.items():
             assert after[section][key]==value
-            if not re.fullmatch(r'#[0-9a-fA-F]{6}',value):
-                raise ValueError(f'Non-color override: {section}.{key}')
     return result
 
 
