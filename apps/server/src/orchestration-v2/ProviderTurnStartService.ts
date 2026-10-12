@@ -13,15 +13,17 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
+import { restoreWorktree } from "../workspace/restoreWorktree.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import * as Path from "effect/Path";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -90,6 +92,9 @@ export const layer: Layer.Layer<
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
+  | Path.Path
+  | ProjectSetupScriptRunner.ProjectSetupScriptRunner
+  | WorktreeSetupTracker.WorktreeSetupTracker
   | GitWorkflowService.GitWorkflowService
   | ProjectService.ProjectService
   | ProviderAuthService.ProviderAuthService
@@ -100,12 +105,11 @@ export const layer: Layer.Layer<
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
+    const restorationServices =
+      yield* Effect.context<Effect.Services<ReturnType<typeof restoreWorktree>>>();
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
-    const projects = yield* ProjectService.ProjectService;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -458,39 +462,34 @@ export const layer: Layer.Layer<
       }
       const { worktreePath, branch } = projection.thread;
       if (worktreePath !== null && branch !== null) {
-        const exists = yield* fileSystem
-          .exists(worktreePath)
-          .pipe(Effect.orElseSucceed(() => true));
-        if (!exists) {
-          const project = yield* projects.getById(projection.thread.projectId).pipe(
-            Effect.map(Option.getOrUndefined),
-            Effect.orElseSucceed(() => undefined),
-          );
-          if (project !== undefined) {
-            yield* Effect.logWarning("provider turn start recreating missing worktree", {
-              threadId: projection.thread.id,
-              worktreePath,
-              branch,
-            });
-            yield* gitWorkflow.pruneWorktrees({ cwd: project.workspaceRoot }).pipe(
-              Effect.andThen(
-                gitWorkflow.createWorktree({
-                  cwd: project.workspaceRoot,
-                  refName: branch,
-                  path: worktreePath,
-                }),
-              ),
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.failCause(cause)
-                  : Effect.logWarning("provider turn start failed to recreate worktree", {
-                      threadId: projection.thread.id,
-                      worktreePath,
-                      cause: Cause.pretty(cause),
-                    }),
-              ),
+        const preparation = yield* restoreWorktree({
+          threadId: projection.thread.id,
+          projectId: projection.thread.projectId,
+          worktreePath,
+          branch,
+        }).pipe(Effect.provide(restorationServices), Effect.result);
+        if (preparation._tag === "Failure") {
+          if (input.willRetry === true)
+            return yield* Effect.fail(
+              new ProviderTurnStartError({ runId, cause: preparation.failure }),
             );
-          }
+          yield* settleRunBeforeStart({
+            signal: "workspace-preparation-failed",
+            status: "failed",
+            now: yield* DateTime.now,
+            providerInstanceId: run.providerInstanceId,
+            itemProviderThreadId: providerThread.id,
+            item: {
+              type: "error",
+              title: "Workspace preparation failed",
+              failure: makeProviderFailure({
+                cause: preparation.failure,
+                message: preparation.failure.message,
+                class: "validation_error",
+              }),
+            },
+          });
+          return;
         }
       }
       const selectInheritedBackgroundItems = (

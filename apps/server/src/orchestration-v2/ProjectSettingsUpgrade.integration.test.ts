@@ -1,3 +1,4 @@
+import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import { assert, it } from "@effect/vitest";
@@ -152,6 +153,7 @@ const layerRuntime = (dbPath: string) => {
         normalizeWorkspaceRoot: (workspaceRoot) => Effect.succeed(workspaceRoot),
       }),
     ),
+    Layer.provide(ProviderTurnStartTestkit.layerWorkspacePreparation),
     Layer.provide(McpSessionRegistryTestkit.layer),
     Layer.provide(McpProviderSessions.layer),
     Layer.provideMerge(SqlitePersistence.layerFromPath(dbPath)),

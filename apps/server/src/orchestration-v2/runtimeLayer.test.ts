@@ -1,3 +1,4 @@
+import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -105,7 +106,7 @@ const layerCheckpointStoreTest = CheckpointStore.layer.pipe(
 const layerGitWorkflowTest = Layer.mock(GitWorkflow.GitWorkflowService)({
   pruneWorktrees: () => Effect.void,
   createWorktree: () => Effect.succeed({} as never),
-});
+}).pipe(Layer.provideMerge(ProviderTurnStartTestkit.layerWorkspacePreparation));
 const layerProjectServiceTest = Layer.mock(ProjectService.ProjectService)({
   getById: () => Effect.succeed(Option.none()),
 });
