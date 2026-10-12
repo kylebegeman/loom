@@ -1,3 +1,4 @@
+import { workspaceHandoffPaletteSource } from "../workspace-handoff/palette";
 import { pcbPreviewPaletteSource } from "../pcb-preview/palette";
 import { modelPreview3dPaletteSource } from "../model-preview-3d/palette";
 import { projectLifecyclePaletteSource } from "../project-lifecycle/palette";
@@ -50,6 +51,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   modelPreview3dPaletteSource,
   pcbPreviewPaletteSource,
   projectLifecyclePaletteSource,
+  workspaceHandoffPaletteSource,
   appleBuildToolingPaletteSource,
   deviceQaPaletteSource,
   panelPickerPaletteSource,

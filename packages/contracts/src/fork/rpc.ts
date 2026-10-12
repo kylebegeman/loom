@@ -1,3 +1,4 @@
+import { WorkspaceHandoffRpcGroup } from "./workspace-handoff.ts";
 import { PcbPreviewRpcGroup, PCB_PREVIEW_WS_METHODS } from "./pcb-preview.ts";
 import { ModelPreview3dRpcGroup, MODEL_PREVIEW_3D_WS_METHODS } from "./model-preview-3d.ts";
 import { ProjectLifecycleRpcGroup, PROJECT_LIFECYCLE_WS_METHODS } from "./project-lifecycle.ts";
@@ -42,6 +43,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   AppleBuildToolingRpcGroup,
   DeviceQaRpcGroup,
   CodeGraphRpcGroup,
+  WorkspaceHandoffRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 

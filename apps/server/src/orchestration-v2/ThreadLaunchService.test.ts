@@ -32,6 +32,7 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
@@ -135,6 +136,7 @@ function makeHarness(options: HarnessOptions = {}) {
     (_input: Parameters<GitWorkflow.GitWorkflowService["Service"]["removeWorktree"]>[0]) =>
       Effect.void,
   );
+  const closeTerminal = vi.fn(() => Effect.void);
   const runSetup = vi.fn(
     options.runSetup ?? (() => Effect.succeed({ status: "no-script" as const })),
   );
@@ -147,7 +149,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const layerExternalServices = Layer.mergeAll(
     WorktreeSetupTracker.layer,
     Layer.mock(ProjectCloneTracker.ProjectCloneTracker)({ get: () => Effect.succeed(null) }),
-    Layer.mock(TerminalManager.TerminalManager)({ close: () => Effect.void }),
+    Layer.mock(TerminalManager.TerminalManager)({ close: closeTerminal }),
     Layer.succeed(ProjectService.ProjectService, {
       create: () => Effect.die("unused"),
       bootstrap: () => Effect.die("unused"),
@@ -244,6 +246,7 @@ function makeHarness(options: HarnessOptions = {}) {
     generateBranchName,
     generateThreadTitle,
     runSetup,
+    closeTerminal,
   };
 }
 
@@ -508,6 +511,202 @@ it.effect("provisions independent launches concurrently instead of behind a glob
       yield* Deferred.succeed(allowSetup, undefined);
     }).pipe(Effect.provide(harness.layer));
   }),
+);
+
+it.effect.each([0, 17])(
+  "destination preparation waits for async setup ending with $0",
+  (exitCode) =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const finished = yield* Deferred.make<{ exitCode: number; durationMs: number }>();
+      const returned = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        runSetup: () =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(entered, undefined);
+            return {
+              status: "started" as const,
+              async: true,
+              scriptId: "setup",
+              scriptName: "Setup",
+              scriptCommand: "setup",
+              terminalId: "setup-terminal",
+              cwd: "/repo",
+              completion: Deferred.await(finished),
+            };
+          }),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const launch = yield* launches
+          .launch({
+            ...launchInput({
+              command: `command:await:${exitCode}`,
+              thread: `thread:await:${exitCode}`,
+            }),
+            waitForPreparation: true,
+          })
+          .pipe(
+            Effect.tap(() => Deferred.succeed(returned, undefined)),
+            Effect.forkChild,
+          );
+        yield* Deferred.await(entered);
+        assert.equal(yield* Deferred.isDone(returned), false);
+        yield* Deferred.succeed(finished, { exitCode, durationMs: 1 });
+        if (exitCode === 0) {
+          yield* Fiber.join(launch);
+          assert.equal(yield* Deferred.isDone(returned), true);
+        } else
+          assert.equal((yield* Fiber.join(launch).pipe(Effect.flip)).operation, "run-setup-script");
+      }).pipe(Effect.provide(harness.layer));
+    }),
+);
+
+it.effect("retries awaited setup in the same empty destination worktree", () => {
+  let attempts = 0;
+  const harness = makeHarness({
+    runSetup: () =>
+      Effect.sync(() => ({
+        status: "started" as const,
+        async: true,
+        scriptId: "setup",
+        scriptName: "Setup",
+        scriptCommand: "setup",
+        terminalId: "setup-terminal",
+        cwd: "/repo-worktrees/feature",
+        completion: Effect.succeed({ exitCode: ++attempts === 1 ? 17 : 0, durationMs: 1 }),
+      })),
+  });
+  return Effect.gen(function* () {
+    const launches = yield* ThreadLaunch.ThreadLaunchService;
+    const input = {
+      ...launchInput({ command: "command:await:retry", thread: "thread:await:retry" }),
+      workspaceStrategy: { type: "worktree" as const, baseRef: "main", branch: "handoff/retry" },
+      waitForPreparation: true,
+    };
+    assert.equal((yield* launches.launch(input).pipe(Effect.flip)).operation, "run-setup-script");
+    const result = yield* launches.launch(input);
+    assert.equal(result.projection.thread.worktreePath, "/repo-worktrees/feature");
+    assert.equal(result.projection.thread.branch, "handoff/retry");
+    assert.equal(attempts, 2);
+    assert.equal(harness.createWorktree.mock.calls.length, 1);
+  }).pipe(Effect.provide(harness.layer));
+});
+
+it.effect.each(
+  [
+    { type: "root" } as const,
+    { type: "existing_worktree", worktreePath: "/repo-existing", branch: "feature" } as const,
+    { type: "worktree", baseRef: "main" } as const,
+  ].flatMap((workspace) => [0, 17].map((exitCode) => ({ workspace, exitCode }))),
+)("initialization exits $exitCode in $workspace.type workspaces", ({ workspace, exitCode }) =>
+  Effect.gen(function* () {
+    const entered = yield* Deferred.make<void>();
+    const finished = yield* Deferred.make<{ exitCode: number; durationMs: number }>();
+    const harness = makeHarness({
+      runSetup: (input) =>
+        Effect.gen(function* () {
+          yield* input.observeCompletion?.onOutputLine?.("Loading sample data") ?? Effect.void;
+          yield* Deferred.succeed(entered, undefined);
+          return {
+            status: "started" as const,
+            async: false,
+            scriptId: "setup",
+            scriptName: "Prepare development",
+            scriptCommand: "install-and-seed",
+            terminalId: "setup",
+            cwd: input.worktreePath,
+            completion: Deferred.await(finished),
+          };
+        }),
+    });
+    yield* Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch(
+        launchInput({
+          command: `command:initialize:${workspace.type}`,
+          thread: `thread:initialize:${workspace.type}`,
+          message: "Work with the sample data",
+          workspace,
+        }),
+      );
+      yield* Deferred.await(entered);
+      const progress = yield* tracker.get(launched.threadId);
+      assert.equal(progress?.phase, "running");
+      assert.deepEqual(progress?.stages.find((stage) => stage.id === "setup-script")?.tail, [
+        "Loading sample data",
+      ]);
+      assert.isEmpty(
+        yield* outbox.listByCommandId(
+          CommandId.make(`command:initialize:${workspace.type}:release`),
+        ),
+      );
+      const released = yield* threads.streamDomainEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "run.updated" &&
+            event.threadId === launched.threadId &&
+            event.payload.status === (exitCode === 0 ? "starting" : "failed"),
+        ),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      yield* Effect.yieldNow;
+      yield* Deferred.succeed(finished, { exitCode, durationMs: 10 });
+      yield* Fiber.join(released);
+      assert.equal(
+        (yield* threads.getThreadProjection(launched.threadId)).runs[0]?.status,
+        exitCode === 0 ? "starting" : "failed",
+      );
+      assert.equal(harness.removeWorktree.mock.calls.length, 0);
+    }).pipe(Effect.provide(harness.layer));
+  }),
+);
+
+it.effect(
+  "cancelling root initialization closes its setup terminal and preserves the checkout",
+  () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        runSetup: (input) =>
+          Deferred.succeed(entered, undefined).pipe(
+            Effect.as({
+              status: "started" as const,
+              async: false,
+              scriptId: "setup",
+              scriptName: "Setup",
+              scriptCommand: "seed-data",
+              terminalId: "setup",
+              cwd: input.worktreePath,
+              completion: Effect.never,
+            }),
+          ),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const tracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+        const launched = yield* launches.launch(
+          launchInput({
+            command: "command:root-init-cancel",
+            thread: "thread:root-init-cancel",
+            message: "Prepare",
+          }),
+        );
+        yield* Deferred.await(entered);
+        yield* tracker.stream(launched.threadId).pipe(
+          Stream.filter((snapshot) => snapshot?.setupScript?.terminalId === "setup"),
+          Stream.runHead,
+        );
+        yield* tracker.cancel(launched.threadId);
+        assert.equal(harness.closeTerminal.mock.calls.length, 1);
+        assert.equal(harness.removeWorktree.mock.calls.length, 0);
+        assert.equal((yield* tracker.get(launched.threadId))?.phase, "cancelled");
+      }).pipe(Effect.provide(harness.layer));
+    }),
 );
 
 it.effect("enqueues provider work only after setup has been initiated", () =>
@@ -2196,7 +2395,7 @@ it.effect("shared intake preserves durable attachment bytes after a lost launch 
     assert.isDefined(stored);
     assert.notEqual(stored.attachments[0]?.id, attachment.id);
     assert.equal(
-      (stored.context?.records[0] as { attachmentId: string }).attachmentId,
+      (stored.context?.records[0] as { attachmentId: string } | undefined)?.attachmentId,
       stored.attachments[0]?.id,
     );
     const userItem = accepted.turnItems.find(

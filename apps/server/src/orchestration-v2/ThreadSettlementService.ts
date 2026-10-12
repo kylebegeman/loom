@@ -1,18 +1,19 @@
 import { backgroundWorkHoldsCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
-import {
-  CommandId,
-  type ThreadId,
-  type OrchestrationV2DomainEvent,
-  type OrchestrationV2ThreadShell,
-} from "@t3tools/contracts";
+import { CommandId, type ThreadId, type OrchestrationV2DomainEvent } from "@t3tools/contracts";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import * as Cause from "effect/Cause";
+import * as Path from "effect/Path";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import * as StorageCleanup from "../storageCleanup.ts";
+import { threadHasQueuedTurnStart } from "./queuedTurnStart.ts";
+export { threadHasQueuedTurnStart, QUEUED_TURN_START_GRACE_MS } from "./queuedTurnStart.ts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FiberSet from "effect/FiberSet";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -36,7 +37,6 @@ export interface SettlementPullRequest {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
-export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
 
 function toMillis(value: DateTime.Utc | null | undefined): number | null {
   return value == null ? null : DateTime.toEpochMillis(value);
@@ -75,36 +75,6 @@ function pullRequestMatchesProject(
     canonicalRepositoryKey(pullRequest.repositoryKey) ===
       canonicalRepositoryKey(project.repositoryIdentity.canonicalKey)
   );
-}
-
-/**
- * A recent user message stays queued until a run adopts its timestamp.
- * Absolute age bounds client clock skew in both directions and stops stale
- * pre-adoption data from blocking the thread forever. A failed run start
- * clears the block immediately (mirrors the v1 session "error" rule).
- */
-export function threadHasQueuedTurnStart(
-  thread: Pick<
-    OrchestrationV2ThreadShell,
-    | "latestUserMessageAt"
-    | "latestRunRequestedAt"
-    | "latestRunStartedAt"
-    | "latestRunCompletedAt"
-    | "latestRunId"
-    | "status"
-  >,
-  nowMs: number,
-): boolean {
-  const messageAtMs = toMillis(thread.latestUserMessageAt);
-  if (messageAtMs === null || thread.status === "failed") return false;
-  const age = nowMs - messageAtMs;
-  if (Number.isNaN(age) || Math.abs(age) > QUEUED_TURN_START_GRACE_MS) return false;
-  if (thread.latestRunId === null) return true;
-  return [
-    toMillis(thread.latestRunRequestedAt),
-    toMillis(thread.latestRunStartedAt),
-    toMillis(thread.latestRunCompletedAt),
-  ].every((value) => value === null || value < messageAtMs);
 }
 
 /**
@@ -306,6 +276,8 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const terminals = yield* TerminalManager.TerminalManager;
   const projectScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+  const cleanup = yield* StorageCleanup.StorageCleanup;
+  const path = yield* Path.Path;
   // Settling a settled thread re-emits thread.settled with the same settledAt,
   // so this keeps the settle action to one run per settlement.
   const settleActionRunAt = new Map<ThreadId, number>();
@@ -573,6 +545,18 @@ export const make = Effect.gen(function* () {
       // meanwhile is working again, so its worktree is no place for cleanup.
       const thread = yield* projections.getThread(threadId);
       if (thread.settledOverride !== "settled") return;
+      const active = yield* projections.getShellSnapshot();
+      const archived = yield* projections.getShellSnapshot({ location: "archive" });
+      if (
+        [...active.threads, ...archived.threads].some(
+          (holder) =>
+            holder.id !== threadId &&
+            holder.worktreePath !== null &&
+            path.resolve(holder.worktreePath) === path.resolve(worktreePath) &&
+            holder.settledOverride !== "settled",
+        )
+      )
+        return;
       const settledAtMs = toMillis(thread.settledAt);
       if (settledAtMs === null || settleActionRunAt.get(threadId) === settledAtMs) return;
       const run = yield* projectScripts.runForThread({
@@ -586,11 +570,16 @@ export const make = Effect.gen(function* () {
       // Recorded after a successful start, so a failed start retries on the next event.
       settleActionRunAt.set(threadId, settledAtMs);
       if (run.status === "started" && run.completion) {
-        yield* run.completion.pipe(Effect.forkDetach);
+        yield* run.completion;
       }
     },
     (effect, threadId) =>
-      effect.pipe(
+      Effect.gen(function* () {
+        const thread = yield* projections.getThread(threadId);
+        if (thread.worktreePath === null) return yield* effect;
+        yield* withWorkspaceLease(path.resolve(thread.worktreePath), effect);
+      }).pipe(
+        Effect.andThen(cleanup.requestSweep),
         Effect.catchCause((cause) =>
           Cause.hasInterruptsOnly(cause)
             ? Effect.failCause(cause)
@@ -602,10 +591,17 @@ export const make = Effect.gen(function* () {
       ),
   );
 
+  const settlementTasks = yield* FiberSet.make<
+    void,
+    Effect.Error<ReturnType<typeof cleanUpSettledThread>>
+  >();
+
   const processEvent = (event: OrchestrationV2DomainEvent) => {
     switch (event.type) {
       case "thread.settled":
-        return cleanUpSettledThread(event.threadId);
+        return FiberSet.run(settlementTasks, cleanUpSettledThread(event.threadId)).pipe(
+          Effect.asVoid,
+        );
       case "thread.pull-request-synced":
       case "provider-session.detached":
         return worker.enqueue(event.threadId);
@@ -658,7 +654,10 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  return { start, drain: worker.drain } satisfies ThreadSettlementServiceV2["Service"];
+  return {
+    start,
+    drain: worker.drain.pipe(Effect.andThen(FiberSet.awaitEmpty(settlementTasks))),
+  } satisfies ThreadSettlementServiceV2["Service"];
 });
 
 export const layer = Layer.effect(ThreadSettlementServiceV2, make);

@@ -1,3 +1,5 @@
+import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
+import * as WorkspaceHandoff from "./workspace-handoff/WorkspaceHandoffService.ts";
 import { PcbPreviewHttpRoutes } from "./pcb-preview/http.ts";
 import * as PcbPreview from "./pcb-preview/PcbPreviewService.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
@@ -21,6 +23,11 @@ import { SwitchboardLive } from "./switchboard/switchboard.ts";
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   SwitchboardLive,
+  WorkspaceHandoff.layer.pipe(
+    Layer.provide(CommandReceiptStore.layer),
+    Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),
+    Layer.provide(ProjectionStore.layer),
+  ),
   PcbPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
   ModelPreview.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
   // Apple builds run in L19 lanes, so both share the one ProjectLifecycle instance.

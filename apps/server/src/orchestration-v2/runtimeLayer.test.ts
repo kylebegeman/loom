@@ -1,4 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
+import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
 import { limitRecoveryCommand } from "./UsageLimitRecoveryWorker.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
@@ -106,7 +107,7 @@ const layerCheckpointStoreTest = CheckpointStore.layer.pipe(
 const layerGitWorkflowTest = Layer.mock(GitWorkflow.GitWorkflowService)({
   pruneWorktrees: () => Effect.void,
   createWorktree: () => Effect.succeed({} as never),
-});
+}).pipe(Layer.provideMerge(ProviderTurnStartTestkit.layerWorkspacePreparation));
 const layerProjectServiceTest = Layer.mock(ProjectService.ProjectService)({
   getById: () => Effect.succeed(Option.none()),
 });
@@ -1682,6 +1683,72 @@ it.layer(layerLegacyImportTest)("OrchestrationV2 legacy import", (it) => {
 });
 
 it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
+  it.effect(
+    "conditional handoff settlement rejects stale source state and honors a fresh explicit handoff",
+    () =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const threadId = ThreadId.make("conditional-handoff-thread");
+        const projectId = ProjectId.make("conditional-handoff-project");
+        yield* seedProject({
+          projectId,
+          title: "Handoff",
+          workspaceRoot: "/workspace/handoff",
+          defaultModelSelection: null,
+          createdAt: "2026-09-07T00:00:00.000Z",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make("conditional-handoff-create"),
+          threadId,
+          projectId,
+          title: "Source",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.unsettle",
+          commandId: CommandId.make("conditional-handoff-active"),
+          threadId,
+          reason: "user",
+        });
+        const before = yield* orchestrator.getThreadProjection(threadId);
+        yield* TestClock.adjust("1 second");
+        yield* orchestrator.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("conditional-handoff-change"),
+          threadId,
+          title: "Changed source",
+        });
+        const stale = yield* orchestrator
+          .dispatch({
+            type: "thread.settle",
+            commandId: CommandId.make("conditional-handoff-stale"),
+            threadId,
+            snapshotAt: before.thread.updatedAt,
+          })
+          .pipe(Effect.flip);
+        assert.instanceOf(stale, Orchestrator.OrchestratorDispatchError);
+        const fresh = yield* orchestrator.getShellSnapshot();
+        const shell = fresh.threads.find((thread) => thread.id === threadId)!;
+        yield* orchestrator.dispatch({
+          type: "thread.settle",
+          commandId: CommandId.make("conditional-handoff-fresh"),
+          threadId,
+          snapshotAt: shell.updatedAt,
+        });
+        assert.equal(
+          (yield* orchestrator.getThreadProjection(threadId)).thread.settledOverride,
+          "settled",
+        );
+      }),
+  );
+
   it.effect("applies lifecycle commands idempotently and emits archive/removal shell deltas", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

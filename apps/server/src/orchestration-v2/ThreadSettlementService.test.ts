@@ -1,4 +1,6 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
+import * as StorageCleanup from "../storageCleanup.ts";
+import * as NodePath from "@effect/platform-node/NodePath";
 import { assert, describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import {
@@ -509,6 +511,10 @@ interface HarnessOptions {
   readonly existingWorktreePaths?: ReadonlyArray<string>;
   readonly onDispatch?: (command: AutoSettleCommand) => Effect.Effect<void>;
   /** Runs before each settle script start; a failure fails that start. */
+  readonly scriptResult?: (
+    input: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput,
+  ) => ProjectSetupScriptRunner.ProjectSetupScriptRunnerResult;
+  readonly onCleanupRequested?: Effect.Effect<void>;
   readonly onScriptRun?: (
     input: ProjectSetupScriptRunner.ProjectSetupScriptRunnerInput,
   ) => Effect.Effect<void>;
@@ -606,6 +612,13 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       listShells: () => Ref.get(snapshots).pipe(Effect.map((snapshot) => snapshot.projects)),
     }),
     Layer.mock(ProjectionStore.ProjectionStoreV2)({
+      getShellSnapshot: (input) =>
+        Ref.get(snapshots).pipe(
+          Effect.map((snapshot) => ({
+            ...snapshot,
+            threads: input?.location === "archive" ? [] : snapshot.threads,
+          })),
+        ),
       getSettlementCandidates: (threadId) =>
         Ref.update(candidateReads, (reads) => [...reads, threadId]).pipe(
           Effect.andThen(Ref.updateAndGet(snapshotReadCount, (count) => count + 1)),
@@ -632,11 +645,15 @@ const makeHarness = Effect.fn("makeThreadSettlementHarness")(function* (options:
       closeIdle: (input) =>
         Queue.offer(closedIdle, input).pipe(Effect.andThen(options.onCloseIdle?.() ?? Effect.void)),
     }),
+    NodePath.layer,
+    Layer.mock(StorageCleanup.StorageCleanup)({
+      requestSweep: options.onCleanupRequested ?? Effect.void,
+    }),
     Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
       runForThread: (input) =>
         Queue.offer(scriptRuns, input).pipe(
           Effect.andThen(options.onScriptRun?.(input) ?? Effect.void),
-          Effect.as({ status: "no-script" } as const),
+          Effect.as(options.scriptResult?.(input) ?? ({ status: "no-script" } as const)),
         ),
     }),
     Layer.mock(GitManager.GitManager)({
@@ -1122,6 +1139,50 @@ describe("ThreadSettlementServiceV2 terminals", () => {
           // event only if the re-engaged thread was skipped.
           yield* fixture.publishEvent(settledEvent(marker));
           assert.deepStrictEqual(yield* Queue.take(fixture.closedIdle), { threadId: marker.id });
+        }).pipe(Effect.provide(fixture.layer));
+      }),
+    ),
+  );
+
+  it.effect("waits for each settle script without blocking other worktrees", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const completion =
+          yield* Deferred.make<ProjectSetupScriptRunner.ProjectSetupScriptCompletion>();
+        const requests = yield* Queue.unbounded<void>();
+        const slow = appThread("slow-settlement", "settled", "/worktrees/slow");
+        const other = appThread("other-settlement", "settled", "/worktrees/other");
+        const fixture = yield* makeHarness({
+          snapshot: makeSnapshot([]),
+          currentThreads: [slow, other],
+          existingWorktreePaths: ["/worktrees/slow", "/worktrees/other"],
+          onCleanupRequested: Queue.offer(requests, undefined).pipe(Effect.asVoid),
+          scriptResult: (input) =>
+            input.threadId === slow.id
+              ? {
+                  status: "started",
+                  scriptId: "settle",
+                  scriptName: "Settle",
+                  scriptCommand: "cleanup",
+                  terminalId: "settle-terminal",
+                  cwd: "/worktrees/slow",
+                  async: true,
+                  completion: Deferred.await(completion),
+                }
+              : { status: "no-script" },
+        });
+        yield* Effect.gen(function* () {
+          const service = yield* ThreadSettlementService.ThreadSettlementServiceV2;
+          yield* startHarness(service, fixture.activation, fixture.snapshotReads);
+          yield* fixture.publishEvent(settledEvent(slow));
+          expect((yield* Queue.take(fixture.scriptRuns)).threadId).toBe(slow.id);
+          expect(yield* Queue.size(requests)).toBe(0);
+          yield* fixture.publishEvent(settledEvent(other));
+          expect((yield* Queue.take(fixture.scriptRuns)).threadId).toBe(other.id);
+          yield* Queue.take(requests);
+          yield* Deferred.succeed(completion, { exitCode: 0, durationMs: 1 });
+          yield* Queue.take(requests);
+          yield* service.drain;
         }).pipe(Effect.provide(fixture.layer));
       }),
     ),

@@ -83,6 +83,8 @@ export interface ThreadLaunchInput {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly workspaceStrategy: ThreadLaunchWorkspaceStrategy;
+  /** Returns only after workspace setup succeeds; used before releasing another host. */
+  readonly waitForPreparation?: boolean;
   readonly initialMessage?: ThreadLaunchInitialMessage;
   readonly importedNativeThread?: {
     readonly ref: {
@@ -99,7 +101,7 @@ export interface ThreadLaunchInput {
 /** What workspace preparation reads from a launch; a retry rebuilds it from the run. */
 type PreparationInput = Pick<
   ThreadLaunchInput,
-  "commandId" | "projectId" | "workspaceStrategy" | "initialMessage"
+  "commandId" | "projectId" | "workspaceStrategy" | "initialMessage" | "waitForPreparation"
 > & {
   /**
    * Set when a retry reuses the worktree its failed attempt created and
@@ -306,7 +308,7 @@ const make = Effect.gen(function* () {
     );
 
     const reused = input.reusedWorktree;
-    const tracked = input.workspaceStrategy.type === "worktree" || reused !== undefined;
+    const createdWorktree = input.workspaceStrategy.type === "worktree";
     let createdWorktreePath: string | null = null;
     let setupTerminalId: string | null = null;
     let workspaceRecorded = false;
@@ -318,11 +320,11 @@ const make = Effect.gen(function* () {
         stages: ["fetch", "checkout", "setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
-    } else if (reused !== undefined) {
+    } else {
       yield* setupTracker.begin({
         threadId,
         branch: input.workspaceStrategy.branch ?? null,
-        baseRef: reused.baseRef,
+        baseRef: reused?.baseRef ?? null,
         stages: ["setup-script", "agent"],
         fiber: yield* Effect.fiber,
       });
@@ -546,14 +548,9 @@ const make = Effect.gen(function* () {
           projectId: input.projectId,
           projectCwd: project.workspaceRoot,
           worktreePath: cwd,
-          ...(tracked
-            ? {
-                observeCompletion: {
-                  onOutputLine: (line: string) =>
-                    setupTracker.appendTail(threadId, "setup-script", line),
-                },
-              }
-            : {}),
+          observeCompletion: {
+            onOutputLine: (line: string) => setupTracker.appendTail(threadId, "setup-script", line),
+          },
           project: {
             id: project.id,
             workspaceRoot: project.workspaceRoot,
@@ -580,14 +577,14 @@ const make = Effect.gen(function* () {
               status: completion.exitCode === 0 ? "done" : "failed",
               detail: `exited with ${completion.exitCode ?? "no exit code"}`,
             });
-            if (completion.exitCode !== 0 && !setup.async)
+            if (completion.exitCode !== 0 && (!setup.async || input.waitForPreparation === true))
               return yield* mapError(
                 input,
                 "run-setup-script",
                 threadId,
               )(`Setup script exited with ${completion.exitCode ?? "no exit code"}.`);
           });
-          if (setup.async) {
+          if (setup.async && input.waitForPreparation !== true) {
             awaitAsyncSetup = awaitCompletion.pipe(
               Effect.catchCause((cause) =>
                 setupTracker.stage(threadId, "setup-script", {
@@ -600,6 +597,12 @@ const make = Effect.gen(function* () {
             yield* awaitCompletion;
           }
         } else {
+          if (input.waitForPreparation === true)
+            return yield* mapError(
+              input,
+              "run-setup-script",
+              threadId,
+            )("Setup did not provide a completion result.");
           yield* setupTracker.stageStatus(threadId, "setup-script", "done");
         }
       } else {
@@ -629,11 +632,15 @@ const make = Effect.gen(function* () {
             cancelled ? "cancelled" : "failed",
             cancelled ? null : failureDetail(Cause.squash(cause)),
           );
+          if (cancelled && setupTerminalId)
+            yield* terminals
+              .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
+              .pipe(Effect.ignore);
           // A cancelled setup leaves nothing behind. A failed one keeps a worktree
           // the thread recorded, so a retry reuses it, and removes one it never
           // recorded, which a retry would otherwise duplicate.
-          if (tracked && createdWorktreePath && (cancelled || !workspaceRecorded)) {
-            if (setupTerminalId)
+          if (createdWorktree && createdWorktreePath && (cancelled || !workspaceRecorded)) {
+            if (!cancelled && setupTerminalId)
               yield* terminals
                 .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
                 .pipe(Effect.ignore);
@@ -726,7 +733,7 @@ const make = Effect.gen(function* () {
     threadId: ThreadId,
     runId: RunId | null,
   ) {
-    yield* prepareInBackground(input, threadId, runId).pipe(
+    const preparation = prepareInBackground(input, threadId, runId).pipe(
       Effect.onError((cause) =>
         failPreparedRun(
           input,
@@ -735,10 +742,10 @@ const make = Effect.gen(function* () {
           Cause.hasInterruptsOnly(cause) ? "Worktree setup cancelled." : Cause.squash(cause),
         ),
       ),
-      Effect.ignoreCause,
       Effect.ensuring(releasePreparation(input.commandId)),
-      Effect.forkIn(preparationScope),
     );
+    if (input.waitForPreparation === true) yield* preparation;
+    else yield* preparation.pipe(Effect.ignoreCause, Effect.forkIn(preparationScope));
   });
 
   const launch: ThreadLaunchService["Service"]["launch"] = Effect.fn("ThreadLaunchService.launch")(
@@ -917,18 +924,26 @@ const make = Effect.gen(function* () {
         const runIsPreparing =
           runId !== null &&
           projection.runs.some((run) => run.id === runId && run.status === "preparing");
-        const shouldSchedule = runId === null ? Option.isNone(launchReceipt) : runIsPreparing;
+        // An accepted create does not mean setup succeeded. Awaited launches can
+        // retry setup only while the destination thread still has no work.
+        const retryEmptyPreparation =
+          input.waitForPreparation === true &&
+          runId === null &&
+          projection.messages.length === 0 &&
+          projection.runs.length === 0;
+        const shouldSchedule =
+          runId === null ? Option.isNone(launchReceipt) || retryEmptyPreparation : runIsPreparing;
         // A retried root launch prepares the folder its first attempt bound, so
         // a Scratch thread keeps its own. Other root launches bind no folder.
         const boundWorktreePath = projection.thread.worktreePath;
         const preparationStrategy: ThreadLaunchWorkspaceStrategy =
           Option.isSome(launchReceipt) &&
-          workspaceStrategy.type === "root" &&
+          (workspaceStrategy.type === "root" || retryEmptyPreparation) &&
           boundWorktreePath !== null
             ? {
                 type: "existing_worktree",
                 worktreePath: boundWorktreePath,
-                branch: workspaceStrategy.branch,
+                branch: projection.thread.branch ?? undefined,
               }
             : workspaceStrategy;
         if (shouldSchedule) {
@@ -946,7 +961,16 @@ const make = Effect.gen(function* () {
                     );
               if (preparationStillRequired) {
                 yield* schedulePreparation(
-                  { ...input, workspaceStrategy: preparationStrategy },
+                  {
+                    ...input,
+                    workspaceStrategy: preparationStrategy,
+                    ...(retryEmptyPreparation &&
+                    Option.isSome(launchReceipt) &&
+                    workspaceStrategy.type === "worktree" &&
+                    boundWorktreePath !== null
+                      ? { reusedWorktree: { baseRef: workspaceStrategy.baseRef } }
+                      : {}),
+                  },
                   threadId,
                   runId,
                 );
@@ -954,6 +978,12 @@ const make = Effect.gen(function* () {
                 yield* releasePreparation(input.commandId);
               }
             }).pipe(Effect.onError(() => releasePreparation(input.commandId)));
+          } else if (input.waitForPreparation === true) {
+            return yield* mapError(
+              input,
+              "run-setup-script",
+              threadId,
+            )("Workspace preparation is already running. Retry after it finishes.");
           }
         }
 

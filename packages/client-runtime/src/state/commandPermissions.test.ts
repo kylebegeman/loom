@@ -1,4 +1,8 @@
-import { FORK_CLIENT_GUARDED_RPC_SCOPES } from "@t3tools/contracts/fork";
+import { createWorkspaceHandoffAtoms } from "../fork/workspace-handoff.ts";
+import {
+  WORKSPACE_HANDOFF_WS_METHODS,
+  FORK_CLIENT_GUARDED_RPC_SCOPES,
+} from "@t3tools/contracts/fork";
 import { requestGuarded, runStreamGuarded } from "../rpc/client.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -83,6 +87,26 @@ describe("command permissions", () => {
         }
       }),
     ),
+  );
+
+  it.effect.each(["offer", "prepare", "finish", "resume"] as const)(
+    "handoff %s follows the selected host's grant",
+    (method) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const registry = yield* setup;
+          const command = createWorkspaceHandoffAtoms(runtime)[method];
+          const policy = createCommandPermissions(runtime, WORKSPACE_HANDOFF_WS_METHODS[method]);
+          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          expect(registry.get(command.permissionAtom(env))).toBe(true);
+          expect(registry.get(command.permissionAtom(other))).toBe(false);
+          registry.set(sessions(env), AsyncResult.success(grant(false)));
+          expect(registry.get(command.permissionAtom(env))).toBe(false);
+          expect((yield* policy.authorize(registry, env).pipe(Effect.flip)).requiredScope).toBe(
+            AuthOrchestrationOperateScope,
+          );
+        }),
+      ),
   );
 
   it.effect("requires the destination settings grant to run storage cleanup", () =>

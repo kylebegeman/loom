@@ -5,3 +5,7 @@ export * from "./pcb-preview.ts";
 export * from "./project-lifecycle.ts";
 export * from "./device-qa.ts";
 export * from "./code-graph.ts";
+
+export * from "./workspace-handoff.ts";
+
+export * from "./workspace-handoff-flow.ts";

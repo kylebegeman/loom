@@ -1249,20 +1249,14 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
 
     // --- Lifecycle ---------------------------------------------------------------------------
 
-    /** Reattaches lanes that detached on reboot and removes lanes nobody holds. */
+    /** Reattaches lanes after reboot, hides existing mounts and removes lanes nobody holds. */
     const reconcile = Effect.fn("ProjectLifecycle.reconcile")(function* () {
       yield* refreshShellInstalled;
       yield* reclaimFree();
       yield* mutate.withPermits(1)(
         Effect.forEach(
           [...lanes.values()],
-          (lane) =>
-            opsFor(lane)
-              .isMounted(lanePaths(lane))
-              .pipe(
-                Effect.flatMap((mounted) => (mounted ? Effect.void : attach(lane))),
-                Effect.ignore({ log: true }),
-              ),
+          (lane) => attach(lane).pipe(Effect.ignore({ log: true })),
           { discard: true },
         ),
       );

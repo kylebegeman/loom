@@ -18,6 +18,21 @@ and choose **Rescan**.
 
 ### GitHub
 
+For private repositories, run `t3 github setup` once as the user running the server. It installs
+GitHub CLI if needed, starts device sign-in when no saved authorization exists, and configures Git
+for HTTPS access. Open the displayed GitHub page and approve its code. Projects and disposable
+workspaces reuse that machine's authorization. Repeat setup if the authorization expires or is revoked.
+
+Include `--github` when installing a new host with `t3 service install` to prepare GitHub access in
+the same setup. Automation can use `t3 github setup --non-interactive` to install or repair the CLI
+and Git configuration using existing authorization; it fails clearly when browser approval is required.
+Use `t3 github status --repository https://github.com/owner/repository.git` to verify actual Git
+access without changing credentials. A sign-in alone does not prove repository permission.
+
+Each machine needs its own approval. Credentials remain in the operating user's GitHub CLI store;
+they are kept outside projects and are not transferred during handoffs. On headless hosts without
+an OS credential store, GitHub CLI uses its owner-only configuration file.
+
 T3 Code talks to GitHub's API directly and only needs a token. Any of these works, in this
 order of precedence:
 

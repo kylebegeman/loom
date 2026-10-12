@@ -57,6 +57,7 @@ describe("storage cleanup settings", () => {
       worktreeAfterDays: null,
       worktreeOnMerge: false,
       worktreeOnDelete: false,
+      worktreeOnSettle: false,
       worktreeUnchanged: false,
       worktreeKeepWhen: "uncommitted-changes",
       browserArtifactsAfterDays: null,
@@ -101,7 +102,7 @@ describe("storage cleanup settings", () => {
       },
     });
     expect(settings.worktreeCleanup).toMatchObject({
-      rules: { worktreeKeepWhen: "uncommitted-changes" },
+      rules: { worktreeKeepWhen: "uncommitted-changes", worktreeOnSettle: false },
     });
     expect(
       decodeServerSettingsPatch({ storageCleanup: { worktreeKeepWhen: "tracked-changes" } }),

@@ -240,9 +240,19 @@ function itemSummary({
     if (auth.status === "unauthenticated") {
       return (
         <span>
-          {item.label} is not authenticated on this server. Sign in or configure credentials using
-          the <code className="rounded bg-muted px-1 py-px text-2xs">{item.executable}</code> tool
-          on the server host to enable change request features.
+          {item.label} is not authenticated on this server.{" "}
+          {item.kind === "github" ? (
+            <>
+              Run <code className="rounded bg-muted px-1 py-px text-2xs">t3 github setup</code> on
+              the server host to prepare access for projects and change requests.
+            </>
+          ) : (
+            <>
+              Sign in or configure credentials using the{" "}
+              <code className="rounded bg-muted px-1 py-px text-2xs">{item.executable}</code> tool
+              on the server host to enable change request features.
+            </>
+          )}
         </span>
       );
     }

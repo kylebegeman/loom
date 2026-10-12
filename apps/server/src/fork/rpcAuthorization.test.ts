@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   ForkRpcGroup,
+  WORKSPACE_HANDOFF_WS_METHODS as H,
   MODEL_PREVIEW_3D_WS_METHODS as M,
   PCB_PREVIEW_WS_METHODS as P,
 } from "@t3tools/contracts/fork";
@@ -114,4 +115,30 @@ it.effect("PCB printing requires the terminal grant before host work or workspac
     expect(yield* auth([AuthTerminalOperateScope]).effect(P.print, work)).toBe("printed");
     expect(started).toBe(true);
   }),
+);
+
+it.effect.each(Object.values(H))(
+  "handoff %s requires its host's operate grant before work starts",
+  (method) =>
+    Effect.gen(function* () {
+      const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+        makeForkRpcAuth({
+          sessionId: AuthSessionId.make("handoff-test"),
+          subject: "test",
+          method: "bearer-access-token",
+          scopes,
+        });
+      let invoked = false;
+      const work = Effect.sync(() => {
+        invoked = true;
+        return "accepted";
+      });
+      const denied = yield* auth([AuthOrchestrationReadScope])
+        .effect(method, work)
+        .pipe(Effect.flip);
+      expect(denied.requiredScope).toBe(AuthOrchestrationOperateScope);
+      expect(invoked).toBe(false);
+      expect(yield* auth([AuthOrchestrationOperateScope]).effect(method, work)).toBe("accepted");
+      expect(invoked).toBe(true);
+    }),
 );

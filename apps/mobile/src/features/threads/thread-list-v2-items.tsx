@@ -1,3 +1,6 @@
+import { useNavigation } from "@react-navigation/native";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "../../state/entities";
 import type { ThreadRowProviderInstance } from "./thread-provider-instance";
 import {
   THREAD_LIST_V2_MONO_FONT as MONO_FONT,
@@ -645,6 +648,26 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleDelete = useCallback(() => onDeleteThread(thread), [onDeleteThread, thread]);
   const handleRename = useCallback(() => onRenameThread(thread), [onRenameThread, thread]);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
+  const navigation = useNavigation();
+  const serverConfigs = useServerConfigs();
+  const handoffSupported = supportsLoomFeature(
+    serverConfigs.get(thread.environmentId)?.environment.capabilities,
+    "workspace-handoff",
+  );
+  const handoffMenuItems = useMemo<MenuAction[]>(
+    () =>
+      handoffSupported
+        ? [
+            {
+              id: "workspace-handoff",
+              title: "Continue on another machine",
+              image: "arrow.left.arrow.right",
+              attributes: { disabled: !canOperateThread },
+            },
+          ]
+        : [],
+    [handoffSupported, canOperateThread],
+  );
   const handleRegenerateTitle = useCallback(
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
@@ -851,6 +874,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      if (nativeEvent.event === "workspace-handoff" && canOperateThread)
+        navigation.navigate("WorkspaceHandoff", {
+          environmentId: thread.environmentId,
+          threadId: thread.id,
+        });
       if (nativeEvent.event === "new-thread-on-branch") onNewThreadOnBranch(thread);
       if (nativeEvent.event === "settle") handleSettle();
       if (nativeEvent.event === "unsettle") handleUnsettle();
@@ -887,6 +915,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [
       onNewThreadOnBranch,
       thread,
+      navigation,
+      canOperateThread,
       handleArchive,
       handleDelete,
       handleRegenerateTitle,
@@ -1340,6 +1370,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
                     },
                   ]
                 : []),
+              ...handoffMenuItems,
               { id: "copy-thread-id", title: "Copy thread ID", image: "doc.on.doc" },
               ...(snoozedRow
                 ? snoozedMenuActions

@@ -119,10 +119,17 @@ export const makeSpaceOps = Effect.gen(function* () {
 
   const mount = (lane: LanePaths) =>
     Effect.gen(function* () {
-      if (yield* isMounted(lane)) return { device: yield* deviceOf(lane) };
+      if (yield* isMounted(lane)) {
+        // Upgrade visible mounts from older versions without detaching open files.
+        yield* runOk("/sbin/mount", ["-u", "-o", "nobrowse,noowners", lane.spacePath]);
+        return { device: yield* deviceOf(lane) };
+      }
       const stdout = yield* runOk("diskutil", [
         "image",
         "attach",
+        "--nobrowse",
+        "--mountOptions",
+        "noowners",
         "--mountPoint",
         lane.spacePath,
         lane.imagePath,

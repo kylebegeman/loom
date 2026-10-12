@@ -1,3 +1,4 @@
+import { makeWorkspaceHandoffRpcHandlers } from "./workspace-handoff/rpc.ts";
 import { makePcbPreviewRpcHandlers } from "./pcb-preview/rpc.ts";
 import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
 import { makeProjectLifecycleRpcHandlers } from "./project-lifecycle/rpc.ts";
@@ -29,6 +30,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
         ...(yield* withForkRuntime(makePcbPreviewRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeModelPreviewRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeProjectLifecycleRpcHandlers(auth))),
+        ...(yield* withForkRuntime(makeWorkspaceHandoffRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeAppleBuildToolingRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeDeviceQaRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeCodeGraphRpcHandlers(auth))),

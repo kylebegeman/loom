@@ -273,6 +273,7 @@ function CleanupSection() {
       rules.worktreeAfterDays !== null ||
       rules.worktreeOnMerge ||
       rules.worktreeOnDelete ||
+      rules.worktreeOnSettle ||
       rules.worktreeUnchanged;
     return (
       settings.storageCleanup.browserArtifactsAfterDays !== null ||
@@ -512,6 +513,19 @@ export function StorageSettingsPanel() {
         )}
         {(!isProjectScope || (!mixedModes && mode === "custom")) && (
           <>
+            <SettingsRow
+              title="Release settled worktrees"
+              status={ruleStatus("worktreeOnSettle")}
+              description="Release a managed worktree after every thread using it settles. Keeps unpublished commits, local files and busy workspaces. Continuing the conversation restores it and runs setup."
+              serverScoped={!isProjectScope}
+              control={
+                <Switch
+                  aria-label="Release settled worktrees"
+                  checked={settings.worktreeOnSettle}
+                  onCheckedChange={(worktreeOnSettle) => updateWorktree({ worktreeOnSettle })}
+                />
+              }
+            />
             <SettingsRow
               title="Delete worktrees with deleted threads"
               status={ruleStatus("worktreeOnDelete")}

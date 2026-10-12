@@ -1,3 +1,4 @@
+import { WORKSPACE_HANDOFF_WS_METHODS as H } from "./workspace-handoff.ts";
 import { PCB_PREVIEW_WS_METHODS as P } from "./pcb-preview.ts";
 import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "../auth.ts";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "./model-preview-3d.ts";
@@ -59,6 +60,10 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [M.pythonSetup]: AuthTerminalOperateScope,
   [M.updateSettings]: AuthOrchestrationOperateScope,
   [M.clearCache]: AuthOrchestrationOperateScope,
+  [H.offer]: AuthOrchestrationOperateScope,
+  [H.prepare]: AuthOrchestrationOperateScope,
+  [H.finish]: AuthOrchestrationOperateScope,
+  [H.resume]: AuthOrchestrationOperateScope,
   [L.updateSettings]: AuthOrchestrationOperateScope,
   [L.free]: AuthOrchestrationOperateScope,
   [L.grow]: AuthOrchestrationOperateScope,

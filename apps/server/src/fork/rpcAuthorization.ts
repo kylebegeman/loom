@@ -1,3 +1,4 @@
+import { WORKSPACE_HANDOFF_WS_METHODS as H } from "@t3tools/contracts/fork";
 import { PCB_PREVIEW_WS_METHODS as P } from "@t3tools/contracts/fork";
 import { MODEL_PREVIEW_3D_WS_METHODS as M } from "@t3tools/contracts/fork";
 import { PROJECT_LIFECYCLE_WS_METHODS as L } from "@t3tools/contracts/fork";
@@ -111,6 +112,10 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [M.updateSettings]: AuthOrchestrationOperateScope,
   [M.clearCache]: AuthOrchestrationOperateScope,
   [L.getSettings]: AuthOrchestrationReadScope,
+  [H.offer]: AuthOrchestrationOperateScope,
+  [H.prepare]: AuthOrchestrationOperateScope,
+  [H.finish]: AuthOrchestrationOperateScope,
+  [H.resume]: AuthOrchestrationOperateScope,
   [L.updateSettings]: AuthOrchestrationOperateScope,
   [L.watch]: AuthOrchestrationReadScope,
   [L.free]: AuthOrchestrationOperateScope,

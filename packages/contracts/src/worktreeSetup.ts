@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import { IsoDateTime, NonNegativeInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 /**
- * Live progress for a thread whose first turn is creating a worktree. The
+ * Live progress while a thread prepares its workspace and runs project initialization. The
  * server keeps this in memory only; a client that reconnects mid-setup gets a
  * fresh snapshot, and a finished setup is dropped once its turn starts.
  */

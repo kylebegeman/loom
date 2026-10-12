@@ -7,6 +7,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
  * remains data-driven.
  */
 export type ThreadActionMenuId =
+  | "workspace-handoff"
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
@@ -91,6 +92,7 @@ export interface ThreadActionMenuState {
   /** Archive rejects a thread with an attached provider, so disable it here rather than let the action fail. */
   readonly isRunning: boolean;
   readonly supports: {
+    readonly workspaceHandoff?: boolean;
     readonly settlement: boolean;
     /** Server understands thread.auto-settle.set. */
     readonly autoSettleOptOut: boolean;
@@ -123,6 +125,15 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   const items: ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> = [
+    ...(state.supports.workspaceHandoff
+      ? [
+          {
+            id: "workspace-handoff" as const,
+            label: "Continue on another machine…",
+            icon: "arrow-right-left",
+          },
+        ]
+      : []),
     ...(state.branch
       ? [
           {

@@ -1,3 +1,4 @@
+import { threadWorkspaceIdle } from "./queuedTurnStart.ts";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -2423,6 +2424,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           }),
       ),
     );
+    if (command.type === "thread.settle" && command.snapshotAt !== undefined) {
+      const candidate = yield* projectionStore
+        .getThreadShell(thread.id)
+        .pipe(mapDispatchError(command));
+      if (
+        candidate === null ||
+        DateTime.toEpochMillis(candidate.updatedAt) > DateTime.toEpochMillis(command.snapshotAt) ||
+        !threadWorkspaceIdle(candidate, DateTime.toEpochMillis(yield* DateTime.now))
+      ) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Thread ${command.threadId} changed or became busy before handoff settlement.`,
+        });
+      }
+    }
     if (thread.deletedAt !== null) {
       return yield* new OrchestratorDispatchError({
         commandId: command.commandId,
