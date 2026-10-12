@@ -344,6 +344,12 @@ the retired custom Loom widget needs its exact old files reviewed and backed up
 before replacement; the installer deliberately refuses unowned existing files.
 Routine updates retain that widget's placement and personal shell settings.
 
+On Omarchy builds that disable shell file watching, the verified widget update
+may still use cached components after a plugin rescan. Activate it with Omarchy's
+supported **Restart shell** action (`omarchy restart shell`) in an unlocked
+session. The pack installer does not restart the desktop or background Loom server.
+Verify the live widget's `loom.status status` response after activation.
+
 ## Capability availability
 
 `loom-os availability --json` collects the same app, private AI and workstation
