@@ -6,6 +6,9 @@ import {
   ProjectId,
   ThreadId,
   type OrchestrationV2ThreadShell,
+  type ModelSelection,
+  type RuntimeMode,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -25,6 +28,7 @@ import * as Settings from "../../serverSettings.ts";
 import * as SourceControlRepository from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectLifecycle from "../project-lifecycle/ProjectLifecycleService.ts";
 import * as Handoff from "./WorkspaceHandoffService.ts";
+import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 
 const platform = GitVcsDriver.layer.pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "handoff-test-" })),
@@ -78,7 +82,23 @@ const fixture = Effect.gen(function* () {
     projectId: ProjectId;
     worktreePath: string;
     branch: string;
+    modelSelection: ModelSelection;
+    runtimeMode: RuntimeMode;
   } | null = null;
+  let provider: ServerProvider | undefined = {
+    instanceId: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.instanceId,
+    enabled: true,
+    installed: true,
+    status: "ready",
+    auth: { status: "authenticated" },
+    models: [
+      {
+        slug: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
+        aliases: [],
+      },
+    ],
+  } as unknown as ServerProvider;
+  let providerChecks = 0;
   let setupFails = false;
   let laneData: string | null = null;
   let deliveryCount = 0;
@@ -87,6 +107,13 @@ const fixture = Effect.gen(function* () {
   const receipts = new Map<string, CommandReceiptStore.CommandReceiptV2>();
   const contextFor = (isSource: boolean) =>
     Layer.build(Handoff.layer).pipe(
+      Effect.provideService(ProviderRegistry.ProviderRegistry, {
+        refreshInstance: () =>
+          Effect.sync(() => {
+            providerChecks++;
+            return provider ? [provider] : [];
+          }),
+      } as unknown as ProviderRegistry.ProviderRegistry["Service"]),
       Effect.provideService(CommandReceiptStore.CommandReceiptStoreV2, {
         getByCommandId: (id) => Effect.succeed(Option.fromNullishOr(receipts.get(id))),
         insertIfAbsent: () => Effect.die("unused"),
@@ -171,6 +198,8 @@ const fixture = Effect.gen(function* () {
                 projectId: input.projectId,
                 branch: strategy.branch!,
                 worktreePath: worktree,
+                modelSelection: input.modelSelection,
+                runtimeMode: input.runtimeMode,
               };
             }
             if (setupFails)
@@ -229,6 +258,10 @@ const fixture = Effect.gen(function* () {
     useLane: (space: string) => {
       laneData = space;
     },
+    setProvider: (changes: Partial<ServerProvider> | null) => {
+      provider = changes === null ? undefined : { ...provider!, ...changes };
+    },
+    providerChecks: () => providerChecks,
     deliveryCount: () => deliveryCount,
     launchCount: () => launchCount,
   };
@@ -460,3 +493,125 @@ describe("destination-first workspace handoff", () => {
     ),
   );
 });
+
+it.live.each([
+  ["missing", null],
+  ["disabled", { enabled: false }],
+  ["uninstalled", { installed: false }],
+  ["unavailable", { availability: "unavailable" }],
+  ["failed", { status: "error" }],
+  ["unchecked", { status: "warning" }],
+  ["signed out", { auth: { status: "unauthenticated" } }],
+  ["unsupported runtime", { supportedRuntimeModes: [] }],
+  ["missing model", { models: [] }],
+  [
+    "model needs update",
+    {
+      updateRequiredModels: [
+        {
+          slug: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model,
+          name: "Test model",
+          minVersion: "999.0.0",
+        },
+      ],
+    },
+  ],
+] satisfies ReadonlyArray<readonly [string, Partial<ServerProvider> | null]>)(
+  "keeps the source and avoids setup when the destination provider is %s",
+  ([_label, changes]) =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const offer = yield* f.src.offer({
+          threadId: ThreadId.make("source-thread"),
+          requestId: "request-1234",
+        });
+        f.setProvider(changes);
+        expect(
+          (yield* f.dst.prepare({ offer, projectId: f.projectId }).pipe(Effect.flip)).reason,
+        ).toBe("provider-not-ready");
+        expect(f.sourceShell().settledOverride).toBeNull();
+        expect(f.launchCount()).toBe(0);
+      }),
+    ),
+);
+it.live("rechecks provider readiness for a saved preparation and recovers after sign-in", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const offer = yield* f.src.offer({
+        threadId: ThreadId.make("source-thread"),
+        requestId: "request-1234",
+      });
+      const receipt = yield* f.dst.prepare({ offer, projectId: f.projectId });
+      f.setProvider({ auth: { status: "unauthenticated" } });
+      expect(
+        (yield* f.dst.prepare({ offer, projectId: f.projectId }).pipe(Effect.flip)).reason,
+      ).toBe("provider-not-ready");
+      expect((yield* f.dst.resume({ offer, receipt }).pipe(Effect.flip)).reason).toBe(
+        "provider-not-ready",
+      );
+      expect(f.deliveryCount()).toBe(0);
+      f.setProvider({ auth: { status: "authenticated" } });
+      yield* f.dst.prepare({ offer, projectId: f.projectId });
+      yield* f.dst.resume({ offer, receipt });
+      f.setProvider(null);
+      const checks = f.providerChecks();
+      yield* f.dst.prepare({ offer, projectId: f.projectId });
+      yield* f.dst.resume({ offer, receipt });
+      expect(f.providerChecks()).toBe(checks);
+      expect(f.launchCount()).toBe(1);
+      expect(f.deliveryCount()).toBe(1);
+    }),
+  ),
+);
+it.live("rejects destination edits on preparation replay and continuation delivery", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const offer = yield* f.src.offer({
+        threadId: ThreadId.make("source-thread"),
+        requestId: "request-1234",
+      });
+      const receipt = yield* f.dst.prepare({ offer, projectId: f.projectId });
+      yield* f.fs.writeFileString(`${receipt.worktreePath}/tracked.txt`, "destination edits");
+      expect(
+        (yield* f.dst.prepare({ offer, projectId: f.projectId }).pipe(Effect.flip)).reason,
+      ).toBe("preparation-failed");
+      expect((yield* f.dst.resume({ offer, receipt }).pipe(Effect.flip)).reason).toBe(
+        "preparation-failed",
+      );
+      expect(f.deliveryCount()).toBe(0);
+      expect(f.sourceShell().settledOverride).toBeNull();
+      expect(yield* f.fs.readFileString(`${receipt.worktreePath}/tracked.txt`)).toBe(
+        "destination edits",
+      );
+    }),
+  ),
+);
+
+it.live("accepts driver-advertised model aliases and readiness without an auth probe", () =>
+  run(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const offer = yield* f.src.offer({
+        threadId: ThreadId.make("source-thread"),
+        requestId: "request-1234",
+      });
+      f.setProvider({
+        auth: { status: "unknown" },
+        models: [
+          {
+            slug: "canonical-model",
+            name: "Canonical model",
+            isCustom: false,
+            capabilities: null,
+            aliases: [DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.model],
+          },
+        ],
+      });
+      yield* f.dst.prepare({ offer, projectId: f.projectId });
+      expect(f.launchCount()).toBe(1);
+    }),
+  ),
+);

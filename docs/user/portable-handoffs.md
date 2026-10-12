@@ -52,8 +52,9 @@ Stop the source thread and its background work, commit local changes, and publis
 before starting.
 
 Loom prepares a separate destination workspace at the published commit and waits for workspace
-setup to succeed. It then starts a linked conversation with the original request and recent
-conversation context. The original conversation, attachments, provider session, and checkpoints
+setup to succeed. It checks the destination provider, model, and runtime before settling the source,
+including when retrying a saved preparation. It then starts a linked conversation with the original
+request and recent conversation context. The original conversation, attachments, provider session, and checkpoints
 stay on the source host. The destination uses that host's project model and runtime settings.
 
 If preparation fails, the source remains available. Retry the saved handoff to reuse completed

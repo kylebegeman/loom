@@ -1,5 +1,7 @@
 import {
   CommandId,
+  isProviderAvailable,
+  type ModelSelection,
   MessageId,
   ThreadId,
   type ProjectId,
@@ -35,6 +37,7 @@ import * as ThreadLaunch from "../../orchestration-v2/ThreadLaunchService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerEnvironment from "../../environment/ServerEnvironment.ts";
 import * as Settings from "../../serverSettings.ts";
+import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as SourceControlRepository from "../../sourceControl/SourceControlRepositoryService.ts";
 import * as ProjectLifecycle from "../project-lifecycle/ProjectLifecycleService.ts";
@@ -72,6 +75,7 @@ const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const environment = yield* ServerEnvironment.ServerEnvironment;
   const settings = yield* Settings.ServerSettingsService;
+  const providers = yield* ProviderRegistry.ProviderRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const clones = yield* SourceControlRepository.SourceControlRepositoryService;
   const lanes = yield* ProjectLifecycle.ProjectLifecycleService;
@@ -97,6 +101,52 @@ const make = Effect.gen(function* () {
         isHandoffError(cause) ? cause : new WorkspaceHandoffError({ reason, cause }),
       ),
     );
+  const assertProviderReady = Effect.fn("WorkspaceHandoff.assertProviderReady")(function* (
+    selection: ModelSelection,
+    runtimeMode: RuntimeMode,
+  ) {
+    const snapshots = yield* providers.refreshInstance(selection.instanceId);
+    const provider = snapshots.find((snapshot) => snapshot.instanceId === selection.instanceId);
+    if (
+      !provider ||
+      !isProviderAvailable(provider) ||
+      !provider.enabled ||
+      !provider.installed ||
+      provider.status !== "ready" ||
+      provider.auth.status === "unauthenticated" ||
+      !provider.models.some(
+        (model) => model.slug === selection.model || model.aliases?.includes(selection.model),
+      ) ||
+      provider.updateRequiredModels?.some((model) => model.slug === selection.model) ||
+      (provider.supportedRuntimeModes !== undefined &&
+        !provider.supportedRuntimeModes.includes(runtimeMode))
+    )
+      return yield* fail("provider-not-ready");
+  });
+  const assertWorkspaceReady = Effect.fn("WorkspaceHandoff.assertWorkspaceReady")(function* (
+    cwd: string,
+    offer: WorkspaceHandoffOffer,
+    branch: string,
+  ) {
+    if (!(yield* fs.exists(cwd))) return yield* fail("preparation-failed");
+    const head = yield* git.resolveCommit({ cwd, revision: "HEAD" });
+    const status = yield* git.statusDetailsLocal(cwd);
+    const changes = yield* command(cwd, [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--ignore-submodules=none",
+    ]);
+    if (
+      head.commitSha !== offer.headSha ||
+      status.branch !== branch ||
+      changes.exitCode !== 0 ||
+      changes.stdout !== "" ||
+      changes.stdoutTruncated
+    )
+      return yield* fail("preparation-failed");
+  });
   const projectFor = (id: ProjectId) =>
     projects
       .getById(id)
@@ -293,12 +343,8 @@ const make = Effect.gen(function* () {
       if (!current.messages.some((message) => message.id === messageIdFor(offer))) {
         if (current.thread.archivedAt != null || current.thread.deletedAt != null)
           return yield* fail("unavailable");
-        if (
-          !(yield* fs.exists(worktreePath)) ||
-          (yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" })).commitSha !==
-            offer.headSha
-        )
-          return yield* fail("preparation-failed");
+        yield* assertWorkspaceReady(worktreePath, offer, branch);
+        yield* assertProviderReady(current.thread.modelSelection, current.thread.runtimeMode);
       }
       return {
         requestId: offer.requestId,
@@ -311,6 +357,10 @@ const make = Effect.gen(function* () {
         headSha: offer.headSha,
       } satisfies WorkspaceHandoffReceipt;
     }
+    const resolved = resolveProjectSettings(yield* settings.getSettings, project.id).settings;
+    const modelSelection = resolved.defaultModelSelection ?? resolved.textGenerationModelSelection;
+    const runtimeMode = input.runtimeMode ?? resolved.defaultRuntimeMode;
+    yield* assertProviderReady(modelSelection, runtimeMode);
     if (
       !(yield* fs.exists(project.workspaceRoot)) ||
       (yield* fs.readDirectory(project.workspaceRoot)).length === 0
@@ -334,14 +384,13 @@ const make = Effect.gen(function* () {
       `refs/remotes/origin/${offer.upstreamBranch}`,
     ]);
     if (published.exitCode !== 0) return yield* fail("unpublished");
-    const resolved = resolveProjectSettings(yield* settings.getSettings, project.id).settings;
     const launch = yield* launches.launch({
       commandId: CommandId.make(`handoff:${offer.requestId}:${offer.stateKey}:prepare`),
       threadId,
       projectId: project.id,
       title: offer.title,
-      modelSelection: resolved.defaultModelSelection ?? resolved.textGenerationModelSelection,
-      runtimeMode: input.runtimeMode ?? resolved.defaultRuntimeMode,
+      modelSelection,
+      runtimeMode,
       interactionMode: input.interactionMode ?? "default",
       createdBy: "user",
       creationSource: "web",
@@ -369,6 +418,8 @@ const make = Effect.gen(function* () {
       branch,
     ]);
     if (tracking.exitCode !== 0) return yield* fail("preparation-failed");
+    yield* assertWorkspaceReady(worktreePath, offer, branch);
+    yield* assertProviderReady(prepared.thread.modelSelection, prepared.thread.runtimeMode);
     yield* threads.dispatch({
       type: "thread.metadata.update",
       commandId: readyCommandId(offer),
@@ -480,8 +531,8 @@ const make = Effect.gen(function* () {
     if (current.messages.some((message) => message.id === messageId)) return input.receipt;
     if (current.thread.archivedAt != null || current.thread.deletedAt != null)
       return yield* fail("unavailable");
-    const head = yield* git.resolveCommit({ cwd: input.receipt.worktreePath, revision: "HEAD" });
-    if (head.commitSha !== input.offer.headSha) return yield* fail("source-changed");
+    yield* assertWorkspaceReady(input.receipt.worktreePath, input.offer, input.receipt.branch);
+    yield* assertProviderReady(current.thread.modelSelection, current.thread.runtimeMode);
     yield* threads.sendToThread({
       projectId: input.receipt.projectId,
       threadId: input.receipt.threadId,

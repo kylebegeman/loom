@@ -67,6 +67,8 @@ const messages = {
   "invalid-receipt": "The destination does not match this handoff. The source was kept.",
   "preparation-failed":
     "Destination preparation failed. The original conversation is preserved. Check workspace setup and retry.",
+  "provider-not-ready":
+    "The destination provider is not ready for this model and runtime. Open Providers settings on that host, check installation and sign-in, then retry. The original conversation is preserved.",
   unavailable: "The project or published repository is unavailable on this host.",
 } as const;
 export class WorkspaceHandoffError extends Schema.TaggedError<WorkspaceHandoffError>()(

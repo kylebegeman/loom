@@ -132,3 +132,25 @@ it("persists destination readiness before source settlement", async () => {
   ).rejects.toThrow("storage unavailable");
   expect(settled).toBe(false);
 });
+
+it("revalidates a saved destination before source settlement", async () => {
+  let settled = false;
+  await expect(
+    runWorkspaceHandoff({
+      attempt: { ...empty, offer, receipt },
+      offer: async () => {
+        throw new Error("repeated offer");
+      },
+      prepare: async () => {
+        throw new Error("destination no longer ready");
+      },
+      finish: async () => {
+        settled = true;
+        return { sourceSettled: true, reason: "settled" };
+      },
+      resume: async () => receipt,
+      progress: () => {},
+    }),
+  ).rejects.toThrow("destination no longer ready");
+  expect(settled).toBe(false);
+});

@@ -34,7 +34,12 @@ export async function runWorkspaceHandoff(input: {
   const offer = attempt.offer ?? (await input.offer());
   attempt = { ...attempt, offer };
   await input.progress("preparing", attempt);
-  const receipt = attempt.receipt ?? (await input.prepare(offer));
+  // A saved receipt proves past readiness, not that the destination is still usable.
+  // Once source finish is accepted, delivery validates its own workspace instead.
+  const receipt =
+    attempt.sourceResult !== null && attempt.receipt !== null
+      ? attempt.receipt
+      : await input.prepare(offer);
   attempt = { ...attempt, receipt };
   await input.progress("settling", attempt);
   const sourceResult = attempt.sourceResult ?? (await input.finish(offer, receipt));

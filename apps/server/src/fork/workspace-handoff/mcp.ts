@@ -33,7 +33,7 @@ export const WorkspaceHandoffToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_workspace_handoff_prepare", {
     description:
-      "On the destination host, prepare the offer in an existing project of the same repository. Clones an absent checkout, creates a managed worktree at the exact published commit and waits for workspace setup. Returns a receipt; does not settle the source or start the agent. Reuse the request ID when retrying.",
+      "On the destination host, prepare the offer in an existing project of the same repository. Clones an absent checkout, creates a managed worktree at the exact published commit and waits for workspace setup. Checks the selected provider, model and runtime before returning a receipt; does not settle the source or start the agent. Reuse the request ID when retrying and prepare again before settling the source to recheck readiness.",
     parameters: WorkspaceHandoffPrepareInput,
     success: WorkspaceHandoffReceipt,
     failure,
