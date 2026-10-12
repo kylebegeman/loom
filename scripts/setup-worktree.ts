@@ -43,11 +43,12 @@ if (!process.argv.includes("--force-install") && workspaceInstallationReady(work
   );
   const install = NodeChildProcess.spawnSync(
     NodeFS.existsSync(localVp) ? localVp : "vp",
-    ["install", "--frozen-lockfile", "--prefer-offline"],
+    ["i", "--", "--yes", "--frozen-lockfile", "--prefer-offline"],
     {
       cwd: worktree,
       shell: process.platform === "win32",
-      stdio: "inherit",
+      // Setup has no one answering prompts. Confirm dependency relinking and close stdin.
+      stdio: ["ignore", "inherit", "inherit"],
     },
   );
   if (install.status !== 0) process.exit(install.status ?? 1);
