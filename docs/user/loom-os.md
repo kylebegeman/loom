@@ -80,6 +80,26 @@ Office capture supports 200 characters of title, 4,000 of text and 2,048 of link
 It asks you to review the content before saving and preserves the intent through
 login. It does not fetch the supplied link.
 
+## Set up connections
+
+Open **Loom connections** from the app launcher or choose **LoomOS → AI and
+connections → Set up connections**. The same flow is available in Loom actions
+and Connection status. It checks existing Office/Atlas CLI access, Tailscale and
+the private Switchboard gateway before offering the next incomplete step.
+Closing and reopening setup keeps completed connections. An expired or cancelled
+approval can be retried without signing in to the other apps again.
+
+App-window sign-in stays in each app; setup does not read browser credentials.
+**Open access settings** manages grants in the owning app. **Disconnect CLI
+access** asks before removing local CLI sign-in and saved search keys. If the
+server cannot be reached, review those settings after reconnecting to confirm
+revocation. Browser sessions and app data are kept.
+
+For shared AI, unlock the desktop secret store and check again before importing
+a missing client key. Setup can restore the machine's commissioned gateway and
+accept its personal client key through a masked prompt. Provider accounts stay
+on Switchboard's hub. Ordinary setup requires no typed commands or scripts.
+
 ## Search and authenticate
 
 If the app's portable CLI is configured, choose **AI and connections → Connect

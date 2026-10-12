@@ -817,7 +817,11 @@ export async function installationPlan(
     content: await NodeFSP.readFile(NodePath.join(packDir, "health.mjs"), "utf8"),
     mode: 0o644,
   });
-  for (const action of ["shortcuts", "readability", "compatibility", "app-integration"]) {
+  writes.set(NodePath.join(p.root, "connections.mjs"), {
+    content: await NodeFSP.readFile(NodePath.join(packDir, "connections.mjs"), "utf8"),
+    mode: 0o644,
+  });
+  for (const action of ["shortcuts", "readability", "compatibility", "app-integration", "setup"]) {
     writes.set(NodePath.join(p.root, action + "-terminal"), {
       content: `#!/bin/bash\nprintf '\\033]0;Loom ${action}\\007'\n${shellQuote(p.bin)} ${action} ${["compatibility", "app-integration"].includes(action) ? "--human" : "--inline"}\nstatus=$?\n${["compatibility", "app-integration"].includes(action) ? "printf '\\nPress Enter to close. '; read -r _\n" : ""}exit "$status"\n`,
       mode: 0o755,
@@ -829,6 +833,10 @@ export async function installationPlan(
   });
   writes.set(NodePath.join(p.data, "applications/loom-os-actions.desktop"), {
     content: `[Desktop Entry]\nType=Application\nName=Loom actions\nComment=Find apps, save notes, AI and connection tools\nExec=${desktopArg(p.bin)} actions\nIcon=system-search\nTerminal=false\nCategories=Utility;\n`,
+    mode: 0o644,
+  });
+  writes.set(NodePath.join(p.data, "applications/loom-os-setup.desktop"), {
+    content: `[Desktop Entry]\nType=Application\nName=Loom connections\nComment=Resume app access, private network and shared AI setup\nExec=${desktopArg(p.bin)} setup\nIcon=network-workgroup\nTerminal=false\nCategories=Utility;\n`,
     mode: 0o644,
   });
   writes.set(NodePath.join(p.root, "doctor-terminal"), {
@@ -843,9 +851,10 @@ while true; do
   if ! command -v gum >/dev/null 2>&1; then
     printf '\nPress Enter to close. '; read -r _; exit 0
   fi
-  choice=$(gum choose --header 'Loom connections' 'Check again' 'Open Tailscale' 'Open Switchboard' 'Loom service status' 'Close') || exit 0
+  choice=$(gum choose --header 'Loom connections' 'Check again' 'Set up connections' 'Open Tailscale' 'Open Switchboard' 'Loom service status' 'Close') || exit 0
   case "$choice" in
     'Check again') ;;
+    'Set up connections') ${shellQuote(p.bin)} setup --inline ;;
     'Open Tailscale') omarchy-shell omarchy.tailscale open || printf '%s\n' 'Open Tailscale from the system bar.' ;;
     'Open Switchboard') ${shellQuote(p.bin)} open switchboard ;;
     'Loom service status') ${shellQuote(p.bin)} service status ;;
@@ -967,6 +976,7 @@ done
     };
     entries["about"] = { icon: "", label: "About LoomOS", action: "omarchy-launch-about" };
     entries["loomos.connections"] = { label: "AI and connections" };
+    entries["loomos.connections.setup"] = { label: "Set up connections", action: command("setup") };
     entries["loomos.connections.status"] = {
       label: "Connection status",
       action: command("connections --terminal"),
@@ -2159,7 +2169,7 @@ async function readSearch(spec) {
     );
   });
 }
-async function finderChoice(args, env) {
+export async function finderChoice(args, env) {
   return new Promise((resolve, reject) => {
     const child = NodeChildProcess.spawn("gum", args, {
       env,
@@ -2462,6 +2472,12 @@ export function loomActionCatalog(config, context = {}) {
     "Super+Shift+A",
   );
   add(
+    "setup",
+    "Set up connections",
+    "Resume app access, Tailscale and private Switchboard AI setup",
+    ["setup"],
+  );
+  add(
     "connections",
     "Connection status",
     "Check apps, private network and AI; recover connections",
@@ -2703,7 +2719,7 @@ export async function nativeActions(config, env, query = "", dependencies = {}) 
 function searchSecretArgs(app, origin) {
   return ["application", "loom-os-search", "app", app, "origin", origin];
 }
-async function searchSecret(operation, app, origin, env, key) {
+export async function searchSecret(operation, app, origin, env, key) {
   return new Promise((resolve, reject) => {
     const child = NodeChildProcess.spawn(
       "secret-tool",
@@ -3100,7 +3116,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3319,6 +3335,25 @@ export async function main(args = process.argv.slice(2), env = process.env) {
           "--query",
           query,
         ],
+        { env },
+      );
+    return;
+  }
+  if (action === "setup") {
+    if (rest.length > 1 || (rest.length && !["--inline", "--json", "--human"].includes(rest[0])))
+      throw Error("Usage: loom-os setup [--json|--human]");
+    const setup = await import("./connections.mjs");
+    if (rest[0] === "--inline") {
+      if (!process.stdin.isTTY) throw Error("Connection setup needs an interactive terminal.");
+      await setup.nativeGuidedConnections(config, env);
+    } else if (["--json", "--human"].includes(rest[0])) {
+      const report = await setup.guidedConnectionReport(config, env);
+      if (rest[0] === "--human") console.log(setup.formatGuidedConnections(report));
+      else print(report);
+    } else
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-setup", NodePath.join(p.root, "setup-terminal")],
         { env },
       );
     return;

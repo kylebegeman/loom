@@ -312,6 +312,22 @@ skin's printed `loom-branding.sh` only when publishing changed protected assets.
 Loom desktop/server and Switchboard artifacts retain their existing release
 workflows; the pack does not silently upgrade their runtimes.
 
+## Guided connections
+
+**Loom connections** in the launcher and **AI and connections → Set up connections**
+open one native flow for existing app CLI authorizations, Tailscale and Switchboard.
+`loom-os setup --human` or `--json` performs the same bounded checks without opening
+setup. Reopening discovers current owner sessions, so no progress file contains
+credentials and completed approvals are not repeated. App-window sessions remain
+inside Office and Atlas. Confirmed CLI disconnect delegates revocation to the app's
+client and removes only that app/origin's saved search key; offline revocation must
+be confirmed in the owning app after reconnecting.
+
+The shared AI step can restore the configured gateway and import a personal client
+key through masked input and stdin to Switchboard. Unlock/retry is offered first for
+an unavailable secret store. No provider sign-in, inference or service restart is
+part of this flow.
+
 ## Native connection status
 
 The pack owns the `loom.status` plugin under the user's Omarchy plugin directory.
