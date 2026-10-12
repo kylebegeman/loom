@@ -154,7 +154,12 @@ export async function nativeGuidedConnections(config, env, dependencies = {}) {
   const show = dependencies.show ?? console.log;
   const choose =
     dependencies.choose ??
-    ((header, choices) => finderChoice(["choose", "--header", header, "--", ...choices], env));
+    (async (header, choices) => {
+      const selection = await finderChoice(["choose", "--header", header, "--", ...choices], env);
+      // Gum headers of different heights otherwise leave fragments of previous screens.
+      if (process.stdout.isTTY) process.stdout.write("\u001b[2J\u001b[H");
+      return selection;
+    });
   const report = dependencies.report ?? (() => guidedConnectionReport(config, env));
   const command = dependencies.command ?? connectionCommand;
   const dispatch = dependencies.dispatch ?? ((args) => main(args, env));
