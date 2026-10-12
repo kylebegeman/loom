@@ -9,13 +9,13 @@ import { runSeedDevDb } from "../apps/server/scripts/seed-dev-db.ts";
 
 const extraArgs = process.argv.slice(2);
 const help = extraArgs.includes("--help") || extraArgs.includes("-h");
-const explicitHome =
-  NodeUtil.parseArgs({
-    args: extraArgs,
-    strict: false,
-    allowPositionals: true,
-    options: { "home-dir": { type: "string" } },
-  }).values["home-dir"]?.trim() || undefined;
+const parsedHome = NodeUtil.parseArgs({
+  args: extraArgs,
+  strict: false,
+  allowPositionals: true,
+  options: { "home-dir": { type: "string" } },
+}).values["home-dir"];
+const explicitHome = typeof parsedHome === "string" ? parsedHome.trim() || undefined : undefined;
 const result = help
   ? null
   : await Effect.runPromise(

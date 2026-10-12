@@ -21,7 +21,6 @@ import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import * as NetService from "@t3tools/shared/Net";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { windowsSystemTar } from "./build-cli-archive.ts";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
@@ -66,7 +65,7 @@ const runExecutable = Effect.fn("runExecutable")(function* (
   return { stdout, stderr, exitCode };
 });
 
-const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
+export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   readonly archive: string;
   readonly expectVersion: string;
 }) {
@@ -129,8 +128,8 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   // and search stacks (node-pty, fff, msgpackr-extract), and serves the
   // client, so probe a real `serve` in a scratch home rather than a
   // command that only reads package metadata.
-  const net = yield* NetService.NetService;
-  const port = yield* net.findAvailablePort(47700);
+  // Bind once through the kernel; probing and releasing a port races other smoke runs.
+  let port = 0;
   const home = path.join(scratch, "home");
   const server = yield* spawner.spawn(
     ChildProcess.make(
@@ -156,8 +155,27 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   const httpClient = yield* HttpClient.HttpClient;
   // A request that connects while the server is still initializing can hang,
   // so each probe gets its own deadline, like the SSH readiness probe.
-  const probe = httpClient.execute(HttpClientRequest.get(`http://127.0.0.1:${String(port)}/`)).pipe(
-    Effect.map((response) => response.status === 200),
+  const serverRuntimeStatePath = path.join(home, "userdata", "server-runtime.json");
+  const decodeRuntime = Schema.decodeUnknownEffect(
+    Schema.fromJsonString(
+      Schema.Struct({
+        pid: Schema.Int,
+        port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
+      }),
+    ),
+  );
+  const probe = Effect.gen(function* () {
+    const state = yield* fs
+      .readFileString(serverRuntimeStatePath)
+      .pipe(Effect.flatMap(decodeRuntime));
+    if (state.pid !== Number(server.pid)) return false;
+    port = state.port;
+    const response = yield* httpClient.execute(
+      HttpClientRequest.get(`http://127.0.0.1:${String(port)}/`),
+    );
+    return response;
+  }).pipe(
+    Effect.map((response) => response !== false && response.status === 200),
     Effect.timeout(Duration.seconds(2)),
     Effect.orElseSucceed(() => false),
   );
@@ -201,7 +219,6 @@ if (import.meta.main) {
       Layer.mergeAll(
         Logger.layer([Logger.consolePretty()]),
         NodeServices.layer,
-        NetService.layer,
         FetchHttpClient.layer,
       ),
     ),

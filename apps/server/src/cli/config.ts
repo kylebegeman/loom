@@ -31,8 +31,10 @@ const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.optional,
 );
 const portFlag = Flag.Int("port").pipe(
-  Flag.withSchema(PortSchema),
-  Flag.withDescription("Port for the HTTP/WebSocket server."),
+  Flag.withSchema(Schema.Union([Schema.Literal(0), PortSchema])),
+  Flag.withDescription(
+    "Port for the HTTP/WebSocket server. Use 0 for an automatically assigned port.",
+  ),
   Flag.optional,
 );
 const hostFlag = Flag.String("host").pipe(
