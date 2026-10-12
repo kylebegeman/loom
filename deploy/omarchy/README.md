@@ -97,7 +97,7 @@ isolated GPT client policies and server-side AI configuration.
 ## Shared app capabilities
 
 Office and Atlas expose anonymous, build-only metadata at `GET /.well-known/loom-app`.
-Protocol `loom-app-integration` 1.0 describes launch, search, capture, links, notifications,
+Protocol `loom-app-integration` 1.1 describes launch, search, capture, links, notifications,
 availability and bounded offline support. Authenticated `office.integration.describe` and
 `atlas.integration.describe` expose the same metadata through each app's existing registry.
 Actual operations keep their existing scope, account, source, revision and approval checks.
@@ -110,8 +110,12 @@ authorization, redirect, malformed and incompatible responses never select that 
 Ordinary app opening remains available without discovery, including offline reading in
 an already-used Office browser profile. Atlas exposes no durable offline client support yet.
 
-Exact-item OS handoff, unified notifications and live device availability are declared
-unavailable. Later packets can add those capabilities through the same app-owned boundary.
+Exact-item handoff uses each app's declared read-only item resolver and validated
+same-origin route. A temporary native launch asks the existing same-profile window to
+navigate; writing and open editors defer that navigation for explicit review. Uncertain
+delivery never cold-launches a second workspace. Linux closes only its own nonce-labelled
+stateless handoff window if the browser refuses to close it. Older app releases retain
+in-app search guidance. Unified notifications and live device availability remain unavailable.
 
 Check real producer interoperability from a Mac with Go and the app checkouts:
 
@@ -120,7 +124,8 @@ node deploy/omarchy/verify-app-integration.mjs /absolute/office /absolute/atlas
 ```
 
 The command runs isolated metadata/permission tests in both products and checks their
-actual JSON outputs against the adapter and installed search/capture dispatch on loopback.
+actual JSON outputs against the adapter and installed search/capture/exact-item dispatch
+on loopback.
 It uses synthetic executables and no personal records, browser session, inference or database.
 
 ## Native OS AI

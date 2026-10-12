@@ -1309,6 +1309,7 @@ export async function focusExistingApp(app, config, env = process.env, query) {
   const client = clients.find(
     (c) =>
       c.mapped !== false &&
+      !/^Loom handoff [0-9a-f-]{36}:/.test(c.title ?? "") &&
       (c.class === identity || c.initialClass === identity) &&
       /^0x[0-9a-f]+$/i.test(c.address),
   );
@@ -1503,6 +1504,25 @@ export function validateAppIntegration(value, app) {
         normalized.supported = false;
         normalized.reason =
           "This search format needs a newer LoomOS adapter. Open search inside the app.";
+      }
+    }
+    if (cap.supported && id === "links") {
+      if (
+        !cap.operation ||
+        cap.operation.effect !== "read" ||
+        cap.operation.mutation !== "read-only" ||
+        cap.operation.approval !== "none"
+      )
+        throw Error("Invalid read-only app links capability.");
+      if (
+        cap.format !== `${app}-item-links-v1` ||
+        cap.operation.id !== `${app}.items.resolve` ||
+        cap.path !== "/app/" ||
+        cap.handoff !== "loom-item-handoff-v1"
+      ) {
+        normalized.supported = false;
+        normalized.reason =
+          "This item-link format needs a newer LoomOS adapter. Open the item inside the app.";
       }
     }
     if (cap.supported && id === "capture") {
@@ -1750,6 +1770,214 @@ export async function integratedCaptureCommand(
   };
 }
 
+const officeItemKinds = new Set([
+  "thread",
+  "message",
+  "draft",
+  "conversation",
+  "reminder",
+  "reminder-list",
+  "event",
+  "calendar",
+  "person",
+  "bill",
+  "note",
+  "notebook",
+]);
+export function itemReference(app, value) {
+  if (!value || !integrationText(value.id, 150) || Buffer.byteLength(value.id) > 150)
+    throw Error("The selected item has no valid saved identity. Search again.");
+  if (app === "office") {
+    if (
+      !officeItemKinds.has(value.kind) ||
+      (value.recurrenceDate &&
+        (value.kind !== "event" || !/^\d{4}-\d{2}-\d{2}$/.test(value.recurrenceDate)))
+    )
+      throw Error("The selected Office item reference is invalid.");
+    return {
+      kind: value.kind,
+      id: value.id,
+      ...(value.recurrenceDate ? { recurrenceDate: value.recurrenceDate } : {}),
+    };
+  }
+  if (
+    app !== "atlas" ||
+    !["source", "output", "draft", "opportunity"].includes(value.kind) ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 1 ||
+    (value.kind === "source"
+      ? !integrationText(value.versionId, 150) || Buffer.byteLength(value.versionId) > 150
+      : Boolean(value.versionId))
+  )
+    throw Error("The selected Atlas item reference is invalid.");
+  return {
+    kind: value.kind,
+    id: value.id,
+    revision: value.revision,
+    versionId: value.versionId || "",
+  };
+}
+export function itemDestination(app, path, selected, origin) {
+  const ref = itemReference(app, selected);
+  if (
+    !integrationText(path, 1600) ||
+    !path.startsWith("/app/?") ||
+    path.includes("#") ||
+    path.includes("\\")
+  )
+    throw Error("The app returned an invalid item destination.");
+  const url = new URL(path, origin);
+  const allowed =
+    app === "office"
+      ? ["view", "panel", "item", "id", "occurrence"]
+      : ["item", "id", "revision", "version"];
+  if (
+    url.origin !== new URL(origin).origin ||
+    url.pathname !== "/app/" ||
+    url.username ||
+    url.password ||
+    [...url.searchParams.keys()].some(
+      (key) => !allowed.includes(key) || url.searchParams.getAll(key).length !== 1,
+    )
+  )
+    throw Error("The app returned an invalid item destination.");
+  const found = itemReference(app, {
+    kind: url.searchParams.get("item"),
+    id: url.searchParams.get("id"),
+    ...(app === "office"
+      ? { recurrenceDate: url.searchParams.get("occurrence") || "" }
+      : {
+          revision: Number(url.searchParams.get("revision")),
+          versionId: url.searchParams.get("version") || "",
+        }),
+  });
+  if (JSON.stringify(found) !== JSON.stringify(ref))
+    throw Error("The app destination does not match the selected item.");
+  return url;
+}
+export async function resolveExactItem(
+  app,
+  selected,
+  config,
+  env = process.env,
+  dependencies = {},
+) {
+  const reference = itemReference(app, selected);
+  if (!config[`${app}Cli`] || !config[`${app}Url`])
+    throw Error("Configure the app CLI and origin first.");
+  const report = await (dependencies.discover ?? discoverAppIntegration)(app, config);
+  if (report.state !== "available")
+    throw Error(
+      report.state === "legacy"
+        ? "This app release does not support exact item opening. Update the app or use its own search."
+        : report.detail,
+    );
+  const cap = report.manifest.capabilities.links;
+  if (!cap.supported) throw Error(cap.reason);
+  const spec = {
+    command: config[`${app}Cli`],
+    args: [
+      ...cap.operation.command,
+      ...(app === "office"
+        ? ["--references", JSON.stringify(reference), "--header-only=true"]
+        : ["--reference", JSON.stringify(reference)]),
+      "--json",
+    ],
+    env: { ...env, API_URL: config[`${app}Url`] },
+    itemResolution: true,
+  };
+  const value = await (dependencies.resolve ?? readSearch)(spec);
+  let destination = value;
+  if (app === "office") {
+    if (!Array.isArray(value?.items) || value.items.length > 1)
+      throw Error("The app returned an invalid item resolution.");
+    destination = value.items[0];
+    if (!destination || destination.status !== "live")
+      throw Error(
+        "This item was deleted or is outside your access. Search again or check Recently deleted in Office.",
+      );
+  }
+  const returned = itemReference(app, destination?.reference);
+  // Office resolves merged people to their current surviving identity.
+  if (
+    JSON.stringify(returned) !== JSON.stringify(reference) &&
+    !(app === "office" && reference.kind === "person" && returned.kind === "person")
+  )
+    throw Error("The app resolved a different saved item. Search again.");
+  return itemDestination(
+    app,
+    app === "office" ? destination.canonicalURL : destination.path,
+    returned,
+    config[`${app}Url`],
+  );
+}
+export async function launchExactItem(
+  app,
+  destination,
+  config,
+  env = process.env,
+  dependencies = {},
+) {
+  const reused = await (dependencies.focus ?? focusExistingApp)(app, config, env);
+  const nonce = NodeCrypto.randomUUID();
+  const target = new URL(destination);
+  target.searchParams.set("loomHandoff", nonce);
+  if (reused) target.searchParams.set("loomReuse", "1");
+  const spec = appCommand(app, config, env, target.href);
+  await (
+    dependencies.launch ??
+    ((spec) => run(spec.command, spec.args, { env: spec.env, detached: true }))
+  )(spec);
+  if (!dependencies.query && !env.HYPRLAND_INSTANCE_SIGNATURE)
+    return { state: "launched", target: target.href };
+  const query = dependencies.query ?? ((args) => queryHyprland(args, env));
+  const url = new URL(`${config[`${app}Url`]}/app/`);
+  const identity = `chrome-${url.host.replaceAll(":", "_")}_${url.pathname.replaceAll("/", "_")}-Default`;
+  const pause = dependencies.pause ?? (() => new Promise((resolve) => setTimeout(resolve, 100)));
+  // Close only our nonce-labelled stateless handoff, never a login or business window.
+  for (let attempt = 0; attempt < 80; attempt++) {
+    const clients = JSON.parse((await query(["clients", "-j"])).stdout);
+    if (!Array.isArray(clients)) throw Error("Cannot inspect app handoff windows.");
+    const client = clients.find(
+      (c) =>
+        (c.class === identity || c.initialClass === identity) &&
+        /^0x[0-9a-f]+$/i.test(c.address) &&
+        ["complete", "unavailable"].some((state) => c.title === `Loom handoff ${nonce}: ${state}`),
+    );
+    if (client) {
+      const address = `address:${client.address}`;
+      let closed = false;
+      for (const args of [
+        ["eval", `hl.dispatch(hl.dsp.close({window="${address}"}))`],
+        ["dispatch", "closewindow", address],
+      ]) {
+        try {
+          if ((await query(args)).stdout.trim() === "ok") {
+            closed = true;
+            break;
+          }
+        } catch {
+          /* Legacy dispatcher. */
+        }
+      }
+      if (!closed) throw Error("The item handoff finished. Close its temporary window manually.");
+      if (client.title.endsWith(": unavailable"))
+        throw Error(
+          "The existing app could not accept this item. Save your work, update or reopen it, then search again.",
+        );
+      await (dependencies.focus ?? focusExistingApp)(app, config, env);
+      return { state: "handed-off", target: target.href };
+    }
+    await pause();
+  }
+  // A sign-in window or cold launch retains the destination and remains under user control.
+  return { state: "launched", target: target.href };
+}
+export async function openExactItem(app, reference, config, env = process.env, dependencies = {}) {
+  const destination = await resolveExactItem(app, reference, config, env, dependencies);
+  return launchExactItem(app, destination, config, env, dependencies);
+}
+
 export function integrationSearchResults(app, page, format) {
   if (format !== "atlas-workspace-search-v1") return finderResults(app, page);
   if (
@@ -1780,12 +2008,12 @@ export function integrationSearchResults(app, page, format) {
         label: `${index + 1}. ${title} (${item.kind})`,
         title,
         text: terminalText(item.snippet),
-        reference: {
+        reference: itemReference(app, {
           kind: item.kind,
           id: item.id,
           revision: item.revision,
           versionId: item.versionId,
-        },
+        }),
       };
     }),
   };
@@ -1852,7 +2080,12 @@ export function finderResults(app, page) {
           ]
             .filter(Boolean)
             .join(" · ");
-    return { label: `${index + 1}. ${title}${kind ? ` (${kind})` : ""}`, title, text };
+    return {
+      label: `${index + 1}. ${title}${kind ? ` (${kind})` : ""}`,
+      title,
+      text,
+      ...(app === "office" ? { reference: itemReference(app, item.reference) } : {}),
+    };
   });
   return {
     results,
@@ -1876,7 +2109,9 @@ async function readSearch(spec) {
         if (error)
           return reject(
             new Error(
-              "Search could not reach the app or its CLI session. Check connections or sign in to the CLI.",
+              spec.itemResolution
+                ? "The item could not be resolved. It may be unavailable or outside your CLI access. Search again or connect the app CLI."
+                : "Search could not reach the app or its CLI session. Check connections or sign in to the CLI.",
             ),
           );
         try {
@@ -1948,6 +2183,8 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
   const copy = dependencies.copy ?? ((text) => copyFinderText(text, env));
   const show = dependencies.show ?? console.log;
   const open = dependencies.open ?? ((app) => main(["open", app], env));
+  const openItem =
+    dependencies.openItem ?? ((app, reference) => openExactItem(app, reference, config, env));
   const login = dependencies.login ?? ((app) => main(["connect", app, "--inline"], env));
   const apps = ["office", "atlas"].filter((app) => config[`${app}Cli`] && config[`${app}Url`]);
   if (!apps.length || (initialApp && !apps.includes(initialApp)))
@@ -2020,9 +2257,12 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
       if (!result) return;
       show(`${result.title}\n${result.text || "No excerpt available."}`);
       show(
-        "Open the item using search inside the app. Opening the app focuses its existing window.",
+        result.reference
+          ? "Open the exact selected item in its app."
+          : "This older search response has no exact item link. Use search inside the app.",
       );
       const action = await choose("Search result", [
+        ...(result.reference ? ["Open item"] : []),
         "Copy excerpt",
         "Copy title and open app",
         "Back to results",
@@ -2030,7 +2270,10 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
       ]);
       if (!action || action === "Close") return;
       try {
-        if (action === "Copy excerpt") {
+        if (action === "Open item") {
+          await openItem(app, result.reference);
+          return;
+        } else if (action === "Copy excerpt") {
           await copy(`${result.title}\n${result.text}`);
           show("Copied.");
         } else if (action === "Copy title and open app") {
@@ -3153,6 +3396,17 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       return checks.summary.errors ? 1 : 0;
     }
     print(checks);
+    return;
+  }
+  if (action === "open-item") {
+    if (rest.length !== 2) throw Error("Usage: loom-os open-item office|atlas JSON_REFERENCE");
+    let reference;
+    try {
+      reference = JSON.parse(rest[1]);
+    } catch {
+      throw Error("Use the selected item's typed JSON reference.");
+    }
+    await openExactItem(rest[0], reference, config, env);
     return;
   }
   if (action === "open") {

@@ -13,6 +13,7 @@ import {
   discoverAppIntegration,
   integratedSearchCommand,
   integratedCaptureCommand,
+  resolveExactItem,
 } from "./loom-os.mjs";
 
 // Validate the actual Go producer outputs, not independently maintained JSON copies.
@@ -65,7 +66,36 @@ try {
         dependencies,
       );
       NodeAssert.equal(capture.reviewed, app === "office");
-      NodeAssert.equal(manifest.capabilities.links.supported, false);
+      NodeAssert.equal(manifest.capabilities.links.supported, true);
+      const reference =
+        app === "office"
+          ? { kind: "note", id: "saved & literal" }
+          : { kind: "source", id: "saved", revision: 1, versionId: "immutable-original" };
+      const itemPath = `/app/?${new URLSearchParams({
+        item: reference.kind,
+        id: reference.id,
+        ...(app === "atlas" ? { revision: "1", version: reference.versionId } : {}),
+      })}`;
+      const item = await resolveExactItem(
+        app,
+        reference,
+        config,
+        {},
+        {
+          ...dependencies,
+          resolve: async (spec) => {
+            NodeAssert.deepEqual(
+              spec.args.slice(0, 2),
+              manifest.capabilities.links.operation.command,
+            );
+            NodeAssert.deepEqual(JSON.parse(spec.args[3]), reference);
+            return app === "office"
+              ? { items: [{ reference, status: "live", canonicalURL: itemPath }] }
+              : { reference, path: itemPath };
+          },
+        },
+      );
+      NodeAssert.equal(item.pathname + item.search, itemPath);
       NodeAssert.equal(manifest.capabilities.notifications.supported, false);
       NodeAssert.equal(manifest.capabilities.availability.supported, false);
       // Exercise the installed command against real producer metadata on loopback.
@@ -76,7 +106,17 @@ try {
       const executable = NodePath.join(root, "record.mjs");
       await NodeFSP.writeFile(
         executable,
-        `#!${process.execPath}\nimport * as FS from 'node:fs';\nFS.writeFileSync(process.env.LOOM_CONTRACT_RECORD, JSON.stringify({ args: process.argv.slice(2), origin: process.env.API_URL }));\n`,
+        `#!${process.execPath}
+import * as FS from 'node:fs';
+const args = process.argv.slice(2);
+FS.writeFileSync(process.env.LOOM_CONTRACT_RECORD, JSON.stringify({ args, origin: process.env.API_URL }));
+if (args[1] === 'items-resolve') {
+  const ref = args[0] === 'office' ? JSON.parse(args[args.indexOf('--references') + 1]) : JSON.parse(args[args.indexOf('--reference') + 1]);
+  const path = '/app/?' + new URLSearchParams({item:ref.kind,id:ref.id,...(ref.versionId ? {revision:String(ref.revision),version:ref.versionId} : {})});
+  console.log(JSON.stringify(args[0] === 'office' ? {items:[{reference:ref,status:'live',canonicalURL:path}]} : {reference:ref,path}));
+}
+if (args.some(arg => arg.startsWith('--app='))) FS.writeFileSync(process.env.LOOM_CONTRACT_BROWSER_RECORD, JSON.stringify({args}));
+`,
         { mode: 0o755 },
       );
       const server = NodeHttp.createServer((req, res) => {
@@ -96,6 +136,7 @@ try {
         XDG_STATE_HOME: NodePath.join(root, "state"),
         PATH: `${NodePath.dirname(process.execPath)}:/usr/bin:/bin`,
         LOOM_CONTRACT_RECORD: record,
+        LOOM_CONTRACT_BROWSER_RECORD: NodePath.join(root, "browser.json"),
       };
       try {
         await install(
@@ -114,6 +155,31 @@ try {
         const invocation = JSON.parse(await NodeFSP.readFile(record, "utf8"));
         NodeAssert.equal(invocation.args[1], app === "office" ? "search" : "workspace-search");
         NodeAssert.equal(invocation.origin, `http://127.0.0.1:${server.address().port}`);
+        await execute(paths(env).bin, ["open-item", app, JSON.stringify(reference)], { env });
+        const itemInvocation = JSON.parse(await NodeFSP.readFile(record, "utf8"));
+        if (itemInvocation.args[1] === "items-resolve") {
+          NodeAssert.deepEqual(JSON.parse(itemInvocation.args[3]), reference);
+        } else {
+          const target = new URL(
+            itemInvocation.args.find((arg) => arg.startsWith("--app=")).slice(6),
+          );
+          NodeAssert.equal(target.searchParams.get("id"), reference.id);
+        }
+        // The detached synthetic browser records its own completed launch, separately
+        // from the resolver. Await that file without relying on a launch-time sleep.
+        const deadline = Date.now() + 5000;
+        let browser;
+        while (!browser) {
+          try {
+            browser = JSON.parse(await NodeFSP.readFile(env.LOOM_CONTRACT_BROWSER_RECORD, "utf8"));
+          } catch (error) {
+            if (error.code !== "ENOENT" || Date.now() > deadline) throw error;
+          }
+        }
+        const destination = new URL(browser.args.find((arg) => arg.startsWith("--app=")).slice(6));
+        NodeAssert.equal(destination.origin, invocation.origin);
+        NodeAssert.equal(destination.searchParams.get("id"), reference.id);
+        NodeAssert.ok(destination.searchParams.get("loomHandoff"));
         if (app === "atlas") {
           await execute(
             paths(env).bin,
@@ -135,6 +201,7 @@ try {
         capture: app === "office" ? "in-app review" : capture.args.slice(0, 2),
         offline: manifest.offline,
         installedDispatchVerified: true,
+        exactItemResolutionAndLaunchVerified: true,
         verified: true,
       };
     }),

@@ -1049,7 +1049,12 @@ test("finder reads Office excerpts and Atlas metadata with accurate pagination",
   NodeAssert.deepEqual(finderResults("office", officePage), {
     more: true,
     results: [
-      { label: "1. Project notes (notes)", title: "Project notes", text: "A matched excerpt" },
+      {
+        label: "1. Project notes (notes)",
+        title: "Project notes",
+        text: "A matched excerpt",
+        reference: officePage.items[0].reference,
+      },
     ],
   });
   NodeAssert.deepEqual(finderResults("atlas", atlasPage), {
@@ -1064,7 +1069,7 @@ test("finder reads Office excerpts and Atlas metadata with accurate pagination",
   });
   const unsafe = {
     items: [0, 1].map(() => ({
-      reference: { id: "x" },
+      reference: { kind: "note", id: "x" },
       title: "--title\x1b]0;spoof\x07\n",
       snippet: "\x1b[31m\u202Esecret",
     })),

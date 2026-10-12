@@ -115,9 +115,11 @@ Choose **Find in apps** from the launcher or LoomOS menu, or press
 The native picker shows up to 20 results: Office searches ordinary records, while
 current Atlas releases search saved Research and Presence work. Older Atlas
 servers retain source-title, project and topic search. Select a result to read its
-excerpt or metadata, then copy it or copy its title and open the app. Opening
-focuses the existing app window; use the copied text in the app's own search to
-open an item. Search again refines the query. Escape or Close cancels without
+excerpt or metadata, then choose **Open item** to open that exact record in its app.
+Compatible app releases reuse the signed-in window and retain the destination through
+sign-in. Unsent writing or open editors wait for **Open selected item** in the app.
+Save your work first. Deleted, changed or inaccessible records explain recovery.
+Older releases keep **Copy title and open app** for search inside the app. Search again refines the query. Escape or Close cancels without
 opening an app or copying anything. Search requires a reachable server and a
 separate search connection; browser login alone does not authorize the CLI.
 

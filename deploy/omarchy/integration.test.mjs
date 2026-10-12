@@ -345,7 +345,7 @@ test("workspace results retain exact references and sanitize terminal text", () 
           kind: "output",
           id: "output-1",
           revision: 3,
-          versionId: "v1",
+          versionId: "",
           title: "A\u001bTitle",
           snippet: "A\nSnippet",
         },
@@ -359,7 +359,7 @@ test("workspace results retain exact references and sanitize terminal text", () 
     kind: "output",
     id: "output-1",
     revision: 3,
-    versionId: "v1",
+    versionId: "",
   });
   NodeAssert.equal(page.results[0].title, "A Title");
   NodeAssert.equal(page.more, false);
