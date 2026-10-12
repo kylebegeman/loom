@@ -19,12 +19,17 @@ if (!projectRoot) {
 const worktree = NodePath.dirname(import.meta.dirname);
 
 // `shell` resolves `vp` through PATH, including Windows command shims.
+const installStarted = performance.now();
+process.stdout.write("Installing dependencies...\n");
 const install = NodeChildProcess.spawnSync("vp i", {
   cwd: worktree,
   shell: true,
   stdio: "inherit",
 });
 if (install.status !== 0) process.exit(install.status ?? 1);
+process.stdout.write(
+  `Dependencies ready (${Math.round(performance.now() - installStarted)} ms).\n`,
+);
 
 // Env files live as real files in the main checkout; worktrees only get
 // symlinks to them. Only a symlink is ever replaced, so a real env file is
@@ -44,9 +49,22 @@ for (const file of ENV_FILES) {
   NodeFS.symlinkSync(source, target);
 }
 
+process.stdout.write("Preparing development data...\n");
+const seed = NodeChildProcess.spawnSync(
+  process.execPath,
+  [NodePath.join(worktree, "apps", "server", "scripts", "seed-dev-db.ts")],
+  { cwd: worktree, stdio: "inherit" },
+);
+if (seed.status !== 0) process.exit(seed.status ?? 1);
+
+const warmStarted = performance.now();
+process.stdout.write("Warming web dependencies...\n");
 const warm = NodeChildProcess.spawnSync(
   process.execPath,
   [NodePath.join(worktree, "apps", "web", "scripts", "warm-dep-cache.ts")],
   { cwd: worktree, stdio: "inherit" },
 );
-process.exit(warm.status ?? 1);
+if (warm.status !== 0) process.exit(warm.status ?? 1);
+process.stdout.write(
+  `Web dependencies ready (${Math.round(performance.now() - warmStarted)} ms).\n`,
+);

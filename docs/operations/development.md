@@ -1,5 +1,24 @@
 # Development
 
+## Reproducible development data
+
+Run `vp run dev:fixtures` to start this checkout with synthetic projects and stopped
+conversation history. It uses the worktree's `.t3` or, in the main checkout,
+`.t3-fixtures`. Existing data in that isolated home is preserved. No installed-app
+state, credentials or provider sessions are copied.
+
+Choose a dataset before starting the server with `vp run seed-dev-db --scenario empty`,
+`sample` (the default) or `large`. To replace an existing fixture dataset, stop its
+server and add `--reset`. Reset refuses databases that this command did not create.
+`--base-dir` selects another isolated home; start dev with the same `--home-dir`.
+
+The worktree setup action installs dependencies, initializes sample data if none
+exists, and warms the web dependency cache. Its output reports the time spent in
+these stages. It waits for setup to finish before starting the agent.
+
+Use `migrate-dev-db` separately when you specifically need to test migration or
+rendering against a read-only snapshot of installed-app state.
+
 ## First checkout
 
 Install `vp` using the [root README](../../README.md#install-vp). The checkout requires Node 24;

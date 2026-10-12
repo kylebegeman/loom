@@ -6,7 +6,18 @@
       "name": "Setup Worktree",
       "command": "node scripts/setup-worktree.ts",
       "icon": "configure",
-      "runOnWorktreeCreate": true
+      "runOnWorktreeCreate": true,
+      "async": false
+    },
+    {
+      "name": "Development with sample data",
+      "command": "vp run dev:fixtures",
+      "icon": "play"
+    },
+    {
+      "name": "Reset development data",
+      "command": "node apps/server/scripts/seed-dev-db.ts --reset",
+      "icon": "configure"
     }
   ]
 }
