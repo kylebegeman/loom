@@ -121,7 +121,9 @@ def install(bundle: Path,mode: str|None) -> None:
         if destination.exists():
             shutil.copytree(destination,backup/'themes'/name)
         staging=destination.with_name(name+'.new-'+stamp)
-        shutil.copytree(bundle/name,staging)
+        # A reviewed pack is immutable. Its staged skin must be writable for
+        # local rasterization, without changing the retained bundle permissions.
+        shutil.copytree(bundle/name,staging,copy_function=shutil.copyfile)
         # Carry the current wallpaper into the new theme; no image or composition is changed.
         backgrounds=staging/'backgrounds';backgrounds.mkdir()
         background=current/'background'

@@ -138,3 +138,51 @@ with tempfile.TemporaryDirectory() as tmp:
     );
   },
 );
+NodeTest.test(
+  "appearance installs from an immutable release and snapshots its owned library",
+  () => {
+    NodeChildProcess.execFileSync(
+      "python3",
+      [
+        "-c",
+        `
+import sys,tempfile,json,shutil
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+import install
+with tempfile.TemporaryDirectory() as tmp:
+ home=Path(tmp)/'home';home.mkdir();bundle=Path(tmp)/'bundle'
+ shutil.copytree(Path(sys.argv[1]),bundle,ignore=shutil.ignore_patterns('__pycache__'))
+ for p in bundle.rglob('*'):
+  if p.is_file():p.chmod(0o400)
+ current=home/'.local/state/omarchy/current';(current/'theme').mkdir(parents=True)
+ (current/'theme.name').write_text('loom-iris-dark')
+ lib=home/'.local/lib/loom-os/iris';lib.mkdir(parents=True);(lib/'apply.py').write_text('old-library')
+ omarchy=Path(tmp)/'omarchy';omarchy.mkdir()
+ class FixturePath(type(Path())):
+  def __init__(self,*args):
+   if args==('/usr/share/omarchy',):args=(str(omarchy),)
+   super().__init__(*args)
+  @classmethod
+  def home(cls):return home
+ def run(*args,**kwargs):
+  if args[0]=='omarchy-shell':return json.dumps({'locked':False,'secure':False})
+  if args[0]=='rsvg-convert':Path(args[2]).write_bytes(b'fixture-png');return ''
+  if args[0]=='magick':return '0,0: (130,90,165,255) #825AA5FF srgba(130,90,165,1)'
+  raise AssertionError(args)
+ with patch.object(install,'Path',FixturePath),patch.object(install,'session_env',return_value={}),patch.object(install,'run',side_effect=run),patch.object(install.subprocess,'run'):
+  install.install(bundle,'dark')
+ backup=Path((lib/'latest-backup').read_text().strip())
+ assert (backup/'files/.local/lib/loom-os/iris/apply.py').read_text()=='old-library'
+ for mode in ('dark','light'):
+  theme=home/'.config/omarchy/themes'/('loom-iris-'+mode)
+  assert (theme/'about-gradient.txt').is_file()
+  assert (theme/'unlock.svg').read_bytes()==(bundle/('loom-iris-'+mode)/'unlock.svg').read_bytes()
+`,
+        root,
+      ],
+      pythonOptions,
+    );
+  },
+);
