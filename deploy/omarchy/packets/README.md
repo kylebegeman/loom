@@ -28,7 +28,7 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [4. Guided connections](04-guided-connections.md)                                    | completed            | #1, #12         |
 | [5. Capability-aware availability](05-capability-aware-availability.md)              | completed            | #4, #12         |
 | [8. Iris consistency](08-iris-consistency.md)                                        | completed            | #9              |
-| [7. Respectful actionable notifications](07-respectful-actionable-notifications.md)  | approved             | #2, #12         |
+| [7. Respectful actionable notifications](07-respectful-actionable-notifications.md)  | completed            | #2, #12         |
 | [10. Reproducible LoomOS setup](10-reproducible-loomos-setup.md)                     | approved             | #4, #6, #8, #9  |
 | [11. Contextual actions and AI workbench](11-contextual-actions-and-ai-workbench.md) | approved             | #3, #12         |
 | [13. Native workstation control desk](13-native-workstation-control-desk.md)         | approved             | #2, #7, #12     |
