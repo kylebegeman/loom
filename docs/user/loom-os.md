@@ -18,6 +18,50 @@ The list checks local configuration and installed files; the chosen app or AI
 flow checks its live connection and permissions when it runs. Failed launches
 provide an explicit retry. Nothing retries automatically.
 
+## Shortcuts and readability
+
+Choose **LoomOS → Appearance → Shortcuts**, or find Shortcuts in Loom actions.
+The screen shows configured bindings, then offers Standard, Compact, per-action
+customization and disabling Loom app shortcuts. Every change gets a live conflict
+check and a review before applying. If a chord is occupied, adjust it in that
+same review. Standard uses Super+Ctrl+Alt; Compact uses Super+Alt. Both retain
+individual overrides. Disabling all Loom app shortcuts is explicit and reversible.
+
+You can restore the previous selection. Personal bindings outside Loom's block
+stay in place; edits inside the managed block are preserved and block replacement.
+After saving, choose Reload shortcuts now while unlocked, or activate later through
+normal Hyprland reload/sign-in. Reloading shortcuts does not restart background Loom.
+
+Readability controls offer system terminal sizing or larger text and padding for
+Loom utility dialogs. Larger dialogs use Omarchy's included Alacritty without
+editing your terminal configuration. Restore System terminal sizing to use your
+normal terminal again. The native Font and Theme choosers remain available for
+system appearance and contrast.
+
+```sh
+loom-os shortcuts show
+loom-os shortcuts preview compact
+loom-os shortcuts apply compact
+loom-os shortcuts set open-office "Super+F12"
+loom-os shortcuts restore --dry-run
+loom-os shortcuts restore
+```
+
+Presets require an available Hyprland session to check conflicts. An interrupted
+change can be restored with Recover interrupted update in the same screen, or
+`loom-os shortcuts recover`. Recovery preserves edits made after the interruption.
+Shortcut and readability preferences survive pack updates and uninstall. Restoring
+an older pack temporarily uses that pack's bindings; returning to the current pack
+uses the retained preferences again.
+
+## Compatibility checks
+
+Choose **LoomOS → Maintenance → Compatibility checks**, or run
+`loom-os compatibility --human`. This read-only report checks the installed native
+menu parser, Theme picker, About action, Loom entries, file ownership and interrupted
+updates. It reports personal overrides that could break an integration rather than
+rewriting them. It does not contact app servers, read AI credentials or run inference.
+
 ## Open and capture
 
 Open the applications from your launcher or the LoomOS menu. You can also use

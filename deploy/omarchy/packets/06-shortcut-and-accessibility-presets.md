@@ -2,7 +2,7 @@
 
 Make native actions comfortable on different keyboards and readable displays.
 
-Status: **approved**. Complexity: **Small**. Impact: **High**.
+Status: **ready_for_deployment**. Complexity: **Small**. Impact: **High**.
 
 Owner: LoomOS with existing app/hub owners. Dependencies: [#1](01-discoverable-loom-action-menu.md).
 
@@ -24,4 +24,10 @@ Local preparation and focused checks first. Workstation rollout/native acceptanc
 
 ## Evidence
 
-No completion evidence yet. Approved scope remains open.
+- Implemented native menu/action/CLI controls for Standard, Compact, per-action overrides, explicit disabling, reviewed conflict adjustment, restore and interrupted-update recovery.
+- 112 focused pack tests pass on macOS and native ARM Linux, including 12 shortcut tests and five upstream-parser compatibility tests. Focused lint, formatting and generated-document checks pass.
+- Live-binding preflight refuses occupied chords, duplicate proposals, unavailable sessions and edited owned blocks. Review snapshot checks preserve concurrent personal changes; recovery refuses later edits.
+- Readability controls provide per-window Alacritty text/padding without changing global terminal settings, plus existing native Font/Theme actions. The sizing recovery screen remains reachable if Alacritty becomes unavailable.
+- Actual Linux Gum 2.0.0 terminal interaction checks pass for cancellation, keeping current settings, conflict adjustment, reviewed apply, exact binding restore and readability selection/restore. Hyprland, renderer presence and font dispatch are synthetic; these checks are not Workstation physical/display acceptance.
+- Prepared immutable pack 20261011.16, SHA256 2a60f42b7a8f69a53cb837f8b7b96cd7e158f590b5006b901887e613c93bc9f4. Actual retained .14 upgrade, dry-run, rollback and return preserve preferences and synthetic app/credential state on macOS and native ARM Linux.
+- Workstation SSH currently times out. Installation, native reload/display review and physical keyboard acceptance remain pending; no network settings, running services, real app data or Iris shared tokens were changed.

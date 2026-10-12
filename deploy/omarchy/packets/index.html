@@ -260,7 +260,7 @@
     >
       <summary>
         <span class="number">#6</span><span class="title">Shortcut and accessibility presets</span
-        ><span class="status">approved</span>
+        ><span class="status">ready for deployment</span>
       </summary>
       <div class="body">
         <p>Make native actions comfortable on different keyboards and readable displays.</p>
@@ -293,7 +293,45 @@
           reachable; secure lock and necessary local authentication remain normal user flows.
         </p>
         <h3>Evidence</h3>
-        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+        <ul>
+          <li>
+            Implemented native menu/action/CLI controls for Standard, Compact, per-action overrides,
+            explicit disabling, reviewed conflict adjustment, restore and interrupted-update
+            recovery.
+          </li>
+          <li>
+            112 focused pack tests pass on macOS and native ARM Linux, including 12 shortcut tests
+            and five upstream-parser compatibility tests. Focused lint, formatting and
+            generated-document checks pass.
+          </li>
+          <li>
+            Live-binding preflight refuses occupied chords, duplicate proposals, unavailable
+            sessions and edited owned blocks. Review snapshot checks preserve concurrent personal
+            changes; recovery refuses later edits.
+          </li>
+          <li>
+            Readability controls provide per-window Alacritty text/padding without changing global
+            terminal settings, plus existing native Font/Theme actions. The sizing recovery screen
+            remains reachable if Alacritty becomes unavailable.
+          </li>
+          <li>
+            Actual Linux Gum 2.0.0 terminal interaction checks pass for cancellation, keeping
+            current settings, conflict adjustment, reviewed apply, exact binding restore and
+            readability selection/restore. Hyprland, renderer presence and font dispatch are
+            synthetic; these checks are not Workstation physical/display acceptance.
+          </li>
+          <li>
+            Prepared immutable pack 20261011.16, SHA256
+            2a60f42b7a8f69a53cb837f8b7b96cd7e158f590b5006b901887e613c93bc9f4. Actual retained .14
+            upgrade, dry-run, rollback and return preserve preferences and synthetic app/credential
+            state on macOS and native ARM Linux.
+          </li>
+          <li>
+            Workstation SSH currently times out. Installation, native reload/display review and
+            physical keyboard acceptance remain pending; no network settings, running services, real
+            app data or Iris shared tokens were changed.
+          </li>
+        </ul>
       </div>
     </details>
     <details
@@ -302,7 +340,7 @@
     >
       <summary>
         <span class="number">#9</span><span class="title">Omarchy compatibility checks</span
-        ><span class="status">approved</span>
+        ><span class="status">ready for deployment</span>
       </summary>
       <div class="body">
         <p>Catch upstream changes before an integration release breaks everyday controls.</p>
@@ -340,7 +378,44 @@
           reachable; secure lock and necessary local authentication remain normal user flows.
         </p>
         <h3>Evidence</h3>
-        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+        <ul>
+          <li>
+            Implemented read-only native menu, Loom actions and CLI compatibility reporting for the
+            installed parser, stock Theme/About behavior, Loom command entries, owned files/blocks
+            and interrupted pack/shortcut changes.
+          </li>
+          <li>
+            Five focused compatibility regressions use unmodified upstream MenuModel/menu bytes
+            pinned to commit 9480d1b6a98156314dbabe6bfef08f39f8b9cd07 with SHA256 provenance and
+            license. They reproduce label-only About action loss and the obsolete themebook picker
+            override.
+          </li>
+          <li>
+            The focused check.mjs gate covers pack tests and generated packet consistency; --native
+            adds the installed target report. 112 pack tests pass on macOS and native ARM Linux
+            without weakening preservation assertions.
+          </li>
+          <li>
+            Reviewed pack 20261011.16 contains 25 verified members and matches the current runtime.
+            Actual retained .14 upgrade/rollback/return pass on macOS and native ARM Linux with
+            unchanged connection settings and synthetic app/credential data.
+          </li>
+          <li>
+            Actual Gum apply/restore flows finish with a passing installed native-parser and
+            ownership report in isolated Linux. No provider inference, real credential lookup,
+            network access or real service restart occurs.
+          </li>
+          <li>
+            Fixtures cover pinned upstream 4.0.0.alpha; Workstation 4.0.4 has previous native
+            evidence. Other Omarchy versions warn and require native acceptance; no blanket 4.x
+            compatibility claim is made.
+          </li>
+          <li>
+            Workstation remains unreachable over SSH. Its installed .14 pack is the last verified
+            state. Candidate deployment and actual Workstation compatibility/window-focus/display
+            checks remain pending.
+          </li>
+        </ul>
       </div>
     </details>
     <details

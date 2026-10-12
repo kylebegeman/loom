@@ -1,0 +1,20 @@
+{
+  "repository": "https://github.com/basecamp/omarchy",
+  "commit": "9480d1b6a98156314dbabe6bfef08f39f8b9cd07",
+  "version": "4.0.0.alpha",
+  "purpose": "Unmodified upstream parser and menu fixtures. Do not format or edit these files; replace from a recorded upstream commit when updating compatibility coverage.",
+  "files": {
+    "LICENSE": {
+      "source": "LICENSE",
+      "sha256": "717ba1949502290f8e47688ae2e323acd06c8ca47aec9f7596b15f678c1af4a2"
+    },
+    "MenuModel.js.txt": {
+      "source": "shell/plugins/menu/MenuModel.js",
+      "sha256": "5bd864fa74cb202df788afaa18dff74058abe6dea091be776d6fd635e7a2ecd1"
+    },
+    "omarchy-menu.jsonc.txt": {
+      "source": "default/omarchy/omarchy-menu.jsonc",
+      "sha256": "0eec19e6aabb04d1d50a94253f686aa150a3cb5998a14df56dda7e2295b5540f"
+    }
+  }
+}

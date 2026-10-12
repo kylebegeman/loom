@@ -304,3 +304,29 @@ network checks, credential lookup or inference. Shortcut hints come from the
 configured Hyprland bindings. Local prerequisites can be unavailable even while
 other actions work; selected operations retain their normal authorization and
 connection checks.
+
+## Shortcut preferences and compatibility
+
+Shortcut presets and readability use user data in `~/.config/loom-os/shortcuts.json`
+and `readability.json`, following XDG_CONFIG_HOME. They do not add fields to the
+release's connection configuration, so retained installers continue accepting it.
+Shortcut changes update only the owned binding block and its manifest hash. A private
+pending record supports recovery after interruption. Preset application checks live
+Hyprland bindings and refuses ambiguous ownership or conflicts. Personal text outside
+the block is preserved. Reload is an explicit native choice and requires an unlocked
+session. Larger utility dialogs use per-window Alacritty options; global terminal
+settings are untouched. See [daily controls](../../docs/user/loom-os.md#shortcuts-and-readability).
+
+Before preparing a pack release, run the focused gate:
+
+```sh
+node deploy/omarchy/check.mjs
+```
+
+On an installed Linux target, `--native` also runs that installation's read-only
+compatibility report. Native visual/keyboard checks and physical display/suspend
+acceptance remain separate. Record the actual Omarchy version and reviewed release
+hash in rollout evidence; fixtures are not a claim that every upstream version works.
+The unmodified upstream menu/parser fixtures carry their source commit, hashes and
+license in `fixtures/omarchy/provenance.json`. Update those snapshots from recorded
+upstream bytes, rather than editing or formatting the fixture text.

@@ -7,6 +7,7 @@ import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeReadline from "node:readline";
+import * as NodeVM from "node:vm";
 
 import { aiFiles, aiBindings, aiMenu, aiEnvironment, aiAction } from "./ai.mjs";
 import {
@@ -235,7 +236,543 @@ function menuBlock(content, body) {
   );
 }
 
-export async function installationPlan(config, env = process.env, packDir = sourceDir) {
+const shortcutActions = [
+  ["open-loom", "L", "Loom", "open loom"],
+  ["open-office", "O", "Office", "open office"],
+  ["open-atlas", "A", "Atlas", "open atlas"],
+  ["capture-office", "N", "Capture in Office", "capture office --clipboard"],
+  ["find", "F", "Find in apps", "find"],
+  ["actions", "SPACE", "Loom actions", "actions"],
+];
+export function normalizeShortcut(value) {
+  if (value === "none") return null;
+  if (typeof value !== "string" || value.length > 80 || hasControl(value))
+    throw new Error("Invalid shortcut. Use Super+Alt+O, Super+F12, or none.");
+  const parts = value
+    .toUpperCase()
+    .split("+")
+    .map((v) => v.trim());
+  const key = parts.pop(),
+    mods = ["SUPER", "CTRL", "ALT", "SHIFT"];
+  if (
+    !parts.length ||
+    parts.some((v) => !mods.includes(v)) ||
+    new Set(parts).size !== parts.length ||
+    !/^(?:[A-Z0-9]|F(?:[1-9]|1\d|2[0-4])|SPACE|RETURN|ESCAPE|TAB|HOME|END|INSERT|DELETE|PAGE_UP|PAGE_DOWN)$/.test(
+      key,
+    )
+  )
+    throw new Error("Invalid shortcut. Use supported modifiers and one named key.");
+  return [...mods.filter((v) => parts.includes(v)), key].join(" + ");
+}
+function validateShortcuts(value) {
+  if (
+    !value ||
+    value.version !== 1 ||
+    !["standard", "compact", "none"].includes(value.preset) ||
+    !value.bindings ||
+    typeof value.bindings !== "object" ||
+    Array.isArray(value.bindings) ||
+    Object.keys(value).some((k) => !["version", "preset", "bindings"].includes(k))
+  )
+    throw new Error("Invalid shortcut preferences.");
+  const bindings = {};
+  for (const [id, chord] of Object.entries(value.bindings)) {
+    if (!shortcutActions.some((action) => action[0] === id))
+      throw new Error("Unknown shortcut action.");
+    bindings[id] = normalizeShortcut(chord) ?? "none";
+  }
+  return { version: 1, preset: value.preset, bindings };
+}
+const defaultShortcuts = () => ({ version: 1, preset: "standard", bindings: { actions: "none" } });
+async function readShortcuts(env) {
+  if ((await read(NodePath.join(paths(env).state, "loom-os/shortcut-pending.json"))) !== null)
+    throw Error("Shortcut update interrupted. Use shortcuts recover.");
+  return validateShortcuts(
+    (await readJson(NodePath.join(paths(env).config, "loom-os/shortcuts.json"))) ??
+      defaultShortcuts(),
+  );
+}
+export function shortcutBindings(config, preferences = defaultShortcuts()) {
+  const prefs = validateShortcuts(preferences);
+  const prefix = prefs.preset === "compact" ? "SUPER + ALT" : "SUPER + CTRL + ALT";
+  return shortcutActions
+    .filter(
+      ([id]) =>
+        (id !== "open-atlas" || config.atlasUrl) &&
+        (id !== "find" || config.officeCli || (config.atlasCli && config.atlasUrl)),
+    )
+    .flatMap(([id, key, title, suffix]) => {
+      const chord = normalizeShortcut(
+        prefs.bindings[id] ?? (prefs.preset === "none" ? "none" : `${prefix} + ${key}`),
+      );
+      return chord ? [{ id, chord, title, suffix }] : [];
+    });
+}
+function bindingToken(chord) {
+  const parts = normalizeShortcut(chord).split(" + ");
+  const key = parts.pop();
+  const mask = parts.reduce((n, v) => n + { SUPER: 64, CTRL: 4, ALT: 8, SHIFT: 1 }[v], 0);
+  return `${mask}:${key}`;
+}
+function liveBindingToken(binding) {
+  const key = String(binding.key ?? "").toUpperCase();
+  return `${Number(binding.modmask)}:${key === " " ? "SPACE" : key}`;
+}
+export async function shortcutPreview(
+  config,
+  env,
+  proposed,
+  { query = (args) => queryHyprland(args, env) } = {},
+) {
+  const prefs = validateShortcuts(proposed),
+    p = paths(env);
+  const storedPreferences = await read(NodePath.join(p.config, "loom-os/shortcuts.json"));
+  if ((await read(NodePath.join(p.state, "loom-os/shortcut-pending.json"))) !== null)
+    throw Error(
+      "A shortcut update was interrupted. Use shortcuts recover before applying another change.",
+    );
+  const plan = await installationPlan(config, env, sourceDir, prefs);
+  const patch = plan.patches.find((v) => v.kind.startsWith("bindings-"));
+  if (!patch) throw new Error("No supported user bindings file is available.");
+  const comment = patch.kind === "bindings-lua" ? "--" : "#";
+  const manifest = await readJson(p.manifest);
+  const old = manifest?.patches?.find((v) => v.file === patch.file);
+  const block = ownedBlock(patch.before ?? "", comment);
+  if (!old || block === null || sha(block) !== old.blockHash)
+    throw new Error("Preserving an edited or unowned LoomOS bindings block.");
+  let live;
+  try {
+    live = JSON.parse((await query(["binds", "-j"])).stdout);
+    if (
+      !Array.isArray(live) ||
+      live.some(
+        (v) =>
+          !Number.isInteger(v.modmask) ||
+          typeof v.key !== "string" ||
+          typeof v.dispatcher !== "string" ||
+          typeof v.arg !== "string",
+      )
+    )
+      throw new Error("Invalid live bindings");
+  } catch {
+    throw new Error("Cannot check live bindings. Preview again in an available Hyprland session.");
+  }
+  const conflicts = [],
+    bindings = shortcutBindings(config, prefs),
+    seen = new Set();
+  const managedCommands = new Set(shortcutActions.map((v) => `${shellQuote(p.bin)} ${v[3]}`));
+  const managedTokens = new Set();
+  if (patch.kind === "bindings-lua") {
+    for (const match of block.matchAll(/o\.bind\(\s*("(?:\\.|[^"\\])*")/g)) {
+      try {
+        managedTokens.add(bindingToken(JSON.parse(match[1])));
+      } catch {
+        /* Non-app native bindings are excluded. */
+      }
+    }
+  } else {
+    for (const line of block.split("\n")) {
+      const fields = line.split(",");
+      if (/^bindd\s*=/.test(fields[0]) && fields[1])
+        managedTokens.add(
+          bindingToken(
+            fields[0]
+              .replace(/^bindd\s*=\s*/, "")
+              .trim()
+              .split(/\s+/)
+              .join(" + ") +
+              " + " +
+              fields[1].trim(),
+          ),
+        );
+    }
+  }
+  for (const action of bindings) {
+    const token = bindingToken(action.chord);
+    if (seen.has(token))
+      conflicts.push({
+        action: action.id,
+        chord: action.chord,
+        reason: "Another proposed Loom action uses this shortcut.",
+      });
+    seen.add(token);
+    if (
+      live.some(
+        (v) =>
+          liveBindingToken(v) === token &&
+          !(
+            v.dispatcher === "exec" &&
+            managedCommands.has(v.arg) &&
+            managedTokens.has(token) &&
+            block.includes(v.arg.replaceAll('"', '\\"'))
+          ),
+      )
+    )
+      conflicts.push({
+        action: action.id,
+        chord: action.chord,
+        reason: "A live system or personal binding already uses this shortcut.",
+      });
+  }
+  return {
+    preferences: prefs,
+    bindings,
+    conflicts,
+    liveChecked: true,
+    reloadRequired: true,
+    _patch: patch,
+    _manifest: manifest,
+    _comment: comment,
+    _storedPreferences: storedPreferences,
+  };
+}
+function publicShortcutPlan(report) {
+  const { _patch, _manifest, _comment, _storedPreferences, ...result } = report;
+  return result;
+}
+export async function applyShortcuts(config, env, proposed, dependencies = {}) {
+  const report = await shortcutPreview(config, env, proposed, dependencies);
+  if (report.conflicts.length)
+    throw new Error("Shortcut conflicts must be resolved before applying.");
+  const p = paths(env),
+    file = NodePath.join(p.config, "loom-os/shortcuts.json"),
+    history = NodePath.join(p.state, "loom-os/shortcut-restore.json");
+  const before = await readShortcuts(env),
+    patch = report._patch;
+  // A live preview is advisory until its exact source snapshot is checked again.
+  if (
+    (await read(file)) !== report._storedPreferences ||
+    (dependencies.reviewed &&
+      (patch.before !== dependencies.reviewed._patch?.before ||
+        report._storedPreferences !== dependencies.reviewed._storedPreferences)) ||
+    (await read(patch.file)) !== patch.before ||
+    JSON.stringify(await readJson(p.manifest)) !== JSON.stringify(report._manifest)
+  )
+    throw new Error("Bindings changed during review. Preview again.");
+  for (const target of [file, history, patch.file, p.manifest]) await rejectSymlinks(target);
+  const block = ownedBlock(patch.after, report._comment);
+  const manifest = {
+    ...report._manifest,
+    patches: report._manifest.patches.map((v) =>
+      v.file === patch.file ? { ...v, blockHash: sha(block) } : v,
+    ),
+  };
+  const intentFile = NodePath.join(p.state, "loom-os/shortcut-pending.json");
+  const changes = [
+    [
+      history,
+      JSON.stringify({
+        version: 1,
+        previous: before,
+        current: sha(JSON.stringify(report.preferences)),
+      }) + "\n",
+    ],
+    [file, JSON.stringify(report.preferences, null, 2) + "\n"],
+    [patch.file, patch.after],
+    [p.manifest, JSON.stringify(manifest, null, 2) + "\n"],
+  ];
+  const entries = await Promise.all(
+    changes.map(async ([file, after]) => ({ file, before: await read(file), after })),
+  );
+  await write(intentFile, JSON.stringify({ version: 1, entries }) + "\n");
+  for (const entry of entries) await (dependencies.write ?? write)(entry.file, entry.after);
+  await NodeFSP.rm(intentFile);
+  return publicShortcutPlan(report);
+}
+export async function recoverShortcuts(env) {
+  const p = paths(env),
+    intentFile = NodePath.join(p.state, "loom-os/shortcut-pending.json"),
+    intent = await readJson(intentFile);
+  const allowed = new Set([
+    NodePath.join(p.state, "loom-os/shortcut-restore.json"),
+    NodePath.join(p.config, "loom-os/shortcuts.json"),
+    NodePath.join(p.config, "hypr/bindings.lua"),
+    NodePath.join(p.config, "hypr/bindings.conf"),
+    p.manifest,
+  ]);
+  if (
+    !intent ||
+    intent.version !== 1 ||
+    !Array.isArray(intent.entries) ||
+    intent.entries.length !== 4 ||
+    new Set(intent.entries.map((v) => v.file)).size !== 4
+  )
+    throw Error("No valid interrupted shortcut update is available.");
+  for (const entry of intent.entries) {
+    if (
+      !allowed.has(entry.file) ||
+      (entry.before !== null && typeof entry.before !== "string") ||
+      typeof entry.after !== "string"
+    )
+      throw Error("Invalid shortcut recovery record.");
+    await rejectSymlinks(entry.file);
+    const current = await read(entry.file);
+    if (current !== entry.before && current !== entry.after)
+      throw Error("Preserving edits made after the interrupted shortcut update.");
+  }
+  for (const entry of intent.entries) {
+    if (entry.before === null) await NodeFSP.rm(entry.file, { force: true });
+    else await write(entry.file, entry.before);
+  }
+  await NodeFSP.rm(intentFile);
+  return { recovered: true };
+}
+export async function restoreShortcuts(config, env, dependencies = {}) {
+  const p = paths(env),
+    saved = await readJson(NodePath.join(p.state, "loom-os/shortcut-restore.json"));
+  if (!saved || saved.version !== 1)
+    throw new Error("No previous shortcut preferences are available.");
+  const current = await readShortcuts(env);
+  if (saved.current !== sha(JSON.stringify(current)))
+    throw new Error("Preserving edited shortcut preferences. Preview a new preset instead.");
+  return applyShortcuts(config, env, validateShortcuts(saved.previous), dependencies);
+}
+async function shortcutStatus(config, env) {
+  const prefs = await readShortcuts(env),
+    actions = await collectLoomActions(config, env);
+  return {
+    preset: prefs.preset,
+    bindings: shortcutActions
+      .filter(([id]) => actions.some((a) => a.id === id))
+      .map(([id, , title]) => ({
+        id,
+        title,
+        chord: actions.find((a) => a.id === id)?.shortcut || "No configured shortcut",
+      })),
+  };
+}
+function formatShortcutPlan(report) {
+  return [
+    "Loom shortcut preview",
+    ...report.bindings.map((v) => `${v.title}: ${v.chord}`),
+    ...report.conflicts.map((v) => `CONFLICT: ${v.chord}. ${v.reason}`),
+    "Only Loom app shortcuts change. AI routing and personal bindings are preserved.",
+    "Reload Hyprland normally or sign out and back in to activate changes.",
+  ].join("\n");
+}
+export async function nativeShortcuts(config, env, dependencies = {}) {
+  const choose =
+    dependencies.choose ??
+    ((choices) => finderChoice(["choose", "--header", "Loom shortcuts", "--", ...choices], env));
+  const show = dependencies.show ?? console.log;
+  const edit = async (prefs) => {
+    const selected = await choose(shortcutActions.map((a) => a[2]));
+    if (selected === null) return null;
+    const id = shortcutActions.find((a) => a[2] === selected)?.[0];
+    if (!id) throw Error("Unknown shortcut action.");
+    const chord = await (
+      dependencies.input ??
+      ((title) =>
+        finderChoice(
+          [
+            "input",
+            "--header",
+            title + " shortcut",
+            "--placeholder",
+            "Super+Alt+O or none",
+            "--char-limit",
+            "80",
+          ],
+          env,
+        ))
+    )(selected);
+    if (chord === null) return null;
+    return { ...prefs, bindings: { ...prefs.bindings, [id]: normalizeShortcut(chord) ?? "none" } };
+  };
+  while (true) {
+    let status;
+    try {
+      status = await (dependencies.status ?? (() => shortcutStatus(config, env)))();
+    } catch (error) {
+      show(terminalText(error.message));
+      status = { bindings: [] };
+    }
+    show(status.bindings.map((v) => `${v.title}: ${v.chord}`).join("\n"));
+    const choice = await choose([
+      "Standard shortcuts",
+      "Compact shortcuts",
+      "No Loom app shortcuts",
+      "Customize one shortcut",
+      "Restore previous shortcuts",
+      "Recover interrupted update",
+      "Readability controls",
+      "Close",
+    ]);
+    if (choice === null || choice === "Close") return;
+    if (choice === "Recover interrupted update") {
+      try {
+        await recoverShortcuts(env);
+        show("Previous shortcut state recovered.");
+      } catch (error) {
+        show(terminalText(error.message));
+      }
+      continue;
+    }
+    if (choice === "Readability controls") {
+      await (dependencies.readability ?? (() => main(["readability", "--inline"], env)))();
+      continue;
+    }
+    try {
+      let prefs,
+        restoreOriginal = choice === "Restore previous shortcuts";
+      if (choice === "Restore previous shortcuts") {
+        const saved = await readJson(
+          NodePath.join(paths(env).state, "loom-os/shortcut-restore.json"),
+        );
+        if (!saved) throw Error("No previous shortcuts are available.");
+        prefs = saved.previous;
+      } else if (choice === "Customize one shortcut") {
+        prefs = await edit(await readShortcuts(env));
+        if (prefs === null) continue;
+      } else {
+        const preset = {
+          "Standard shortcuts": "standard",
+          "Compact shortcuts": "compact",
+          "No Loom app shortcuts": "none",
+        }[choice];
+        if (!preset) throw Error("Unknown shortcut choice.");
+        prefs = { ...(await readShortcuts(env)), preset };
+        if (preset === "none") prefs.bindings = {};
+      }
+      let preview = await (dependencies.preview ?? ((v) => shortcutPreview(config, env, v)))(prefs);
+      show(formatShortcutPlan(preview));
+      while (preview.conflicts.length) {
+        if ((await choose(["Keep current shortcuts", "Adjust a shortcut"])) !== "Adjust a shortcut")
+          break;
+        const changed = await edit(prefs);
+        if (changed === null) break;
+        prefs = changed;
+        restoreOriginal = false;
+        preview = await (dependencies.preview ?? ((v) => shortcutPreview(config, env, v)))(prefs);
+        show(formatShortcutPlan(preview));
+      }
+      if (preview.conflicts.length) continue;
+      if (
+        (await choose(["Keep current shortcuts", "Apply reviewed shortcuts"])) !==
+        "Apply reviewed shortcuts"
+      )
+        continue;
+      await (restoreOriginal
+        ? (dependencies.restore ?? (() => restoreShortcuts(config, env, { reviewed: preview })))()
+        : (dependencies.apply ?? ((v) => applyShortcuts(config, env, v, { reviewed: preview })))(
+            prefs,
+          ));
+      show("Saved. Reload Hyprland normally or sign out and back in to activate.");
+      if ((await choose(["Activate later", "Reload shortcuts now"])) === "Reload shortcuts now") {
+        const locked = NodeChildProcess.spawnSync("omarchy-hyprland-session-locked", [], {
+          env,
+          stdio: "ignore",
+          timeout: 3000,
+        });
+        if (locked.status !== 1) show("Unlock the desktop normally before reloading shortcuts.");
+        else {
+          const result = await queryHyprland(["reload"], env);
+          if (result.stdout.trim() !== "ok")
+            throw Error("Shortcut reload did not finish. Reload Hyprland normally.");
+          show("Shortcuts activated.");
+        }
+      }
+    } catch (error) {
+      show(terminalText(error.message));
+      await choose(["Back"]);
+    }
+  }
+}
+async function readReadability(env) {
+  const prefs = (await readJson(NodePath.join(paths(env).config, "loom-os/readability.json"))) ?? {
+    version: 1,
+    size: "system",
+  };
+  if (
+    prefs.version !== 1 ||
+    !["system", "larger"].includes(prefs.size) ||
+    Object.keys(prefs).some((key) => !["version", "size"].includes(key))
+  )
+    throw Error("Invalid readability preferences.");
+  return prefs;
+}
+export async function loomTuiCommand(args, env, resolve = executable) {
+  const prefs = await readReadability(env);
+  if (prefs.size === "system") return { command: "omarchy-launch-tui", args };
+  const terminal = resolve("alacritty");
+  // Keep the preference's recovery screen reachable if its chosen terminal is removed.
+  if (!terminal && args[0] === "--app-id=org.omarchy.loom-readability")
+    return { command: "omarchy-launch-tui", args };
+  if (!terminal)
+    throw Error(
+      "Larger Loom dialogs require the included Alacritty terminal. Restore system sizing in Readability controls.",
+    );
+  const [appId, ...command] = args;
+  if (!appId.startsWith("--app-id=")) throw Error("Loom dialog needs an app identity.");
+  return {
+    command: "uwsm-app",
+    args: [
+      "--",
+      terminal,
+      "--class",
+      appId.slice(9),
+      "--option",
+      "font.size=14",
+      "--option",
+      "window.padding.x=12",
+      "--option",
+      "window.padding.y=12",
+      "-e",
+      ...command,
+    ],
+  };
+}
+async function nativeReadability(env) {
+  while (true) {
+    console.log(
+      "Loom utility dialogs: " +
+        (await readReadability(env)).size +
+        ". Existing terminal, display and theme settings stay yours.",
+    );
+    const choice = await finderChoice(
+      [
+        "choose",
+        "--header",
+        "Readability controls",
+        "--",
+        "System terminal sizing",
+        "Larger Loom dialogs",
+        "Native font chooser",
+        "Native theme chooser",
+        "Close",
+      ],
+      env,
+    );
+    if (choice === null || choice === "Close") return;
+    if (["System terminal sizing", "Larger Loom dialogs"].includes(choice)) {
+      const size = choice === "Larger Loom dialogs" ? "larger" : "system";
+      if (size === "larger" && !executable("alacritty")) {
+        console.log("Alacritty is unavailable. System sizing remains active.");
+        continue;
+      }
+      await write(
+        NodePath.join(paths(env).config, "loom-os/readability.json"),
+        JSON.stringify({ version: 1, size }) + "\n",
+      );
+      console.log("Saved for the next Loom utility dialog.");
+    } else if (choice === "Native font chooser" || choice === "Native theme chooser") {
+      await run(
+        "omarchy-menu",
+        ["summon", choice === "Native font chooser" ? "style.font" : "style.theme"],
+        { env },
+      );
+      return;
+    }
+  }
+}
+
+export async function installationPlan(
+  config,
+  env = process.env,
+  packDir = sourceDir,
+  preferences,
+) {
   config = validateConfig(config);
   const p = paths(env);
   const writes = new Map();
@@ -280,6 +817,12 @@ export async function installationPlan(config, env = process.env, packDir = sour
     content: await NodeFSP.readFile(NodePath.join(packDir, "health.mjs"), "utf8"),
     mode: 0o644,
   });
+  for (const action of ["shortcuts", "readability", "compatibility"]) {
+    writes.set(NodePath.join(p.root, action + "-terminal"), {
+      content: `#!/bin/bash\nprintf '\\033]0;Loom ${action}\\007'\n${shellQuote(p.bin)} ${action} ${action === "compatibility" ? "--human" : "--inline"}\nstatus=$?\n${action === "compatibility" ? "printf '\\nPress Enter to close. '; read -r _\n" : ""}exit "$status"\n`,
+      mode: 0o755,
+    });
+  }
   writes.set(NodePath.join(p.root, "actions-terminal"), {
     content: `#!/bin/bash\nprintf '\\033]0;Loom actions\\007'\n${shellQuote(p.bin)} actions --inline "$@"\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
     mode: 0o755,
@@ -350,21 +893,15 @@ done
       mode: 0o644,
     });
   }
-  const bindings = [
-    ["L", "Loom", "open loom"],
-    ["O", "Office", "open office"],
-    ...(config.atlasUrl ? [["A", "Atlas", "open atlas"]] : []),
-    ["N", "Capture in Office", "capture office --clipboard"],
-    ...(finderEnabled ? [["F", "Find in apps", "find"]] : []),
-  ];
+  const bindings = shortcutBindings(config, preferences ?? (await readShortcuts(env)));
   const patches = [];
   if (lua !== null) {
     const body =
       (aiEnabled ? aiBindings(p) + "\n" : "") +
       bindings
         .map(
-          ([key, name, suffix]) =>
-            `o.bind("SUPER + CTRL + ALT + ${key}", ${JSON.stringify(name)}, ${JSON.stringify(command(suffix))})`,
+          ({ chord, title, suffix }) =>
+            `o.bind(${JSON.stringify(chord)}, ${JSON.stringify(title)}, ${JSON.stringify(command(suffix))})`,
         )
         .join("\n");
     patches.push({
@@ -378,10 +915,11 @@ done
     if (p.bin.includes(","))
       throw new Error("Hyprland legacy bindings cannot use a path containing a comma.");
     const body = bindings
-      .map(
-        ([key, name, suffix]) =>
-          `bindd = SUPER CTRL ALT, ${key}, ${name}, exec, ${command(suffix)}`,
-      )
+      .map(({ chord, title, suffix }) => {
+        const parts = chord.split(" + ");
+        const key = parts.pop();
+        return `bindd = ${parts.join(" ")}, ${key}, ${title}, exec, ${command(suffix)}`;
+      })
       .join("\n");
     patches.push({
       file: bindingsConf,
@@ -445,6 +983,15 @@ done
         action: `omarchy-theme-set ${shellQuote(theme)}`,
       };
     }
+    entries["loomos.appearance.shortcuts"] = { label: "Shortcuts", action: command("shortcuts") };
+    entries["loomos.appearance.readability"] = {
+      label: "Readability controls",
+      action: command("readability"),
+    };
+    entries["loomos.maintenance.compatibility"] = {
+      label: "Compatibility checks",
+      action: command("compatibility --terminal"),
+    };
     entries["loomos.maintenance"] = { label: "Maintenance" };
     entries["loomos.maintenance.status"] = {
       label: "Installed integration",
@@ -779,6 +1326,11 @@ export async function focusExistingApp(app, config, env = process.env, query) {
 }
 
 async function run(command, args, { env = process.env, detached = false } = {}) {
+  if (command === "omarchy-launch-tui") {
+    const spec = await loomTuiCommand(args, env);
+    command = spec.command;
+    args = spec.args;
+  }
   const uwsm = detached && executable("uwsm-app");
   if (uwsm) {
     args = ["--", command, ...args];
@@ -1084,6 +1636,17 @@ export function loomActionCatalog(config, context = {}) {
       shortcut: context.shortcuts === undefined ? shortcut : (context.shortcuts[id] ?? ""),
     });
   };
+  add("actions", "Loom actions", "Find native utilities", ["actions"]);
+  add("shortcuts", "Shortcuts", "Review keyboard presets and personal bindings", ["shortcuts"]);
+  add("readability", "Readability controls", "Larger dialog text, fonts and theme contrast", [
+    "readability",
+  ]);
+  add(
+    "compatibility",
+    "Compatibility checks",
+    "Inspect native menu, theme picker and integration ownership",
+    ["compatibility", "--terminal"],
+  );
   add(
     "open-loom",
     "Open Loom",
@@ -1639,7 +2202,165 @@ function parseArgs(args) {
   return { options, positional };
 }
 const print = (value) => console.log(JSON.stringify(value, null, 2));
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+export function compileNativeMenu(source) {
+  if (typeof source !== "string" || source.length > 1024 * 1024)
+    throw Error("Unsupported native menu parser.");
+  const module = { exports: {} };
+  NodeVM.runInNewContext(source, { module }, { timeout: 1000, filename: "MenuModel.js" });
+  for (const name of ["parseMenuJsonc", "mergeMenuSources", "item"])
+    if (typeof module.exports[name] !== "function")
+      throw Error("Native menu parser contract has changed.");
+  return module.exports;
+}
+export async function collectCompatibility(config, env) {
+  const p = paths(env),
+    root = env.OMARCHY_PATH || "/usr/share/omarchy",
+    checks = [];
+  if (!NodePath.isAbsolute(root) || hasControl(root)) throw Error("Omarchy path must be absolute.");
+  const add = (id, state, detail) => checks.push({ id, state, detail });
+  let version = "unknown";
+  try {
+    const raw = (await read(NodePath.join(root, "version")))?.trim();
+    if (raw && /^[\w.+-]{1,80}$/.test(raw)) version = raw;
+  } catch {
+    /* Report an unknown version. */
+  }
+  add(
+    "version",
+    ["4.0.4", "4.0.0.alpha"].includes(version) ? "ok" : "warning",
+    `Omarchy ${version}. Parser fixtures cover pinned upstream 4.0.0.alpha; Workstation 4.0.4 was previously verified. Other versions require native acceptance.`,
+  );
+  const lua = await read(NodePath.join(p.config, "hypr/bindings.lua")),
+    legacy = await read(NodePath.join(p.config, "hypr/bindings.conf"));
+  add(
+    "bindings",
+    lua !== null || legacy !== null ? "ok" : "error",
+    lua !== null
+      ? "Lua user bindings detected."
+      : legacy !== null
+        ? "Legacy user bindings detected; graphical menu extensions are unavailable."
+        : "No supported user bindings file was found.",
+  );
+  if (lua !== null) {
+    try {
+      const parser = compileNativeMenu(
+        await NodeFSP.readFile(NodePath.join(root, "shell/plugins/menu/MenuModel.js"), "utf8"),
+      );
+      const native = parser.parseMenuJsonc(
+        await NodeFSP.readFile(NodePath.join(root, "default/omarchy/omarchy-menu.jsonc"), "utf8"),
+      );
+      const raw = await read(NodePath.join(p.config, "omarchy/extensions/omarchy-menu.jsonc"));
+      const user = parser.parseMenuJsonc(raw ?? "{}");
+      if (!native.length || (raw && !user.length && !/^\s*\{\s*\}\s*$/.test(raw)))
+        throw Error("Native or user menu data did not parse.");
+      const merged = parser.mergeMenuSources(native, user);
+      if (!merged || !merged.items) throw Error("Native menu merge contract changed.");
+      add("native-menu", "ok", "The installed native parser accepts the stock and user menus.");
+      const theme = parser.item(merged.items, "style.theme"),
+        stock = native.find((v) => v.id === "style.theme");
+      add(
+        "theme-picker",
+        stock?.action && theme?.action === stock.action ? "ok" : "error",
+        stock?.action && theme?.action === stock.action
+          ? "The Theme entry retains the stock native picker."
+          : "The Theme entry overrides or loses the stock picker. Review personal menu overrides before updating.",
+      );
+      for (const [id, key, suffix] of [
+        ["loom-actions", "loomos.actions", "actions"],
+        ["shortcuts", "loomos.appearance.shortcuts", "shortcuts"],
+        ["readability", "loomos.appearance.readability", "readability"],
+        ["compatibility", "loomos.maintenance.compatibility", "compatibility --terminal"],
+      ]) {
+        const entry = parser.item(merged.items, key);
+        add(
+          id,
+          entry?.action === `${shellQuote(p.bin)} ${suffix}` ? "ok" : "error",
+          entry?.action === `${shellQuote(p.bin)} ${suffix}`
+            ? `${key} resolves to its installed Loom command.`
+            : `${key} is missing or overridden.`,
+        );
+      }
+      const about = parser.item(merged.items, "about"),
+        nativeAbout = native.find((v) => v.id === "about");
+      add(
+        "about",
+        about?.action === nativeAbout?.action && Boolean(about?.icon) ? "ok" : "error",
+        "About must preserve the native action and icon when its label changes.",
+      );
+    } catch (error) {
+      const existing = checks.find((v) => v.id === "native-menu");
+      if (existing) {
+        existing.state = "error";
+        existing.detail = terminalText(error.message);
+      } else add("native-menu", "error", terminalText(error.message));
+    }
+  } else
+    add(
+      "native-menu",
+      "warning",
+      "Native menu checks require the supported Omarchy Lua shell. Legacy bindings remain available.",
+    );
+  try {
+    const manifest = await readJson(p.manifest);
+    if (
+      !manifest ||
+      manifest.version !== 1 ||
+      !Array.isArray(manifest.files) ||
+      !Array.isArray(manifest.patches)
+    )
+      throw Error("Integration ownership record is missing or invalid.");
+    for (const entry of manifest.files) {
+      await rejectSymlinks(entry.file);
+      const current = await read(entry.file);
+      if (current === null || sha(current) !== entry.hash)
+        throw Error("An owned integration file has local edits or is missing.");
+    }
+    for (const entry of manifest.patches) {
+      const comment = entry.kind === "menu" ? "//" : entry.kind === "bindings-lua" ? "--" : "#";
+      await rejectSymlinks(entry.file);
+      const block = ownedBlock((await read(entry.file)) ?? "", comment);
+      if (block === null || sha(block) !== entry.blockHash)
+        throw Error("An owned integration block has local edits or is missing.");
+    }
+    add(
+      "ownership",
+      "ok",
+      "Owned files and integration blocks match their installation record; surrounding personal settings are preserved.",
+    );
+  } catch (error) {
+    add("ownership", "error", terminalText(error.message));
+  }
+  add(
+    "activation",
+    (await read(NodePath.join(p.state, "loom-os/pack-pending.json"))) === null ? "ok" : "error",
+    "A pending pack activation must be finished with its exact reviewed release before another update.",
+  );
+  add(
+    "shortcut-update",
+    (await read(NodePath.join(p.state, "loom-os/shortcut-pending.json"))) === null ? "ok" : "error",
+    "An interrupted shortcut change must be recovered before another preset is applied.",
+  );
+  return {
+    version,
+    checks,
+    errors: checks.filter((v) => v.state === "error").length,
+    warnings: checks.filter((v) => v.state === "warning").length,
+    readOnly: true,
+    networkUsed: false,
+    providerInference: false,
+    physicalAcceptance:
+      "Separate native keyboard, display and sleep/wake checks are required on applicable hardware.",
+  };
+}
+function formatCompatibility(report) {
+  return [
+    `Compatibility: ${report.errors} errors, ${report.warnings} warnings`,
+    ...report.checks.map((v) => `[${v.state.toUpperCase()}] ${v.id}: ${v.detail}`),
+    report.physicalAcceptance,
+  ].join("\n");
+}
+
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -1719,6 +2440,90 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "compatibility") {
+    if (rest.length > 1 || (rest.length && !["--human", "--terminal"].includes(rest[0])))
+      throw Error("Usage: compatibility [--human|--terminal]");
+    if (rest[0] === "--terminal")
+      await run(
+        "omarchy-launch-tui",
+        [
+          "--app-id=org.omarchy.loom-compatibility",
+          NodePath.join(p.root, "compatibility-terminal"),
+        ],
+        { env },
+      );
+    else {
+      const report = await collectCompatibility(config, env);
+      if (rest[0] === "--human") console.log(formatCompatibility(report));
+      else print(report);
+    }
+    return;
+  }
+  if (action === "shortcuts") {
+    if (!rest.length || (rest.length === 1 && rest[0] === "--inline")) {
+      if (!rest.length)
+        await run(
+          "omarchy-launch-tui",
+          ["--app-id=org.omarchy.loom-shortcuts", NodePath.join(p.root, "shortcuts-terminal")],
+          { env },
+        );
+      else {
+        if (!process.stdin.isTTY) throw Error("Shortcuts need an interactive terminal.");
+        await nativeShortcuts(config, env);
+      }
+      return;
+    }
+    const [operation, ...values] = rest,
+      dryRun = values.includes("--dry-run"),
+      args = values.filter((v) => v !== "--dry-run");
+    if (operation === "recover" && !values.length) {
+      print(await recoverShortcuts(env));
+      return;
+    }
+    if (operation === "show" && !values.length) {
+      print(await shortcutStatus(config, env));
+      return;
+    }
+    let prefs;
+    if (["preview", "apply"].includes(operation) && args.length === 1) {
+      prefs = { ...(await readShortcuts(env)), preset: args[0] };
+      if (args[0] === "none") prefs.bindings = {};
+    } else if (operation === "set" && args.length === 2) {
+      prefs = await readShortcuts(env);
+      prefs.bindings[args[0]] = args[1];
+    } else if (operation === "restore" && !args.length) {
+      if (dryRun) {
+        const saved = await readJson(NodePath.join(p.state, "loom-os/shortcut-restore.json"));
+        if (!saved) throw Error("No previous shortcuts.");
+        prefs = saved.previous;
+      } else {
+        print(await restoreShortcuts(config, env));
+        return;
+      }
+    } else
+      throw Error(
+        "Usage: shortcuts show|preview PRESET|apply PRESET|set ACTION CHORD|restore [--dry-run]",
+      );
+    const report =
+      operation === "preview" || dryRun
+        ? publicShortcutPlan(await shortcutPreview(config, env, prefs))
+        : await applyShortcuts(config, env, prefs);
+    print(report);
+    return;
+  }
+  if (action === "readability") {
+    if (!rest.length)
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-readability", NodePath.join(p.root, "readability-terminal")],
+        { env },
+      );
+    else if (rest.length === 1 && rest[0] === "--inline") {
+      if (!process.stdin.isTTY) throw Error("Readability controls need an interactive terminal.");
+      await nativeReadability(env);
+    } else throw Error("Usage: readability");
+    return;
+  }
   if (action === "actions") {
     let inline = false,
       json = false,
