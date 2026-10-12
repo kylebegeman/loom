@@ -35,7 +35,10 @@ const waitFor = (flow: Flow.GitHubSetupFlow["Service"], phase: string) =>
 it.effect("reuses a host-owned request across starts and subscriptions", () =>
   Effect.gen(function* () {
     const f = yield* fixture;
-    assert.equal((yield* f.flow.start({ requestId: "first" })).phase, "checking");
+    assert.equal(
+      (yield* f.flow.start({ requestId: "first" }).pipe(Effect.scoped)).phase,
+      "checking",
+    );
     yield* Deferred.await(f.started);
     const second = yield* f.flow.start({ requestId: "second" });
     assert.equal(second.requestId, "first");

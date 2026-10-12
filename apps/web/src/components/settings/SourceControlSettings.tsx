@@ -1,3 +1,6 @@
+import { GitHubHostSetupSettings } from "./GitHubHostSetupSettings";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { useServerConfigs } from "../../state/entities";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { ChevronDownIcon } from "lucide-react";
 import * as Duration from "effect/Duration";
@@ -194,10 +197,12 @@ function itemSummary({
   item,
   auth,
   authAccount,
+  githubSetupSupported = false,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
   readonly auth: SourceControlProviderAuth | null;
   readonly authAccount: string | null;
+  readonly githubSetupSupported?: boolean;
 }) {
   if (isVcsNotReady(item)) {
     return <span>Support for {item.label} is coming soon.</span>;
@@ -241,7 +246,9 @@ function itemSummary({
       return (
         <span>
           {item.label} is not authenticated on this server.{" "}
-          {item.kind === "github" ? (
+          {item.kind === "github" && githubSetupSupported ? (
+            "Use GitHub access above to prepare this host."
+          ) : item.kind === "github" ? (
             <>
               Run <code className="rounded bg-muted px-1 py-px text-2xs">t3 github setup</code> on
               the server host to prepare access for projects and change requests.
@@ -270,9 +277,11 @@ function itemSummary({
 function DiscoveryItemRow({
   item,
   children,
+  githubSetupSupported = false,
 }: {
   readonly item: VcsDiscoveryItem | SourceControlProviderDiscoveryItem;
   readonly children?: ReactNode;
+  readonly githubSetupSupported?: boolean;
 }) {
   const version = optionLabel(item.version);
   const enabled = isProviderDiscoveryItem(item)
@@ -321,7 +330,7 @@ function DiscoveryItemRow({
               ) : null}
             </div>
             <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-normal text-muted-foreground/80">
-              {itemSummary({ item, auth, authAccount })}
+              {itemSummary({ item, auth, authAccount, githubSetupSupported })}
             </p>
           </div>
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
@@ -514,11 +523,15 @@ function EmptySourceControlDiscovery({
 
 export function SourceControlSettingsPanel() {
   const { scope, environment, connectedEnvironments } = useSettingsScope();
+  const configs = useServerConfigs();
   // Discovery scans one machine's tools, so it shows the representative
   // environment (named in the section title when several are selected);
   // the settings rows above it fan out like everywhere else.
   const environmentId =
     environment?.connection.phase === "connected" ? environment.environmentId : null;
+  const githubSetupSupported =
+    environmentId !== null &&
+    supportsLoomFeature(configs.get(environmentId)?.environment.capabilities, "github-host-setup");
   const aggregate = scope.environmentIds.length !== 1 && connectedEnvironments.length > 1;
   const environmentSuffix = aggregate && environment ? ` · ${environment.label}` : "";
   const discovery = useEnvironmentQuery(
@@ -574,6 +587,14 @@ export function SourceControlSettingsPanel() {
   return (
     <SettingsPageContainer>
       <ProjectDefaultsSettings category="source-control" />
+      {environmentId && githubSetupSupported && (
+        <GitHubHostSetupSettings
+          key={environmentId}
+          environmentId={environmentId}
+          label={environment?.label ?? "Selected host"}
+          onReady={handleScan}
+        />
+      )}
       {environmentId === null ? (
         <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
           <p className="px-4 py-3 text-sm text-muted-foreground">
@@ -615,7 +636,11 @@ export function SourceControlSettingsPanel() {
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
-                <DiscoveryItemRow key={`provider:${item.kind}`} item={item}>
+                <DiscoveryItemRow
+                  key={`provider:${item.kind}`}
+                  item={item}
+                  githubSetupSupported={githubSetupSupported}
+                >
                   {item.kind === "github" ? (
                     <SettingsSearchTarget id={searchableSetting("github-accounts").id}>
                       <div className="grid gap-6">

@@ -833,11 +833,21 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
   },
   {
+    id: "github-host-setup",
+    title: "GitHub access",
+    to: "/settings/source-control",
+    scope: "environment-defaults",
+    environmentOnly: true,
+    searchTerms: [
+      "github sign in device code private repositories host setup authentication cli install",
+    ],
+  },
+  {
     id: "github-accounts",
     title: "GitHub accounts and token",
     to: "/settings/source-control",
     searchTerms: [
-      "github gh account login user host enterprise ghes switch multiple accounts disable sign in token personal access token pat api key credential",
+      "github gh account login user host enterprise ghes switch multiple accounts disable sign in token personal access token pat api key credential device code private repository setup",
     ],
     environmentOnly: true,
     scope: "environment-defaults",

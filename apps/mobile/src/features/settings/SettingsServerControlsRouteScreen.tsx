@@ -1,3 +1,4 @@
+import { GitHubHostSetupSettings } from "./components/GitHubHostSetupSettings";
 import { useNavigation } from "@react-navigation/native";
 import { SettingsRow } from "./components/SettingsRow";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
@@ -348,6 +349,15 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
 
               {props.page === "source-control" ? (
                 <>
+                  {selectedTargets
+                    .filter((environment) => environment.connection.phase === "connected")
+                    .map((environment) => (
+                      <GitHubHostSetupSettings
+                        key={environment.environmentId}
+                        environmentId={environment.environmentId}
+                        label={environment.label}
+                      />
+                    ))}
                   <BranchNamingSettings
                     key={targets
                       .map((target) => `${target.environment.environmentId}:${target.projectId}`)

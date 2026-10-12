@@ -18,10 +18,17 @@ and choose **Rescan**.
 
 ### GitHub
 
-For private repositories, run `t3 github setup` once as the user running the server. It installs
-GitHub CLI if needed, starts device sign-in when no saved authorization exists, and configures Git
-for HTTPS access. Open the displayed GitHub page and approve its code. Projects and disposable
-workspaces reuse that machine's authorization. Repeat setup if the authorization expires or is revoked.
+In Loom, open **Settings → Source Control → GitHub access** on the host you want to prepare and
+choose **Set up GitHub**. Setup installs GitHub CLI if needed and reuses saved authorization.
+If approval is needed, copy the displayed code, open GitHub, and approve only if its code matches.
+Loom finishes configuring HTTPS Git access automatically. Closing Settings keeps setup running;
+reopen it to see the active request. Cancel stops the request while keeping any saved authorization.
+Retry requests a fresh code when an approval expires.
+
+From a terminal, run `t3 github setup` once as the user running the server and approve its displayed
+code in your browser. Projects and disposable workspaces reuse that machine's authorization.
+Repeat setup if the authorization expires or is revoked. GitHub access setup needs terminal operation
+permission on the selected host. A token saved for pull requests does not automatically configure Git.
 
 Include `--github` when installing a new host with `t3 service install` to prepare GitHub access in
 the same setup. Automation can use `t3 github setup --non-interactive` to install or repair the CLI
