@@ -1,3 +1,4 @@
+/* eslint-disable t3code/no-global-process-runtime -- Bootstrap executes before dependencies exist and must check the native Node host. */
 // @effect-diagnostics nodeBuiltinImport:off - runs before `vp i`, so only Node built-ins exist.
 /**
  * Worktree setup, run by the t3.json "Setup Worktree" action as
@@ -9,6 +10,11 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+import {
+  invalidateWorkspaceInstallation,
+  recordWorkspaceInstallation,
+  workspaceInstallationReady,
+} from "./lib/workspace-setup.ts";
 
 const ENV_FILES = [".env", NodePath.join("infra", "relay", ".env")];
 
@@ -18,18 +24,38 @@ if (!projectRoot) {
 }
 const worktree = NodePath.dirname(import.meta.dirname);
 
-// `shell` resolves `vp` through PATH, including Windows command shims.
+const setupStarted = performance.now();
 const installStarted = performance.now();
-process.stdout.write("Installing dependencies...\n");
-const install = NodeChildProcess.spawnSync("vp i", {
-  cwd: worktree,
-  shell: true,
-  stdio: "inherit",
-});
-if (install.status !== 0) process.exit(install.status ?? 1);
-process.stdout.write(
-  `Dependencies ready (${Math.round(performance.now() - installStarted)} ms).\n`,
-);
+if (!process.argv.includes("--force-install") && workspaceInstallationReady(worktree)) {
+  process.stdout.write(
+    `Using prepared dependencies (${Math.round(performance.now() - installStarted)} ms).\n`,
+  );
+} else {
+  invalidateWorkspaceInstallation(worktree);
+  process.stdout.write("Installing dependencies from the shared package cache...\n");
+  // The package manager keeps immutable packages in its existing shared store.
+  // Each checkout retains its own links and native build outputs.
+  const localVp = NodePath.join(
+    worktree,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "vp.cmd" : "vp",
+  );
+  const install = NodeChildProcess.spawnSync(
+    NodeFS.existsSync(localVp) ? localVp : "vp",
+    ["install", "--frozen-lockfile", "--prefer-offline"],
+    {
+      cwd: worktree,
+      shell: process.platform === "win32",
+      stdio: "inherit",
+    },
+  );
+  if (install.status !== 0) process.exit(install.status ?? 1);
+  recordWorkspaceInstallation(worktree);
+  process.stdout.write(
+    `Dependencies ready (${Math.round(performance.now() - installStarted)} ms).\n`,
+  );
+}
 
 // Env files live as real files in the main checkout; worktrees only get
 // symlinks to them. Only a symlink is ever replaced, so a real env file is
@@ -49,6 +75,7 @@ for (const file of ENV_FILES) {
   NodeFS.symlinkSync(source, target);
 }
 
+const dataStarted = performance.now();
 process.stdout.write("Preparing development data...\n");
 const seed = NodeChildProcess.spawnSync(
   process.execPath,
@@ -56,6 +83,9 @@ const seed = NodeChildProcess.spawnSync(
   { cwd: worktree, stdio: "inherit" },
 );
 if (seed.status !== 0) process.exit(seed.status ?? 1);
+process.stdout.write(
+  `Development data ready (${Math.round(performance.now() - dataStarted)} ms).\n`,
+);
 
 const warmStarted = performance.now();
 process.stdout.write("Warming web dependencies...\n");
@@ -67,4 +97,8 @@ const warm = NodeChildProcess.spawnSync(
 if (warm.status !== 0) process.exit(warm.status ?? 1);
 process.stdout.write(
   `Web dependencies ready (${Math.round(performance.now() - warmStarted)} ms).\n`,
+);
+
+process.stdout.write(
+  `Workspace ready (${Math.round(performance.now() - setupStarted)} ms total).\n`,
 );

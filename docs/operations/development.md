@@ -19,6 +19,19 @@ these stages. It waits for setup to finish before starting the agent.
 Use `migrate-dev-db` separately when you specifically need to test migration or
 rendering against a read-only snapshot of installed-app state.
 
+## Repeatable workspace setup
+
+The repository's setup action uses the package manager's shared package store and keeps each
+checkout's dependency links and build output separate. Repeated setup skips installation when
+its recorded lockfile, workspace manifests, patches, Node version and architecture still match
+and the dependency links are intact. Source edits do not trigger another install. Development
+fixtures and the checkout's Vite cache are still checked on each run.
+
+Setup reports dependency, fixture and web-cache durations and total preparation time. To force
+an install while investigating damaged dependencies, run the configured setup action with
+`node scripts/setup-worktree.ts --force-install`. Keep `T3CODE_PROJECT_ROOT` set to the project's
+main checkout, as it is when Loom runs that action.
+
 ## First checkout
 
 Install `vp` using the [root README](../../README.md#install-vp). The checkout requires Node 24;
