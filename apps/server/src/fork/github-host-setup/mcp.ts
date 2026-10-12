@@ -17,10 +17,20 @@ export const GitHubHostSetupToolkit = Toolkit.make(
   Tool.make("loom_github_host_setup", {
     description:
       "Prepare persistent GitHub HTTPS access on this host. Start with a unique requestId, then use status to read progress and the public device code. The user approves that code at https://github.com/login/device. Never approve on their behalf. Reopening status reuses the active request. Cancel requires its current requestId. Saved credentials remain on the host outside projects and lanes. Requires full access, including status because it can expose an approval code.",
-    parameters: Schema.Union([
-      Schema.Struct({ action: Schema.Literal("status") }),
-      Schema.Struct({ action: Schema.Literals(["start", "cancel"]), ...GitHubSetupRequest.fields }),
-    ]),
+    // MCP input schemas require an object root; validate action-specific fields at decode.
+    parameters: Schema.Struct({
+      action: Schema.Literals(["status", "start", "cancel"]),
+      requestId: Schema.optional(GitHubSetupRequest.fields.requestId).annotate({
+        description: "Required for start and cancel. Reuse the same ID when retrying a start.",
+      }),
+    }).check(
+      Schema.makeFilter(
+        (input) =>
+          input.action === "status" ||
+          input.requestId !== undefined ||
+          "requestId is required for start and cancel.",
+      ),
+    ),
     success: GitHubSetupState,
     failure: Schema.Union([GitHubSetupFlowError, OrchestratorMcpFailure]),
     dependencies: [McpInvocationContext, ThreadManagementService],
@@ -39,9 +49,9 @@ export const githubHostSetupHandlers = McpToolAccess.toLayer(
             const service = yield* GitHubSetupFlow.GitHubSetupFlow;
             switch (input.action) {
               case "start":
-                return yield* service.start(input);
+                return yield* service.start({ requestId: input.requestId! });
               case "cancel":
-                return yield* service.cancel(input);
+                return yield* service.cancel({ requestId: input.requestId! });
               case "status":
                 return yield* service.snapshot;
             }
