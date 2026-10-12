@@ -29,6 +29,58 @@ export function connectionCommand(file, args, env, input) {
   });
 }
 
+export async function probeAppConnection(app, config, env, dependencies = {}) {
+  const command = dependencies.command ?? connectionCommand;
+  let check = row(
+    app,
+    names[app] + " CLI",
+    "setup-needed",
+    "This app's address and command-line client must be configured.",
+  );
+  let declaration = null;
+  if (config[`${app}Cli`] && config[`${app}Url`]) {
+    declaration = await (dependencies.discover ?? discoverAppIntegration)(app, config);
+    if (declaration.state !== "available") {
+      check = row(
+        app,
+        names[app] + " CLI",
+        "unavailable",
+        "Update or reconnect the app server, then retry. App opening remains available.",
+      );
+    } else {
+      const cliEnv = await (dependencies.appEnvironment ?? appCliEnvironment)(
+        app,
+        config[`${app}Url`],
+        env,
+      );
+      const result = await command(config[`${app}Cli`], [app, "integration-describe", "--json"], {
+        ...cliEnv,
+        API_URL: config[`${app}Url`],
+      });
+      let valid = false;
+      if (result.exit === 0) {
+        try {
+          validateAppIntegration(JSON.parse(result.stdout), app);
+          valid = true;
+        } catch {
+          /* Refuse invalid success. */
+        }
+      }
+      check = row(
+        app,
+        names[app] + " CLI",
+        valid ? "connected" : [3, 4].includes(result.exit) ? "approval-needed" : "unavailable",
+        valid
+          ? "The app accepts its existing CLI access. App permissions still apply."
+          : [3, 4].includes(result.exit)
+            ? "Sign in or review the app's CLI permissions. Browser sign-in is separate."
+            : "The CLI could not verify access. Retry after checking the app and secret store; existing access is preserved.",
+      );
+    }
+  }
+  return { step: check, declaration };
+}
+
 export async function guidedConnectionReport(config, env, dependencies = {}) {
   const command = dependencies.command ?? connectionCommand;
   const health = await (dependencies.health ?? collectConnections)(config, env);
@@ -85,58 +137,12 @@ export async function guidedConnectionReport(config, env, dependencies = {}) {
             : "Check the private network and Switchboard hub. Existing access is preserved.",
     ),
   ];
-  await Promise.all(
-    Object.keys(names).map(async (app) => {
-      let check = row(
-        app,
-        names[app] + " CLI",
-        "setup-needed",
-        "This app's address and command-line client must be configured.",
-      );
-      if (config[`${app}Cli`] && config[`${app}Url`]) {
-        const declaration = await (dependencies.discover ?? discoverAppIntegration)(app, config);
-        if (declaration.state !== "available") {
-          check = row(
-            app,
-            names[app] + " CLI",
-            "unavailable",
-            "Update or reconnect the app server, then retry. App opening remains available.",
-          );
-        } else {
-          const cliEnv = await (dependencies.appEnvironment ?? appCliEnvironment)(
-            app,
-            config[`${app}Url`],
-            env,
-          );
-          const result = await command(
-            config[`${app}Cli`],
-            [app, "integration-describe", "--json"],
-            { ...cliEnv, API_URL: config[`${app}Url`] },
-          );
-          let valid = false;
-          if (result.exit === 0) {
-            try {
-              validateAppIntegration(JSON.parse(result.stdout), app);
-              valid = true;
-            } catch {
-              /* Refuse invalid success. */
-            }
-          }
-          check = row(
-            app,
-            names[app] + " CLI",
-            valid ? "connected" : [3, 4].includes(result.exit) ? "approval-needed" : "unavailable",
-            valid
-              ? "The app accepts its existing CLI access. App permissions still apply."
-              : [3, 4].includes(result.exit)
-                ? "Sign in or review the app's CLI permissions. Browser sign-in is separate."
-                : "The CLI could not verify access. Retry after checking the app and secret store; existing access is preserved.",
-          );
-        }
-      }
-      return check;
-    }),
-  ).then((apps) => steps.push(...apps));
+  const apps = await Promise.all(
+    Object.keys(names).map(
+      async (app) => (await probeAppConnection(app, config, env, dependencies)).step,
+    ),
+  );
+  steps.push(...apps);
   return { version: 1, steps, ready: steps.every((step) => step.state === "connected") };
 }
 

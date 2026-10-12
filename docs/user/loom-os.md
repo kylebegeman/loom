@@ -199,11 +199,36 @@ Revoke a paired device in the host's **Settings → Connections**. To remove the
 HTTPS route, run `tailscale serve --https=443 off`, replacing `443` with the port
 you selected. This leaves local Loom and the background service running.
 
+## What works now
+
+Choose **What works now** from the launcher, Loom actions or **LoomOS → AI and
+connections**. The Loom bar icon opens the same keyboard-friendly status and
+recovery controls; its tooltip shows separate app, network, AI and workstation
+states. Symbols and text distinguish attention and unavailable states as well
+as color.
+
+Office supports saved copies and some queued changes after prior use in that
+browser profile. Atlas currently declares no durable offline reading or writing.
+**Check in app** describes support and asks you to verify this device's saved
+copies; it does not promise that an uncached item is available. The apps do not
+currently report their browser cache or pending-change count to LoomOS, so
+**Not confirmed** never means an empty queue. Open the owning app to inspect it.
+
+Live search needs the app server and CLI access, with permissions checked when
+searching. Shared AI needs Switchboard's private route. A stopped workstation
+service is shown separately. During an outage, last-verified offline declarations
+are retained for up to seven days, labelled as retained support rather than current
+access. Sleep clears readiness until a fresh check finishes.
+
+**Check again**, **Set up connections** and **Open app** recover access without
+resubmitting queued changes or restarting agents. App offline storage and retry
+policies remain in Office and Atlas.
+
 ## Private AI status and recovery
 
 The Loom status icon checks Tailscale, Switchboard and this workstation's Loom
-server every 30 seconds. Hover for their separate states, or click for
-**AI and connections**. Open **Connection status** to check again, open Tailscale
+server alongside app capabilities every 30 seconds. Hover for separate states,
+or click for **What works now**. Open **Connection status** to check again, open Tailscale
 or Switchboard, or inspect the Loom service. Checks do not restart agents or
 refresh provider account usage.
 

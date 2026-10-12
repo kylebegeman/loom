@@ -4,8 +4,9 @@ import * as NodeFS from "node:fs";
 import * as NodeVM from "node:vm";
 const test = NodeTest.test,
   assert = NodeAssert;
-const { view } = NodeVM.runInNewContext(
-  NodeFS.readFileSync(new URL("./status/StatusModel.js", import.meta.url), "utf8") + "\n({ view })",
+const { view, freshness } = NodeVM.runInNewContext(
+  NodeFS.readFileSync(new URL("./status/StatusModel.js", import.meta.url), "utf8") +
+    "\n({ view, freshness })",
 );
 const now = Date.now();
 const report = {
@@ -49,4 +50,60 @@ test("stale, malformed and inconsistent status cannot retain a ready indicator a
   for (const input of inputs) assert.equal(view(input, now).aiReady, false);
   assert.equal(view(JSON.stringify(report), now + 90001).aiReady, false);
   assert.equal(view(JSON.stringify(report), now).aiReady, true);
+});
+
+test("resume and backwards clock changes reject every pre-gap sample until a new check", () => {
+  const gap = freshness(now, now + 6000, now - 1000);
+  assert.equal(gap.refresh, true);
+  assert.equal(view(JSON.stringify(report), now + 6000, gap.minimum).aiReady, false);
+  const fresh = { ...report, generatedAt: new Date(now + 6001).toISOString() };
+  assert.equal(view(JSON.stringify(fresh), now + 6001, gap.minimum).aiReady, true);
+  assert.equal(freshness(now, now + 1000, now - 1000).refresh, false);
+  assert.equal(freshness(now, now - 1000, now - 2000).refresh, true);
+});
+
+test("capability status distinguishes offline support, live search and unknown pending changes", () => {
+  const conditional = { state: "conditional", detail: "Supported after prior use." };
+  const app = {
+    id: "office",
+    title: "Office",
+    server: "reachable",
+    cli: "connected",
+    declaration: "live",
+    reading: conditional,
+    writing: conditional,
+    search: { state: "available", detail: "Permissions apply." },
+    pending: { state: "unknown", detail: "Open app." },
+    pendingCount: null,
+  };
+  const ecosystem = { ...report, version: 2, apps: [app] };
+  const result = view(JSON.stringify(ecosystem), now);
+  assert.equal(result.state, "ok");
+  assert.match(result.tooltip, /Saved reading: Supported after prior use/);
+  assert.match(result.tooltip, /Pending changes: not reported by app/);
+  for (const invalid of [
+    { ...ecosystem, apps: [{ ...app, pendingCount: 0 }] },
+    { ...ecosystem, apps: [{ ...app, cli: "approval-needed" }] },
+    {
+      ...ecosystem,
+      state: "attention",
+      apps: [{ ...app, declaration: "retained", server: "unavailable" }],
+    },
+    { ...ecosystem, apps: [app, app] },
+    { ...ecosystem, apps: [{ ...app, writing: { state: "available", detail: "bad\u001btext" } }] },
+  ])
+    assert.equal(view(JSON.stringify(invalid), now).aiReady, false);
+  const partial = {
+    ...ecosystem,
+    state: "attention",
+    apps: [
+      {
+        ...app,
+        cli: "approval-needed",
+        search: { state: "approval-needed", detail: "Connect the CLI." },
+      },
+    ],
+  };
+  assert.equal(view(JSON.stringify(partial), now).state, "attention");
+  assert.equal(view(JSON.stringify(partial), now).aiReady, true);
 });

@@ -331,7 +331,7 @@ part of this flow.
 ## Native connection status
 
 The pack owns the `loom.status` plugin under the user's Omarchy plugin directory.
-Its native bar presentation reads bounded connection checks every 30 seconds;
+Its native bar presentation reads bounded capability/connection checks every 30 seconds;
 there is no additional daemon. Ask AI uses the same private route check before
 launch and keeps prompts intact through an explicit retry. Provider inference,
 account-usage refresh and service restarts are never diagnostic side effects.
@@ -343,6 +343,23 @@ integrity checks and edited widgets are preserved. A commissioned machine with
 the retired custom Loom widget needs its exact old files reviewed and backed up
 before replacement; the installer deliberately refuses unowned existing files.
 Routine updates retain that widget's placement and personal shell settings.
+
+## Capability availability
+
+`loom-os availability --json` collects the same app, private AI and workstation
+status used by the bar. The native **What works now** action exposes explicit
+read-only retry and owner-app opening. Offline support comes from validated app
+integration declarations; retained declarations are origin-bound, expire after
+seven days and contain no grants, account data or browser credentials. Refused
+CLI access disables live search availability independently of offline support.
+Current app contracts decline device cache/outbox reporting, so those observations
+remain unconfirmed rather than reporting invented zero pending changes.
+
+The widget clears status on logind sleep signals, rejects in-flight pre-sleep
+results by generation, and also handles wall-clock gaps/backwards changes. Its
+one-second clock check performs no network request; connection checks run at most
+once per widget at a time on the 30-second cadence or explicit recovery. Sleep
+never cancels an owning CLI credential refresh or replays queued work.
 
 ## Implementation packets
 
