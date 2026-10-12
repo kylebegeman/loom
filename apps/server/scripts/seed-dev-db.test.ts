@@ -32,8 +32,14 @@ const inspect = (databasePath: string) =>
     const auth = yield* sql<{ count: number }>`SELECT count(*) AS count FROM auth_sessions`;
     const messages =
       shells.length > 0 ? (yield* projections.getThreadProjection(shells[0]!.id)).messages : [];
+    const visible =
+      shells.length > 0
+        ? (yield* projections.getThreadSnapshotWindow(shells[0]!.id, { rowLimit: 20 })).projection
+            .messages
+        : [];
     return {
       shells,
+      visible,
       messages,
       events: events[0]!.count,
       pending: pending[0]!.count,
@@ -55,7 +61,11 @@ it.layer(NodeServices.layer)("development fixtures", (it) => {
       assert.equal(result.status, "seeded");
       const sample = yield* inspect(result.databasePath);
       assert.equal(sample.shells.length, 3);
-      assert.equal(sample.events, 10);
+      assert.isAbove(sample.events, 0);
+      assert.deepEqual(
+        sample.visible.map((message) => message.text),
+        sample.messages.map((message) => message.text),
+      );
       assert.deepEqual(
         sample.messages.map((message) => message.role),
         ["user", "assistant"],

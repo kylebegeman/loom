@@ -152,31 +152,67 @@ const writeFixture = Effect.fn("writeDevelopmentFixture")(function* (
             deletedAt: null,
           },
         }),
-        ...(["user", "assistant"] as const).map((role) => {
+        ...(["user", "assistant"] as const).flatMap((role) => {
           const createdAt = role === "user" ? CREATED_AT : "2026-01-01T12:00:01.000Z";
-          return decodeEvent({
-            id: `fixture:event:${index}:${role}`,
-            type: "message.updated",
-            threadId,
-            occurredAt: createdAt,
-            payload: {
-              id: `fixture:message:${index}:${role}`,
+          const text =
+            role === "user"
+              ? "Read README.md and confirm this is a synthetic sample project. Do not modify files or start other work."
+              : "This is synthetic development history. No provider has run and no personal data was copied.";
+          return [
+            decodeEvent({
+              id: `fixture:event:${index}:${role}`,
+              type: "message.updated",
               threadId,
-              runId: null,
-              nodeId: null,
-              role,
-              createdBy: role === "user" ? "user" : "system",
-              creationSource: "web",
-              text:
-                role === "user"
-                  ? "Help me work with this sample project."
-                  : "This is synthetic development history. No provider has run and no personal data was copied.",
-              attachments: [],
-              streaming: false,
-              createdAt,
-              updatedAt: createdAt,
-            },
-          });
+              occurredAt: createdAt,
+              payload: {
+                id: `fixture:message:${index}:${role}`,
+                threadId,
+                runId: null,
+                nodeId: null,
+                role,
+                createdBy: role === "user" ? "user" : "system",
+                creationSource: "web",
+                text,
+                attachments: [],
+                streaming: false,
+                createdAt,
+                updatedAt: createdAt,
+              },
+            }),
+            decodeEvent({
+              id: `fixture:event:${index}:${role}:item`,
+              type: "turn-item.updated",
+              threadId,
+              occurredAt: createdAt,
+              payload: {
+                id: `fixture:item:${index}:${role}`,
+                threadId,
+                runId: null,
+                nodeId: null,
+                providerThreadId: null,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: role === "user" ? 0 : 1,
+                status: "completed",
+                title: null,
+                startedAt: createdAt,
+                completedAt: createdAt,
+                updatedAt: createdAt,
+                messageId: `fixture:message:${index}:${role}`,
+                text,
+                ...(role === "user"
+                  ? {
+                      type: "user_message",
+                      inputIntent: "turn_start",
+                      attachments: [],
+                      createdBy: "user",
+                      creationSource: "web",
+                    }
+                  : { type: "assistant_message", streaming: false }),
+              },
+            }),
+          ];
         }),
       ],
     });
