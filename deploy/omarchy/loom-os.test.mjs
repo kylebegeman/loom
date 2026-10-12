@@ -1,4 +1,5 @@
 import * as NodeAssert from "node:assert/strict";
+import * as NodeHttp from "node:http";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -24,6 +25,23 @@ import {
 } from "./loom-os.mjs";
 
 const test = NodeTest.test;
+
+async function legacyServer(t, config) {
+  const server = NodeHttp.createServer((_request, response) => {
+    response.writeHead(404);
+    response.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(
+    () =>
+      new Promise((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  );
+  const origin = `http://127.0.0.1:${server.address().port}`;
+  config.officeUrl = origin;
+  config.atlasUrl = origin;
+}
 
 async function fixture(t, { bindings = "lua", menu = true } = {}) {
   const temporary = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-os-test-"));
@@ -349,6 +367,7 @@ test("Office and Atlas share the retained Office profile so email sign-in reache
 
 test("native search forwards the correct app origin and preserves query words as one argument", async (t) => {
   const f = await fixture(t);
+  await legacyServer(t, f.config);
   await install(f.config, { env: f.env });
   await main(["search", "office", "from:person@example.test", "design & notes"], f.env);
   const office = JSON.parse(await NodeFSP.readFile(f.env.LOOM_OS_TEST_RECORD, "utf8"));
@@ -378,6 +397,7 @@ test("native search forwards the correct app origin and preserves query words as
 
 test("Atlas native capture uses a private source and explicit Omarchy topic without running AI", async (t) => {
   const f = await fixture(t);
+  await legacyServer(t, f.config);
   await install(f.config, { env: f.env });
   const text = "Synthetic text with $literal and `literal`.";
   await main(["capture", "atlas", "--title", "Synthetic capture", "--text", text], f.env);
@@ -964,6 +984,7 @@ function finderFixture(choices, queries = ["project"]) {
   return {
     events,
     dependencies: {
+      discover: async (app) => ({ app, state: "legacy", manifest: null }),
       choose: async (header, options) => {
         events.push(["choose", header, options]);
         NodeAssert.ok(choices.length, "Unexpected additional action");

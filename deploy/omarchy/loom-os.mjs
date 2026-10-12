@@ -817,9 +817,9 @@ export async function installationPlan(
     content: await NodeFSP.readFile(NodePath.join(packDir, "health.mjs"), "utf8"),
     mode: 0o644,
   });
-  for (const action of ["shortcuts", "readability", "compatibility"]) {
+  for (const action of ["shortcuts", "readability", "compatibility", "app-integration"]) {
     writes.set(NodePath.join(p.root, action + "-terminal"), {
-      content: `#!/bin/bash\nprintf '\\033]0;Loom ${action}\\007'\n${shellQuote(p.bin)} ${action} ${action === "compatibility" ? "--human" : "--inline"}\nstatus=$?\n${action === "compatibility" ? "printf '\\nPress Enter to close. '; read -r _\n" : ""}exit "$status"\n`,
+      content: `#!/bin/bash\nprintf '\\033]0;Loom ${action}\\007'\n${shellQuote(p.bin)} ${action} ${["compatibility", "app-integration"].includes(action) ? "--human" : "--inline"}\nstatus=$?\n${["compatibility", "app-integration"].includes(action) ? "printf '\\nPress Enter to close. '; read -r _\n" : ""}exit "$status"\n`,
       mode: 0o755,
     });
   }
@@ -987,6 +987,10 @@ done
     entries["loomos.appearance.readability"] = {
       label: "Readability controls",
       action: command("readability"),
+    };
+    entries["loomos.connections.integration"] = {
+      label: "App integration",
+      action: command("app-integration --terminal"),
     };
     entries["loomos.maintenance.compatibility"] = {
       label: "Compatibility checks",
@@ -1375,6 +1379,431 @@ export function officeCaptureUrl(config, { title = "", text = "", url = "" }) {
   return capture.href;
 }
 
+const integrationFormat = "loom-app-integration";
+const integrationCapabilities = [
+  "launch",
+  "search",
+  "capture",
+  "links",
+  "notifications",
+  "availability",
+];
+const integrationText = (value, max = 4000) =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.length <= max &&
+  !/[\p{Cc}\p{Cf}]/u.test(value);
+function integrationPath(value, prefix = "/") {
+  if (
+    !integrationText(value, 2048) ||
+    !value.startsWith(prefix) ||
+    value.startsWith("//") ||
+    value.includes("\\") ||
+    value.includes("?") ||
+    value.includes("#") ||
+    value.includes("//") ||
+    /%(?:2e|2f|5c)/i.test(value) ||
+    value.split("/").some((v) => v === "." || v === "..") ||
+    new URL(value, "https://integration.invalid").pathname !== value
+  )
+    throw Error("Invalid app integration path.");
+  return value;
+}
+function integrationOperation(value, app) {
+  if (
+    !value ||
+    !integrationText(value.id, 100) ||
+    !new RegExp(`^${app}\\.[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$`).test(value.id) ||
+    !["GET", "POST"].includes(value.method) ||
+    !["read", "write", "external"].includes(value.effect) ||
+    !["read-only", "idempotent", "non-idempotent", "destructive"].includes(value.mutation) ||
+    !integrationText(value.approval, 100) ||
+    !Array.isArray(value.command) ||
+    value.command.length !== 2 ||
+    value.command[0] !== app ||
+    value.command[1] !== value.id.slice(app.length + 1).replaceAll(".", "-") ||
+    !Array.isArray(value.scopes) ||
+    value.scopes.length > 32 ||
+    value.scopes.some((v) => !integrationText(v, 100)) ||
+    !Array.isArray(value.surfaces) ||
+    !value.surfaces.includes("api") ||
+    !value.surfaces.includes("cli")
+  )
+    throw Error("Invalid app integration operation.");
+  return { ...value, path: integrationPath(value.path, `/api/${app}/`) };
+}
+export function validateAppIntegration(value, app) {
+  if (!["office", "atlas"].includes(app)) throw Error("Unknown integration app.");
+  if (
+    !value ||
+    value.format !== integrationFormat ||
+    value.app !== app ||
+    !integrationText(value.name, 100) ||
+    !value.version ||
+    !Number.isSafeInteger(value.version.major) ||
+    !Number.isSafeInteger(value.version.minor) ||
+    value.version.major < 1 ||
+    value.version.minor < 0
+  )
+    throw Error("Invalid app integration declaration.");
+  if (value.version.major !== 1) throw Error("Unsupported app integration version. Update LoomOS.");
+  if (
+    !value.capabilities ||
+    !Array.isArray(value.actions) ||
+    value.actions.length > 32 ||
+    !value.offline ||
+    ["savedReading", "supportedWriting", "requiresPriorUse"].some(
+      (key) => typeof value.offline[key] !== "boolean",
+    ) ||
+    !integrationText(value.offline.detail)
+  )
+    throw Error("Invalid app integration declaration.");
+  const capabilities = {};
+  for (const id of integrationCapabilities) {
+    const cap = value.capabilities[id];
+    if (
+      !cap ||
+      !Number.isSafeInteger(cap.version) ||
+      cap.version < 1 ||
+      typeof cap.supported !== "boolean"
+    )
+      throw Error("Invalid app integration capability.");
+    if (cap.version !== 1) {
+      capabilities[id] = {
+        version: cap.version,
+        supported: false,
+        reason: `Update LoomOS to use ${id} capability version ${cap.version}.`,
+      };
+      continue;
+    }
+    if (!cap.supported && !integrationText(cap.reason))
+      throw Error("Unavailable capability needs an explanation.");
+    const normalized = { ...cap };
+    if (cap.path !== undefined) normalized.path = integrationPath(cap.path, "/app/");
+    if (cap.operation !== undefined)
+      normalized.operation = integrationOperation(cap.operation, app);
+    if (cap.supported && id === "launch" && !cap.path) throw Error("App launch path is missing.");
+    if (cap.supported && id === "search") {
+      if (
+        !cap.operation ||
+        cap.operation.effect !== "read" ||
+        cap.operation.mutation !== "read-only" ||
+        cap.operation.approval !== "none" ||
+        !Number.isSafeInteger(cap.queryLimit) ||
+        cap.queryLimit < 1 ||
+        cap.queryLimit > 2000 ||
+        !["characters", "utf8-bytes"].includes(cap.queryUnit)
+      )
+        throw Error("Invalid read-only app search capability.");
+      const expected = {
+        "office-search-v1": "office.search",
+        "atlas-workspace-search-v1": "atlas.workspace.search",
+      };
+      if (expected[cap.format] !== cap.operation.id) {
+        normalized.supported = false;
+        normalized.reason =
+          "This search format needs a newer LoomOS adapter. Open search inside the app.";
+      }
+    }
+    if (cap.supported && id === "capture") {
+      for (const key of ["titleLimit", "textLimit", "urlLimit"])
+        if (!Number.isSafeInteger(cap[key]) || cap[key] < 1 || cap[key] > 65536)
+          throw Error("Invalid app capture limits.");
+      if (!["utf16-units", "utf8-bytes"].includes(cap.captureUnit))
+        throw Error("Invalid app capture length unit.");
+      if (
+        !Array.isArray(cap.destinations) ||
+        cap.destinations.length > 16 ||
+        cap.destinations.some((v) => !integrationText(v, 100))
+      )
+        throw Error("Invalid capture destinations.");
+      if (
+        (app === "office" &&
+          (cap.format !== "review-in-app-v1" || !cap.path || cap.reviewed !== true)) ||
+        (app === "atlas" &&
+          (cap.format !== "private-source-v1" ||
+            cap.operation?.id !== "atlas.sources.capture" ||
+            cap.operation.effect !== "write" ||
+            cap.operation.approval !== "none" ||
+            cap.operation.mutation !== "idempotent" ||
+            cap.reviewed === true))
+      ) {
+        normalized.supported = false;
+        normalized.reason =
+          "This capture format needs a newer LoomOS adapter. Capture inside the app.";
+      }
+    }
+    capabilities[id] = normalized;
+  }
+  const ids = new Set();
+  const actions = value.actions.map((action) => {
+    if (
+      !action ||
+      !integrationText(action.id, 100) ||
+      !/^[a-z][a-z0-9-]*$/.test(action.id) ||
+      ids.has(action.id) ||
+      !integrationText(action.label, 160) ||
+      typeof action.capability !== "string"
+    )
+      throw Error("Invalid app integration action.");
+    ids.add(action.id);
+    return {
+      id: action.id,
+      label: action.label,
+      capability: action.capability,
+      available: Boolean(capabilities[action.capability]?.supported),
+      reason:
+        capabilities[action.capability]?.reason || "This action needs a newer LoomOS capability.",
+    };
+  });
+  return {
+    format: integrationFormat,
+    version: value.version,
+    app,
+    name: value.name,
+    actions,
+    capabilities,
+    offline: value.offline,
+  };
+}
+async function integrationBody(response) {
+  if (Number(response.headers.get("content-length")) > 128 * 1024) {
+    await response.body?.cancel();
+    throw Error("App integration declaration exceeds its size limit.");
+  }
+  const reader = response.body?.getReader();
+  if (!reader) throw Error("App integration declaration is empty.");
+  const chunks = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > 128 * 1024) throw Error("App integration declaration exceeds its size limit.");
+      chunks.push(value);
+    }
+  } finally {
+    await reader.cancel();
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+export async function discoverAppIntegration(app, config, { request = fetch } = {}) {
+  if (!["office", "atlas"].includes(app) || !config[`${app}Url`])
+    throw Error("Configure the app address before checking integration.");
+  const origin = config[`${app}Url`];
+  try {
+    const response = await request(origin + "/.well-known/loom-app", {
+      method: "GET",
+      redirect: "manual",
+      credentials: "omit",
+      signal: AbortSignal.timeout(4000),
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+    });
+    if (!response.ok) {
+      await response.body?.cancel();
+      return {
+        app,
+        state: [404, 410].includes(response.status) ? "legacy" : "unavailable",
+        detail: [404, 410].includes(response.status)
+          ? "This app release has no integration declaration. Existing limited app controls remain available."
+          : [401, 403].includes(response.status)
+            ? "App integration requires authorization. Open the app or check its server policy."
+            : "App integration is unavailable. Check connections and retry.",
+        manifest: null,
+      };
+    }
+    if (!/^application\/json(?:;|$)/i.test(response.headers.get("content-type") ?? "")) {
+      await response.body?.cancel();
+      throw Error("Invalid app integration response type.");
+    }
+    const manifest = validateAppIntegration(await integrationBody(response), app);
+    return {
+      app,
+      state: "available",
+      detail: "Versioned app integration is available. App permissions remain authoritative.",
+      manifest,
+    };
+  } catch (error) {
+    return {
+      app,
+      state: "unavailable",
+      detail: error.message?.startsWith("Unsupported app integration")
+        ? "This app needs a newer LoomOS integration version. Update LoomOS or use the app directly."
+        : "The app integration declaration is unavailable or invalid. Check connections or update the app, then retry.",
+      manifest: null,
+    };
+  }
+}
+export async function integratedSearchCommand(
+  app,
+  query,
+  config,
+  env = process.env,
+  dependencies = {},
+) {
+  if (!["office", "atlas"].includes(app) || !config[`${app}Cli`] || !config[`${app}Url`])
+    throw Error("Configure the app CLI and reachable origin first.");
+  if (
+    typeof query !== "string" ||
+    !query.trim() ||
+    [...query].length > 2000 ||
+    /[\p{Cc}\p{Cf}]/u.test(query)
+  )
+    throw Error("Search needs a bounded query without control characters.");
+  const report = await (dependencies.discover ?? discoverAppIntegration)(app, config);
+  if (report.state === "legacy")
+    return { ...searchCommand(app, query, config, env), integrationState: "legacy" };
+  if (report.state !== "available") throw Error(report.detail);
+  const cap = report.manifest.capabilities.search;
+  if (!cap.supported) throw Error(cap.reason);
+  const size = cap.queryUnit === "characters" ? [...query].length : Buffer.byteLength(query);
+  if (size > cap.queryLimit)
+    throw Error(
+      `Search is limited to ${cap.queryLimit} ${cap.queryUnit === "characters" ? "characters" : "UTF-8 bytes"}.`,
+    );
+  return {
+    command: config[`${app}Cli`],
+    args: [...cap.operation.command, "--query", query, "--limit", "20", "--json"],
+    env: { ...env, API_URL: config[`${app}Url`] },
+    integrationState: "available",
+    resultFormat: cap.format,
+  };
+}
+export async function integratedCaptureCommand(
+  app,
+  payload,
+  config,
+  env = process.env,
+  dependencies = {},
+) {
+  if (!["office", "atlas"].includes(app) || !config[`${app}Url`])
+    throw Error("Configure the app address first.");
+  const { title = "", text = "", url = "" } = payload;
+  if ([title, text, url].some((value) => typeof value !== "string" || value.includes("\0")))
+    throw Error("Capture needs text without NUL characters.");
+  if (!title.trim() && !text.trim() && !url) throw Error("Capture needs text, title, or a URL.");
+  if (app === "atlas" && (!config.atlasCli || !title.trim() || !text.trim()))
+    throw Error("Atlas capture needs a configured CLI/endpoint, --title and --text.");
+  if (url) {
+    const parsed = new URL(url);
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password ||
+      hasControl(url)
+    )
+      throw Error(
+        "Capture URL must be HTTP(S) without embedded credentials or control characters.",
+      );
+  }
+  const report = await (dependencies.discover ?? discoverAppIntegration)(app, config);
+  if (!["available", "legacy"].includes(report.state)) throw Error(report.detail);
+  const cap =
+    report.state === "available"
+      ? report.manifest.capabilities.capture
+      : {
+          supported: true,
+          path: "/app/share",
+          captureUnit: app === "office" ? "utf16-units" : "utf8-bytes",
+          titleLimit: 200,
+          textLimit: app === "office" ? 4000 : 65536,
+          urlLimit: app === "office" ? 2048 : 2000,
+          operation: { command: ["atlas", "sources-capture"] },
+        };
+  if (!cap.supported) throw Error(cap.reason);
+  const size = (value) =>
+    cap.captureUnit === "utf8-bytes" ? Buffer.byteLength(value) : value.length;
+  for (const [field, value] of Object.entries({ title, text, url }))
+    if (size(value) > cap[`${field}Limit`])
+      throw Error(
+        `Capture ${field} exceeds the app limit of ${cap[`${field}Limit`]} ${cap.captureUnit}.`,
+      );
+  if (app === "office") {
+    const target = new URL(cap.path, config.officeUrl);
+    for (const [key, value] of Object.entries({ title, text, url }))
+      if (value) target.searchParams.set(key, value);
+    return {
+      ...appCommand(app, config, env, target.href),
+      integrationState: report.state,
+      reviewed: true,
+    };
+  }
+  return {
+    command: config.atlasCli,
+    args: [
+      ...cap.operation.command,
+      "--title",
+      title,
+      "--text",
+      text,
+      ...(url ? ["--url", url] : []),
+      "--audience",
+      "private",
+      "--topics",
+      "omarchy",
+      "--json",
+    ],
+    env: { ...env, API_URL: config.atlasUrl },
+    integrationState: report.state,
+    reviewed: false,
+  };
+}
+
+export function integrationSearchResults(app, page, format) {
+  if (format !== "atlas-workspace-search-v1") return finderResults(app, page);
+  if (
+    app !== "atlas" ||
+    !Array.isArray(page?.matches) ||
+    page.matches.length > 20 ||
+    typeof page.next !== "string" ||
+    !integrationText(page.coverage)
+  )
+    throw Error("The app returned an unsupported search response.");
+  return {
+    more: Boolean(page.next),
+    coverage: terminalText(page.coverage),
+    results: page.matches.map((item, index) => {
+      if (
+        !item ||
+        !["source", "output", "draft", "opportunity"].includes(item.kind) ||
+        !integrationText(item.id, 150) ||
+        typeof item.title !== "string" ||
+        typeof item.snippet !== "string" ||
+        !Number.isSafeInteger(item.revision) ||
+        item.revision < 1 ||
+        typeof item.versionId !== "string"
+      )
+        throw Error("The app returned an unsupported search result.");
+      const title = terminalText(item.title, 200) || "Untitled";
+      return {
+        label: `${index + 1}. ${title} (${item.kind})`,
+        title,
+        text: terminalText(item.snippet),
+        reference: {
+          kind: item.kind,
+          id: item.id,
+          revision: item.revision,
+          versionId: item.versionId,
+        },
+      };
+    }),
+  };
+}
+function formatAppIntegration(report) {
+  if (report.state !== "available") return `${appNames[report.app]}: ${report.detail}`;
+  const manifest = report.manifest;
+  return [
+    `${manifest.name}: integration ${manifest.version.major}.${manifest.version.minor}`,
+    ...integrationCapabilities.map(
+      (id) =>
+        `${id}: ${manifest.capabilities[id].supported ? "Supported" : manifest.capabilities[id].reason}`,
+    ),
+    "Offline support: " + manifest.offline.detail,
+    "These are build capabilities, not a signed-in session, grant or live device status.",
+  ].join("\n");
+}
+
 // Search text never becomes shell code, browser navigation or an AI prompt.
 export function searchCommand(app, query, config, env = process.env) {
   if (!["office", "atlas"].includes(app) || !config[`${app}Cli`] || !config[`${app}Url`])
@@ -1507,7 +1936,9 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
           "--header",
           `Search ${appNames[app]}`,
           "--placeholder",
-          app === "office" ? "Words, phrases or Office filters" : "Source title, project or topic",
+          app === "office"
+            ? "Words, phrases or Office filters"
+            : "Words in saved Research or Presence work",
           "--char-limit",
           app === "office" ? "500" : "200",
         ],
@@ -1531,7 +1962,10 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
     let page;
     show(`Searching ${appNames[app]}…`);
     try {
-      page = finderResults(app, await search(searchCommand(app, query, config, env)));
+      const spec = await integratedSearchCommand(app, query, config, env, {
+        discover: dependencies.discover,
+      });
+      page = integrationSearchResults(app, await search(spec), spec.resultFormat);
     } catch (error) {
       show(terminalText(error.message));
       const recovery = await choose(`Search ${appNames[app]}`, [
@@ -1560,7 +1994,9 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
         ? `${page.results.length} results${page.more ? "; showing the first page. Refine your query for more." : "."}`
         : "No matches. Try different words.",
     );
-    if (app === "atlas") show("Atlas searches library titles, projects and topics.");
+    if (page.coverage) show(page.coverage);
+    else if (app === "atlas")
+      show("This older Atlas release searches library titles, projects and topics.");
     while (true) {
       const selectedResult = await choose(`Search ${appNames[app]}`, [
         ...page.results.map((r) => r.label),
@@ -1646,6 +2082,12 @@ export function loomActionCatalog(config, context = {}) {
     "Compatibility checks",
     "Inspect native menu, theme picker and integration ownership",
     ["compatibility", "--terminal"],
+  );
+  add(
+    "app-integration",
+    "App integration",
+    "Inspect supported app capabilities and offline bounds",
+    ["app-integration", "--terminal"],
   );
   add(
     "open-loom",
@@ -2360,7 +2802,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -2440,6 +2882,29 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "app-integration") {
+    if (rest.length > 1 || (rest.length && !["--human", "--terminal"].includes(rest[0])))
+      throw Error("Usage: app-integration [--human|--terminal]");
+    if (rest[0] === "--terminal")
+      await run(
+        "omarchy-launch-tui",
+        [
+          "--app-id=org.omarchy.loom-app-integration",
+          NodePath.join(p.root, "app-integration-terminal"),
+        ],
+        { env },
+      );
+    else {
+      const reports = await Promise.all(
+        ["office", "atlas"]
+          .filter((app) => config[`${app}Url`])
+          .map((app) => discoverAppIntegration(app, config)),
+      );
+      if (rest[0] === "--human") console.log(reports.map(formatAppIntegration).join("\n\n"));
+      else print(reports);
+    }
+    return;
+  }
   if (action === "compatibility") {
     if (rest.length > 1 || (rest.length && !["--human", "--terminal"].includes(rest[0])))
       throw Error("Usage: compatibility [--human|--terminal]");
@@ -2842,35 +3307,17 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         throw new Error("Could not read text from the Wayland clipboard.");
       text = result.stdout;
     }
-    if (app === "office") {
-      const url = officeCaptureUrl(config, { title: options.title, text, url: options.url });
-      const spec = appCommand(app, config, env, url);
-      await run(spec.command, spec.args, { env, detached: true });
-      return;
-    }
-    if (app === "atlas") {
-      if (!config.atlasCli || !config.atlasUrl || !options.title || !text)
-        throw new Error("Atlas capture needs a configured CLI/endpoint, --title and --text.");
-      await run(
-        config.atlasCli,
-        [
-          "atlas",
-          "sources-capture",
-          "--title",
-          options.title,
-          "--text",
-          text,
-          "--audience",
-          "private",
-          "--topics",
-          "omarchy",
-          "--json",
-        ],
-        { env: { ...env, API_URL: config.atlasUrl } },
-      );
-      return;
-    }
-    throw new Error("Capture supports office or atlas.");
+    const spec = await integratedCaptureCommand(
+      app,
+      { title: options.title, text, url: options.url },
+      config,
+      env,
+    );
+    await run(spec.command, spec.args, {
+      env: app === "atlas" ? await appCliEnvironment(app, config.atlasUrl, spec.env) : env,
+      detached: app === "office",
+    });
+    return;
   }
   if (["login", "search"].includes(action)) {
     const [app, ...query] = rest;
@@ -2879,7 +3326,7 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     if (action === "login")
       await run(config[`${app}Cli`], ["login"], { env: { ...env, API_URL: config[`${app}Url`] } });
     else {
-      const spec = searchCommand(app, query.join(" "), config, env);
+      const spec = await integratedSearchCommand(app, query.join(" "), config, env);
       await run(spec.command, spec.args, {
         env: await appCliEnvironment(app, config[`${app}Url`], spec.env),
       });

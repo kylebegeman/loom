@@ -94,6 +94,35 @@ servers need those settings on their own host, rather than on the browser client
 Only Claude Code may use Claude subscription models. Office and Atlas keep their
 isolated GPT client policies and server-side AI configuration.
 
+## Shared app capabilities
+
+Office and Atlas expose anonymous, build-only metadata at `GET /.well-known/loom-app`.
+Protocol `loom-app-integration` 1.0 describes launch, search, capture, links, notifications,
+availability and bounded offline support. Authenticated `office.integration.describe` and
+`atlas.integration.describe` expose the same metadata through each app's existing registry.
+Actual operations keep their existing scope, account, source, revision and approval checks.
+
+LoomOS accepts additive minor versions, refuses incompatible major versions and disables
+unsupported capability versions with recovery guidance. Search and capture negotiate the
+actual registry CLI words, formats and length units. Commands remain literal arguments.
+Only a missing declaration (404 or 410) selects the existing limited adapter. Network,
+authorization, redirect, malformed and incompatible responses never select that fallback.
+Ordinary app opening remains available without discovery, including offline reading in
+an already-used Office browser profile. Atlas exposes no durable offline client support yet.
+
+Exact-item OS handoff, unified notifications and live device availability are declared
+unavailable. Later packets can add those capabilities through the same app-owned boundary.
+
+Check real producer interoperability from a Mac with Go and the app checkouts:
+
+```sh
+node deploy/omarchy/verify-app-integration.mjs /absolute/office /absolute/atlas
+```
+
+The command runs isolated metadata/permission tests in both products and checks their
+actual JSON outputs against the adapter and installed search/capture dispatch on loopback.
+It uses synthetic executables and no personal records, browser session, inference or database.
+
 ## Native OS AI
 
 Configuring both `switchboard-url` and `switchboard-cli` enables native AI routing.

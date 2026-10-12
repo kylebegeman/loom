@@ -104,10 +104,17 @@ loom-os search atlas "project research"
 loom-os capture atlas --title "Research" --text "A source worth keeping"
 ```
 
+Choose **LoomOS → AI and connections → App integration** to inspect each app's
+supported controls and offline limits. You can also run `loom-os app-integration --human`.
+These describe the app release, not whether this device has saved content or pending changes.
+Search and capture retain the app's permissions. An invalid or incompatible declaration
+shows recovery guidance; use the app directly while its integration is unavailable.
+
 Choose **Find in apps** from the launcher or LoomOS menu, or press
 `Super+Ctrl+Alt+F`. You can also run `loom-os find office` or `loom-os find atlas`.
 The native picker shows up to 20 results: Office searches ordinary records, while
-Atlas searches source titles, projects and topics. Select a result to read its
+current Atlas releases search saved Research and Presence work. Older Atlas
+servers retain source-title, project and topic search. Select a result to read its
 excerpt or metadata, then copy it or copy its title and open the app. Opening
 focuses the existing app window; use the copied text in the app's own search to
 open an item. Search again refines the query. Escape or Close cancels without
