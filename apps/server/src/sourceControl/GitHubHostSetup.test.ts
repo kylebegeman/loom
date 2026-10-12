@@ -2,6 +2,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -82,6 +84,40 @@ it.layer(NodeServices.layer)("GitHub host setup", (it) => {
         const error = yield* f.service.setup({ interactive: true }).pipe(Effect.flip);
         assert.equal(error.reason, "unavailable");
         assert.notInclude(yield* f.calls(), "auth login");
+      }),
+  );
+  it.effect(
+    "reports device approval from a real non-TTY subprocess and rechecks saved authentication",
+    () =>
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const script = yield* f.fs.readFileString(f.gh);
+        yield* f.fs.writeFileString(
+          f.gh,
+          script.replace(
+            'touch "' + f.home + '/signed-in"',
+            `printf '! First copy your one-time code: ABCD-' >&2
+printf 'EFGH\\nOpen this URL to continue in your web browser: https://github.com/login/device\\n' >&2
+touch "${f.home}/signed-in"`,
+          ),
+        );
+        const waiting = yield* Deferred.make<string>();
+        const observed = yield* Deferred.make<void>();
+        const worker = yield* f.service
+          .setup({
+            interactive: true,
+            onProgress: (progress) =>
+              progress.deviceCode === undefined
+                ? Effect.void
+                : Deferred.succeed(waiting, progress.deviceCode).pipe(
+                    Effect.andThen(Deferred.await(observed)),
+                  ),
+          })
+          .pipe(Effect.forkScoped);
+        assert.equal(yield* Deferred.await(waiting), "ABCD-EFGH");
+        yield* Deferred.succeed(observed, undefined);
+        assert.equal((yield* Fiber.join(worker)).state, "git-ready");
+        assert.equal((yield* f.service.status()).state, "signed-in");
       }),
   );
   it.effect("reports helper configuration failure instead of claiming Git is ready", () =>

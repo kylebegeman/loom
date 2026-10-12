@@ -1,3 +1,4 @@
+import { GitHubHostSetupToolkit, githubHostSetupHandlers } from "../github-host-setup/mcp.ts";
 import { WorkspaceHandoffToolkit, workspaceHandoffHandlers } from "../workspace-handoff/mcp.ts";
 import type { toolkitRegistration } from "../../mcp/McpHttpServer.ts";
 import { ModelPreview3dToolkit, modelPreview3dHandlers } from "../model-preview-3d/mcp.ts";
@@ -8,6 +9,12 @@ import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
 import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: GitHubHostSetupToolkit,
+    handlers: githubHostSetupHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(GitHubHostSetupToolkit, githubHostSetupHandlers),
+  },
   {
     toolkit: WorkspaceHandoffToolkit,
     handlers: workspaceHandoffHandlers,

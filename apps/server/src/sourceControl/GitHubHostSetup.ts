@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- SHA-256 is updated incrementally while downloading official archives.
+import { parseGitHubDeviceCode } from "./githubDeviceCode.ts";
 import * as NodeCrypto from "node:crypto";
 import * as NodeStream from "@effect/platform-node/NodeStream";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -8,6 +9,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import type * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as ChildProcess from "effect/process/ChildProcess";
@@ -130,6 +132,11 @@ export const GitHubHostStatus = Schema.Struct({
   ]),
 });
 export type GitHubHostStatus = typeof GitHubHostStatus.Type;
+export interface GitHubSetupProgress {
+  readonly phase: "checking" | "installing" | "waiting" | "configuring";
+  readonly deviceCode?: string;
+}
+
 export class GitHubHostSetup extends Context.Service<
   GitHubHostSetup,
   {
@@ -137,6 +144,7 @@ export class GitHubHostSetup extends Context.Service<
     readonly setup: (input: {
       readonly interactive: boolean;
       readonly repository?: string;
+      readonly onProgress?: (progress: GitHubSetupProgress) => Effect.Effect<void>;
     }) => Effect.Effect<GitHubHostStatus, GitHubHostSetupError>;
   }
 >()("t3/sourceControl/GitHubHostSetup") {}
@@ -322,31 +330,79 @@ export const make = Effect.fnUntraced(function* (releases: typeof RELEASES = REL
   const setup = Effect.fn("GitHubHostSetup.setup")(function* (input: {
     readonly interactive: boolean;
     readonly repository?: string;
+    readonly onProgress?: (progress: GitHubSetupProgress) => Effect.Effect<void>;
   }) {
     if (input.repository !== undefined && !REPOSITORY_PATTERN.test(input.repository))
       return yield* new GitHubHostSetupError({ reason: "repository-invalid" });
+    yield* input.onProgress?.({ phase: "checking" }) ?? Effect.void;
     let executable = yield* locate();
-    if (executable === null) executable = yield* install();
+    if (executable === null) {
+      yield* input.onProgress?.({ phase: "installing" }) ?? Effect.void;
+      executable = yield* install();
+    }
     if (!(yield* authReady(executable))) {
       if (!input.interactive)
         return yield* new GitHubHostSetupError({ reason: "sign-in-required" });
-      const code = yield* spawner
-        .exitCode(
-          ChildProcess.make(
-            executable,
-            ["auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"],
-            { env: environment, stdin: "inherit", stdout: "inherit", stderr: "inherit" },
-          ),
-        )
-        .pipe(
-          Effect.timeout("15 minutes"),
-          Effect.mapError(
-            (cause) => new GitHubHostSetupError({ reason: "sign-in-required", cause }),
-          ),
-        );
+      const command = [
+        "auth",
+        "login",
+        "--hostname",
+        "github.com",
+        "--git-protocol",
+        "https",
+        "--web",
+      ];
+      // Non-TTY gh prints the code/URL and polls without opening a browser on the server.
+      // Only the parsed public device code reaches clients; raw CLI output stays private.
+      const login =
+        input.onProgress === undefined
+          ? spawner.exitCode(
+              ChildProcess.make(executable, command, {
+                env: environment,
+                stdin: "inherit",
+                stdout: "inherit",
+                stderr: "inherit",
+              }),
+            )
+          : Effect.scoped(
+              Effect.gen(function* () {
+                const child = yield* spawner.spawn(
+                  ChildProcess.make(executable, command, {
+                    env: { ...environment, GH_FORCE_TTY: "", NO_COLOR: "1" },
+                    stdin: "ignore",
+                  }),
+                );
+                let sent = false;
+                const read = (output: Stream.Stream<Uint8Array, PlatformError.PlatformError>) => {
+                  let tail = "";
+                  return output.pipe(
+                    Stream.decodeText(),
+                    Stream.runForEach((chunk) =>
+                      Effect.gen(function* () {
+                        tail = (tail + chunk).slice(-4096);
+                        const deviceCode = parseGitHubDeviceCode(tail);
+                        if (sent || deviceCode === null) return;
+                        sent = true;
+                        yield* input.onProgress?.({ phase: "waiting", deviceCode }) ?? Effect.void;
+                      }),
+                    ),
+                  );
+                };
+                const [, , exitCode] = yield* Effect.all(
+                  [read(child.stdout), read(child.stderr), child.exitCode],
+                  { concurrency: "unbounded" },
+                );
+                return exitCode;
+              }),
+            );
+      const code = yield* login.pipe(
+        Effect.timeout("15 minutes"),
+        Effect.mapError((cause) => new GitHubHostSetupError({ reason: "sign-in-required", cause })),
+      );
       if (code !== 0 || !(yield* authReady(executable)))
         return yield* new GitHubHostSetupError({ reason: "sign-in-required" });
     }
+    yield* input.onProgress?.({ phase: "configuring" }) ?? Effect.void;
     const configured = yield* execute(executable, [
       "auth",
       "setup-git",

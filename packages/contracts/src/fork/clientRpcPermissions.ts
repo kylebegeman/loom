@@ -1,3 +1,4 @@
+import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "./github-host-setup.ts";
 import { WORKSPACE_HANDOFF_WS_METHODS as H } from "./workspace-handoff.ts";
 import { PCB_PREVIEW_WS_METHODS as P } from "./pcb-preview.ts";
 import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "../auth.ts";
@@ -9,6 +10,8 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [GH.start]: AuthTerminalOperateScope,
+  [GH.cancel]: AuthTerminalOperateScope,
   [P.historyRestore]: AuthOrchestrationOperateScope,
   [P.historyUndo]: AuthOrchestrationOperateScope,
   [P.pinMap]: AuthOrchestrationOperateScope,

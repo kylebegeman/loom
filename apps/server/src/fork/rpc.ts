@@ -1,3 +1,5 @@
+import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "@t3tools/contracts/fork";
+import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
 import { makeWorkspaceHandoffRpcHandlers } from "./workspace-handoff/rpc.ts";
 import { makePcbPreviewRpcHandlers } from "./pcb-preview/rpc.ts";
 import { makeModelPreviewRpcHandlers } from "./model-preview-3d/rpc.ts";
@@ -20,7 +22,11 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
   ForkRpcGroup.toLayer(
     Effect.gen(function* () {
       const auth = makeForkRpcAuth(session);
+      const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
       return ForkRpcGroup.of({
+        [GH.start]: (input) => auth.effect(GH.start, github.start(input)),
+        [GH.cancel]: (input) => auth.effect(GH.cancel, github.cancel(input)),
+        [GH.watch]: () => auth.stream(GH.watch, github.changes),
         [FORK_WS_METHODS.coreInfo]: () =>
           auth.effect(
             FORK_WS_METHODS.coreInfo,

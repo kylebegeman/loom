@@ -1,3 +1,4 @@
+import { GitHubHostSetupRpcGroup, GITHUB_HOST_SETUP_WS_METHODS } from "./github-host-setup.ts";
 import { WorkspaceHandoffRpcGroup } from "./workspace-handoff.ts";
 import { PcbPreviewRpcGroup, PCB_PREVIEW_WS_METHODS } from "./pcb-preview.ts";
 import { ModelPreview3dRpcGroup, MODEL_PREVIEW_3D_WS_METHODS } from "./model-preview-3d.ts";
@@ -44,6 +45,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   DeviceQaRpcGroup,
   CodeGraphRpcGroup,
   WorkspaceHandoffRpcGroup,
+  GitHubHostSetupRpcGroup,
 );
 export type ForkRpcMethod = RpcGroup.Rpcs<typeof ForkRpcGroup>["_tag"];
 
@@ -56,6 +58,7 @@ export const LoomWsRpcGroup = WsRpcGroup.merge(ForkRpcGroup);
  * method missing here would be typed as unary.
  */
 export type ForkSubscriptionRpcTag =
+  | typeof GITHUB_HOST_SETUP_WS_METHODS.watch
   | typeof PCB_PREVIEW_WS_METHODS.workspaceUpdates
   | typeof PCB_PREVIEW_WS_METHODS.panelEvents
   | typeof PCB_PREVIEW_WS_METHODS.editorEvents

@@ -27,6 +27,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "pcb-enclosure-fit",
   "project-lifecycle",
   "workspace-handoff",
+  "github-host-setup",
   "apple-build-tooling",
   "device-qa",
   "code-graph",

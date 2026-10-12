@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   ForkRpcGroup,
+  GITHUB_HOST_SETUP_WS_METHODS as GH,
   WORKSPACE_HANDOFF_WS_METHODS as H,
   MODEL_PREVIEW_3D_WS_METHODS as M,
   PCB_PREVIEW_WS_METHODS as P,
@@ -140,5 +141,39 @@ it.effect.each(Object.values(H))(
       expect(invoked).toBe(false);
       expect(yield* auth([AuthOrchestrationOperateScope]).effect(method, work)).toBe("accepted");
       expect(invoked).toBe(true);
+    }),
+);
+
+it.effect(
+  "GitHub setup requires terminal permission for mutations and approval-code subscriptions",
+  () =>
+    Effect.gen(function* () {
+      const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+        makeForkRpcAuth({
+          sessionId: AuthSessionId.make("github-setup-test"),
+          subject: "test",
+          method: "bearer-access-token",
+          scopes,
+        });
+      const read = auth([AuthOrchestrationReadScope, AuthOrchestrationOperateScope]);
+      let invoked = false;
+      const work = Effect.sync(() => {
+        invoked = true;
+        return "accepted";
+      });
+      for (const method of [GH.start, GH.cancel]) {
+        const denied = yield* read.effect(method, work).pipe(Effect.flip);
+        expect(denied.requiredScope).toBe(AuthTerminalOperateScope);
+      }
+      const denied = yield* Stream.runCollect(read.stream(GH.watch, Stream.fromEffect(work))).pipe(
+        Effect.flip,
+      );
+      expect(denied.requiredScope).toBe(AuthTerminalOperateScope);
+      expect(invoked).toBe(false);
+      const terminal = auth([AuthTerminalOperateScope]);
+      expect(yield* terminal.effect(GH.start, work)).toBe("accepted");
+      expect(yield* Stream.runCollect(terminal.stream(GH.watch, Stream.make("ABCD-EFGH")))).toEqual(
+        ["ABCD-EFGH"],
+      );
     }),
 );

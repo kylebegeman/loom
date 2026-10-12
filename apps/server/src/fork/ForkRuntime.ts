@@ -1,3 +1,4 @@
+import type { GitHubSetupFlow } from "../sourceControl/GitHubSetupFlow.ts";
 import type { WorkspaceHandoffService } from "./workspace-handoff/WorkspaceHandoffService.ts";
 import type { PcbPreviewService } from "./pcb-preview/PcbPreviewService.ts";
 import type { ModelPreviewService } from "./model-preview-3d/ModelPreviewService.ts";
@@ -10,6 +11,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | GitHubSetupFlow
   | ModelPreviewService
   | PcbPreviewService
   | ProjectLifecycleService

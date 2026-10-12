@@ -41,3 +41,5 @@ export * from "./pcb-changes.ts";
 export * from "./pcb-enclosure.ts";
 
 export * from "./workspace-handoff.ts";
+
+export * from "./github-host-setup.ts";

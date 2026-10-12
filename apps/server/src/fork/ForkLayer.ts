@@ -1,3 +1,6 @@
+import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
+import * as GitHubHostSetup from "../sourceControl/GitHubHostSetup.ts";
+import { FetchHttpClient } from "effect/http";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
 import * as WorkspaceHandoff from "./workspace-handoff/WorkspaceHandoffService.ts";
 import { PcbPreviewHttpRoutes } from "./pcb-preview/http.ts";
@@ -22,6 +25,9 @@ import { SwitchboardLive } from "./switchboard/switchboard.ts";
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  GitHubSetupFlow.layer.pipe(
+    Layer.provide(GitHubHostSetup.layer.pipe(Layer.provide(FetchHttpClient.layer))),
+  ),
   SwitchboardLive,
   WorkspaceHandoff.layer.pipe(
     Layer.provide(CommandReceiptStore.layer),
