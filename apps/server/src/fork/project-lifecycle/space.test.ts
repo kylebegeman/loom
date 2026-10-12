@@ -91,7 +91,7 @@ describe("image backend commands", () => {
       const { image } = yield* makeSpaceOps.pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, runner),
       );
-      const attach = `diskutil image attach --mountPoint ${lane.spacePath} ${lane.imagePath}`;
+      const attach = `diskutil image attach --nobrowse --mountOptions noowners --mountPoint ${lane.spacePath} ${lane.imagePath}`;
 
       const created = yield* image.create(lane, 1.4 * GB, "loom-app").pipe(Effect.flip);
       expect(created.message).toContain("did not mount");
@@ -116,7 +116,7 @@ describe("image backend commands", () => {
       const { image } = yield* makeSpaceOps.pipe(
         Effect.provideService(ProcessRunner.ProcessRunner, runner),
       );
-      const attach = `diskutil image attach --mountPoint ${lane.spacePath} ${lane.imagePath}`;
+      const attach = `diskutil image attach --nobrowse --mountOptions noowners --mountPoint ${lane.spacePath} ${lane.imagePath}`;
 
       // Nothing mounts in the test, so both attempts end in the mount check.
       yield* image.attach(lane, 2 * GB, "loom-app").pipe(Effect.flip);
@@ -165,6 +165,17 @@ describe.runIf(
     () =>
       Effect.gen(function* () {
         const { image } = yield* makeSpaceOps;
+        const runner = yield* ProcessRunner.ProcessRunner;
+        const assertHidden = () =>
+          Effect.gen(function* () {
+            const mounts = yield* runner.run({ command: "/sbin/mount", args: [] });
+            expect(mounts.code).toBe(0);
+            const line = mounts.stdout
+              .split("\n")
+              .find((entry) => entry.includes(` on ${lane.spacePath} (`));
+            expect(line).toMatch(/[, ]nobrowse[,)]/);
+            expect(line).toMatch(/[, ]noowners[,)]/);
+          });
         const laneDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-lane-"));
         const lane = {
           laneDir,
@@ -185,6 +196,7 @@ describe.runIf(
         const created = yield* image.create(lane, GB, `loom-test-${process.pid}`);
         expect(created.device).toMatch(/^\/dev\/disk\d+$/);
         expect(yield* image.isMounted(lane)).toBe(true);
+        yield* assertHidden();
         expect(NodeFS.readdirSync(lane.spacePath)).toEqual(
           expect.arrayContaining(["tmp", "build", "data", ".metadata_never_index"]),
         );
@@ -195,14 +207,33 @@ describe.runIf(
         const usage = yield* image.usage(lane);
         expect(usage!.usedBytes).toBeGreaterThan(40_000_000);
 
+        // Repair volumes mounted by older Loom versions without interrupting open files.
+        const visible = yield* runner.run({
+          command: "/sbin/mount",
+          args: ["-u", "-o", "browse,noowners", lane.spacePath],
+        });
+        expect(visible.code).toBe(0);
+        yield* Effect.gen(function* () {
+          const fd = yield* Effect.acquireRelease(
+            Effect.sync(() => NodeFS.openSync(NodePath.join(lane.spacePath, "tmp", "blob"), "r")),
+            (fd) => Effect.sync(() => NodeFS.closeSync(fd)),
+          );
+          yield* image.attach(lane, GB, `loom-test-${process.pid}`);
+          expect(NodeFS.readSync(fd, Buffer.alloc(1), 0, 1, 0)).toBe(1);
+        }).pipe(Effect.scoped);
+        yield* assertHidden();
+        expect(NodeFS.statSync(NodePath.join(lane.spacePath, "tmp", "blob")).size).toBe(50_000_000);
+
         yield* image.detach(lane, created.device);
         expect(yield* image.isMounted(lane)).toBe(false);
         expect(() => NodeFS.writeFileSync(NodePath.join(lane.spacePath, "stray"), "x")).toThrow();
 
         yield* image.attach(lane, GB, `loom-test-${process.pid}`);
         expect(NodeFS.existsSync(NodePath.join(lane.spacePath, "tmp", "blob"))).toBe(true);
+        yield* assertHidden();
         const grown = yield* image.resize(lane, 2 * GB, null);
         expect(grown.device).toMatch(/^\/dev\/disk\d+$/);
+        yield* assertHidden();
         expect(
           NodeFS.statfsSync(lane.spacePath).blocks * NodeFS.statfsSync(lane.spacePath).bsize,
         ).toBeGreaterThan(1.5 * GB);
