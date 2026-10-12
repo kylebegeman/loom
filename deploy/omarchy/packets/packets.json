@@ -51,7 +51,7 @@
     {
       "id": 2,
       "title": "Exact-item search opening",
-      "status": "verification_pending",
+      "status": "completed",
       "complexity": "Medium",
       "impact": "High",
       "dependsOn": [12],
@@ -75,8 +75,8 @@
         "Actual native Chromium fixtures pass cold launch, existing-window reuse, immutable Atlas source/output selection and the nonce-specific temporary-window fallback through the current Hyprland Lua API. Native Find Office selected a live Desk result and opened it in its original signed-in window. Empty Atlas search, both picker cancellations, repeated ordinary launches and the installed compatibility report pass with original business windows preserved.",
         "Office source 892921de26debfb4021a2eb67d44cbda401ae220 is deployed as revision 20261012-154536. Protected preparation passed 1019 UI tests, isolated database/recovery proofs, 33 browser journeys (one documented skip), image/smoke and all live release checks. Native Check for updates and Update Office delivered exact interface 550d084ce361fe5851cc with an activated worker and no waiting update.",
         "Office device retention failure was traced to one irrecoverable snapshot backing file. A private IndexedDB copy was retained; only that server-derived record was removed after confirming drafts/outbox were empty. Retry rebuilt it and all stores read successfully. The source regression separates optional retention errors from real connection failures; the delivered native window has neither warning. No profile, credentials, other stores or writing were cleared.",
-        "Atlas server source 56d983e4bb1f9afd76bd689f5878b691a67389bf remains live under commissioned service/timer plan 16. The older native shell still loads cached build 3024419b822c232d5b54: explicit Update receives HTML at its retired worker URL. Fix 0c42f8b740343cde5d5368b8da0b846721676b38 restores JavaScript worker delivery and waits for explicit APPLY_UPDATE before claim/unregister, without deleting caches or records. Required checks and failing-before-fix/lifecycle regressions pass; its full-history bundle and built private release are retained.",
-        "Atlas fresh encrypted pre-release capture and retrieved isolated restore passed, preserving 36 tables and two archive documents with no alerts. New private service/runtime/policy plans are prepared. Original-key escrow verification passed once; subsequent fresh commissioning authentication timed out at 1Password. The replacement service/timer and native Atlas Update delivery remain pending, so packet #2 is not marked complete. Current service, backup scheduling, private HTTPS and original keys remain unchanged.",
+        "Atlas checked source 0c42f8b740343cde5d5368b8da0b846721676b38 is deployed in the compact pinned runtime release-20261012-worker-fix-0c42f8b-runtime, with service/commission plans 18-worker-runtime. The legacy cached shell could not update because its worker URL returned HTML. The checked JavaScript compatibility route now waits for explicit APPLY_UPDATE, claims then unregisters without cache/record deletion. Required checks and failing-before-fix/lifecycle regressions pass; the compact runtime and verified full-history source bundle are retained.",
+        "Atlas original-key verification, fresh encrypted pre-release capture/retrieved restore and installed-release commissioning passed, preserving 36 tables and two archive documents. Service and backup timer run at login; the timer reports exit 0 and maintenance has no alerts. Original keys, retained releases, accepted backups, paused intake and Files grants are preserved. Native Update delivered exact interface 8e66519e171798615b94 into the original signed-in window. A guarded normal refresh detached the compatibility controller; registration/controller counts are zero and the retained shell cache remains.",
         "Atlas signed-in personal workspace currently contains no saved sources or outputs. Successful immutable item opening is proven with native fixtures; personal saved-item acceptance is unavailable until suitable records exist. No personal test records or provider inference were created. Evidence and current rollout handoff: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/exact-items. Packet #3 is not started; #14 stays excluded."
       ]
     },
@@ -297,7 +297,7 @@
     {
       "id": 12,
       "title": "Shared app integration contract",
-      "status": "verification_pending",
+      "status": "completed",
       "complexity": "Large",
       "impact": "High",
       "dependsOn": [],
@@ -320,8 +320,8 @@
         "Both real producers and installed loopback consumer dispatch passed interoperability proof. Compatible/additive/missing/malformed versions, unavailable capabilities, anonymous HTTP routing, permission refusal, literal arguments, Unicode bounds, result normalization and cancellation are covered.",
         "Office make check passed (1008 web tests, Go checks, 65 scripted cases and docs); Atlas make check passed (493 web tests and Go checks). 121 pack tests passed on Mac, 83 focused consumer/action/release tests on native ARM Linux, with targeted formatting and lint.",
         "Immutable pack 20261011.17, SHA256 69097b48b360ac3e4042048cf6508b371d206ae5f995257f4182d301646bc7c9, prepared. Actual retained .14 upgrade/rollback/return passed on Mac and native ARM Linux, preserving custom shortcuts, configuration and synthetic app/credential data.",
-        "Workstation SSH timed out; installation and physical acceptance remain pending. Office/Atlas service publication follows their existing release workflows. Exact-item handoff is implemented by packet #2 with its own release and native-acceptance bounds. Unified notifications and live availability remain unavailable; no durable Atlas offline support is claimed.",
-        "Verification artifacts and rollout handoff: /Users/kyle/Developer/artifacts/loom-os/2026-10-11/app-integration. Shared Iris has no changes. Packet #14 remains excluded."
+        "Verification artifacts and rollout handoff: /Users/kyle/Developer/artifacts/loom-os/2026-10-11/app-integration. Shared Iris has no changes. Packet #14 remains excluded.",
+        "Packet #2 completed publication and native acceptance on Workstation. Both deployed producers negotiate through the installed shared adapter: Office office-search-v1 and Atlas atlas-workspace-search-v1, with supported exact links and existing capture declarations. Actual authorized search, exact Office identity opening, native immutable Atlas fixtures, normal update delivery and window reuse pass. Unsupported notifications/live availability and durable Atlas offline support remain explicitly unavailable; these declarations do not implement later packets."
       ]
     },
     {

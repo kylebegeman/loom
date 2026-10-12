@@ -22,8 +22,8 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [1. Discoverable Loom action menu](01-discoverable-loom-action-menu.md)              | verification_pending | None            |
 | [6. Shortcut and accessibility presets](06-shortcut-and-accessibility-presets.md)    | ready_for_deployment | #1              |
 | [9. Omarchy compatibility checks](09-omarchy-compatibility-checks.md)                | ready_for_deployment | None            |
-| [12. Shared app integration contract](12-shared-app-integration-contract.md)         | verification_pending | None            |
-| [2. Exact-item search opening](02-exact-item-search-opening.md)                      | verification_pending | #12             |
+| [12. Shared app integration contract](12-shared-app-integration-contract.md)         | completed            | None            |
+| [2. Exact-item search opening](02-exact-item-search-opening.md)                      | completed            | #12             |
 | [3. Destination-aware capture](03-destination-aware-capture.md)                      | approved             | #12             |
 | [4. Guided connections](04-guided-connections.md)                                    | approved             | #1, #12         |
 | [5. Capability-aware availability](05-capability-aware-availability.md)              | approved             | #4, #12         |
