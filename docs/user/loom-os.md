@@ -123,6 +123,13 @@ Older releases keep **Copy title and open app** for search inside the app. Searc
 opening an app or copying anything. Search requires a reachable server and a
 separate search connection; browser login alone does not authorize the CLI.
 
+You can also open a saved reference from the terminal with
+`loom-os open-item office '{"kind":"note","id":"SAVED_NOTE_ID"}'`.
+Use the owning app's returned reference, including Atlas revisions and source versions.
+Apps on different ports must use distinct hostnames if their app paths are the same;
+Chromium omits ports from its native window identity. Ambiguous matches refuse opening
+and explain the configuration change.
+
 The terminal `loom-os search` command returns the app's JSON results. Atlas capture saves a private source tagged
 `omarchy`. Its server must be reachable from this machine.
 

@@ -1271,6 +1271,25 @@ export function appCommand(app, config, env = process.env, urlOverride) {
     env,
   };
 }
+function nativeAppWindowIdentity(app, config) {
+  const urls = {
+    office: config.officeUrl && new URL(`${config.officeUrl}/app/`),
+    atlas: config.atlasUrl && new URL(`${config.atlasUrl}/app/`),
+    switchboard: config.switchboardDashboardUrl && new URL(config.switchboardDashboardUrl),
+  };
+  // Chromium's Wayland app identity uses the hostname and path, omitting the
+  // port. Distinct configured origins can therefore have the same identity.
+  const identity = (url) => `chrome-${url.hostname}_${url.pathname.replaceAll("/", "_")}-Default`;
+  const selected = identity(urls[app]);
+  for (const [other, url] of Object.entries(urls)) {
+    if (other !== app && url && identity(url) === selected)
+      throw Error(
+        `${appNames[app]} and ${appNames[other]} have the same native window identity. Configure distinct hostnames to keep their windows separate.`,
+      );
+  }
+  return selected;
+}
+
 async function queryHyprland(args, env) {
   return new Promise((resolve, reject) => {
     NodeChildProcess.execFile(
@@ -1295,8 +1314,7 @@ export async function focusExistingApp(app, config, env = process.env, query) {
   if (!origin) return false;
   // Chromium uses the app URL as its Wayland identity. --class is also used by
   // extension popups, so matching that flag can focus 1Password instead.
-  const url = new URL(app === "switchboard" ? origin : `${origin}/app/`);
-  const identity = `chrome-${url.host.replaceAll(":", "_")}_${url.pathname.replaceAll("/", "_")}-Default`;
+  const identity = nativeAppWindowIdentity(app, config);
   let clients;
   try {
     clients = JSON.parse((await query(["clients", "-j"])).stdout);
@@ -1931,8 +1949,7 @@ export async function launchExactItem(
   if (!dependencies.query && !env.HYPRLAND_INSTANCE_SIGNATURE)
     return { state: "launched", target: target.href };
   const query = dependencies.query ?? ((args) => queryHyprland(args, env));
-  const url = new URL(`${config[`${app}Url`]}/app/`);
-  const identity = `chrome-${url.host.replaceAll(":", "_")}_${url.pathname.replaceAll("/", "_")}-Default`;
+  const identity = nativeAppWindowIdentity(app, config);
   const pause = dependencies.pause ?? (() => new Promise((resolve) => setTimeout(resolve, 100)));
   // Close only our nonce-labelled stateless handoff, never a login or business window.
   for (let attempt = 0; attempt < 80; attempt++) {
@@ -1948,7 +1965,7 @@ export async function launchExactItem(
       const address = `address:${client.address}`;
       let closed = false;
       for (const args of [
-        ["eval", `hl.dispatch(hl.dsp.close({window="${address}"}))`],
+        ["eval", `hl.dispatch(hl.dsp.window.close({window="${address}"}))`],
         ["dispatch", "closewindow", address],
       ]) {
         try {
@@ -3045,7 +3062,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;

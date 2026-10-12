@@ -314,3 +314,79 @@ test("Finder Open item passes the selected typed identity without writing the cl
   });
   NodeAssert.deepEqual(opened, [["office", { kind: "note", id: "saved" }]]);
 });
+
+test("native window identities omit ports for ordinary focus and completed item handoffs", async () => {
+  const portConfig = { ...config, officeUrl: "https://office.example.test:8443" };
+  const focused = [];
+  NodeAssert.equal(
+    await focusExistingApp("office", portConfig, {}, async (args) => {
+      if (args[0] === "clients")
+        return {
+          stdout: JSON.stringify([
+            { class: "loom-os-office", address: "0x01", title: "1Password - Chromium" },
+            { class: "chrome-office.example.test__app_-Default", address: "0x02", title: "Office" },
+          ]),
+        };
+      focused.push(args);
+      return { stdout: "ok" };
+    }),
+    true,
+  );
+  NodeAssert.ok(JSON.stringify(focused).includes("address:0x02"));
+  NodeAssert.ok(!JSON.stringify(focused).includes("address:0x01"));
+  let nonce;
+  const dispatches = [];
+  const result = await launchExactItem(
+    "office",
+    new URL(route(officeRef), portConfig.officeUrl),
+    portConfig,
+    {},
+    {
+      focus: async () => true,
+      launch: async (spec) => {
+        nonce = new URL(spec.args.find((v) => v.startsWith("--app=")).slice(6)).searchParams.get(
+          "loomHandoff",
+        );
+      },
+      query: async (args) => {
+        dispatches.push(args);
+        if (args[0] === "clients")
+          return {
+            stdout: JSON.stringify([
+              {
+                class: "chrome-office.example.test__app_-Default",
+                address: "0x03",
+                title: `Loom handoff ${nonce}: complete`,
+              },
+            ]),
+          };
+        if (args[0] !== "eval") throw Error("Legacy dispatcher is unavailable on this compositor.");
+        // The installed Omarchy dispatcher is hl.dsp.window.close; this
+        // compositor has no legacy closewindow or hl.dsp.close alias.
+        const command = /^hl\.dispatch\(hl\.dsp\.([a-z.]+)\(\{window="([^"\n]+)"\}\)\)$/.exec(
+          args[1],
+        );
+        if (command?.[1] !== "window.close") throw Error("Unsupported native dispatcher.");
+        NodeAssert.equal(command[2], "address:0x03");
+        return { stdout: "ok" };
+      },
+      pause: async () => {},
+    },
+  );
+  NodeAssert.equal(result.state, "handed-off");
+  NodeAssert.ok(JSON.stringify(dispatches).includes("address:0x03"));
+});
+
+test("native focus refuses apps whose different ports share Chromium's window identity", async () => {
+  const ambiguous = {
+    ...config,
+    officeUrl: "http://localhost:8394",
+    atlasUrl: "http://localhost:8397",
+  };
+  await NodeAssert.rejects(
+    focusExistingApp("office", ambiguous, {}, async () => {
+      NodeAssert.fail("An ambiguous identity must never inspect or focus another app");
+    }),
+    /distinct hostnames|same native window identity/,
+  );
+});

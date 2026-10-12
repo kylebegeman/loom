@@ -114,7 +114,10 @@ Exact-item handoff uses each app's declared read-only item resolver and validate
 same-origin route. A temporary native launch asks the existing same-profile window to
 navigate; writing and open editors defer that navigation for explicit review. Uncertain
 delivery never cold-launches a second workspace. Linux closes only its own nonce-labelled
-stateless handoff window if the browser refuses to close it. Older app releases retain
+stateless handoff window if the browser refuses to close it. Chromium identifies native
+app windows by hostname and path, omitting ports. Configured apps with colliding identities
+refuse native focus and request distinct hostnames instead of selecting another app.
+Older app releases retain
 in-app search guidance. Unified notifications and live device availability remain unavailable.
 
 Check real producer interoperability from a Mac with Go and the app checkouts:

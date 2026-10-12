@@ -700,7 +700,7 @@ test("repeated Office launches focus its app window and ignore password popups",
           ? JSON.stringify([
               { address: "0x11", class: "loom-os-office", title: "1Password" },
               { address: "0x22", class: "chrome-office.example.test__app_-Default" },
-              { address: "0x33", class: "chrome-atlas.example.test_8397__app_-Default" },
+              { address: "0x33", class: "chrome-atlas.example.test__app_-Default" },
             ])
           : "ok",
     };
@@ -714,7 +714,7 @@ test("repeated Office launches focus its app window and ignore password popups",
   );
 });
 
-test("Atlas matches its own origin including port and launches only when absent", async (t) => {
+test("Atlas focuses its native hostname identity while preserving the configured port for launch", async (t) => {
   const f = await fixture(t);
   const calls = [];
   const hyprctl = async (args) => {
@@ -725,7 +725,7 @@ test("Atlas matches its own origin including port and launches only when absent"
           ? JSON.stringify([
               {
                 address: "0x33",
-                initialClass: "chrome-atlas.example.test_8397__app_-Default",
+                initialClass: "chrome-atlas.example.test__app_-Default",
                 class: "changed",
               },
             ])
