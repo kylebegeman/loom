@@ -13,6 +13,7 @@ import {
   launchAgent,
   prunePublishedBuilds,
   releaseForTag,
+  restoreBuildInputs,
   updateManifest,
   validateFeedConfig,
 } from "./updates.ts";
@@ -20,6 +21,48 @@ import {
 const COMMIT = "cdbf78ca63edbd1289a81deecba28c2bcfcf73fd";
 
 describe("Loom update publishing", () => {
+  it("cleans generated build inputs so the next integration can check out", async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-build-cleanup-"));
+    const buildInputs = [
+      "apps/server/package.json",
+      "apps/desktop/package.json",
+      "apps/web/package.json",
+      "packages/contracts/package.json",
+      "pnpm-lock.yaml",
+      "apps/desktop/src/preview/AnnotationStyles.generated.ts",
+    ];
+    const git = (...args: string[]) =>
+      NodeChildProcess.execFileSync("git", args, { cwd: directory, encoding: "utf8" }).trim();
+    try {
+      git("init", "--quiet");
+      for (const file of [...buildInputs, "unrelated.txt"]) {
+        await NodeFSP.mkdir(NodePath.dirname(NodePath.join(directory, file)), { recursive: true });
+        await NodeFSP.writeFile(NodePath.join(directory, file), "original\n");
+      }
+      git("add", ".");
+      git(
+        "-c",
+        "user.name=Test",
+        "-c",
+        "user.email=test@example.com",
+        "commit",
+        "--quiet",
+        "-m",
+        "fixture",
+      );
+      for (const file of [...buildInputs, "unrelated.txt"]) {
+        await NodeFSP.writeFile(NodePath.join(directory, file), "changed\n");
+      }
+      restoreBuildInputs(directory);
+      for (const file of buildInputs) {
+        expect(await NodeFSP.readFile(NodePath.join(directory, file), "utf8")).toBe("original\n");
+      }
+      expect(git("status", "--porcelain")).toBe("M unrelated.txt");
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("finds the installed build after an in-app update without a legacy marker write", async () => {
     const directory = await NodeFSP.mkdtemp(
       NodePath.join(NodeOS.tmpdir(), "loom-installed-record-"),

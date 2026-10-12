@@ -259,6 +259,22 @@ function ensureBlockmap(zip: string) {
   );
 }
 
+export function restoreBuildInputs(sourceDir: string) {
+  // The desktop build regenerates this tracked CSS module. Leaving it dirty
+  // prevents a later integration from checking out in the publisher's private clone.
+  run(
+    "git",
+    [
+      "restore",
+      "--",
+      ...STAMPED_PACKAGES,
+      "pnpm-lock.yaml",
+      "apps/desktop/src/preview/AnnotationStyles.generated.ts",
+    ],
+    { cwd: sourceDir },
+  );
+}
+
 async function prepare(release: Release) {
   const record = NodePath.join(BUILDS_DIR, release.recordName);
   const artifacts = NodePath.join(record, "updates");
@@ -363,8 +379,11 @@ async function prepare(release: Release) {
     await NodeFSP.rename(stagedRecord, record);
     return { record, zip, manifest };
   } finally {
-    run("git", ["restore", "--", ...STAMPED_PACKAGES, "pnpm-lock.yaml"], { cwd: SOURCE_DIR });
-    await NodeFSP.rm(staging, { recursive: true, force: true });
+    try {
+      restoreBuildInputs(SOURCE_DIR);
+    } finally {
+      await NodeFSP.rm(staging, { recursive: true, force: true });
+    }
   }
 }
 
