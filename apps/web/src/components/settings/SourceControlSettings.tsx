@@ -586,7 +586,6 @@ export function SourceControlSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <ProjectDefaultsSettings category="source-control" />
       {environmentId && githubSetupSupported && (
         <GitHubHostSetupSettings
           key={environmentId}
@@ -595,6 +594,7 @@ export function SourceControlSettingsPanel() {
           onReady={handleScan}
         />
       )}
+      <ProjectDefaultsSettings category="source-control" />
       {environmentId === null ? (
         <SettingsSection id={searchableSetting("source-control").id} title="Server environment">
           <p className="px-4 py-3 text-sm text-muted-foreground">
