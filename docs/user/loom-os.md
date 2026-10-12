@@ -5,6 +5,19 @@ remain together in Office, with the same app interface used on other platforms.
 Each app connects to its existing server. Your available offline features follow
 the app's shared implementation and keep their storage between desktop launches.
 
+## Discover native actions
+
+Open **Loom actions** from the launcher or LoomOS menu. Type words such as
+mail, notes, save, AI or connections to find an action, its description and a
+configured shortcut when available. Press Enter to launch the selected action,
+or press Escape twice to close without doing anything. The first Escape leaves
+the search field; the second closes the native picker. Ctrl+C also closes it.
+
+Actions needing setup explain what is missing and let you return to the picker.
+The list checks local configuration and installed files; the chosen app or AI
+flow checks its live connection and permissions when it runs. Failed launches
+provide an explicit retry. Nothing retries automatically.
+
 ## Open and capture
 
 Open the applications from your launcher or the LoomOS menu. You can also use

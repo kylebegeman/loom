@@ -1,0 +1,404 @@
+{
+  "format": "loom-os-packets-v1",
+  "decision": "Kyle selected every proposal except original major idea #14. This records implementation authorization, not completion.",
+  "excluded": [
+    {
+      "id": 14,
+      "title": "Saved project workspaces",
+      "reason": "Explicitly excluded by Kyle."
+    }
+  ],
+  "executionOrder": [1, 6, 9, 12, 2, 3, 4, 5, 8, 7, 10, 11, 13, 17, 16, 15, 18],
+  "principles": [
+    "Preserve native Omarchy shell, pixel character and Iris skin.",
+    "All AI uses Switchboard; reuse upstream T3 execution and remote access.",
+    "Office and Atlas remain the same cross-platform products and own their data, permissions and offline behavior.",
+    "No saved project-workspace bundles, layout restoration or new project association system from #14.",
+    "Preserve concurrent work and never bypass the secure lock.",
+    "Publish reusable Iris changes when a new version is needed across consumers."
+  ],
+  "packets": [
+    {
+      "id": 1,
+      "title": "Discoverable Loom action menu",
+      "status": "verification_pending",
+      "complexity": "Small",
+      "impact": "High",
+      "dependsOn": [],
+      "summary": "Find and launch existing LoomOS capabilities through the native menu and launcher without remembering commands.",
+      "scope": [
+        "Searchable native picker with action names, useful descriptions and existing shortcut hints.",
+        "Show missing configuration or installation with a next step; selection never executes an unavailable or arbitrary action.",
+        "Reach the same picker from the launcher, LoomOS menu and CLI; keep Omarchy styling and keyboard cancellation."
+      ],
+      "acceptance": [
+        "Search mail, notes/save, AI and connections and reach the correct existing action.",
+        "Opening, filtering, cancellation and missing-action guidance invoke no inference, app writes or secret reads.",
+        "Installed action entry points launch; existing app focus, menu extensions, theme and running service are preserved."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented native launcher, LoomOS menu and CLI entry points with searchable descriptions, actual shortcut hints, setup guidance and explicit retry.",
+        "95 focused integration-pack tests pass, including nine action tests. Focused lint and generated-document consistency checks pass.",
+        "Isolated Linux Gum 2.0.0 checks pass: literal initial queries, filtering/cancellation, unavailable-action guidance and exact synthetic browser dispatch. No inference, app writes or real credential reads.",
+        "Installed reviewed pack 20261011.14 on Workstation. Installed bytes match SHA256 7d1dde40b3c339067132b03ef386b31cb0050070a16d8d157f01e2af8c4fe776. Verified previous pack 20261011.11 remains available; no activation is pending.",
+        "Iris Dark, integration configuration, shell configuration and running t3code.service PID 1154 were preserved through installation.",
+        "Native launcher, actual menu selection, filtering and two-Escape cancellation passed on Workstation. Final existing-Office-window focus and preservation assertion awaits reconnection; its checker was corrected to use the actual app identity instead of the browser profile window identity.",
+        "Physical shortcut and laptop sleep/wake acceptance belong to later packets, not this release. Evidence is retained in the local LoomOS 2026-10-11 packets artifact directory."
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Exact-item search opening",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [12],
+      "summary": "Open the selected Office record or Atlas source directly in its existing app window.",
+      "scope": [
+        "Apps own stable authenticated record routes; retain the destination through login.",
+        "Finder passes the selected record identity to the app without treating excerpts or queries as URLs.",
+        "Existing app windows navigate rather than duplicate; absent/deleted/inaccessible items explain recovery."
+      ],
+      "acceptance": [
+        "Open each supported Office record type and Atlas source from native search.",
+        "Check signed-out handoff, unavailable records and existing-window reuse.",
+        "Verify route behavior in Linux and the shared web/Mac experience."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 3,
+      "title": "Destination-aware capture",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [12],
+      "summary": "Capture once, choose Office or Atlas and review before saving.",
+      "scope": [
+        "Preview clipboard/selected text and supplied links with a supported destination picker.",
+        "Office retains reviewed Note, Reminder and Desk flows; Atlas exposes a reviewed source capture flow.",
+        "Retain capture through login; provide loading, error, cancellation and duplicate-submission handling."
+      ],
+      "acceptance": [
+        "Use literal text, Unicode, links and supported length limits across both destinations.",
+        "Cancel without writing or fetching a supplied URL.",
+        "Verify signed-out return, server failures and supported offline behavior."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 4,
+      "title": "Guided connections",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [1, 12],
+      "summary": "One resumable flow explains app sessions, private network and shared AI setup.",
+      "scope": [
+        "Discover existing app and CLI authorizations without copying browser credentials.",
+        "Open required app approval pages automatically and guide private network/hub setup.",
+        "Expose connected, approval-needed, unavailable, retry and revoke/forget states."
+      ],
+      "acceptance": [
+        "Resume partial setup after cancellation or restart without repeating completed approvals.",
+        "Check expired device codes, revoked sessions, server/hub outage and unavailable Secret Service.",
+        "A person can complete ordinary setup without entering shell commands or pasting scripts."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 5,
+      "title": "Capability-aware availability",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [4, 12],
+      "summary": "Show what can actually be used when parts of the ecosystem are unavailable.",
+      "scope": [
+        "Extend the existing status widget using app-owned offline and pending-change capability reports.",
+        "Distinguish cached reading, supported writing, live search, AI and owning workstation availability.",
+        "Reject stale status after suspend and offer explicit recovery without resubmitting work."
+      ],
+      "acceptance": [
+        "Verify disconnected, partially connected, revoked and reconnect states against app-owned contracts.",
+        "Inspect status with keyboard and pointer; do not rely only on color.",
+        "Polling stays bounded and never refreshes provider usage or performs inference."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 6,
+      "title": "Shortcut and accessibility presets",
+      "status": "approved",
+      "complexity": "Small",
+      "impact": "High",
+      "dependsOn": [1],
+      "summary": "Make native actions comfortable on different keyboards and readable displays.",
+      "scope": [
+        "Offer conflict-checked shortcut presets with preview, restore and user-customization preservation.",
+        "Show actual configured bindings instead of claiming default bindings are active.",
+        "Support readable native terminal sizing and accessible focus/contrast choices through existing controls."
+      ],
+      "acceptance": [
+        "Check conflicts, invalid bindings, preset apply/restore and personal edits.",
+        "Verify complete keyboard interaction and readable layouts at common display scales.",
+        "Physical keyboard acceptance is recorded separately from command/virtual-input checks."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 7,
+      "title": "Respectful actionable notifications",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [2, 12],
+      "summary": "Deliver meaningful notifications once, with a precise destination and clear attention rules.",
+      "scope": [
+        "Coordinate existing app/browser/native delivery to avoid duplicate notifications.",
+        "Provide quiet previews, originating-app identity, priority and focus-time behavior.",
+        "Use app-owned record/thread destinations and preserve authorization boundaries."
+      ],
+      "acceptance": [
+        "Verify reminder, source and agent-approval handoffs to existing windows.",
+        "Test duplicate delivery, privacy/quiet modes, inaccessible destinations and cancellation.",
+        "Preserve native Omarchy notification presentation and platform-specific settings."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 8,
+      "title": "Iris consistency",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "Medium",
+      "dependsOn": [9],
+      "summary": "Keep supported OS surfaces and every graphical LOOM wordmark consistent with Iris.",
+      "scope": [
+        "Generate supported palette values from canonical Iris tokens while preserving Omarchy layout, pixel art and motion.",
+        "Check contrast, terminal colors, theme switching and gradient wordmark placement.",
+        "Publish an Iris version when shared token/component changes need to be retained across products."
+      ],
+      "acceptance": [
+        "Inspect both themes across supported native surfaces and theme changes.",
+        "Verify palette provenance, gradient preservation and contrast.",
+        "Shared Iris changes are released and consumer versions checked; OS-only assets do not require an artificial Iris release."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 9,
+      "title": "Omarchy compatibility checks",
+      "status": "approved",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [],
+      "summary": "Catch upstream changes before an integration release breaks everyday controls.",
+      "scope": [
+        "Test supported Omarchy parsers and native actions alongside current synthetic pack tests.",
+        "Cover themes, menu entry points, app window reuse, runtime/config preservation and installer ownership.",
+        "Record supported Omarchy versions and meaningful compatibility failures in release evidence."
+      ],
+      "acceptance": [
+        "Reproduce known parser/theme-picker failure modes in focused regressions.",
+        "Check current and retained-release install/rollback, personal edits and interrupted activation.",
+        "Run actual Linux/native checks when a target is available; distinguish fixtures from physical acceptance."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 10,
+      "title": "Reproducible LoomOS setup",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [4, 6, 8, 9],
+      "summary": "Commission an existing Omarchy machine from a portable, versioned recipe.",
+      "scope": [
+        "Declare laptop/workstation profile, selected releases, app origins and supported appearance/settings.",
+        "Keep secrets and device-specific identifiers out of recipes; resume interrupted commissioning.",
+        "Guide necessary local administrator authentication and verify final health/recovery paths."
+      ],
+      "acceptance": [
+        "Commission clean laptop and workstation installations from the same reviewed recipe.",
+        "Test interruption, rerun, existing personalized machines and incompatible components.",
+        "Recover a replacement machine without relying on session artifact scripts."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 11,
+      "title": "Contextual actions and AI workbench",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [3, 12],
+      "summary": "Operate on deliberately selected context and review results before handing them to an app.",
+      "scope": [
+        "Support selected text, files, screenshots and app-provided context with explicit preview.",
+        "Reuse supported Loom/app actions and Switchboard routing; show owning environment and failure/retry states.",
+        "Allow reviewed copying, capture and app actions with retained provenance and original permissions."
+      ],
+      "acceptance": [
+        "Check context selection, cancellation, size/type failures and routing eligibility.",
+        "No action silently captures unrelated app data or falls back to a direct provider.",
+        "Verify complete explanation, summary and capture workflows with synthetic inference before authorized live acceptance."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 12,
+      "title": "Shared app integration contract",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [],
+      "summary": "Apps describe their supported OS capabilities instead of making LoomOS guess their internals.",
+      "scope": [
+        "Extend existing app-owned registries/contracts for actions, stable links, search, capture, notifications and availability.",
+        "Keep authorization, validation and business operations inside each owning app.",
+        "Provide version negotiation, unavailable-capability behavior and reusable adapters without a second product runtime."
+      ],
+      "acceptance": [
+        "Verify compatible, older, missing and malformed capability declarations.",
+        "Typecheck and behavior-test affected producers and consumers across supported surfaces.",
+        "Integrate at least Office and Atlas through the same contract without weakening their permissions."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 13,
+      "title": "Native workstation control desk",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [2, 7, 12],
+      "summary": "See and manage existing background work, failures and approvals from Omarchy.",
+      "scope": [
+        "Read tasks and approvals from the existing T3/Loom environment and relevant app services.",
+        "Expose exact-thread/job navigation and only supported controls; add explicit unavailable/reverse states.",
+        "Keep execution in the owning service and avoid introducing a replacement Core/Runner."
+      ],
+      "acceptance": [
+        "Inspect running, waiting, failed, completed and disconnected states.",
+        "Verify permission/approval behavior and exact-destination handoff.",
+        "Confirm native refresh stays bounded and opening the desk starts no job or restart."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 15,
+      "title": "Laptop/workstation continuity",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [2, 4, 5, 16],
+      "summary": "Preserve access to work across devices while background jobs remain on their owning workstation.",
+      "scope": [
+        "Extend existing T3 remote access and app links with explicit handoff and profile-aware behavior.",
+        "Support suspend/reconnect and graceful offline availability with no duplicate running agents.",
+        "Keep laptop background/battery behavior configurable and workstation hosting explicit."
+      ],
+      "acceptance": [
+        "Verify laptop/phone handoff, workstation continuity, revoked device and reconnect.",
+        "Perform physical sleep/wake, Wi-Fi transitions and battery checks on applicable hardware.",
+        "Different clients never open competing servers against the same live database."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 16,
+      "title": "Coherent offline ecosystem",
+      "status": "approved",
+      "complexity": "Massive",
+      "impact": "Transformational",
+      "dependsOn": [12],
+      "summary": "Make applicable saved reading and writing reliable in the shared Office and Atlas products.",
+      "scope": [
+        "Implement app-owned saved content, supported local edits, durable pending changes and reviewed conflicts.",
+        "Align Linux and Mac behavior; LoomOS reports app capabilities instead of adding a separate sync engine.",
+        "Include storage management, account separation, failure/reconnect and explicit unsupported operations."
+      ],
+      "acceptance": [
+        "Exercise stopped-server reading/writing, restart persistence, reconnect, conflicts and duplicate retries with isolated state.",
+        "Verify supported workflows on Linux and Mac; do not equate browser cache with durable offline support.",
+        "Record app-specific limitations and check migrations through the owning product workflow."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 17,
+      "title": "Coordinated updates and recovery",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [9, 10, 13],
+      "summary": "Present compatible component updates and their recovery mechanisms without surprising active work.",
+      "scope": [
+        "Describe component versions, channels, compatibility and expected restart/interruption.",
+        "Preserve existing component release ownership and custom fork origin; coordinate supported maintenance around active work.",
+        "Expose stage/apply/verify/recover states and appropriate rollback boundaries per component."
+      ],
+      "acceptance": [
+        "Check incompatible versions, offline metadata, interrupted updates, active jobs and recovery.",
+        "Never silently replace the fork with upstream or restart an active environment.",
+        "Separate pack rollback, client update and system/package recovery guarantees."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    },
+    {
+      "id": 18,
+      "title": "Resilient private AI hub",
+      "status": "approved",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [4, 5],
+      "summary": "Improve private AI availability while Switchboard remains authoritative for every route.",
+      "scope": [
+        "Explain hub readiness, account constraints and model eligibility using centralized cached status.",
+        "Add explicitly supported wake/readiness controls and evaluate secondary capacity when useful.",
+        "Explore local-model routes only through Switchboard, after hardware/task-quality measurements."
+      ],
+      "acceptance": [
+        "Verify asleep/offline/constrained/ineligible states without polling providers from each client.",
+        "Check wake support, cancellation, timeout and route ownership with synthetic fixtures.",
+        "Secondary/offline routing preserves existing subscription/client restrictions and has no direct-provider fallback."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": []
+    }
+  ]
+}

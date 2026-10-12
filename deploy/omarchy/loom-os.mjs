@@ -280,6 +280,14 @@ export async function installationPlan(config, env = process.env, packDir = sour
     content: await NodeFSP.readFile(NodePath.join(packDir, "health.mjs"), "utf8"),
     mode: 0o644,
   });
+  writes.set(NodePath.join(p.root, "actions-terminal"), {
+    content: `#!/bin/bash\nprintf '\\033]0;Loom actions\\007'\n${shellQuote(p.bin)} actions --inline "$@"\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
+    mode: 0o755,
+  });
+  writes.set(NodePath.join(p.data, "applications/loom-os-actions.desktop"), {
+    content: `[Desktop Entry]\nType=Application\nName=Loom actions\nComment=Find apps, save notes, AI and connection tools\nExec=${desktopArg(p.bin)} actions\nIcon=system-search\nTerminal=false\nCategories=Utility;\n`,
+    mode: 0o644,
+  });
   writes.set(NodePath.join(p.root, "doctor-terminal"), {
     content: `#!/bin/bash\nprintf '\\033]0;Check connections\\007'\n${shellQuote(p.bin)} doctor --human\nstatus=$?\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
     mode: 0o755,
@@ -400,6 +408,11 @@ done
         continue;
       entries[`loomos.${app}`] = { label: name, action: command(`open ${app}`) };
     }
+    entries["loomos.actions"] = {
+      label: "Loom actions",
+      description: "Find apps, save notes, AI and connection tools",
+      action: command("actions"),
+    };
     entries["about"] = { icon: "", label: "About LoomOS", action: "omarchy-launch-about" };
     entries["loomos.connections"] = { label: "AI and connections" };
     entries["loomos.connections.status"] = {
@@ -1044,6 +1057,357 @@ export async function nativeFinder(config, env, initialApp, dependencies = {}) {
   }
 }
 
+// This catalog describes existing native actions. Listing it checks local state only;
+// live availability and app permissions remain authoritative at execution.
+export function loomActionCatalog(config, context = {}) {
+  const missing = new Set(context.missingExecutables ?? []);
+  const configured = (...keys) => keys.every((key) => Boolean(config[key]) && !missing.has(key));
+  const actions = [];
+  const add = (
+    id,
+    title,
+    description,
+    args,
+    available = true,
+    reason = "",
+    shortcut = "",
+    command = null,
+  ) => {
+    actions.push({
+      id,
+      title,
+      description,
+      args,
+      command,
+      available,
+      unavailableReason: available ? null : reason,
+      shortcut: context.shortcuts === undefined ? shortcut : (context.shortcuts[id] ?? ""),
+    });
+  };
+  add(
+    "open-loom",
+    "Open Loom",
+    "Coding threads and agents",
+    ["open", "loom"],
+    configured("loomExecutable"),
+    "Restore the installed Loom executable or update its configured path.",
+    "Super+Ctrl+Alt+L",
+  );
+  add(
+    "open-office",
+    "Open Office",
+    "Mail, notes, calendar and reminders",
+    ["open", "office"],
+    configured("officeUrl") && !missing.has("browserExecutable"),
+    "Configure the Office address and restore the configured browser.",
+    "Super+Ctrl+Alt+O",
+  );
+  add(
+    "open-atlas",
+    "Open Atlas",
+    "Research sources and writing",
+    ["open", "atlas"],
+    configured("atlasUrl") && !missing.has("browserExecutable"),
+    "Configure the Atlas address and restore the configured browser.",
+    "Super+Ctrl+Alt+A",
+  );
+  add(
+    "open-switchboard",
+    "Open Switchboard",
+    "Shared AI accounts, models and routing",
+    ["open", "switchboard"],
+    configured("switchboardDashboardUrl") && !missing.has("browserExecutable"),
+    "Configure the Switchboard dashboard address and restore the configured browser.",
+  );
+  const searchable = (app) => configured(app + "Cli", app + "Url");
+  add(
+    "find",
+    "Find in apps",
+    "Search Office and Atlas",
+    ["find"],
+    searchable("office") || searchable("atlas"),
+    "Install and configure an Office or Atlas search client.",
+    "Super+Ctrl+Alt+F",
+  );
+  for (const app of ["office", "atlas"]) {
+    const name = appNames[app];
+    const reason = `Install and configure the ${name} search client and app address, then use Connect ${name} search.`;
+    add(
+      "search-" + app,
+      "Search " + name,
+      app === "office"
+        ? "Find mail, notes and other records"
+        : "Find library titles, projects and topics",
+      ["find", app],
+      searchable(app),
+      reason,
+    );
+    add(
+      "connect-" + app,
+      "Connect " + name + " search",
+      "Sign in and approve search access",
+      ["connect", app],
+      searchable(app),
+      reason,
+    );
+  }
+  add(
+    "capture-office",
+    "Capture in Office",
+    "Save clipboard text as a note, reminder or Desk draft",
+    ["capture", "office", "--clipboard"],
+    configured("officeUrl") && !missing.has("browserExecutable"),
+    "Configure Office and restore the browser before capturing clipboard text.",
+    "Super+Ctrl+Alt+N",
+  );
+  add(
+    "ask-ai",
+    "Ask AI",
+    "Ask the agent through private Switchboard routing",
+    ["agent"],
+    configured("switchboardCli", "switchboardUrl"),
+    "Connect Switchboard and its installed client before using AI.",
+    "Super+Shift+A",
+  );
+  add(
+    "connections",
+    "Connection status",
+    "Check apps, private network and AI; recover connections",
+    ["connections", "--terminal"],
+  );
+  add("doctor", "Check connections", "Inspect app access and the background Loom service", [
+    "doctor",
+    "--terminal",
+  ]);
+  add(
+    "tailscale",
+    "Open Tailscale",
+    "Private network and device connections",
+    ["omarchy.tailscale", "open"],
+    true,
+    "",
+    "",
+    "omarchy-shell",
+  );
+  for (const mode of ["dark", "light"])
+    add(
+      "iris-" + mode,
+      "Iris " + (mode === "dark" ? "Dark" : "Light"),
+      "Apply Iris colors using the native theme flow",
+      ["loom-iris-" + mode],
+      (context.availableThemes ?? []).includes(mode),
+      "Install the Iris " +
+        mode +
+        " theme first. Other themes remain available in the native Theme picker.",
+      "",
+      "omarchy-theme-set",
+    );
+  add("integration", "Installed integration", "Version, profile, theme and retained rollback", [
+    "pack",
+    "status",
+    "--terminal",
+  ]);
+  add(
+    "rollback",
+    "Restore previous integration",
+    "Review and confirm the retained release",
+    ["pack", "rollback", "--terminal"],
+    Boolean(context.previousRelease) && !context.pendingActivation,
+    context.pendingActivation
+      ? "Finish the exact pending integration update before choosing a rollback."
+      : "No verified previous integration release is available.",
+  );
+  add(
+    "pair",
+    "Connect another device",
+    "Pair a laptop or phone with this workstation",
+    ["pair", "--terminal"],
+    config.profile === "workstation" && configured("serverExecutable", "serverBaseDir"),
+    "Enable the workstation profile and configure its Loom server; start hosting before pairing.",
+  );
+  add(
+    "about",
+    "About LoomOS",
+    "Native system overview and LOOM wordmark",
+    [],
+    true,
+    "",
+    "",
+    "omarchy-launch-about",
+  );
+  return actions;
+}
+function validateActionQuery(query) {
+  if (typeof query !== "string" || [...query].length > 200 || /[\p{Cc}\p{Cf}]/u.test(query))
+    throw new Error("Action query must contain at most 200 characters without control characters.");
+}
+export function filterLoomActions(actions, query = "") {
+  validateActionQuery(query);
+  const words = query.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
+  return actions.filter((action) =>
+    words.every((word) =>
+      `${action.title} ${action.description}`.toLocaleLowerCase().includes(word),
+    ),
+  );
+}
+async function collectLoomActions(config, env) {
+  const p = paths(env);
+  const missingExecutables = [];
+  await Promise.all(
+    [
+      "loomExecutable",
+      "browserExecutable",
+      "officeCli",
+      "atlasCli",
+      "switchboardCli",
+      "serverExecutable",
+    ].map(async (key) => {
+      if (!config[key]) return;
+      try {
+        await NodeFSP.access(config[key], NodeFSP.constants.X_OK);
+      } catch {
+        missingExecutables.push(key);
+      }
+    }),
+  );
+  const availableThemes = [];
+  await Promise.all(
+    ["dark", "light"].map(async (mode) => {
+      try {
+        if (
+          (
+            await NodeFSP.stat(NodePath.join(p.home, ".config/omarchy/themes/loom-iris-" + mode))
+          ).isDirectory()
+        )
+          availableThemes.push(mode);
+      } catch {
+        /* The catalog provides setup guidance for a missing theme. */
+      }
+    }),
+  );
+  let previousRelease = false,
+    pendingActivation = false;
+  try {
+    const { releaseStatus } = await import("./release.mjs");
+    const status = await releaseStatus({ env });
+    previousRelease = Boolean(status.previous?.verified);
+    pendingActivation = Boolean(status.pending);
+  } catch {
+    /* A damaged release record must not enable rollback. */
+  }
+  const shortcuts = {};
+  const defaults = loomActionCatalog(config);
+  const recordShortcut = (keys, command) => {
+    const action = defaults.find(
+      (action) => !action.command && command === `${shellQuote(p.bin)} ${action.args.join(" ")}`,
+    );
+    if (
+      action &&
+      (!shortcuts[action.id] || keys.split("+").length < shortcuts[action.id].split("+").length)
+    )
+      shortcuts[action.id] = keys
+        .replace(/SUPER/gi, "Super")
+        .replace(/CTRL/gi, "Ctrl")
+        .replace(/ALT/gi, "Alt")
+        .replace(/SHIFT/gi, "Shift")
+        .replace(/\s*\+\s*/g, "+");
+  };
+  const lua = await read(NodePath.join(p.config, "hypr/bindings.lua"));
+  if (lua !== null) {
+    for (const match of lua.matchAll(
+      /o\.bind\(\s*("(?:\\.|[^"\\])*")\s*,\s*("(?:\\.|[^"\\])*")\s*,\s*("(?:\\.|[^"\\])*")/g,
+    )) {
+      try {
+        recordShortcut(JSON.parse(match[1]), JSON.parse(match[3]));
+      } catch {
+        // Ignore unsupported Lua string escapes in personal bindings.
+      }
+    }
+  } else {
+    const conf = await read(NodePath.join(p.config, "hypr/bindings.conf"));
+    for (const line of (conf ?? "").split("\n")) {
+      const fields = line.split(",").map((field) => field.trim());
+      const commandIndex = fields[2] === "exec" ? 3 : fields[3] === "exec" ? 4 : null;
+      if (/^bindd?\s*=/.test(fields[0]) && commandIndex !== null)
+        recordShortcut(
+          fields[0]
+            .replace(/^bindd?\s*=\s*/, "")
+            .split(/\s+/)
+            .join("+") +
+            "+" +
+            fields[1],
+          fields.slice(commandIndex).join(","),
+        );
+    }
+  }
+  return loomActionCatalog(config, {
+    missingExecutables,
+    availableThemes,
+    previousRelease,
+    pendingActivation,
+    shortcuts,
+  });
+}
+export async function nativeActions(config, env, query = "", dependencies = {}) {
+  validateActionQuery(query);
+  const catalog = dependencies.catalog ?? (() => collectLoomActions(config, env));
+  const filter =
+    dependencies.filter ??
+    (async (value, actions) => {
+      const rows = actions.map(
+        (action) =>
+          `${action.title}${action.shortcut ? " [" + action.shortcut + "]" : ""} | ${action.description}${action.available ? "" : " | Setup needed"}`,
+      );
+      const selected = await finderChoice(
+        [
+          "filter",
+          "--header",
+          "Loom actions · Esc leaves search; Esc again closes",
+          "--placeholder",
+          "Find apps, save notes, AI or connections",
+          `--value=${value}`,
+          "--strict",
+          "--",
+          ...rows,
+        ],
+        env,
+      );
+      return selected === null ? null : (actions[rows.indexOf(selected)]?.id ?? "unknown");
+    });
+  const choose =
+    dependencies.choose ??
+    ((choices) => finderChoice(["choose", "--header", "Loom actions", "--", ...choices], env));
+  const show = dependencies.show ?? console.log;
+  const execute =
+    dependencies.execute ??
+    ((action) =>
+      action.command ? run(action.command, action.args, { env }) : main(action.args, env));
+  let retry = null;
+  while (true) {
+    const actions = await catalog();
+    const id = retry ?? (await filter(query, actions));
+    retry = null;
+    if (id === null) return;
+    const action = actions.find((action) => action.id === id);
+    if (!action) throw new Error("The picker returned an unknown action.");
+    show(action.title + "\n" + action.description);
+    if (!action.available) {
+      show(action.unavailableReason);
+      if ((await choose(["Back to actions", "Close"])) === "Back to actions") continue;
+      return;
+    }
+    try {
+      await execute(action);
+      return;
+    } catch {
+      show(action.title + " did not finish. Check connections, retry, or return to actions.");
+      const choice = await choose(["Retry action", "Back to actions", "Close"]);
+      if (choice === "Retry action") retry = id;
+      else if (choice !== "Back to actions") return;
+    }
+  }
+}
+
 function searchSecretArgs(app, origin) {
   return ["application", "loom-os-search", "app", app, "origin", origin];
 }
@@ -1275,7 +1639,7 @@ function parseArgs(args) {
   return { options, positional };
 }
 const print = (value) => console.log(JSON.stringify(value, null, 2));
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nopen loom|office|atlas|switchboard\ncapture office [--clipboard] [--title TITLE] [--text TEXT] [--url URL]\ncapture atlas --title TITLE --text TEXT  (saves a private source)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -1355,6 +1719,42 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "actions") {
+    let inline = false,
+      json = false,
+      query = "";
+    const seen = new Set();
+    for (let i = 0; i < rest.length; i++) {
+      const option = rest[i];
+      if (seen.has(option) || !["--inline", "--json", "--query"].includes(option))
+        throw new Error("Usage: loom-os actions [--query TEXT] [--json]");
+      seen.add(option);
+      if (option === "--inline") inline = true;
+      else if (option === "--json") json = true;
+      else {
+        if (rest[i + 1] === undefined) throw new Error("Action query needs a value.");
+        query = rest[++i];
+      }
+    }
+    if (inline && json) throw new Error("Choose interactive actions or JSON listing.");
+    validateActionQuery(query);
+    if (json) print(filterLoomActions(await collectLoomActions(config, env), query));
+    else if (inline) {
+      if (!process.stdin.isTTY) throw new Error("Loom actions needs an interactive terminal.");
+      await nativeActions(config, env, query);
+    } else
+      await run(
+        "omarchy-launch-tui",
+        [
+          "--app-id=org.omarchy.loom-actions",
+          NodePath.join(p.root, "actions-terminal"),
+          "--query",
+          query,
+        ],
+        { env },
+      );
+    return;
+  }
   if (action === "connect") {
     const app = rest[0];
     if (

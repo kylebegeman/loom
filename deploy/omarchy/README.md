@@ -290,3 +290,17 @@ integrity checks and edited widgets are preserved. A commissioned machine with
 the retired custom Loom widget needs its exact old files reviewed and backed up
 before replacement; the installer deliberately refuses unowned existing files.
 Routine updates retain that widget's placement and personal shell settings.
+
+## Implementation packets
+
+Kyle selected 17 further improvements, excluding saved project workspaces (#14).
+The [packet review](packets/README.md) records their scope, dependencies and
+acceptance. Approved packets are not completion claims.
+
+The searchable **Loom actions** launcher/menu uses the same existing operations.
+`loom-os actions --query "mail"` opens it with an initial filter;
+`loom-os actions --json --query "mail"` lists matching action metadata without
+network checks, credential lookup or inference. Shortcut hints come from the
+configured Hyprland bindings. Local prerequisites can be unavailable even while
+other actions work; selected operations retain their normal authorization and
+connection checks.

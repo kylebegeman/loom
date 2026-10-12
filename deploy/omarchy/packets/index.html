@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>LoomOS implementation packets</title
+  ><style>
+    :root {
+      --foreground: #eee9f1;
+      --muted-foreground: #b5aabb;
+      --card: #25202d;
+      --border: #3a3142;
+      --accent: #c5a8dd;
+      --background: #1a1720;
+      --radius: 12px;
+      --font-sans: system-ui, sans-serif;
+    }
+    html[data-standalone] {
+      background: var(--background);
+    }
+    html,
+    body {
+      background: transparent;
+      color: var(--foreground);
+      font-family: var(--font-sans);
+      margin: 0;
+    }
+    main {
+      max-width: 900px;
+      margin: auto;
+    }
+    h1 {
+      font-size: 26px;
+      line-height: 1.2;
+      font-weight: 650;
+      margin: 0 0 12px;
+    }
+    h2 {
+      font-size: 18px;
+      margin: 22px 0 8px;
+    }
+    p,
+    li {
+      line-height: 1.55;
+      font-size: 15px;
+      overflow-wrap: anywhere;
+    }
+    p {
+      max-width: 74ch;
+    }
+    p,
+    ul {
+      margin: 8px 0 16px;
+    }
+    ul {
+      padding-left: 22px;
+    }
+    small,
+    .muted {
+      color: var(--muted-foreground);
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      margin: 18px 0 7px;
+    }
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--foreground);
+      background: var(--card);
+      font: inherit;
+    }
+    input:focus-visible,
+    summary:focus-visible,
+    a:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 3px;
+    }
+    details {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+    }
+    summary {
+      cursor: pointer;
+      line-height: 1.45;
+      font-weight: 600;
+      list-style: none;
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+    summary::-webkit-details-marker {
+      display: none;
+    }
+    .number {
+      color: var(--muted-foreground);
+      font-size: 14px;
+      min-width: 30px;
+    }
+    .title {
+      flex: 1;
+      min-width: 160px;
+    }
+    .status {
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--card);
+      border-radius: 6px;
+      padding: 4px 8px;
+      color: var(--muted-foreground);
+    }
+    .active {
+      color: var(--accent);
+    }
+    .body {
+      padding: 8px 0 4px 42px;
+      max-width: 75ch;
+    }
+    .body h3 {
+      font-size: 15px;
+      margin: 18px 0 8px;
+    }
+    .body a {
+      color: var(--accent);
+    }
+    .meta {
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+    [hidden] {
+      display: none !important;
+    }
+    @media (max-width: 460px) {
+      h1 {
+        font-size: 23px;
+      }
+      .body {
+        padding-left: 0;
+      }
+      .status {
+        margin-left: 42px;
+      }
+      .title {
+        min-width: 200px;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        scroll-behavior: auto;
+      }
+    }
+  </style>
+  <main>
+    <h1>Approved LoomOS packets</h1>
+    <p>
+      17 selected improvements, ordered by dependency. Saved project workspaces (#14) are excluded.
+      Open a packet to review its full scope and acceptance checks.
+    </p>
+    <p class="muted">
+      Preserve Omarchy's character. Keep Iris consistent. Apps own their data. Every AI route uses
+      Switchboard.
+    </p>
+    <label for="query">Find a packet by name, number or capability</label
+    ><input id="query" type="search" placeholder="Search capture, offline, connections…" />
+    <p id="count" class="meta" aria-live="polite">17 packets</p>
+    <details
+      id="packet-1"
+      data-search="1 Discoverable Loom action menu Find and launch existing LoomOS capabilities through the native menu and launcher without remembering commands. Searchable native picker with action names, useful descriptions and existing shortcut hints. Show missing configuration or installation with a next step; selection never executes an unavailable or arbitrary action. Reach the same picker from the launcher, LoomOS menu and CLI; keep Omarchy styling and keyboard cancellation."
+      open
+    >
+      <summary>
+        <span class="number">#1</span><span class="title">Discoverable Loom action menu</span
+        ><span class="status active">verification pending</span>
+      </summary>
+      <div class="body">
+        <p>
+          Find and launch existing LoomOS capabilities through the native menu and launcher without
+          remembering commands.
+        </p>
+        <p class="meta">Small complexity; High impact. Dependencies: none.</p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Searchable native picker with action names, useful descriptions and existing shortcut
+            hints.
+          </li>
+          <li>
+            Show missing configuration or installation with a next step; selection never executes an
+            unavailable or arbitrary action.
+          </li>
+          <li>
+            Reach the same picker from the launcher, LoomOS menu and CLI; keep Omarchy styling and
+            keyboard cancellation.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Search mail, notes/save, AI and connections and reach the correct existing action.
+          </li>
+          <li>
+            Opening, filtering, cancellation and missing-action guidance invoke no inference, app
+            writes or secret reads.
+          </li>
+          <li>
+            Installed action entry points launch; existing app focus, menu extensions, theme and
+            running service are preserved.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <ul>
+          <li>
+            Implemented native launcher, LoomOS menu and CLI entry points with searchable
+            descriptions, actual shortcut hints, setup guidance and explicit retry.
+          </li>
+          <li>
+            95 focused integration-pack tests pass, including nine action tests. Focused lint and
+            generated-document consistency checks pass.
+          </li>
+          <li>
+            Isolated Linux Gum 2.0.0 checks pass: literal initial queries, filtering/cancellation,
+            unavailable-action guidance and exact synthetic browser dispatch. No inference, app
+            writes or real credential reads.
+          </li>
+          <li>
+            Installed reviewed pack 20261011.14 on Workstation. Installed bytes match SHA256
+            7d1dde40b3c339067132b03ef386b31cb0050070a16d8d157f01e2af8c4fe776. Verified previous pack
+            20261011.11 remains available; no activation is pending.
+          </li>
+          <li>
+            Iris Dark, integration configuration, shell configuration and running t3code.service PID
+            1154 were preserved through installation.
+          </li>
+          <li>
+            Native launcher, actual menu selection, filtering and two-Escape cancellation passed on
+            Workstation. Final existing-Office-window focus and preservation assertion awaits
+            reconnection; its checker was corrected to use the actual app identity instead of the
+            browser profile window identity.
+          </li>
+          <li>
+            Physical shortcut and laptop sleep/wake acceptance belong to later packets, not this
+            release. Evidence is retained in the local LoomOS 2026-10-11 packets artifact directory.
+          </li>
+        </ul>
+      </div>
+    </details>
+    <details
+      id="packet-6"
+      data-search="6 Shortcut and accessibility presets Make native actions comfortable on different keyboards and readable displays. Offer conflict-checked shortcut presets with preview, restore and user-customization preservation. Show actual configured bindings instead of claiming default bindings are active. Support readable native terminal sizing and accessible focus/contrast choices through existing controls."
+    >
+      <summary>
+        <span class="number">#6</span><span class="title">Shortcut and accessibility presets</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Make native actions comfortable on different keyboards and readable displays.</p>
+        <p class="meta">Small complexity; High impact. Dependencies: <a href="#packet-1">#1</a>.</p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Offer conflict-checked shortcut presets with preview, restore and user-customization
+            preservation.
+          </li>
+          <li>Show actual configured bindings instead of claiming default bindings are active.</li>
+          <li>
+            Support readable native terminal sizing and accessible focus/contrast choices through
+            existing controls.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Check conflicts, invalid bindings, preset apply/restore and personal edits.</li>
+          <li>
+            Verify complete keyboard interaction and readable layouts at common display scales.
+          </li>
+          <li>
+            Physical keyboard acceptance is recorded separately from command/virtual-input checks.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-9"
+      data-search="9 Omarchy compatibility checks Catch upstream changes before an integration release breaks everyday controls. Test supported Omarchy parsers and native actions alongside current synthetic pack tests. Cover themes, menu entry points, app window reuse, runtime/config preservation and installer ownership. Record supported Omarchy versions and meaningful compatibility failures in release evidence."
+    >
+      <summary>
+        <span class="number">#9</span><span class="title">Omarchy compatibility checks</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Catch upstream changes before an integration release breaks everyday controls.</p>
+        <p class="meta">Medium complexity; High impact. Dependencies: none.</p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Test supported Omarchy parsers and native actions alongside current synthetic pack
+            tests.
+          </li>
+          <li>
+            Cover themes, menu entry points, app window reuse, runtime/config preservation and
+            installer ownership.
+          </li>
+          <li>
+            Record supported Omarchy versions and meaningful compatibility failures in release
+            evidence.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Reproduce known parser/theme-picker failure modes in focused regressions.</li>
+          <li>
+            Check current and retained-release install/rollback, personal edits and interrupted
+            activation.
+          </li>
+          <li>
+            Run actual Linux/native checks when a target is available; distinguish fixtures from
+            physical acceptance.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-12"
+      data-search="12 Shared app integration contract Apps describe their supported OS capabilities instead of making LoomOS guess their internals. Extend existing app-owned registries/contracts for actions, stable links, search, capture, notifications and availability. Keep authorization, validation and business operations inside each owning app. Provide version negotiation, unavailable-capability behavior and reusable adapters without a second product runtime."
+    >
+      <summary>
+        <span class="number">#12</span><span class="title">Shared app integration contract</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Apps describe their supported OS capabilities instead of making LoomOS guess their
+          internals.
+        </p>
+        <p class="meta">Large complexity; High impact. Dependencies: none.</p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Extend existing app-owned registries/contracts for actions, stable links, search,
+            capture, notifications and availability.
+          </li>
+          <li>Keep authorization, validation and business operations inside each owning app.</li>
+          <li>
+            Provide version negotiation, unavailable-capability behavior and reusable adapters
+            without a second product runtime.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Verify compatible, older, missing and malformed capability declarations.</li>
+          <li>
+            Typecheck and behavior-test affected producers and consumers across supported surfaces.
+          </li>
+          <li>
+            Integrate at least Office and Atlas through the same contract without weakening their
+            permissions.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-2"
+      data-search="2 Exact-item search opening Open the selected Office record or Atlas source directly in its existing app window. Apps own stable authenticated record routes; retain the destination through login. Finder passes the selected record identity to the app without treating excerpts or queries as URLs. Existing app windows navigate rather than duplicate; absent/deleted/inaccessible items explain recovery."
+    >
+      <summary>
+        <span class="number">#2</span><span class="title">Exact-item search opening</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Open the selected Office record or Atlas source directly in its existing app window.</p>
+        <p class="meta">
+          Medium complexity; High impact. Dependencies: <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Apps own stable authenticated record routes; retain the destination through login.
+          </li>
+          <li>
+            Finder passes the selected record identity to the app without treating excerpts or
+            queries as URLs.
+          </li>
+          <li>
+            Existing app windows navigate rather than duplicate; absent/deleted/inaccessible items
+            explain recovery.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Open each supported Office record type and Atlas source from native search.</li>
+          <li>Check signed-out handoff, unavailable records and existing-window reuse.</li>
+          <li>Verify route behavior in Linux and the shared web/Mac experience.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-3"
+      data-search="3 Destination-aware capture Capture once, choose Office or Atlas and review before saving. Preview clipboard/selected text and supplied links with a supported destination picker. Office retains reviewed Note, Reminder and Desk flows; Atlas exposes a reviewed source capture flow. Retain capture through login; provide loading, error, cancellation and duplicate-submission handling."
+    >
+      <summary>
+        <span class="number">#3</span><span class="title">Destination-aware capture</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Capture once, choose Office or Atlas and review before saving.</p>
+        <p class="meta">
+          Medium complexity; High impact. Dependencies: <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Preview clipboard/selected text and supplied links with a supported destination picker.
+          </li>
+          <li>
+            Office retains reviewed Note, Reminder and Desk flows; Atlas exposes a reviewed source
+            capture flow.
+          </li>
+          <li>
+            Retain capture through login; provide loading, error, cancellation and
+            duplicate-submission handling.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Use literal text, Unicode, links and supported length limits across both destinations.
+          </li>
+          <li>Cancel without writing or fetching a supplied URL.</li>
+          <li>Verify signed-out return, server failures and supported offline behavior.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-4"
+      data-search="4 Guided connections One resumable flow explains app sessions, private network and shared AI setup. Discover existing app and CLI authorizations without copying browser credentials. Open required app approval pages automatically and guide private network/hub setup. Expose connected, approval-needed, unavailable, retry and revoke/forget states."
+    >
+      <summary>
+        <span class="number">#4</span><span class="title">Guided connections</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>One resumable flow explains app sessions, private network and shared AI setup.</p>
+        <p class="meta">
+          Medium complexity; High impact. Dependencies: <a href="#packet-1">#1</a>,
+          <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>Discover existing app and CLI authorizations without copying browser credentials.</li>
+          <li>
+            Open required app approval pages automatically and guide private network/hub setup.
+          </li>
+          <li>Expose connected, approval-needed, unavailable, retry and revoke/forget states.</li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Resume partial setup after cancellation or restart without repeating completed
+            approvals.
+          </li>
+          <li>
+            Check expired device codes, revoked sessions, server/hub outage and unavailable Secret
+            Service.
+          </li>
+          <li>
+            A person can complete ordinary setup without entering shell commands or pasting scripts.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-5"
+      data-search="5 Capability-aware availability Show what can actually be used when parts of the ecosystem are unavailable. Extend the existing status widget using app-owned offline and pending-change capability reports. Distinguish cached reading, supported writing, live search, AI and owning workstation availability. Reject stale status after suspend and offer explicit recovery without resubmitting work."
+    >
+      <summary>
+        <span class="number">#5</span><span class="title">Capability-aware availability</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Show what can actually be used when parts of the ecosystem are unavailable.</p>
+        <p class="meta">
+          Medium complexity; High impact. Dependencies: <a href="#packet-4">#4</a>,
+          <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Extend the existing status widget using app-owned offline and pending-change capability
+            reports.
+          </li>
+          <li>
+            Distinguish cached reading, supported writing, live search, AI and owning workstation
+            availability.
+          </li>
+          <li>
+            Reject stale status after suspend and offer explicit recovery without resubmitting work.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Verify disconnected, partially connected, revoked and reconnect states against app-owned
+            contracts.
+          </li>
+          <li>Inspect status with keyboard and pointer; do not rely only on color.</li>
+          <li>Polling stays bounded and never refreshes provider usage or performs inference.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-8"
+      data-search="8 Iris consistency Keep supported OS surfaces and every graphical LOOM wordmark consistent with Iris. Generate supported palette values from canonical Iris tokens while preserving Omarchy layout, pixel art and motion. Check contrast, terminal colors, theme switching and gradient wordmark placement. Publish an Iris version when shared token/component changes need to be retained across products."
+    >
+      <summary>
+        <span class="number">#8</span><span class="title">Iris consistency</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Keep supported OS surfaces and every graphical LOOM wordmark consistent with Iris.</p>
+        <p class="meta">
+          Medium complexity; Medium impact. Dependencies: <a href="#packet-9">#9</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Generate supported palette values from canonical Iris tokens while preserving Omarchy
+            layout, pixel art and motion.
+          </li>
+          <li>Check contrast, terminal colors, theme switching and gradient wordmark placement.</li>
+          <li>
+            Publish an Iris version when shared token/component changes need to be retained across
+            products.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Inspect both themes across supported native surfaces and theme changes.</li>
+          <li>Verify palette provenance, gradient preservation and contrast.</li>
+          <li>
+            Shared Iris changes are released and consumer versions checked; OS-only assets do not
+            require an artificial Iris release.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-7"
+      data-search="7 Respectful actionable notifications Deliver meaningful notifications once, with a precise destination and clear attention rules. Coordinate existing app/browser/native delivery to avoid duplicate notifications. Provide quiet previews, originating-app identity, priority and focus-time behavior. Use app-owned record/thread destinations and preserve authorization boundaries."
+    >
+      <summary>
+        <span class="number">#7</span><span class="title">Respectful actionable notifications</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Deliver meaningful notifications once, with a precise destination and clear attention
+          rules.
+        </p>
+        <p class="meta">
+          Medium complexity; High impact. Dependencies: <a href="#packet-2">#2</a>,
+          <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>Coordinate existing app/browser/native delivery to avoid duplicate notifications.</li>
+          <li>
+            Provide quiet previews, originating-app identity, priority and focus-time behavior.
+          </li>
+          <li>Use app-owned record/thread destinations and preserve authorization boundaries.</li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Verify reminder, source and agent-approval handoffs to existing windows.</li>
+          <li>
+            Test duplicate delivery, privacy/quiet modes, inaccessible destinations and
+            cancellation.
+          </li>
+          <li>Preserve native Omarchy notification presentation and platform-specific settings.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-10"
+      data-search="10 Reproducible LoomOS setup Commission an existing Omarchy machine from a portable, versioned recipe. Declare laptop/workstation profile, selected releases, app origins and supported appearance/settings. Keep secrets and device-specific identifiers out of recipes; resume interrupted commissioning. Guide necessary local administrator authentication and verify final health/recovery paths."
+    >
+      <summary>
+        <span class="number">#10</span><span class="title">Reproducible LoomOS setup</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>Commission an existing Omarchy machine from a portable, versioned recipe.</p>
+        <p class="meta">
+          Large complexity; High impact. Dependencies: <a href="#packet-4">#4</a>,
+          <a href="#packet-6">#6</a>, <a href="#packet-8">#8</a>, <a href="#packet-9">#9</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Declare laptop/workstation profile, selected releases, app origins and supported
+            appearance/settings.
+          </li>
+          <li>
+            Keep secrets and device-specific identifiers out of recipes; resume interrupted
+            commissioning.
+          </li>
+          <li>
+            Guide necessary local administrator authentication and verify final health/recovery
+            paths.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Commission clean laptop and workstation installations from the same reviewed recipe.
+          </li>
+          <li>
+            Test interruption, rerun, existing personalized machines and incompatible components.
+          </li>
+          <li>Recover a replacement machine without relying on session artifact scripts.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-11"
+      data-search="11 Contextual actions and AI workbench Operate on deliberately selected context and review results before handing them to an app. Support selected text, files, screenshots and app-provided context with explicit preview. Reuse supported Loom/app actions and Switchboard routing; show owning environment and failure/retry states. Allow reviewed copying, capture and app actions with retained provenance and original permissions."
+    >
+      <summary>
+        <span class="number">#11</span><span class="title">Contextual actions and AI workbench</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Operate on deliberately selected context and review results before handing them to an app.
+        </p>
+        <p class="meta">
+          Large complexity; High impact. Dependencies: <a href="#packet-3">#3</a>,
+          <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Support selected text, files, screenshots and app-provided context with explicit
+            preview.
+          </li>
+          <li>
+            Reuse supported Loom/app actions and Switchboard routing; show owning environment and
+            failure/retry states.
+          </li>
+          <li>
+            Allow reviewed copying, capture and app actions with retained provenance and original
+            permissions.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Check context selection, cancellation, size/type failures and routing eligibility.
+          </li>
+          <li>
+            No action silently captures unrelated app data or falls back to a direct provider.
+          </li>
+          <li>
+            Verify complete explanation, summary and capture workflows with synthetic inference
+            before authorized live acceptance.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-13"
+      data-search="13 Native workstation control desk See and manage existing background work, failures and approvals from Omarchy. Read tasks and approvals from the existing T3/Loom environment and relevant app services. Expose exact-thread/job navigation and only supported controls; add explicit unavailable/reverse states. Keep execution in the owning service and avoid introducing a replacement Core/Runner."
+    >
+      <summary>
+        <span class="number">#13</span><span class="title">Native workstation control desk</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>See and manage existing background work, failures and approvals from Omarchy.</p>
+        <p class="meta">
+          Large complexity; High impact. Dependencies: <a href="#packet-2">#2</a>,
+          <a href="#packet-7">#7</a>, <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Read tasks and approvals from the existing T3/Loom environment and relevant app
+            services.
+          </li>
+          <li>
+            Expose exact-thread/job navigation and only supported controls; add explicit
+            unavailable/reverse states.
+          </li>
+          <li>
+            Keep execution in the owning service and avoid introducing a replacement Core/Runner.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>Inspect running, waiting, failed, completed and disconnected states.</li>
+          <li>Verify permission/approval behavior and exact-destination handoff.</li>
+          <li>
+            Confirm native refresh stays bounded and opening the desk starts no job or restart.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-17"
+      data-search="17 Coordinated updates and recovery Present compatible component updates and their recovery mechanisms without surprising active work. Describe component versions, channels, compatibility and expected restart/interruption. Preserve existing component release ownership and custom fork origin; coordinate supported maintenance around active work. Expose stage/apply/verify/recover states and appropriate rollback boundaries per component."
+    >
+      <summary>
+        <span class="number">#17</span><span class="title">Coordinated updates and recovery</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Present compatible component updates and their recovery mechanisms without surprising
+          active work.
+        </p>
+        <p class="meta">
+          Large complexity; High impact. Dependencies: <a href="#packet-9">#9</a>,
+          <a href="#packet-10">#10</a>, <a href="#packet-13">#13</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Describe component versions, channels, compatibility and expected restart/interruption.
+          </li>
+          <li>
+            Preserve existing component release ownership and custom fork origin; coordinate
+            supported maintenance around active work.
+          </li>
+          <li>
+            Expose stage/apply/verify/recover states and appropriate rollback boundaries per
+            component.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Check incompatible versions, offline metadata, interrupted updates, active jobs and
+            recovery.
+          </li>
+          <li>Never silently replace the fork with upstream or restart an active environment.</li>
+          <li>Separate pack rollback, client update and system/package recovery guarantees.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-16"
+      data-search="16 Coherent offline ecosystem Make applicable saved reading and writing reliable in the shared Office and Atlas products. Implement app-owned saved content, supported local edits, durable pending changes and reviewed conflicts. Align Linux and Mac behavior; LoomOS reports app capabilities instead of adding a separate sync engine. Include storage management, account separation, failure/reconnect and explicit unsupported operations."
+    >
+      <summary>
+        <span class="number">#16</span><span class="title">Coherent offline ecosystem</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Make applicable saved reading and writing reliable in the shared Office and Atlas
+          products.
+        </p>
+        <p class="meta">
+          Massive complexity; Transformational impact. Dependencies: <a href="#packet-12">#12</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Implement app-owned saved content, supported local edits, durable pending changes and
+            reviewed conflicts.
+          </li>
+          <li>
+            Align Linux and Mac behavior; LoomOS reports app capabilities instead of adding a
+            separate sync engine.
+          </li>
+          <li>
+            Include storage management, account separation, failure/reconnect and explicit
+            unsupported operations.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Exercise stopped-server reading/writing, restart persistence, reconnect, conflicts and
+            duplicate retries with isolated state.
+          </li>
+          <li>
+            Verify supported workflows on Linux and Mac; do not equate browser cache with durable
+            offline support.
+          </li>
+          <li>
+            Record app-specific limitations and check migrations through the owning product
+            workflow.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-15"
+      data-search="15 Laptop/workstation continuity Preserve access to work across devices while background jobs remain on their owning workstation. Extend existing T3 remote access and app links with explicit handoff and profile-aware behavior. Support suspend/reconnect and graceful offline availability with no duplicate running agents. Keep laptop background/battery behavior configurable and workstation hosting explicit."
+    >
+      <summary>
+        <span class="number">#15</span><span class="title">Laptop/workstation continuity</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Preserve access to work across devices while background jobs remain on their owning
+          workstation.
+        </p>
+        <p class="meta">
+          Large complexity; High impact. Dependencies: <a href="#packet-2">#2</a>,
+          <a href="#packet-4">#4</a>, <a href="#packet-5">#5</a>, <a href="#packet-16">#16</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Extend existing T3 remote access and app links with explicit handoff and profile-aware
+            behavior.
+          </li>
+          <li>
+            Support suspend/reconnect and graceful offline availability with no duplicate running
+            agents.
+          </li>
+          <li>
+            Keep laptop background/battery behavior configurable and workstation hosting explicit.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Verify laptop/phone handoff, workstation continuity, revoked device and reconnect.
+          </li>
+          <li>
+            Perform physical sleep/wake, Wi-Fi transitions and battery checks on applicable
+            hardware.
+          </li>
+          <li>Different clients never open competing servers against the same live database.</li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <details
+      id="packet-18"
+      data-search="18 Resilient private AI hub Improve private AI availability while Switchboard remains authoritative for every route. Explain hub readiness, account constraints and model eligibility using centralized cached status. Add explicitly supported wake/readiness controls and evaluate secondary capacity when useful. Explore local-model routes only through Switchboard, after hardware/task-quality measurements."
+    >
+      <summary>
+        <span class="number">#18</span><span class="title">Resilient private AI hub</span
+        ><span class="status">approved</span>
+      </summary>
+      <div class="body">
+        <p>
+          Improve private AI availability while Switchboard remains authoritative for every route.
+        </p>
+        <p class="meta">
+          Large complexity; High impact. Dependencies: <a href="#packet-4">#4</a>,
+          <a href="#packet-5">#5</a>.
+        </p>
+        <h3>Scope</h3>
+        <ul>
+          <li>
+            Explain hub readiness, account constraints and model eligibility using centralized
+            cached status.
+          </li>
+          <li>
+            Add explicitly supported wake/readiness controls and evaluate secondary capacity when
+            useful.
+          </li>
+          <li>
+            Explore local-model routes only through Switchboard, after hardware/task-quality
+            measurements.
+          </li>
+        </ul>
+        <h3>Acceptance</h3>
+        <ul>
+          <li>
+            Verify asleep/offline/constrained/ineligible states without polling providers from each
+            client.
+          </li>
+          <li>
+            Check wake support, cancellation, timeout and route ownership with synthetic fixtures.
+          </li>
+          <li>
+            Secondary/offline routing preserves existing subscription/client restrictions and has no
+            direct-provider fallback.
+          </li>
+        </ul>
+        <h3>Delivery</h3>
+        <p>
+          Local preparation and focused checks first. Workstation rollout/native acceptance when
+          reachable; secure lock and necessary local authentication remain normal user flows.
+        </p>
+        <h3>Evidence</h3>
+        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+      </div>
+    </details>
+    <p class="muted">
+      Update the canonical packet record as each release is verified. Preparation, installation and
+      physical acceptance are separate states.
+    </p>
+  </main>
+  <script>
+    if (window.self === window.top) document.documentElement.dataset.standalone = "";
+    const input = document.querySelector("#query"),
+      rows = [...document.querySelectorAll("details")];
+    input.addEventListener("input", () => {
+      const terms = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      rows.forEach((row) => {
+        row.hidden = !terms.every((t) => row.dataset.search.toLowerCase().includes(t));
+        if (!row.hidden) shown++;
+      });
+      document.querySelector("#count").textContent = shown + " of 17 packets";
+    });
+    document.querySelectorAll('a[href^="#packet-"]').forEach((a) =>
+      a.addEventListener("click", () => {
+        const row = document.querySelector(a.getAttribute("href"));
+        if (row) {
+          input.value = "";
+          input.dispatchEvent(new Event("input"));
+          row.open = true;
+        }
+      }),
+    );
+    console.assert(rows.length === 17 && !document.querySelector("#packet-14"), "Packet inventory");
+    console.log("17 packets; #14 excluded; dependency order checked.");
+  </script>
+</html>
