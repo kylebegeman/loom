@@ -2402,7 +2402,7 @@ export function loomActionCatalog(config, context = {}) {
       "Search " + name,
       app === "office"
         ? "Find mail, notes and other records"
-        : "Find library titles, projects and topics",
+        : "Find saved Research and Presence work",
       ["find", app],
       searchable(app),
       reason,
