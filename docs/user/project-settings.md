@@ -143,7 +143,7 @@ captures and log retention remain machine-wide.
 
 Worktrees can be removed after a chosen number of inactive days, after merging, or when they
 have no commits beyond the default branch. Only T3-managed worktrees are eligible. Active
-sessions and shared worktrees prevent removal. **Keep worktrees with local changes** defaults
+sessions prevent removal. Shared worktrees stay while any thread using them is active. **Keep worktrees with local changes** defaults
 to **Uncommitted changes**, which protects tracked edits and untracked files but deletes ignored
 files such as `.env` and build output. **Any local files** also protects ignored files other than
 `node_modules`. **Edited tracked files** protects only tracked edits and allows untracked and
@@ -151,6 +151,14 @@ ignored files to be deleted. Branches and thread history stay; starting another 
 Merge cleanup requires a merged pull request whose commits are included in the remote default
 branch. A squash or rebase merge on GitHub also counts when the pull request targeted the default
 branch and the worktree is still at the pull request's last commit.
+
+Enable **Release settled worktrees** to reclaim a managed checkout after its last active thread
+settles. The server waits for settlement actions, open terminals and provider sessions. It fetches
+the branch's upstream and keeps the checkout if its current commits are unpublished. This rule
+always protects local files, including ignored data other than `node_modules`, regardless of the
+local-change setting above. Your project's main checkout stays in place. Continuing a released
+conversation recreates its checkout and waits for workspace setup before starting the agent.
+Failed setup keeps the checkout and retries when you continue again, including after a restart.
 
 Enable **Delete worktrees with deleted threads** to remove safe worktrees after their last
 thread is deleted, including archived threads and worktrees left by earlier deletions. The
