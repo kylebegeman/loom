@@ -24,7 +24,7 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [9. Omarchy compatibility checks](09-omarchy-compatibility-checks.md)                | ready_for_deployment | None            |
 | [12. Shared app integration contract](12-shared-app-integration-contract.md)         | completed            | None            |
 | [2. Exact-item search opening](02-exact-item-search-opening.md)                      | completed            | #12             |
-| [3. Destination-aware capture](03-destination-aware-capture.md)                      | approved             | #12             |
+| [3. Destination-aware capture](03-destination-aware-capture.md)                      | completed            | #12             |
 | [4. Guided connections](04-guided-connections.md)                                    | approved             | #1, #12         |
 | [5. Capability-aware availability](05-capability-aware-availability.md)              | approved             | #4, #12         |
 | [8. Iris consistency](08-iris-consistency.md)                                        | approved             | #9              |
