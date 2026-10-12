@@ -125,6 +125,7 @@ with tempfile.TemporaryDirectory() as tmp:
  for name,value in [(theme+'/colors.toml','new'),(library,'new')]:
   p=home/name;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(value)
  saved=backup/'themes/loom-iris-dark';saved.mkdir(parents=True);(saved/'colors.toml').write_text('old')
+ (home/library).chmod(0o400)
  p=backup/'files'/library;p.parent.mkdir(parents=True,exist_ok=True);p.write_text('old')
  (backup/'backup.json').write_text(json.dumps({'previousTheme':'loom-iris-dark','themes':{'loom-iris-dark':True},'files':{library:{'existed':True,'installedSha256':None}},'managedT3':None}))
  def apply(*args,**kwargs):
@@ -168,13 +169,14 @@ with tempfile.TemporaryDirectory() as tmp:
   def home(cls):return home
  def run(*args,**kwargs):
   if args[0]=='omarchy-shell':return json.dumps({'locked':False,'secure':False})
-  if args[0]=='rsvg-convert':Path(args[2]).write_bytes(b'fixture-png');return ''
+  if args[0]=='rsvg-convert':Path(args[args.index('-o')+1]).write_bytes(b'fixture-png');return ''
   if args[0]=='magick':return '0,0: (130,90,165,255) #825AA5FF srgba(130,90,165,1)'
   raise AssertionError(args)
  with patch.object(install,'Path',FixturePath),patch.object(install,'session_env',return_value={}),patch.object(install,'run',side_effect=run),patch.object(install.subprocess,'run'):
   install.install(bundle,'dark')
  backup=Path((lib/'latest-backup').read_text().strip())
  assert (backup/'files/.local/lib/loom-os/iris/apply.py').read_text()=='old-library'
+ for wrapper in (lib/'native-bin').iterdir(): assert wrapper.stat().st_mode & 0o100, 'Adapter is not executable'
  for mode in ('dark','light'):
   theme=home/'.config/omarchy/themes'/('loom-iris-'+mode)
   assert (theme/'about-gradient.txt').is_file()

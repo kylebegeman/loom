@@ -137,7 +137,10 @@ def install(bundle: Path,mode: str|None) -> None:
     for file in library_files:
         atomic_write(library/file,(bundle/file).read_bytes())
     (library/'publish-terminal-colors.sh').chmod(0o755)
-    shutil.copytree(bundle/'native-bin',library/'native-bin',dirs_exist_ok=True)
+    for file in (bundle/'native-bin').iterdir():
+        if file.is_file():
+            atomic_write(library/'native-bin'/file.name,file.read_bytes())
+            (library/'native-bin'/file.name).chmod(0o755)
     hook_text='#!/bin/bash\nset -euo pipefail\nexec /usr/bin/python3 "$HOME/.local/lib/loom-os/iris/apply.py"\n'
     atomic_write(hook,hook_text.encode());hook.chmod(0o755)
     for file in files:
@@ -189,7 +192,9 @@ def rollback(backup: Path) -> None:
     for key,info in metadata['files'].items():
         dest=home/key
         if info['existed']:
-            shutil.copy2(backup/'files'/key,dest)
+            saved=backup/'files'/key
+            atomic_write(dest,saved.read_bytes())
+            shutil.copystat(saved,dest)
         else:
             dest.unlink(missing_ok=True)
     for name,existed in metadata['themes'].items():
