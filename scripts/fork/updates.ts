@@ -14,6 +14,7 @@ import * as NodeURL from "node:url";
 import { serializeUpdateManifest } from "../lib/update-manifest.ts";
 
 const REPOSITORY = "kylebegeman/loom";
+const OFFICIAL_UPSTREAM = "https://github.com/pingdotgg/t3code.git";
 const SIGNING_IDENTITY = "Loom Local Code Signing";
 const LABEL = "com.kylebegeman.loom-updates";
 const APP_PATH = "/Applications/Loom.app";
@@ -66,6 +67,50 @@ const annotationValue = (annotation: string, key: string) => {
   return values[0]?.slice(key.length + 1).trim();
 };
 
+const annotatedUpstream = (annotation: string) => {
+  const tag =
+    annotationValue(annotation, "upstream") ??
+    /^Loom built from upstream (v[^\s]+)$/m.exec(annotation)?.[1];
+  if (tag !== undefined && (!tag.startsWith("v") || !LOOM_VERSION.test(tag.slice(1))))
+    throw new Error("Invalid annotated upstream tag; use an exact stable or nightly v* tag.");
+  return tag;
+};
+
+const repositoryIntegration = (sourceDir: string, tag: string) => {
+  if (!tag.startsWith("loom-v") || !LOOM_VERSION.test(tag.slice("loom-v".length)))
+    throw new Error(`Invalid Loom integration tag: ${tag}`);
+  const ref = `refs/tags/${tag}`;
+  const commit = run("git", ["rev-parse", `${ref}^{commit}`], { cwd: sourceDir });
+  const annotation =
+    run("git", ["cat-file", "-t", ref], { cwd: sourceDir }) === "tag"
+      ? run("git", ["for-each-ref", "--format=%(contents)", ref], { cwd: sourceDir })
+      : "";
+  return { commit, annotation };
+};
+
+/** Fork origin need not mirror upstream tags. Fetch only the claimed official ref, never moving an existing one. */
+export function ensureUpstreamProvenance(
+  sourceDir: string,
+  tag: string,
+  upstream = OFFICIAL_UPSTREAM,
+) {
+  const integration = repositoryIntegration(sourceDir, tag);
+  const claimed = annotatedUpstream(integration.annotation);
+  if (claimed === undefined) return;
+  const ref = `refs/tags/${claimed}`;
+  if (run("git", ["tag", "--list", claimed], { cwd: sourceDir }) === "")
+    run("git", ["fetch", "--quiet", "--no-tags", upstream, `${ref}:${ref}`], { cwd: sourceDir });
+  try {
+    run("git", ["merge-base", "--is-ancestor", `${ref}^{commit}`, integration.commit], {
+      cwd: sourceDir,
+    });
+  } catch (cause) {
+    throw new Error("The annotated upstream tag is not an ancestor of the selected source.", {
+      cause,
+    });
+  }
+}
+
 export function releaseForTag(tag: string, commit: string, context: ReleaseContext = {}) {
   const requested = tag.startsWith("loom-v") ? tag.slice("loom-v".length) : "";
   if (!LOOM_VERSION.test(requested) || !SOURCE_COMMIT.test(commit)) {
@@ -105,9 +150,7 @@ export function releaseForTag(tag: string, commit: string, context: ReleaseConte
   const upstreamTags = (context.upstreamTags ?? []).filter(
     (item) => item.startsWith("v") && LOOM_VERSION.test(item.slice(1)),
   );
-  const claimed =
-    annotationValue(annotation, "upstream") ??
-    /^Loom built from upstream (v[^\s]+)$/m.exec(annotation)?.[1];
+  const claimed = annotatedUpstream(annotation);
   if (claimed !== undefined && !upstreamTags.includes(claimed))
     throw new Error("The annotated upstream tag is not present in this source history.");
   const upstreamTag = claimed ?? upstreamTags[0];
@@ -126,7 +169,7 @@ export function releaseForTag(tag: string, commit: string, context: ReleaseConte
 
 /** Read immutable version state from Git, including reserved and draft publications. */
 export function releaseFromRepository(sourceDir: string, tag: string) {
-  const commit = run("git", ["rev-parse", `${tag}^{commit}`], { cwd: sourceDir });
+  const { commit, annotation } = repositoryIntegration(sourceDir, tag);
   const publications = run(
     "git",
     [
@@ -144,11 +187,6 @@ export function releaseFromRepository(sourceDir: string, tag: string) {
       if (!sha) throw new Error(`Loom publication tag does not identify a commit: ${name}`);
       return [{ tag: name, commit: sha }];
     });
-  const annotated =
-    run("git", ["cat-file", "-t", `refs/tags/${tag}`], { cwd: sourceDir }) === "tag";
-  const annotation = annotated
-    ? run("git", ["for-each-ref", "--format=%(contents)", `refs/tags/${tag}`], { cwd: sourceDir })
-    : "";
   const upstreamTags = run(
     "git",
     ["tag", "--list", "v[0-9]*", "--merged", commit, "--sort=-creatordate"],
@@ -334,7 +372,7 @@ async function latestIntegration() {
       "--quiet",
       "origin",
       "+refs/heads/main:refs/remotes/origin/main",
-      // Include bare Loom publication state and genuine upstream provenance.
+      // Include bare Loom publication state; missing annotated upstream refs are fetched below.
       "refs/tags/*:refs/tags/*",
     ],
     { cwd: SOURCE_DIR },
@@ -351,6 +389,7 @@ async function latestIntegration() {
     { cwd: SOURCE_DIR },
   ).split("\n")[0];
   if (!tag) throw new Error("No merged Loom integration tag is available.");
+  ensureUpstreamProvenance(SOURCE_DIR, tag);
   return releaseFromRepository(SOURCE_DIR, tag);
 }
 

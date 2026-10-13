@@ -18,6 +18,7 @@ import {
   prunePublishedBuilds,
   releaseForTag,
   releaseFromRepository,
+  ensureUpstreamProvenance,
   restoreBuildInputs,
   reservePublicationTag,
   updateManifest,
@@ -298,6 +299,100 @@ describe("Loom update publishing", () => {
       expect(retry.recordName).toBe(release.recordName);
       reservePublicationTag(retry, fixture.source);
       expect(fixture.remoteGit("tag", "--list")).toBe(release.releaseTag);
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("fetches only missing annotated upstream provenance before reading a fork release", async () => {
+    const fixture = await publicationFixture();
+    try {
+      const ancestor = fixture.commit("upstream source");
+      const source = fixture.commit("fork source");
+      const upstream = NodePath.join(fixture.root, "upstream.git");
+      NodeChildProcess.execFileSync("git", ["init", "--quiet", "--bare", upstream]);
+      const tag = "v0.0.46-nightly.20261013.3042";
+      fixture.git(
+        "push",
+        "--quiet",
+        upstream,
+        `${ancestor}:refs/tags/${tag}`,
+        `${ancestor}:refs/tags/v0.0.46-nightly.20261014.1`,
+      );
+      const candidate = "loom-v0.0.47-nightly.20261013.3045";
+      fixture.git("tag", "-a", candidate, "-m", `upstream=${tag}`, source);
+      expect(() => releaseFromRepository(fixture.source, candidate)).toThrow("source history");
+      ensureUpstreamProvenance(fixture.source, candidate, upstream);
+      expect(releaseFromRepository(fixture.source, candidate).upstreamTag).toBe(tag);
+      expect(fixture.git("tag", "--list", "v*")).toBe(tag);
+      expect(fixture.remoteGit("tag", "--list")).toBe("");
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps present upstream refs unchanged and does not contact the remote", async () => {
+    const fixture = await publicationFixture();
+    try {
+      const ancestor = fixture.commit("upstream source");
+      const source = fixture.commit("fork source");
+      const tag = "v0.0.46-nightly.20261013.3042";
+      fixture.git("tag", "-a", tag, "-m", "immutable upstream", ancestor);
+      const original = fixture.git("rev-parse", `refs/tags/${tag}`);
+      const candidate = "loom-v0.0.47-nightly.20261013.3045";
+      fixture.git("tag", "-a", candidate, "-m", `Loom built from upstream ${tag}`, source);
+      ensureUpstreamProvenance(
+        fixture.source,
+        candidate,
+        NodePath.join(fixture.root, "absent.git"),
+      );
+      expect(fixture.git("rev-parse", `refs/tags/${tag}`)).toBe(original);
+      expect(releaseFromRepository(fixture.source, candidate).upstreamTag).toBe(tag);
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses invalid provenance names before fetching", async () => {
+    const fixture = await publicationFixture();
+    try {
+      const source = fixture.commit("fork source");
+      for (const [index, tag] of [
+        "--upload-pack=unsafe",
+        "v0.0.46-preview.20261013.1",
+        "v0.0.46;echo-unsafe",
+      ].entries()) {
+        const candidate = `loom-v0.0.47-nightly.20261013.${index + 1}`;
+        fixture.git("tag", "-a", candidate, "-m", `upstream=${tag}`, source);
+        expect(() =>
+          ensureUpstreamProvenance(
+            fixture.source,
+            candidate,
+            NodePath.join(fixture.root, "absent.git"),
+          ),
+        ).toThrow("Invalid annotated upstream tag");
+      }
+      expect(fixture.git("tag", "--list", "v*")).toBe("");
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a fetched upstream tag outside the selected source history", async () => {
+    const fixture = await publicationFixture();
+    try {
+      const source = fixture.commit("fork source");
+      const later = fixture.commit("unmerged upstream source");
+      const tag = "v0.0.46-nightly.20261013.3042";
+      const upstream = NodePath.join(fixture.root, "upstream.git");
+      NodeChildProcess.execFileSync("git", ["init", "--quiet", "--bare", upstream]);
+      fixture.git("push", "--quiet", upstream, `${later}:refs/tags/${tag}`);
+      const candidate = "loom-v0.0.47-nightly.20261013.3045";
+      fixture.git("tag", "-a", candidate, "-m", `upstream=${tag}`, source);
+      expect(() => ensureUpstreamProvenance(fixture.source, candidate, upstream)).toThrow(
+        "not an ancestor",
+      );
+      expect(() => releaseFromRepository(fixture.source, candidate)).toThrow("source history");
     } finally {
       await NodeFSP.rm(fixture.root, { recursive: true, force: true });
     }
