@@ -24,6 +24,7 @@ import {
   validateSigningEntitlements,
   confirmedUploadedBuild,
   pruneCompletedIosBuilds,
+  resetArchiveSigningState,
   publish,
   missingTestFlightGroups,
 } from "./ios-release.ts";
@@ -829,6 +830,85 @@ describe("Loom iOS release boundaries", () => {
       await NodeFSP.rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("resets stale archive signing receipts without deleting release evidence or other records", async () => {
+    const directory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "loom-ios-signing-reset-"),
+    );
+    const output = NodePath.join(directory, "retry");
+    const signingState = NodePath.join(output, "archive-signing");
+    const other = NodePath.join(directory, "completed");
+    const saved = JSON.stringify(receipt);
+    try {
+      await NodeFSP.mkdir(signingState, { recursive: true });
+      await NodeFSP.mkdir(NodePath.join(other, "Loom.xcarchive"), { recursive: true });
+      await NodeFSP.writeFile(NodePath.join(output, "loom-ios-release.json"), saved);
+      await NodeFSP.writeFile(NodePath.join(output, "notes.txt"), "retry evidence");
+      await NodeFSP.writeFile(NodePath.join(signingState, "receipt.json"), "stale receipt");
+      await NodeFSP.writeFile(NodePath.join(signingState, "plan.json"), "stale plan");
+      await NodeFSP.writeFile(NodePath.join(other, "loom-ios-release.json"), saved);
+      await NodeFSP.writeFile(
+        NodePath.join(other, "Loom.xcarchive", "Info.plist"),
+        "signed archive",
+      );
+
+      expect(await resetArchiveSigningState(output)).toBe(signingState);
+      await expect(NodeFSP.lstat(signingState)).rejects.toMatchObject({ code: "ENOENT" });
+      expect(await NodeFSP.readFile(NodePath.join(output, "loom-ios-release.json"), "utf8")).toBe(
+        saved,
+      );
+      expect(await NodeFSP.readFile(NodePath.join(output, "notes.txt"), "utf8")).toBe(
+        "retry evidence",
+      );
+      expect(await NodeFSP.readFile(NodePath.join(other, "loom-ios-release.json"), "utf8")).toBe(
+        saved,
+      );
+      expect(
+        await NodeFSP.readFile(NodePath.join(other, "Loom.xcarchive", "Info.plist"), "utf8"),
+      ).toBe("signed archive");
+      expect(await resetArchiveSigningState(output)).toBe(signingState);
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["record", "signing state"])(
+    "rejects a symlinked %s during archive signing reset",
+    async (kind) => {
+      const directory = await NodeFSP.mkdtemp(
+        NodePath.join(NodeOS.tmpdir(), "loom-ios-signing-link-"),
+      );
+      const output = NodePath.join(directory, "retry");
+      const outside = NodePath.join(directory, "unrelated");
+      try {
+        await NodeFSP.mkdir(NodePath.join(outside, "archive-signing"), { recursive: true });
+        await NodeFSP.writeFile(NodePath.join(outside, "loom-ios-release.json"), "release receipt");
+        await NodeFSP.writeFile(
+          NodePath.join(outside, "archive-signing", "receipt.json"),
+          "keep signing receipt",
+        );
+        if (kind === "record") await NodeFSP.symlink(outside, output);
+        else {
+          await NodeFSP.mkdir(output);
+          await NodeFSP.symlink(
+            NodePath.join(outside, "archive-signing"),
+            NodePath.join(output, "archive-signing"),
+          );
+        }
+        await expect(resetArchiveSigningState(output)).rejects.toThrow(
+          "owned path without symlinks",
+        );
+        expect(
+          await NodeFSP.readFile(NodePath.join(outside, "loom-ios-release.json"), "utf8"),
+        ).toBe("release receipt");
+        expect(
+          await NodeFSP.readFile(NodePath.join(outside, "archive-signing", "receipt.json"), "utf8"),
+        ).toBe("keep signing receipt");
+      } finally {
+        await NodeFSP.rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("skips symlinked records, receipts and artifacts during retention", async () => {
     const directory = await NodeFSP.mkdtemp(

@@ -593,6 +593,14 @@ async function removeOwnedArtifact(filename: string) {
   if (await ownedPath(filename)) await NodeFSP.rm(filename, { recursive: true, force: true });
 }
 
+/** Fresh native sources require a new signing plan and its corresponding apply receipt. */
+export async function resetArchiveSigningState(outputDir: string) {
+  await ownedPath(outputDir);
+  const signingState = NodePath.join(outputDir, "archive-signing");
+  await removeOwnedArtifact(signingState);
+  return signingState;
+}
+
 /** Keep upload receipts, ambiguous uploads, and unrelated directories; prune only named owned artifacts. */
 export async function pruneCompletedIosBuilds(
   outputDir: string,
@@ -892,7 +900,7 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
         signingManifest,
       );
       const settingsFile = NodePath.join(outputDir, "archive-signing-settings.json");
-      const signingState = NodePath.join(outputDir, "archive-signing");
+      const signingState = await resetArchiveSigningState(outputDir);
       await NodeFSP.writeFile(settingsFile, `${JSON.stringify(signingManifest, null, 2)}\n`, {
         mode: 0o600,
       });
