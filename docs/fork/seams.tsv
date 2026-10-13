@@ -182,4 +182,15 @@ apps/mobile/src/features/home/ThreadListFilters.tsx	project-navigation	1
 apps/mobile/src/features/threads/ThreadNavigationSidebar.tsx	project-navigation	1
 apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-navigation	1
 apps/mobile/src/persistence/mobile-preferences.ts	project-navigation	1
+apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx	project-navigation	1
+apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx	project-navigation	1
+apps/mobile/src/features/workspace/WorkspaceToolbar.tsx	project-navigation	1
+apps/mobile/src/features/home/HomeHeader.tsx	project-navigation	1
+apps/mobile/src/features/home/HomeRouteScreen.tsx	project-navigation	1
+apps/mobile/src/features/home/MaterialThreadListToolbar.tsx	project-navigation	1
 apps/server/src/preview/ServerBrowser.ts	browser-timeout-recovery	1
+
+apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	1
+apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
+apps/mobile/src/features/threads/sidebar-native-header-items.ts	project-navigation	1
+apps/mobile/src/lib/storage.test.ts	project-navigation	1

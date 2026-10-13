@@ -154,7 +154,13 @@ function ThreadNavigationSidebarPane(
   const drawerColor = materialTheme["--color-drawer"];
 
   const insets = useSafeAreaInsets();
-  const { view: navigationView, setView: setNavigationView } = useProjectNavigation();
+  const {
+    view: navigationView,
+    setView: setNavigationView,
+    title: navigationTitle,
+    searchLabel,
+    searchPlaceholder,
+  } = useProjectNavigation();
   const { fabClearance } = useAndroidControlSizing();
   const projects = useProjects();
   const threads = useNavigationThreadShells();
@@ -547,7 +553,10 @@ function ThreadNavigationSidebarPane(
           {
             id: "environment:all",
             title: "All environments",
-            subtitle: "Show threads from every environment",
+            subtitle:
+              navigationView === "projects"
+                ? "Show projects from every environment"
+                : "Show threads from every environment",
             state: options.selectedEnvironmentId === null ? "on" : "off",
           },
           ...environments.map((environment) => ({
@@ -971,6 +980,7 @@ function ThreadNavigationSidebarPane(
   const filterMenu = useMemo(
     () =>
       buildHomeListFilterMenu({
+        navigationView,
         environments,
         projects: navigationView === "threads" ? projectFilterOptions : [],
         selectedEnvironmentId: options.selectedEnvironmentId,
@@ -1034,7 +1044,7 @@ function ThreadNavigationSidebarPane(
     return (
       <>
         <NativeStackScreenOptions
-          optionsVersion={[nativeHeaderItems, props.width]}
+          optionsVersion={[nativeHeaderItems, props.width, navigationTitle]}
           options={{
             // Re-applies the shell's static brand slot with the
             // connection-status swap so reconnects surface in the header
@@ -1045,6 +1055,7 @@ function ThreadNavigationSidebarPane(
               onOpenEnvironments: props.onOpenEnvironmentSettings,
               fallbackTitleStyle: { fontSize: 18, fontWeight: "800" },
             }),
+            title: navigationTitle,
             headerSearchBarOptions: {
               ref: searchBarRef,
               autoCapitalize: "none",
@@ -1053,7 +1064,7 @@ function ThreadNavigationSidebarPane(
               // hidesSearchBarWhenScrolling collapses it on scroll.
               hideWhenScrolling: false,
               obscureBackground: false,
-              placeholder: "Search",
+              placeholder: searchPlaceholder,
               placement: "stacked",
               onCancelButtonPress: () => {
                 props.onSearchQueryChange("");
@@ -1205,7 +1216,10 @@ function ThreadNavigationSidebarPane(
             />
             <View className="flex-row items-center gap-2.5">
               <ControlPillMenu actions={listMenuActions} onPressAction={handleListMenuAction}>
-                <SidebarFilterButton accessibilityLabel="Filter threads" icon={filterIcon} />
+                <SidebarFilterButton
+                  accessibilityLabel={filterMenu.accessibilityLabel}
+                  icon={filterIcon}
+                />
               </ControlPillMenu>
               <SidebarHeaderActions onOpenSettings={props.onOpenSettings} />
             </View>
@@ -1220,12 +1234,12 @@ function ThreadNavigationSidebarPane(
             />
             <TextInput
               ref={searchInputRef}
-              accessibilityLabel="Search threads"
+              accessibilityLabel={searchLabel}
               autoCapitalize="none"
               autoCorrect={false}
               clearButtonMode="while-editing"
               onChangeText={props.onSearchQueryChange}
-              placeholder="Search"
+              placeholder={searchPlaceholder}
               placeholderTextColorClassName="accent-placeholder"
               selectionColorClassName={undefined}
               cursorColorClassName={undefined}

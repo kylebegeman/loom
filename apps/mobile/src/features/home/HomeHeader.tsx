@@ -1,3 +1,5 @@
+// fork: project-navigation - Fallback native header labels follow Threads/Projects.
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { use, useCallback, useEffect, useRef } from "react";
 import { useNavigation, type ParamListBase } from "@react-navigation/native";
@@ -18,6 +20,11 @@ import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
 export type { HomeHeaderEnvironment } from "./HomeHeader.types";
 
 export function HomeHeader(props: HomeHeaderProps) {
+  const {
+    title: navigationTitle,
+    searchPlaceholder,
+    view: navigationView,
+  } = useProjectNavigation();
   const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
   const { layout, panes, togglePrimarySidebar } = useAdaptiveWorkspaceLayout();
   const usesNativeMailSearchToolbar = useNativeMailSearchToolbar();
@@ -44,7 +51,8 @@ export function HomeHeader(props: HomeHeaderProps) {
   // the filter menu only carries the filters and the "customized" icon state
   // keys off those alone.
   const hasCustomListOptions =
-    props.selectedEnvironmentId !== null || props.selectedProjectKey !== null;
+    props.selectedEnvironmentId !== null ||
+    (navigationView === "threads" && props.selectedProjectKey !== null);
   const focusSearch = useCallback(() => {
     if (primaryColumn && !panes.primarySidebarVisible) {
       focusAfterReveal.current = true;
@@ -55,7 +63,7 @@ export function HomeHeader(props: HomeHeaderProps) {
     return searchBarRef.current !== null;
   }, [primaryColumn, panes.primarySidebarVisible, togglePrimarySidebar]);
   useHardwareKeyboardCommand("focusSearch", focusSearch);
-  const filterMenu = buildHomeListFilterMenu(props);
+  const filterMenu = buildHomeListFilterMenu({ ...props, navigationView });
 
   if (props.usesWorkspaceToolbar) {
     return null;
@@ -64,11 +72,12 @@ export function HomeHeader(props: HomeHeaderProps) {
   return (
     <>
       <NativeStackScreenOptions
-        optionsVersion={[filterMenu.items, showsCompactCompose]}
+        optionsVersion={[filterMenu.items, showsCompactCompose, navigationTitle]}
         options={{
           // Static header config (glass, title, fonts) lives in Stack.tsx
           // (GLASS_HEADER_OPTIONS). Only dynamic values are set here.
           headerTintColor: iconColor,
+          title: navigationTitle,
           unstable_headerRightItems: () =>
             sidebarHeader
               ? [
@@ -115,7 +124,7 @@ export function HomeHeader(props: HomeHeaderProps) {
                   obscureBackground: false,
                   placement: "stacked" as const,
                   allowToolbarIntegration: false,
-                  placeholder: "Search",
+                  placeholder: searchPlaceholder,
                   onCancelButtonPress: () => props.onSearchQueryChange(""),
                   onChangeText: (event) => props.onSearchQueryChange(event.nativeEvent.text),
                 },
@@ -139,7 +148,7 @@ export function HomeHeader(props: HomeHeaderProps) {
                         : "line.3.horizontal.decrease",
                       onComposePress: props.onStartNewTask,
                       onSearchTextChange: props.onSearchQueryChange,
-                      placeholder: "Search",
+                      placeholder: searchPlaceholder,
                       searchTextChangeId: "home-search-text",
                       showsSearchDismissButton: true,
                     }),
@@ -152,7 +161,7 @@ export function HomeHeader(props: HomeHeaderProps) {
                     ref: searchBarRef,
                     autoCapitalize: "none" as const,
                     hideNavigationBar: false,
-                    placeholder: "Search",
+                    placeholder: searchPlaceholder,
                     onCancelButtonPress: () => {
                       props.onSearchQueryChange("");
                     },
@@ -167,13 +176,15 @@ export function HomeHeader(props: HomeHeaderProps) {
       {sidebarHeader || usesNativeMailSearchToolbar ? null : (
         <NativeHeaderToolbar placement="bottom">
           <NativeHeaderToolbar.Menu
-            accessibilityLabel="Filter threads"
+            accessibilityLabel={
+              navigationView === "projects" ? "Filter projects" : "Filter threads"
+            }
             icon={
               hasCustomListOptions
                 ? "line.3.horizontal.decrease.circle.fill"
                 : "line.3.horizontal.decrease.circle"
             }
-            title="Thread list options"
+            title={navigationView === "projects" ? "Project list options" : "Thread list options"}
             separateBackground
           >
             <NativeHeaderToolbar.Menu title="Environment">
@@ -181,7 +192,11 @@ export function HomeHeader(props: HomeHeaderProps) {
               <NativeHeaderToolbar.MenuAction
                 isOn={props.selectedEnvironmentId === null}
                 onPress={() => props.onEnvironmentChange(null)}
-                subtitle="Show threads from every environment"
+                subtitle={
+                  navigationView === "projects"
+                    ? "Show projects from every environment"
+                    : "Show threads from every environment"
+                }
               >
                 <NativeHeaderToolbar.Label>All environments</NativeHeaderToolbar.Label>
               </NativeHeaderToolbar.MenuAction>
@@ -196,7 +211,7 @@ export function HomeHeader(props: HomeHeaderProps) {
               ))}
             </NativeHeaderToolbar.Menu>
 
-            {props.projects.length > 0 ? (
+            {navigationView === "threads" && props.projects.length > 0 ? (
               <NativeHeaderToolbar.Menu title="Project">
                 <NativeHeaderToolbar.Label>Project</NativeHeaderToolbar.Label>
                 <NativeHeaderToolbar.MenuAction

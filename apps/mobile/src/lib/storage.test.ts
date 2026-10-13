@@ -177,6 +177,7 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
   });
 
+  // fork: project-navigation - Persist only supported modes and preserve unrelated device preferences.
   it.each(["threads", "projects"] as const)(
     "persists the Loom navigation view (%s)",
     async (view) => {

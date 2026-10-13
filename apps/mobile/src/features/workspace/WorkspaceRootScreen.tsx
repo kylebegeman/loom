@@ -1,3 +1,5 @@
+// fork: project-navigation - Native title/search announce the selected navigation mode.
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { useNavigation } from "@react-navigation/native";
 import { use, useCallback, useMemo } from "react";
@@ -39,12 +41,13 @@ function WorkspaceRootTitle(props: {
   readonly onOpenEnvironments: () => void;
 }) {
   const { state } = useWorkspaceTabs()!;
+  const { title: navigationTitle } = useProjectNavigation();
   return (
     <View style={{ width: props.maxWidth, minHeight: 32, justifyContent: "center" }}>
       <WorkspaceConnectionTitle
         brand={
           <CompactBrandTitle
-            accessibilityLabel={`${BRAND_NAME}, ${TAB_TITLES[state.selectedTab]}`}
+            accessibilityLabel={`${BRAND_NAME}, ${state.selectedTab === "threads" ? navigationTitle : TAB_TITLES[state.selectedTab]}`}
           />
         }
         maxWidth={props.maxWidth}
@@ -72,6 +75,7 @@ function WorkspaceRootContent() {
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardState((keyboard) => keyboard.height);
   const workspace = useWorkspaceTabs()!;
+  const { title: navigationTitle, searchLabel } = useProjectNavigation();
   const { state } = workspace;
   const renderHeaderTitle = useCallback(
     () => (
@@ -107,9 +111,16 @@ function WorkspaceRootContent() {
       >
         {Platform.OS === "ios" ? (
           <NativeStackScreenOptions
-            optionsVersion={[state.selectedTab, state.selectionRevision, width, sidebarNavigation]}
+            optionsVersion={[
+              state.selectedTab,
+              state.selectionRevision,
+              width,
+              sidebarNavigation,
+              navigationTitle,
+            ]}
             options={{
-              title: TAB_TITLES[state.selectedTab],
+              title:
+                state.selectedTab === "threads" ? navigationTitle : TAB_TITLES[state.selectedTab],
               headerShown: true,
               unstable_headerLeftItems: () => [],
               headerTitle: renderHeaderTitle,
@@ -122,7 +133,7 @@ function WorkspaceRootContent() {
             actions={[
               {
                 accessibilityLabel:
-                  state.selectedTab === "threads" ? "Search threads" : "Search pull requests",
+                  state.selectedTab === "threads" ? searchLabel : "Search pull requests",
                 icon: "magnifyingglass",
                 onPress: () => {
                   dispatchHardwareKeyboardCommand("focusSearch");

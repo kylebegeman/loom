@@ -1,3 +1,5 @@
+// fork: project-navigation - Shared toolbar search names the current navigation mode.
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import {
@@ -52,6 +54,7 @@ export function WorkspaceToolbar(props: {
   readonly onNewTask: () => void;
 }) {
   const workspace = useWorkspaceTabs();
+  const { searchLabel, searchPlaceholder } = useProjectNavigation();
   const input = useRef<TextInputInstance>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const insets = useSafeAreaInsets();
@@ -134,8 +137,14 @@ export function WorkspaceToolbar(props: {
                 />
                 <TextInput
                   ref={input}
-                  accessibilityLabel={`Search ${activeTab.label}`}
-                  placeholder={`Search ${activeTab.label === "PRs" ? "pull requests" : "threads"}`}
+                  accessibilityLabel={
+                    state.selectedTab === "pullRequests" ? "Search pull requests" : searchLabel
+                  }
+                  placeholder={
+                    state.selectedTab === "pullRequests"
+                      ? "Search pull requests"
+                      : searchPlaceholder
+                  }
                   placeholderTextColor={placeholderStyle.color}
                   value={tab.query}
                   onChangeText={(query) => dispatch({ type: "query", query })}

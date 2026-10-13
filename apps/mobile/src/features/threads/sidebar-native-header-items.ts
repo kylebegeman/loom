@@ -1,3 +1,4 @@
+// fork: project-navigation - The filter announcement comes from the selected list mode.
 import type {
   NativeStackHeaderItem,
   NativeStackHeaderItemMenu,
@@ -47,7 +48,7 @@ export function createSidebarHeaderItems(input: {
       type: "menu",
       axisBehavior: "horizontalOnly",
       label: "",
-      accessibilityLabel: "Filter threads",
+      accessibilityLabel: input.filterMenu.accessibilityLabel,
       icon: sfSymbolIcon(input.filterIcon),
       menu: {
         title: input.filterMenu.title,

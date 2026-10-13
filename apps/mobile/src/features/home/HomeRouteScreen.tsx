@@ -1,3 +1,5 @@
+// fork: project-navigation - Adaptive empty-detail headers reflect the selected navigation mode.
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { use } from "react";
 import { NativePrimaryColumnContext } from "../../native/v5-workspace-context";
 import * as Arr from "effect/Array";
@@ -35,6 +37,7 @@ import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 /* ─── Route screen ───────────────────────────────────────────────────── */
 
 export function HomeRouteScreen() {
+  const { title: navigationTitle } = useProjectNavigation();
   const { width: windowWidth } = useWindowDimensions();
   const nativePrimaryColumn = use(NativePrimaryColumnContext);
   const columnMetrics = useNativeColumnLayoutMetrics();
@@ -184,7 +187,7 @@ export function HomeRouteScreen() {
             />
           </NativeHeaderToolbar>
         ) : null}
-        {Platform.OS === "android" ? <AndroidScreenHeader title="Threads" /> : null}
+        {Platform.OS === "android" ? <AndroidScreenHeader title={navigationTitle} /> : null}
         <WorkspaceEmptyDetail
           onAddConnection={
             Platform.OS === "android" && !catalogState.hasConnections

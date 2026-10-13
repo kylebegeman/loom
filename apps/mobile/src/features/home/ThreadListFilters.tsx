@@ -29,7 +29,9 @@ export function ThreadListFilters(
     >
       <ListFilterMenu
         label={selectedEnvironment?.label ?? "All environments"}
-        accessibilityLabel="Filter threads by environment"
+        accessibilityLabel={
+          props.projectView ? "Filter projects by environment" : "Filter threads by environment"
+        }
         active={selectedEnvironment !== undefined}
         actions={[
           {
@@ -88,11 +90,11 @@ export function ThreadListFilters(
       (!props.projectView && props.selectedProjectKey !== null) ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Reset thread filters"
+          accessibilityLabel={props.projectView ? "Reset project filters" : "Reset thread filters"}
           className="h-8 w-8 items-center justify-center"
           onPress={() => {
             props.onEnvironmentChange(null);
-            props.onProjectChange(null);
+            if (!props.projectView) props.onProjectChange(null);
           }}
         >
           <SymbolView name="xmark.circle.fill" size={18} tintColorClassName="accent-icon-muted" />

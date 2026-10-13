@@ -1,3 +1,5 @@
+// fork: project-navigation - Library filters describe Projects and leave thread-only scopes untouched.
+import type { LoomNavigatorView } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 export interface HomeListFilterMenuEnvironment {
@@ -26,10 +28,12 @@ type HomeListFilterMenuSubmenu = {
 
 export interface HomeListFilterMenu {
   readonly title: string;
+  readonly accessibilityLabel: string;
   readonly items: Array<HomeListFilterMenuAction | HomeListFilterMenuSubmenu>;
 }
 
 export function buildHomeListFilterMenu(props: {
+  readonly navigationView?: LoomNavigatorView;
   readonly environments: ReadonlyArray<HomeListFilterMenuEnvironment>;
   readonly projects: ReadonlyArray<HomeListFilterMenuProject>;
   readonly selectedEnvironmentId: EnvironmentId | null;
@@ -37,6 +41,7 @@ export function buildHomeListFilterMenu(props: {
   readonly onEnvironmentChange: (environmentId: EnvironmentId | null) => void;
   readonly onProjectChange: (projectKey: string | null) => void;
 }): HomeListFilterMenu {
+  const projectsView = props.navigationView === "projects";
   const items: Array<HomeListFilterMenuAction | HomeListFilterMenuSubmenu> = [];
 
   items.push({
@@ -46,7 +51,9 @@ export function buildHomeListFilterMenu(props: {
       {
         type: "action",
         title: "All environments",
-        subtitle: "Show threads from every environment",
+        subtitle: projectsView
+          ? "Show projects from every environment"
+          : "Show threads from every environment",
         state: props.selectedEnvironmentId === null ? "on" : "off",
         onPress: () => props.onEnvironmentChange(null),
       },
@@ -62,7 +69,7 @@ export function buildHomeListFilterMenu(props: {
     ],
   });
 
-  if (props.projects.length > 0) {
+  if (!projectsView && props.projects.length > 0) {
     items.push({
       type: "submenu",
       title: "Project",
@@ -85,7 +92,8 @@ export function buildHomeListFilterMenu(props: {
   }
 
   return {
-    title: "Thread list options",
+    title: projectsView ? "Project list options" : "Thread list options",
+    accessibilityLabel: projectsView ? "Filter projects" : "Filter threads",
     items,
   };
 }

@@ -1,3 +1,5 @@
+// fork: project-navigation - Material search announces the selected Threads/Projects mode.
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
@@ -47,6 +49,7 @@ export function MaterialThreadListToolbar(props: {
   const { height: toolbarHeight, ...headerPadding } = useMaterialToolbarLayout();
   const { state } = useWorkspaceState();
   const { onRequestVisibility, onSearchQueryChange } = props;
+  const { searchLabel, searchPlaceholder, view: navigationView } = useProjectNavigation();
   const searchRef = useRef<TextInputInstance>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const searching = searchOpen || props.searchQuery.length > 0;
@@ -88,9 +91,9 @@ export function MaterialThreadListToolbar(props: {
   const searchField = (
     <MaterialSearchField
       inputRef={searchRef}
-      accessibilityLabel="Search threads"
+      accessibilityLabel={searchLabel}
       clearAccessibilityLabel="Clear search"
-      placeholder="Search"
+      placeholder={searchPlaceholder}
       value={props.searchQuery}
       onChangeText={onSearchQueryChange}
     />
@@ -126,7 +129,7 @@ export function MaterialThreadListToolbar(props: {
                 />
               </View>
               <AndroidHeaderIconButton
-                accessibilityLabel="Search threads"
+                accessibilityLabel={searchLabel}
                 icon="magnifyingglass"
                 onPress={openSearch}
               />
@@ -153,7 +156,7 @@ export function MaterialThreadListToolbar(props: {
           <AndroidAnchoredMenu actions={props.filterActions} onPressAction={props.onFilterAction}>
             {(open) => (
               <MaterialFloatingActionButton
-                label="Filter threads"
+                label={navigationView === "projects" ? "Filter projects" : "Filter threads"}
                 icon={filterIcon}
                 onPress={open}
               />

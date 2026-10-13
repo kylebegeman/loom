@@ -1,3 +1,5 @@
+// fork: project-navigation - Keep native search labels aligned with Threads/Projects.
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { use, useCallback, useEffect, useRef } from "react";
 import { Platform } from "react-native";
@@ -16,6 +18,7 @@ export function WorkspaceToolbar(props: {
   readonly sidebar?: boolean;
 }) {
   const workspace = useWorkspaceTabs()!;
+  const { searchLabel, searchPlaceholder } = useProjectNavigation();
   const navigation = useNavigation();
   const metrics = useNativeLayoutMetrics();
   const nativeToolbarCompose =
@@ -57,7 +60,7 @@ export function WorkspaceToolbar(props: {
   return (
     <>
       <NativeStackScreenOptions
-        optionsVersion={[selectedTab, tab.searchMode]}
+        optionsVersion={[selectedTab, tab.searchMode, searchPlaceholder]}
         options={{
           headerSearchBarOptions:
             tab.searchMode !== "resting"
@@ -71,7 +74,7 @@ export function WorkspaceToolbar(props: {
                   placement: "stacked",
                   allowToolbarIntegration: false,
                   placeholder:
-                    selectedTab === "pullRequests" ? "Search pull requests" : "Search threads",
+                    selectedTab === "pullRequests" ? "Search pull requests" : searchPlaceholder,
                   cancelButtonText: "✕",
                   onFocus: () => workspace.dispatch({ type: "search", tab: selectedTab }),
                   onBlur: () => workspace.dispatch({ type: "expand", tab: selectedTab }),
@@ -103,9 +106,7 @@ export function WorkspaceToolbar(props: {
           }
         />
         <NativeHeaderToolbar.Button
-          accessibilityLabel={
-            selectedTab === "pullRequests" ? "Search pull requests" : "Search threads"
-          }
+          accessibilityLabel={selectedTab === "pullRequests" ? "Search pull requests" : searchLabel}
           icon="magnifyingglass"
           onPress={focusSearch}
         />

@@ -91,6 +91,9 @@ jobs:
             apps/mobile/src/fork/mobile-identity/appConfig.test.ts \
             apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts \
             apps/mobile/src/features/projects/AddProjectScreen.test.ts \
+            apps/mobile/src/fork/project-navigation/projectNavigation.logic.test.ts \
+            apps/mobile/src/lib/storage.test.ts \
+            apps/mobile/src/features/home/home-list-filter-menu.test.ts \
             apps/mobile/src/features/threads/new-task-project-selection.test.ts \
             apps/mobile/src/fork/project-checkout/ProjectCheckoutSection.test.tsx \
             packages/contracts/src/fork/project-checkout.test.ts \
@@ -102,6 +105,7 @@ jobs:
             apps/server/src/storageCleanupScheduling.test.ts \
             apps/server/src/preview/ServerBrowser.test.ts \
             packages/shared/src/git.test.ts \
+            packages/client-runtime/src/fork/project-navigation.test.ts \
             packages/client-runtime/src/fork/workspace-handoff-flow.test.ts \
             packages/client-runtime/src/fork/workspace-handoff-destinations.test.ts
       - name: Record qualified source
