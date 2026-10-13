@@ -320,3 +320,39 @@ test("an unchanged owned preset introduces no conflict from opaque native Lua ca
   const changed = { ...prefs, bindings: { ...prefs.bindings, "open-office": "Super+Ctrl+Alt+L" } };
   assert.ok((await shortcutPreview(config, f.env, changed, native)).conflicts.length > 0);
 });
+
+test("restore preserves an absent preference file and exact existing formatting", async (t) => {
+  const f = await fixture(t);
+  const file = NodePath.join(f.p.config, "loom-os/shortcuts.json");
+  await assert.rejects(NodeFSP.access(file));
+  const proposed = { version: 1, preset: "none", bindings: {} };
+  await applyShortcuts(config, f.env, proposed, { query: live });
+  await restoreShortcuts(config, f.env, { query: live });
+  await assert.rejects(NodeFSP.access(file));
+  const original = '{"version":1,"preset":"standard","bindings":{}}\n';
+  await NodeFSP.writeFile(file, original);
+  await applyShortcuts(config, f.env, proposed, { query: live });
+  await restoreShortcuts(config, f.env, { query: live });
+  assert.equal(await NodeFSP.readFile(file, "utf8"), original);
+});
+
+test("interrupted restoration of an absent file recovers the applied preferences", async (t) => {
+  const f = await fixture(t),
+    proposed = { version: 1, preset: "none", bindings: {} };
+  await applyShortcuts(config, f.env, proposed, { query: live });
+  const file = NodePath.join(f.p.config, "loom-os/shortcuts.json"),
+    before = await NodeFSP.readFile(file, "utf8");
+  await assert.rejects(
+    restoreShortcuts(config, f.env, {
+      query: live,
+      write: async (path, content) => {
+        if (path === f.p.manifest) throw Error("interrupted after preference removal");
+        await NodeFSP.writeFile(path, content);
+      },
+    }),
+    /interrupted/,
+  );
+  await assert.rejects(NodeFSP.access(file));
+  await recoverShortcuts(f.env);
+  assert.equal(await NodeFSP.readFile(file, "utf8"), before);
+});

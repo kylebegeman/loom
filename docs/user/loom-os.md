@@ -426,3 +426,35 @@ changes after review, the action stops and asks for a fresh review. It restores 
 integration pack while preserving your chosen theme, app data, credentials and
 running background agents. An interrupted update must be finished with its exact
 reviewed bundle before choosing another release.
+
+## Continue work on another device
+
+Open **LoomOS → AI and connections → Device continuity**. Save the workstation's
+private Tailscale HTTPS address after reviewing its environment identity. Each
+open or handoff checks that same identity again. An offline or replaced host
+needs recovery; it never starts a replacement server on your laptop.
+
+Use **Pair another device with this workstation** for an unconnected laptop or
+phone. Loom's existing pairing screen owns the short-lived approval and QR.
+Other devices use their own login and grants. Review or revoke device access in
+Loom **Settings → Connections** on the workstation. Forgetting a LoomOS shortcut
+only removes the shortcut, and does not revoke access.
+
+In the control desk, choose an exact thread or app item and **Continue on another
+device**. Review its link, then copy it or show its QR. Loom threads require a
+saved target matching their owning environment. Office and Atlas resolve the
+exact item through their normal CLI permissions; the receiving device still
+needs its own app access. Handoff moves no data and starts no agent. During an
+outage, use **What works offline** to review each app's saved copies and queued
+changes. Retry explicitly after reconnecting; interrupted AI work is not replayed.
+
+Device continuity also offers the OS's advertised power profiles when available,
+and its normal power menu. Profile changes are reviewed and require an unlocked
+desktop. Laptop mode keeps background hosting off by default; a workstation's
+existing service stays with its owner. Power tools and actual battery, lid,
+Wi-Fi and suspend behavior depend on the installed OS and hardware.
+
+For scripts, `loom-os continuity inspect ORIGIN` returns the public environment
+identity. `loom-os continuity connect ORIGIN ENVIRONMENT_ID` saves that reviewed
+identity, and `loom-os continuity --json` reports current reachability and power
+support. These settings contain no credentials.

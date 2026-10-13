@@ -662,7 +662,11 @@ export async function openLoomThread(destination, config, env, deps = {}) {
 
 /** Controls re-read the owner and bind to the exact reviewed run or schedule. */
 export async function controlDeskAction(action, row, config, env, deps = {}) {
-  if (!row || !identity(row.id) || !["open", "inspect", "stop", "pause", "resume"].includes(action))
+  if (
+    !row ||
+    !identity(row.id) ||
+    !["open", "handoff", "inspect", "stop", "pause", "resume"].includes(action)
+  )
     throw Error("Choose an existing desk action.");
   const report = await (deps.collect ?? collectControlDesk)(config, env, deps);
   const current = report.rows.find(
@@ -673,6 +677,15 @@ export async function controlDeskAction(action, row, config, env, deps = {}) {
       item.id === row.id,
   );
   if (!current) throw Error("This work is no longer visible. Refresh the desk; nothing changed.");
+  if (action === "handoff") {
+    const { nativeHandoff } = await import("./continuity.mjs");
+    const destination = current.destination;
+    if (destination?.type === "loom-thread")
+      return nativeHandoff("loom", destination, config, env, deps);
+    if (destination?.type === "app-item")
+      return nativeHandoff(destination.app, destination.reference, config, env, deps);
+    throw Error("This owner has no exact cross-device destination for this work.");
+  }
   if (action === "open") {
     const destination = current.destination;
     if (destination?.type === "loom-thread") {
@@ -865,6 +878,7 @@ export async function nativeControlDesk(config, env, deps = {}) {
             row.destination.type === "loom-thread"
               ? "Open Loom thread in browser"
               : "Open exact item",
+            "Continue on another device",
           ]
         : []),
       "Inspect saved status",
@@ -883,6 +897,7 @@ export async function nativeControlDesk(config, env, deps = {}) {
     const selected = {
       "Open Loom thread in browser": "open",
       "Open exact item": "open",
+      "Continue on another device": "handoff",
       "Inspect saved status": "inspect",
       "Stop this run": "stop",
       "Pause future triggers": "pause",

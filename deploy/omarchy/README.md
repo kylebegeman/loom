@@ -492,3 +492,19 @@ hash in rollout evidence; fixtures are not a claim that every upstream version w
 The unmodified upstream menu/parser fixtures carry their source commit, hashes and
 license in `fixtures/omarchy/provenance.json`. Update those snapshots from recorded
 upstream bytes, rather than editing or formatting the fixture text.
+
+## Device continuity
+
+`loom-os continuity` provides verified private workstation shortcuts and reviewed
+exact thread/app-item handoff from the control desk. It pins the public T3 environment
+identity, never saves pairing credentials, and verifies the same host before opening
+or sharing a thread. `~/.config/loom-os/continuity.json` is separate from release
+configuration and contains only the private origin, environment ID and label.
+Current browser login and revoked-device recovery stay in T3's existing connection
+controls; host reachability is not an authorization claim.
+
+The utility delegates pairing, offline-device review and OS power changes to their
+existing owners. It starts no daemon, retries no work after sleep/reconnect and
+creates no competing local server. Optional `powerprofilesctl`/`qrencode` support
+is discovered without installing dependencies. Physical laptop acceptance remains
+separate from fixtures and desktop checks.

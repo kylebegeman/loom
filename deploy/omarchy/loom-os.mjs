@@ -467,10 +467,16 @@ export async function applyShortcuts(config, env, proposed, dependencies = {}) {
       JSON.stringify({
         version: 1,
         previous: before,
+        previousContent: report._storedPreferences,
         current: sha(JSON.stringify(report.preferences)),
       }) + "\n",
     ],
-    [file, JSON.stringify(report.preferences, null, 2) + "\n"],
+    [
+      file,
+      dependencies.restorePreferencesContent === undefined
+        ? JSON.stringify(report.preferences, null, 2) + "\n"
+        : dependencies.restorePreferencesContent,
+    ],
     [patch.file, patch.after],
     [p.manifest, JSON.stringify(manifest, null, 2) + "\n"],
   ];
@@ -478,7 +484,10 @@ export async function applyShortcuts(config, env, proposed, dependencies = {}) {
     changes.map(async ([file, after]) => ({ file, before: await read(file), after })),
   );
   await write(intentFile, JSON.stringify({ version: 1, entries }) + "\n");
-  for (const entry of entries) await (dependencies.write ?? write)(entry.file, entry.after);
+  for (const entry of entries) {
+    if (entry.after === null) await NodeFSP.rm(entry.file, { force: true });
+    else await (dependencies.write ?? write)(entry.file, entry.after);
+  }
   await NodeFSP.rm(intentFile);
   return publicShortcutPlan(report);
 }
@@ -505,7 +514,7 @@ export async function recoverShortcuts(env) {
     if (
       !allowed.has(entry.file) ||
       (entry.before !== null && typeof entry.before !== "string") ||
-      typeof entry.after !== "string"
+      (entry.after !== null && typeof entry.after !== "string")
     )
       throw Error("Invalid shortcut recovery record.");
     await rejectSymlinks(entry.file);
@@ -528,7 +537,29 @@ export async function restoreShortcuts(config, env, dependencies = {}) {
   const current = await readShortcuts(env);
   if (saved.current !== sha(JSON.stringify(current)))
     throw new Error("Preserving edited shortcut preferences. Preview a new preset instead.");
-  return applyShortcuts(config, env, validateShortcuts(saved.previous), dependencies);
+  const previous = validateShortcuts(saved.previous);
+  if (
+    saved.previousContent === null &&
+    JSON.stringify(previous) !== JSON.stringify(validateShortcuts(defaultShortcuts()))
+  )
+    throw Error(
+      "An absent shortcut file cannot restore different preferences. Review the saved history.",
+    );
+  if (
+    saved.previousContent !== undefined &&
+    saved.previousContent !== null &&
+    (typeof saved.previousContent !== "string" ||
+      saved.previousContent.length > 16384 ||
+      JSON.stringify(validateShortcuts(JSON.parse(saved.previousContent))) !==
+        JSON.stringify(previous))
+  )
+    throw Error(
+      "The saved original shortcut preferences are invalid. Preserve them and review a new preset.",
+    );
+  return applyShortcuts(config, env, previous, {
+    ...dependencies,
+    restorePreferencesContent: saved.previousContent,
+  });
 }
 async function shortcutStatus(config, env) {
   const prefs = await readShortcuts(env),
@@ -803,6 +834,7 @@ export async function installationPlan(
     "loom-environment.mjs",
     "maintenance.mjs",
     "maintenance-ui.mjs",
+    "continuity.mjs",
   ]) {
     try {
       writes.set(NodePath.join(p.root, name), {
@@ -818,6 +850,7 @@ export async function installationPlan(
     ["workbench", "AI workbench", "workbench.mjs"],
     ["desk", "Workstation control desk", "control-desk.mjs"],
     ["updates", "Updates and recovery", "maintenance-ui.mjs"],
+    ["continuity", "Device continuity", "continuity.mjs"],
   ]) {
     if (!featureModules.has(module)) continue;
     writes.set(NodePath.join(p.root, action + "-terminal"), {
@@ -1078,6 +1111,12 @@ done
           action: command(`device ${app}`),
         };
     }
+    if (featureModules.has("continuity.mjs"))
+      entries["loomos.connections.continuity"] = {
+        label: "Device continuity",
+        description: "Continue work across devices and review laptop power",
+        action: command("continuity"),
+      };
     entries["loomos.connections.setup"] = { label: "Set up connections", action: command("setup") };
     entries["loomos.connections.status"] = {
       label: "Connection status",
@@ -2811,6 +2850,12 @@ export function loomActionCatalog(config, context = {}) {
     "Review component versions, stage updates and recover through their owners",
     ["updates"],
   );
+  add(
+    "continuity",
+    "Device continuity",
+    "Verified workstation links, exact handoff and laptop power controls",
+    ["continuity"],
+  );
   add("integration", "Installed integration", "Version, profile, theme and retained rollback", [
     "pack",
     "status",
@@ -3423,7 +3468,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nhub [--json|--human] [--provider claude|codex] [--model ID] [--client kyle|office|atlas]  (cached readiness and supported recovery)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nhub [--json|--human] [--provider claude|codex] [--model ID] [--client kyle|office|atlas]  (cached readiness and supported recovery)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\ncontinuity [--json|inspect ORIGIN|connect ORIGIN ENVIRONMENT_ID|forget ENVIRONMENT_ID]\ncontinuity handoff loom|office|atlas JSON_REFERENCE [--json]  (review exact links for another device)\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3763,6 +3808,60 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         { env },
       );
     } else throw Error("Usage: loom-os notifications [--json|focus on|focus off]");
+    return;
+  }
+  if (action === "continuity") {
+    const continuity = await import("./continuity.mjs");
+    const inline = rest.includes("--inline"),
+      json = rest.includes("--json");
+    const values = rest.filter((value) => !["--inline", "--json"].includes(value));
+    if (
+      (inline && json) ||
+      rest.filter((value) => value === "--inline").length > 1 ||
+      rest.filter((value) => value === "--json").length > 1
+    )
+      throw Error("Choose one continuity view mode.");
+    if (values[0] === "inspect" && values.length === 2 && !inline)
+      print(await continuity.inspectWorkstation(values[1]));
+    else if (values[0] === "connect" && values.length === 3 && !inline)
+      print(await continuity.saveTarget(values[1], values[2], env));
+    else if (values[0] === "forget" && values.length === 2 && !inline)
+      print(await continuity.forgetTarget(env, values[1]));
+    else if (values[0] === "handoff" && values.length === 3) {
+      const reference = JSON.parse(values[2]);
+      if (json)
+        print({
+          link: await continuity.handoffLink(values[1], reference, config, env),
+          grantsAccess: false,
+        });
+      else if (inline) {
+        if (!process.stdin.isTTY) throw Error("Device handoff needs an interactive terminal.");
+        await continuity.nativeHandoff(values[1], reference, config, env);
+      } else
+        await run(
+          "omarchy-launch-tui",
+          [
+            "--app-id=org.omarchy.loom-continuity",
+            NodePath.join(p.root, "continuity-terminal"),
+            ...values,
+          ],
+          { env },
+        );
+    } else if (!values.length) {
+      if (json) print(await continuity.continuityStatus(config, env));
+      else if (inline) {
+        if (!process.stdin.isTTY) throw Error("Device continuity needs an interactive terminal.");
+        await continuity.nativeContinuity(config, env);
+      } else
+        await run(
+          "omarchy-launch-tui",
+          ["--app-id=org.omarchy.loom-continuity", NodePath.join(p.root, "continuity-terminal")],
+          { env },
+        );
+    } else
+      throw Error(
+        "Usage: continuity [--json|inspect ORIGIN|connect ORIGIN ENVIRONMENT_ID|forget ENVIRONMENT_ID] | handoff loom|office|atlas JSON_REFERENCE [--json]",
+      );
     return;
   }
   if (action === "hub") {
