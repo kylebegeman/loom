@@ -15,7 +15,7 @@ import {
   formatReleaseStatus,
   main as releaseMain,
 } from "./release.mjs";
-import { install, paths } from "./loom-os.mjs";
+import { collectCompatibility, install, paths, uninstall } from "./loom-os.mjs";
 
 async function fixture(t, profile = "laptop") {
   const root = await NodeFSP.realpath(
@@ -319,5 +319,135 @@ test("partial contextual runtimes are refused while pre-feature releases remain 
   await assert.rejects(verifyRelease(f.bundle, hash), /inventory is incomplete/);
   hash = await removeMember("workbench.mjs");
   hash = await removeMember("control-desk.mjs");
+  hash = await removeMember("maintenance.mjs");
+  hash = await removeMember("maintenance-ui.mjs");
   assert.equal((await verifyRelease(f.bundle, hash)).version, "test-1");
+});
+
+test("maintenance runtime must be complete and a retained pack rollback preserves its private review journal", async (t) => {
+  const f = await fixture(t);
+  const source = NodePath.join(f.root, "pre-maintenance-source");
+  await NodeFSP.cp(NodePath.join(f.bundle, "pack"), source, { recursive: true });
+  await NodeFSP.cp(NodePath.join(f.bundle, "iris"), NodePath.join(source, "iris"), {
+    recursive: true,
+  });
+  await NodeFSP.rm(NodePath.join(source, "maintenance-ui.mjs"));
+  await assert.rejects(
+    buildRelease(NodePath.join(f.root, "incomplete"), "partial", source),
+    /complete runtime dependencies/,
+  );
+  await NodeFSP.rm(NodePath.join(source, "maintenance.mjs"));
+  const previous = await buildRelease(NodePath.join(f.root, "legacy"), "pre-maintenance", source);
+  await activateRelease(previous.directory, previous.sha256, { env: f.env });
+  await activateRelease(f.bundle, f.release.sha256, { env: f.env });
+  const journal = NodePath.join(f.p.state, "loom-os/maintenance.json");
+  await NodeFSP.writeFile(journal, "private retained review fixture", { mode: 0o600 });
+  const menu = NodePath.join(f.p.config, "omarchy/extensions/omarchy-menu.jsonc");
+  assert.match(await NodeFSP.readFile(menu, "utf8"), /loomos.maintenance.updates/);
+  await rollbackRelease({ env: f.env, expectedSha256: previous.sha256 });
+  assert.doesNotMatch(await NodeFSP.readFile(menu, "utf8"), /loomos.maintenance.updates/);
+  await assert.rejects(NodeFSP.readFile(NodePath.join(f.p.root, "updates-terminal")), {
+    code: "ENOENT",
+  });
+  await assert.rejects(
+    NodeFSP.readFile(NodePath.join(f.p.data, "applications/loom-os-updates.desktop")),
+    { code: "ENOENT" },
+  );
+  assert.equal(await NodeFSP.readFile(journal, "utf8"), "private retained review fixture");
+  // The retained bundle's manager restores features even if the old installed manager predates them.
+  await activateRelease(f.bundle, f.release.sha256, { env: f.env });
+  assert.match(await NodeFSP.readFile(menu, "utf8"), /loomos.maintenance.updates/);
+  assert.equal(await NodeFSP.readFile(journal, "utf8"), "private retained review fixture");
+});
+
+async function legacyOwnershipRelease(f, { removeRequired = false } = {}) {
+  const source = NodePath.join(f.root, "legacy-ownership-source");
+  await NodeFSP.cp(NodePath.join(f.bundle, "pack"), source, { recursive: true });
+  await NodeFSP.cp(NodePath.join(f.bundle, "iris"), NodePath.join(source, "iris"), {
+    recursive: true,
+  });
+  for (const name of ["maintenance.mjs", "maintenance-ui.mjs"])
+    await NodeFSP.rm(NodePath.join(source, name));
+  const file = NodePath.join(source, "loom-os.mjs");
+  const original = await NodeFSP.readFile(file, "utf8");
+  // Reproduce the older installer's observable ownership merge after removed files were deleted.
+  // Its reviewed installer and generated menu remain the target release's authority during rollback.
+  const legacy =
+    original.replace("export async function install(", "async function legacyUnderlyingInstall(") +
+    String.raw`
+export async function install(config, options = {}) {
+  const p = paths(options.env), old = await readJson(p.manifest);
+  const result = await legacyUnderlyingInstall(config, options);
+  if (!options.dryRun) {
+    ${removeRequired ? 'await NodeFSP.rm(NodePath.join(p.data, "applications/loom-os-office.desktop"), { force: true });' : ""}
+    const current = await readJson(p.manifest);
+    current.files = [...current.files, ...(old?.files ?? []).filter((entry) => !current.files.some((present) => present.file === entry.file))];
+    await write(p.manifest, JSON.stringify(current, null, 2) + "\n");
+  }
+  return result;
+}
+`;
+  assert.notEqual(legacy, original);
+  await NodeFSP.chmod(file, 0o600);
+  await NodeFSP.writeFile(file, legacy);
+  return buildRelease(
+    NodePath.join(f.root, "legacy-ownership-release"),
+    "legacy-ownership",
+    source,
+  );
+}
+test("rollback through a legacy installer removes absent obsolete ownership records while preserving private state and exact target bytes", async (t) => {
+  const f = await fixture(t),
+    legacy = await legacyOwnershipRelease(f);
+  await activateRelease(legacy.directory, legacy.sha256, { env: f.env });
+  await activateRelease(f.bundle, f.release.sha256, { env: f.env });
+  const config = await NodeFSP.readFile(f.p.configFile),
+    journal = NodePath.join(f.p.state, "loom-os/updates/journal.json");
+  await NodeFSP.mkdir(NodePath.dirname(journal), { recursive: true });
+  await NodeFSP.writeFile(journal, "private recovery receipt\n", { mode: 0o600 });
+  const ownedLegacy = await NodeFSP.readFile(NodePath.join(legacy.directory, "pack/loom-os.mjs"));
+  await rollbackRelease({ env: f.env, expectedSha256: legacy.sha256 });
+  const obsolete = [
+    NodePath.join(f.p.root, "maintenance.mjs"),
+    NodePath.join(f.p.root, "maintenance-ui.mjs"),
+    NodePath.join(f.p.root, "updates-terminal"),
+    NodePath.join(f.p.data, "applications/loom-os-updates.desktop"),
+  ];
+  const manifest = JSON.parse(await NodeFSP.readFile(f.p.manifest, "utf8"));
+  for (const file of obsolete) {
+    await assert.rejects(NodeFSP.access(file), { code: "ENOENT" });
+    assert.ok(!manifest.files.some((entry) => entry.file === file));
+  }
+  assert.equal(
+    (await collectCompatibility(f.config, f.env)).checks.find((entry) => entry.id === "ownership")
+      .state,
+    "ok",
+  );
+  assert.deepEqual(await NodeFSP.readFile(f.p.configFile), config);
+  assert.equal(await NodeFSP.readFile(journal, "utf8"), "private recovery receipt\n");
+  assert.deepEqual(await NodeFSP.readFile(NodePath.join(f.p.root, "loom-os.mjs")), ownedLegacy);
+  assert.equal((await releaseStatus({ env: f.env })).active.matchesInstalled, true);
+});
+test("legacy rollback keeps edited obsolete records for uninstall and never hides a missing required target file", async (t) => {
+  const f = await fixture(t),
+    legacy = await legacyOwnershipRelease(f, { removeRequired: true });
+  await activateRelease(legacy.directory, legacy.sha256, { env: f.env });
+  await activateRelease(f.bundle, f.release.sha256, { env: f.env });
+  const edited = NodePath.join(f.p.data, "applications/loom-os-updates.desktop");
+  await NodeFSP.appendFile(edited, "# Personal retired launcher\n");
+  await rollbackRelease({ env: f.env, expectedSha256: legacy.sha256 });
+  const required = NodePath.join(f.p.data, "applications/loom-os-office.desktop"),
+    manifest = JSON.parse(await NodeFSP.readFile(f.p.manifest, "utf8"));
+  await assert.rejects(NodeFSP.access(required), { code: "ENOENT" });
+  assert.ok(manifest.files.some((entry) => entry.file === required));
+  assert.ok(manifest.files.some((entry) => entry.file === edited));
+  assert.match(await NodeFSP.readFile(edited, "utf8"), /Personal retired launcher/);
+  assert.equal(
+    (await collectCompatibility(f.config, f.env)).checks.find((entry) => entry.id === "ownership")
+      .state,
+    "error",
+  );
+  const result = await uninstall({ env: f.env });
+  assert.ok(result.preserved.includes(edited));
+  assert.match(await NodeFSP.readFile(edited, "utf8"), /Personal retired launcher/);
 });

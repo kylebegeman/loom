@@ -2,7 +2,7 @@
 
 Make native actions comfortable on different keyboards and readable displays.
 
-Status: **ready_for_deployment**. Complexity: **Small**. Impact: **High**.
+Status: **verification_pending**. Complexity: **Small**. Impact: **High**.
 
 Owner: LoomOS with existing app/hub owners. Dependencies: [#1](01-discoverable-loom-action-menu.md).
 
@@ -29,5 +29,6 @@ Local preparation and focused checks first. Workstation rollout/native acceptanc
 - Live-binding preflight refuses occupied chords, duplicate proposals, unavailable sessions and edited owned blocks. Review snapshot checks preserve concurrent personal changes; recovery refuses later edits.
 - Readability controls provide per-window Alacritty text/padding without changing global terminal settings, plus existing native Font/Theme actions. The sizing recovery screen remains reachable if Alacritty becomes unavailable.
 - Actual Linux Gum 2.0.0 terminal interaction checks pass for cancellation, keeping current settings, conflict adjustment, reviewed apply, exact binding restore and readability selection/restore. Hyprland, renderer presence and font dispatch are synthetic; these checks are not Workstation physical/display acceptance.
-- Prepared immutable pack 20261011.16, SHA256 2a60f42b7a8f69a53cb837f8b7b96cd7e158f590b5006b901887e613c93bc9f4. Actual retained .14 upgrade, dry-run, rollback and return preserve preferences and synthetic app/credential state on macOS and native ARM Linux.
-- Workstation SSH currently times out. Installation, native reload/display review and physical keyboard acceptance remain pending; no network settings, running services, real app data or Iris shared tokens were changed.
+- The controls are installed in verified Workstation pack 20261012.43. Its actual native compatibility report resolves both Shortcuts and Readability commands and reports no interrupted shortcut update. Pack .43 -> .42 -> .43 rollback/reapplication preserves preferences, Iris appearance and the running service; earlier isolated .16/.14 checks cover personal and synthetic app/credential-state preservation.
+- Live baseline: shortcuts.json is absent, while native Lua callbacks provide the standard Super+Ctrl+Alt+L/O/A/N/F chords; Loom actions has no configured shortcut. readability.json is version 1 with size system. Preserve that preference-file absence and existing personal bindings during acceptance.
+- Remaining Workstation acceptance: inspect Shortcuts and Readability, keyboard cancellation and Keep current, temporary reviewed preset apply/restore with the native Hyprland reload, then text-size selection/restore and actual Alacritty rendering at the current display scale. Real physical-keyboard and other display-scale checks remain unverified; laptop hardware and suspend/wake acceptance are deferred. Installed state and remaining checks: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/packet17-readiness-audit.md. The current 40-entry preservation baseline records missing shortcuts.json: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/maintenance/preservation-before.json.

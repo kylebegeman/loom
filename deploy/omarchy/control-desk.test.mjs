@@ -183,6 +183,158 @@ NodeTest.test(
 );
 
 NodeTest.test(
+  "thread inventory reports capped rows and separately omitted archived or deleted records",
+  async () => {
+    const threads = Array.from({ length: 105 }, (_, index) =>
+      thread({ id: `thread-${index}`, status: index === 104 ? "running" : "completed" }),
+    );
+    const hidden = [
+      thread({ id: "deleted-thread", deletedAt: "2026-10-12T12:00:00Z" }),
+      thread({ id: "archived-thread", archivedAt: "2026-10-12T12:00:00Z" }),
+    ];
+    const archivedThreads = Array.from({ length: 3 }, (_, index) =>
+      thread({ id: `archive-${index}`, archivedAt: "2026-10-12T12:00:00Z" }),
+    );
+    const { deps } = fixture({
+      discover: async () => ({ state: "unavailable" }),
+      loomRequest: async (_config, _env, path) => {
+        if (path.endsWith("environment")) return environment;
+        if (path.endsWith("session")) return fullSession;
+        return { threads: [...threads, ...hidden], archivedThreads };
+      },
+      loomCall: async () => ({ tasks: [] }),
+    });
+    const report = await collectControlDesk(config, {}, deps);
+    const source = report.sources.find((entry) => entry.id === "loom-threads");
+    NodeAssert.equal(source.rawCount, 110);
+    NodeAssert.equal(source.filteredCount, 5);
+    NodeAssert.equal(source.count, 100);
+    NodeAssert.equal(source.omittedCount, 5);
+    NodeAssert.equal(source.truncated, true);
+    NodeAssert.equal(report.rows.length, 100);
+    NodeAssert.ok(!report.rows.some((row) => row.id === "thread-104"));
+    NodeAssert.equal(report.total, 105);
+    NodeAssert.equal(report.shown, 100);
+    NodeAssert.equal(report.omittedCount, 5);
+    NodeAssert.equal(report.truncated, true);
+    NodeAssert.match(formatControlDesk(report), /5 archived or deleted/);
+    NodeAssert.match(formatControlDesk(report), /5.*omitted/);
+  },
+);
+
+NodeTest.test("schedule inventory reports tasks omitted by the source row cap", async () => {
+  const tasks = Array.from({ length: 103 }, (_, index) =>
+    schedule({ scheduledTaskId: `schedule-${index}` }),
+  );
+  const { deps } = fixture({
+    discover: async () => ({ state: "unavailable" }),
+    loomRequest: async (_config, _env, path) => {
+      if (path.endsWith("environment")) return environment;
+      if (path.endsWith("session")) return fullSession;
+      return { threads: [] };
+    },
+    loomCall: async () => ({ tasks }),
+  });
+  const report = await collectControlDesk(config, {}, deps);
+  const source = report.sources.find((entry) => entry.id === "loom-schedules");
+  NodeAssert.equal(source.rawCount, 103);
+  NodeAssert.equal(source.filteredCount, 0);
+  NodeAssert.equal(source.count, 100);
+  NodeAssert.equal(source.omittedCount, 3);
+  NodeAssert.equal(source.truncated, true);
+  NodeAssert.equal(report.total, 103);
+  NodeAssert.equal(report.shown, 100);
+  NodeAssert.equal(report.omittedCount, 3);
+  NodeAssert.equal(report.truncated, true);
+});
+
+NodeTest.test("combined desk view reports rows omitted only by its final view cap", async () => {
+  const { deps } = fixture({
+    loomRequest: async (_config, _env, path) => {
+      if (path.endsWith("environment")) return environment;
+      if (path.endsWith("session")) return fullSession;
+      return {
+        threads: Array.from({ length: 70 }, (_, index) => thread({ id: `thread-${index}` })),
+      };
+    },
+    loomCall: async () => ({
+      tasks: Array.from({ length: 70 }, (_, index) =>
+        schedule({ scheduledTaskId: `schedule-${index}` }),
+      ),
+    }),
+  });
+  const report = await collectControlDesk(config, {}, deps);
+  NodeAssert.equal(report.rows.length, 143);
+  NodeAssert.equal(report.total, 143);
+  NodeAssert.equal(report.shown, 100);
+  NodeAssert.equal(report.omittedCount, 43);
+  NodeAssert.equal(report.truncated, true);
+  NodeAssert.ok(report.sources.every((source) => !source.truncated));
+  NodeAssert.match(formatControlDesk(report), /43.*omitted/);
+});
+
+NodeTest.test(
+  "approval inventory preserves owner review while exposing its source cap",
+  async () => {
+    const { deps } = fixture();
+    const normal = deps.command;
+    deps.command = async (file, args, env) =>
+      file === "/office" && args[0] === "approvals" && args[1] === "list"
+        ? {
+            exit: 0,
+            stdout: JSON.stringify({
+              items: Array.from({ length: 105 }, (_, index) => ({
+                id: `approval-${index}`,
+                status: "pending",
+              })),
+            }),
+          }
+        : normal(file, args, env);
+    const report = await collectControlDesk(config, {}, deps);
+    const source = report.sources.find((entry) => entry.id === "approvals.list");
+    NodeAssert.equal(source.rawCount, 105);
+    NodeAssert.equal(source.count, 100);
+    NodeAssert.equal(source.omittedCount, 5);
+    NodeAssert.equal(source.truncated, true);
+    NodeAssert.equal(report.total, 109);
+    NodeAssert.equal(report.rows.length, 104);
+    NodeAssert.equal(report.shown, 100);
+    NodeAssert.equal(report.omittedCount, 9);
+    NodeAssert.ok(
+      report.rows
+        .filter((row) => row.kind === "approval")
+        .every((row) => !row.controls.approve.available),
+    );
+  },
+);
+
+NodeTest.test("archive filtering stays separate from a truncated work view", async () => {
+  const { deps } = fixture({
+    discover: async () => ({ state: "unavailable" }),
+    loomRequest: async (_config, _env, path) => {
+      if (path.endsWith("environment")) return environment;
+      if (path.endsWith("session")) return fullSession;
+      return {
+        threads: [thread({ deletedAt: "2026-10-12T12:00:00Z" })],
+        archivedThreads: [thread({ id: "archived-one", archivedAt: "2026-10-12T12:00:00Z" })],
+      };
+    },
+    loomCall: async () => ({ tasks: [] }),
+  });
+  const report = await collectControlDesk(config, {}, deps);
+  const source = report.sources.find((entry) => entry.id === "loom-threads");
+  NodeAssert.equal(source.rawCount, 2);
+  NodeAssert.equal(source.filteredCount, 2);
+  NodeAssert.equal(source.count, 0);
+  NodeAssert.equal(source.omittedCount, 0);
+  NodeAssert.equal(source.truncated, false);
+  NodeAssert.equal(report.total, 0);
+  NodeAssert.equal(report.shown, 0);
+  NodeAssert.equal(report.omittedCount, 0);
+  NodeAssert.equal(report.truncated, false);
+});
+
+NodeTest.test(
   "thread work states include queued and pending review while old failures do not override new completion",
   () => {
     const cases = [
@@ -728,6 +880,13 @@ NodeTest.test(
       /More history is available in Atlas/,
     );
     NodeAssert.equal(report.truncated, true);
+    const source = report.sources.find((entry) => entry.id === "atlas.runs.list");
+    NodeAssert.equal(source.rawCount, 0);
+    NodeAssert.equal(source.omittedCount, 0);
+    NodeAssert.equal(report.total, 4);
+    NodeAssert.equal(report.shown, 4);
+    NodeAssert.equal(report.omittedCount, 0);
+    NodeAssert.match(formatControlDesk(report), /Further owner history may be available/);
     NodeAssert.throws(() => atlasDeskRows({ runs: [], nextCursor: {} }), /Invalid/);
     NodeAssert.throws(
       () =>

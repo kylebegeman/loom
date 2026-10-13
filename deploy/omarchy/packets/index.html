@@ -175,7 +175,7 @@
     >
       <summary>
         <span class="number">#1</span><span class="title">Discoverable Loom action menu</span
-        ><span class="status active">verification pending</span>
+        ><span class="status">completed</span>
       </summary>
       <div class="body">
         <p>
@@ -243,13 +243,17 @@
           </li>
           <li>
             Native launcher, actual menu selection, filtering and two-Escape cancellation passed on
-            Workstation. Final existing-Office-window focus and preservation assertion awaits
-            reconnection; its checker was corrected to use the actual app identity instead of the
-            browser profile window identity.
+            Workstation. The final entrance-specific check now also passes on installed pack
+            20261012.43: the Loom actions picker was opened with the literal Open Office query, its
+            exact action was inspected and Enter selected it. The original Office window
+            0x5bb72788cdb0, PID 238763 was reused; no duplicate window or record write occurred.
           </li>
           <li>
-            Physical shortcut and laptop sleep/wake acceptance belong to later packets, not this
-            release. Evidence is retained in the local LoomOS 2026-10-11 packets artifact directory.
+            Physical shortcut and laptop sleep/wake acceptance belong to later packets. Original
+            fixture and native menu evidence is retained in the 2026-10-11 packets artifact
+            directory; the completed Office action proof is
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/maintenance/packet1-native-proof.json,
+            with native-actions-office.png.
           </li>
         </ul>
       </div>
@@ -260,7 +264,7 @@
     >
       <summary>
         <span class="number">#6</span><span class="title">Shortcut and accessibility presets</span
-        ><span class="status">ready for deployment</span>
+        ><span class="status active">verification pending</span>
       </summary>
       <div class="body">
         <p>Make native actions comfortable on different keyboards and readable displays.</p>
@@ -321,15 +325,28 @@
             synthetic; these checks are not Workstation physical/display acceptance.
           </li>
           <li>
-            Prepared immutable pack 20261011.16, SHA256
-            2a60f42b7a8f69a53cb837f8b7b96cd7e158f590b5006b901887e613c93bc9f4. Actual retained .14
-            upgrade, dry-run, rollback and return preserve preferences and synthetic app/credential
-            state on macOS and native ARM Linux.
+            The controls are installed in verified Workstation pack 20261012.43. Its actual native
+            compatibility report resolves both Shortcuts and Readability commands and reports no
+            interrupted shortcut update. Pack .43 -&gt; .42 -&gt; .43 rollback/reapplication
+            preserves preferences, Iris appearance and the running service; earlier isolated .16/.14
+            checks cover personal and synthetic app/credential-state preservation.
           </li>
           <li>
-            Workstation SSH currently times out. Installation, native reload/display review and
-            physical keyboard acceptance remain pending; no network settings, running services, real
-            app data or Iris shared tokens were changed.
+            Live baseline: shortcuts.json is absent, while native Lua callbacks provide the standard
+            Super+Ctrl+Alt+L/O/A/N/F chords; Loom actions has no configured shortcut.
+            readability.json is version 1 with size system. Preserve that preference-file absence
+            and existing personal bindings during acceptance.
+          </li>
+          <li>
+            Remaining Workstation acceptance: inspect Shortcuts and Readability, keyboard
+            cancellation and Keep current, temporary reviewed preset apply/restore with the native
+            Hyprland reload, then text-size selection/restore and actual Alacritty rendering at the
+            current display scale. Real physical-keyboard and other display-scale checks remain
+            unverified; laptop hardware and suspend/wake acceptance are deferred. Installed state
+            and remaining checks:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/packet17-readiness-audit.md.
+            The current 40-entry preservation baseline records missing shortcuts.json:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/maintenance/preservation-before.json.
           </li>
         </ul>
       </div>
@@ -340,7 +357,7 @@
     >
       <summary>
         <span class="number">#9</span><span class="title">Omarchy compatibility checks</span
-        ><span class="status">ready for deployment</span>
+        ><span class="status">completed</span>
       </summary>
       <div class="body">
         <p>Catch upstream changes before an integration release breaks everyday controls.</p>
@@ -406,14 +423,28 @@
             network access or real service restart occurs.
           </li>
           <li>
-            Fixtures cover pinned upstream 4.0.0.alpha; Workstation 4.0.4 has previous native
-            evidence. Other Omarchy versions warn and require native acceptance; no blanket 4.x
-            compatibility claim is made.
+            Fixtures cover pinned upstream 4.0.0.alpha, the version reported by Workstation in the
+            final .43 native checks; Workstation 4.0.4 has previous native evidence. Other Omarchy
+            versions still require native acceptance; no blanket 4.x compatibility or physical
+            keyboard/display/suspend claim is made.
           </li>
           <li>
-            Workstation remains unreachable over SSH. Its installed .14 pack is the last verified
-            state. Candidate deployment and actual Workstation compatibility/window-focus/display
-            checks remain pending.
+            Actual installed pack 20261012.43 passes all 12 native compatibility checks with zero
+            errors and warnings, including stock Theme/About behavior, installed menu actions, owned
+            files/blocks and interruption state. Actual .43 -&gt; .42 -&gt; .43
+            rollback/reapplication passed with Iris and the running T3 service preserved. Evidence:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/native-compatibility-final-43.json,
+            pack-rollback-native-43-to42.json, pack-reapply-native-43.json and
+            native-acceptance-final.json.
+          </li>
+          <li>
+            Actual Theme picker selection and About gradient rendering were inspected in both Iris
+            modes during packet #8; desktop PATH, native shell geometry, personal settings,
+            protected branding and original app windows were preserved. Evidence:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/iris-consistency/IMPLEMENTATION-HANDOFF.md
+            and final-verification.json. Packet #1 now also records exact original Office-window
+            reuse through the installed action picker. These native results close the former
+            deployment/connection gap; physical keyboard/display/sleep acceptance remains separate.
           </li>
         </ul>
       </div>
@@ -1453,7 +1484,7 @@
     >
       <summary>
         <span class="number">#17</span><span class="title">Coordinated updates and recovery</span
-        ><span class="status">approved</span>
+        ><span class="status">completed</span>
       </summary>
       <div class="body">
         <p>
@@ -1493,7 +1524,64 @@
           reachable; secure lock and necessary local authentication remain normal user flows.
         </p>
         <h3>Evidence</h3>
-        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+        <ul>
+          <li>
+            Implemented native Updates and recovery through the LoomOS Maintenance menu, searchable
+            actions, app launcher and CLI. Compact cached status and manual refresh show actual
+            component identities, unknown channels and recovery-kit alignment. Verified local
+            pack/kit candidates support reviewed stage/apply/verify, exact interrupted retry, pack
+            rollback and unapplied discard; receipts bind the candidate, baseline, displayed
+            component plan and rollback identity.
+          </li>
+          <li>
+            345 focused pack tests pass on Mac and native Linux. Isolated fixtures and independent
+            probes cover offline/incompatible metadata, tampered and stale receipts, active or
+            unknown work, interrupted owner recovery before snapshot publication and refusal to
+            overwrite separately advanced releases. Component-changing kits require a full
+            authenticated local Loom work inventory, including archived threads and schedules; a
+            bounded desk cannot prove idleness.
+          </li>
+          <li>
+            Workstation runs verified pack 20261012.46, SHA256
+            ca25fdcdae453f85b5b2aec7046a9c7c163dd9013729ae6aa78c32fd9f94e8d2, with all 37 runtime
+            members matching. Native candidate discovery, cached details, Cancel-first staging, Keep
+            current before apply, reviewed apply/verify and actual .46 -&gt; unmodified historical
+            .43 -&gt; .46 passed. Reapplication uses the newer trusted bundle manager. A legacy
+            installer retired-record ownership defect discovered during this cycle was corrected and
+            independently probed.
+          </li>
+          <li>
+            Independent Mac and Workstation recovery kits match recipe SHA256
+            7882b57c32d966f480e9bef68f0564629305b96f075179e1d9cd97f5759faaa9 and preserve all five
+            existing component inventories. Native kit staging, exact-plan review, apply and
+            verification passed; all 16 commissioning checks report ready and all 12 native
+            compatibility checks pass with zero errors.
+          </li>
+          <li>
+            All 40 recorded file/mode checks, credentials, personal configuration, Iris Dark,
+            gradient branding, DND off and active T3 service PID 319427 are preserved. Existing
+            Office and Atlas windows were reused through owner handoffs; the stock system
+            maintenance menu opened without mutation. These handoffs used the .45 UI, whose frozen
+            bytes are identical in .46; the installed .46 entry point was inspected during final kit
+            acceptance.
+          </li>
+          <li>
+            Maintenance owns local integration packs and recovery kits. Hosted apps, system
+            packages, provider accounts and server releases retain their existing owners and
+            backup/recovery requirements; pinned server activation is separate. No real-provider
+            inference, live component/server upgrade, forced interruption or new physical-machine
+            acceptance was performed. Physical keyboard/readability acceptance remains open in
+            packet #6; laptop/suspend checks are deferred and packet #14 remains excluded.
+          </li>
+          <li>
+            Final acceptance and exact supporting receipts:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/maintenance/native-acceptance-final46.json.
+            Independent recovery and ownership proofs are in
+            recovery/source-receipt-20261012.46.json, review-probes.json and
+            ownership-review-probes.json in that artifact directory. Unrelated T3/Switchboard edits
+            remain preserved and outside this release.
+          </li>
+        </ul>
       </div>
     </details>
     <details

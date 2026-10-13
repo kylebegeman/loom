@@ -37,6 +37,18 @@ const failureDetail = (owner, error) =>
       ? `${owner} native access is not connected. ${owner === "Loom" ? "Connect Loom native access" : "Sign in to its CLI through Loom connections"}, then refresh.`
       : `${owner} could not confirm its current work. Check connections and refresh; no work was restarted.`;
 const unavailableControl = (reason) => ({ available: false, reason });
+const visibleLoomThread = (thread) => !thread.deletedAt && !thread.archivedAt;
+const sourceInventory = (rawCount, count, filteredCount = 0) => {
+  const omittedCount = rawCount - filteredCount - count;
+  return { rawCount, count, filteredCount, omittedCount, truncated: omittedCount > 0 };
+};
+const omissionDetail = (inventory) =>
+  (inventory.omittedCount
+    ? ` ${inventory.omittedCount} received rows omitted by the source limit. Open the owner for more work.`
+    : "") +
+  (inventory.filteredCount
+    ? ` ${inventory.filteredCount} archived or deleted threads are excluded from this view.`
+    : "");
 
 /** The shell contains statuses and identities, not conversation or provider history. */
 export function loomDeskRows(snapshot, environment, session) {
@@ -44,7 +56,7 @@ export function loomDeskRows(snapshot, environment, session) {
     throw Object.assign(Error("Invalid Loom work metadata."), { code: "protocol" });
   const seen = new Set();
   return [...snapshot.threads]
-    .filter((thread) => !thread.deletedAt && !thread.archivedAt)
+    .filter(visibleLoomThread)
     .sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
     .slice(0, deskRowLimit)
     .map((thread) => {
@@ -401,15 +413,26 @@ async function collectLoom(config, env, deps) {
       const added = index
         ? scheduledDeskRows(result.value, environment, session)
         : loomDeskRows(result.value, environment, session);
+      const archived = index ? [] : (result.value.archivedThreads ?? []);
+      if (!Array.isArray(archived)) throw Error("Invalid archived Loom work metadata.");
+      const rawCount = index
+        ? result.value.tasks.length
+        : result.value.threads.length + archived.length;
+      const filteredCount = index
+        ? 0
+        : rawCount - result.value.threads.filter(visibleLoomThread).length;
+      const inventory = sourceInventory(rawCount, added.length, filteredCount);
       rows.push(...added);
       sources.push({
         id,
         owner: "loom",
         state: "connected",
-        detail: index
-          ? "Existing schedules only. Prompts and webhook URLs are omitted."
-          : "Existing thread statuses and pending review identities only.",
-        count: added.length,
+        detail:
+          (index
+            ? "Existing schedules only. Prompts and webhook URLs are omitted."
+            : "Existing thread statuses and pending review identities only.") +
+          omissionDetail(inventory),
+        ...inventory,
       });
     }
   }
@@ -481,17 +504,25 @@ async function collectApp(app, config, env, deps) {
           row.controls.stop = unavailableControl(
             "This Atlas client has no supported cancellation operation.",
           );
+      const rawCount =
+        id === "atlas.runs.list"
+          ? value.runs.length
+          : id === "approvals.list"
+            ? value.items.length
+            : value.issues.length;
+      const inventory = sourceInventory(rawCount, added.length);
       rows.push(...added);
       sources.push({
         id,
         owner: app,
         state: "connected",
         detail:
-          id === "atlas.runs.list"
+          (id === "atlas.runs.list"
             ? `Bounded owner-filtered Atlas run metadata only. ${value.nextCursor ? "More history is available in Atlas. " : ""}Prompts, evidence, output and tools are not read.`
-            : "Existing owner-filtered app work only; app permissions still apply.",
-        count: added.length,
-        truncated: id === "atlas.runs.list" && Boolean(value.nextCursor),
+            : "Existing owner-filtered app work only; app permissions still apply.") +
+          omissionDetail(inventory),
+        ...inventory,
+        truncated: inventory.truncated || (id === "atlas.runs.list" && Boolean(value.nextCursor)),
       });
     }
   }
@@ -536,6 +567,9 @@ export async function collectControlDesk(config, env, deps = {}) {
       ["failed", "waiting", "running", "completed"].indexOf(a.state) -
       ["failed", "waiting", "running", "completed"].indexOf(b.state),
   );
+  const shown = Math.min(rows.length, deskRowLimit);
+  // Counts cover received, owner-filtered metadata only, never a service-wide idle proof.
+  const total = rows.length + sources.reduce((sum, source) => sum + (source.omittedCount ?? 0), 0);
   return {
     version: 1,
     checkedAt: new Date((deps.now ?? Date.now)()).toISOString(),
@@ -545,7 +579,9 @@ export async function collectControlDesk(config, env, deps = {}) {
     rows,
     refreshIntervalMs: deskRefreshIntervalMs,
     truncated: rows.length > deskRowLimit || sources.some((source) => source.truncated),
-    total: rows.length,
+    total,
+    shown,
+    omittedCount: total - shown,
   };
 }
 
@@ -556,6 +592,11 @@ export function formatControlDesk(report) {
     "Workstation control desk",
     "",
     ...report.sources.map((source) => `${source.owner}: ${source.state}. ${source.detail}`),
+    ...(report.truncated
+      ? [
+          `Showing ${report.shown} of ${report.total} observed rows; ${report.omittedCount} known rows omitted by desk limits. Further owner history may be available. This view cannot confirm all work is idle.`,
+        ]
+      : []),
     "",
     ...report.rows
       .slice(0, deskRowLimit)

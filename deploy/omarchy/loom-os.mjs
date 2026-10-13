@@ -797,7 +797,13 @@ export async function installationPlan(
   }
   // New feature modules are optional in retained releases used for rollback.
   const featureModules = new Set();
-  for (const name of ["workbench.mjs", "control-desk.mjs", "loom-environment.mjs"]) {
+  for (const name of [
+    "workbench.mjs",
+    "control-desk.mjs",
+    "loom-environment.mjs",
+    "maintenance.mjs",
+    "maintenance-ui.mjs",
+  ]) {
     try {
       writes.set(NodePath.join(p.root, name), {
         content: await NodeFSP.readFile(NodePath.join(packDir, name), "utf8"),
@@ -811,6 +817,7 @@ export async function installationPlan(
   for (const [action, title, module] of [
     ["workbench", "AI workbench", "workbench.mjs"],
     ["desk", "Workstation control desk", "control-desk.mjs"],
+    ["updates", "Updates and recovery", "maintenance-ui.mjs"],
   ]) {
     if (!featureModules.has(module)) continue;
     writes.set(NodePath.join(p.root, action + "-terminal"), {
@@ -818,7 +825,7 @@ export async function installationPlan(
       mode: 0o755,
     });
     writes.set(NodePath.join(p.data, `applications/loom-os-${action}.desktop`), {
-      content: `[Desktop Entry]\nType=Application\nName=${title}\nComment=${action === "workbench" ? "Preview selected context and review private AI results" : "Review background work and approvals in their owning apps"}\nExec=${desktopArg(p.bin)} ${action}\nIcon=${action === "workbench" ? "utilities-terminal" : "view-list-details"}\nTerminal=false\nCategories=Utility;\n`,
+      content: `[Desktop Entry]\nType=Application\nName=${title}\nComment=${action === "workbench" ? "Preview selected context and review private AI results" : action === "desk" ? "Review background work and approvals in their owning apps" : "Review component updates and their recovery boundaries"}\nExec=${desktopArg(p.bin)} ${action}\nIcon=${action === "workbench" ? "utilities-terminal" : action === "desk" ? "view-list-details" : "system-software-update"}\nTerminal=false\nCategories=Utility;\n`,
       mode: 0o644,
     });
   }
@@ -1129,7 +1136,19 @@ done
       description: "Review and confirm a rollback without interrupting agents",
       action: command("pack rollback --terminal"),
     };
-    entries["update.loomos"] = { label: "LoomOS integration", target: "loomos.maintenance" };
+    if (featureModules.has("maintenance.mjs") && featureModules.has("maintenance-ui.mjs")) {
+      entries["loomos.maintenance.updates"] = {
+        label: "Updates and recovery",
+        description: "Review compatible local releases and owning app maintenance",
+        action: command("updates"),
+      };
+      entries["update.loomos"] = {
+        label: "LoomOS updates and recovery",
+        target: "loomos.maintenance.updates",
+      };
+    } else {
+      entries["update.loomos"] = { label: "LoomOS integration", target: "loomos.maintenance" };
+    }
     if (finderEnabled) {
       entries["loomos.find"] = { label: "Find in apps", action: command("find") };
       for (const app of ["office", "atlas"])
@@ -1240,12 +1259,15 @@ export async function install(
       files: [...plan.writes.keys(), ...plan.patches.map((s) => s.file)],
       dryRun: true,
     };
-  const records = [];
+  const records = [],
+    retained = [];
   for (const entry of old?.files ?? []) {
     if (plan.writes.has(entry.file)) continue;
     await rejectSymlinks(entry.file);
     const content = await read(entry.file);
-    if (content !== null && sha(content) === entry.hash) await NodeFSP.rm(entry.file);
+    if (content === null) continue;
+    if (sha(content) === entry.hash) await NodeFSP.rm(entry.file);
+    else retained.push(entry);
   }
   for (const [file, value] of plan.writes) {
     await write(file, value.content, value.mode);
@@ -1264,11 +1286,8 @@ export async function install(
       await write(patch.file, patch.after);
     }
   }
-  // Keep previously owned entries so uninstall also finds launchers removed by reconfiguration.
-  const files = [
-    ...records,
-    ...(old?.files ?? []).filter((e) => !records.some((r) => r.file === e.file)),
-  ];
+  // Edited obsolete files remain tracked for uninstall; deleted or already absent obsolete files no longer belong to this install.
+  const files = [...records, ...retained];
   const patches = [
     ...plan.patches.map(({ file, kind, after }) => ({
       file,
@@ -2647,6 +2666,12 @@ export function loomActionCatalog(config, context = {}) {
       "",
       "omarchy-theme-set",
     );
+  add(
+    "updates",
+    "Updates and recovery",
+    "Review component versions, stage updates and recover through their owners",
+    ["updates"],
+  );
   add("integration", "Installed integration", "Version, profile, theme and retained rollback", [
     "pack",
     "status",
@@ -3259,7 +3284,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3359,6 +3384,28 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "updates") {
+    if (!rest.length || (rest.length === 1 && rest[0] === "--inline")) {
+      if (!rest.length) {
+        await run(
+          "omarchy-launch-tui",
+          ["--app-id=org.omarchy.loom-updates", NodePath.join(p.root, "updates-terminal")],
+          { env },
+        );
+      } else {
+        if (!process.stdin.isTTY)
+          throw Error("Updates and recovery needs an interactive terminal.");
+        const utility = await import("./maintenance-ui.mjs");
+        await utility.nativeMaintenance(config, env);
+      }
+    } else {
+      const maintenance = await import("./maintenance.mjs");
+      const result = await maintenance.main(rest, env);
+      if (typeof result === "string") console.log(result);
+      else if (result !== undefined) print(result);
+    }
+    return;
+  }
   if (action === "workbench") {
     const workbench = await import("./workbench.mjs");
     const options = workbench.workbenchArgs(rest);

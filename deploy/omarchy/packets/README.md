@@ -19,9 +19,9 @@ Dependencies determine this order; independent packets can proceed when useful. 
 
 | Packet                                                                               | Status               | Dependencies    |
 | ------------------------------------------------------------------------------------ | -------------------- | --------------- |
-| [1. Discoverable Loom action menu](01-discoverable-loom-action-menu.md)              | verification_pending | None            |
-| [6. Shortcut and accessibility presets](06-shortcut-and-accessibility-presets.md)    | ready_for_deployment | #1              |
-| [9. Omarchy compatibility checks](09-omarchy-compatibility-checks.md)                | ready_for_deployment | None            |
+| [1. Discoverable Loom action menu](01-discoverable-loom-action-menu.md)              | completed            | None            |
+| [6. Shortcut and accessibility presets](06-shortcut-and-accessibility-presets.md)    | verification_pending | #1              |
+| [9. Omarchy compatibility checks](09-omarchy-compatibility-checks.md)                | completed            | None            |
 | [12. Shared app integration contract](12-shared-app-integration-contract.md)         | completed            | None            |
 | [2. Exact-item search opening](02-exact-item-search-opening.md)                      | completed            | #12             |
 | [3. Destination-aware capture](03-destination-aware-capture.md)                      | completed            | #12             |
@@ -32,7 +32,7 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [10. Reproducible LoomOS setup](10-reproducible-loomos-setup.md)                     | completed            | #4, #6, #8, #9  |
 | [11. Contextual actions and AI workbench](11-contextual-actions-and-ai-workbench.md) | completed            | #3, #12         |
 | [13. Native workstation control desk](13-native-workstation-control-desk.md)         | completed            | #2, #7, #12     |
-| [17. Coordinated updates and recovery](17-coordinated-updates-and-recovery.md)       | approved             | #9, #10, #13    |
+| [17. Coordinated updates and recovery](17-coordinated-updates-and-recovery.md)       | completed            | #9, #10, #13    |
 | [16. Coherent offline ecosystem](16-coherent-offline-ecosystem.md)                   | approved             | #12             |
 | [15. Laptop/workstation continuity](15-laptop-workstation-continuity.md)             | approved             | #2, #4, #5, #16 |
 | [18. Resilient private AI hub](18-resilient-private-ai-hub.md)                       | approved             | #4, #5          |

@@ -330,6 +330,49 @@ status. `loom-os connections --terminal` opens the native recovery console.
 If the status icon is absent, use `loom-os connections --enable-status` to place
 it through Omarchy's plugin controls. It preserves an existing placement.
 
+## Updates and recovery
+
+Choose **LoomOS → Maintenance → Updates and recovery**, find it in Loom actions,
+or use **Update → LoomOS updates and recovery**. Review the installed pack,
+commissioned component versions, current app release identities and the running
+Loom service. A pinned release identifies the checked files for future launches;
+its running process and a web app's loaded interface can still use an older build.
+Unavailable metadata and undeclared release channels stay explicit.
+
+Browse verified local releases to stage a pack or portable recovery kit. Checked
+incoming bundles can be placed under `~/.local/share/loom-os/maintenance/inbox/packs/`
+or `kits/`; each bundle keeps its own directory. Staging
+freezes the exact bytes and presents a review receipt before installation. Review
+its component changes and recovery boundaries, then choose **Apply reviewed update**.
+An edited candidate, changed configuration or different installed baseline requires
+a new review. Integration updates preserve running services. Component-changing
+kits check the owning environment's work and leave server activation with its owner.
+
+The screen can verify an installed update, resume the same interrupted operation,
+discard an unapplied candidate, or restore its exact retained integration pack.
+Pack rollback preserves the selected appearance, credentials and app data. Kit
+recovery resumes its verified owner workflow; restoring personal data, system
+packages and application servers uses each owner's recovery procedure.
+
+Open Office or Atlas to use their guarded app update action. Open Switchboard to
+review the private AI hub, or open the stock Omarchy maintenance menu for system
+updates. Their existing update, unsaved-work and backup controls remain authoritative.
+
+```sh
+loom-os updates status --human
+loom-os updates stage pack /absolute/path/to/checked-pack PACK_SHA256
+loom-os updates stage kit /absolute/path/to/checked-kit RECIPE_SHA256
+loom-os updates apply REVIEW_SHA256
+loom-os updates verify
+loom-os updates recover REVIEW_SHA256
+loom-os updates rollback REVIEW_SHA256
+loom-os updates discard REVIEW_SHA256
+```
+
+The review digest is the staging receipt, distinct from the bundle's digest. Keep
+the transferred bundle and its reviewed digest for recovery. A pack predating this
+utility can be reapplied through the newer bundle's standalone release manager.
+
 ## Appearance and integration maintenance
 
 Choose **LoomOS → Appearance → Iris Dark** or **Iris Light** to change the skin
@@ -337,7 +380,7 @@ through the normal Omarchy theme flow. These actions appear when the Iris themes
 are installed. **About LoomOS** keeps the native system overview and gradient wordmark.
 
 Open **LoomOS → Maintenance → Installed integration**, also available from
-**Update → LoomOS integration**, to see this machine's profile, theme, installed
+**Loom actions → Installed integration**, to see this machine's profile, theme, installed
 pack version and retained rollback. It checks the retained bundles and whether
 the installed runtime still matches. The CLI equivalents are `loom-os pack status`
 for JSON and `loom-os pack status --human` for readable output. This inspection

@@ -2,7 +2,7 @@
 
 Catch upstream changes before an integration release breaks everyday controls.
 
-Status: **ready_for_deployment**. Complexity: **Medium**. Impact: **High**.
+Status: **completed**. Complexity: **Medium**. Impact: **High**.
 
 Owner: LoomOS with existing app/hub owners. Dependencies: None.
 
@@ -29,5 +29,6 @@ Local preparation and focused checks first. Workstation rollout/native acceptanc
 - The focused check.mjs gate covers pack tests and generated packet consistency; --native adds the installed target report. 112 pack tests pass on macOS and native ARM Linux without weakening preservation assertions.
 - Reviewed pack 20261011.16 contains 25 verified members and matches the current runtime. Actual retained .14 upgrade/rollback/return pass on macOS and native ARM Linux with unchanged connection settings and synthetic app/credential data.
 - Actual Gum apply/restore flows finish with a passing installed native-parser and ownership report in isolated Linux. No provider inference, real credential lookup, network access or real service restart occurs.
-- Fixtures cover pinned upstream 4.0.0.alpha; Workstation 4.0.4 has previous native evidence. Other Omarchy versions warn and require native acceptance; no blanket 4.x compatibility claim is made.
-- Workstation remains unreachable over SSH. Its installed .14 pack is the last verified state. Candidate deployment and actual Workstation compatibility/window-focus/display checks remain pending.
+- Fixtures cover pinned upstream 4.0.0.alpha, the version reported by Workstation in the final .43 native checks; Workstation 4.0.4 has previous native evidence. Other Omarchy versions still require native acceptance; no blanket 4.x compatibility or physical keyboard/display/suspend claim is made.
+- Actual installed pack 20261012.43 passes all 12 native compatibility checks with zero errors and warnings, including stock Theme/About behavior, installed menu actions, owned files/blocks and interruption state. Actual .43 -> .42 -> .43 rollback/reapplication passed with Iris and the running T3 service preserved. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/native-compatibility-final-43.json, pack-rollback-native-43-to42.json, pack-reapply-native-43.json and native-acceptance-final.json.
+- Actual Theme picker selection and About gradient rendering were inspected in both Iris modes during packet #8; desktop PATH, native shell geometry, personal settings, protected branding and original app windows were preserved. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/iris-consistency/IMPLEMENTATION-HANDOFF.md and final-verification.json. Packet #1 now also records exact original Office-window reuse through the installed action picker. These native results close the former deployment/connection gap; physical keyboard/display/sleep acceptance remains separate.

@@ -38,6 +38,8 @@ test("actions are discoverable by ordinary words and keep existing shortcut hint
     ["notes", "open-office"],
     ["screenshot", "workbench"],
     ["approvals", "desk"],
+    ["updates", "updates"],
+    ["component versions", "updates"],
   ])
     NodeAssert.ok(
       filterLoomActions(actions, query).some((a) => a.id === id),

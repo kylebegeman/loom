@@ -343,6 +343,29 @@ skin's printed `loom-branding.sh` only when publishing changed protected assets.
 Loom desktop/server and Switchboard artifacts retain their existing release
 workflows; the pack does not silently upgrade their runtimes.
 
+## Coordinated maintenance
+
+The native **Updates and recovery** screen combines installed release identities,
+current owner metadata and reviewed local pack/recovery-kit maintenance. It stages
+immutable verified bytes and binds a private review receipt to the candidate,
+installed baseline and plan. Apply, exact retry, verification, discard and pack
+rollback delegate to existing release owners; report and staging start no updater.
+
+Local packs and portable kits can be supplied to `loom-os updates stage` with their
+independently reviewed SHA256. The native picker also discovers verified retained
+releases and local incoming bundles. User settings, private route origins, component
+inventory and supported feature boundaries are checked before activation. Existing
+running services are preserved. Component-changing recipes require the owning
+local environment's complete work metadata; the bounded control desk remains
+informational. Pinned server bytes stay separate from explicit owner activation.
+
+Office and Atlas expose their current hosted interface identities and retain their
+own guarded update controls. Switchboard owns private hub releases and routing;
+Omarchy owns system/package updates and recovery. This utility does not create a
+cross-product server deployment authority or use upstream T3 release discovery.
+See [Using LoomOS](../../docs/user/loom-os.md#updates-and-recovery) for native and
+CLI review/recovery flows.
+
 ## Reproducible setup
 
 Use a [portable recipe and recovery kit](recipes/README.md) to commission an existing

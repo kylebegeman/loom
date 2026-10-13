@@ -18,9 +18,19 @@ const packFiles = [
   "workbench.mjs",
   "control-desk.mjs",
   "loom-environment.mjs",
+  "maintenance.mjs",
+  "maintenance-ui.mjs",
 ];
 const contextualFiles = ["workbench.mjs", "control-desk.mjs", "loom-environment.mjs"];
 const contextualDependencies = [...contextualFiles, "capture.mjs", "connections.mjs"];
+const maintenanceFiles = ["maintenance.mjs", "maintenance-ui.mjs"];
+const maintenanceDependencies = [
+  ...maintenanceFiles,
+  "control-desk.mjs",
+  "commission.mjs",
+  "loom-environment.mjs",
+  "connections.mjs",
+];
 const statusFiles = ["manifest.json", "LoomStatus.qml", "StatusModel.js"];
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 async function ordinary(path, directory = false) {
@@ -79,6 +89,8 @@ export async function buildRelease(output, version, sourceDir = source) {
             "workbench.mjs",
             "control-desk.mjs",
             "loom-environment.mjs",
+            "maintenance.mjs",
+            "maintenance-ui.mjs",
           ].includes(name) ||
           error.code !== "ENOENT"
         )
@@ -90,6 +102,11 @@ export async function buildRelease(output, version, sourceDir = source) {
       !contextualDependencies.every((name) => includedPackFiles.includes(name))
     )
       throw Error("The contextual utilities need their complete runtime dependencies.");
+    if (
+      maintenanceFiles.some((name) => includedPackFiles.includes(name)) &&
+      !maintenanceDependencies.every((name) => includedPackFiles.includes(name))
+    )
+      throw Error("Updates and recovery needs its complete runtime dependencies.");
     const entries = [
       ...includedPackFiles.map((name) => ["pack/" + name, NodePath.join(sourceDir, name)]),
       ...statusEntries,
@@ -164,6 +181,8 @@ export async function verifyRelease(directory, expected) {
     !manifest.files["iris/manifest.json"] ||
     (contextualFiles.some((file) => manifest.files["pack/" + file]) &&
       !contextualDependencies.every((file) => manifest.files["pack/" + file])) ||
+    (maintenanceFiles.some((file) => manifest.files["pack/" + file]) &&
+      !maintenanceDependencies.every((file) => manifest.files["pack/" + file])) ||
     (statusFiles.some((file) => manifest.files["pack/status/" + file]) &&
       !statusFiles.every((file) => manifest.files["pack/status/" + file]))
   )
@@ -337,6 +356,8 @@ async function adoptInstalled(p, directory, releases) {
             "workbench.mjs",
             "control-desk.mjs",
             "loom-environment.mjs",
+            "maintenance.mjs",
+            "maintenance-ui.mjs",
           ].includes(name)
         )
           continue;
@@ -383,6 +404,53 @@ async function adoptInstalled(p, directory, releases) {
   }
 }
 
+async function ownershipManifest(p) {
+  try {
+    await ordinary(p.manifest);
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+  const manifest = JSON.parse(await NodeFSP.readFile(p.manifest, "utf8"));
+  if (
+    manifest.version !== 1 ||
+    !Array.isArray(manifest.files) ||
+    !Array.isArray(manifest.patches) ||
+    manifest.files.some(
+      (entry) =>
+        !entry ||
+        typeof entry.file !== "string" ||
+        !NodePath.isAbsolute(entry.file) ||
+        !/^[a-f0-9]{64}$/.test(entry.hash ?? ""),
+    )
+  )
+    throw Error("Invalid integration ownership record.");
+  return manifest;
+}
+async function reconcileLegacyOwnership(p, previous, requiredFiles) {
+  const manifest = await ownershipManifest(p);
+  if (!manifest)
+    throw Error("The release installer did not publish its integration ownership record.");
+  const previousHashes = new Map((previous?.files ?? []).map((entry) => [entry.file, entry.hash]));
+  const required = new Set(requiredFiles),
+    retained = [];
+  for (const entry of manifest.files) {
+    // Older installers carried their whole prior inventory forward after deleting obsolete files.
+    // Prune only absent unchanged inherited entries outside the reviewed target inventory.
+    if (!required.has(entry.file) && previousHashes.get(entry.file) === entry.hash) {
+      try {
+        await NodeFSP.lstat(entry.file);
+      } catch (error) {
+        if (error.code === "ENOENT") continue;
+        throw error;
+      }
+    }
+    retained.push(entry);
+  }
+  if (retained.length !== manifest.files.length)
+    await atomicJSON(p.manifest, { ...manifest, files: retained });
+}
+
 /** Update user integration only. App servers, credentials, service state and skin stay owned by their existing installers. */
 export async function activateRelease(
   directory,
@@ -416,6 +484,11 @@ export async function activateRelease(
     dryRun: true,
     packDir: NodePath.join(directory, "pack"),
   });
+  if (
+    !Array.isArray(plan.files) ||
+    plan.files.some((file) => typeof file !== "string" || !NodePath.isAbsolute(file))
+  )
+    throw Error("The release installer has no supported file inventory.");
   if (dryRun)
     return {
       ...plan,
@@ -458,10 +531,12 @@ export async function activateRelease(
       throw error;
     }
   }
+  const previousOwnership = await ownershipManifest(p);
   const active = { version: manifest.version, directory: target, sha256: expected };
   // Record intent first so an interrupted activation remains recoverable and reviewable.
   await atomicJSON(pending, { version: 1, previous: state.active, next: active });
   await targetInstaller.install(config, { env, packDir: NodePath.join(target, "pack") });
+  await reconcileLegacyOwnership(p, previousOwnership, plan.files);
   await atomicJSON(NodePath.join(p.state, "loom-os/pack-release.json"), {
     version: 1,
     active,

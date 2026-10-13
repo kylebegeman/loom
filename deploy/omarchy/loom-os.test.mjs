@@ -8,6 +8,7 @@ import * as NodeTest from "node:test";
 import {
   appCommand,
   appCliEnvironment,
+  collectCompatibility,
   connectSearch,
   searchBrowserCommand,
   searchLoginMode,
@@ -215,6 +216,16 @@ test("reconfiguration removes optional launchers when their app endpoint is disa
   await missing(NodePath.join(f.p.data, "applications/loom-os-atlas.desktop"));
   await missing(NodePath.join(f.p.data, "applications/loom-os-switchboard.desktop"));
   await NodeFSP.access(NodePath.join(f.p.data, "applications/loom-os-office.desktop"));
+  const manifest = JSON.parse(await NodeFSP.readFile(f.p.manifest, "utf8"));
+  for (const name of ["loom-os-atlas.desktop", "loom-os-switchboard.desktop"])
+    NodeAssert.ok(
+      !manifest.files.some((entry) => entry.file === NodePath.join(f.p.data, "applications", name)),
+    );
+  NodeAssert.equal(
+    (await collectCompatibility(updated, f.env)).checks.find((entry) => entry.id === "ownership")
+      .state,
+    "ok",
+  );
 });
 
 test("reinstall refuses to overwrite a locally edited launcher before making writes", async (t) => {
@@ -1410,4 +1421,19 @@ test("installed configure retains its status sources and updates an app launcher
     executable,
   );
   NodeAssert.ok((await NodeFSP.readFile(f.bindingsFile, "utf8")).startsWith(f.originalBindings));
+});
+
+test("reconfiguration retains edited obsolete files and their records for a later uninstall", async (t) => {
+  const f = await fixture(t);
+  await install(f.config, { env: f.env });
+  const file = NodePath.join(f.p.data, "applications/loom-os-atlas.desktop");
+  await NodeFSP.appendFile(file, "# Personal obsolete launcher\n");
+  const updated = { ...f.config };
+  delete updated.atlasUrl;
+  await install(updated, { env: f.env });
+  const manifest = JSON.parse(await NodeFSP.readFile(f.p.manifest, "utf8"));
+  NodeAssert.ok(manifest.files.some((entry) => entry.file === file));
+  const result = await uninstall({ env: f.env });
+  NodeAssert.ok(result.preserved.includes(file));
+  NodeAssert.match(await NodeFSP.readFile(file, "utf8"), /Personal obsolete launcher/);
 });
