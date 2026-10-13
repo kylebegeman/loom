@@ -33,8 +33,9 @@ describe("fallbackTextGenerationModelSelection", () => {
     const providerInstances = {
       [configured]: { driver: ProviderDriverKind.make("codex"), config: {} },
     };
-    const fallback = fallbackTextGenerationModelSelection(providerInstances, (instanceId) =>
-      instanceId === configured ? true : false,
+    const fallback = fallbackTextGenerationModelSelection(
+      providerInstances,
+      (instanceId) => instanceId === configured,
     );
     expect(fallback).toBeNull();
   });
