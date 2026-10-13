@@ -18,6 +18,8 @@ export interface CloudPublicConfig {
   readonly clerk: {
     readonly publishableKey: string | null;
     readonly jwtTemplate: string | null;
+    readonly nativeAuthDomain: string | null; // fork: fleet-connect
+    readonly accountPortalUrl: string | null;
   };
   readonly relay: {
     readonly url: string | null;
@@ -61,6 +63,8 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
     clerk: {
       publishableKey: trimNonEmpty(extra?.clerk?.publishableKey),
       jwtTemplate: trimNonEmpty(extra?.clerk?.jwtTemplate),
+      nativeAuthDomain: trimNonEmpty(extra?.clerk?.nativeAuthDomain), // fork: fleet-connect
+      accountPortalUrl: normalizeSecureUrl(extra?.clerk?.accountPortalUrl),
     },
     relay: {
       url: normalizeSecureRelayUrl(trimNonEmpty(extra?.relay?.url) ?? ""),
@@ -71,6 +75,12 @@ export function resolveCloudPublicConfig(extra: ExpoExtra = Constants.expoConfig
       tracesToken: trimNonEmpty(extra?.observability?.tracesToken),
     },
   } satisfies CloudPublicConfig;
+}
+
+/** Basic email sign-in does not need an OAuth callback or Associated Domains. */
+// fork: fleet-connect
+export function hasNativeCloudAuthConfig(): boolean {
+  return Boolean(resolveCloudPublicConfig().clerk.nativeAuthDomain);
 }
 
 export function hasCloudPublicConfig(): boolean {

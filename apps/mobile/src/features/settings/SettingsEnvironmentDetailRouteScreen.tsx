@@ -21,6 +21,10 @@ import { serverEnvironment } from "../../state/server";
 import { environmentSession, useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
+// fork: fleet-connections - Computer work and access live beside its routes and permissions.
+import { ComputerNameSection } from "../../fork/connections/ComputerNameSection"; // fork: computer-naming
+import { ComputerWorkSection } from "../../fork/connections/ComputerWorkSection";
+import { DevicesWithAccessSection } from "../../fork/connections/DevicesWithAccessSection";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
 import { SettingsActionRow } from "./components/SettingsActionRow";
@@ -170,19 +174,26 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   }
 
   return (
-    <SettingsScreen title={environment?.environmentLabel ?? "Environment"}>
+    <SettingsScreen title={environment?.environmentLabel ?? "Computer"}>
       <ScreenScrollView
         contentInsetAdjustmentBehavior="automatic"
+        // fork: fleet-connections
+        automaticallyAdjustKeyboardInsets
+        keyboardShouldPersistTaps="handled"
         className="flex-1"
         contentContainerClassName="gap-6 px-5 pt-4"
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
       >
         {!environment ? (
           <Text className="text-base text-foreground-muted">
-            This environment is no longer saved on this device.
+            This computer is no longer saved on this device.
           </Text>
         ) : (
           <>
+            {/* fork: fleet-connections - Preserve work actions and access in the shared details. */}
+            <ComputerWorkSection environmentId={environmentId} connected={connected} />
+            {/* fork: computer-naming - One name follows the computer across clients. */}
+            <ComputerNameSection environmentId={environmentId} connected={connected} />
             <SettingsSection title="Connection">
               <ConnectionEnvironmentRow
                 environment={environment}
@@ -194,6 +205,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                 onUpdate={connections.onUpdateEnvironment}
               />
             </SettingsSection>
+            {/* fork: fleet-connections - Show authorized devices for the selected host. */}
+            <DevicesWithAccessSection environmentId={environmentId} connected={connected} />
             <EnvironmentRoutesSection
               environmentId={environmentId}
               connected={connected}
@@ -209,7 +222,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             />
             {!connected ? (
               <Text className="px-2 text-sm text-foreground-muted">
-                Connect this environment to manage it.
+                Connect this computer to manage it.
               </Text>
             ) : !allowed ? (
               <Text className="px-2 text-sm text-foreground-muted">
@@ -217,7 +230,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                   ? "Could not verify your permissions. Reconnect to try again."
                   : session === null
                     ? "Checking permissions…"
-                    : "This connection does not have permission to manage the environment."}
+                    : "This connection does not have permission to manage this computer."}
               </Text>
             ) : null}
             {error ? (

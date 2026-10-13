@@ -7,9 +7,50 @@ Loom beta through its own TestFlight invitation.
 
 The upstream merge process continues to merge the whole repository. The fork-owned
 publisher packages that exact merged source for iOS. Android delivery is outside this
-release path. Local releases disable Expo OTA, upstream Expo ownership, and Connect by
-default, so they require neither an Expo account nor an EAS subscription. Direct host
-pairing remains available.
+release path. Local releases disable Expo OTA and upstream Expo ownership, so they
+require neither an Expo account nor an EAS subscription. Direct host pairing remains
+available. Connect uses the existing account and relay protocol, with explicit public
+configuration shared by desktop, standalone hosts and iOS releases.
+
+## Account-linked computers
+
+Configure the local publisher with `~/Library/Application Support/Loom Updates/connect.json`:
+
+```json
+{
+  "enabled": true,
+  "mobileEnabled": true,
+  "clerkPublishableKey": "pk_live_...",
+  "clerkJwtTemplate": "t3-relay",
+  "clerkCliOAuthClientId": "public-oauth-application-id",
+  "relayUrl": "https://relay.example.com",
+  "accountPortalUrl": "https://accounts.example.com"
+}
+```
+
+Use the public values for the same deployment on every client and host. The upstream
+production values are in the repository-root `.env.example`. Use `accountPortalUrl` for the deployment's hosted Clerk account pages; the upstream
+production key defaults to `https://accounts.t3.codes`. No Clerk secret key or
+relay deployment credentials belong in this file. `enabled:false` disables Connect;
+`mobileEnabled` defaults to false. New prepared release records freeze these public
+values so a retry keeps the original account deployment even if local settings change.
+Existing records without this configuration retain their original disabled setup.
+
+With the upstream account service, Loom iOS uses email-code sign-in and opens account
+creation and profile settings in the browser. This does not require registering Loom's
+bundle with upstream's native OAuth callbacks. Native social sign-in and passkeys require
+registration of Loom's Apple team and bundle on the selected auth service, its callback
+allowlist and Associated Domains configuration. Only after that qualification, set the
+optional `nativeAuthDomain` to that service's authentication hostname. Do not point it at
+upstream's authentication domain and assume Loom is registered. Connect account discovery
+does not enable push notifications, Apple sign-in or Expo OTA.
+
+For direct manual iOS builds, set `LOOM_MOBILE_CONNECT_ENABLED=1` and the four canonical
+public `T3CODE_*` values from [Connect setup](connect-setup.md), plus
+`LOOM_MOBILE_ACCOUNT_PORTAL_URL` for an independently hosted account service. The release publisher
+sanitizes unrelated development and native-provider settings before archiving. Sign in
+with the same Connect account on the phone and each work computer; account discovery
+finds linked computers while direct pairings remain device-local.
 
 ## One-time Apple setup
 

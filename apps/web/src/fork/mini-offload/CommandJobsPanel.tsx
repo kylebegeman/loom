@@ -16,12 +16,12 @@ export default function CommandJobsPanel(props: ForkPanelProps) {
     return (
       <div className="flex flex-col gap-3 p-5">
         <p className="text-sm text-muted-foreground">
-          Command jobs are unavailable on this Loom server. Open Computers to start a normal agent
+          Command jobs are unavailable on this Loom server. Open connections to start a normal agent
           thread.
         </p>
         <div>
-          <Button variant="outline" render={<Link to="/computers" />}>
-            Open computers
+          <Button variant="outline" render={<Link to="/settings/connections" />}>
+            Open connections
           </Button>
         </div>
       </div>

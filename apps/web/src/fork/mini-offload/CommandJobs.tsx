@@ -295,7 +295,7 @@ function Body({ threadRef }: { threadRef: ScopedThreadRef }) {
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
         For a full agent session, open{" "}
-        <Link to="/computers" className="text-primary underline underline-offset-2">
+        <Link to="/settings/connections" className="text-primary underline underline-offset-2">
           Computers
         </Link>
         . Command jobs send a committed snapshot, up to 64 MiB.

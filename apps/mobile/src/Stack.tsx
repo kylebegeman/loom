@@ -236,13 +236,13 @@ const SettingsContentStack = createV5SheetStackNavigator({
       screen: SettingsEnvironmentsRouteScreen,
       linking: "environments",
       options: {
-        title: "Environments",
+        title: "Connections", // fork: fleet-connections - One computer inventory across entry points.
       },
     }),
     SettingsEnvironmentDetail: createNativeStackScreen({
       screen: SettingsEnvironmentDetailRouteScreen,
       linking: "environments/:environmentId",
-      options: { title: "Environment" },
+      options: { title: "Computer" }, // fork: fleet-connections - Friendly host details.
     }),
     SettingsEnvironmentNewThreads: createNativeStackScreen({
       screen: SettingsEnvironmentNewThreadsRouteScreen,
@@ -288,7 +288,7 @@ const SettingsContentStack = createV5SheetStackNavigator({
       screen: ConnectionsNewRouteScreen,
       linking: "environment-new",
       options: {
-        title: "Add Environment",
+        title: "Connect computer", // fork: fleet-connections - Keep pairing terminology consistent.
       },
     }),
     SettingsArchive: createNativeStackScreen({
@@ -978,7 +978,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectionsRouteScreen,
       linking: "connections",
       options: {
-        title: "Environments",
+        title: "Connections", // fork: fleet-connections - One computer inventory across entry points.
         // Android: full page; the screen renders its own AndroidScreenHeader,
         // so the native bar stays hidden. iOS keeps the sheet.
         ...(Platform.OS === "android"
@@ -997,7 +997,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
         // Keep the iOS header visible from the first render so the sheet's
         // native header stack mounts without remounting the pairing form.
         ...(Platform.OS === "ios" ? SHEET_GLASS_HEADER_OPTIONS : undefined),
-        title: "Add Environment",
+        title: "Connect computer", // fork: fleet-connections - Keep pairing terminology consistent.
         ...FORM_SHEET_PRESENTATION_OPTIONS,
         sheetAllowedDetents: [0.55, 0.7],
         sheetGrabberVisible: true,

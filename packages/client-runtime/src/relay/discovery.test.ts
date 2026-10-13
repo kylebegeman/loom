@@ -195,7 +195,18 @@ describe("RelayEnvironmentDiscovery", () => {
         const requests = yield* Ref.get(harness.statusRequests);
         yield* Deferred.succeed(
           requests.get(environments[1]!.environmentId)!,
-          status(environments[1]!, "online"),
+          // fork: computer-naming
+          {
+            ...status(environments[1]!, "online"),
+            descriptor: {
+              environmentId: environments[1]!.environmentId,
+              label: "Orange Pi",
+              platform: { os: "linux", arch: "arm64" },
+              serverVersion: "0.0.45",
+              orchestrationProtocolVersion: 2,
+              capabilities: { repositoryIdentity: true, loomFeatures: ["computer-naming"] },
+            },
+          },
         );
 
         const partiallyResolved = yield* SubscriptionRef.changes(discovery.state).pipe(
@@ -206,6 +217,10 @@ describe("RelayEnvironmentDiscovery", () => {
           Stream.runHead,
           Effect.map(Option.getOrThrow),
         );
+        // fork: computer-naming
+        expect(
+          partiallyResolved.environments.get(environments[1]!.environmentId)?.environment.label,
+        ).toBe("Orange Pi");
         expect(
           partiallyResolved.environments.get(environments[0]!.environmentId)?.availability,
         ).toBe("checking");

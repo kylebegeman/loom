@@ -913,14 +913,14 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "environment-icon",
-    title: "Environment icon",
+    title: "Computer icon",
     to: "/settings/connections",
     targetId: "connections-environment",
     searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
   },
   {
     id: "local-environment",
-    title: "Local environment",
+    title: "Run agents on this computer",
     to: "/settings/connections",
     targetId: "connections-environment",
     searchTerms: ["turn off on disable enable local server agents remote only restart"],
@@ -986,7 +986,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "connections-environment",
-    title: "This machine",
+    title: "This computer",
     to: "/settings/connections",
     searchTerms: [
       "connections server backend local remote access administrative permissions scope pairing links qr code authorized clients sessions revoke endpoint",
@@ -994,9 +994,19 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "remote-environments",
-    title: "Environments",
+    title: "Your computers",
     to: "/settings/connections",
-    searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
+    searchTerms: [
+      "computers devices connections add pair backend host code ssh config agent tunnel saved t3 connect",
+    ],
+  },
+  // fork: fleet-connections
+  {
+    id: "computer-name",
+    title: "Computer name",
+    to: "/settings/connections",
+    targetId: "remote-environments",
+    searchTerms: ["rename label nickname friendly name computers machines"],
   },
   {
     id: "load-balancing",

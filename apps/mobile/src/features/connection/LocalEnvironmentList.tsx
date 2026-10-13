@@ -8,6 +8,7 @@ import { ConnectionEnvironmentRow } from "./ConnectionEnvironmentRow";
 
 type EnvironmentRowProps = ComponentProps<typeof ConnectionEnvironmentRow>;
 
+// fork: fleet-connections - Computer wording matches the unified inventory.
 /** Shared list and empty state for environment management entry points. */
 export function LocalEnvironmentList({
   environments,
@@ -37,8 +38,8 @@ export function LocalEnvironmentList({
           />
         </View>
         <Text className="text-center text-sm leading-normal text-foreground-muted">
-          No environments connected yet.{"\n"}Tap{" "}
-          <Text className="font-t3-bold text-foreground">+</Text> to add one.
+          No computers saved yet.{"\n"}Tap <Text className="font-t3-bold text-foreground">+</Text>{" "}
+          to add one.
         </Text>
       </View>
     );

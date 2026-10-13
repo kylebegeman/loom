@@ -1,3 +1,5 @@
+// fork: connect-compat
+import { resolveCurrentConnectAuthSurface } from "../fork/connections/connectAuthSurface.ts";
 import { relayClerkTokenOptions } from "@t3tools/shared/relayAuth";
 import { normalizeSecureRelayUrl } from "@t3tools/shared/relayUrl";
 import * as Schema from "effect/Schema";
@@ -71,7 +73,7 @@ export function resolveRelayTracingConfig() {
 
 export function hasCloudPublicConfig(): boolean {
   const config = resolveCloudPublicConfig();
-  return Boolean(config.clerkPublishableKey && config.clerkJwtTemplate && config.relayUrl);
+  return resolveCurrentConnectAuthSurface(config).kind === "available"; // fork: connect-compat
 }
 
 export function resolveRelayClerkTokenOptions() {

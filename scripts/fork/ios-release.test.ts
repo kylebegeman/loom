@@ -6,6 +6,8 @@ import * as NodeProcess from "node:process";
 
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { parseLoomConnectConfig } from "./connect-config.ts";
+
 import {
   compareBuildNumbers,
   iosBuildEnvironment,
@@ -173,6 +175,146 @@ describe("Loom iOS release boundaries", () => {
     expect(iosBuildEnvironment({ T3_SHOWCASE_CAPTURE_BUILD: "1" })).not.toHaveProperty(
       "T3_SHOWCASE_CAPTURE_BUILD",
     );
+  });
+
+  it("preserves explicit public Connect configuration while stripping unrelated cloud secrets", () => {
+    const env = {
+      LOOM_MOBILE_CONNECT_ENABLED: "1",
+      T3CODE_CLERK_PUBLISHABLE_KEY: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
+      T3CODE_CLERK_JWT_TEMPLATE: "relay",
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "public-oauth-id",
+      T3CODE_RELAY_URL: "https://relay.example.test",
+      LOOM_MOBILE_ACCOUNT_PORTAL_URL: "https://accounts.example.test",
+      CLERK_SECRET_KEY: "private-must-not-cross",
+      EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: "unqualified-upstream-native-app",
+      LOOM_MOBILE_PUSH_ENABLED: "1",
+      LOOM_MOBILE_APPLE_SIGN_IN_ENABLED: "1",
+    };
+    const built = iosBuildEnvironment(env, "42", SHA);
+    expect(built).toMatchObject({
+      LOOM_MOBILE_CONNECT_ENABLED: "1",
+      T3CODE_CLERK_PUBLISHABLE_KEY: env.T3CODE_CLERK_PUBLISHABLE_KEY,
+      T3CODE_CLERK_JWT_TEMPLATE: "relay",
+      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: "public-oauth-id",
+      T3CODE_RELAY_URL: "https://relay.example.test",
+      LOOM_MOBILE_ACCOUNT_PORTAL_URL: "https://accounts.example.test",
+      LOOM_MOBILE_PUSH_ENABLED: "0",
+      LOOM_MOBILE_APPLE_SIGN_IN_ENABLED: "0",
+      LOOM_MOBILE_UPDATES_ENABLED: "0",
+    });
+    expect(built).not.toHaveProperty("CLERK_SECRET_KEY");
+    expect(built).not.toHaveProperty("EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID");
+    expect(iosBuildEnvironment(env, "42", SHA, null)).not.toHaveProperty("T3CODE_RELAY_URL");
+  });
+
+  it("freezes public Connect identity in receipts and verifies Expo against that exact identity", () => {
+    const connectConfig = parseLoomConnectConfig({
+      enabled: true,
+      mobileEnabled: true,
+      clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
+      clerkJwtTemplate: "relay",
+      clerkCliOAuthClientId: "public-oauth-id",
+      relayUrl: "https://relay.example.test",
+      accountPortalUrl: "https://accounts.example.test",
+    })!;
+    const prepared = parseReceipt({ ...receipt, connectConfig });
+    expect(prepared.connectConfig).toEqual(connectConfig);
+    expect(parseReceipt(receipt)).not.toHaveProperty("connectConfig");
+    const connected = {
+      ...config,
+      extra: {
+        appVariant: "production",
+        clerk: {
+          publishableKey: connectConfig.clerkPublishableKey,
+          jwtTemplate: connectConfig.clerkJwtTemplate,
+          accountPortalUrl: connectConfig.accountPortalUrl,
+          nativeAuthDomain: null,
+        },
+        relay: { url: connectConfig.relayUrl },
+      },
+    };
+    expect(() => validateIosReleaseConfig(connected, TEAM, "1", connectConfig)).not.toThrow();
+    expect(() => validateIosReleaseConfig(connected, TEAM, "1")).toThrow("Connect configuration");
+    expect(() =>
+      parseReceipt({ ...receipt, connectConfig: { ...connectConfig, mobileEnabled: false } }),
+    ).toThrow("enabled");
+    const changedEnvironment = {
+      LOOM_MOBILE_CONNECT_ENABLED: "1",
+      T3CODE_RELAY_URL: "https://different.example.test",
+    };
+    expect(iosBuildEnvironment(changedEnvironment, "1", SHA, prepared.connectConfig)).toMatchObject(
+      {
+        T3CODE_RELAY_URL: connectConfig.relayUrl,
+        T3CODE_CLERK_PUBLISHABLE_KEY: connectConfig.clerkPublishableKey,
+      },
+    );
+  });
+
+  it("only permits associated domains for the explicitly qualified native app", () => {
+    const connectConfig = parseLoomConnectConfig({
+      enabled: true,
+      mobileEnabled: true,
+      clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
+      clerkJwtTemplate: "relay",
+      clerkCliOAuthClientId: "public-oauth-id",
+      relayUrl: "https://relay.example.test",
+      accountPortalUrl: "https://accounts.example.test",
+      nativeAuthDomain: "auth.example.test",
+    })!;
+    const domains = ["applinks:auth.example.test", "webcredentials:auth.example.test"];
+    const connected = {
+      ...config,
+      ios: { ...config.ios, associatedDomains: domains },
+      extra: {
+        appVariant: "production",
+        clerk: {
+          publishableKey: connectConfig.clerkPublishableKey,
+          jwtTemplate: connectConfig.clerkJwtTemplate,
+          accountPortalUrl: connectConfig.accountPortalUrl,
+          nativeAuthDomain: connectConfig.nativeAuthDomain,
+        },
+        relay: { url: connectConfig.relayUrl },
+      },
+    };
+    expect(() => validateIosReleaseConfig(connected, TEAM, "1", connectConfig)).not.toThrow();
+    const entitlements = {
+      "application-identifier": `${TEAM}.com.kylebegeman.loom`,
+      "com.apple.developer.team-identifier": TEAM,
+      "com.apple.security.application-groups": ["group.com.kylebegeman.loom"],
+      "com.apple.developer.associated-domains": domains,
+    };
+    expect(() =>
+      validateSigningEntitlements(
+        entitlements,
+        { ...receipt, connectConfig },
+        "com.kylebegeman.loom",
+      ),
+    ).not.toThrow();
+    const profile = { ...entitlements, "com.apple.developer.associated-domains": ["*"] };
+    expect(() =>
+      validateSigningEntitlements(
+        profile,
+        { ...receipt, connectConfig },
+        "com.kylebegeman.loom",
+        true,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      validateSigningEntitlements(profile, { ...receipt, connectConfig }, "com.kylebegeman.loom"),
+    ).toThrow("associated domains");
+    expect(() =>
+      validateSigningEntitlements(
+        {
+          ...entitlements,
+          "com.apple.developer.associated-domains": ["applinks:wrong.example.test"],
+        },
+        { ...receipt, connectConfig },
+        "com.kylebegeman.loom",
+      ),
+    ).toThrow("associated domains");
+    expect(() =>
+      validateSigningEntitlements(entitlements, receipt, "com.kylebegeman.loom"),
+    ).toThrow("associated domains");
   });
 
   it("requires an isolated production bundle and prevents upstream OTA delivery", () => {

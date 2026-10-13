@@ -437,13 +437,16 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
   }, [connectedEnvironments, savedConnectionsById, serverConfigByEnvironmentId]);
 }
 
-function useSelectedEnvironment(): {
+// fork: fleet-connections - A computer-specific entry point keeps its destination.
+function useSelectedEnvironment(initialEnvironmentId: EnvironmentId | null = null): {
   readonly environmentOptions: ReadonlyArray<EnvironmentOption>;
   readonly selectedEnvironment: EnvironmentOption | null;
   readonly selectedEnvironmentId: EnvironmentId | null;
   readonly setSelectedEnvironmentId: (environmentId: EnvironmentId) => void;
 } {
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
+  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
+    initialEnvironmentId,
+  );
   const environmentOptions = useEnvironmentOptions();
   const selectedEnvironment = resolveAddProjectEnvironment(
     environmentOptions,
@@ -579,14 +582,17 @@ function SourceControlRow(props: {
   );
 }
 
-export function AddProjectSourceScreen() {
+// fork: fleet-connections - Preserve destination from the computer work actions.
+export function AddProjectSourceScreen(
+  props: { readonly initialEnvironmentId?: EnvironmentId } = {},
+) {
   const navigation = useNavigation();
   const {
     environmentOptions,
     selectedEnvironment,
     selectedEnvironmentId,
     setSelectedEnvironmentId,
-  } = useSelectedEnvironment();
+  } = useSelectedEnvironment(props.initialEnvironmentId ?? null);
   const canWriteSourceControl = useEnvironmentScope(
     selectedEnvironment?.environmentId ?? null,
     AuthSourceControlWriteScope,

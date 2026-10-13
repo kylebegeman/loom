@@ -44,3 +44,5 @@ export * from "./workspace-handoff.ts";
 
 export * from "./github-host-setup.ts";
 export * from "./mini-offload.ts";
+
+export * from "./computer-naming.ts";

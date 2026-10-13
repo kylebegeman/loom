@@ -1,3 +1,4 @@
+import { computerDisplayLabel } from "@t3tools/client-runtime/fork"; // fork: computer-naming
 import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
@@ -26,14 +27,15 @@ export interface EnvironmentPresentation extends BaseEnvironmentPresentation {
   readonly relayManaged: boolean;
 }
 
-function projectEnvironmentPresentation(
+// fork: computer-naming
+export function projectEnvironmentPresentation(
   environmentId: EnvironmentId,
   presentation: BaseEnvironmentPresentation,
 ): EnvironmentPresentation {
   return {
     ...presentation,
     environmentId,
-    label: presentation.entry.target.label,
+    label: computerDisplayLabel(presentation), // fork: computer-naming
     displayUrl: connectionCatalogDisplayUrl(presentation.entry),
     relayManaged: hasRelayRoute(presentation.entry),
   };

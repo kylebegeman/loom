@@ -5,10 +5,12 @@ import {
   AuthTerminalOperateScope,
   AuthSessionId,
   AuthEnvironmentMaintainScope,
+  AuthSettingsWriteScope,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
   ForkRpcGroup,
+  COMPUTER_NAMING_WS_METHODS as N,
   GITHUB_HOST_SETUP_WS_METHODS as GH,
   WORKSPACE_HANDOFF_WS_METHODS as H,
   MINI_OFFLOAD_WS_METHODS as O,
@@ -219,5 +221,31 @@ it.effect("Mini workers require admin maintenance and job dispatch requires term
       expect(yield* auth([AuthOrchestrationReadScope]).effect(method, work)).toBe("executed");
       invoked = false;
     }
+  }),
+);
+
+it.effect("computer renaming requires settings write without mutating on a denied grant", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("computer-naming-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    let changed = false;
+    const rename = Effect.sync(() => {
+      changed = true;
+      return "Renamed";
+    });
+    const denied = yield* auth([AuthOrchestrationReadScope, AuthOrchestrationOperateScope])
+      .effect(N.rename, rename)
+      .pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(AuthSettingsWriteScope);
+    expect(changed).toBe(false);
+    expect(yield* auth([AuthSettingsWriteScope]).effect(N.rename, rename)).toBe("Renamed");
+    expect(yield* auth([AuthOrchestrationReadScope]).effect(N.get, Effect.succeed("Current"))).toBe(
+      "Current",
+    );
   }),
 );

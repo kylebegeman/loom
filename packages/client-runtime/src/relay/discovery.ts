@@ -1,3 +1,4 @@
+import { relayComputerDisplayRecord } from "../fork/computer-label.ts"; // fork: computer-naming
 import type {
   RelayClientEnvironmentRecord,
   RelayEnvironmentStatusResponse,
@@ -187,6 +188,8 @@ export const make = Effect.fn("RelayEnvironmentDiscovery.make")(function* () {
       }
       yield* updateEnvironment(generation, environment.environmentId, (current) => ({
         ...current,
+        // fork: computer-naming
+        environment: relayComputerDisplayRecord(current.environment, result.success),
         availability: result.success.status,
         status: Option.some(result.success),
         error: Option.none(),

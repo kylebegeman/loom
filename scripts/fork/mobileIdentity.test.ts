@@ -6,6 +6,7 @@ const cloud = {
   LOOM_MOBILE_CONNECT_ENABLED: "1",
   LOOM_IOS_TEAM_ID: "ABC1234567",
   T3CODE_RELAY_URL: "https://relay.example.test",
+  LOOM_MOBILE_ACCOUNT_PORTAL_URL: "https://accounts.example.test",
   EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_own_app",
   EXPO_PUBLIC_CLERK_JWT_TEMPLATE: "relay",
 };

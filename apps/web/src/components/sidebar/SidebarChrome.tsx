@@ -186,9 +186,9 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     void navigate({ to: "/settings" });
   }, [closeMobileSidebar, navigate]);
 
-  const handleComputersClick = useCallback(() => {
+  const handleConnectionsClick = useCallback(() => {
     closeMobileSidebar();
-    void navigate({ to: "/computers" });
+    void navigate({ to: "/settings/connections" });
   }, [closeMobileSidebar, navigate]);
 
   const handleUsageClick = useCallback(() => {
@@ -233,8 +233,8 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           <SidebarUtilityItem
             icon={<MonitorIcon />}
-            label="Computers"
-            onClick={handleComputersClick}
+            label="Connections"
+            onClick={handleConnectionsClick}
           />
         </>
       )}

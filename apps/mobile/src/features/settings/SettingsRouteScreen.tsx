@@ -87,7 +87,7 @@ function ConfiguredSettingsRouteScreen() {
           />
           <SettingsRow
             icon="desktopcomputer"
-            label="Environments"
+            label="Computers" // fork: fleet-connections - The settings inventory contains work hosts.
             value={`${Object.keys(savedConnectionsById).length}`}
             valuePosition="trailing"
             target="SettingsEnvironments"
@@ -120,7 +120,7 @@ function LocalSettingsRouteScreen() {
         <SettingsSection title="Connections">
           <SettingsRow
             icon="desktopcomputer"
-            label="Environments"
+            label="Computers" // fork: fleet-connections - The settings inventory contains work hosts.
             value={`${environmentCount}`}
             valuePosition="trailing"
             target="SettingsEnvironments"

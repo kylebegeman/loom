@@ -1,3 +1,4 @@
+import { computerDisplayLabel } from "@t3tools/client-runtime/fork"; // fork: computer-naming
 import type {
   EnvironmentPresentation,
   PreparedConnection,
@@ -34,10 +35,12 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
       }
 
       const prepared = Option.getOrNull(get(input.preparedConnectionAtom(environmentId)));
+      const environmentLabel = computerDisplayLabel(presentation); // fork: computer-naming
       if (
         previous !== null &&
         presentation.entry === previousEntry &&
-        prepared === previousPrepared
+        prepared === previousPrepared &&
+        previous.environmentLabel === environmentLabel // fork: computer-naming
       ) {
         return previous;
       }
@@ -61,7 +64,7 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
       previousPrepared = prepared;
       previous = {
         environmentId,
-        environmentLabel: presentation.entry.target.label,
+        environmentLabel, // fork: computer-naming
         pairingUrl: displayUrl,
         displayUrl,
         httpBaseUrl,

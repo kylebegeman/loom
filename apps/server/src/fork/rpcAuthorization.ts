@@ -1,3 +1,5 @@
+import { AuthSettingsWriteScope } from "@t3tools/contracts";
+import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "@t3tools/contracts/fork";
 import { WORKSPACE_HANDOFF_WS_METHODS as H } from "@t3tools/contracts/fork";
 import { MINI_OFFLOAD_WS_METHODS as O } from "@t3tools/contracts/fork";
@@ -23,6 +25,8 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [N.rename]: AuthSettingsWriteScope,
+  [N.get]: AuthOrchestrationReadScope,
   [GH.start]: AuthTerminalOperateScope,
   [GH.cancel]: AuthTerminalOperateScope,
   // Watching exposes an active device code, which can authorize host Git access.

@@ -1,3 +1,5 @@
+import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
+import * as ComputerNaming from "./computer-naming/ComputerNaming.ts";
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "@t3tools/contracts/fork";
 import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
 import { makeWorkspaceHandoffRpcHandlers } from "./workspace-handoff/rpc.ts";
@@ -23,8 +25,11 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
   ForkRpcGroup.toLayer(
     Effect.gen(function* () {
       const auth = makeForkRpcAuth(session);
+      const naming = yield* withForkRuntime(ComputerNaming.ComputerNaming);
       const github = yield* withForkRuntime(GitHubSetupFlow.GitHubSetupFlow);
       return ForkRpcGroup.of({
+        [N.get]: () => auth.effect(N.get, naming.current),
+        [N.rename]: (input) => auth.effect(N.rename, naming.rename(input)),
         [GH.start]: (input) => auth.effect(GH.start, github.start(input)),
         [GH.cancel]: (input) => auth.effect(GH.cancel, github.cancel(input)),
         [GH.watch]: () => auth.stream(GH.watch, github.changes),

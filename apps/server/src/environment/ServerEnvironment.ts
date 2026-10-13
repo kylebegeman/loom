@@ -10,7 +10,6 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -21,8 +20,8 @@ import { resolveServerSelfUpdateCapability } from "../cloud/selfUpdate.ts";
 import { resolveServiceLauncherMode } from "../cloud/serviceLauncherClient.ts";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import { resolveServerEnvironmentLabel } from "./ServerEnvironmentLabel.ts";
 import { detectServerEnvironmentMachineKind } from "./ServerEnvironmentMachine.ts";
+import * as ComputerNaming from "../fork/computer-naming/ComputerNaming.ts"; // fork: computer-naming
 import { LOOM_SERVER_FEATURES } from "../fork/features.ts"; // fork: ext-core
 
 export class ServerEnvironmentIdPersistenceError extends Schema.TaggedError<ServerEnvironmentIdPersistenceError>()(
@@ -183,15 +182,14 @@ const makeIdentity = Effect.gen(function* () {
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
-  const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const secrets = yield* ServerSecretStore.ServerSecretStore;
   const identity = yield* ServerEnvironmentIdentity;
   const hostPlatform = yield* HostProcess.Platform;
   const hostArchitecture = yield* HostProcess.Architecture;
   const environmentId = yield* identity.getEnvironmentId;
-  const cwdBaseName = path.basename(serverConfig.cwd).trim();
-  const label = yield* resolveServerEnvironmentLabel({ cwdBaseName });
+  const naming = yield* ComputerNaming.ComputerNaming; // fork: computer-naming
+  const { label } = yield* naming.current; // fork: computer-naming
   const machine = yield* detectServerEnvironmentMachineKind();
   const launcher = yield* resolveServiceLauncherMode();
   const serverSelfUpdate = resolveServerSelfUpdateCapability({
@@ -272,9 +270,14 @@ export const make = Effect.gen(function* () {
     // The publish opt-in and relay link change at runtime (`t3 connect
     // publish`, the client settings toggle), so the capability is read per
     // descriptor request rather than baked in at startup.
-    getDescriptor: readAgentActivityPublishingActive(secrets).pipe(
-      Effect.map((agentActivityPublishing) => ({
+    // fork: computer-naming
+    getDescriptor: Effect.all({
+      agentActivityPublishing: readAgentActivityPublishingActive(secrets),
+      naming: naming.current,
+    }).pipe(
+      Effect.map(({ agentActivityPublishing, naming }) => ({
         ...descriptor,
+        label: naming.label,
         capabilities: { ...descriptor.capabilities, agentActivityPublishing },
       })),
     ),
@@ -290,6 +293,7 @@ export const layerIdentity = Layer.effect(ServerEnvironmentIdentity, makeIdentit
  * ServerSecretStore backing the descriptor's publishing capability.
  */
 export const layer = Layer.effect(ServerEnvironment, make).pipe(
+  Layer.provideMerge(ComputerNaming.layer), // fork: computer-naming
   Layer.provideMerge(layerIdentity),
   Layer.provide(ProcessRunner.layer),
 );

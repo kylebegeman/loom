@@ -246,7 +246,7 @@ function HandoffContent() {
   };
   const manageComputers = () => {
     useWorkspaceHandoff.setState({ open: false });
-    void navigate({ to: "/computers" });
+    void navigate({ to: "/settings/connections" });
   };
   return (
     <Dialog

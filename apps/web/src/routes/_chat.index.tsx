@@ -93,8 +93,8 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
               <RefreshIcon size="md" />
               Try again
             </Button>
-            <Button size="sm" variant="outline" render={<Link to="/computers" />}>
-              Open Computers
+            <Button size="sm" variant="outline" render={<Link to="/settings/connections" />}>
+              Open connections
             </Button>
           </div>
         </EmptyHeader>

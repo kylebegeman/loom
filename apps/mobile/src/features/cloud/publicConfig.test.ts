@@ -15,6 +15,7 @@ vi.mock("expo-constants", () => ({
   },
 }));
 
+// fork: fleet-connect - Basic builds keep native auth capabilities separate from account discovery.
 describe("resolveCloudPublicConfig", () => {
   it("reports the missing Clerk JWT template as structured configuration", () => {
     expect(() => resolveRelayClerkTokenOptions()).toThrowError(
@@ -27,6 +28,8 @@ describe("resolveCloudPublicConfig", () => {
       clerk: {
         publishableKey: null,
         jwtTemplate: null,
+        nativeAuthDomain: null,
+        accountPortalUrl: null,
       },
       relay: {
         url: null,
@@ -54,6 +57,8 @@ describe("resolveCloudPublicConfig", () => {
       clerk: {
         publishableKey: "pk_test_example",
         jwtTemplate: "t3-relay",
+        nativeAuthDomain: null,
+        accountPortalUrl: null,
       },
       relay: {
         url: "https://relay.example.test",
@@ -76,6 +81,8 @@ describe("resolveCloudPublicConfig", () => {
       clerk: {
         publishableKey: "pk_test_example",
         jwtTemplate: "t3-relay",
+        nativeAuthDomain: null,
+        accountPortalUrl: null,
       },
       relay: {
         url: null,

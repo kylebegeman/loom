@@ -166,7 +166,7 @@ export function CloudEnvironmentConnectRows({
         type: "success",
         title: savedWithoutRelay.has(environment.environmentId)
           ? "T3 Connect route added"
-          : "Environment added",
+          : "Computer connected",
         description: savedWithoutRelay.has(environment.environmentId)
           ? `${environment.label} falls back to T3 Connect when its other routes are unreachable.`
           : `Connecting to ${environment.label} through T3 Connect.`,
@@ -178,12 +178,12 @@ export function CloudEnvironmentConnectRows({
     }
     const cause = squashAtomCommandFailure(result);
     const message =
-      cause instanceof Error ? cause.message : "Could not connect the T3 Connect environment.";
+      cause instanceof Error ? cause.message : "Could not connect the T3 Connect computer.";
     const traceId = findErrorTraceId(cause);
     console.error("[t3-connect] Could not connect environment", { message, traceId, cause });
     toastManager.add({
       type: "error",
-      title: "Could not connect environment",
+      title: "Could not connect computer",
       description: message,
       data: traceId
         ? {
@@ -299,9 +299,7 @@ export function CloudEnvironmentConnectRows({
     if (discoveryProblem !== null && !environmentsState.refreshing) {
       return (
         <div className={ITEM_ROW_CLASSNAME}>
-          <p className="text-sm font-medium text-destructive">
-            Could not load T3 Connect environments
-          </p>
+          <p className="text-sm font-medium text-destructive">Could not load linked computers</p>
           <p className="mt-1 text-xs text-muted-foreground">{discoveryProblem}</p>
           <Button
             size="sm"

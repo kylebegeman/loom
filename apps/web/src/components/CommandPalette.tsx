@@ -1781,7 +1781,7 @@ function OpenCommandPaletteDialog(props: {
                   icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
                   run: async () => {
                     setOpen(false);
-                    await navigate({ to: "/computers" });
+                    await navigate({ to: "/settings/connections" });
                   },
                 },
                 ...(addProjectEnvironmentOptions.length > 0
@@ -1808,7 +1808,7 @@ function OpenCommandPaletteDialog(props: {
       // With no connected computer there is nothing to browse.
       if (target.kind === "connect") {
         setOpen(false);
-        void navigate({ to: "/computers" });
+        void navigate({ to: "/settings/connections" });
         return;
       }
 
@@ -2293,6 +2293,9 @@ function OpenCommandPaletteDialog(props: {
     value: "action:computers",
     searchTerms: [
       "open computers",
+      "connections",
+      "devices",
+      "pairing",
       "machines",
       "environments",
       "runner",
@@ -2302,11 +2305,11 @@ function OpenCommandPaletteDialog(props: {
       "Linux",
       "connect",
     ],
-    title: "Open computers",
-    description: "Choose a computer for your next agent",
+    title: "Open connections",
+    description: "Choose a computer, manage access and connect your devices",
     icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
     run: async () => {
-      await navigate({ to: "/computers" });
+      await navigate({ to: "/settings/connections" });
     },
   });
 

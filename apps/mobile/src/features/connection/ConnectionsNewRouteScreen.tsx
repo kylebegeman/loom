@@ -197,10 +197,10 @@ export function ConnectionsNewRouteScreen({
   return (
     <SettingsScreen
       formSheet={routeName === "ConnectionsNew"}
-      title="Add environment"
+      title={params.routeFor ? "Add route" : "Connect computer"} // fork: fleet-connections
       actions={[
         {
-          accessibilityLabel: isSubmitting ? "Connecting" : "Add environment",
+          accessibilityLabel: isSubmitting ? "Connecting" : "Connect computer", // fork: fleet-connections
           loading: isSubmitting,
           icon: "checkmark",
           tintColor: headerIconColor,

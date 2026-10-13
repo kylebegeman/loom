@@ -1,3 +1,4 @@
+import type { ComputerNaming } from "./computer-naming/ComputerNaming.ts";
 import type { GitHubSetupFlow } from "../sourceControl/GitHubSetupFlow.ts";
 import type { WorkspaceHandoffService } from "./workspace-handoff/WorkspaceHandoffService.ts";
 import type { MiniOffloadService } from "./mini-offload/MiniOffloadService.ts";
@@ -12,6 +13,7 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | ComputerNaming
   | GitHubSetupFlow
   | MiniOffloadService
   | ModelPreviewService

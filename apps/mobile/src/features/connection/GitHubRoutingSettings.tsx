@@ -115,8 +115,9 @@ export function GitHubRoutingSettings() {
         })}
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
-        Choose environments you trust to share PR data and use each other's GitHub access. Enable
-        both environments. This applies only to this client.
+        {/* fork: fleet-connections */}
+        Choose computers you trust to share PR data and use each other's GitHub access. Enable both
+        computers. This applies only to this client.
       </Text>
     </View>
   );

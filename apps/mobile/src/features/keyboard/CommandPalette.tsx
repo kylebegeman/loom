@@ -218,8 +218,8 @@ export function CommandPalette(props: {
       {
         key: "environments",
         kind: "action",
-        title: "Manage environments",
-        searchTerms: ["connections", "server", "remote"],
+        title: "Connections", // fork: fleet-connections - Same inventory as the computer shortcut.
+        searchTerms: ["connections", "computers", "environments", "server", "remote"], // fork: fleet-connections
         run: () =>
           navigation.navigate("SettingsSheet", {
             screen: "SettingsContent",

@@ -1,4 +1,5 @@
 /** Fork-owned iOS identity and cloud distribution boundaries. */
+import { resolveLoomAccountPortalUrl } from "./connect-config.ts";
 export type MobileAppVariant = "development" | "preview" | "production";
 
 type Environment = Readonly<Record<string, string | undefined>>;
@@ -114,6 +115,15 @@ export function resolveLoomMobileIdentity(env: Environment) {
   ) {
     throw new Error("LOOM_MOBILE_AUTH_DOMAIN must be your own authentication domain.");
   }
+  const accountPortalUrl = resolveLoomAccountPortalUrl(
+    configured(env, "LOOM_MOBILE_ACCOUNT_PORTAL_URL"),
+    publishableKey,
+  );
+  if (connectEnabled && !authDomain && !accountPortalUrl) {
+    throw new Error(
+      "Email-based Loom Connect requires the deployment's hosted account portal URL.",
+    );
+  }
   const pushEnabled = flag(env, "LOOM_MOBILE_PUSH_ENABLED");
   const appleSignInEnabled = flag(env, "LOOM_MOBILE_APPLE_SIGN_IN_ENABLED");
   if ((pushEnabled || appleSignInEnabled) && (!connectEnabled || !teamId || personalTeam)) {
@@ -142,5 +152,6 @@ export function resolveLoomMobileIdentity(env: Environment) {
     relayUrl: connectEnabled ? relayUrl : undefined,
     clerkPublishableKey: connectEnabled ? publishableKey : undefined,
     clerkJwtTemplate: connectEnabled ? jwtTemplate : undefined,
+    accountPortalUrl: connectEnabled ? accountPortalUrl : undefined,
   };
 }

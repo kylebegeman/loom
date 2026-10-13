@@ -1,10 +1,14 @@
 import { useAuth } from "@clerk/expo";
 import { AuthView, type UserProfileCustomPage, UserProfileView } from "@clerk/expo/native";
 import { StackActions, useNavigation } from "@react-navigation/native";
-import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { View } from "react-native";
 
-import { hasCloudPublicConfig } from "../cloud/publicConfig";
+import { hasCloudPublicConfig, hasNativeCloudAuthConfig } from "../cloud/publicConfig";
+import {
+  ConnectEmailAccountView,
+  ConnectEmailAuthView,
+} from "../../fork/connect/ConnectEmailAuthView"; // fork: fleet-connect
 import { T3ConnectProfilePage } from "../cloud/T3ConnectProfilePage";
 
 // Custom rows in Clerk's native profile. Mirrors the web UserButton pages.
@@ -32,25 +36,31 @@ export function SettingsAuthRouteScreen() {
 function ConfiguredSettingsAuthRouteScreen() {
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const navigation = useNavigation();
-  const handleHostBack = useCallback(
-    () => navigation.dispatch(StackActions.popTo("SettingsContent")),
-    [navigation],
-  );
-  const hasBeenSignedIn = useRef(isSignedIn);
-  if (isSignedIn) {
-    hasBeenSignedIn.current = true;
-  }
+  // fork: fleet-connect - Return to the Connections entry point that opened account access.
+  const handleHostBack = useCallback(() => {
+    if (navigation.canGoBack()) navigation.goBack();
+    else navigation.dispatch(StackActions.replace("SettingsContent"));
+  }, [navigation]);
+  const [hasBeenSignedIn, setHasBeenSignedIn] = useState(Boolean(isSignedIn));
+  if (isSignedIn && !hasBeenSignedIn) setHasBeenSignedIn(true);
 
   useEffect(() => {
-    if (hasBeenSignedIn.current && isLoaded && isSignedIn === false) {
-      navigation.dispatch(StackActions.popTo("SettingsContent"));
+    if (hasBeenSignedIn && isLoaded && isSignedIn === false) {
+      handleHostBack();
     }
-  }, [isLoaded, isSignedIn, navigation]);
+  }, [handleHostBack, hasBeenSignedIn, isLoaded, isSignedIn]);
 
   return (
     <View collapsable={false} className="flex-1 overflow-hidden bg-sheet">
       {isLoaded ? (
-        hasBeenSignedIn.current ? (
+        // fork: fleet-connect - Unqualified native callbacks use email codes and hosted account settings.
+        !hasNativeCloudAuthConfig() ? (
+          isSignedIn ? (
+            <ConnectEmailAccountView onBack={handleHostBack} />
+          ) : (
+            <ConnectEmailAuthView onBack={handleHostBack} />
+          )
+        ) : hasBeenSignedIn ? (
           <UserProfileView
             customPages={USER_PROFILE_CUSTOM_PAGES}
             isDismissible={false}

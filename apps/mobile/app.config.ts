@@ -442,6 +442,9 @@ const config: ExpoConfig = {
     clerk: {
       publishableKey: identity.clerkPublishableKey ?? null,
       jwtTemplate: identity.clerkJwtTemplate ?? null,
+      // fork: fleet-connect - Native SSO/passkeys require this app's qualified auth domain.
+      nativeAuthDomain: identity.associatedDomains.length ? repoEnv.LOOM_MOBILE_AUTH_DOMAIN : null,
+      accountPortalUrl: identity.accountPortalUrl ?? null,
     },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads

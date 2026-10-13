@@ -397,3 +397,44 @@ Conflicts should only appear on seam lines. `docs/fork/seams.tsv` lists every se
 its marker and how many marked lines it keeps; `scripts/fork/loom.sh check` fails when a
 merge drops one, or when a marker appears that the manifest does not list. A change that
 adds or moves a seam updates the manifest in the same commit.
+
+### Shared computer connections
+
+Loom reuses upstream Connect identity, discovery and relay protocols. Shared host names
+use the existing signed descriptor and config stream. The local publisher freezes
+explicit public Connect configuration for desktop, iOS and exact-source CLI archives.
+See [Connections help](docs/fork/user/connections.md).
+
+| File                                                                         | Marker              | Why                                                                        |
+| ---------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------- |
+| `apps/mobile/app.config.ts`                                                  | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/mobile/src/Stack.tsx`                                                  | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/cloud/publicConfig.test.ts`                        | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/mobile/src/features/cloud/publicConfig.ts`                             | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/mobile/src/features/connection/ConnectionEnvironmentRow.tsx`           | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/mobile/src/features/connection/ConnectionsNewRouteScreen.tsx`          | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/connection/ConnectionsRouteScreen.tsx`             | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/connection/LocalEnvironmentList.tsx`               | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/connection/useConnectionController.ts`             | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/mobile/src/features/keyboard/CommandPalette.tsx`                       | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/projects/AddProjectScreen.tsx`                     | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/projects/AddProjectSourceRoute.tsx`                | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/settings/SettingsAuthRouteScreen.tsx`              | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/settings/SettingsEnvironmentsRouteScreen.tsx`      | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/settings/SettingsRouteScreen.tsx`                  | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/state/remote-environment-projections.test.ts`               | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/mobile/src/state/remote-environment-projections.ts`                    | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/server/src/environment/ServerEnvironment.ts`                           | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/server/src/ws.ts`                                                      | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `apps/web/src/cloud/publicConfig.ts`                                         | `connect-compat`    | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/web/src/components/settings/ConnectionsSettings.tsx`                   | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/web/src/components/settings/settingsSearch.ts`                         | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/web/src/state/environments.ts`                                         | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `packages/client-runtime/src/relay/discovery.test.ts`                        | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `packages/client-runtime/src/relay/discovery.ts`                             | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `packages/client-runtime/src/state/presentation.ts`                          | `computer-naming`   | Publish and project the canonical computer name.                           |
+| `scripts/lib/public-config.test.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `scripts/lib/public-config.ts`                                               | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+| `apps/mobile/src/features/connection/GitHubRoutingSettings.tsx`              | `fleet-connections` | Describe host sharing using the computer terminology.                      |

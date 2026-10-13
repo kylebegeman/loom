@@ -1,3 +1,4 @@
+import { relayComputerDisplayRecord } from "@t3tools/client-runtime/fork"; // fork: computer-naming
 import { useAtomValue } from "@effect/atom-react";
 import {
   RelayConnectionRegistration,
@@ -55,7 +56,7 @@ export function useConnectionController() {
   const relayEnvironments = useMemo<ReadonlyArray<RelayEnvironmentView>>(
     () =>
       [...discovery.environments.values()].map((entry) => ({
-        environment: entry.environment,
+        environment: relayComputerDisplayRecord(entry.environment, Option.getOrNull(entry.status)), // fork: computer-naming
         availability: entry.availability,
         status: Option.getOrNull(entry.status),
         error: Option.getOrNull(entry.error)?.message ?? null,

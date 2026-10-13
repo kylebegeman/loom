@@ -49,7 +49,6 @@ import {
 import {
   RelayConnectionRegistration,
   RelayConnectionTarget,
-  connectionRoutes,
   connectionStatusText,
   environmentMcpUrl,
 } from "@t3tools/client-runtime/connection";
@@ -202,6 +201,13 @@ import {
   threadJumpCommandForIndex,
   threadJumpIndexFromCommand,
 } from "../../keybindings";
+
+// fork: fleet-connections
+import { ComputerConnectionsHome } from "~/fork/connections/ComputerConnectionsHome";
+import { ComputerWorkActions } from "~/fork/connections/ComputerWorkActions";
+import { ComputerConnectionDetails } from "~/fork/connections/ComputerConnectionDetails";
+import { RemoteComputerAccess } from "~/fork/connections/RemoteComputerAccess";
+import { RenameComputer } from "~/fork/connections/RenameComputer";
 
 const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
@@ -669,7 +675,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
           kind === "hosted-link"
             ? "Open it in the browser on the device you want to connect."
             : kind === "link"
-              ? "Open it in the client you want to pair to this environment."
+              ? "Open it on the device you want to connect to this computer."
               : "Paste it into another client to finish pairing.",
       });
     },
@@ -821,7 +827,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                       size={132}
                       level="M"
                       marginSize={2}
-                      title="Pairing link — scan to open on another device"
+                      title="Pairing link, scan to open on another device"
                     />
                   </div>
                 ) : null}
@@ -924,7 +930,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 size={168}
                 level="M"
                 marginSize={1}
-                title="Pairing link — scan to open on another device"
+                title="Pairing link, scan to open on another device"
               />
             </div>
           ) : (
@@ -1493,8 +1499,8 @@ function SavedBackendListRow({
   onRemove,
   onAddRoute,
 }: SavedBackendListRowProps) {
-  const [routesOpen, setRoutesOpen] = useState(false);
-  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  // fork: fleet-connections
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const environmentId = environment.environmentId;
   const unsupported = environment.connection.phase === "unsupported";
   const enabled = environment.entry.enabled && !unsupported;
@@ -1585,7 +1591,6 @@ function SavedBackendListRow({
     environment.serverConfig ??
       (lastDescriptor === undefined ? null : { environment: lastDescriptor }),
   );
-  const routeCount = connectionRoutes(environment.entry).length;
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
     resumingServerUpdate ? "Restarting" : status.text,
@@ -1620,68 +1625,24 @@ function SavedBackendListRow({
       label={environment.label}
       dimmed={!enabled}
       subtitle={
-        <span className="flex min-w-0 items-center gap-1">
-          <Tooltip>
-            {/* The status can change while the tooltip is open, and base-ui only
-                re-measures the popup when the trigger's payload changes. */}
-            <TooltipTrigger
-              payload={statusTooltip}
-              render={
-                <span
-                  className={cn(
-                    "min-w-0 truncate",
-                    enabled &&
-                      status.tone === "error" &&
-                      !resumingServerUpdate &&
-                      "text-destructive",
-                  )}
-                />
-              }
-            >
-              {subtitleText}
-            </TooltipTrigger>
-            <TooltipPopup side="top" className="whitespace-pre-wrap">
-              {statusTooltip}
-            </TooltipPopup>
-          </Tooltip>
-          <span aria-hidden className="shrink-0">
-            ·
-          </span>
-          <button
-            type="button"
-            aria-expanded={routesOpen}
-            onClick={() => setRoutesOpen((open) => !open)}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+        <Tooltip>
+          <TooltipTrigger
+            payload={statusTooltip}
+            render={
+              <span
+                className={cn(
+                  "min-w-0 truncate",
+                  enabled && status.tone === "error" && !resumingServerUpdate && "text-destructive",
+                )}
+              />
+            }
           >
-            {routeCount === 1 ? "Routes" : `${routeCount} routes`}
-            <ChevronRightIcon
-              aria-hidden
-              className={cn(
-                "size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-                routesOpen && "rotate-90",
-              )}
-            />
-          </button>
-          <span aria-hidden className="shrink-0">
-            ·
-          </span>
-          <button
-            type="button"
-            aria-expanded={permissionsOpen}
-            aria-controls={`remote-permissions-${environmentId}`}
-            onClick={() => setPermissionsOpen((open) => !open)}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            Permissions
-            <ChevronRightIcon
-              aria-hidden
-              className={cn(
-                "size-3 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-                permissionsOpen && "rotate-90",
-              )}
-            />
-          </button>
-        </span>
+            {subtitleText}
+          </TooltipTrigger>
+          <TooltipPopup side="top" className="whitespace-pre-wrap">
+            {statusTooltip}
+          </TooltipPopup>
+        </Tooltip>
       }
       below={
         serverUpdateState.status !== "idle" ? (
@@ -1690,26 +1651,32 @@ function SavedBackendListRow({
           </div>
         ) : null
       }
+      // fork: fleet-connections
       detail={
         <>
-          {routesOpen && (
-            <EnvironmentRoutesList
-              environment={environment}
-              onAddRoute={() => onAddRoute(environment)}
-            />
-          )}
-          {permissionsOpen && (
-            <div
-              id={`remote-permissions-${environmentId}`}
-              className="mt-2 border-t border-border/50"
-            >
+          <ComputerWorkActions environment={environment} />
+          <ComputerConnectionDetails
+            label={environment.label}
+            open={detailsOpen}
+            onOpenChange={setDetailsOpen}
+          >
+            <section aria-label="Connection routes">
+              <h3 className="text-xs font-medium">Routes</h3>
+              <EnvironmentRoutesList
+                environment={environment}
+                onAddRoute={() => onAddRoute(environment)}
+              />
+            </section>
+            <RemoteComputerAccess environmentId={environmentId} connected={isConnected} />
+            <section aria-label="Connection permissions">
+              <h3 className="text-xs font-medium">This device's permissions</h3>
               <SessionPermissions
                 environmentId={environmentId}
                 connected={isConnected}
                 routeContext
               />
-            </div>
-          )}
+            </section>
+          </ComputerConnectionDetails>
         </>
       }
     >
@@ -1753,6 +1720,7 @@ function SavedBackendListRow({
           {unsupported ? "Client not supported" : enabled ? "Switch off" : "Switch on"}
         </TooltipPopup>
       </Tooltip>
+      <RenameComputer environment={environment} />
       <Menu>
         <MenuTrigger
           render={
@@ -1772,9 +1740,9 @@ function SavedBackendListRow({
             environmentId={environmentId}
             serverConfig={environment.serverConfig}
           />
-          <MenuItem onClick={() => setRoutesOpen((open) => !open)}>
+          <MenuItem onClick={() => setDetailsOpen((open) => !open)}>
             <RouteIcon />
-            {routesOpen ? "Hide routes" : "Routes"}
+            {detailsOpen ? "Hide connection details" : "Connection details"}
           </MenuItem>
           {mcpUrl ? (
             <MenuItem onClick={() => copyMcpUrl(mcpUrl, { url: mcpUrl })}>Copy MCP URL</MenuItem>
@@ -1838,7 +1806,7 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
   const [isUpdatingPreference, setIsUpdatingPreference] = useState(false);
 
   const disabledReason = !isSignedIn
-    ? "Sign in to T3 Connect to manage this environment."
+    ? "Sign in to T3 Connect to link this computer to your account."
     : !canManageRelay
       ? "Your session does not have permission to manage T3 Connect access."
       : null;
@@ -1863,10 +1831,10 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
             ? "T3 Connect tunnel disabled"
             : "T3 Connect unlinked",
         description: enabled
-          ? "This environment is available through T3 Connect."
+          ? "This computer is available through T3 Connect."
           : publishAgentActivity
             ? "The managed tunnel was removed. Agent activity publishing stays on."
-            : "This environment is no longer available through T3 Connect.",
+            : "This computer is no longer available through T3 Connect.",
       });
     }
     setIsUpdating(false);
@@ -1885,8 +1853,8 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         type: "success",
         title: enabled ? "Agent activity enabled" : "Agent activity disabled",
         description: enabled
-          ? "This environment publishes agent activity to your mobile clients."
-          : "This environment will stop publishing agent activity.",
+          ? "This computer publishes agent activity to your mobile devices."
+          : "This computer will stop publishing agent activity.",
       });
     }
     setIsUpdatingPreference(false);
@@ -1904,8 +1872,8 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
         type: "success",
         title: enabled ? "Webhooks held while offline" : "Webhooks no longer held",
         description: enabled
-          ? "T3 Connect keeps webhook requests for up to 24 hours while this environment is offline."
-          : "Requests to an offline environment now fail. Anything already held is still delivered.",
+          ? "T3 Connect keeps webhook requests for up to 24 hours while this computer is offline."
+          : "Requests to an offline computer now fail. Anything already held is still delivered.",
       });
     }
     setIsUpdatingPreference(false);
@@ -1918,8 +1886,8 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
           title={searchableSetting("t3-connect").title}
           description={
             managedTunnelActive
-              ? "This environment is available to your other devices through T3 Connect."
-              : "Make this environment available to your other devices through T3 Connect."
+              ? "This computer is available to your other devices through T3 Connect."
+              : "Make this computer available to your other devices through T3 Connect."
           }
           status={operationError ?? primaryCloudLinkState.error}
           control={
@@ -1960,10 +1928,10 @@ function ConfiguredCloudLinkRow({ canManageRelay }: { readonly canManageRelay: b
       {managedTunnelActive ? (
         <SettingsRow
           title={searchableSetting("hold-webhooks-while-offline").title}
-          description="Keep webhook requests for up to 24 hours while this environment is offline, then deliver them. Off: T3 Connect only forwards requests and stores nothing."
+          description="Keep webhook requests for up to 24 hours while this computer is offline, then deliver them. Off: T3 Connect only forwards requests and stores nothing."
           control={
             <CloudLinkSwitch
-              ariaLabel="Hold webhook requests while this environment is offline"
+              ariaLabel="Hold webhook requests while this computer is offline"
               checked={holdWebhooksWhileOffline}
               disabled={!canManageRelay || !isSignedIn || primaryCloudLinkState.isPending || isBusy}
               disabledReason={disabledReason}
@@ -1997,16 +1965,16 @@ function CloudLinkRow({
 
 function EmptyRemoteEnvironments({ cloudEnabled = true }: { readonly cloudEnabled?: boolean }) {
   return (
-    <Empty className="min-h-52">
+    <Empty className="min-h-32">
       <EmptyMedia variant="icon">
         <ChevronsLeftRightEllipsisIcon />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle>No saved remote environments</EmptyTitle>
+        <EmptyTitle>Connect another computer</EmptyTitle>
         <EmptyDescription>
           {cloudEnabled
-            ? "Click “Add environment” to pair another environment, or connect one from T3 Connect."
-            : "Click “Add environment” to pair another environment."}
+            ? "Use Connect computer for a pairing link or SSH, or sign in to discover computers linked to your account."
+            : "Use Connect computer to add a computer with a pairing link or SSH."}
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -2034,7 +2002,7 @@ function CloudRemoteEnvironmentRows({
 export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const { environments } = useEnvironments();
+  const { environments, isReady } = useEnvironments();
   const primaryEnvironment = usePrimaryEnvironment();
   const connectPairing = useAtomCommand(connectPairingAtom, { reportFailure: false });
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
@@ -2569,7 +2537,7 @@ export function ConnectionsSettings() {
       setAddBackendDialogOpen(false);
       toastManager.add({
         type: "success",
-        title: routeTarget ? "Route added" : "Environment connected",
+        title: routeTarget ? "Route added" : "Computer connected",
         description: routeTarget
           ? `${routeTarget.label} can now be reached over SSH ${target.alias}.`
           : `${target.alias} is ready over an SSH-managed tunnel.`,
@@ -2656,7 +2624,7 @@ export function ConnectionsSettings() {
         : {
             type: "success",
             title: "Backend added",
-            description: "The environment is saved and will reconnect on app startup.",
+            description: "The computer is saved and will reconnect on app startup.",
           },
     );
     setIsAddingSavedBackend(false);
@@ -3011,7 +2979,7 @@ export function ConnectionsSettings() {
         onClick={() => void handleAddSavedBackend()}
       >
         <PlusIcon className="size-3.5" />
-        {isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Add environment"}
+        {isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Connect computer"}
       </Button>
     </div>
   );
@@ -3132,7 +3100,7 @@ export function ConnectionsSettings() {
           onClick={() => void handleAddSavedBackend()}
         >
           <PlusIcon className="size-3.5" />
-          {isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Add environment"}
+          {isAddingSavedBackend ? "Adding…" : routeTarget ? "Add route" : "Connect computer"}
         </Button>
       </div>
     </div>
@@ -3612,9 +3580,7 @@ export function ConnectionsSettings() {
         <>
           <SettingsSection
             {...searchableSetting("connections-environment")}
-            title={
-              primaryEnvironment?.label ?? (desktopBridge ? "This machine" : "Primary environment")
-            }
+            title="Connection settings"
             icon={
               <EnvironmentMachineIcon
                 aria-hidden
@@ -3736,7 +3702,7 @@ export function ConnectionsSettings() {
           {canReadAccess || canWriteAccess ? (
             <FoldedSettingsSection
               id="authorized-clients"
-              title="Authorized clients"
+              title="Devices with access"
               summary={summarizeAuthorizedClients(
                 desktopClientSessions,
                 visibleDesktopPairingLinks,
@@ -4048,8 +4014,8 @@ export function ConnectionsSettings() {
       ) : (
         <SettingsSection {...searchableSetting("connections-environment")}>
           <SettingsRow
-            title="No environment selected"
-            description="Connect an environment to view its settings and access."
+            title="No computer selected"
+            description="Connect a computer to view its settings and access."
           />
           {/* A turned-off local environment leaves no primary environment, so its switch lives here too. */}
           <LocalEnvironmentSetting />
@@ -4063,11 +4029,15 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
-      {primarySettings}
-      <SettingsSection
-        {...searchableSetting("remote-environments")}
-        title="Environments"
-        headerAction={
+      {/* fork: fleet-connections */}
+      <ComputerConnectionsHome
+        primaryEnvironment={primaryEnvironment}
+        primaryDetails={primarySettings}
+        primaryActions={
+          primaryEnvironment ? <RenameComputer environment={primaryEnvironment} /> : null
+        }
+        isReady={isReady}
+        headerActions={
           <div className="flex items-center gap-1">
             {savedServerUpdateTargets.length > 0 ? (
               <ServerUpdatesAction targets={savedServerUpdateTargets} variant="ghost-muted" />
@@ -4088,25 +4058,25 @@ export function ConnectionsSettings() {
                   render={
                     <DialogTrigger
                       render={
-                        <Button size="xs" variant="ghost-muted" aria-label="Add environment">
+                        <Button size="xs" variant="ghost-muted" aria-label="Connect computer">
                           <PlusIcon className="size-3" />
-                          <span>Add environment</span>
+                          <span>Connect computer</span>
                         </Button>
                       }
                     />
                   }
                 />
-                <TooltipPopup side="top">Add environment</TooltipPopup>
+                <TooltipPopup side="top">Connect computer</TooltipPopup>
               </Tooltip>
               <DialogPopup className="max-h-[80dvh] sm:max-w-3xl">
                 <DialogHeader>
                   <DialogTitle>
-                    {routeTarget ? `Add a route to ${routeTarget.label}` : "Add Environment"}
+                    {routeTarget ? `Add a route to ${routeTarget.label}` : "Connect computer"}
                   </DialogTitle>
                   <DialogDescription>
                     {routeTarget
                       ? "Pair this machine again over another address, such as its Tailscale name. It joins the existing routes instead of adding a second machine."
-                      : "Pair another environment to this client."}
+                      : "Connect another computer with a pairing link or SSH. Your projects and conversations stay on the computer that runs them."}
                   </DialogDescription>
                 </DialogHeader>
                 <DialogPanel>
@@ -4137,26 +4107,31 @@ export function ConnectionsSettings() {
             </Dialog>
           </div>
         }
-      >
-        {listedEnvironments.map((environment) => (
-          <SavedBackendListRow
-            key={environment.environmentId}
-            environment={environment}
-            removingEnvironmentId={removingSavedEnvironmentId}
-            onSetEnabled={handleSetSavedBackendEnabled}
-            onRemove={handleRemoveSavedBackend}
-            onAddRoute={(target) => {
-              setRouteTarget(target);
-              setSavedBackendError(null);
-              setAddBackendDialogOpen(true);
-            }}
+        computerRows={
+          <>
+            {listedEnvironments.map((environment) => (
+              <SavedBackendListRow
+                key={environment.environmentId}
+                environment={environment}
+                removingEnvironmentId={removingSavedEnvironmentId}
+                onSetEnabled={handleSetSavedBackendEnabled}
+                onRemove={handleRemoveSavedBackend}
+                onAddRoute={(target) => {
+                  setRouteTarget(target);
+                  setSavedBackendError(null);
+                  setAddBackendDialogOpen(true);
+                }}
+              />
+            ))}
+          </>
+        }
+        discoveredRows={
+          <CloudRemoteEnvironmentRows
+            primaryEnvironmentId={primaryEnvironmentId}
+            savedEnvironments={savedEnvironments}
           />
-        ))}
-        <CloudRemoteEnvironmentRows
-          primaryEnvironmentId={primaryEnvironmentId}
-          savedEnvironments={savedEnvironments}
-        />
-      </SettingsSection>
+        }
+      />
       {hasCloudPublicConfig() ? (
         <RemoveT3ConnectEnvironmentDialog
           environmentLabel={pendingT3ConnectRemoval?.label ?? null}

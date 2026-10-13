@@ -47,7 +47,7 @@ export function NoProjectsHero({
               </EmptyTitle>
               <EmptyDescription>
                 {savedProjectsUnavailable
-                  ? "Open Computers to reconnect. Your saved conversations are still in the sidebar."
+                  ? "Open connections to reconnect. Your saved conversations are still in the sidebar."
                   : scratchTargetEnvironmentId === null
                     ? "Choose a computer and add a project to start your first conversation."
                     : "Add a project, or start without one."}
@@ -74,8 +74,8 @@ export function NoProjectsHero({
                 )}
               </div>
               <div className="mt-3">
-                <Button size="sm" variant="ghost" render={<Link to="/computers" />}>
-                  Open Computers
+                <Button size="sm" variant="ghost" render={<Link to="/settings/connections" />}>
+                  Open connections
                 </Button>
               </div>
             </EmptyHeader>

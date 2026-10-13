@@ -11,6 +11,13 @@ import * as NodeURL from "node:url";
 
 import Plist from "plist";
 
+import {
+  loomConnectBuildEnvironment,
+  loomMobileConnectConfig,
+  parseLoomConnectConfig,
+  type LoomConnectConfig,
+} from "./connect-config.ts";
+
 const BUNDLE_ID = "com.kylebegeman.loom";
 const BUNDLE_IDS = [BUNDLE_ID, `${BUNDLE_ID}.sharing`, `${BUNDLE_ID}.widgets`] as const;
 const ASSOCIATED_DOMAINS_ENTITLEMENT = "com.apple.developer.associated-domains";
@@ -118,9 +125,12 @@ export function iosBuildEnvironment(
   env: Environment,
   buildNumber?: string,
   sourceSha?: string,
+  preparedConnect?: LoomConnectConfig | null,
 ): NodeJS.ProcessEnv {
+  const connect = preparedConnect === undefined ? loomMobileConnectConfig(env) : preparedConnect;
   const result = { ...env };
   delete result.ELECTRON_RUN_AS_NODE;
+  delete result.CLERK_SECRET_KEY;
   for (const key of Object.keys(result)) {
     if (
       key.startsWith("EXPO_PUBLIC_") ||
@@ -138,7 +148,7 @@ export function iosBuildEnvironment(
     EXPO_NO_DOTENV: "1",
     EXPO_NO_GIT_STATUS: "1",
     CI: "1",
-    LOOM_MOBILE_CONNECT_ENABLED: "0",
+    ...loomConnectBuildEnvironment(connect),
     LOOM_MOBILE_UPDATES_ENABLED: "0",
     LOOM_MOBILE_PUSH_ENABLED: "0",
     LOOM_MOBILE_APPLE_SIGN_IN_ENABLED: "0",
@@ -148,7 +158,12 @@ export function iosBuildEnvironment(
   };
 }
 
-export function validateIosReleaseConfig(input: unknown, teamId: string, buildNumber?: string) {
+export function validateIosReleaseConfig(
+  input: unknown,
+  teamId: string,
+  buildNumber?: string,
+  connect: LoomConnectConfig | null = null,
+) {
   const config = record(input, "Expo config");
   const ios = record(config.ios, "Expo iOS config");
   const updates = record(config.updates, "Expo updates config");
@@ -173,16 +188,32 @@ export function validateIosReleaseConfig(input: unknown, teamId: string, buildNu
       "Local TestFlight releases must disable OTA and omit cloud publishing identity.",
     );
   }
+  const domains = connect?.nativeAuthDomain
+    ? [`applinks:${connect.nativeAuthDomain}`, `webcredentials:${connect.nativeAuthDomain}`]
+    : [];
   if (
-    ios.associatedDomains !== undefined ||
+    (domains.length
+      ? JSON.stringify(ios.associatedDomains) !== JSON.stringify(domains)
+      : ios.associatedDomains !== undefined) ||
     Object.hasOwn(
       record(ios.entitlements ?? {}, "Expo iOS entitlements"),
       ASSOCIATED_DOMAINS_ENTITLEMENT,
     )
   ) {
     throw new Error(
-      "Local TestFlight releases must omit associated domains while Connect is disabled.",
+      "Local TestFlight associated domains must match the explicitly qualified Connect domain.",
     );
+  }
+  const clerk = record(extra.clerk ?? {}, "Expo Clerk config");
+  const relay = record(extra.relay ?? {}, "Expo relay config");
+  if (
+    (clerk.publishableKey ?? null) !== (connect?.clerkPublishableKey ?? null) ||
+    (clerk.jwtTemplate ?? null) !== (connect?.clerkJwtTemplate ?? null) ||
+    (relay.url ?? null) !== (connect?.relayUrl ?? null) ||
+    (clerk.nativeAuthDomain ?? null) !== (connect?.nativeAuthDomain ?? null) ||
+    (clerk.accountPortalUrl ?? null) !== (connect?.accountPortalUrl ?? null)
+  ) {
+    throw new Error("Expo Connect configuration differs from the explicitly prepared release.");
   }
   if (extra.appVariant !== "production" || extra.iosPersonalTeamBuild === true)
     throw new Error("TestFlight requires a production Apple Developer build.");
@@ -219,8 +250,9 @@ export function validateArtifactInfo(
 
 export function validateSigningEntitlements(
   input: unknown,
-  expected: { teamId: string },
+  expected: { teamId: string; connectConfig?: LoomConnectConfig },
   bundleId: string,
+  provisioningProfile = false,
 ) {
   const entitlements = record(input, "Signing entitlements");
   if (
@@ -230,8 +262,19 @@ export function validateSigningEntitlements(
   ) {
     throw new Error(`Unexpected signing identity in ${bundleId}.`);
   }
-  if (Object.hasOwn(entitlements, ASSOCIATED_DOMAINS_ENTITLEMENT))
+  const authDomain = bundleId === BUNDLE_ID ? expected.connectConfig?.nativeAuthDomain : undefined;
+  const domains = authDomain ? [`applinks:${authDomain}`, `webcredentials:${authDomain}`] : [];
+  if (
+    domains.length
+      ? JSON.stringify(entitlements[ASSOCIATED_DOMAINS_ENTITLEMENT]) !== JSON.stringify(domains) &&
+        !(
+          provisioningProfile &&
+          JSON.stringify(entitlements[ASSOCIATED_DOMAINS_ENTITLEMENT]) === '["*"]'
+        )
+      : Object.hasOwn(entitlements, ASSOCIATED_DOMAINS_ENTITLEMENT)
+  ) {
     throw new Error(`Unexpected associated domains in ${bundleId}.`);
+  }
   const appGroups = entitlements["com.apple.security.application-groups"] ?? [];
   if (!Array.isArray(appGroups)) throw new Error("Invalid signing app groups.");
   if (!appGroups.includes(`group.${BUNDLE_ID}`))
@@ -416,6 +459,7 @@ export type IosReleaseReceipt = {
   buildNumber: string;
   groups: string[];
   preparedAt: string;
+  connectConfig?: LoomConnectConfig;
   artifactSha256?: string;
   buildId?: string;
 };
@@ -459,6 +503,11 @@ export function parseReceipt(input: unknown): IosReleaseReceipt {
     throw new Error("Invalid artifact digest in release receipt.");
   if (value.buildId !== undefined && (typeof value.buildId !== "string" || !value.buildId.trim()))
     throw new Error("Invalid uploaded build ID in release receipt.");
+  const connectConfig =
+    value.connectConfig === undefined ? null : parseLoomConnectConfig(value.connectConfig);
+  if (value.connectConfig !== undefined && !connectConfig?.mobileEnabled) {
+    throw new Error("Prepared mobile Connect configuration must be enabled.");
+  }
   return {
     schemaVersion: 1,
     sourceRoot,
@@ -468,6 +517,7 @@ export function parseReceipt(input: unknown): IosReleaseReceipt {
     buildNumber,
     groups: value.groups as string[],
     preparedAt: text(value.preparedAt, "Preparation time"),
+    ...(connectConfig ? { connectConfig } : {}),
     ...(artifactSha256 ? { artifactSha256 } : {}),
     ...(typeof value.buildId === "string" ? { buildId: value.buildId } : {}),
   };
@@ -654,15 +704,29 @@ function sourceIdentity(sourceRoot: string, expected?: string): string {
   return sha;
 }
 
-function configFor(sourceRoot: string, teamId: string, buildNumber?: string) {
-  const env = iosBuildEnvironment({ ...NodeProcess.env, LOOM_IOS_TEAM_ID: teamId }, buildNumber);
+function configFor(
+  sourceRoot: string,
+  teamId: string,
+  buildNumber?: string,
+  preparedConnect?: LoomConnectConfig | null,
+) {
+  const env = iosBuildEnvironment(
+    { ...NodeProcess.env, LOOM_IOS_TEAM_ID: teamId },
+    buildNumber,
+    undefined,
+    preparedConnect,
+  );
+  const connectConfig = loomMobileConnectConfig(env);
   const config = json(
     NodePath.join(sourceRoot, "apps/mobile/node_modules/.bin/expo"),
     ["config", "--json", "--type", "public"],
     NodePath.join(sourceRoot, "apps/mobile"),
     env,
   );
-  return validateIosReleaseConfig(config, teamId, buildNumber);
+  return {
+    ...validateIosReleaseConfig(config, teamId, buildNumber, connectConfig),
+    ...(connectConfig ? { connectConfig } : {}),
+  };
 }
 
 function buildList(appId: string) {
@@ -716,7 +780,12 @@ function assertReceiptContext(receipt: IosReleaseReceipt, requestedSha?: string)
   )
     throw new Error("The selected signing account or source differs from the prepared release.");
   sourceIdentity(receipt.sourceRoot, receipt.sourceSha);
-  const config = configFor(receipt.sourceRoot, receipt.teamId, receipt.buildNumber);
+  const config = configFor(
+    receipt.sourceRoot,
+    receipt.teamId,
+    receipt.buildNumber,
+    receipt.connectConfig ?? null,
+  );
   if (config.version !== receipt.version)
     throw new Error("Prepared release app version no longer matches source.");
 }
@@ -737,7 +806,7 @@ async function prepare(outputDir: string, sourceSha?: string): Promise<IosReleas
     buildList(settings.appId).map((build) => build.buildNumber),
     NodeProcess.env.LOOM_IOS_BUILD_NUMBER,
   );
-  const { version } = configFor(SOURCE_ROOT, settings.teamId, buildNumber);
+  const { version, connectConfig } = configFor(SOURCE_ROOT, settings.teamId, buildNumber);
   const receipt: IosReleaseReceipt = {
     schemaVersion: 1,
     sourceRoot: SOURCE_ROOT,
@@ -746,6 +815,7 @@ async function prepare(outputDir: string, sourceSha?: string): Promise<IosReleas
     version,
     buildNumber,
     preparedAt: new Date().toISOString(),
+    ...(connectConfig ? { connectConfig } : {}),
   };
   await writeReceipt(outputDir, receipt);
   return receipt;
@@ -760,7 +830,12 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
   }
   if (await ownedPath(NodePath.join(outputDir, "Loom.ipa"))) return;
   const mobileRoot = NodePath.join(receipt.sourceRoot, "apps/mobile");
-  const env = iosBuildEnvironment(NodeProcess.env, receipt.buildNumber, receipt.sourceSha);
+  const env = iosBuildEnvironment(
+    NodeProcess.env,
+    receipt.buildNumber,
+    receipt.sourceSha,
+    receipt.connectConfig ?? null,
+  );
   const exportOptions = NodeProcess.env.LOOM_IOS_EXPORT_OPTIONS?.trim();
   let signingManifest: ReturnType<typeof manualSigningManifest> | undefined;
   if (exportOptions) {
@@ -970,7 +1045,7 @@ async function inspect(outputDir: string, receipt: IosReleaseReceipt) {
       const profileInfo = record(Plist.parse(profile), "Provisioning profile");
       if (profileInfo.ProvisionedDevices !== undefined || profileInfo.ProvisionsAllDevices === true)
         throw new Error("TestFlight requires App Store distribution provisioning profiles.");
-      validateSigningEntitlements(profileInfo.Entitlements, receipt, bundleId);
+      validateSigningEntitlements(profileInfo.Entitlements, receipt, bundleId, true);
       if (
         !Array.isArray(profileInfo.TeamIdentifier) ||
         !profileInfo.TeamIdentifier.includes(receipt.teamId)

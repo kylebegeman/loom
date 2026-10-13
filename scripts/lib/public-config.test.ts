@@ -102,6 +102,32 @@ describe("loadRepoEnv", () => {
     });
   });
 
+  // fork: fleet-connect - A source checkout's env files cannot change prepared release identity.
+  it("keeps disabled and configured release builds isolated from source env files", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env"),
+      "T3CODE_CLERK_PUBLISHABLE_KEY=pk_root\nT3CODE_RELAY_URL=https://root.example.test\n",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env.local"),
+      "T3CODE_CLERK_PUBLISHABLE_KEY=pk_local\nT3CODE_RELAY_URL=https://local.example.test\n",
+    );
+    const disabled = loadRepoEnv({ repoRoot, baseEnv: { T3CODE_RELEASE_PUBLIC_CONFIG: "1" } });
+    expect(disabled.VITE_CLERK_PUBLISHABLE_KEY).toBeUndefined();
+    expect(disabled.T3CODE_RELAY_URL).toBeUndefined();
+    const configured = loadRepoEnv({
+      repoRoot,
+      baseEnv: {
+        T3CODE_RELEASE_PUBLIC_CONFIG: "1",
+        T3CODE_CLERK_PUBLISHABLE_KEY: "pk_prepared",
+        T3CODE_RELAY_URL: "https://prepared.example.test",
+      },
+    });
+    expect(configured.VITE_CLERK_PUBLISHABLE_KEY).toBe("pk_prepared");
+    expect(configured.VITE_T3CODE_RELAY_URL).toBe("https://prepared.example.test");
+  });
+
   it("accepts legacy framework aliases as root overrides", () => {
     expect(
       resolvePublicConfig({

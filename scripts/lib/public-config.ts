@@ -32,8 +32,10 @@ export function loadRepoEnv({
   readonly repoRoot?: string;
   readonly readFiles?: boolean;
 } = {}): Record<string, string | undefined> {
-  const rootEnv = readFiles ? readEnvFile(NodePath.join(repoRoot, ".env")) : {};
-  const localEnv = readFiles ? readEnvFile(NodePath.join(repoRoot, ".env.local")) : {};
+  // fork: fleet-connect - Prepared releases consume only their frozen public configuration.
+  const includeFiles = readFiles && baseEnv.T3CODE_RELEASE_PUBLIC_CONFIG !== "1";
+  const rootEnv = includeFiles ? readEnvFile(NodePath.join(repoRoot, ".env")) : {};
+  const localEnv = includeFiles ? readEnvFile(NodePath.join(repoRoot, ".env.local")) : {};
   const config = resolvePublicConfig(baseEnv, localEnv, rootEnv);
 
   return {

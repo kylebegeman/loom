@@ -45,6 +45,18 @@ const ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 describe("searchSettings", () => {
+  it.each(["rename computer", "friendly name", "nickname"])(
+    "finds shared computer naming from %s",
+    (query) => {
+      expect(searchSettings(query)).toContainEqual(
+        expect.objectContaining({
+          id: "computer-name",
+          to: "/settings/connections",
+          targetId: "remote-environments",
+        }),
+      );
+    },
+  );
   it.each(["OTel", "OTLP", "telemetry export", "Grafana"])(
     "finds environment telemetry settings for %s",
     (query) => {

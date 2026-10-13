@@ -1,3 +1,4 @@
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork"; // fork: computer-naming
 import { ConnectionTraceId } from "./ConnectionTraceId";
 import { SymbolView } from "../../components/AppSymbol";
 import { connectionStatusText } from "@t3tools/client-runtime/connection";
@@ -50,6 +51,7 @@ export function ConnectionEnvironmentRow(props: {
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(props.environment.environmentId),
   );
+  const sharedName = supportsLoomFeature(serverConfig?.environment.capabilities, "computer-naming"); // fork: computer-naming
   const unsupported = props.environment.connectionState === "unsupported";
   const enabled = props.environment.isEnabled && !unsupported;
   const statusLabel = connectionStatusLabel(props.environment);
@@ -62,7 +64,7 @@ export function ConnectionEnvironmentRow(props: {
       props.environment.connectionState === "reconnecting");
   const handleSave = useCallback(async () => {
     const result = await props.onUpdate(props.environment.environmentId, {
-      label: label.trim(),
+      label: sharedName ? props.environment.environmentLabel : label.trim(), // fork: computer-naming
       displayUrl: url.trim(),
     });
     if (AsyncResult.isSuccess(result)) {
@@ -71,10 +73,10 @@ export function ConnectionEnvironmentRow(props: {
     }
     const error = Cause.squash(result.cause);
     Alert.alert(
-      "Could not update environment",
-      error instanceof Error ? error.message : "The environment could not be updated.",
+      "Could not update computer",
+      error instanceof Error ? error.message : "The connection could not be updated.",
     );
-  }, [label, url, props]);
+  }, [label, url, sharedName, props]);
 
   return (
     <Animated.View layout={LinearTransition.duration(250)} className="bg-grouped-card">
@@ -160,14 +162,17 @@ export function ConnectionEnvironmentRow(props: {
             </Text>
           ) : (
             <>
-              <ConnectionFormField
-                label="Label"
-                autoCapitalize="words"
-                autoCorrect={false}
-                placeholder="My MacBook"
-                value={label}
-                onChangeText={setLabel}
-              />
+              {/* fork: computer-naming - Older hosts retain an explicit device-local alias. */}
+              {!sharedName ? (
+                <ConnectionFormField
+                  label="Name on this device"
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  placeholder="My MacBook"
+                  value={label}
+                  onChangeText={setLabel}
+                />
+              ) : null}
 
               <ConnectionFormField
                 label="URL"
@@ -196,14 +201,14 @@ export function ConnectionEnvironmentRow(props: {
                 </View>
               )}
               <MaterialIconButton
-                accessibilityLabel="Reconnect environment"
+                accessibilityLabel="Reconnect computer"
                 icon="arrow.clockwise"
                 variant="tonal"
                 disabled={!enabled}
                 onPress={() => props.onReconnect(props.environment.environmentId)}
               />
               <MaterialIconButton
-                accessibilityLabel="Remove environment"
+                accessibilityLabel="Remove computer"
                 icon="trash"
                 variant="danger"
                 onPress={() => props.onRemove(props.environment.environmentId)}

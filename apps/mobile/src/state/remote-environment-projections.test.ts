@@ -4,7 +4,7 @@ import type {
 } from "@t3tools/client-runtime/connection";
 import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
 import type { ServerConfig } from "@t3tools/contracts";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
@@ -76,6 +76,71 @@ function makeHarness() {
 }
 
 describe("remote environment projections", () => {
+  // fork: computer-naming - A host rename must update Home without replacing its route or credentials.
+  it("refreshes the shared computer name while preserving credentials and older local aliases", () => {
+    const harness = makeHarness();
+    const initialPresentation = harness.registry.get(harness.presentationAtom(ENVIRONMENT_ID))!;
+    harness.registry.set(
+      harness.preparedConnectionAtom(ENVIRONMENT_ID),
+      Option.some(prepared(ENVIRONMENT_ID, "paired", "paired-token")),
+    );
+    const savedAtom = harness.projections.savedConnectionAtom(ENVIRONMENT_ID);
+    const initial = harness.registry.get(savedAtom);
+    const descriptor = {
+      environmentId: ENVIRONMENT_ID,
+      label: "Office Mac",
+      platform: { os: "darwin" as const, arch: "arm64" as const },
+      serverVersion: "0.0.48",
+      capabilities: { repositoryIdentity: false, loomFeatures: ["computer-naming"] },
+    };
+    const config: ServerConfig = {
+      environment: descriptor,
+      auth: {
+        policy: "loopback-browser",
+        bootstrapMethods: ["one-time-token"],
+        sessionMethods: ["bearer-access-token"],
+        sessionCookieName: "t3_session",
+      },
+      cwd: "/repo",
+      keybindingsConfigPath: "/repo/keybindings.json",
+      keybindings: [],
+      issues: [],
+      providers: [],
+      availableEditors: [],
+      settings: DEFAULT_SERVER_SETTINGS,
+      observability: {
+        logsDirectoryPath: "/repo/logs",
+        localTracingEnabled: false,
+        otlpTracesEnabled: false,
+        otlpMetricsEnabled: false,
+        otlpLogsEnabled: false,
+      },
+    };
+    harness.registry.set(harness.presentationAtom(ENVIRONMENT_ID), {
+      ...initialPresentation,
+      serverConfig: config,
+    });
+    const renamed = harness.registry.get(savedAtom);
+    expect(renamed).not.toBe(initial);
+    expect(renamed).toMatchObject({
+      environmentLabel: "Office Mac",
+      bearerToken: "paired-token",
+      httpBaseUrl: "https://paired.example.test",
+    });
+    harness.registry.set(harness.presentationAtom(ENVIRONMENT_ID), {
+      ...initialPresentation,
+      serverConfig: { ...config, cwd: "/changed" },
+    });
+    expect(harness.registry.get(savedAtom)).toBe(renamed);
+    harness.registry.set(harness.presentationAtom(ENVIRONMENT_ID), {
+      ...initialPresentation,
+      serverConfig: {
+        ...config,
+        environment: { ...descriptor, capabilities: { repositoryIdentity: false } },
+      },
+    });
+    expect(harness.registry.get(savedAtom)?.environmentLabel).toBe(initial?.environmentLabel);
+  });
   it("shares each environment projection and invalidates only changed inputs", () => {
     const harness = makeHarness();
     const firstConsumer = Atom.make((get) =>

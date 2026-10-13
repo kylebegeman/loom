@@ -1,3 +1,4 @@
+import { computerNameConfigUpdates } from "./fork/computer-naming/config.ts"; // fork: computer-naming
 import { OrchestrationDispatchCommandError } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -3054,6 +3055,11 @@ const layerWsRpc = (
                 })),
               );
 
+              // fork: computer-naming
+              const namingUpdates = yield* computerNameConfigUpdates(config, () =>
+                loadServerConfig({ usageLimitsCommand }),
+              );
+
               const liveUpdates = Stream.merge(
                 keybindingsUpdates,
                 Stream.merge(
@@ -3067,7 +3073,12 @@ const layerWsRpc = (
 
               return Stream.concat(
                 rpcInitialItems([{ version: 1 as const, type: "snapshot" as const, config }]),
-                withLateEditorConfig(config, liveUpdates, externalLauncher),
+                // fork: computer-naming
+                withLateEditorConfig(
+                  config,
+                  Stream.merge(liveUpdates, namingUpdates),
+                  externalLauncher,
+                ),
               );
             }),
           ),
