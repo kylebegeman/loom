@@ -351,6 +351,11 @@ immutable verified bytes and binds a private review receipt to the candidate,
 installed baseline and plan. Apply, exact retry, verification, discard and pack
 rollback delegate to existing release owners; report and staging start no updater.
 
+An older installed updater can reject a newly added runtime module as an invalid
+release member. Verify the new kit independently, then invoke its
+`integration/pack/maintenance.mjs` for staging and applying; the same ownership,
+review and rollback checks apply. Preserve the installed updater until activation.
+
 Local packs and portable kits can be supplied to `loom-os updates stage` with their
 independently reviewed SHA256. The native picker also discovers verified retained
 releases and local incoming bundles. User settings, private route origins, component

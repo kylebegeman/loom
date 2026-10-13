@@ -458,3 +458,34 @@ For scripts, `loom-os continuity inspect ORIGIN` returns the public environment
 identity. `loom-os continuity connect ORIGIN ENVIRONMENT_ID` saves that reviewed
 identity, and `loom-os continuity --json` reports current reachability and power
 support. These settings contain no credentials.
+
+## Storage and optional apps
+
+Open **LoomOS → Maintenance → Storage and optional apps** or run
+`loom-os housekeeping`. Review storage cleanup before applying it. The review
+protects current and previous integration/recovery targets, configured clients,
+existing CLI shortcuts and running processes. Changes after review require a new
+review. Browser profiles, app data and workstation state stay outside cleanup.
+
+Optional-app cleanup removes Firefox, Obsidian, Kdenlive, OBS, Pinta and Xournal++
+when installed, together with their unused dependencies. LibreOffice, Codex,
+installed Claude apps, core desktop/network tools, printing, Bluetooth and
+voice dictation are protected. System cleanup pauses printing and dictation startup while keeping their
+software installed. Restore them from this screen or with
+`loom-os housekeeping utilities restore`. Bluetooth stays enabled.
+Package cache cleanup retains two versions per package. Applying system cleanup uses the normal terminal's local sudo prompt.
+
+Save an app selection with `loom-os housekeeping save-apps /absolute/apps.json`.
+The portable file uses `format: "loom-os-app-selection"`, `version: 1`,
+`keepPackages` and `removePackages` arrays of Linux package names. Add future
+installed apps to `keepPackages`; unlisted apps are preserved. Install new
+products through their owning installers, then copy this selection between
+Omarchy machines. Personal selections persist through integration updates.
+
+```sh
+loom-os housekeeping plan
+loom-os housekeeping apply REVIEW_HASH
+loom-os housekeeping apps
+loom-os housekeeping system-plan
+loom-os housekeeping system-apply REVIEW_HASH
+```

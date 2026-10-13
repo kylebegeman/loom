@@ -856,6 +856,7 @@ export async function installationPlan(
     "maintenance.mjs",
     "maintenance-ui.mjs",
     "continuity.mjs",
+    "housekeeping.mjs",
   ]) {
     try {
       writes.set(NodePath.join(p.root, name), {
@@ -872,6 +873,7 @@ export async function installationPlan(
     ["desk", "Workstation control desk", "control-desk.mjs"],
     ["updates", "Updates and recovery", "maintenance-ui.mjs"],
     ["continuity", "Device continuity", "continuity.mjs"],
+    ["housekeeping", "Storage and optional apps", "housekeeping.mjs"],
   ]) {
     if (!featureModules.has(module)) continue;
     writes.set(NodePath.join(p.root, action + "-terminal"), {
@@ -1215,6 +1217,13 @@ done
       description: "Reviewed recipe, remaining connections and local setup steps",
       action: command("commission"),
     };
+    if (featureModules.has("housekeeping.mjs")) {
+      entries["loomos.maintenance.housekeeping"] = {
+        label: "Storage and optional apps",
+        description: "Review obsolete files, recovery retention and selected apps",
+        action: command("housekeeping"),
+      };
+    }
     entries["loomos.maintenance.status"] = {
       label: "Installed integration",
       description: "Version, machine profile, theme and retained rollback",
@@ -2872,6 +2881,12 @@ export function loomActionCatalog(config, context = {}) {
     ["updates"],
   );
   add(
+    "housekeeping",
+    "Storage and optional apps",
+    "Review unused files, recovery retention and optional applications",
+    ["housekeeping"],
+  );
+  add(
     "continuity",
     "Device continuity",
     "Verified workstation links, exact handoff and laptop power controls",
@@ -3489,7 +3504,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nhub [--json|--human] [--provider claude|codex] [--model ID] [--client kyle|office|atlas]  (cached readiness and supported recovery)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\ncontinuity [--json|inspect ORIGIN|connect ORIGIN ENVIRONMENT_ID|forget ENVIRONMENT_ID]\ncontinuity handoff loom|office|atlas JSON_REFERENCE [--json]  (review exact links for another device)\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nhub [--json|--human] [--provider claude|codex] [--model ID] [--client kyle|office|atlas]  (cached readiness and supported recovery)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\nhousekeeping [plan|apply REVIEW_HASH|apps|save-apps FILE|system-plan|system-apply REVIEW_HASH]  (review obsolete storage and optional apps)\ncontinuity [--json|inspect ORIGIN|connect ORIGIN ENVIRONMENT_ID|forget ENVIRONMENT_ID]\ncontinuity handoff loom|office|atlas JSON_REFERENCE [--json]  (review exact links for another device)\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3829,6 +3844,17 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         { env },
       );
     } else throw Error("Usage: loom-os notifications [--json|focus on|focus off]");
+    return;
+  }
+  if (action === "housekeeping") {
+    const housekeeping = await import("./housekeeping.mjs");
+    if (rest.length) await housekeeping.main(rest, env);
+    else
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-housekeeping", NodePath.join(p.root, "housekeeping-terminal")],
+        { env },
+      );
     return;
   }
   if (action === "continuity") {
