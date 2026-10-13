@@ -4,7 +4,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { type EnvironmentId } from "@t3tools/contracts";
 import { COMPUTER_NAME_MAX_LENGTH } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
@@ -36,7 +36,18 @@ export function ComputerNameSection({
   const [pending, setPending] = useState(false);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
-  const name = draft ?? query.data?.label ?? config?.environment.label ?? "";
+  const liveLabel = config?.environment.label;
+  const name = draft ?? liveLabel ?? query.data?.label ?? "";
+  const observedLabel = useRef(liveLabel);
+  const refreshNaming = query.refresh;
+  useEffect(() => {
+    if (!supported || !connected || !allowed || liveLabel === undefined) return;
+    const previous = observedLabel.current;
+    observedLabel.current = liveLabel;
+    // Another client can rename this host while these details remain open.
+    // The stream owns the visible name; reload override metadata for Reset.
+    if (previous !== undefined && previous !== liveLabel) refreshNaming();
+  }, [supported, connected, allowed, liveLabel, refreshNaming]);
   const canSave = connected && allowed && !pending;
 
   async function save(nextName: string | null) {

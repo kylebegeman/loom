@@ -436,15 +436,18 @@ const config: ExpoConfig = {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     iosPushEnabled: identity.pushEnabled,
+    // fork: fleet-connect - Expo public serialization turns null into objects, so omit unset values.
     relay: {
-      url: identity.relayUrl ?? null,
+      url: identity.relayUrl,
     },
     clerk: {
-      publishableKey: identity.clerkPublishableKey ?? null,
-      jwtTemplate: identity.clerkJwtTemplate ?? null,
-      // fork: fleet-connect - Native SSO/passkeys require this app's qualified auth domain.
-      nativeAuthDomain: identity.associatedDomains.length ? repoEnv.LOOM_MOBILE_AUTH_DOMAIN : null,
-      accountPortalUrl: identity.accountPortalUrl ?? null,
+      publishableKey: identity.clerkPublishableKey,
+      jwtTemplate: identity.clerkJwtTemplate,
+      // Native SSO/passkeys require this app's qualified auth domain.
+      nativeAuthDomain: identity.associatedDomains.length
+        ? repoEnv.LOOM_MOBILE_AUTH_DOMAIN
+        : undefined,
+      accountPortalUrl: identity.accountPortalUrl,
     },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads
@@ -464,11 +467,9 @@ const config: ExpoConfig = {
       ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME
       : undefined,
     observability: {
-      tracesUrl: identity.connectEnabled ? (repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? null) : null,
-      tracesDataset: identity.connectEnabled
-        ? (repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null)
-        : null,
-      tracesToken: identity.connectEnabled ? (repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null) : null,
+      tracesUrl: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL : undefined,
+      tracesDataset: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET : undefined,
+      tracesToken: identity.connectEnabled ? repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN : undefined,
     },
     ...(identity.expoProjectId ? { eas: { projectId: identity.expoProjectId } } : {}),
   },

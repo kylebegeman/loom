@@ -24,8 +24,8 @@ describe("Loom native distribution config", () => {
     expect(config.extra?.eas).toBeUndefined();
     expect(config.updates?.enabled).toBe(false);
     expect(config.updates?.url).toBeUndefined();
-    expect(config.extra?.relay.url).toBeNull();
-    expect(config.extra?.clerk.publishableKey).toBeNull();
+    expect(config.extra?.relay.url).toBeUndefined();
+    expect(config.extra?.clerk.publishableKey).toBeUndefined();
     expect(config.extra?.iosPushEnabled).toBe(false);
   });
 });
