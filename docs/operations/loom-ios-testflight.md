@@ -82,10 +82,14 @@ local publisher's private state directory. Required variables are:
 An export-options plist, when supplied, must use `method=app-store-connect`,
 `destination=export`, your `teamID`, and `signingStyle=manual`. Its
 `provisioningProfiles` dictionary must explicitly map all three bundle IDs to your
-installed App Store profiles. The same mappings are applied to generated app and extension targets before
-archiving, so one Apple Distribution identity is sufficient. Without a supplied plist,
-archiving uses the generated project signing settings and `asc` generates manual export
-options from the signed archive. API keys can instead resolve through `ASC_KEY_ID`,
+installed App Store profiles. Set `signingCertificate` to the distribution
+certificate's 40-character SHA-1 fingerprint, and ensure that certificate belongs
+to all three profiles. Certificate names and automatic selectors are rejected
+because another app can install a newer certificate with the same name. The
+publisher applies the same profile mappings and fingerprint to generated app and
+extension targets before archiving. Without a supplied plist, archiving uses the
+generated project signing settings and `asc` generates manual export options from
+the signed archive. API keys can instead resolve through `ASC_KEY_ID`,
 `ASC_ISSUER_ID`, and `ASC_PRIVATE_KEY_PATH`; key contents stay in a private file.
 Never place a private key in source or pass its contents as a command argument.
 

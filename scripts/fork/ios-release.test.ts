@@ -36,6 +36,7 @@ vi.mock("node:child_process", () => ({ spawnSync }));
 const TEAM = "LOOMTEST01";
 const APP = "1234567890";
 const SHA = "a".repeat(40);
+const CERTIFICATE_SHA1 = "0123456789ABCDEF0123456789ABCDEF01234567";
 const config = {
   name: "Loom",
   scheme: "loom",
@@ -501,12 +502,48 @@ describe("Loom iOS release boundaries", () => {
       }),
     ).toThrow("Build numbers");
   });
+  it("pins every archive target to the explicit export certificate fingerprint", () => {
+    const options = {
+      method: "app-store-connect",
+      destination: "export",
+      signingStyle: "manual",
+      teamID: TEAM,
+      signingCertificate: CERTIFICATE_SHA1.toLowerCase(),
+      provisioningProfiles: {
+        "com.kylebegeman.loom": "Loom App Store",
+        "com.kylebegeman.loom.sharing": "Loom Sharing App Store",
+        "com.kylebegeman.loom.widgets": "Loom Widgets App Store",
+      },
+    };
+    expect(
+      manualSigningManifest(options, TEAM).targets.map(
+        (target) => target.configurations[0]!.settings.CODE_SIGN_IDENTITY,
+      ),
+    ).toEqual(Array(3).fill(CERTIFICATE_SHA1));
+    for (const signingCertificate of [
+      undefined,
+      null,
+      "",
+      "Apple Distribution",
+      "Apple Distribution: Example (LOOMTEST01)",
+      "a".repeat(39),
+      "a".repeat(41),
+      "g".repeat(40),
+      123,
+    ]) {
+      expect(() => manualSigningManifest({ ...options, signingCertificate }, TEAM)).toThrow(
+        "SHA-1",
+      );
+    }
+  });
+
   it("maps every archive target to its own App Store profile and forbids direct upload exports", () => {
     const options = {
       method: "app-store-connect",
       destination: "export",
       signingStyle: "manual",
       teamID: TEAM,
+      signingCertificate: CERTIFICATE_SHA1,
       provisioningProfiles: {
         "com.kylebegeman.loom": "Loom App Store",
         "com.kylebegeman.loom.sharing": "Loom Sharing App Store",
@@ -551,6 +588,7 @@ describe("Loom iOS release boundaries", () => {
       destination: "export",
       signingStyle: "manual",
       teamID: TEAM,
+      signingCertificate: CERTIFICATE_SHA1,
       provisioningProfiles: {
         "com.kylebegeman.loom": "Loom App Store",
         "com.kylebegeman.loom.sharing": "Loom Sharing App Store",
@@ -615,13 +653,13 @@ describe("Loom iOS release boundaries", () => {
       objects.XCBuildConfiguration.widgetRelease.buildSettings,
     ]) {
       expect(settings).toMatchObject({
-        CODE_SIGN_IDENTITY: '"Apple Distribution"',
+        CODE_SIGN_IDENTITY: JSON.stringify(CERTIFICATE_SHA1),
         CODE_SIGN_STYLE: '"Manual"',
         DEVELOPMENT_TEAM: JSON.stringify(TEAM),
       });
     }
     expect(objects.XCBuildConfiguration.sharingRelease.buildSettings).toMatchObject({
-      '"CODE_SIGN_IDENTITY[sdk=iphoneos*]"': '"Apple Distribution"',
+      '"CODE_SIGN_IDENTITY[sdk=iphoneos*]"': JSON.stringify(CERTIFICATE_SHA1),
       '"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]"': '"Loom Sharing App Store"',
       PROVISIONING_PROFILE_SPECIFIER: '"Loom Sharing App Store"',
     });

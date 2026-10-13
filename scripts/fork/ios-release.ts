@@ -296,6 +296,14 @@ export function manualSigningManifest(input: unknown, teamId: string) {
       "Export options must export locally with manual app-store-connect signing for the selected team.",
     );
   }
+  const certificate = options.signingCertificate;
+  if (typeof certificate !== "string" || !/^[a-f0-9]{40}$/i.test(certificate)) {
+    throw new Error(
+      "Manual export options require signingCertificate with the certificate's 40-character SHA-1 fingerprint.",
+    );
+  }
+  // A name or automatic selector can resolve to a newer certificate owned by another app.
+  const signingIdentity = certificate.toUpperCase();
   const profiles = record(options.provisioningProfiles, "Export provisioning profiles");
   if (
     Object.keys(profiles).some(
@@ -316,7 +324,7 @@ export function manualSigningManifest(input: unknown, teamId: string) {
           settings: {
             CODE_SIGN_STYLE: "Manual",
             DEVELOPMENT_TEAM: teamId,
-            CODE_SIGN_IDENTITY: "Apple Distribution",
+            CODE_SIGN_IDENTITY: signingIdentity,
             PROVISIONING_PROFILE_SPECIFIER: profiles[bundleId],
             PROVISIONING_PROFILE: null,
             PRODUCT_BUNDLE_IDENTIFIER: bundleId,
