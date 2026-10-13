@@ -45,8 +45,9 @@ native context can differ, so the provider may still reject an input.
 
 ## Continue on another machine
 
-In Loom, use **Continue on another machine** from a thread's menu or the command palette.
-Connect the destination host and add a project for the same repository there first. Both hosts
+In Loom, use **Move work** from a thread's menu or the command palette.
+Choose the destination computer and a project for the same repository. Connect the computer
+and add that project there first if it is not listed. Both hosts
 need workspace operation permission, and the destination needs Git access and a working provider.
 Stop the source thread and its background work, commit local changes, and publish the branch
 before starting.

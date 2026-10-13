@@ -129,7 +129,7 @@ export function buildThreadActionMenuItems(
       ? [
           {
             id: "workspace-handoff" as const,
-            label: "Continue on another machine…",
+            label: "Move work…",
             icon: "arrow-right-left",
           },
         ]

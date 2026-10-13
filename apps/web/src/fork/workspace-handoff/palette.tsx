@@ -9,10 +9,18 @@ export const workspaceHandoffPaletteSource: ForkCommandPaletteSource = {
           {
             kind: "action",
             value: "action:loom:workspace-handoff:open",
-            title: "Continue on another machine",
-            description: "Prepare a linked continuation before settling this work",
+            title: "Move work",
+            description: "Continue this conversation on another computer",
             icon: <ArrowRightLeftIcon className="size-4" />,
-            searchTerms: ["handoff", "move", "machine", "host", "workspace", "continue"],
+            searchTerms: [
+              "handoff",
+              "move",
+              "machine",
+              "computer",
+              "host",
+              "workspace",
+              "continue",
+            ],
             run: async () => openWorkspaceHandoff(activeThreadRef),
           },
         ]

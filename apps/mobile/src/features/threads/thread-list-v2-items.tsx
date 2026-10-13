@@ -660,7 +660,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         ? [
             {
               id: "workspace-handoff",
-              title: "Continue on another machine",
+              title: "Move work",
               image: "arrow.left.arrow.right",
               attributes: { disabled: !canOperateThread },
             },
