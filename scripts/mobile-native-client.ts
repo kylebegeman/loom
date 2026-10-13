@@ -12,7 +12,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Argument, Command } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
-import Plist from "plist";
 
 import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts";
 
@@ -279,26 +278,13 @@ export const installedBinary = Effect.fn("installedBinary")(function* (
     const apps = yield* run("xcrun", ["simctl", "listapps", device]);
     if (!apps.includes(`"${bundleId}"`)) return null;
     const app = yield* run("xcrun", ["simctl", "get_app_container", device, bundleId, "app"]);
-    // Linker-only simulator signatures can launch but cannot use Keychain or App Groups.
-    const encoded = yield* run("codesign", ["-d", "--entitlements", "-", "--xml", app]).pipe(
-      Effect.catchTags({ NativeClientError: () => Effect.succeed("") }),
+    // Simulator entitlements live in Mach-O sections, not necessarily in the signature.
+    // Full bundle signing distinguishes Xcode's usable build from the earlier linker-only binary.
+    const verified = yield* run("codesign", ["--verify", "--strict", app]).pipe(
+      Effect.as(true),
+      Effect.catchTags({ NativeClientError: () => Effect.succeed(false) }),
     );
-    const decoded = yield* Effect.try(() => Plist.parse(encoded)).pipe(
-      Effect.orElseSucceed(() => null),
-    );
-    const schema = Schema.Struct({
-      "keychain-access-groups": Schema.Array(Schema.String),
-      "com.apple.security.application-groups": Schema.Array(Schema.String),
-    });
-    if (
-      !Schema.is(schema)(decoded) ||
-      !decoded["keychain-access-groups"].some(
-        (group) =>
-          group === bundleId || (/^[A-Z0-9]{10}\./.test(group) && group.slice(11) === bundleId),
-      ) ||
-      !decoded["com.apple.security.application-groups"].includes(`group.${bundleId}`)
-    )
-      return null;
+    if (!verified) return null;
     return yield* hashBundle(app);
   }
   const installed = yield* run("adb", ["-s", device, "shell", "pm", "list", "packages", bundleId]);
