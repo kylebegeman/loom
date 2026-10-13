@@ -33,6 +33,6 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [11. Contextual actions and AI workbench](11-contextual-actions-and-ai-workbench.md) | completed            | #3, #12         |
 | [13. Native workstation control desk](13-native-workstation-control-desk.md)         | completed            | #2, #7, #12     |
 | [17. Coordinated updates and recovery](17-coordinated-updates-and-recovery.md)       | completed            | #9, #10, #13    |
-| [16. Coherent offline ecosystem](16-coherent-offline-ecosystem.md)                   | approved             | #12             |
+| [16. Coherent offline ecosystem](16-coherent-offline-ecosystem.md)                   | completed            | #12             |
 | [15. Laptop/workstation continuity](15-laptop-workstation-continuity.md)             | approved             | #2, #4, #5, #16 |
 | [18. Resilient private AI hub](18-resilient-private-ai-hub.md)                       | approved             | #4, #5          |
