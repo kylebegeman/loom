@@ -10,6 +10,7 @@ import {
   compareBuildNumbers,
   iosBuildEnvironment,
   manualSigningManifest,
+  applyManualArchiveSigningSettings,
   withIosReleaseLock,
   nextBuildNumber,
   parseIosReleaseArgs,
@@ -361,6 +362,110 @@ describe("Loom iOS release boundaries", () => {
         TEAM,
       ),
     ).toThrow("explicitly map");
+  });
+
+  it("replaces generated SDK-qualified signing values only in the three archive target configurations", () => {
+    const options = {
+      method: "app-store-connect",
+      destination: "export",
+      signingStyle: "manual",
+      teamID: TEAM,
+      provisioningProfiles: {
+        "com.kylebegeman.loom": "Loom App Store",
+        "com.kylebegeman.loom.sharing": "Loom Sharing App Store",
+        "com.kylebegeman.loom.widgets": "Loom Widgets App Store",
+      },
+    };
+    const target = (name: string, list: string) => ({ name, buildConfigurationList: list });
+    const list = (release: string) => ({
+      buildConfigurations: [{ value: "debug" }, { value: release }],
+    });
+    const configuration = (bundleId: string, settings: Record<string, string> = {}) => ({
+      name: "Release",
+      buildSettings: { PRODUCT_BUNDLE_IDENTIFIER: bundleId, ...settings },
+    });
+    const objects = {
+      PBXNativeTarget: {
+        app: target("Loom", "appList"),
+        sharing: target('"expo-sharing-extension"', "sharingList"),
+        widget: target("ExpoWidgetsTarget", "widgetList"),
+        other: target("Unrelated", "otherList"),
+      },
+      XCConfigurationList: {
+        appList: list("appRelease"),
+        sharingList: list("sharingRelease"),
+        widgetList: list("widgetRelease"),
+        otherList: list("otherRelease"),
+      },
+      XCBuildConfiguration: {
+        debug: {
+          name: "Debug",
+          buildSettings: { '"CODE_SIGN_IDENTITY[sdk=iphoneos*]"': '"iPhone Developer"' },
+        },
+        projectRelease: {
+          name: "Release",
+          buildSettings: { '"CODE_SIGN_IDENTITY[sdk=iphoneos*]"': '"iPhone Developer"' },
+        },
+        appRelease: configuration("com.kylebegeman.loom", {
+          CODE_SIGN_ENTITLEMENTS: "Loom/Loom.entitlements",
+        }),
+        sharingRelease: configuration("com.kylebegeman.loom.sharing", {
+          '"CODE_SIGN_IDENTITY[sdk=iphoneos*]"': '"iPhone Developer"',
+          '"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]"': '"Development profile"',
+          '"PROVISIONING_PROFILE[sdk=iphoneos*]"': '"legacy-development-uuid"',
+        }),
+        widgetRelease: configuration("com.kylebegeman.loom.widgets"),
+        otherRelease: configuration("com.example.unrelated", {
+          CODE_SIGN_IDENTITY: '"iPhone Developer"',
+        }),
+      },
+    };
+    const untouched = structuredClone({
+      debug: objects.XCBuildConfiguration.debug,
+      project: objects.XCBuildConfiguration.projectRelease,
+      other: objects.XCBuildConfiguration.otherRelease,
+    });
+    const hash = { project: { objects } };
+    const manifest = manualSigningManifest(options, TEAM);
+    applyManualArchiveSigningSettings(hash, manifest);
+    for (const settings of [
+      objects.XCBuildConfiguration.appRelease.buildSettings,
+      objects.XCBuildConfiguration.sharingRelease.buildSettings,
+      objects.XCBuildConfiguration.widgetRelease.buildSettings,
+    ]) {
+      expect(settings).toMatchObject({
+        CODE_SIGN_IDENTITY: '"Apple Distribution"',
+        CODE_SIGN_STYLE: '"Manual"',
+        DEVELOPMENT_TEAM: JSON.stringify(TEAM),
+      });
+    }
+    expect(objects.XCBuildConfiguration.sharingRelease.buildSettings).toMatchObject({
+      '"CODE_SIGN_IDENTITY[sdk=iphoneos*]"': '"Apple Distribution"',
+      '"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]"': '"Loom Sharing App Store"',
+      PROVISIONING_PROFILE_SPECIFIER: '"Loom Sharing App Store"',
+    });
+    expect(objects.XCBuildConfiguration.sharingRelease.buildSettings).not.toHaveProperty(
+      '"PROVISIONING_PROFILE[sdk=iphoneos*]"',
+    );
+    expect(objects.XCBuildConfiguration.appRelease.buildSettings).toMatchObject({
+      CODE_SIGN_ENTITLEMENTS: "Loom/Loom.entitlements",
+    });
+    expect({
+      debug: objects.XCBuildConfiguration.debug,
+      project: objects.XCBuildConfiguration.projectRelease,
+      other: objects.XCBuildConfiguration.otherRelease,
+    }).toEqual(untouched);
+    const once = structuredClone(hash);
+    applyManualArchiveSigningSettings(hash, manifest);
+    expect(hash).toEqual(once);
+    const invalid = structuredClone(once);
+    invalid.project.objects.XCBuildConfiguration.widgetRelease.buildSettings.PRODUCT_BUNDLE_IDENTIFIER =
+      "com.example.other";
+    const beforeFailure = structuredClone(invalid);
+    expect(() => applyManualArchiveSigningSettings(invalid, manifest)).toThrow(
+      "Unexpected generated bundle ID",
+    );
+    expect(invalid).toEqual(beforeFailure);
   });
 
   it("reuses only a recorded valid Apple build after its local IPA is pruned", () => {

@@ -5,6 +5,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
+import * as NodeModule from "node:module";
 import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
@@ -267,6 +268,111 @@ export function manualSigningManifest(input: unknown, teamId: string) {
       ],
     })),
   };
+}
+
+function pbxValue(input: unknown, context: string) {
+  const value = text(input, context);
+  return value.startsWith('"') ? text(JSON.parse(value), context) : value;
+}
+
+export function applyManualArchiveSigningSettings(
+  input: unknown,
+  manifest: ReturnType<typeof manualSigningManifest>,
+) {
+  const objects = record(
+    record(record(input, "Xcode project hash").project, "Xcode project").objects,
+    "Xcode objects",
+  );
+  const targets = record(objects.PBXNativeTarget, "Xcode native targets");
+  const lists = record(objects.XCConfigurationList, "Xcode configuration lists");
+  const configurations = record(objects.XCBuildConfiguration, "Xcode build configurations");
+  const patches: { settings: JsonRecord; desired: JsonRecord }[] = [];
+  const selected = new Set<string>();
+  for (const desiredTarget of manifest.targets) {
+    const matches = Object.entries(targets).filter(([key, value]) => {
+      if (key.endsWith("_comment")) return false;
+      const target = record(value, "Xcode native target");
+      return pbxValue(target.name, "Xcode target name") === desiredTarget.name;
+    });
+    if (matches.length !== 1)
+      throw new Error(`Expected one archive target named ${desiredTarget.name}.`);
+    const target = record(matches[0]![1], "Xcode archive target");
+    const list = record(
+      lists[text(target.buildConfigurationList, "Target configuration list")],
+      "Target configuration list",
+    );
+    if (!Array.isArray(list.buildConfigurations))
+      throw new Error("Target configuration references must be an array.");
+    for (const desiredConfiguration of desiredTarget.configurations) {
+      const matches = list.buildConfigurations
+        .map((reference: unknown) => {
+          const id = text(
+            record(reference, "Build configuration reference").value,
+            "Build configuration ID",
+          );
+          return { id, configuration: record(configurations[id], "Build configuration") };
+        })
+        .filter(
+          ({ configuration }) =>
+            pbxValue(configuration.name, "Configuration name") === desiredConfiguration.name,
+        );
+      if (matches.length !== 1)
+        throw new Error(
+          `Expected one ${desiredConfiguration.name} configuration in ${desiredTarget.name}.`,
+        );
+      const { id, configuration } = matches[0]!;
+      if (selected.has(id))
+        throw new Error("Archive targets cannot share a signing configuration.");
+      selected.add(id);
+      const settings = record(configuration.buildSettings, "Archive build settings");
+      if (
+        pbxValue(settings.PRODUCT_BUNDLE_IDENTIFIER, "Archive bundle ID") !==
+        desiredConfiguration.settings.PRODUCT_BUNDLE_IDENTIFIER
+      ) {
+        throw new Error(`Unexpected generated bundle ID in ${desiredTarget.name}.`);
+      }
+      patches.push({ settings, desired: desiredConfiguration.settings });
+    }
+  }
+  // Resolve every target before changing any configuration. SDK-qualified values can
+  // override an unconditional identity, so update the matching signing keys too.
+  for (const { settings, desired } of patches) {
+    for (const [key, value] of Object.entries(desired)) {
+      for (const existing of Object.keys(settings)) {
+        if (pbxValue(existing, "Build setting key").split("[", 1)[0] !== key) continue;
+        if (value === null) delete settings[existing];
+        else settings[existing] = JSON.stringify(value);
+      }
+      if (value === null) delete settings[key];
+      else settings[key] = JSON.stringify(value);
+    }
+  }
+}
+
+export async function applyGeneratedManualArchiveSigning(
+  mobileRoot: string,
+  projectFile: string,
+  manifest: ReturnType<typeof manualSigningManifest>,
+) {
+  const requireMobile = NodeModule.createRequire(NodePath.join(mobileRoot, "package.json"));
+  const plugins = record(requireMobile("expo/config-plugins"), "Expo config plugins");
+  const utils = record(
+    record(plugins.IOSConfig, "Expo iOS config").XcodeUtils,
+    "Expo Xcode utilities",
+  );
+  if (typeof utils.getPbxproj !== "function")
+    throw new Error("Expo cannot parse the generated Xcode project.");
+  const project = record(utils.getPbxproj(mobileRoot), "Parsed Xcode project");
+  if (
+    NodePath.resolve(text(project.filepath, "Parsed project path")) !==
+    NodePath.resolve(projectFile)
+  ) {
+    throw new Error("Expo selected a different generated Xcode project.");
+  }
+  applyManualArchiveSigningSettings(project.hash, manifest);
+  if (typeof project.writeSync !== "function")
+    throw new Error("Expo cannot serialize the generated Xcode project.");
+  await NodeFSP.writeFile(projectFile, text(project.writeSync(), "Serialized Xcode project"));
 }
 
 export function uploadedBuilds(input: unknown) {
@@ -654,6 +760,12 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
         entry.endsWith(".xcodeproj"),
       );
       if (projects.length !== 1) throw new Error("Expected one generated iOS project.");
+      const projectPath = NodePath.join(mobileRoot, "ios", projects[0]!);
+      await applyGeneratedManualArchiveSigning(
+        mobileRoot,
+        NodePath.join(projectPath, "project.pbxproj"),
+        signingManifest,
+      );
       const settingsFile = NodePath.join(outputDir, "archive-signing-settings.json");
       const signingState = NodePath.join(outputDir, "archive-signing");
       await NodeFSP.writeFile(settingsFile, `${JSON.stringify(signingManifest, null, 2)}\n`, {
@@ -667,7 +779,7 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
             "signing",
             "plan",
             "--project",
-            NodePath.join(mobileRoot, "ios", projects[0]!),
+            projectPath,
             "--settings-file",
             settingsFile,
             "--state-dir",
