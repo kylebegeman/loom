@@ -4,7 +4,8 @@ import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import { resolveLoomMobileIdentity } from "../../scripts/fork/mobileIdentity.ts"; // fork: mobile-identity
 
-const repoEnv = loadRepoEnv();
+// Release archives consume only the publisher's sanitized environment.
+const repoEnv = loadRepoEnv({ readFiles: process.env.LOOM_IOS_RELEASE_BUILD !== "1" });
 Object.assign(process.env, repoEnv);
 
 const identity = resolveLoomMobileIdentity(repoEnv);

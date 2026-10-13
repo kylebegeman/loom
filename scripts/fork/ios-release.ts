@@ -115,6 +115,7 @@ export function iosBuildEnvironment(
     if (
       key.startsWith("EXPO_PUBLIC_") ||
       key.startsWith("T3CODE_") ||
+      key.startsWith("T3_SHOWCASE_") ||
       key.startsWith("VITE_") ||
       key.startsWith("LOOM_MOBILE_")
     )
@@ -123,6 +124,7 @@ export function iosBuildEnvironment(
   return {
     ...result,
     APP_VARIANT: "production",
+    LOOM_IOS_RELEASE_BUILD: "1",
     EXPO_NO_DOTENV: "1",
     EXPO_NO_GIT_STATUS: "1",
     CI: "1",

@@ -78,6 +78,30 @@ describe("loadRepoEnv", () => {
     });
   });
 
+  it("can exclude root files without changing ordinary development loading", () => {
+    const repoRoot = makeTemporaryDirectory();
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env"),
+      "EXPO_PUBLIC_SHOWCASE=1\nLOOM_IOS_RELEASE_BUILD=0\nT3CODE_RELAY_URL=https://root.example.test\n",
+    );
+    NodeFS.writeFileSync(
+      NodePath.join(repoRoot, ".env.local"),
+      "T3CODE_RELAY_URL=https://local.example.test\n",
+    );
+
+    const baseEnv = { LOOM_IOS_RELEASE_BUILD: "1", APP_VARIANT: "production" };
+    const isolated = loadRepoEnv({ baseEnv, repoRoot, readFiles: false });
+    expect(isolated).toEqual(baseEnv);
+    expect(isolated.EXPO_PUBLIC_SHOWCASE).toBeUndefined();
+    expect(isolated.VITE_T3CODE_RELAY_URL).toBeUndefined();
+    expect(loadRepoEnv({ baseEnv: {}, repoRoot })).toMatchObject({
+      EXPO_PUBLIC_SHOWCASE: "1",
+      LOOM_IOS_RELEASE_BUILD: "0",
+      T3CODE_RELAY_URL: "https://local.example.test",
+      VITE_T3CODE_RELAY_URL: "https://local.example.test",
+    });
+  });
+
   it("accepts legacy framework aliases as root overrides", () => {
     expect(
       resolvePublicConfig({

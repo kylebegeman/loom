@@ -134,6 +134,8 @@ describe("Loom iOS release boundaries", () => {
           LOOM_MOBILE_EXPO_PROJECT_ID: "upstream",
           ELECTRON_RUN_AS_NODE: "1",
           VITE_WS_URL: "ws://localhost",
+          LOOM_IOS_RELEASE_BUILD: "0",
+          T3_SHOWCASE_CAPTURE_BUILD: "1",
         },
         "42",
         SHA,
@@ -142,6 +144,7 @@ describe("Loom iOS release boundaries", () => {
       ASC_PRIVATE_KEY_PATH: "/private/key.p8",
       LOOM_IOS_TEAM_ID: TEAM,
       APP_VARIANT: "production",
+      LOOM_IOS_RELEASE_BUILD: "1",
       LOOM_MOBILE_CONNECT_ENABLED: "0",
       LOOM_MOBILE_UPDATES_ENABLED: "0",
       LOOM_IOS_BUILD_NUMBER: "42",
@@ -157,6 +160,9 @@ describe("Loom iOS release boundaries", () => {
     expect(
       iosBuildEnvironment({ EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "upstream" }),
     ).not.toHaveProperty("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY");
+    expect(iosBuildEnvironment({ T3_SHOWCASE_CAPTURE_BUILD: "1" })).not.toHaveProperty(
+      "T3_SHOWCASE_CAPTURE_BUILD",
+    );
   });
 
   it("requires an isolated production bundle and prevents upstream OTA delivery", () => {
