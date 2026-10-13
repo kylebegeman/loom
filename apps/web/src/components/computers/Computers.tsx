@@ -6,16 +6,18 @@ import {
   PlusIcon,
   ArrowUpRightIcon,
   FolderIcon,
+  MessageSquareIcon,
   LinkIcon,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
+import { buildThreadRouteParams } from "~/threadRoutes";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { useEnvironments } from "~/state/environments";
-import { useProjects, setActiveEnvironmentId } from "~/state/entities";
+import { useProjects, useThreadShells } from "~/state/entities";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { useHandleNewThread } from "~/hooks/useHandleNewThread";
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -23,13 +25,14 @@ import { connectPairing } from "~/connection/onboarding";
 import { environmentCatalog } from "~/connection/catalog";
 import { Alert, useAction } from "~/fork/apple-build-tooling/parts";
 import { serverEnvironment } from "~/state/server";
-import { readyAgentCount } from "./presentation";
+import { readyAgentCount, recentConversationForComputer } from "./presentation";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 export function Computers() {
   const { environments, isReady } = useEnvironments();
   const projects = useProjects();
+  const threads = useThreadShells();
   const setEnabled = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
   const retryNow = useAtomCommand(environmentCatalog.retryNow, { reportFailure: false });
   const { handleNewThread } = useHandleNewThread();
@@ -38,8 +41,7 @@ export function Computers() {
   const [connecting, setConnecting] = useState(false);
   const [choosingProject, setChoosingProject] = useState<EnvironmentId | null>(null);
   const addProject = (environmentId: EnvironmentId) => {
-    setActiveEnvironmentId(environmentId);
-    openCommandPalette({ open: "add-project" });
+    openCommandPalette({ open: "add-project", environmentId });
   };
   return (
     <div className="flex flex-col gap-6">
@@ -87,6 +89,19 @@ export function Computers() {
                 project.environmentId === environment.environmentId &&
                 project.workspaceRoot !== scratchWorkspaceRootFor(environment.environmentId),
             );
+            const recentConversation = recentConversationForComputer(
+              threads,
+              projects,
+              environment.environmentId,
+            );
+            const recentProject = projects.find(
+              (project) =>
+                project.environmentId === environment.environmentId &&
+                project.id === recentConversation?.projectId,
+            );
+            const canStartConversation =
+              machineProjects.length > 0 ||
+              scratchWorkspaceRootFor(environment.environmentId) !== null;
             const platform = environment.serverConfig?.environment.platform;
             const picking = choosingProject === environment.environmentId;
             const agentsReady = readyAgentCount(environment.serverConfig?.providers ?? []);
@@ -108,7 +123,7 @@ export function Computers() {
                     <h3 className="truncate font-medium text-sm">{environment.label}</h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {local
-                        ? "This environment"
+                        ? "This computer"
                         : platform
                           ? `${platform.os === "linux" ? "Linux" : platform.os === "darwin" ? "macOS" : platform.os} ${platform.arch}`
                           : "Remote computer"}
@@ -184,12 +199,17 @@ export function Computers() {
                     >
                       Set up agents
                     </Button>
-                  ) : (
+                  ) : canStartConversation ? (
                     <Button
                       size="sm"
-                      variant={local ? "outline" : "default"}
+                      variant="outline"
                       disabled={action.busy}
-                      aria-expanded={picking}
+                      aria-expanded={machineProjects.length > 1 ? picking : undefined}
+                      aria-controls={
+                        machineProjects.length > 1
+                          ? `computer-projects-${environment.environmentId}`
+                          : undefined
+                      }
                       onClick={() => {
                         if (machineProjects.length === 0) {
                           if (scratchWorkspaceRootFor(environment.environmentId))
@@ -204,20 +224,67 @@ export function Computers() {
                         else setChoosingProject(picking ? null : environment.environmentId);
                       }}
                     >
-                      {machineProjects.length === 0 &&
-                      !scratchWorkspaceRootFor(environment.environmentId)
-                        ? "Add project"
-                        : "Start thread"}
+                      New conversation
                       <ArrowUpRightIcon aria-hidden />
                     </Button>
-                  )}
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={!connected || action.busy}
+                    title={!connected ? "Reconnect this computer to add a project" : undefined}
+                    onClick={() => addProject(environment.environmentId)}
+                  >
+                    <PlusIcon aria-hidden />
+                    Add project
+                  </Button>
                 </div>
                 {connected && agentsReady === 0 && (
                   <AgentReadiness environmentId={environment.environmentId} />
                 )}
-                {picking && connected && (
-                  <div className="mt-4 flex flex-col gap-2 border-t border-border pt-3">
-                    <p className="text-xs font-medium">Choose a project on {environment.label}</p>
+                {recentConversation && (
+                  <div className="mt-4 flex min-w-0 flex-col items-start gap-3 rounded-lg bg-muted/40 p-3 sm:flex-row sm:items-center">
+                    <div className="flex min-w-0 w-full items-start gap-3 sm:flex-1 sm:items-center">
+                      <MessageSquareIcon
+                        aria-hidden
+                        className="size-4 shrink-0 text-muted-foreground"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-medium sm:truncate">
+                          {recentConversation.title || "Untitled conversation"}
+                        </p>
+                        <p className="break-words text-xs text-muted-foreground sm:truncate">
+                          {recentProject?.title ?? "Recent conversation"}
+                        </p>
+                      </div>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      render={
+                        <Link
+                          to="/$environmentId/$threadId"
+                          params={buildThreadRouteParams(
+                            scopeThreadRef(environment.environmentId, recentConversation.id),
+                          )}
+                        />
+                      }
+                    >
+                      Continue recent work
+                    </Button>
+                  </div>
+                )}
+                {picking && connected && agentsReady > 0 && (
+                  <div
+                    id={`computer-projects-${environment.environmentId}`}
+                    className="mt-4 flex flex-col gap-2 border-t border-border pt-3"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium">Choose a project on {environment.label}</p>
+                      <Button size="xs" variant="ghost" onClick={() => setChoosingProject(null)}>
+                        Cancel
+                      </Button>
+                    </div>
                     {machineProjects.map((project) => (
                       <button
                         key={project.id}
@@ -240,16 +307,6 @@ export function Computers() {
                         </span>
                       </button>
                     ))}
-                    <div>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => addProject(environment.environmentId)}
-                      >
-                        <PlusIcon aria-hidden />
-                        Add project
-                      </Button>
-                    </div>
                   </div>
                 )}
               </section>
@@ -258,8 +315,7 @@ export function Computers() {
         </div>
       )}
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Each computer has its own projects and agents. Start a thread and work in the normal
-        composer.
+        Continue an existing conversation, or start a new one on the computer you choose.
       </p>
     </div>
   );

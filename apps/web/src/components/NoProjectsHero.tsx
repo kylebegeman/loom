@@ -1,20 +1,36 @@
+import { Link } from "@tanstack/react-router";
 import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
 import { useScratchProject } from "../hooks/useScratchProject";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironment, usePrimaryEnvironmentId } from "../state/environments";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
 import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
-export function NoProjectsHero() {
+export function NoProjectsHero({
+  savedProjectsUnavailable = false,
+}: {
+  readonly savedProjectsUnavailable?: boolean;
+}) {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
+  const scratchComputer = useEnvironment(scratchTargetEnvironmentId);
+  const [startingScratch, setStartingScratch] = useState(false);
+  const startWithoutProject = async () => {
+    if (scratchTargetEnvironmentId === null || startingScratch) return;
+    setStartingScratch(true);
+    try {
+      await startScratchThread(scratchTargetEnvironmentId);
+    } finally {
+      setStartingScratch(false);
+    }
+  };
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
@@ -24,13 +40,22 @@ export function NoProjectsHero() {
         <Empty size="hero" className="flex-1">
           <div className="w-full max-w-lg px-8 py-12">
             <EmptyHeader className="max-w-none">
-              <EmptyTitle>What should we work on?</EmptyTitle>
+              <EmptyTitle>
+                {savedProjectsUnavailable
+                  ? "Reconnect to your projects"
+                  : "What should we work on?"}
+              </EmptyTitle>
               <EmptyDescription>
-                {scratchTargetEnvironmentId === null
-                  ? "Add a project to start your first thread."
-                  : "Add a project, or start without one."}
+                {savedProjectsUnavailable
+                  ? "Open Computers to reconnect. Your saved conversations are still in the sidebar."
+                  : scratchTargetEnvironmentId === null
+                    ? "Choose a computer and add a project to start your first conversation."
+                    : "Add a project, or start without one."}
               </EmptyDescription>
-              <div className="mt-6 flex justify-center gap-2">
+              {scratchComputer === null ? null : (
+                <EmptyDescription>New work starts on {scratchComputer.label}.</EmptyDescription>
+              )}
+              <div className="mt-6 flex flex-wrap justify-center gap-2">
                 <Button size="sm" onClick={openAddProject}>
                   <PlusIcon className="size-4" />
                   Add project
@@ -39,12 +64,19 @@ export function NoProjectsHero() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                    disabled={startingScratch}
+                    aria-busy={startingScratch}
+                    onClick={() => void startWithoutProject()}
                   >
                     <MessageSquareDashedIcon className="size-4" />
-                    Start without a project
+                    {startingScratch ? "Opening conversation…" : "Start without a project"}
                   </Button>
                 )}
+              </div>
+              <div className="mt-3">
+                <Button size="sm" variant="ghost" render={<Link to="/computers" />}>
+                  Open Computers
+                </Button>
               </div>
             </EmptyHeader>
           </div>

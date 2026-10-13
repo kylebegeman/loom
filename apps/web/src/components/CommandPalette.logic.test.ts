@@ -14,6 +14,7 @@ import {
   filterCommandPaletteGroups,
   findHighlightedCommandPaletteItem,
   reduceCommandPaletteUiState,
+  resolveAddProjectOpenTarget,
   type CommandPaletteActionItem,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
@@ -253,6 +254,18 @@ describe("reduceCommandPaletteUiState", () => {
       open: true,
       mode: "command",
       openIntent: { kind: "new-thread-in" },
+    });
+  });
+
+  it("preserves the explicitly chosen computer for adding a project", () => {
+    const environmentId = EnvironmentId.make("remote-computer");
+    const state = reduceCommandPaletteUiState(closedState, {
+      _tag: "OpenAddProject",
+      environmentId,
+    });
+    expect(state.openIntent).toEqual({ kind: "add-project", environmentId });
+    expect(reduceCommandPaletteUiState(state, { _tag: "OpenAddProject" }).openIntent).toEqual({
+      kind: "add-project",
     });
   });
 
@@ -892,5 +905,34 @@ describe("virtualized command palette rows", () => {
     expect(findHighlightedCommandPaletteItem(groups, "thread-b")?.value).toBe("thread-b");
     expect(findHighlightedCommandPaletteItem(groups, "offline")).toBeNull();
     expect(findHighlightedCommandPaletteItem(groups, null)).toBeNull();
+  });
+});
+
+describe("resolveAddProjectOpenTarget", () => {
+  const local = EnvironmentId.make("local");
+  const remote = EnvironmentId.make("remote");
+  it("opens the chosen computer without asking again", () => {
+    expect(resolveAddProjectOpenTarget([local, remote], remote)).toEqual({
+      kind: "computer",
+      environmentId: remote,
+    });
+  });
+  it("preserves an unavailable chosen computer without falling back", () => {
+    expect(resolveAddProjectOpenTarget([local], remote)).toEqual({
+      kind: "unavailable",
+      environmentId: remote,
+    });
+    expect(resolveAddProjectOpenTarget([], remote)).toEqual({
+      kind: "unavailable",
+      environmentId: remote,
+    });
+  });
+  it("keeps selection for untargeted requests and connects when no computer is available", () => {
+    expect(resolveAddProjectOpenTarget([local, remote])).toEqual({ kind: "choose" });
+    expect(resolveAddProjectOpenTarget([remote])).toEqual({
+      kind: "computer",
+      environmentId: remote,
+    });
+    expect(resolveAddProjectOpenTarget([])).toEqual({ kind: "connect" });
   });
 });

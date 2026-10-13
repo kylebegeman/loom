@@ -7,7 +7,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
-import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -18,7 +17,8 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useConnectedEnvironmentIds, useEnvironments } from "../state/environments";
+import { resolveIndexDraftProject } from "../lib/indexDraftLanding";
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
@@ -36,27 +36,26 @@ function ChatIndexRouteView() {
 
 /**
  * Landing on the index route drops straight into a draft thread for the most
- * recently active project, so the first screen is a prompt instead of a dead
- * end. Falls back to an add-project hero when no project exists yet.
+ * recently active connected project. Cached projects on offline computers
+ * stay in the sidebar, and the landing offers a way to reconnect to them.
  */
 function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
   const handleNewThread = useNewThreadHandler();
   const startingRef = useRef(false);
-  const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
+  const [startFailed, setStartFailed] = useState(false);
 
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped
-        ? (sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null)
-        : null,
-    [bootstrapped, projects, threads],
+      bootstrapped ? resolveIndexDraftProject(projects, threads, connectedEnvironmentIds) : null,
+    [bootstrapped, projects, threads, connectedEnvironmentIds],
   );
 
   useEffect(() => {
-    if (mostRecentProject === null || startingRef.current) {
+    if (startFailed || mostRecentProject === null || startingRef.current) {
       return;
     }
     startingRef.current = true;
@@ -64,28 +63,19 @@ function IndexDraftLanding() {
       replace: true,
     }).catch(() => {
       startingRef.current = false;
-      setStartState((state) => ({ ...state, failed: true }));
+      setStartFailed(true);
     });
-  }, [handleNewThread, mostRecentProject, startState.retryRequest]);
+  }, [handleNewThread, mostRecentProject, startFailed]);
 
   if (!bootstrapped) {
     return null;
   }
   if (mostRecentProject !== null) {
-    return startState.failed ? (
-      <DraftStartError
-        onRetry={() => {
-          setStartState((state) => ({
-            failed: false,
-            retryRequest: state.retryRequest + 1,
-          }));
-        }}
-      />
-    ) : null;
+    return startFailed ? <DraftStartError onRetry={() => setStartFailed(false)} /> : null;
   }
   // First-run routing to the welcome wizard happens in FirstRunGate at the
   // root, before this route ever renders.
-  return <NoProjectsHero />;
+  return <NoProjectsHero savedProjectsUnavailable={projects.length > 0} />;
 }
 
 function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
@@ -98,10 +88,13 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
           <EmptyDescription>
             The project is still available. Try opening the draft again.
           </EmptyDescription>
-          <div className="mt-5 flex justify-center">
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Button size="sm" onClick={onRetry}>
               <RefreshIcon size="md" />
               Try again
+            </Button>
+            <Button size="sm" variant="outline" render={<Link to="/computers" />}>
+              Open Computers
             </Button>
           </div>
         </EmptyHeader>

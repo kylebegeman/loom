@@ -55,7 +55,6 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
-import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
@@ -184,6 +183,7 @@ import {
   findHighlightedCommandPaletteItem,
   type CommandPaletteActionItem,
   type CommandPaletteOpenIntent,
+  resolveAddProjectOpenTarget,
   type CommandPaletteProject,
   type CommandPaletteSubmenuItem,
   type CommandPaletteView,
@@ -368,10 +368,6 @@ function notifyThemeSaveFailure(): void {
   );
 }
 
-function projectFavicon(project: Project) {
-  return <ProjectFavicon project={project} className="size-4" />;
-}
-
 export function CommandPalette({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
@@ -384,7 +380,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     (mode: SearchOverlayMode) => dispatch({ _tag: "ToggleMode", mode }),
     [],
   );
-  const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
+  const openAddProject = useCallback(
+    (environmentId?: EnvironmentId) =>
+      dispatch({
+        _tag: "OpenAddProject",
+        ...(environmentId !== undefined ? { environmentId } : {}),
+      }),
+    [],
+  );
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -503,7 +506,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
-          openAddProject();
+          openAddProject(detail.environmentId);
         } else if (detail.query !== undefined) {
           dispatch({
             _tag: "OpenSearch",
@@ -914,7 +917,10 @@ function OpenCommandPaletteDialog(props: {
 
   const addProjectEnvironmentOptions = useMemo(() => {
     const options = environments
-      .filter((environment) => canCreateProjectInEnvironment(environment.connection.phase))
+      .filter(
+        (environment) =>
+          environment.entry.enabled && canCreateProjectInEnvironment(environment.connection.phase),
+      )
       .map((environment): AddProjectEnvironmentOption => {
         const isPrimary = environment.entry.target._tag === "PrimaryConnectionTarget";
         return {
@@ -1424,6 +1430,7 @@ function OpenCommandPaletteDialog(props: {
         {
           addonIcon: view.addonIcon,
           groups: view.groups,
+          ...(view.existingFolderOnly ? { existingFolderOnly: true } : {}),
           ...(view.initialQuery ? { initialQuery: view.initialQuery } : {}),
         },
       ]);
@@ -1474,6 +1481,7 @@ function OpenCommandPaletteDialog(props: {
       const view: CommandPaletteView = {
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
         groups: [],
+        existingFolderOnly: true,
         initialQuery,
       };
 
@@ -1548,9 +1556,9 @@ function OpenCommandPaletteDialog(props: {
         {
           kind: "action",
           value: `action:add-project:${environmentId}:local`,
-          searchTerms: ["local", "folder", "directory", "browse"],
-          title: "Local folder",
-          description: "Browse a folder on disk",
+          searchTerms: ["local", "folder", "directory", "browse", "open", "existing"],
+          title: "Existing folder",
+          description: `Open a folder on ${environmentLabelById.get(environmentId) ?? "this computer"}`,
           icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
           keepOpen: true,
           run: async () => {
@@ -1642,9 +1650,16 @@ function OpenCommandPaletteDialog(props: {
         });
       }
 
-      return [{ value: `sources:${environmentId}`, label: "Sources", items: sourceItems }];
+      return [
+        {
+          value: `sources:${environmentId}`,
+          label: `On ${environmentLabelById.get(environmentId) ?? "this computer"}`,
+          items: sourceItems,
+        },
+      ];
     },
     [
+      environmentLabelById,
       newProjectsRootFor,
       openSourceControlSettings,
       startAddProjectBrowse,
@@ -1701,7 +1716,7 @@ function OpenCommandPaletteDialog(props: {
     description: option.isConnected
       ? option.isPrimary
         ? "This device"
-        : option.environmentId
+        : "Remote computer"
       : option.status,
     disabled: !option.isConnected,
     icon: <EnvironmentMachineIcon kind={option.machine} className={ITEM_ICON_CLASS} />,
@@ -1725,40 +1740,90 @@ function OpenCommandPaletteDialog(props: {
     () => [
       {
         value: "environments",
-        label: "Environments",
+        label: "Computers",
         items: addProjectEnvironmentItems,
       },
     ],
     [addProjectEnvironmentItems],
   );
 
-  const openAddProjectFlow = useCallback(() => {
-    // With no connected environment there is nothing to browse, so the only
-    // useful next step is connecting one.
-    if (addProjectEnvironmentOptions.length === 0) {
-      setOpen(false);
-      void navigate({ to: "/settings/connections" });
-      return;
-    }
-
-    if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
-      pushPaletteView({
+  const openAddProjectFlow = useCallback(
+    (requestedEnvironmentId?: EnvironmentId) => {
+      const target = resolveAddProjectOpenTarget(
+        addProjectEnvironmentOptions.map((option) => option.environmentId),
+        requestedEnvironmentId,
+      );
+      const computerSelectionView: CommandPaletteView = {
         addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
         groups: addProjectEnvironmentGroups,
-      });
-      return;
-    }
+      };
+      if (target.kind === "computer") {
+        startAddProjectSourceSelection(target.environmentId);
+        return;
+      }
+      if (target.kind === "unavailable") {
+        const environment = environments.find(
+          (candidate) => candidate.environmentId === target.environmentId,
+        );
+        pushPaletteView({
+          addonIcon: <MonitorIcon className={ADDON_ICON_CLASS} />,
+          groups: [
+            {
+              value: "add-project-unavailable",
+              label: `${environment?.label ?? "The selected computer"} is unavailable`,
+              items: [
+                {
+                  kind: "action",
+                  value: "add-project:manage-computers",
+                  title: "Manage computers",
+                  description: "Reconnect the selected computer before adding a project there",
+                  searchTerms: ["reconnect", "connect", "computer", "offline"],
+                  icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+                  run: async () => {
+                    setOpen(false);
+                    await navigate({ to: "/computers" });
+                  },
+                },
+                ...(addProjectEnvironmentOptions.length > 0
+                  ? [
+                      {
+                        kind: "action" as const,
+                        value: "add-project:choose-computer",
+                        title: "Choose another computer",
+                        searchTerms: ["choose", "computer", "environment"],
+                        icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+                        keepOpen: true,
+                        run: async () => {
+                          pushPaletteView(computerSelectionView);
+                        },
+                      },
+                    ]
+                  : []),
+              ],
+            },
+          ],
+        });
+        return;
+      }
+      // With no connected computer there is nothing to browse.
+      if (target.kind === "connect") {
+        setOpen(false);
+        void navigate({ to: "/computers" });
+        return;
+      }
 
-    void startAddProjectSourceSelection(defaultAddProjectEnvironmentId);
-  }, [
-    addProjectEnvironmentGroups,
-    addProjectEnvironmentOptions.length,
-    defaultAddProjectEnvironmentId,
-    navigate,
-    pushPaletteView,
-    setOpen,
-    startAddProjectSourceSelection,
-  ]);
+      pushPaletteView(computerSelectionView);
+    },
+    [
+      addProjectEnvironmentGroups,
+      addProjectEnvironmentOptions,
+      environments,
+      navigate,
+      pushPaletteView,
+      setOpen,
+      startAddProjectSourceSelection,
+    ],
+  );
 
   // New project starts on this device (options list it first); the name step
   // lists the other machines when there is a choice.
@@ -1785,7 +1850,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
     clearOpenIntent();
-    openAddProjectFlow();
+    openAddProjectFlow(openIntent.environmentId);
   }, [clearOpenIntent, openAddProjectFlow, openIntent]);
 
   useLayoutEffect(() => {
@@ -2372,6 +2437,7 @@ function OpenCommandPaletteDialog(props: {
       readonly rawCwd: string;
       readonly platform: string;
       readonly currentProjectCwd: string | null;
+      readonly createWorkspaceRootIfMissing: boolean;
     }) => {
       const environment = environments.find(
         (candidate) => candidate.environmentId === input.environmentId,
@@ -2467,18 +2533,37 @@ function OpenCommandPaletteDialog(props: {
           projectId,
           title: inferProjectTitleFromPath(cwd),
           workspaceRoot: cwd,
-          createWorkspaceRootIfMissing: true,
+          createWorkspaceRootIfMissing: input.createWorkspaceRootIfMissing,
           defaultModelSelection: null,
         },
       });
       if (createResult._tag === "Failure") {
         if (!isAtomCommandInterrupted(createResult)) {
           const error = squashAtomCommandFailure(createResult);
+          const detail = errorMessage(error);
+          const folderHint = `On ${environment?.label ?? "the selected computer"}: ${cwd}. Check that this folder exists and that Loom can access it.`;
           toastManager.add(
             stackedThreadToast({
               type: "error",
-              title: "Failed to add project",
-              description: error instanceof Error ? error.message : "An error occurred.",
+              title: input.createWorkspaceRootIfMissing
+                ? "Failed to add project"
+                : "Could not open folder",
+              description: input.createWorkspaceRootIfMissing
+                ? error instanceof Error
+                  ? error.message
+                  : "An error occurred."
+                : [
+                    folderHint,
+                    [
+                      "Failed to mutate project",
+                      "Failed to mutate project.",
+                      "An error occurred.",
+                    ].includes(detail)
+                      ? null
+                      : detail,
+                  ]
+                    .filter(Boolean)
+                    .join(" "),
             }),
           );
         }
@@ -2516,13 +2601,14 @@ function OpenCommandPaletteDialog(props: {
   );
 
   const handleAddProject = useCallback(
-    async (rawCwd: string) => {
+    async (rawCwd: string, createWorkspaceRootIfMissing: boolean) => {
       if (!browseEnvironmentId) return;
       await handleAddProjectForEnvironment({
         environmentId: browseEnvironmentId,
         rawCwd,
         platform: browseEnvironmentPlatform,
         currentProjectCwd: currentProjectCwdForBrowse,
+        createWorkspaceRootIfMissing,
       });
     },
     [
@@ -2722,7 +2808,7 @@ function OpenCommandPaletteDialog(props: {
         }
         return;
       }
-      await handleAddProject(cloneResult.value.cwd);
+      await handleAddProject(cloneResult.value.cwd, true);
       return;
     }
 
@@ -2906,7 +2992,7 @@ function OpenCommandPaletteDialog(props: {
       ? null
       : {
           value: "new-project-machines",
-          label: "Environments",
+          label: "Computers",
           items: newProjectEnvironmentOptions.map((option) => ({
             ...buildEnvironmentItem(
               option,
@@ -3060,8 +3146,10 @@ function OpenCommandPaletteDialog(props: {
   const inputPlaceholder =
     newProjectFlow !== null
       ? "Project name"
-      : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
-        getCommandPaletteInputPlaceholder(paletteMode));
+      : currentView?.existingFolderOnly
+        ? "Existing folder path"
+        : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
+          getCommandPaletteInputPlaceholder(paletteMode));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canWriteSourceControl = useEnvironmentScope(
@@ -3081,6 +3169,7 @@ function OpenCommandPaletteDialog(props: {
     (!isCloneDestinationStep || canCloneProject) &&
     canCreateProjectInEnvironment(browseEnvironment?.connection.phase);
   const willCreateProjectPath =
+    (isCloneDestinationStep || currentView?.existingFolderOnly !== true) &&
     canSubmitBrowsePath &&
     !isBrowsePending &&
     browseAccessError === null &&
@@ -3093,9 +3182,11 @@ function OpenCommandPaletteDialog(props: {
     ? willCreateProjectPath
       ? "Create & Clone"
       : "Clone"
-    : willCreateProjectPath
-      ? "Create & Add"
-      : "Add";
+    : currentView?.existingFolderOnly
+      ? "Open"
+      : willCreateProjectPath
+        ? "Create & Add"
+        : "Add";
   const addShortcutLabel = hasHighlightedBrowseItem ? `${submitModifierLabel} Enter` : "Enter";
   const remoteProjectButtonLabel = addProjectCloneFlow
     ? addProjectCloneFlow.source === "url"
@@ -3214,7 +3305,7 @@ function OpenCommandPaletteDialog(props: {
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
       } else {
-        void handleAddProject(resolvedAddProjectPath);
+        void handleAddProject(resolvedAddProjectPath, currentView?.existingFolderOnly !== true);
       }
       return;
     }
@@ -3380,10 +3471,11 @@ function OpenCommandPaletteDialog(props: {
         rawCwd: selection.linuxPath,
         platform: "Linux",
         currentProjectCwd: null,
+        createWorkspaceRootIfMissing: false,
       });
       return;
     }
-    await handleAddProject(pickedPath);
+    await handleAddProject(pickedPath, false);
   }, [
     browseDesktopInstanceId,
     browseEnvironmentId,
@@ -3479,7 +3571,10 @@ function OpenCommandPaletteDialog(props: {
                 if (isCloneDestinationStep) {
                   void submitAddProjectCloneFlow(resolvedAddProjectPath);
                 } else {
-                  void handleAddProject(resolvedAddProjectPath);
+                  void handleAddProject(
+                    resolvedAddProjectPath,
+                    currentView?.existingFolderOnly !== true,
+                  );
                 }
               }}
             />
@@ -3644,9 +3739,14 @@ function OpenCommandPaletteDialog(props: {
                 ? {
                     emptyStateMessage: "Press Enter to create this folder and add it as a project.",
                   }
-                : threadSearch.isPending
-                  ? { emptyStateMessage: "Searching thread messages…" }
-                  : {})}
+                : currentView?.existingFolderOnly
+                  ? {
+                      emptyStateMessage:
+                        "Enter an existing folder path and press Enter to open it. Missing folders are not created.",
+                    }
+                  : threadSearch.isPending
+                    ? { emptyStateMessage: "Searching thread messages…" }
+                    : {})}
       />
     </CommandPaletteContent>
   );
