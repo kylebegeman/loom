@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import {
@@ -167,6 +168,31 @@ describe("Scratch checkout archives", () => {
     }).pipe(Effect.provide(layer), Effect.scoped),
   );
 
+  it.live("retains Scratch when its sibling archive parent is owned by another user", () =>
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const path = yield* Path.Path;
+      const uid = yield* HostProcess.UserId;
+      const parent = path.dirname(f.root);
+      const error = yield* archiveScratchCheckout(f.input).pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...f.fs,
+          stat: (file) =>
+            f.fs
+              .stat(file)
+              .pipe(
+                Effect.map((info) =>
+                  file === parent ? { ...info, uid: Option.some((uid ?? 0) + 1) } : info,
+                ),
+              ),
+        }),
+        Effect.flip,
+      );
+      expect(error.message).toContain("root ownership or filesystem changed");
+      expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      expect(yield* f.fs.exists(scratchArchivePaths(f.input).archive)).toBe(false);
+    }).pipe(Effect.provide(layer), Effect.scoped),
+  );
   it.live("requires the process UID and retains foreign Git metadata", () =>
     Effect.gen(function* () {
       const f = yield* fixture;

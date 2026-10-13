@@ -97,8 +97,10 @@ jobs:
             packages/client-runtime/src/fork/project-checkout.permissions.test.ts \
             apps/server/src/project/ProjectCheckoutManagement.test.ts \
             apps/server/src/workspace/ManagedProjectCheckout.test.ts \
+            apps/server/src/workspace/ScratchCheckout.test.ts \
             apps/server/src/storageCleanup.test.ts \
             apps/server/src/storageCleanupScheduling.test.ts \
+            apps/server/src/preview/ServerBrowser.test.ts \
             packages/shared/src/git.test.ts \
             packages/client-runtime/src/fork/workspace-handoff-flow.test.ts \
             packages/client-runtime/src/fork/workspace-handoff-destinations.test.ts

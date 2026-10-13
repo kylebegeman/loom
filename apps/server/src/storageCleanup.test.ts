@@ -18,6 +18,7 @@ import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
 import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
+import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import {
@@ -47,12 +48,14 @@ import { CodexProviderCapabilitiesV2 } from "./orchestration-v2/Adapters/CodexAd
 import { ServerActivation } from "./serverActivation.ts";
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EventId,
   ProjectId,
   ProviderInstanceId,
   RunId,
   RuntimeRequestId,
   ThreadId,
   type OrchestrationV2ThreadShell,
+  type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import {
@@ -286,6 +289,12 @@ const cleanupFixture = Effect.gen(function* () {
   let terminalListener:
     | Parameters<TerminalManager.TerminalManager["Service"]["subscribeMetadata"]>[0]
     | undefined;
+  const activation = yield* Deferred.make<void>();
+  const domainSubscribed = yield* Deferred.make<void>();
+  const domainEvents = yield* PubSub.unbounded<{
+    event: OrchestrationV2DomainEvent;
+    consumed: Deferred.Deferred<void>;
+  }>();
   const context = yield* Layer.build(StorageCleanup.layer).pipe(
     Effect.provideService(GitVcsDriver.GitVcsDriver, {
       ...git,
@@ -332,7 +341,23 @@ const cleanupFixture = Effect.gen(function* () {
         Effect.sync(() => ({ threads: input?.location === "archive" ? [] : threads })),
     } as unknown as ProjectionStore.ProjectionStoreV2["Service"]),
     Effect.provideService(Orchestrator.OrchestratorV2, {
-      streamDomainEvents: Stream.empty,
+      streamDomainEvents: Stream.unwrap(
+        PubSub.subscribe(domainEvents).pipe(
+          Effect.tap(() => Deferred.succeed(domainSubscribed, undefined)),
+          Effect.map((subscription) =>
+            Stream.fromSubscription(subscription).pipe(
+              Stream.flatMap(({ event, consumed }) =>
+                Stream.succeed(event).pipe(
+                  // Signal only after the service's event handler has processed this item.
+                  Stream.concat(
+                    Stream.fromEffect(Deferred.succeed(consumed, undefined)).pipe(Stream.drain),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     } as unknown as Orchestrator.OrchestratorV2["Service"]),
     Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) =>
       Effect.sync(() =>
@@ -371,10 +396,36 @@ const cleanupFixture = Effect.gen(function* () {
           };
         }),
     } as unknown as TerminalManager.TerminalManager["Service"]),
-    Effect.provideService(ServerActivation, Effect.never),
+    Effect.provideService(ServerActivation, Deferred.await(activation)),
   );
+  const service = Context.get(context, StorageCleanup.StorageCleanup);
   return {
-    service: Context.get(context, StorageCleanup.StorageCleanup),
+    service,
+    activateEvents: Effect.gen(function* () {
+      yield* Deferred.succeed(activation, undefined);
+      yield* Deferred.await(domainSubscribed);
+      yield* service.drain;
+    }),
+    publishThreadEvent: (
+      type: "thread.settled" | "thread.unpinned",
+      thread: OrchestrationV2ThreadShell,
+    ) =>
+      Effect.gen(function* () {
+        yield* Deferred.await(domainSubscribed);
+        const consumed = yield* Deferred.make<void>();
+        yield* PubSub.publish(domainEvents, {
+          event: {
+            id: EventId.make(`cleanup:${type}:${thread.id}`),
+            threadId: thread.id,
+            occurredAt: at(0),
+            type,
+            payload: { ...thread, lastVisitedAt: thread.lastVisitedAt ?? null },
+          },
+          consumed,
+        });
+        yield* Deferred.await(consumed);
+        yield* service.drain;
+      }),
     noteTerminal: (event: Parameters<NonNullable<typeof terminalListener>>[0]) =>
       terminalListener!(event),
     keepProviderSession: () => {
@@ -484,6 +535,33 @@ const runCleanupTest = <A, E>(
 ) => effect.pipe(Effect.provide(cleanupTestLayer), Effect.scoped);
 
 describe("storage cleanup reports and local file policies", () => {
+  it.live(
+    "waits for worktree settle-hook cleanup requests instead of reclaiming on thread.settled",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* cleanupFixture;
+          yield* f.publish();
+          f.disable();
+          yield* f.activateEvents;
+          f.settle();
+          yield* f.publishThreadEvent(
+            "thread.settled",
+            shell({
+              branch: "feature",
+              worktreePath: f.worktree,
+              settledOverride: "settled",
+              settledAt: at(0),
+            }),
+          );
+          expect(yield* f.fs.exists(f.worktree)).toBe(true);
+          // ThreadSettlementService sends this request only after the settle hook completes.
+          yield* f.service.requestSweep;
+          yield* f.service.drain;
+          expect(yield* f.fs.exists(f.worktree)).toBe(false);
+        }),
+      ),
+  );
   it.live(
     "releases, restores and prepares the same checkout, including retry after failed setup",
     () =>
@@ -1384,6 +1462,66 @@ const primaryFixture = Effect.gen(function* () {
   return { ...f, cwd, mark };
 });
 describe("primary project storage cleanup", () => {
+  it.live(
+    "automatically releases after the final conversation emits thread.settled with global policy off",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(null);
+          yield* setManagedProjectRetention(
+            f.cwd,
+            "release-on-settle",
+            ProjectId.make("project-1"),
+          );
+          const conversations = [
+            shell(),
+            shell({ id: ThreadId.make("thread-2") }),
+            shell({ id: ThreadId.make("thread-3") }),
+          ];
+          f.setThreads(conversations);
+          yield* f.activateEvents;
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+          for (const index of [0, 1, 2]) {
+            const settled = shell({
+              ...conversations[index]!,
+              settledOverride: "settled",
+              settledAt: at(0),
+            });
+            conversations[index] = settled;
+            f.setThreads([...conversations]);
+            yield* f.publishThreadEvent("thread.settled", settled);
+            expect(yield* f.fs.exists(f.cwd)).toBe(index !== 2);
+          }
+          const report = yield* f.service.latestReport;
+          expect(report?.trigger).toBe("automatic");
+          expect(report?.entries.find((entry) => entry.kind === "project")?.outcome).toBe(
+            "removed",
+          );
+        }),
+      ),
+  );
+  it.live.each(["release-on-settle", "inherit"] as const)(
+    "automatically rechecks %s cleanup when a protected conversation is unpinned",
+    (retention) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(retention === "inherit" ? 8 : null);
+          yield* setManagedProjectRetention(f.cwd, retention, ProjectId.make("project-1"));
+          f.setThreads([shell({ settledOverride: "settled", settledAt: at(0), pinnedAt: at(0) })]);
+          yield* f.activateEvents;
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+          const unpinned = shell({ settledOverride: "settled", settledAt: at(0), pinnedAt: null });
+          f.setThreads([unpinned]);
+          yield* f.publishThreadEvent("thread.unpinned", unpinned);
+          expect(yield* f.fs.exists(f.cwd)).toBe(false);
+          expect((yield* f.service.latestReport)?.trigger).toBe("automatic");
+        }),
+      ),
+  );
   it.live(
     "project-specific settlement releases with environment cleanup off and survives restoration",
     () =>

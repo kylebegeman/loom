@@ -123,6 +123,8 @@ const EDITABLE_AT_POINT_SCRIPT = `(x, y) => {
 }`;
 const UNATTACHED_FILL_VIEWPORT = { width: 1280, height: 800 } as const;
 const NAVIGATION_TIMEOUT_MS = 15_000;
+// Native locator timeouts must settle before the host watchdog tears down a stalled page.
+const OPERATION_TIMEOUT_HEADROOM_MS = 250; // fork: browser-timeout-recovery
 const VIEWER_NAVIGATION_OPTIONS = { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS } as const;
 const ACTION_TIMELINE_LIMIT = 50;
 
@@ -491,6 +493,16 @@ const make = Effect.gen(function* () {
 
   const tabs = new Map<string, ServerTab>();
   const pendingTabs = new Map<string, Promise<ServerTab>>();
+  // A stalled renderer can be replaced without throwing away its profile's cookies/storage.
+  const recoveryPages = new Map<
+    string,
+    {
+      readonly context: BrowserContext;
+      readonly isolated: boolean;
+      readonly profileId: string | undefined;
+      readonly url: string;
+    }
+  >();
   /** A replacement endpoint must wait until the previous relay has been released. */
   const desktopReleases = new Map<string, Promise<void>>();
   /** Sessions closed while their tab was still opening; the open discards its page. */
@@ -517,6 +529,9 @@ const make = Effect.gen(function* () {
         }),
       ),
     onContextClose: (context) => {
+      for (const [key, recovery] of recoveryPages) {
+        if (recovery.context === context) recoveryPages.delete(key);
+      }
       for (const tab of tabs.values()) {
         if (tab.page.context() === context) dropTab(tab, true);
       }
@@ -689,7 +704,12 @@ const make = Effect.gen(function* () {
   /** Whether the preview session for a tab still exists. */
   const sessionOpen = (tab: ServerTab) => !closedSessions.has(tabKey(tab.threadId, tab.tabId));
 
-  const dropTab = (tab: ServerTab, closeSession: boolean, replacedByDesktop = false) => {
+  const dropTab = (
+    tab: ServerTab,
+    closeSession: boolean,
+    replacedByDesktop = false,
+    preserveContext = false,
+  ) => {
     const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
     tabs.delete(key);
@@ -698,7 +718,7 @@ const make = Effect.gen(function* () {
     clearAbortedNavigation(tab);
     // A desktop page outlives the connection unless its session closed with it.
     const end =
-      (tab.desktop || replacedByDesktop) && !closeSession && sessionOpen(tab)
+      (tab.desktop || replacedByDesktop || preserveContext) && !closeSession && sessionOpen(tab)
         ? "reconnect"
         : "gone";
     for (const viewer of tab.viewers) viewer.push({ _tag: end });
@@ -706,7 +726,7 @@ const make = Effect.gen(function* () {
     // The desktop owns its page; letting go only ends this connection.
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
     else void tab.page.close().catch(constVoid);
-    if (tab.isolatedContext) void tab.page.context().close().catch(constVoid);
+    if (tab.isolatedContext && !preserveContext) void tab.page.context().close().catch(constVoid);
     void tab.recording?.encoder.close().catch(constVoid);
     void NodeFSP.rm(downloadDir(tab), { recursive: true, force: true }).catch(constVoid);
     reportLiveTabs();
@@ -780,9 +800,20 @@ const make = Effect.gen(function* () {
         desktop === null &&
         ((snapshot.automationOwner !== undefined && snapshot.profileId === undefined) ||
           snapshot.profileId === INCOGNITO_BROWSER_PROFILE_ID);
+      const key = tabKey(snapshot.threadId, snapshot.tabId);
+      const recovery = recoveryPages.get(key);
+      const retainedContext =
+        desktop === null && recovery !== undefined && recovery.profileId === snapshot.profileId
+          ? recovery.context
+          : undefined;
+      if (recovery !== undefined && retainedContext === undefined) {
+        recoveryPages.delete(key);
+        if (recovery.isolated) await recovery.context.close().catch(constVoid);
+      }
       const context =
         adopted?.page.context() ??
         desktop?.page.context() ??
+        retainedContext ??
         (await contexts.contextFor(
           snapshot.profileId ?? "default",
           isolatedContext ? tabKey(snapshot.threadId, snapshot.tabId) : undefined,
@@ -922,8 +953,8 @@ const make = Effect.gen(function* () {
       // Popups become tabs and keep `window.opener`, so sign-in popups can report back.
       page.on("popup", (popup) => void adoptPopup(tab, popup));
       // Playwright cannot reload a crashed page, so it must leave the tab list.
-      const key = tabKey(tab.threadId, tab.tabId);
-      if (closedPendingTabs.delete(key)) {
+      const currentKey = tabKey(tab.threadId, tab.tabId);
+      if (closedPendingTabs.delete(currentKey)) {
         await control.close().catch(constVoid);
         if (desktop) await desktop.close().catch(constVoid);
         else await page.close().catch(constVoid);
@@ -932,14 +963,21 @@ const make = Effect.gen(function* () {
       }
       page.on("close", () => dropTab(tab, true));
       page.on("crash", () => dropTab(tab, true));
-      tabs.set(key, tab);
+      tabs.set(currentKey, tab);
+      recoveryPages.delete(currentKey);
       reportLiveTabs();
       // A late attachment can already be signed in at a different URL than the fallback page.
       if (desktop) void reportLoaded(tab);
       // A popup is already loading its own URL, and the desktop loads its tab's.
-      if (!adopted && !desktop && snapshot.navStatus._tag === "Loading") {
+      const initialUrl =
+        retainedContext !== undefined && recovery?.url !== "about:blank"
+          ? recovery?.url
+          : snapshot.navStatus._tag === "Loading" || snapshot.navStatus._tag === "Success"
+            ? snapshot.navStatus.url
+            : undefined;
+      if (!adopted && !desktop && initialUrl !== undefined) {
         tab.initialNavigation = page
-          .goto(snapshot.navStatus.url, { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS })
+          .goto(initialUrl, { waitUntil: "commit", timeout: NAVIGATION_TIMEOUT_MS })
           .then(constVoid);
         // Background creation keeps the failed tab; automation awaits the original error.
         void tab.initialNavigation.catch(constVoid);
@@ -1248,7 +1286,11 @@ const make = Effect.gen(function* () {
       );
       if (!snapshot) return yield* new ServerBrowserTabNotFoundError({ threadId, tabId });
       return yield* Effect.tryPromise({
-        try: () => ensureTab(snapshot),
+        try: async () => {
+          const tab = await ensureTab(snapshot);
+          await tab.initialNavigation;
+          return tab;
+        },
         catch: (cause) => (isTabNotFound(cause) ? cause : new ServerBrowserLaunchError({ cause })),
       });
     });
@@ -1925,7 +1967,18 @@ const make = Effect.gen(function* () {
   };
 
   const executePageOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
-    const input = request.input;
+    const rawInput = request.input as Readonly<Record<string, unknown>>;
+    const requestedTimeout =
+      typeof rawInput.timeoutMs === "number" ? rawInput.timeoutMs : NAVIGATION_TIMEOUT_MS;
+    const innerTimeout = Math.max(
+      1,
+      Math.min(
+        requestedTimeout,
+        request.timeoutMs -
+          Math.min(OPERATION_TIMEOUT_HEADROOM_MS, Math.max(1, Math.floor(request.timeoutMs / 10))),
+      ),
+    );
+    const input: unknown = { ...rawInput, timeoutMs: innerTimeout };
     switch (request.operation) {
       case "navigate": {
         const navigateInput = input as PreviewAutomationNavigateInput;
@@ -2030,8 +2083,17 @@ const make = Effect.gen(function* () {
               request.tabId === undefined
                 ? undefined
                 : tabs.get(tabKey(request.threadId, request.tabId));
-            if (tab && tab.control.agentCanActNow(request.agentSessionId ?? ""))
-              dropTab(tab, false);
+            if (tab && tab.control.agentCanActNow(request.agentSessionId ?? "")) {
+              if (!tab.desktop)
+                recoveryPages.set(tabKey(tab.threadId, tab.tabId), {
+                  context: tab.page.context(),
+                  isolated: tab.isolatedContext,
+                  profileId: tab.profileId,
+                  url: tab.page.url(),
+                });
+              // Closing the old page cancels pending clicks; only its context and committed URL survive.
+              dropTab(tab, false, false, !tab.desktop);
+            }
             return Effect.fail(
               new ServerBrowserPage.ServerBrowserOperationError(
                 "PreviewAutomationTimeoutError",
@@ -2070,6 +2132,11 @@ const make = Effect.gen(function* () {
       }
       const key = tabKey(event.threadId, event.tabId);
       const tab = tabs.get(key);
+      if (event.type === "closed") {
+        const recovery = recoveryPages.get(key);
+        recoveryPages.delete(key);
+        if (recovery?.isolated) await recovery.context.close().catch(constVoid);
+      }
       if (event.type === "closed" && !tab && pendingTabs.has(key)) closedPendingTabs.add(key);
       if (!tab) return;
       if (event.type === "closed") {

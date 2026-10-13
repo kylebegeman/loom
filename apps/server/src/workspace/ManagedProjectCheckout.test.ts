@@ -11,6 +11,9 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as PlatformError from "effect/PlatformError";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
 import { runCheckoutProcess } from "./checkoutProcess.ts";
 import {
@@ -103,6 +106,38 @@ describe("Managed primary project checkouts", () => {
           expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(false);
         }),
       ),
+  );
+  it.live("archives and restores an owned project beneath a differently owned ancestor", () =>
+    run(
+      Effect.gen(function* () {
+        const f = yield* fixture;
+        const path = yield* Path.Path;
+        const uid = yield* HostProcess.UserId;
+        const ancestor = path.dirname(f.parent);
+        const filesystem = {
+          ...f.fs,
+          stat: (file: string) =>
+            f.fs
+              .stat(file)
+              .pipe(
+                Effect.map((info) =>
+                  file === ancestor ? { ...info, uid: Option.some((uid ?? 0) + 1) } : info,
+                ),
+              ),
+        };
+        yield* f.mark;
+        // Linux temp roots are owned by the runner, but /tmp belongs to root.
+        yield* f.release.pipe(Effect.provideService(FileSystem.FileSystem, filesystem));
+        expect(yield* f.fs.exists(f.cwd)).toBe(false);
+        expect(
+          yield* restoreManagedProjectCheckout(f.cwd).pipe(
+            Effect.provideService(FileSystem.FileSystem, filesystem),
+          ),
+        ).toBe(true);
+        expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("published content\n");
+        yield* assertManagedProjectOwned((yield* readManagedProjectCheckout(f.cwd))!);
+      }),
+    ),
   );
   it.live("serializes simultaneous reopen requests without failing the later caller", () =>
     run(

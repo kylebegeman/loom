@@ -644,7 +644,7 @@ export function StorageSettingsPanel() {
             <SettingsRow
               title="Release settled project checkouts"
               status={ruleStatus("projectOnSettle")}
-              description="Release published clones created by Loom after all conversations settle. User-opened folders, pinned conversations, active work, local files and clones with linked worktrees are kept."
+              description="Release published project folders managed by Loom after all conversations settle. Folders without reviewed ownership, per-project Keep choices, pinned conversations, active work, local files and linked worktrees are protected."
               control={
                 <Switch
                   aria-label="Release settled project checkouts"
@@ -656,7 +656,7 @@ export function StorageSettingsPanel() {
             <SettingsRow
               title="Release inactive project checkouts"
               status={ruleStatus("projectAfterDays")}
-              description="Release safe published clones after this many inactive days. Projects and conversations stay available; using a released project restores its saved revision and reruns setup."
+              description="Release safe published project folders managed by Loom after this many inactive days, unless a project has its own storage choice. Projects and conversations stay available; using a released project restores its saved revision and reruns setup."
               control={
                 <RetentionControl
                   label="Release inactive project checkouts"

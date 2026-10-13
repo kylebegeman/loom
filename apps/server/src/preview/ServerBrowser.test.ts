@@ -29,6 +29,7 @@ import * as Broker from "../mcp/PreviewAutomationBroker.ts";
 import * as DesktopChannel from "./DesktopBrowserChannel.ts";
 import * as Manager from "./Manager.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
+import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 import * as PreviewBrowser from "./PreviewBrowser.ts";
 
 // Keep the manager, broker, ownership, refs, and viewer paths real; replace Chromium I/O only.
@@ -143,10 +144,19 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
       }
     }),
   };
+  const pages = [page];
+  let pageRequests = 0;
   const context = {
     page,
+    pages,
     sessions,
-    newPage: async () => page as unknown as Page,
+    newPage: async () => {
+      if (pageRequests++ === 0) return page as unknown as Page;
+      const replacement = makeContext().page;
+      replacement.context = () => context;
+      pages.push(replacement);
+      return replacement as unknown as Page;
+    },
     grantPermissions: vi.fn(async () => {}),
     exposeBinding: vi.fn(async (_name: string, binding: ClipboardBinding) => {
       clipboardBinding = binding;
@@ -160,7 +170,7 @@ function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "
     close: vi.fn(async () => {
       if (contextClosed) return;
       contextClosed = true;
-      await page.close();
+      await Promise.all(pages.map((candidate) => candidate.close()));
       onClose?.(context as unknown as BrowserContext);
     }),
   };
@@ -1798,11 +1808,19 @@ it.live("a desktop page that comes back reconnects without waiting for a viewer"
   ).pipe(Effect.provide(layer)),
 );
 
-it.effect("a stalled snapshot releases its tab and preserves the host for the next request", () =>
+it.effect("a stalled snapshot recreates its page with the same profile and committed URL", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { broker, tabId } = yield* ready;
+      const { browser, broker, tabId } = yield* ready;
+      yield* broker.invoke({
+        scope,
+        tabId,
+        operation: "navigate",
+        input: { url: "http://localhost:3000/review", readiness: "none" },
+      });
       const original = contexts[0]!;
+      const viewer = yield* browser.attachViewer(viewerInput(tabId, false));
+      yield* Queue.clear(viewer.output);
       const started = Promise.withResolvers<void>();
       const send = original.sessions[0]!.send;
       const previous = send.getMockImplementation()!;
@@ -1825,6 +1843,10 @@ it.effect("a stalled snapshot releases its tab and preserves the host for the ne
       yield* Effect.promise(() => started.promise);
       yield* TestClock.adjust("1 second");
       expect(original.page.isClosed()).toBe(true);
+      let end = yield* Queue.take(viewer.output);
+      while (end._tag !== "reconnect" && end._tag !== "gone")
+        end = yield* Queue.take(viewer.output);
+      expect(end._tag).toBe("reconnect");
       expect(yield* Fiber.join(stalled)).toMatchObject({
         _tag: "PreviewAutomationTimeoutError",
         remoteTag: "PreviewAutomationTimeoutError",
@@ -1837,7 +1859,149 @@ it.effect("a stalled snapshot releases its tab and preserves the host for the ne
         timeoutMs: 1000,
       });
       expect(recovered.title).toBe("test page");
-      expect(contexts).toHaveLength(2);
+      expect(recovered.url).toBe("http://localhost:3000/review");
+      expect(contexts).toHaveLength(1);
+      expect(original.close).not.toHaveBeenCalled();
+      expect(original.pages).toHaveLength(2);
+      expect(original.pages[1]!.context()).toBe(original);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect.each(["waitFor", "click"] as const)(
+  "an ordinary %s locator timeout leaves the current page and profile intact",
+  (operation) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { broker, tabId } = yield* ready;
+        yield* broker.invoke({
+          scope,
+          tabId,
+          operation: "navigate",
+          input: { url: "http://localhost:3000/review", readiness: "none" },
+        });
+        const original = contexts[0]!;
+        const started = Promise.withResolvers<void>();
+        const wait = vi
+          .spyOn(ServerBrowserPage, operation)
+          .mockImplementation(
+            async (_page: Page, input: { readonly timeoutMs?: number | undefined }) => {
+              started.resolve();
+              // A locator that has its own deadline must settle before the hard host watchdog.
+              if ((input.timeoutMs ?? 15_000) >= 1000) return new Promise<never>(() => {});
+              throw new ServerBrowserPage.ServerBrowserOperationError(
+                "PreviewAutomationTimeoutError",
+                "The condition did not match before its locator deadline.",
+              );
+            },
+          );
+        yield* Effect.addFinalizer(() => Effect.sync(() => wait.mockRestore()));
+        const waiting = yield* broker
+          .invoke<void>({
+            scope,
+            tabId,
+            operation,
+            input: operation === "waitFor" ? { text: "Missing text" } : { selector: "#missing" },
+            timeoutMs: 1000,
+          })
+          .pipe(Effect.flip, Effect.forkChild);
+        yield* Effect.promise(() => started.promise);
+        yield* TestClock.adjust("1 second");
+        const failure = yield* Fiber.join(waiting);
+        expect(failure).toMatchObject({ _tag: "PreviewAutomationTimeoutError" });
+        expect(original.page.isClosed()).toBe(false);
+        expect(original.close).not.toHaveBeenCalled();
+        const current = yield* broker.invoke<PreviewAutomationStatus>({
+          scope,
+          tabId,
+          operation: "status",
+          input: {},
+        });
+        expect(current.url).toBe("http://localhost:3000/review");
+        expect(contexts).toHaveLength(1);
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
+it.effect("a timed-out click cancels its old page and is never replayed after recovery", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker, tabId } = yield* ready;
+      yield* broker.invoke({
+        scope,
+        tabId,
+        operation: "navigate",
+        input: { url: "http://localhost:3000/review", readiness: "none" },
+      });
+      const original = contexts[0]!;
+      const started = Promise.withResolvers<void>();
+      const click = vi.spyOn(ServerBrowserPage, "click").mockImplementation(async (page) => {
+        started.resolve();
+        return await new Promise<never>((_resolve, reject) =>
+          page.once("close", () => reject(new Error("Pending click cancelled with its page"))),
+        );
+      });
+      yield* Effect.addFinalizer(() => Effect.sync(() => click.mockRestore()));
+      const clicking = yield* broker
+        .invoke<void>({
+          scope,
+          tabId,
+          operation: "click",
+          input: { selector: "#eventually-ready" },
+          timeoutMs: 1000,
+        })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* TestClock.adjust("1 second");
+      expect(yield* Fiber.join(clicking)).toMatchObject({ _tag: "PreviewAutomationTimeoutError" });
+      expect(original.page.isClosed()).toBe(true);
+      expect(original.close).not.toHaveBeenCalled();
+      const recovered = yield* broker.invoke<PreviewAutomationSnapshot>({
+        scope,
+        tabId,
+        operation: "snapshot",
+        input: {},
+        timeoutMs: 1000,
+      });
+      expect(recovered.url).toBe("http://localhost:3000/review");
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(original.pages[1]!.context()).toBe(original);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+it.effect("closing a stalled tab also closes its retained isolated context", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker, tabId } = yield* ready;
+      const manager = yield* Manager.PreviewManager;
+      const original = contexts[0]!;
+      const started = Promise.withResolvers<void>();
+      original.sessions[0]!.send.mockImplementation(async () => {
+        started.resolve();
+        return new Promise(() => {});
+      });
+      const stalled = yield* broker
+        .invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+          timeoutMs: 1000,
+        })
+        .pipe(Effect.flip, Effect.forkChild);
+      yield* Effect.promise(() => started.promise);
+      yield* TestClock.adjust("1 second");
+      yield* Fiber.join(stalled);
+      expect(original.close).not.toHaveBeenCalled();
+      const closed = Promise.withResolvers<void>();
+      const close = original.close.getMockImplementation()!;
+      original.close.mockImplementationOnce(async () => {
+        await close();
+        closed.resolve();
+      });
+      yield* manager.close({ threadId: scope.thread.threadId, tabId });
+      yield* Effect.promise(() => closed.promise);
+      expect(original.close).toHaveBeenCalledTimes(1);
     }),
   ).pipe(Effect.provide(layer)),
 );

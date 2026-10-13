@@ -88,11 +88,13 @@ const canonicalRoot = Effect.fnUntraced(function* (input: ScratchCheckoutInput) 
   if (uid !== undefined && Option.getOrNull(rootInfo.uid) !== uid)
     return yield* fail("Scratch root is not owned by this process.");
   const parentInfo = yield* fs.stat(path.dirname(root));
+  // Scratch archives are siblings and need an owned parent. Project archives stay
+  // inside this verified root, whose ancestor may be root-owned (for example /tmp).
   if (
     rootInfo.dev !== parentInfo.dev ||
     !Option.isSome(rootInfo.uid) ||
-    !Option.isSome(parentInfo.uid) ||
-    rootInfo.uid.value !== parentInfo.uid.value
+    (input.recoveryKind !== "project" &&
+      (!Option.isSome(parentInfo.uid) || rootInfo.uid.value !== parentInfo.uid.value))
   )
     return yield* fail("Scratch root ownership or filesystem changed.");
   return {

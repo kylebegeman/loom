@@ -300,8 +300,14 @@ function ManagedCheckoutSetting({
                   <div>
                     <dt className="text-xs text-muted-foreground">Saved revision</dt>
                     <dd className="wrap-anywhere">
-                      {preview.branch ?? "Detached revision"}
-                      {preview.head ? ` · ${preview.head.slice(0, 12)}` : " · No commit"}
+                      {preview.state === "released" ? (
+                        "Available when the working folder is restored"
+                      ) : (
+                        <>
+                          {preview.branch ?? "Detached revision"}
+                          {preview.head ? ` · ${preview.head.slice(0, 12)}` : " · No commit"}
+                        </>
+                      )}
                     </dd>
                   </div>
                   <div>

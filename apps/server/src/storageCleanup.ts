@@ -1383,9 +1383,13 @@ const make = Effect.gen(function* () {
       Stream.runForEach(events, (event) =>
         (event.type === "thread.deleted" ||
           event.type === "thread.archived" ||
+          event.type === "thread.unpinned" ||
+          // Worktree settlement requests cleanup after its settle hook finishes.
+          (event.type === "thread.settled" && event.payload.worktreePath === null) ||
           (event.type === "provider-session.updated" && event.payload.status === "stopped")) &&
         (settlementCleanupEnabled() ||
-          anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnDelete))
+          lastSettings.storageCleanup.projectAfterDays !== null ||
+          anyWorktreePolicy(lastSettings, worktreeCleanupEnabled))
           ? worker.requestSweep
           : Effect.void,
       ).pipe(
