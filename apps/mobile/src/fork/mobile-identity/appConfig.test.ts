@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
+import { IOSConfig } from "expo/config-plugins";
 
 vi.mock("../../../../../scripts/lib/public-config.ts", () => ({ loadRepoEnv: () => ({}) }));
 
@@ -9,9 +10,15 @@ describe("Loom native distribution config", () => {
     expect(config.scheme).toBe("loom");
     expect(config.ios).toMatchObject({
       bundleIdentifier: "com.kylebegeman.loom",
-      associatedDomains: [],
       entitlements: { "keychain-access-groups": ["$(AppIdentifierPrefix)com.kylebegeman.loom"] },
     });
+    expect(config.ios).not.toHaveProperty("associatedDomains");
+    expect(
+      IOSConfig.Entitlements.setAssociatedDomains(config, {
+        "com.apple.developer.associated-domains": [],
+        "com.apple.security.application-groups": ["group.com.kylebegeman.loom"],
+      }),
+    ).toEqual({ "com.apple.security.application-groups": ["group.com.kylebegeman.loom"] });
     expect(config.ios?.appleTeamId).toBeUndefined();
     expect(config.owner).toBeUndefined();
     expect(config.extra?.eas).toBeUndefined();

@@ -13,6 +13,7 @@ import Plist from "plist";
 
 const BUNDLE_ID = "com.kylebegeman.loom";
 const BUNDLE_IDS = [BUNDLE_ID, `${BUNDLE_ID}.sharing`, `${BUNDLE_ID}.widgets`] as const;
+const ASSOCIATED_DOMAINS_ENTITLEMENT = "com.apple.developer.associated-domains";
 const UPSTREAM_APP_ID = "6787819824";
 const UPSTREAM_TEAM_ID = "ARK85ZXQ4Z";
 const SOURCE_ROOT = NodePath.resolve(NodeURL.fileURLToPath(new URL("../..", import.meta.url)));
@@ -172,6 +173,17 @@ export function validateIosReleaseConfig(input: unknown, teamId: string, buildNu
       "Local TestFlight releases must disable OTA and omit cloud publishing identity.",
     );
   }
+  if (
+    ios.associatedDomains !== undefined ||
+    Object.hasOwn(
+      record(ios.entitlements ?? {}, "Expo iOS entitlements"),
+      ASSOCIATED_DOMAINS_ENTITLEMENT,
+    )
+  ) {
+    throw new Error(
+      "Local TestFlight releases must omit associated domains while Connect is disabled.",
+    );
+  }
   if (extra.appVariant !== "production" || extra.iosPersonalTeamBuild === true)
     throw new Error("TestFlight requires a production Apple Developer build.");
   if (buildNumber && ios.buildNumber !== buildNumber)
@@ -218,6 +230,8 @@ export function validateSigningEntitlements(
   ) {
     throw new Error(`Unexpected signing identity in ${bundleId}.`);
   }
+  if (Object.hasOwn(entitlements, ASSOCIATED_DOMAINS_ENTITLEMENT))
+    throw new Error(`Unexpected associated domains in ${bundleId}.`);
   const appGroups = entitlements["com.apple.security.application-groups"] ?? [];
   if (!Array.isArray(appGroups)) throw new Error("Invalid signing app groups.");
   if (!appGroups.includes(`group.${BUNDLE_ID}`))

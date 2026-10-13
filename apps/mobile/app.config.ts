@@ -217,7 +217,7 @@ const config: ExpoConfig = {
     bundleIdentifier: iosBundleIdentifier,
     ...(identity.iosBuildNumber ? { buildNumber: identity.iosBuildNumber } : {}),
     ...(identity.teamId ? { appleTeamId: identity.teamId } : {}),
-    associatedDomains: identity.associatedDomains,
+    ...(identity.associatedDomains.length ? { associatedDomains: identity.associatedDomains } : {}),
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },

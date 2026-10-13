@@ -198,6 +198,29 @@ describe("Loom iOS release boundaries", () => {
     expect(() => validateIosReleaseConfig(config, TEAM, "2")).toThrow("build number");
   });
 
+  it("rejects associated-domain capabilities from local release config, including empty declarations", () => {
+    for (const domains of [[], ["applinks:auth.example.test"]]) {
+      expect(() =>
+        validateIosReleaseConfig(
+          { ...config, ios: { ...config.ios, associatedDomains: domains } },
+          TEAM,
+        ),
+      ).toThrow("associated domains");
+      expect(() =>
+        validateIosReleaseConfig(
+          {
+            ...config,
+            ios: {
+              ...config.ios,
+              entitlements: { "com.apple.developer.associated-domains": domains },
+            },
+          },
+          TEAM,
+        ),
+      ).toThrow("associated domains");
+    }
+  });
+
   it("checks the IPA's embedded source and all extension bundle versions", () => {
     const expected = { ...receipt };
     expect(() =>
@@ -279,6 +302,15 @@ describe("Loom iOS release boundaries", () => {
         "com.kylebegeman.loom",
       ),
     ).toThrow("app groups");
+    for (const domains of [[], ["applinks:auth.example.test"]]) {
+      expect(() =>
+        validateSigningEntitlements(
+          { ...entitlements, "com.apple.developer.associated-domains": domains },
+          receipt,
+          "com.kylebegeman.loom",
+        ),
+      ).toThrow("associated domains");
+    }
     for (const bundleId of [
       "com.kylebegeman.loom",
       "com.kylebegeman.loom.sharing",
