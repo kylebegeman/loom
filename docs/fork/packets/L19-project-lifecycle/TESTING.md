@@ -36,6 +36,9 @@ reopen, new-thread preparation, retained provider resume, setup failure/retry an
 restoration. Storage tests cover publication, advanced remote branches, stale refs, local and
 ignored files, pins, active work, providers, pending effects, linked worktrees and submodules.
 Recovery tests protect replaced roots, writes during removal and interrupted deletion.
+Reviewed adoption tests cover stale tokens, unsafe roots, cross-project receipts, preserved
+local files, retention precedence and explicit Keep restoration. Client interaction tests
+cover confirmation/cancellation, permission revocation and host/project switching.
 Handoff tests verify published revision preparation, destination readiness, linked history
 and source-change/retry behavior. GitHub host setup has separate credential-readiness tests.
 
@@ -45,6 +48,8 @@ and source-change/retry behavior. GitHub host setup has separate credential-read
 vp test run apps/server/src/fork/project-lifecycle
 vp test run apps/server/src/fork/mcp/registration.test.ts
 vp test run apps/server/src/workspace/ManagedProjectCheckout.test.ts apps/server/src/storageCleanup.test.ts
+vp test run apps/server/src/project/ProjectCheckoutManagement.test.ts apps/server/src/fork/project-checkout/mcp.test.ts
+vp test run apps/web/src/fork/project-checkout/ProjectCheckoutSettings.test.tsx apps/mobile/src/fork/project-checkout/ProjectCheckoutSection.test.tsx
 vp test run apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts apps/server/src/orchestration-v2/ThreadLaunchService.test.ts apps/server/src/terminal/Manager.test.ts
 vp test run apps/server/src/fork/workspace-handoff
 ```

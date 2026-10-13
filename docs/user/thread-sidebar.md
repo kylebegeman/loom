@@ -134,11 +134,16 @@ sending an answer or restarting the agent. Settling also closes the thread's
 terminals that wait at an idle prompt, and keeps their output. A terminal that
 runs a command, such as a dev server, stays open.
 
-To release a published managed checkout once every thread using it has settled, enable
-**Settings → Storage → Release settled worktrees**. To release an entire clone created by Loom,
-use **Release settled project checkouts**. Folders opened manually stay in place. Local data,
-pinned conversations and busy workspaces are kept. Continuing the conversation restores the
-checkout and runs workspace setup before the agent starts.
+To release a published managed worktree once every thread using it has settled, enable
+**Settings → Storage → Release settled worktrees**. For the primary project folder, choose
+**Release when settled** in the project's storage settings, or use the computer's
+**Release settled project checkouts** default. An existing folder must first be reviewed and
+explicitly registered as managed; opening it or enabling cleanup does not adopt it.
+**Keep on this computer** prevents primary-folder release and restores a released folder when
+selected. Worktree cleanup remains separate. Local data, unpublished work, pinned conversations
+and busy workspaces are kept. Continuing a released conversation restores its checkout and
+runs workspace setup before the agent starts. See [Project storage](project-settings.md#storage-cleanup)
+for review, retention and recovery details.
 
 To remove build output while keeping the checkout, turn on **Run in the thread's worktree when the
 thread settles** for one of the project's actions, or set `"runOnSettle": true` on a

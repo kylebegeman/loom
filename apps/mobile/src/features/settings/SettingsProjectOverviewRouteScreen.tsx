@@ -7,6 +7,8 @@ import { useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// fork: project-checkout-management - Review storage ownership per checkout on its host.
+import { ProjectCheckoutSection } from "../../fork/project-checkout/ProjectCheckoutSection";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "./components/SettingsScreen";
@@ -45,7 +47,7 @@ export function SettingsProjectOverviewRouteScreen() {
             </Text>
           ) : (
             <ProjectOverviewContent
-              key={`${selectedProjectKey}:${members.map((member) => member.id).join(",")}`}
+              key={`${selectedProjectKey}:${members.map((member) => `${member.environmentId}:${member.id}:${member.workspaceRoot}`).join(",")}`}
               members={members}
               environments={selectedTargets}
             />
@@ -170,6 +172,19 @@ function ProjectOverviewContent(props: {
           );
         })}
       </SettingsSection>
+      {/* fork: project-checkout-management - Each review stays bound to one computer's folder. */}
+      {props.members.map((member) => (
+        <ProjectCheckoutSection
+          key={`${member.environmentId}:${member.id}`}
+          environmentId={member.environmentId}
+          projectId={member.id}
+          workspaceRoot={member.workspaceRoot}
+          computerLabel={
+            props.environments.find((entry) => entry.environmentId === member.environmentId)
+              ?.label ?? "Computer"
+          }
+        />
+      ))}
     </>
   );
 }

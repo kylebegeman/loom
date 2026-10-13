@@ -1,0 +1,351 @@
+// @vitest-environment jsdom
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { ProjectCheckoutPreview } from "@t3tools/contracts/fork";
+import * as Cause from "effect/Cause";
+import { AsyncResult } from "effect/reactivity";
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+const harness = vi.hoisted(() => ({
+  supported: true,
+  canRead: true,
+  canAdopt: true,
+  canSetRetention: true,
+  preview: vi.fn(),
+  adopt: vi.fn(),
+  setRetention: vi.fn(),
+}));
+
+vi.mock("@effect/atom-react", () => ({
+  useAtomValue: (atom: "adopt" | "retention") =>
+    atom === "adopt" ? harness.canAdopt : harness.canSetRetention,
+}));
+vi.mock("@t3tools/client-runtime/fork", () => ({
+  supportsLoomFeature: () => harness.supported,
+  createProjectCheckoutAtoms: () => ({
+    preview: "preview",
+    adopt: { name: "adopt", permissionAtom: () => "adopt" },
+    setRetention: { name: "retention", permissionAtom: () => "retention" },
+  }),
+}));
+vi.mock("../../connection/runtime", () => ({ connectionAtomRuntime: {} }));
+vi.mock("../../state/entities", () => ({
+  useEnvironmentServerConfig: () => ({ environment: { capabilities: {} } }),
+}));
+vi.mock("../../state/session", () => ({
+  useEnvironmentScope: () => harness.canRead,
+  readEnvironmentScope: () => harness.canRead,
+}));
+vi.mock("../../state/atom-registry", () => ({
+  appAtomRegistry: {
+    get: (atom: "adopt" | "retention") =>
+      atom === "adopt" ? harness.canAdopt : harness.canSetRetention,
+  },
+}));
+vi.mock("../../state/use-atom-command", () => ({
+  useAtomCommand: (command: { name: "adopt" | "retention" }) =>
+    command.name === "adopt" ? harness.adopt : harness.setRetention,
+}));
+vi.mock("../../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => harness.preview }));
+vi.mock("react-native", () => ({
+  View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("../../components/AppText", () => ({
+  AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+}));
+vi.mock("../../features/settings/components/SettingsSection", () => ({
+  SettingsSection: ({
+    title,
+    footer,
+    children,
+  }: {
+    title: string;
+    footer: string;
+    children: ReactNode;
+  }) => (
+    <section>
+      <h2>{title}</h2>
+      {children}
+      <p>{footer}</p>
+    </section>
+  ),
+}));
+vi.mock("../../components/MaterialButton", () => ({
+  MaterialButton: ({
+    label,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
+vi.mock("../../components/ListChoiceRow", () => ({
+  ListChoiceRow: ({
+    label,
+    selected,
+    disabled,
+    onPress,
+  }: {
+    label: string;
+    selected: boolean;
+    disabled?: boolean;
+    onPress: () => void;
+  }) => (
+    <button role="radio" aria-checked={selected} disabled={disabled} onClick={onPress}>
+      {label}
+    </button>
+  ),
+}));
+
+import { ProjectCheckoutSection } from "./ProjectCheckoutSection";
+
+const mac = EnvironmentId.make("mac");
+const projectId = ProjectId.make("project");
+function preview(overrides: Partial<ProjectCheckoutPreview> = {}): ProjectCheckoutPreview {
+  return {
+    projectId,
+    workspaceRoot: "/projects/example",
+    state: "external",
+    ownershipSource: null,
+    retention: "inherit",
+    head: "commit",
+    branch: "main",
+    localFiles: { trackedChanges: 0, untrackedFiles: 0, ignoredFiles: 0, truncated: false },
+    blockers: [],
+    reviewToken: "review-token",
+    repositoryIdentity: null,
+    ...overrides,
+  };
+}
+let container: HTMLDivElement;
+let root: Root;
+function render(
+  props: { environmentId?: EnvironmentId; projectId?: ProjectId; workspaceRoot?: string } = {},
+) {
+  act(() =>
+    root.render(
+      <ProjectCheckoutSection
+        environmentId={props.environmentId ?? mac}
+        projectId={props.projectId ?? projectId}
+        workspaceRoot={props.workspaceRoot ?? "/projects/example"}
+        computerLabel="Mac"
+      />,
+    ),
+  );
+}
+function button(label: string) {
+  const result = [...container.querySelectorAll("button")].find(
+    (entry) => entry.textContent === label,
+  );
+  if (!result) throw new Error(`Missing action: ${label}`);
+  return result;
+}
+async function click(label: string) {
+  await act(async () => button(label).click());
+}
+async function confirmAdoption() {
+  await click("Review folder");
+  await click("Review management");
+}
+
+beforeEach(() => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  harness.supported = true;
+  harness.canRead = true;
+  harness.canAdopt = true;
+  harness.canSetRetention = true;
+  harness.preview.mockReset().mockResolvedValue(AsyncResult.success(preview()));
+  harness.adopt.mockReset().mockResolvedValue(
+    AsyncResult.success(
+      preview({
+        state: "managed",
+        ownershipSource: "adopted",
+        retention: "keep",
+        reviewToken: "managed-token",
+      }),
+    ),
+  );
+  harness.setRetention.mockReset().mockResolvedValue(
+    AsyncResult.success(
+      preview({
+        state: "managed",
+        ownershipSource: "clone",
+        retention: "release-on-settle",
+        reviewToken: "next-token",
+      }),
+    ),
+  );
+  container = document.createElement("div");
+  root = createRoot(container);
+});
+afterEach(() => {
+  act(() => root.unmount());
+});
+
+describe("reviewed native project storage management", () => {
+  it("does not inspect or adopt on open, then adopts only after explicit review and confirmation", async () => {
+    render();
+    expect(harness.preview).not.toHaveBeenCalled();
+    expect(harness.adopt).not.toHaveBeenCalled();
+    await confirmAdoption();
+    expect(harness.preview).toHaveBeenCalledWith({ environmentId: mac, input: { projectId } });
+    expect(harness.adopt).not.toHaveBeenCalled();
+    await click("Confirm management");
+    expect(harness.adopt).toHaveBeenCalledWith({
+      environmentId: mac,
+      input: { projectId, reviewToken: "review-token", retention: "keep" },
+    });
+    expect(container.textContent).toContain("Loom now manages this checkout.");
+    expect(button("Review preference change").disabled).toBe(true);
+  });
+
+  it("reviews immediate release consequences and lets the user go back or cancel without adopting", async () => {
+    render();
+    await click("Review folder");
+    await click("Release when settled");
+    await click("Review management");
+    expect(container.textContent).toContain("An already settled checkout can be released");
+    await click("Back to review");
+    expect(button("Release when settled").getAttribute("aria-checked")).toBe("true");
+    await click("Cancel review");
+    expect(harness.adopt).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Confirm management");
+    await confirmAdoption();
+    expect(button("Confirm management")).toBeDefined();
+  });
+
+  it("sends the reviewed release policy only after confirmation", async () => {
+    render();
+    await click("Review folder");
+    await click("Release when settled");
+    await click("Review management");
+    await click("Confirm management");
+    expect(harness.adopt).toHaveBeenCalledWith({
+      environmentId: mac,
+      input: { projectId, reviewToken: "review-token", retention: "release-on-settle" },
+    });
+  });
+
+  it("rejects permission revocation before a visible confirmation dispatches", async () => {
+    render();
+    await confirmAdoption();
+    harness.canAdopt = false;
+    await click("Confirm management");
+    expect(harness.adopt).not.toHaveBeenCalled();
+    render();
+    expect(container.textContent).toContain("Settings permission is required");
+    expect(container.textContent).not.toContain("Confirm management");
+  });
+
+  it("requires a fresh review after a stale-review failure", async () => {
+    harness.adopt.mockResolvedValueOnce(
+      AsyncResult.failure(Cause.fail(new Error("The folder changed. Review again."))),
+    );
+    render();
+    await confirmAdoption();
+    await click("Confirm management");
+    expect(container.textContent).toContain("The folder changed. Review again.");
+    expect(container.textContent).not.toContain("Confirm management");
+    harness.preview.mockResolvedValueOnce(
+      AsyncResult.success(preview({ reviewToken: "fresh-token" })),
+    );
+    await click("Retry folder review");
+    await click("Review management");
+    await click("Confirm management");
+    expect(harness.adopt).toHaveBeenLastCalledWith({
+      environmentId: mac,
+      input: { projectId, reviewToken: "fresh-token", retention: "keep" },
+    });
+  });
+
+  it("does not transfer an in-flight review to a different host or project", async () => {
+    let complete!: (value: ReturnType<typeof AsyncResult.success<ProjectCheckoutPreview>>) => void;
+    harness.preview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    render();
+    await click("Review folder");
+    render({
+      environmentId: EnvironmentId.make("pi"),
+      projectId: ProjectId.make("other"),
+      workspaceRoot: "/ssd/other",
+    });
+    await act(async () => complete(AsyncResult.success(preview())));
+    expect(container.textContent).toContain("/ssd/other");
+    expect(container.textContent).not.toContain("Review management");
+    expect(harness.adopt).not.toHaveBeenCalled();
+  });
+
+  it("shows local-work warnings on managed checkouts and supports keeping a released checkout", async () => {
+    harness.preview.mockResolvedValue(
+      AsyncResult.success(
+        preview({
+          state: "released",
+          ownershipSource: "clone",
+          retention: "release-on-settle",
+          blockers: ["Unpublished work keeps this checkout on disk."],
+        }),
+      ),
+    );
+    harness.setRetention.mockResolvedValue(
+      AsyncResult.success(
+        preview({ state: "released", ownershipSource: "clone", retention: "keep" }),
+      ),
+    );
+    render();
+    await click("Review folder");
+    expect(container.textContent).toContain("Your project and conversations remain in Loom.");
+    expect(container.textContent).toContain("Unpublished work keeps this checkout on disk.");
+    await click("Keep on this computer");
+    await click("Review preference change");
+    expect(container.textContent).toContain("restore this project's main folder now");
+    await click("Confirm preference");
+    expect(harness.setRetention).toHaveBeenCalledWith({
+      environmentId: mac,
+      input: { projectId, reviewToken: "review-token", retention: "keep" },
+    });
+    expect(harness.adopt).not.toHaveBeenCalled();
+  });
+
+  it("shows blocked paths and supports retrying review without offering adoption", async () => {
+    harness.preview.mockResolvedValueOnce(
+      AsyncResult.success(
+        preview({
+          state: "blocked",
+          reviewToken: null,
+          blockers: ["This folder contains another project."],
+        }),
+      ),
+    );
+    render();
+    await click("Review folder");
+    expect(container.textContent).toContain("This folder contains another project.");
+    expect(container.textContent).not.toContain("Review management");
+    await click("Review folder again");
+    expect(container.textContent).toContain("Review management");
+  });
+
+  it("guides old hosts to update and blocks folder requests without read access", async () => {
+    harness.supported = false;
+    render();
+    expect(container.textContent).toContain("Update Loom on this computer");
+    await click("Review folder");
+    expect(harness.preview).not.toHaveBeenCalled();
+    harness.supported = true;
+    harness.canRead = false;
+    render();
+    expect(container.textContent).toContain("Project read permission is required");
+    await click("Review folder");
+    expect(harness.preview).not.toHaveBeenCalled();
+  });
+});

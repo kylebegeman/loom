@@ -7,8 +7,12 @@ release/reopen are implemented. Preserve these boundaries when changing the vert
   arbitrary checkout roots or resources it cannot identify.
 - Existing connected environments, clone tracking and thread launch own machine selection
   and preparation. Keep transports thin and share service paths across clients and agents.
-- Only successful Loom clones create primary-checkout ownership receipts. Opening a folder
-  must not adopt it for automatic deletion; older roots stay protected.
+- Successful Loom clones and explicitly reviewed existing primary repositories create
+  ownership receipts. Opening a folder or enabling cleanup never adopts it. Adoption and
+  retention changes recheck the authoritative project and review fingerprint under a lease.
+- Keep, release-on-settle and inherited defaults govern the primary folder only. Keep restores
+  a released owned folder without running setup; worktree cleanup remains independent.
+  Version 1 receipts inherit host defaults. Older runtimes cannot read version 2 receipts.
 - Publication is an explicit Git workflow. Cleanup and handoff verify fresh publication
   evidence and preserve unique local files rather than committing or pushing them.
 - Project records and repository identity survive checkout release. Passive queries must not

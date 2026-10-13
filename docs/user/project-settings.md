@@ -41,7 +41,7 @@ the **Server settings** categories and auto-settle controls in **Thread behavior
 selected environments' defaults. Choosing a project edits its overrides on the selected
 environments. Use **Use defaults** in a page to remove that page's project overrides.
 Open **Settings → Projects & threads → Overview** to rename the project across its selected
-connected checkouts and see where those checkouts live.
+connected checkouts, see where they live, and review each checkout's storage preference.
 Settings that are environment-wide stay read-only while a project is selected. When selected
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
@@ -169,12 +169,33 @@ conversation recreates its worktree checkout and waits for workspace setup befor
 Failed setup keeps the checkout and retries when you continue again, including after a restart.
 
 Enable **Release settled project checkouts** or **Release inactive project checkouts**
-to reclaim complete clones created by Loom. Folders you opened yourself and clones created
-before managed ownership was available stay on disk. Every conversation must be settled for
-the settlement rule; inactivity uses the most recent conversation activity. Pinned conversations,
-active agents or terminals, pending actions, local files and linked worktrees keep the checkout.
-All local branches and tags must be published, and the remote must be reachable when releasing.
-Repositories with submodules are kept.
+to set this computer's defaults for managed primary project folders. Every conversation must
+be settled for the settlement rule; inactivity uses the most recent conversation activity.
+Folders opened manually and older clones stay on disk until you explicitly review and let
+Loom manage them. Enabling cleanup does not adopt existing folders.
+
+To manage an existing folder, select its project and open **Settings → Project → Project storage**
+on web or desktop, or **Settings → Projects & threads → Overview** on mobile. Review the folder
+on each computer, choose **Keep on this computer** or **Release when settled**, then confirm.
+Loom registers the existing folder without moving its files or changing its project history.
+Only primary Git repositories with their own Git directory and an origin remote can be adopted;
+unsafe or unavailable folders remain external. Local changes can stay in an adopted folder.
+
+**Keep on this computer** overrides automatic primary-folder cleanup. Choosing it for a released
+checkout restores that folder immediately; setup runs when an agent next uses the project.
+**Release when settled** permits release after every conversation settles, even if the computer's
+default release setting is off. For a managed folder, **Use this computer's cleanup rules**
+(**Use computer's default** on mobile) returns to its settlement and inactivity defaults.
+These choices govern the primary folder; worktree cleanup follows its separate settings.
+
+Saving a release preference can release an already settled, eligible checkout during the next
+cleanup. Pinned conversations, active agents or terminals, pending actions, local files and
+linked worktrees keep the checkout. All local branches and tags must be published, and the
+remote must be reachable when releasing. Ignored local data is protected except for rebuildable
+`node_modules` folders. Repositories with submodules are kept. Keep permanent application data
+outside the working folder and its disposable lane. Update Loom on a computer before managing
+its existing project folders; older server versions cannot reopen folders released with the
+new storage metadata.
 
 Projects and conversations stay discoverable after release. Opening a file or terminal, using
 Git, or continuing work restores the saved revision from its recovery archive. Starting an agent

@@ -1,3 +1,4 @@
+import { ProjectCheckoutSettings } from "../../fork/project-checkout/ProjectCheckoutSettings"; // fork: project-checkout-management
 // fork: mini-native-retention
 import type {
   StorageCleanupReport,
@@ -473,6 +474,7 @@ export function StorageSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      {isProjectScope && <ProjectCheckoutSettings projects={scope.members} />}
       <SettingsSection id="storage-worktrees" title="Worktrees">
         {!isProjectScope && <WorktreesDirectoryRow />}
         {isProjectScope && (

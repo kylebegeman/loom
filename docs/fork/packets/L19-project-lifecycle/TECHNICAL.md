@@ -237,12 +237,28 @@ Checkout location is chosen on the owning host; it is not required to be inside 
 Managed Mini hosts can supply canonical SSD defaults. Dependencies and development fixtures
 belong to repeatable setup on that host, not a shared production or development database.
 
-A successful Loom clone writes an owned receipt beside the checkout. Storage cleanup can
-release only roots matching that receipt, and only after checking current activity,
-publication, local files, process ownership and filesystem safety. User-opened roots and
-pre-receipt clones remain ineligible. Managed worktree release continues to use its own
-branch and holder checks. See [storageCleanup.ts](../../../../apps/server/src/storageCleanup.ts)
-and [ManagedProjectCheckout.ts](../../../../apps/server/src/workspace/ManagedProjectCheckout.ts).
+A successful Loom clone writes an owned receipt beside the checkout. An existing registered
+primary Git root can also gain ownership through an explicit review and confirmed adoption;
+opening it or enabling cleanup does not adopt it. The review fingerprint binds the project,
+canonical root, filesystem identity, Git revision, local-file listing and current receipt.
+Mutation rechecks it under the same workspace lease used by cleanup and restoration; a stale
+review requires a new preview. See
+[ProjectCheckoutManagement.ts](../../../../apps/server/src/project/ProjectCheckoutManagement.ts).
+
+Receipts store ownership source and primary-folder retention. Keep disables primary-folder
+cleanup and explicitly restores a released owned folder without running setup. Release when
+settled enables only settlement release independently of host defaults; inheritance follows
+host settlement and inactivity settings. Managed worktree release retains its own policy.
+Storage cleanup still checks activity, publication, local files, process ownership and
+filesystem safety. Adoption preserves local work; it does not bypass release safeguards.
+See [storageCleanup.ts](../../../../apps/server/src/storageCleanup.ts) and
+[ManagedProjectCheckout.ts](../../../../apps/server/src/workspace/ManagedProjectCheckout.ts).
+
+New and rewritten receipts use version 2. This runtime reads version 1 as clone ownership
+with inherited retention, but older runtimes cannot decode version 2 or restore its released
+checkout. Preserve recovery metadata when downgrading; an older server is not a supported
+recovery path. Clients gate management by the owning host's `project-checkout-management`
+capability.
 
 Project records outlive the directory. Repository identity resolution reads the owned receipt
 when Git files are absent, without restoring them. Explicit workspace use restores a verified

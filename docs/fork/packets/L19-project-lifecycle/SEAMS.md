@@ -5,7 +5,12 @@ on narrow upstream integrations, so this packet can conflict during an upstream 
 
 ## Boundaries to preserve
 
-- Successful cloning records primary-checkout ownership; opening an existing folder does not.
+- Successful cloning and confirmed, current review of an existing primary Git root record
+  ownership. Opening a folder and enabling cleanup never grant it. Review and mutation stay
+  on the owning host; fingerprint revalidation runs under its workspace lease.
+- Primary-folder Keep, release-on-settle and inherited defaults do not alter worktree policy.
+  Keep explicitly restores a released folder; passive reads never do. Version 1 receipt
+  compatibility remains; older runtimes cannot read newly written version 2 receipts.
 - Project and repository identity remain available after release. Passive status and identity
   queries do not restore directories.
 - Explicit Git, file, terminal, new-thread and provider-start paths restore managed roots.

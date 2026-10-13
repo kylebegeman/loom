@@ -1,7 +1,7 @@
 # L19: Project lifecycle
 
-Status: lanes, resource leases, selected-computer project preparation and linked machine
-handoff are implemented. Managed primary-checkout release and reopen are implemented locally.
+Status: lanes, resource leases, selected-computer project preparation, linked machine
+handoff, reviewed existing-project adoption, primary-folder retention and release/reopen are implemented.
 
 A lane owns disposable output and leased resources for a checkout. The connected computer
 owns its project records, conversation history, providers and credentials. The checkout can
@@ -14,8 +14,10 @@ remain available.
 - Owned processes, ports, simulators, labelled Docker resources and machine-wide build slots.
 - Create, clone or open a project on a selected connected computer; reuse its existing checkout
   and run repeatable project setup when preparing work.
-- Opt-in release of published managed worktrees and primary clones, with local recovery and
-  automatic restoration on explicit use. Folders opened manually are not adopted for deletion.
+- Opt-in release of published managed worktrees and primary folders, with local recovery and
+  automatic restoration on explicit use. Existing repositories require explicit reviewed
+  adoption; opening a folder never grants cleanup ownership. Per-project primary-folder
+  retention overrides computer defaults without changing worktree cleanup.
 - Move work by preparing a published revision on another computer and creating a linked
   continuation. The original conversation remains on its host.
 - Per-host GitHub setup and provider readiness. Connecting a host does not copy credentials.
@@ -26,10 +28,11 @@ and handoff verify commits already pushed rather than making commits or pushes t
 
 ## Surfaces
 
-Web and desktop expose lane and checkout storage policies. Web and native mobile can select
-computers for project creation and continuation. Mobile turns use the same server preparation
-and restoration paths. Local, tailnet and relay connections retain the same host ownership.
-Capabilities gate lanes, managed checkout cleanup and handoff independently.
+Web and desktop expose lane and computer cleanup policies. Web, desktop and native mobile
+expose reviewed primary-folder adoption and retention, and can select computers for project
+creation and continuation. Mobile turns use the same server preparation and restoration paths.
+Local, tailnet and relay connections retain the same host ownership. Capabilities gate lanes,
+checkout management, cleanup and handoff independently.
 
 ## Extension points and seams
 

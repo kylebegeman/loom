@@ -40,10 +40,18 @@ Simulators created outside the lane, unrelated processes and unlabelled containe
 Checkout removal is a separate, opt-in storage policy; releasing lane output does not itself
 remove source files.
 
-Published worktrees can release after settlement or retention. Complete clones created by
-Loom can also release after all conversations settle or after configured inactivity. The
-project and conversation records remain. Opening a user's folder does not grant deletion
-ownership, and clones created before ownership receipts remain protected.
+Published worktrees can release after settlement or retention. Managed primary folders,
+including successful Loom clones and explicitly reviewed existing repositories, can release
+after all conversations settle or after configured inactivity. Opening a folder or enabling
+cleanup never grants ownership. Existing folders stay protected until the user reviews one
+checkout on its computer and confirms management without moving its files or history.
+
+Each managed primary folder chooses Keep, Release when settled, or the computer's defaults.
+Keep prevents automatic primary-folder cleanup and restores an already released folder when
+explicitly selected. Release when settled enables that rule independently of the computer's
+defaults; it can release already settled eligible work during the next cleanup. Worktree rules
+remain separate. Permanent application data belongs outside both disposable working folders
+and lanes. The project and conversation records remain.
 
 Cleanup keeps pinned or busy work, pending actions, open providers or terminals, unique local
 files, unpublished revisions and linked worktrees. Primary repositories with submodules are
@@ -54,7 +62,9 @@ files and blocks another release until those files are inspected.
 ## Entry points
 
 - **Settings → Loom → Storage:** lane caps, reserve, usage, shell integration and resource actions.
-- **Settings → Storage:** checkout release and retention policies, with results and failure reasons.
+- **Settings → Storage:** computer cleanup defaults, with results and failure reasons.
+- Project settings on web/desktop and **Projects & threads → Overview** on mobile: review and
+  adopt an existing primary folder, then choose or change its retention preference.
 - Project creation and conversation start: select the computer owning the workspace.
 - **Move work:** prepare a destination and continue there without relocating original history.
 - Agent tools: lane status/free/grow/lease actions, storage reports, handoff and host GitHub setup.

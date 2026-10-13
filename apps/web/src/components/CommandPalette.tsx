@@ -2350,6 +2350,9 @@ function OpenCommandPaletteDialog(props: {
       kind: "action",
       value: "action:project-settings",
       searchTerms: [
+        "storage",
+        "retention",
+        "ephemeral",
         "project",
         "settings",
         "name",

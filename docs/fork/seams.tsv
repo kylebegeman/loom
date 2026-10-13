@@ -172,3 +172,6 @@ apps/mobile/src/features/cloud/linkEnvironment.test.ts	fleet-connect	1
 apps/mobile/src/features/cloud/ConnectOnboardingRouteScreen.tsx	fleet-connect	1
 apps/server/src/project/ProjectCheckoutManagement.ts	project-checkout-management	1
 apps/server/src/storageCleanupScheduling.test.ts	project-checkout-management	1
+apps/mobile/src/features/settings/SettingsProjectOverviewRouteScreen.tsx	project-checkout-management	2
+apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-checkout-management	1
+apps/web/src/components/settings/StorageSettings.tsx	project-checkout-management	1
