@@ -12,6 +12,12 @@ import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
 import { serializeUpdateManifest } from "../lib/update-manifest.ts";
+import { ensureRuntimeReleaseAssets } from "./runtime-release.ts";
+import {
+  loomConnectBuildEnvironment,
+  parseLoomConnectConfig,
+  type LoomConnectConfig,
+} from "./connect-config.ts";
 
 const REPOSITORY = "kylebegeman/loom";
 const OFFICIAL_UPSTREAM = "https://github.com/pingdotgg/t3code.git";
@@ -234,17 +240,47 @@ export function validateFeedConfig(raw: string) {
   }
 }
 
-export function buildEnvironment(sourceDir: string, env: NodeJS.ProcessEnv) {
+function publisherConnectConfig() {
+  const connectPath = NodePath.join(STATE_DIR, "connect.json");
+  return NodeFS.existsSync(connectPath)
+    ? parseLoomConnectConfig(JSON.parse(NodeFS.readFileSync(connectPath, "utf8")))
+    : undefined;
+}
+
+export function buildEnvironment(
+  sourceDir: string,
+  env: NodeJS.ProcessEnv,
+  connect?: LoomConnectConfig | null,
+) {
   const result = { ...env };
   delete result.ELECTRON_RUN_AS_NODE;
+  delete result.CLERK_SECRET_KEY;
   delete result.VITE_HTTP_URL;
   delete result.VITE_WS_URL;
   // Do not inherit build overrides or a mock feed from a running dev instance.
   for (const key of Object.keys(result)) {
     if (key.startsWith("T3CODE_DESKTOP_")) delete result[key];
   }
+  if (connect !== undefined) {
+    for (const key of [
+      "T3CODE_CLERK_PUBLISHABLE_KEY",
+      "T3CODE_CLERK_JWT_TEMPLATE",
+      "T3CODE_CLERK_CLI_OAUTH_CLIENT_ID",
+      "T3CODE_RELAY_URL",
+      "VITE_CLERK_PUBLISHABLE_KEY",
+      "VITE_CLERK_JWT_TEMPLATE",
+      "VITE_CLERK_CLI_OAUTH_CLIENT_ID",
+      "VITE_T3CODE_RELAY_URL",
+      "EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY",
+      "EXPO_PUBLIC_CLERK_JWT_TEMPLATE",
+      "LOOM_MOBILE_AUTH_DOMAIN",
+      "LOOM_MOBILE_ACCOUNT_PORTAL_URL",
+    ])
+      delete result[key];
+  }
   return {
     ...result,
+    ...(connect !== undefined ? loomConnectBuildEnvironment(connect) : {}),
     PATH: [
       NodePath.join(sourceDir, "node_modules/.bin"),
       NodePath.dirname(NodeProcess.execPath),
@@ -256,6 +292,7 @@ export function buildEnvironment(sourceDir: string, env: NodeJS.ProcessEnv) {
       "/usr/sbin",
       "/sbin",
     ].join(NodePath.delimiter),
+    T3CODE_RELEASE_PUBLIC_CONFIG: "1",
     T3CODE_DESKTOP_UPDATE_REPOSITORY: REPOSITORY,
     T3CODE_DESKTOP_SIGNED: "false",
     COREPACK_ENABLE_DOWNLOAD_PROMPT: "0",
@@ -263,10 +300,18 @@ export function buildEnvironment(sourceDir: string, env: NodeJS.ProcessEnv) {
   };
 }
 
-function run(command: string, args: string[], options: { cwd?: string; stream?: boolean } = {}) {
+function run(
+  command: string,
+  args: string[],
+  options: { cwd?: string; stream?: boolean; connect?: LoomConnectConfig | null } = {},
+) {
   const result = NodeChildProcess.spawnSync(command, args, {
     cwd: options.cwd,
-    env: buildEnvironment(options.cwd ?? SOURCE_DIR, NodeProcess.env),
+    env: buildEnvironment(
+      options.cwd ?? SOURCE_DIR,
+      NodeProcess.env,
+      options.connect !== undefined ? options.connect : publisherConnectConfig(),
+    ),
     encoding: "utf8",
     stdio: options.stream ? "inherit" : "pipe",
     maxBuffer: 8 * 1024 * 1024,
@@ -447,6 +492,21 @@ export function restoreBuildInputs(sourceDir: string) {
   );
 }
 
+/** Old records predate public configuration receipts and retain disabled Connect on replay. */
+export async function preparedConnectConfig(record: string, sourceSha: string) {
+  const path = NodePath.join(record, "connect-config.json");
+  if (!(await exists(path))) return null;
+  const value: unknown = JSON.parse(await NodeFSP.readFile(path, "utf8"));
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Prepared Connect configuration must be an object.");
+  }
+  const receipt = value as Record<string, unknown>;
+  if (receipt.schemaVersion !== 1 || receipt.sourceSha !== sourceSha) {
+    throw new Error("Prepared Connect configuration belongs to a different source.");
+  }
+  return receipt.connectConfig === null ? null : parseLoomConnectConfig(receipt.connectConfig);
+}
+
 async function prepare(release: Release) {
   const record = NodePath.join(BUILDS_DIR, release.recordName);
   const artifacts = NodePath.join(record, "updates");
@@ -454,8 +514,14 @@ async function prepare(release: Release) {
   const manifest = NodePath.join(artifacts, `${release.channel}-mac.yml`);
   if (await exists(NodePath.join(artifacts, "ready"))) {
     if (!(await exists(`${zip}.blockmap`))) ensureBlockmap(zip);
-    return { record, zip, manifest };
+    return {
+      record,
+      zip,
+      manifest,
+      connectConfig: await preparedConnectConfig(record, release.commit),
+    };
   }
+  const connectConfig = publisherConnectConfig() ?? null;
 
   const identities = run("security", [
     "find-identity",
@@ -477,7 +543,11 @@ async function prepare(release: Release) {
   const staging = await NodeFSP.mkdtemp(NodePath.join(STATE_DIR, "build-"));
   try {
     console.log(`Building Loom ${release.version} (${release.commit.slice(0, 10)}).`);
-    run("pnpm", ["install", "--frozen-lockfile"], { cwd: SOURCE_DIR, stream: true });
+    run("pnpm", ["install", "--frozen-lockfile"], {
+      cwd: SOURCE_DIR,
+      stream: true,
+      connect: connectConfig,
+    });
     run(NodeProcess.execPath, ["scripts/update-release-package-versions.ts", release.version], {
       cwd: SOURCE_DIR,
       stream: true,
@@ -497,7 +567,7 @@ async function prepare(release: Release) {
         "--output-dir",
         staging,
       ],
-      { cwd: SOURCE_DIR, stream: true },
+      { cwd: SOURCE_DIR, stream: true, connect: connectConfig },
     );
     const zipNames = (await NodeFSP.readdir(staging)).filter((filename) =>
       filename.endsWith("-arm64.zip"),
@@ -532,6 +602,11 @@ async function prepare(release: Release) {
     await NodeFSP.mkdir(NodePath.join(stagedRecord, "updates"), { recursive: true });
     await NodeFSP.rename(app, NodePath.join(stagedRecord, "Loom.app"));
     await NodeFSP.writeFile(NodePath.join(stagedRecord, "build.env"), buildRecord);
+    await NodeFSP.writeFile(
+      NodePath.join(stagedRecord, "connect-config.json"),
+      `${JSON.stringify({ schemaVersion: 1, sourceSha: release.commit, connectConfig }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
     const stagedZip = NodePath.join(stagedRecord, "updates", release.filename);
     run("ditto", [
       "-c",
@@ -549,7 +624,7 @@ async function prepare(release: Release) {
     await NodeFSP.writeFile(NodePath.join(stagedRecord, "updates", "ready"), `${release.commit}\n`);
     await NodeFSP.mkdir(BUILDS_DIR, { recursive: true });
     await NodeFSP.rename(stagedRecord, record);
-    return { record, zip, manifest };
+    return { record, zip, manifest, connectConfig };
   } finally {
     try {
       restoreBuildInputs(SOURCE_DIR);
@@ -612,6 +687,12 @@ Source commit: ${release.commit}. macOS Apple Silicon; signed with Kyle's local 
     ],
     { stream: true },
   );
+  await ensureRuntimeReleaseAssets({
+    version: release.version,
+    sourceSha: release.commit,
+    env: buildEnvironment(SOURCE_DIR, NodeProcess.env, prepared.connectConfig),
+    log: (message) => console.log(message),
+  });
   run(
     "gh",
     [
@@ -657,6 +738,14 @@ async function enable() {
   const script = NodePath.join(tools, "fork/updates.ts");
   if (NodeURL.fileURLToPath(import.meta.url) !== script) {
     await NodeFSP.copyFile(NodeURL.fileURLToPath(import.meta.url), script);
+    await NodeFSP.copyFile(
+      NodeURL.fileURLToPath(new URL("./connect-config.ts", import.meta.url)),
+      NodePath.join(tools, "fork/connect-config.ts"),
+    );
+    await NodeFSP.copyFile(
+      NodeURL.fileURLToPath(new URL("./runtime-release.ts", import.meta.url)),
+      NodePath.join(tools, "fork/runtime-release.ts"),
+    );
     await NodeFSP.copyFile(
       NodeURL.fileURLToPath(new URL("../lib/update-manifest.ts", import.meta.url)),
       NodePath.join(tools, "lib/update-manifest.ts"),
@@ -873,6 +962,10 @@ async function publishIos(release: Release) {
   }
   if (config.signingKeychain && config.signingKeychainPasswordFile)
     unlockIosSigningKeychain(config.signingKeychain, config.signingKeychainPasswordFile);
+  const connectConfig = await preparedConnectConfig(
+    NodePath.join(BUILDS_DIR, release.recordName),
+    release.commit,
+  );
   const result = NodeChildProcess.spawnSync(
     NodeProcess.execPath,
     [
@@ -886,7 +979,7 @@ async function publishIos(release: Release) {
     {
       cwd: SOURCE_DIR,
       env: {
-        ...automaticIosEnvironment(buildEnvironment(SOURCE_DIR, NodeProcess.env)),
+        ...automaticIosEnvironment(buildEnvironment(SOURCE_DIR, NodeProcess.env, connectConfig)),
         ASC_PROFILE: config.profile,
         ASC_STRICT_AUTH: "true",
         LOOM_IOS_TEAM_ID: config.teamId,

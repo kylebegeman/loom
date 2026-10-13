@@ -7,9 +7,12 @@ import * as NodePath from "node:path";
 
 import { describe, expect, it } from "vite-plus/test";
 
+import { parseLoomConnectConfig } from "./connect-config.ts";
+
 import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
   buildEnvironment,
+  preparedConnectConfig,
   launchAgent,
   iosPublishConfig,
   unlockIosSigningKeychain,
@@ -53,6 +56,66 @@ async function publicationFixture() {
 }
 
 describe("Loom update publishing", () => {
+  it("uses only the explicitly prepared public config for desktop and runtime builds", () => {
+    const config = parseLoomConnectConfig({
+      enabled: true,
+      mobileEnabled: true,
+      clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
+      clerkJwtTemplate: "relay",
+      clerkCliOAuthClientId: "public-oauth-id",
+      relayUrl: "https://relay.example.test",
+      accountPortalUrl: "https://accounts.example.test",
+    })!;
+    const inherited = {
+      T3CODE_RELAY_URL: "https://wrong.example.test",
+      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "unqualified",
+      LOOM_MOBILE_AUTH_DOMAIN: "wrong.example.test",
+      CLERK_SECRET_KEY: "private-must-not-cross",
+    };
+    const built = buildEnvironment("/source", inherited, config);
+    expect(built).toMatchObject({
+      T3CODE_RELAY_URL: config.relayUrl,
+      T3CODE_CLERK_PUBLISHABLE_KEY: config.clerkPublishableKey,
+      LOOM_MOBILE_CONNECT_ENABLED: "1",
+    });
+    expect(built).not.toHaveProperty("EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY");
+    expect(built).not.toHaveProperty("LOOM_MOBILE_AUTH_DOMAIN");
+    expect(built).not.toHaveProperty("CLERK_SECRET_KEY");
+    expect(buildEnvironment("/source", inherited, null)).not.toHaveProperty("T3CODE_RELAY_URL");
+  });
+
+  it("freezes Connect configuration per prepared source and preserves old disabled releases", async () => {
+    const directory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "loom-connect-receipt-"),
+    );
+    try {
+      expect(await preparedConnectConfig(directory, COMMIT)).toBeNull();
+      const config = parseLoomConnectConfig({
+        enabled: true,
+        mobileEnabled: true,
+        clerkPublishableKey: "pk_live_YXV0aC5leGFtcGxlLnRlc3Qk",
+        clerkJwtTemplate: "relay",
+        clerkCliOAuthClientId: "public-oauth-id",
+        relayUrl: "https://relay.example.test",
+        accountPortalUrl: "https://accounts.example.test",
+      })!;
+      await NodeFSP.writeFile(
+        NodePath.join(directory, "connect-config.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          sourceSha: COMMIT,
+          connectConfig: config,
+        }),
+      );
+      expect(await preparedConnectConfig(directory, COMMIT)).toEqual(config);
+      await expect(preparedConnectConfig(directory, "0".repeat(40))).rejects.toThrow(
+        "different source",
+      );
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it("cleans generated build inputs so the next integration can check out", async () => {
     const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-build-cleanup-"));
     const buildInputs = [

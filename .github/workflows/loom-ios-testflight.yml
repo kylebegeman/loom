@@ -64,6 +64,12 @@ jobs:
       - name: Check release, project, and handoff contracts
         run: |
           vp test run \
+            scripts/fork/connect-config.test.ts \
+            scripts/fork/runtime-release.test.ts \
+            scripts/fork/runtime-release.workflow.test.ts \
+            scripts/lib/public-config.test.ts \
+            apps/mobile/src/fork/connect/connectEmailSignIn.test.ts \
+            apps/mobile/src/fork/connect/connectEmailSignIn.secondary.test.ts \
             scripts/fork/ios-release.test.ts \
             scripts/fork/updates.test.ts \
             scripts/mobile-native-client.test.ts \

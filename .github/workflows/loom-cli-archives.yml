@@ -1,0 +1,130 @@
+# Fork-owned exact-source runtimes. The Mac publisher waits before publishing its draft.
+name: Loom computer runtimes
+run-name: Loom runtimes ${{ inputs.version }} ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact reserved Loom release version
+        required: true
+      source_sha:
+        description: Exact checked source commit
+        required: true
+      request_id:
+        description: Publisher attempt identity
+        required: true
+      clerk_publishable_key:
+        description: Public Clerk application identifier
+        required: false
+      clerk_jwt_template:
+        description: Public Clerk JWT template name
+        required: false
+      clerk_cli_oauth_client_id:
+        description: Public CLI OAuth application identifier
+        required: false
+      relay_url:
+        description: Public Connect relay URL
+        required: false
+
+concurrency:
+  group: loom-runtimes-${{ inputs.version }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  LOOM_RUNTIME_VERSION: ${{ inputs.version }}
+  LOOM_RUNTIME_SOURCE_SHA: ${{ inputs.source_sha }}
+  T3CODE_CLERK_PUBLISHABLE_KEY: ${{ inputs.clerk_publishable_key }}
+  T3CODE_CLERK_JWT_TEMPLATE: ${{ inputs.clerk_jwt_template }}
+  T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ inputs.clerk_cli_oauth_client_id }}
+  T3CODE_RELAY_URL: ${{ inputs.relay_url }}
+
+jobs:
+  build:
+    if: github.repository == 'kylebegeman/loom'
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform: mac
+            arch: arm64
+            key: darwin-arm64
+          - runner: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+            key: linux-arm64
+          - runner: ubuntu-24.04
+            platform: linux
+            arch: x64
+            key: linux-x64
+    runs-on: ${{ matrix.runner }}
+    env:
+      VP_NODE_VERSION: "26.8.2"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.version }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version: "26.8.2"
+          cache: true
+          run-install: |
+            args:
+              - --frozen-lockfile
+      - name: Validate immutable source
+        shell: bash
+        run: |
+          node --input-type=module -e 'import { validateRuntimeRelease } from "./scripts/fork/runtime-release.ts"; validateRuntimeRelease(process.env.LOOM_RUNTIME_VERSION, process.env.LOOM_RUNTIME_SOURCE_SHA)'
+          test "$(git rev-parse HEAD)" = "$LOOM_RUNTIME_SOURCE_SHA"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: stable
+      - name: Build the source runtime
+        shell: bash
+        run: |
+          node scripts/update-release-package-versions.ts "$LOOM_RUNTIME_VERSION"
+          vp run --filter t3 build
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml
+          mkdir -p "$RUNNER_TEMP/loom-resource-monitor/${{ matrix.key }}"
+          cp native/resource-monitor/target/release/t3-resource-monitor "$RUNNER_TEMP/loom-resource-monitor/${{ matrix.key }}/"
+          node apps/server/scripts/cli.ts build-exe --verbose
+          node scripts/build-cli-archive.ts --platform "${{ matrix.platform }}" --arch "${{ matrix.arch }}" --version "$LOOM_RUNTIME_VERSION" --resource-monitor-dir "$RUNNER_TEMP/loom-resource-monitor" --output-dir release-cli
+          node scripts/smoke-cli-archive.ts --archive "release-cli/t3-$LOOM_RUNTIME_VERSION-${{ matrix.key }}.tar.gz" --expect-version "$LOOM_RUNTIME_VERSION"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: loom-runtime-${{ matrix.key }}
+          path: release-cli/*.tar.gz
+          if-no-files-found: error
+          retention-days: 3
+
+  attach:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: loom-runtime-*
+          merge-multiple: true
+          path: release-cli
+      - name: Attach only to the reserved draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$LOOM_RUNTIME_VERSION" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)" = "true"
+          cd release-cli
+          sha256sum -- *.tar.gz > SHA256SUMS
+          gh release upload "$LOOM_RUNTIME_VERSION" ./*.tar.gz SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

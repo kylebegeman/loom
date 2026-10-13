@@ -160,3 +160,7 @@ packages/client-runtime/src/state/presentation.ts	computer-naming	3
 scripts/lib/public-config.test.ts	fleet-connect	1
 scripts/lib/public-config.ts	fleet-connect	1
 apps/mobile/src/features/connection/GitHubRoutingSettings.tsx	fleet-connections	1
+packages/shared/src/cliRelease.test.ts	fleet-connect	3
+packages/shared/src/cliRelease.ts	fleet-connect	3
+packages/ssh/src/tunnel.test.ts	fleet-connect	2
+packages/ssh/src/tunnel.ts	fleet-connect	3
