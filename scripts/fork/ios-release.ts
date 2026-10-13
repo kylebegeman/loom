@@ -490,6 +490,34 @@ export function confirmedUploadedBuild(
   return build;
 }
 
+/** Require the complete membership of the exact app/build before skipping group assignment. */
+export function missingTestFlightGroups(
+  input: unknown,
+  expected: { appId: string; buildId: string },
+  requested: readonly string[],
+) {
+  const response = record(input, "TestFlight build group membership");
+  if (response.appId !== expected.appId || response.buildId !== expected.buildId)
+    throw new Error("TestFlight group membership belongs to a different app or build.");
+  if (response.complete !== true)
+    throw new Error("TestFlight group membership lookup must be complete before distribution.");
+  if (
+    !Array.isArray(response.groups) ||
+    !Number.isSafeInteger(response.groupCount) ||
+    response.groupCount !== response.groups.length
+  )
+    throw new Error(
+      "TestFlight group membership must contain a consistent groups array and count.",
+    );
+  const selectors = new Set<string>();
+  for (const item of response.groups) {
+    const group = record(item, "TestFlight group");
+    selectors.add(text(group.id, "TestFlight group ID"));
+    selectors.add(text(group.name, "TestFlight group name"));
+  }
+  return [...new Set(requested)].filter((group) => !selectors.has(group));
+}
+
 async function ownedPath(filename: string) {
   let info;
   try {
@@ -963,7 +991,7 @@ async function inspect(outputDir: string, receipt: IosReleaseReceipt) {
   }
 }
 
-async function publish(outputDir: string, receipt: IosReleaseReceipt) {
+export async function publish(outputDir: string, receipt: IosReleaseReceipt) {
   if (!receipt.artifactSha256) throw new Error("Inspect the signed IPA before publishing.");
   assertReceiptContext(receipt);
   const ipaExists = Boolean(await ownedPath(NodePath.join(outputDir, "Loom.ipa")));
@@ -977,6 +1005,34 @@ async function publish(outputDir: string, receipt: IosReleaseReceipt) {
     throw new Error(
       "This build number already exists in Apple without a matching local upload receipt. Inspect it before retrying; no duplicate upload was attempted.",
     );
+  if (receipt.buildId && !existing) confirmedUploadedBuild(receipt, builds);
+  let groups = receipt.groups;
+  if (existing?.processingState === "VALID") {
+    confirmedUploadedBuild(receipt, builds);
+    if (groups.length) {
+      groups = missingTestFlightGroups(
+        json("asc", [
+          "testflight",
+          "groups",
+          "list",
+          "--build-id",
+          existing.id,
+          "--app",
+          receipt.appId,
+          "--output",
+          "json",
+        ]),
+        { appId: receipt.appId, buildId: existing.id },
+        receipt.groups,
+      );
+    }
+    if (!groups.length) {
+      console.log(
+        `TestFlight build ${receipt.version} (${receipt.buildNumber}) is already processed and assigned to the requested groups. Source: ${receipt.sourceSha}`,
+      );
+      return receipt;
+    }
+  }
   const args = [
     "publish",
     "testflight",
@@ -995,7 +1051,7 @@ async function publish(outputDir: string, receipt: IosReleaseReceipt) {
   } else {
     args.push("--ipa", NodePath.join(outputDir, "Loom.ipa"));
   }
-  if (receipt.groups.length) args.push("--group", receipt.groups.join(","));
+  if (groups.length) args.push("--group", groups.join(","));
   else args.push("--upload-only");
   const result = json("asc", args);
   await NodeFSP.writeFile(

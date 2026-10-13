@@ -4,7 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodeProcess from "node:process";
 
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   compareBuildNumbers,
@@ -22,7 +22,14 @@ import {
   validateSigningEntitlements,
   confirmedUploadedBuild,
   pruneCompletedIosBuilds,
+  publish,
+  missingTestFlightGroups,
 } from "./ios-release.ts";
+
+const { spawnSync } = vi.hoisted(() => ({
+  spawnSync: vi.fn<(command: string, args: string[]) => { status: number; stdout: string }>(),
+}));
+vi.mock("node:child_process", () => ({ spawnSync }));
 
 const TEAM = "LOOMTEST01";
 const APP = "1234567890";
@@ -527,6 +534,65 @@ describe("Loom iOS release boundaries", () => {
     ).toThrow("valid");
   });
 
+  it("matches assigned group IDs and names and retains only missing requested groups", () => {
+    const membership = {
+      appId: APP,
+      buildId: "confirmed",
+      complete: true,
+      groupCount: 2,
+      groups: [
+        { id: "internal-id", name: "Internal", membership: "explicit-and-all-builds" },
+        { id: "external-id", name: "External", membership: "explicit" },
+      ],
+    };
+    const expected = { appId: APP, buildId: "confirmed" };
+    expect(missingTestFlightGroups(membership, expected, ["Internal", "external-id"])).toEqual([]);
+    expect(
+      missingTestFlightGroups(membership, expected, ["Internal", "New", "new-id", "New"]),
+    ).toEqual(["New", "new-id"]);
+    expect(
+      missingTestFlightGroups({ ...membership, groupCount: 0, groups: [] }, expected, ["Internal"]),
+    ).toEqual(["Internal"]);
+    expect(missingTestFlightGroups(membership, expected, [])).toEqual([]);
+  });
+
+  it.each([
+    ["wrong app", { appId: "9876543210" }],
+    ["wrong build", { buildId: "someone-else" }],
+    ["partial lookup", { complete: false }],
+    ["missing completion", { complete: undefined }],
+    ["nonboolean completion", { complete: "true" }],
+    ["missing groups", { groups: undefined }],
+    ["object groups", { groups: {} }],
+    ["inconsistent count", { groupCount: 2 }],
+    ["missing count", { groupCount: undefined }],
+    ["invalid group", { groups: [null] }],
+    ["missing group ID", { groups: [{ name: "Internal" }] }],
+    ["blank group name", { groups: [{ id: "internal-id", name: " " }] }],
+    [
+      "malformed irrelevant group",
+      {
+        groupCount: 2,
+        groups: [{ id: "internal-id", name: "Internal" }, { id: "other-id" }],
+      },
+    ],
+  ])("rejects %s membership before deciding distribution", (_label, overrides) => {
+    expect(() =>
+      missingTestFlightGroups(
+        {
+          appId: APP,
+          buildId: "confirmed",
+          complete: true,
+          groupCount: 1,
+          groups: [{ id: "internal-id", name: "Internal" }],
+          ...overrides,
+        },
+        { appId: APP, buildId: "confirmed" },
+        ["Internal"],
+      ),
+    ).toThrow();
+  });
+
   it("bounds completed build artifacts and retains upload evidence and unconfirmed records", async () => {
     const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-ios-retention-"));
     const create = async (
@@ -671,6 +737,214 @@ describe("Loom iOS release boundaries", () => {
       expect(await NodeFSP.readFile(NodePath.join(lock, "pid"), "utf8")).toBe("bad");
     } finally {
       await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("Loom TestFlight publication replay", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    spawnSync.mockReset();
+  });
+
+  const fixture = async (groups = ["Internal"]) => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-ios-replay-"));
+    const confirmed = parseReceipt({
+      ...receipt,
+      groups,
+      artifactSha256: "b".repeat(64),
+      buildId: "confirmed",
+    });
+    const membership = {
+      buildId: confirmed.buildId,
+      appId: APP,
+      complete: true,
+      groupCount: 1,
+      groups: [{ id: "internal-id", name: "Internal" }],
+    };
+    const uploaded = [{ id: "confirmed", attributes: { version: "1", processingState: "VALID" } }];
+    const calls: string[][] = [];
+    vi.stubEnv("LOOM_IOS_TEAM_ID", TEAM);
+    vi.stubEnv("LOOM_IOS_ASC_APP_ID", APP);
+    spawnSync.mockImplementation((command, args) => {
+      calls.push([command, ...args]);
+      const ok = (result: unknown) => ({ status: 0, stdout: JSON.stringify(result) });
+      if (command === "git" && args.join(" ") === "rev-parse HEAD")
+        return { status: 0, stdout: SHA };
+      if (command === "git" && args[0] === "status") return { status: 0, stdout: "" };
+      if (command === NodePath.join(receipt.sourceRoot, "apps/mobile/node_modules/.bin/expo"))
+        return ok(config);
+      if (command === "asc" && args[0] === "apps" && args[1] === "view")
+        return ok({ data: { id: APP, attributes: { bundleId: "com.kylebegeman.loom" } } });
+      if (command === "asc" && args[0] === "builds" && args[1] === "list")
+        return ok({ data: uploaded });
+      if (command === "asc" && args.slice(0, 3).join(" ") === "testflight groups list")
+        return ok(membership);
+      if (command === "asc" && args.slice(0, 2).join(" ") === "publish testflight")
+        return ok({ buildId: "confirmed" });
+      throw new Error(`Unexpected mocked release command: ${command} ${args.join(" ")}`);
+    });
+    return { directory, confirmed, membership, uploaded, calls };
+  };
+
+  it("does not redistribute or reupload a confirmed valid build already in every requested group", async () => {
+    const setup = await fixture(["Internal", "internal-id"]);
+    try {
+      expect(await publish(setup.directory, setup.confirmed)).toEqual(setup.confirmed);
+      expect(setup.calls.filter((call) => call[1] === "publish")).toEqual([]);
+      expect(setup.calls).toContainEqual([
+        "asc",
+        "testflight",
+        "groups",
+        "list",
+        "--build-id",
+        "confirmed",
+        "--app",
+        APP,
+        "--output",
+        "json",
+      ]);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
+    }
+  });
+
+  it("distributes only missing requested group IDs and names", async () => {
+    const setup = await fixture(["Internal", "internal-id", "External", "other-id"]);
+    try {
+      expect(await publish(setup.directory, setup.confirmed)).toEqual(setup.confirmed);
+      const distribution = setup.calls.filter((call) => call[1] === "publish");
+      expect(distribution).toHaveLength(1);
+      expect(distribution[0]).toContain("--build-id");
+      expect(distribution[0]).not.toContain("--ipa");
+      expect(distribution[0]?.slice(-2)).toEqual(["--group", "External,other-id"]);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
+    }
+  });
+
+  it("stops before distribution if complete group membership cannot be established", async () => {
+    const setup = await fixture();
+    setup.membership.complete = false;
+    try {
+      await expect(publish(setup.directory, setup.confirmed)).rejects.toThrow("complete");
+      expect(setup.calls.filter((call) => call[1] === "publish")).toEqual([]);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
+    }
+  });
+  it("distributes all groups when complete membership is empty and preserves the confirmed receipt", async () => {
+    const setup = await fixture();
+    setup.membership.groups = [];
+    setup.membership.groupCount = 0;
+    try {
+      await publish(setup.directory, setup.confirmed);
+      const distribution = setup.calls.filter((call) => call[1] === "publish");
+      expect(distribution).toHaveLength(1);
+      expect(distribution[0]?.slice(-2)).toEqual(["--group", "Internal"]);
+      expect(
+        JSON.parse(
+          await NodeFSP.readFile(NodePath.join(setup.directory, "loom-ios-release.json"), "utf8"),
+        ),
+      ).toEqual(setup.confirmed);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
+    }
+  });
+
+  it("does not run an upload-only replay when no groups were requested", async () => {
+    const setup = await fixture([]);
+    try {
+      expect(await publish(setup.directory, setup.confirmed)).toEqual(setup.confirmed);
+      expect(setup.calls.filter((call) => call[1] === "publish")).toEqual([]);
+      expect(
+        setup.calls.filter((call) => call.slice(1, 4).join(" ") === "testflight groups list"),
+      ).toEqual([]);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    [
+      "unconfirmed receipt",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        delete setup.confirmed.buildId;
+      },
+    ],
+    [
+      "missing artifact digest",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        delete setup.confirmed.artifactSha256;
+      },
+    ],
+    [
+      "missing recorded build",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.uploaded.length = 0;
+      },
+    ],
+    [
+      "different recorded build",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.uploaded[0]!.id = "someone-else";
+      },
+    ],
+    [
+      "different build number",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.uploaded[0]!.attributes.version = "2";
+      },
+    ],
+    [
+      "invalid build",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.uploaded[0]!.attributes.processingState = "INVALID";
+      },
+    ],
+    [
+      "processing build without IPA",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.uploaded[0]!.attributes.processingState = "PROCESSING";
+      },
+    ],
+    [
+      "different source",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.confirmed.sourceSha = "c".repeat(40);
+      },
+    ],
+    [
+      "different account",
+      (setup: Awaited<ReturnType<typeof fixture>>) => {
+        setup.confirmed.appId = "9876543210";
+      },
+    ],
+  ])("never distributes or uploads a %s", async (_label, invalidate) => {
+    const setup = await fixture();
+    invalidate(setup);
+    try {
+      await expect(publish(setup.directory, setup.confirmed)).rejects.toThrow();
+      expect(setup.calls.filter((call) => call[1] === "publish")).toEqual([]);
+      expect(
+        setup.calls.filter((call) => call.slice(1, 4).join(" ") === "testflight groups list"),
+      ).toEqual([]);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
+    }
+  });
+
+  it("still inspects a retained IPA before treating group membership as published", async () => {
+    const setup = await fixture();
+    try {
+      await NodeFSP.writeFile(NodePath.join(setup.directory, "Loom.ipa"), "changed artifact");
+      await expect(publish(setup.directory, setup.confirmed)).rejects.toThrow("digest changed");
+      expect(setup.calls.filter((call) => call[1] === "publish")).toEqual([]);
+      expect(
+        setup.calls.filter((call) => call.slice(1, 4).join(" ") === "testflight groups list"),
+      ).toEqual([]);
+    } finally {
+      await NodeFSP.rm(setup.directory, { recursive: true, force: true });
     }
   });
 });
