@@ -1,3 +1,4 @@
+// fork: mini-native-retention
 import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
@@ -5,12 +6,14 @@ import {
   OrchestratorMcpFailure,
   ServerSettings,
   ServerSettingsPatch,
+  StorageCleanupReport,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as StorageCleanup from "../../../storageCleanup.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
@@ -64,4 +67,17 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
   }),
   success: Schema.Struct(PreferenceFields),
 }).annotate(Tool.Destructive, true);
-export const EnvironmentToolkit = Toolkit.make(EnvironmentReadTool, EnvironmentPreferencesTool);
+const StorageCleanupReportTool = Tool.make("loom_storage_cleanup_report", {
+  ...shared,
+  description:
+    "Read the latest automatic or user-requested native workspace cleanup report, including kept-work reasons and reclaimed bytes. Does not run cleanup or change administrator-owned retention settings.",
+  dependencies: [...shared.dependencies, StorageCleanup.StorageCleanup],
+  success: Schema.NullOr(StorageCleanupReport),
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false);
+export const EnvironmentToolkit = Toolkit.make(
+  EnvironmentReadTool,
+  EnvironmentPreferencesTool,
+  StorageCleanupReportTool,
+);

@@ -1,9 +1,11 @@
+// fork: mini-native-retention
 import * as Option from "effect/Option";
 import * as GitWorkflow from "./git/GitWorkflowService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { restoreWorktree } from "./workspace/restoreWorktree.ts";
+import { restoreScratchCheckout } from "./workspace/ScratchCheckout.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Context from "effect/Context";
@@ -25,6 +27,7 @@ import * as ServerConfig from "./config.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as GitManager from "./git/GitManager.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Settings from "./serverSettings.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -254,6 +257,8 @@ const cleanupFixture = Effect.gen(function* () {
     storageCleanup: { ...DEFAULT_SERVER_SETTINGS.storageCleanup, worktreeAfterDays: 8 },
   };
   let threads = [shell({ branch: "feature", worktreePath: worktree })];
+  let projectRoots = [{ id: ProjectId.make("project-1"), workspaceRoot: repo }];
+  let pendingEffects = false;
   let editBeforeRemoval = false;
   let openSessionCwd: string | null = null;
   let fullStatusCalls = 0;
@@ -279,7 +284,7 @@ const cleanupFixture = Effect.gen(function* () {
       subscribeChanges: Effect.succeed(Stream.empty),
     } as unknown as Settings.ServerSettingsService["Service"]),
     Effect.provideService(ProjectStore.ProjectStoreV2, {
-      listShells: () => Effect.succeed([{ id: ProjectId.make("project-1"), workspaceRoot: repo }]),
+      listShells: () => Effect.sync(() => projectRoots),
     } as unknown as ProjectStore.ProjectStoreV2["Service"]),
     Effect.provideService(ProjectionStore.ProjectionStoreV2, {
       getShellSnapshot: (input?: { location?: string }) =>
@@ -290,24 +295,26 @@ const cleanupFixture = Effect.gen(function* () {
     } as unknown as Orchestrator.OrchestratorV2["Service"]),
     Effect.provideService(SqlClient.SqlClient, ((strings: TemplateStringsArray) =>
       Effect.sync(() =>
-        openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
-          ? [
-              {
-                payload_json: JSON.stringify({
-                  id: "session-1",
-                  driver: "codex",
-                  providerInstanceId: "codex",
-                  status: "ready",
-                  cwd: openSessionCwd,
-                  model: null,
-                  capabilities: CodexProviderCapabilitiesV2,
-                  createdAt: "2026-06-01T12:00:00.000Z",
-                  updatedAt: "2026-06-01T12:00:00.000Z",
-                  lastError: null,
-                }),
-              },
-            ]
-          : [],
+        pendingEffects && strings.join("").includes("effect_outbox")
+          ? [{ id: 1 }]
+          : openSessionCwd !== null && strings.join("").includes("projection_provider_sessions")
+            ? [
+                {
+                  payload_json: JSON.stringify({
+                    id: "session-1",
+                    driver: "codex",
+                    providerInstanceId: "codex",
+                    status: "ready",
+                    cwd: openSessionCwd,
+                    model: null,
+                    capabilities: CodexProviderCapabilitiesV2,
+                    createdAt: "2026-06-01T12:00:00.000Z",
+                    updatedAt: "2026-06-01T12:00:00.000Z",
+                    lastError: null,
+                  }),
+                },
+              ]
+            : [],
       )) as unknown as SqlClient.SqlClient),
     Effect.provideService(GitManager.GitManager, {
       invalidateStatus: () => Effect.void,
@@ -388,6 +395,15 @@ const cleanupFixture = Effect.gen(function* () {
     },
     setThreads: (next: typeof threads) => {
       threads = next;
+    },
+    setProjectRoot: (workspaceRoot: string) => {
+      projectRoots = [{ id: ProjectId.make("project-1"), workspaceRoot }];
+    },
+    setScratchRetention: (scratchAfterDays: number | null) => {
+      settings = { ...settings, storageCleanup: { ...settings.storageCleanup, scratchAfterDays } };
+    },
+    setPendingEffects: (pending: boolean) => {
+      pendingEffects = pending;
     },
     setOpenSessionCwd: (cwd: string | null) => {
       openSessionCwd = cwd;
@@ -1072,3 +1088,220 @@ describe("storage cleanup reports and local file policies", () => {
     ),
   );
 });
+
+describe("native Scratch and pin retention", () => {
+  it.live("keeps a pinned worktree and pending checkpoint effects", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* cleanupFixture;
+        f.setThreads([shell({ branch: "feature", worktreePath: f.worktree, pinnedAt: at(0) })]);
+        expect((yield* f.service.runNow).entries[0]?.reason).toBe("Thread is pinned");
+        f.setThreads([shell({ branch: "feature", worktreePath: f.worktree })]);
+        f.setPendingEffects(true);
+        expect((yield* f.service.runNow).entries[0]?.reason).toBe(
+          "Thread effects are still pending",
+        );
+        expect(yield* f.fs.exists(f.worktree)).toBe(true);
+      }),
+    ),
+  );
+
+  it.live("rechecks pins when a thread is pinned during measurement", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        let pinDuringWalk: (() => void) | undefined;
+        let cwd: string | undefined;
+        const f = yield* cleanupFixture.pipe(
+          Effect.provideService(FileSystem.FileSystem, {
+            ...fs,
+            readDirectory: (directory, options) => {
+              if (directory === cwd) pinDuringWalk?.();
+              return fs.readDirectory(directory, options);
+            },
+          }),
+        );
+        cwd = yield* fs.realPath(f.worktree);
+        pinDuringWalk = () =>
+          f.setThreads([shell({ branch: "feature", worktreePath: f.worktree, pinnedAt: at(0) })]);
+        expect((yield* f.service.runNow).entries[0]?.reason).toBe("Thread is pinned");
+        expect(yield* fs.exists(f.worktree)).toBe(true);
+      }),
+    ),
+  );
+
+  const scratchFixture = Effect.gen(function* () {
+    const f = yield* cleanupFixture;
+    const config = yield* ServerConfig.ServerConfig;
+    const root = `${config.baseDir}/scratch`;
+    const cwd = `${root}/owned-thread`;
+    yield* f.fs.makeDirectory(cwd, { recursive: true });
+    f.setProjectRoot(root);
+    f.setThreads([shell({ worktreePath: cwd })]);
+    f.setScratchRetention(8);
+    return {
+      ...f,
+      root,
+      cwd,
+      input: {
+        scratchRoot: root,
+        worktreePath: cwd,
+        projectId: ProjectId.make("project-1"),
+        threadId: ThreadId.make("thread-1"),
+      },
+    };
+  });
+
+  it.live("archives and restores a clean local Scratch repository and checkpoint refs", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* scratchFixture;
+        yield* f.command(f.cwd, ["init", "-b", "main"]);
+        yield* f.fs.writeFileString(`${f.cwd}/proof`, "preserved");
+        yield* f.command(f.cwd, ["add", "."]);
+        yield* f.command(f.cwd, [
+          "-c",
+          "user.name=Scratch test",
+          "-c",
+          "user.email=scratch@example.test",
+          "commit",
+          "-m",
+          "local work",
+        ]);
+        yield* f.command(f.cwd, [
+          "update-ref",
+          "refs/t3/orchestration-v2/checkpoints/test/ordinal/1",
+          "HEAD",
+        ]);
+        const report = yield* f.service.runNow;
+        expect(report.entries.find((entry) => entry.kind === "scratch")).toMatchObject({
+          outcome: "removed",
+        });
+        expect(yield* f.fs.exists(f.cwd)).toBe(false);
+        expect(yield* restoreScratchCheckout(f.input)).toBe(true);
+        expect(yield* f.fs.readFileString(`${f.cwd}/proof`)).toBe("preserved");
+        expect(
+          (yield* f.command(f.cwd, [
+            "rev-parse",
+            "refs/t3/orchestration-v2/checkpoints/test/ordinal/1",
+          ])).stdout,
+        ).toBe((yield* f.command(f.cwd, ["rev-parse", "HEAD"])).stdout);
+      }),
+    ),
+  );
+
+  it.live("retains pinned, live, pending, non-Git and shared Scratch data", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* scratchFixture;
+        const reasons = [
+          [shell({ worktreePath: f.cwd, pinnedAt: at(0) }), "Thread is pinned"],
+          [
+            shell({ worktreePath: f.cwd, status: "running" }),
+            "Thread is running or has pending work",
+          ],
+          [
+            shell({ worktreePath: f.cwd, latestRunCompletedAt: yield* DateTime.now }),
+            "Scratch retention has not elapsed",
+          ],
+        ] as const;
+        for (const [thread, reason] of reasons) {
+          f.setThreads([thread]);
+          expect(
+            (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+          ).toBe(reason);
+        }
+        f.setThreads([shell({ worktreePath: f.cwd })]);
+        f.setPendingEffects(true);
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+        ).toBe("Thread effects are still pending");
+        f.setPendingEffects(false);
+        yield* f.fs.writeFileString(`${f.cwd}/notes`, "user data");
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+        ).toBe("Non-Git Scratch data is retained");
+        f.setThreads([
+          shell({ worktreePath: f.cwd }),
+          shell({ id: ThreadId.make("other"), worktreePath: f.cwd }),
+        ]);
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+        ).toBe("Shared by 2 threads");
+        expect(yield* f.fs.readFileString(`${f.cwd}/notes`)).toBe("user data");
+      }),
+    ),
+  );
+});
+
+it.live(
+  "Scratch cleanup protects uncommitted and ignored user data while releasing reproducible dependencies",
+  () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* cleanupFixture;
+        const config = yield* ServerConfig.ServerConfig;
+        const root = `${config.baseDir}/scratch`;
+        const cwd = `${root}/clean-repo`;
+        yield* f.fs.makeDirectory(cwd, { recursive: true });
+        f.setProjectRoot(root);
+        f.setThreads([shell({ worktreePath: cwd })]);
+        f.setScratchRetention(8);
+        yield* f.command(cwd, ["init", "-b", "main"]);
+        yield* f.fs.writeFileString(`${cwd}/.gitignore`, ".env\nnode_modules/\n");
+        yield* f.fs.writeFileString(`${cwd}/proof`, "original");
+        yield* f.command(cwd, ["add", "."]);
+        yield* f.command(cwd, [
+          "-c",
+          "user.name=Scratch test",
+          "-c",
+          "user.email=scratch@example.test",
+          "commit",
+          "-m",
+          "initial",
+        ]);
+        yield* f.fs.writeFileString(`${cwd}/proof`, "dirty");
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+        ).toContain("uncommitted changes");
+        yield* f.command(cwd, ["checkout", "--", "proof"]);
+        yield* f.fs.writeFileString(`${cwd}/.env`, "private data");
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.reason,
+        ).toContain("ignored files");
+        yield* f.fs.remove(`${cwd}/.env`);
+        yield* f.fs.makeDirectory(`${cwd}/node_modules`);
+        yield* f.fs.writeFileString(`${cwd}/node_modules/reproducible`, "dependency");
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "scratch")?.outcome,
+        ).toBe("removed");
+      }),
+    ),
+);
+
+it.live("retains a managed worktree containing a same-device bind mount", () =>
+  runCleanupTest(
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      let mounted = "/unused";
+      const f = yield* cleanupFixture.pipe(
+        Effect.provideService(FileSystem.FileSystem, {
+          ...fs,
+          readFileString: (file, encoding) =>
+            file === "/proc/self/mountinfo"
+              ? Effect.succeed(`24 1 0:1 / ${mounted} rw - ext4 /dev/test rw\n`)
+              : fs.readFileString(file, encoding),
+        }),
+        Effect.provideService(HostProcess.Platform, "linux"),
+      );
+      mounted = `${yield* fs.realPath(f.worktree)}/node_modules`;
+      yield* fs.makeDirectory(`${f.worktree}/node_modules`);
+      yield* fs.writeFileString(`${f.worktree}/node_modules/foreign-data`, "protected");
+      f.setPolicy("tracked-changes");
+      const result = yield* f.service.runNow;
+      expect(result.entries[0]).toMatchObject({ outcome: "failed" });
+      expect(result.entries[0]?.reason).toContain("mounted filesystem");
+      expect(yield* fs.readFileString(`${f.worktree}/node_modules/foreign-data`)).toBe("protected");
+    }),
+  ),
+);

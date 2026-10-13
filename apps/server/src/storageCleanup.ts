@@ -1,3 +1,4 @@
+// fork: mini-native-retention
 import {
   GitCommandError,
   OrchestrationV2AppThreadJson,
@@ -44,6 +45,13 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "./worktreesDirectory.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
+import {
+  archiveScratchCheckout,
+  scratchArchiveMatches,
+  scratchCheckoutOwned,
+  scratchArchivePaths,
+  assertScratchUnmounted,
+} from "./workspace/ScratchCheckout.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const decodeCleanupThread = Schema.decodeUnknownEffect(
@@ -453,6 +461,7 @@ const make = Effect.gen(function* () {
               holder.branch === thread.branch &&
               holder.projectId === thread.projectId,
           );
+        if (holders.some((holder) => holder.pinnedAt != null)) return keep("thread is pinned");
         if (holders.length > 1 && !settled) return keep(`shared by ${holders.length} threads`);
         if (yield* fs.exists(`${worktreePath}.t3-setup-pending`))
           return keep("workspace preparation is pending");
@@ -466,6 +475,10 @@ const make = Effect.gen(function* () {
         const realParent = yield* fs.realPath(path.dirname(worktreePath));
         if (realPath !== path.join(realParent, path.basename(worktreePath)))
           return keep("worktree is a symbolic link");
+        const owner = yield* HostProcess.UserId;
+        if (owner !== undefined && Option.getOrNull((yield* fs.stat(realPath)).uid) !== owner)
+          return keep("worktree is owned by another user");
+        yield* assertScratchUnmounted(realPath);
         if (!roots.some((root) => inside(root, realPath)))
           return keep("outside the managed worktree folder");
         if (yield* containsProjectRoot(worktreePath, [project, ...snapshot.projects]))
@@ -583,6 +596,7 @@ const make = Effect.gen(function* () {
               entry.worktreePath !== null && path.resolve(entry.worktreePath) === worktreePath,
           );
           if (hasTerminal(worktreePath)) return "open terminal";
+          if (latest.some((holder) => holder.pinnedAt != null)) return "thread is pinned";
           if (deleted) {
             if (
               latest.length > 0 ||
@@ -612,6 +626,11 @@ const make = Effect.gen(function* () {
             })
           )
             return "thread activity or shared worktree changed since check";
+          for (const holder of latest) {
+            const effects = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
+              WHERE thread_id = ${holder.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1`;
+            if (effects.length > 0) return "thread effects are still pending";
+          }
           // Sessions can outlive their run and can be shared across app threads.
           const sessionRows = yield* sql<{ payload_json: string }>`
             SELECT payload_json FROM orchestration_v2_projection_provider_sessions
@@ -660,6 +679,7 @@ const make = Effect.gen(function* () {
         // edit arrives after our last status check.
         if (fileRules.worktreeKeepWhen === "tracked-changes")
           yield* cleanupGit(worktreePath, ["clean", "-ffdx"], "git clean");
+        yield* assertScratchUnmounted(realPath);
         yield* cleanupGit(
           project.workspaceRoot,
           ["-c", "status.showUntrackedFiles=normal", "worktree", "remove", worktreePath],
@@ -684,6 +704,164 @@ const make = Effect.gen(function* () {
               error,
             });
           }),
+        ),
+      );
+    }
+  });
+
+  const cleanScratch = Effect.fn("StorageCleanup.cleanScratch")(function* (
+    retention: number | null,
+    now: number,
+    entries: StorageCleanupReportEntry[],
+  ) {
+    if (retention === null) return;
+    const roots = new Set([
+      path.resolve(config.baseDir, "scratch"),
+      path.resolve(config.managedProjectsRoot ?? config.baseDir, "scratch"),
+    ]);
+    const snapshot = yield* readThreads();
+    const groups = Map.groupBy(
+      snapshot.threads.filter((thread) => thread.worktreePath !== null),
+      (thread) => path.resolve(thread.worktreePath!),
+    );
+    for (const [cwd, holders] of groups) {
+      const thread = holders[0]!;
+      const project = snapshot.projects.find((candidate) => candidate.id === thread.projectId);
+      if (
+        project === undefined ||
+        !roots.has(path.resolve(project.workspaceRoot)) ||
+        path.dirname(cwd) !== path.resolve(project.workspaceRoot)
+      )
+        continue;
+      const entry: StorageCleanupReportEntry = {
+        kind: "scratch",
+        outcome: "kept",
+        reason: "",
+        path: cwd,
+        threadId: thread.id,
+        threadTitle: thread.title,
+        bytes: null,
+        files: null,
+      };
+      const keep = (reason: string) => entries.push({ ...entry, reason: sentence(reason) });
+      yield* withWorkspaceLease(
+        cwd,
+        Effect.gen(function* () {
+          if (!(yield* fs.exists(cwd))) return;
+          const input = {
+            scratchRoot: path.resolve(project.workspaceRoot),
+            worktreePath: cwd,
+            projectId: thread.projectId,
+            threadId: thread.id,
+          };
+          const blocked = Effect.fnUntraced(function* () {
+            const current = yield* readThreads();
+            const latest = current.threads.filter(
+              (holder) => holder.worktreePath !== null && path.resolve(holder.worktreePath) === cwd,
+            );
+            if ((yield* settingsService.getSettings).storageCleanup.scratchAfterDays !== retention)
+              return "settings changed since check";
+            if (
+              latest.length !== holders.length ||
+              latest.some(
+                (holder) =>
+                  !holders.some(
+                    (prior) =>
+                      prior.id === holder.id &&
+                      prior.projectId === holder.projectId &&
+                      storageCleanupActivityAt(prior) === storageCleanupActivityAt(holder),
+                  ),
+              )
+            )
+              return "thread identity or activity changed since check";
+            if (latest.some((holder) => holder.pinnedAt != null)) return "thread is pinned";
+            if (latest.some((holder) => !threadWorkspaceIdle(holder, now)))
+              return "thread is running or has pending work";
+            if (hasTerminal(cwd)) return "open terminal";
+            if (
+              latest.some((holder) => storageCleanupActivityAt(holder) >= now - retention * DAY_MS)
+            )
+              return "Scratch retention has not elapsed";
+            if (yield* containsProjectRoot(cwd, current.projects))
+              return "contains a project checkout";
+            for (const holder of latest) {
+              const pending = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
+              WHERE thread_id = ${holder.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1`;
+              if (pending.length > 0) return "thread effects are still pending";
+            }
+            const sessionRows = yield* sql<{
+              payload_json: string;
+            }>`SELECT payload_json FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
+            const sessions = yield* Effect.forEach(sessionRows, (row) =>
+              decodeCleanupSession(row.payload_json),
+            );
+            if (
+              sessions.some(
+                (session) =>
+                  path.resolve(session.cwd) === cwd || inside(cwd, path.resolve(session.cwd)),
+              )
+            )
+              return "provider session is still open";
+            return null;
+          });
+          if (holders.length > 1) return keep(`shared by ${holders.length} threads`);
+          if (yield* fs.exists(`${cwd}.t3-setup-pending`))
+            return keep("workspace preparation is pending");
+          const before = yield* blocked();
+          if (before !== null) return keep(before);
+          const names = yield* fs.readDirectory(cwd);
+          if (names.length > 0 && !names.includes(".git"))
+            return keep("non-Git Scratch data is retained");
+          if (
+            names.includes(".git") &&
+            (yield* fs.stat(path.join(cwd, ".git"))).type !== "Directory"
+          )
+            return keep("not an independent Scratch repository");
+          const fileRules = {
+            ...resolveWorktreeCleanup(yield* settingsService.getSettings, thread.projectId),
+            worktreeKeepWhen: "any-local-files" as const,
+          };
+          if (names.length > 0) {
+            const changes = yield* localChangesReason(cwd, fileRules);
+            if (changes !== null) return keep(changes);
+          }
+          const bytes = yield* measureWorktree(cwd);
+          const archivePath = path.resolve(scratchArchivePaths(input).archive);
+          const previousArchiveBytes = (yield* fs.exists(archivePath))
+            ? yield* measureWorktree(archivePath)
+            : 0;
+          const archive = yield* archiveScratchCheckout(input);
+          const archiveBytes = yield* measureWorktree(archivePath);
+          const after = yield* blocked();
+          if (after !== null) return keep(after);
+          if (!(yield* scratchArchiveMatches(archive)))
+            return keep("Scratch repository changed while archiving");
+          if (archive.kind === "git") {
+            const changes = yield* localChangesReason(cwd, fileRules);
+            if (changes !== null) return keep(changes);
+          }
+          yield* scratchCheckoutOwned(input);
+          const finalBlock = yield* blocked();
+          if (finalBlock !== null) return keep(finalBlock);
+          // The durable archive remains outside this folder. Its registered identity stays in
+          // the projection so startup can restore commits, checkpoint refs and Git metadata.
+          yield* assertScratchUnmounted(yield* fs.realPath(cwd));
+          yield* fs.remove(cwd, { recursive: true });
+          entries.push({
+            ...entry,
+            outcome: "removed",
+            reason: `Inactive for ${retention} days; recovery archive saved`,
+            bytes:
+              bytes === null || archiveBytes === null || previousArchiveBytes === null
+                ? null
+                : Math.max(0, bytes + previousArchiveBytes - archiveBytes),
+          });
+        }),
+      ).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() =>
+            entries.push({ ...entry, outcome: "failed", reason: cleanupFailureReason(error) }),
+          ),
         ),
       );
     }
@@ -752,6 +930,9 @@ const make = Effect.gen(function* () {
           yield* Effect.logWarning("worktree cleanup failed", { error });
         }),
       ),
+    );
+    yield* cleanScratch(settings.scratchAfterDays, now, entries).pipe(
+      Effect.catch((error) => Effect.logWarning("Scratch cleanup failed", { error })),
     );
     for (const category of [
       {
