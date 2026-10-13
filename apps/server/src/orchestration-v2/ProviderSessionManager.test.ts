@@ -30,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
 
@@ -44,6 +45,8 @@ import * as ServerSettings from "../serverSettings.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
+import * as EffectOutbox from "./EffectOutbox.ts";
+import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
@@ -4250,6 +4253,122 @@ it.effect(
     }),
 );
 
+it.effect.each(["server_shutdown", "idle_timeout", "runtime_error"] as const)(
+  "records a shared session's $0 after all app threads detach",
+  (reason) =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const effect = Effect.gen(function* () {
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const sql = yield* SqlClient.SqlClient;
+        const now = yield* DateTime.now;
+        const threadIds = [
+          ThreadId.make(`released-${reason}-a`),
+          ThreadId.make(`released-${reason}-b`),
+        ];
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        const providerThreads = threadIds.map((threadId) =>
+          makeProviderThread({
+            idAllocator,
+            threadId,
+            providerSessionId,
+            now,
+            nativeThreadId: String(threadId),
+          }),
+        );
+        for (const [index, threadId] of threadIds.entries()) {
+          yield* eventSink.write({
+            events: [
+              yield* makeThreadCreatedEvent({ idAllocator, threadId, now }),
+              {
+                id: yield* idAllocator.allocate.event({ threadId }),
+                type: "provider-thread.updated",
+                threadId,
+                driver: CODEX_DRIVER,
+                occurredAt: now,
+                payload: providerThreads[index]!,
+              },
+            ],
+          });
+          yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        }
+        for (const threadId of threadIds) {
+          yield* eventSink.write({
+            events: [
+              {
+                id: yield* idAllocator.allocate.event({ threadId }),
+                type: "provider-session.detached",
+                threadId,
+                driver: CODEX_DRIVER,
+                occurredAt: now,
+                payload: { providerSessionId, detachedAt: now },
+              },
+            ],
+          });
+          yield* manager.detach({ providerSessionId, threadId, revokeMcpCredential: true });
+          assert.deepEqual((yield* projections.getThreadProjection(threadId)).providerSessions, []);
+        }
+        const readSessions = sql<{ status: string; payload_json: string }>`
+          SELECT status, payload_json FROM orchestration_v2_projection_provider_sessions
+          WHERE provider_session_id = ${providerSessionId}
+        `;
+        const beforeProviderThreads =
+          yield* sql`SELECT payload_json FROM orchestration_v2_projection_provider_threads ORDER BY provider_thread_id`;
+        assert.equal((yield* readSessions)[0]?.status, "ready");
+        assert.isTrue(Option.isSome(yield* manager.get(providerSessionId)));
+        assert.equal((yield* Ref.get(state)).closeCount, 0);
+        if (reason === "server_shutdown") yield* manager.shutdown;
+        else if (reason === "idle_timeout") {
+          const stopped = yield* eventSink.stream({ eventType: "provider-session.updated" }).pipe(
+            Stream.filter(
+              (event) =>
+                event.event.type === "provider-session.updated" &&
+                event.event.payload.status === "stopped",
+            ),
+            Stream.take(1),
+            Stream.runDrain,
+            Effect.forkChild,
+          );
+          yield* TestClock.adjust("1 second");
+          yield* Fiber.join(stopped);
+        } else yield* manager.release({ providerSessionId, reason, detail: "runtime failed" });
+        assert.equal((yield* Ref.get(state)).closeCount, 1);
+        assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
+        const rows = yield* readSessions;
+        assert.equal(rows[0]?.status, reason === "runtime_error" ? "error" : "stopped");
+        assert.equal(
+          (yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_sessions WHERE status NOT IN ('stopped', 'error')`)
+            .length,
+          0,
+        );
+        assert.equal(
+          (yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_session_bindings`).length,
+          0,
+        );
+        for (const [index, threadId] of threadIds.entries()) {
+          const projection = yield* projections.getThreadProjection(threadId);
+          assert.deepEqual(projection.providerSessions, []);
+          assert.deepEqual(
+            projection.providerThreads[0]?.nativeThreadRef,
+            providerThreads[index]?.nativeThreadRef,
+          );
+        }
+        assert.deepEqual(
+          yield* sql`SELECT payload_json FROM orchestration_v2_projection_provider_threads ORDER BY provider_thread_id`,
+          beforeProviderThreads,
+        );
+      });
+      yield* effect.pipe(
+        Effect.provide(Layer.merge(layerTest({ state, idleTimeoutMs: 1000 }), layerTestDatabase)),
+      );
+    }),
+);
+
 it.effect(
   "ProviderSessionManagerV2 re-attaching a thread waits for its in-flight unload, then reloads it",
   () =>
@@ -4940,4 +5059,134 @@ it.effect("late provider teardown releases only its original runtime generation"
       ),
     );
   }),
+);
+
+const providerSessionRecoveryCases = [
+  { binding: "detached", status: "ready" },
+  { binding: "detached", status: "error" },
+  { binding: "bound", status: "error" },
+] as const;
+it.effect.each(
+  providerSessionRecoveryCases.flatMap(({ binding, status }) =>
+    [
+      { store: "SQL", projectionLayer: ProjectionStore.layer },
+      { store: "memory", projectionLayer: ProjectionStore.layerMemory },
+    ].flatMap(({ store, projectionLayer }) =>
+      (["startup", "shutdown"] as const).map((trigger) => ({
+        binding,
+        status,
+        store,
+        projectionLayer,
+        trigger,
+      })),
+    ),
+  ),
+)(
+  "reconciles a $binding $status shared session after process loss on $trigger ($store)",
+  ({ binding, status, projectionLayer, trigger }) =>
+    Effect.gen(function* () {
+      const stores = Layer.mergeAll(
+        EventStore.layer,
+        projectionLayer,
+        IdAllocator.layer,
+        EffectOutbox.layer,
+      ).pipe(Layer.provideMerge(layerTestDatabase));
+      const recoveryLayer = ProviderRuntimeRecovery.layer.pipe(
+        Layer.provideMerge(EventSink.layer.pipe(Layer.provideMerge(stores))),
+        Layer.provideMerge(ServerSettings.layerTest()),
+      );
+      yield* Effect.gen(function* () {
+        const recovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const sql = yield* SqlClient.SqlClient;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make(`orphan-session-${trigger}`);
+        const providerSessionId = idAllocator.derive.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+        });
+        const providerThread = makeProviderThread({
+          idAllocator,
+          threadId,
+          providerSessionId,
+          now,
+        });
+        const threadCreated = yield* makeThreadCreatedEvent({ idAllocator, threadId, now });
+        yield* eventSink.write({
+          events: [
+            threadCreated,
+            {
+              id: yield* idAllocator.allocate.event({ threadId }),
+              type: "provider-thread.updated",
+              threadId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: providerThread,
+            },
+            {
+              id: yield* idAllocator.allocate.event({ threadId }),
+              type: "provider-session.attached",
+              threadId,
+              driver: CODEX_DRIVER,
+              occurredAt: now,
+              payload: {
+                ...makeProviderSession({ providerSessionId, now }),
+                status,
+                lastError: status === "error" ? "retained runtime diagnostic" : null,
+              },
+            },
+            ...(binding === "detached"
+              ? [
+                  {
+                    id: yield* idAllocator.allocate.event({ threadId }),
+                    type: "provider-session.detached" as const,
+                    threadId,
+                    driver: CODEX_DRIVER,
+                    occurredAt: now,
+                    payload: { providerSessionId, detachedAt: now },
+                  },
+                  // Deleted owners also leave the canonical global row behind.
+                  {
+                    id: yield* idAllocator.allocate.event({ threadId }),
+                    type: "thread.deleted" as const,
+                    threadId,
+                    occurredAt: now,
+                    payload: { ...threadCreated.payload, deletedAt: now },
+                  },
+                ]
+              : []),
+          ],
+        });
+        const before = yield* projections.getThreadProjection(threadId);
+        assert.equal(before.providerSessions.length, binding === "bound" ? 1 : 0);
+        assert.deepEqual(yield* projections.getRecoveryThreadIds("runtime"), []);
+        const remaining = yield* projections.getProviderSessionsForRecovery();
+        assert.equal(remaining.length, 1);
+        assert.equal(remaining[0]?.session.status, status);
+        const summary = yield* recovery.reconcile(trigger);
+        assert.equal(summary.stoppedSessions, 1);
+        assert.deepEqual(yield* projections.getProviderSessionsForRecovery(), []);
+        if (projectionLayer === ProjectionStore.layer)
+          assert.equal(
+            (yield* sql<{
+              status: string;
+            }>`SELECT status FROM orchestration_v2_projection_provider_sessions WHERE provider_session_id = ${providerSessionId}`)[0]
+              ?.status,
+            "stopped",
+          );
+        const after = yield* projections.getThreadProjection(threadId);
+        assert.deepEqual({ ...after, providerSessions: [] }, { ...before, providerSessions: [] });
+        assert.equal(after.providerSessions.length, binding === "bound" ? 1 : 0);
+        if (binding === "bound") {
+          assert.equal(after.providerSessions[0]?.status, "stopped");
+          assert.equal(after.providerSessions[0]?.lastError, "retained runtime diagnostic");
+        }
+        assert.equal(
+          (yield* sql`SELECT 1 FROM orchestration_v2_projection_provider_session_bindings`).length,
+          projectionLayer === ProjectionStore.layer && binding === "bound" ? 1 : 0,
+        );
+        assert.equal((yield* recovery.reconcile(trigger)).stoppedSessions, 0);
+      }).pipe(Effect.provide(recoveryLayer));
+    }),
 );

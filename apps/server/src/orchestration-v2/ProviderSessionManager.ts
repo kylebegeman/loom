@@ -201,6 +201,8 @@ export class ProviderSessionManagerV2 extends Context.Service<
 >()("t3/orchestration-v2/ProviderSessionManager/ProviderSessionManagerV2") {}
 
 interface LiveSessionEntry {
+  /** Anchors lifecycle events after the final app thread detaches. Updates do not reattach it. */
+  readonly lifecycleThreadId: ThreadId;
   readonly attachedThreadIds: ReadonlySet<ThreadId>;
   readonly loadedProviderThreadKeyByThread: ReadonlyMap<ThreadId, string>;
   /**
@@ -679,7 +681,10 @@ export const layerWithOptions = (
           };
           yield* writeProviderSessionEvents({
             runtime: input.entry.runtime,
-            threadIds: input.entry.attachedThreadIds,
+            threadIds:
+              input.entry.attachedThreadIds.size > 0
+                ? input.entry.attachedThreadIds
+                : [input.entry.lifecycleThreadId],
             type: "provider-session.updated",
             payload,
           });
@@ -2231,6 +2236,7 @@ export const layerWithOptions = (
               const exposedRuntime = decorateRuntime(runtime, eventSubscribers);
               const now = yield* Clock.currentTimeMillis;
               const entry: LiveSessionEntry = {
+                lifecycleThreadId: input.threadId,
                 attachedThreadIds: new Set([input.threadId]),
                 loadedProviderThreadKeyByThread: new Map(),
                 mcpCredentialIdByThread:

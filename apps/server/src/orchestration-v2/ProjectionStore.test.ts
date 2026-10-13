@@ -3253,6 +3253,39 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         (yield* projectionStore.getThreadProjection(secondThreadId)).providerSessions,
         1,
       );
+      // Global recovery reads include live errors regardless of their bindings.
+      const bound = yield* projectionStore.getProviderSessionsForRecovery();
+      assert.lengthOf(bound, 1);
+      assert.equal(bound[0]?.session.status, "error");
+      yield* projectionStore.apply({
+        id: EventId.make("event:projection-shared-provider-session:last-detached"),
+        type: "provider-session.detached",
+        threadId: secondThreadId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: { providerSessionId, detachedAt: now },
+      });
+      const unbound = yield* projectionStore.getProviderSessionsForRecovery();
+      assert.lengthOf(unbound, 1);
+      assert.equal(unbound[0]?.threadId, secondThreadId);
+      assert.equal(unbound[0]?.session.id, providerSessionId);
+      assert.equal(unbound[0]?.session.status, "error");
+      yield* projectionStore.apply({
+        id: EventId.make("event:projection-shared-provider-session:released"),
+        type: "provider-session.updated",
+        threadId: firstThreadId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: { ...session, status: "stopped", lastError: null },
+      });
+      assert.deepEqual(yield* projectionStore.getProviderSessionsForRecovery(), []);
+      for (const threadId of [firstThreadId, secondThreadId])
+        assert.deepEqual(
+          (yield* projectionStore.getThreadProjection(threadId)).providerSessions,
+          [],
+        );
     }),
   );
 

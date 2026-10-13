@@ -668,6 +668,48 @@ export const make = Effect.gen(function* () {
         closedRequests += result.closedRequests;
         retiredEffects += result.retiredEffects;
       }
+      // Detached sessions and errors can outlive thread recovery, including a
+      // deleted owner. At this process-loss boundary every transport is gone.
+      const remainingSessions = yield* projections
+        .getProviderSessionsForRecovery()
+        .pipe(
+          Effect.mapError(
+            (cause) => new ProviderRuntimeRecoveryError({ operation: "read-projections", cause }),
+          ),
+        );
+      for (const { threadId, session } of remainingSessions) {
+        const now = yield* DateTime.now;
+        yield* eventSink
+          .write({
+            events: [
+              {
+                id: yield* ids.allocate.event({ threadId, providerSessionId: session.id }).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderRuntimeRecoveryError({
+                        operation: "reconcile",
+                        threadId,
+                        cause,
+                      }),
+                  ),
+                ),
+                type: "provider-session.updated",
+                threadId,
+                driver: session.driver,
+                providerInstanceId: session.providerInstanceId,
+                occurredAt: now,
+                payload: { ...session, status: "stopped", updatedAt: now },
+              },
+            ],
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderRuntimeRecoveryError({ operation: "reconcile", threadId, cause }),
+            ),
+          );
+        stoppedSessions++;
+      }
       const outboxReconciliation = yield* outbox.reconcileAfterProcessLoss.pipe(
         Effect.mapError(
           (cause) => new ProviderRuntimeRecoveryError({ operation: "drain-outbox", cause }),

@@ -23,6 +23,7 @@ import type {
   OrchestrationV2DomainEvent,
   OrchestrationV2ProjectedTurnItem,
   OrchestrationV2ProviderThread,
+  OrchestrationV2ProviderSession,
   OrchestrationV2ProviderTurn,
   OrchestrationV2Run,
   OrchestrationV2Subagent,
@@ -498,6 +499,14 @@ export interface ProjectionStoreV2Shape {
   readonly canStartQueuedRun: (
     threadId: ThreadId,
   ) => Effect.Effect<boolean, ProjectionStoreV2Error>;
+  /** Global session rows still protecting their workspace, including detached or deleted owners. */
+  readonly getProviderSessionsForRecovery: () => Effect.Effect<
+    ReadonlyArray<{
+      readonly threadId: ThreadId;
+      readonly session: OrchestrationV2ProviderSession;
+    }>,
+    ProjectionStoreV2Error
+  >;
   readonly getRecoveryThreadIds: (
     kind: ProjectionRecoveryKind,
   ) => Effect.Effect<ReadonlyArray<ThreadId>, ProjectionStoreV2Error>;
@@ -884,12 +893,17 @@ export function applyToProjection(
 export interface ProjectionReplayState {
   readonly projections: Map<ThreadId, OrchestrationV2ThreadProjection>;
   readonly providerSessionThreadIds: Map<ProviderSessionId, ReadonlySet<ThreadId>>;
+  readonly providerSessions: Map<
+    ProviderSessionId,
+    { readonly threadId: ThreadId; readonly session: OrchestrationV2ProviderSession }
+  >;
 }
 
 function makeProjectionReplayState(): ProjectionReplayState {
   return {
     projections: new Map(),
     providerSessionThreadIds: new Map(),
+    providerSessions: new Map(),
   };
 }
 
@@ -917,6 +931,13 @@ function applyToProjectionReplayState(
     }
   }
   state.projections.set(event.threadId, next);
+
+  if (event.type === "provider-session.attached" || event.type === "provider-session.updated") {
+    state.providerSessions.set(event.payload.id, {
+      threadId: event.threadId,
+      session: event.payload,
+    });
+  }
 
   switch (event.type) {
     case "provider-session.attached": {
@@ -3574,6 +3595,27 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
     );
 
+    const getProviderSessionsForRecovery = Effect.fn(
+      "ProjectionStore.getProviderSessionsForRecovery",
+    )(
+      function* () {
+        const rows = yield* sql<PayloadRow & { readonly thread_id: string }>`
+          SELECT sessions.thread_id, sessions.payload_json
+          FROM orchestration_v2_projection_provider_sessions AS sessions
+          WHERE sessions.status != 'stopped'
+          ORDER BY sessions.provider_session_id ASC
+        `;
+        return yield* Effect.forEach(rows, (row) => {
+          const threadId = ThreadId.make(row.thread_id);
+          return decodeProviderSessionPayload(row.payload_json).pipe(
+            Effect.map((session) => ({ threadId, session })),
+            Effect.mapError((cause) => new ProjectionStoreReadError({ threadId, cause })),
+          );
+        });
+      },
+      Effect.mapError((cause) => new ProjectionStoreSetupError({ cause })),
+    );
+
     const getRecoveryThreadIds = Effect.fn("ProjectionStore.getRecoveryThreadIds")(
       function* (kind: ProjectionRecoveryKind) {
         const candidates = (() => {
@@ -5968,6 +6010,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       getProviderControlContext,
       getLimitRecoveryCandidates,
       getRecoveryThreadIds,
+      getProviderSessionsForRecovery,
       getUnreadableThreadIds,
       getThreadSnapshot,
       getThreadSnapshotWindow,
@@ -5993,6 +6036,7 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
             const next: ProjectionReplayState = {
               projections: new Map(existing.projections),
               providerSessionThreadIds: new Map(existing.providerSessionThreadIds),
+              providerSessions: new Map(existing.providerSessions),
             };
             if (!applyToProjectionReplayState(next, event)) {
               return [
@@ -6161,6 +6205,14 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
                 );
               })
               .toSorted((left, right) => left.id.localeCompare(right.id)),
+          ),
+        ),
+      getProviderSessionsForRecovery: () =>
+        Ref.get(replayState).pipe(
+          Effect.map((state) =>
+            [...state.providerSessions.values()]
+              .filter(({ session }) => session.status !== "stopped")
+              .toSorted((left, right) => left.session.id.localeCompare(right.session.id)),
           ),
         ),
       getRecoveryThreadIds: (kind) =>
