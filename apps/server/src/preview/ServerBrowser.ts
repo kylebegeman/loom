@@ -326,6 +326,8 @@ interface ServerTab {
   zoomFactor: number;
   loading: boolean;
   closing: boolean;
+  /** A late native attachment retired this headless page; its outstanding actions cannot succeed. */
+  replacedByDesktop: boolean;
   recording: Recording | null;
   initialNavigation: Promise<void> | null;
   /** Counts main-frame navigation requests, so late events can tell they were superseded. */
@@ -557,10 +559,12 @@ const make = Effect.gen(function* () {
   };
 
   const report = (tab: ServerTab, navStatus: PreviewNavStatus) => {
+    if (tab.closing) return;
     void tab.cdp
       .send("Page.getNavigationHistory")
       .catch(() => null)
       .then((history) => {
+        if (tab.closing) return;
         const index = history?.currentIndex ?? 0;
         const count = history?.entries.length ?? 0;
         runFork(
@@ -683,14 +687,18 @@ const make = Effect.gen(function* () {
   /** Whether the preview session for a tab still exists. */
   const sessionOpen = (tab: ServerTab) => !closedSessions.has(tabKey(tab.threadId, tab.tabId));
 
-  const dropTab = (tab: ServerTab, closeSession: boolean) => {
+  const dropTab = (tab: ServerTab, closeSession: boolean, replacedByDesktop = false) => {
     const key = tabKey(tab.threadId, tab.tabId);
     if (tabs.get(key) !== tab) return;
     tabs.delete(key);
+    tab.replacedByDesktop = replacedByDesktop;
     tab.closing = true;
     clearAbortedNavigation(tab);
     // A desktop page outlives the connection unless its session closed with it.
-    const end = tab.desktop && !closeSession && sessionOpen(tab) ? "reconnect" : "gone";
+    const end =
+      (tab.desktop || replacedByDesktop) && !closeSession && sessionOpen(tab)
+        ? "reconnect"
+        : "gone";
     for (const viewer of tab.viewers) viewer.push({ _tag: end });
     void tab.control.close().catch(constVoid);
     // The desktop owns its page; letting go only ends this connection.
@@ -799,6 +807,7 @@ const make = Effect.gen(function* () {
       zoomFactor: 1,
       loading: false,
       closing: false,
+      replacedByDesktop: false,
       recording: null,
       recordingStart: null,
       initialNavigation: null,
@@ -908,6 +917,8 @@ const make = Effect.gen(function* () {
     page.on("crash", () => dropTab(tab, true));
     tabs.set(key, tab);
     reportLiveTabs();
+    // A late attachment can already be signed in at a different URL than the fallback page.
+    if (desktop) void reportLoaded(tab);
     // A popup is already loading its own URL, and the desktop loads its tab's.
     if (!adopted && !desktop && snapshot.navStatus._tag === "Loading") {
       tab.initialNavigation = page
@@ -1684,6 +1695,13 @@ const make = Effect.gen(function* () {
     }
   };
 
+  const assertTabNotReplaced = (tab: ServerTab) => {
+    if (tab.replacedByDesktop)
+      throw new BrowserControlInterrupted(
+        "The desktop browser replaced this fallback page. The action was not replayed. Refresh the snapshot before continuing.",
+      );
+  };
+
   const runOperation = async (request: PreviewAutomationRequest): Promise<unknown> => {
     const input = request.input;
     switch (request.operation) {
@@ -1756,7 +1774,7 @@ const make = Effect.gen(function* () {
             "A browser dialog is pending. Read preview_status and use preview_dialog first.",
             "dialogPending",
           );
-        return tab.control.agent(request.agentSessionId, async () => {
+        const result = await tab.control.agent(request.agentSessionId, async () => {
           if (tab.dialog)
             throw new BrowserControlInterrupted(
               "A browser dialog is pending. Read preview_status and use preview_dialog first.",
@@ -1785,6 +1803,8 @@ const make = Effect.gen(function* () {
           }
           return statusWithTitle(tab, request.agentSessionId);
         });
+        assertTabNotReplaced(tab);
+        return result;
       }
       case "recordingStop": {
         if (
@@ -1877,6 +1897,12 @@ const make = Effect.gen(function* () {
   };
 
   const executeTabOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
+    const result = await executePageOperation(tab, request);
+    assertTabNotReplaced(tab);
+    return result;
+  };
+
+  const executePageOperation = async (tab: ServerTab, request: PreviewAutomationRequest) => {
     const input = request.input;
     switch (request.operation) {
       case "navigate": {
@@ -2426,18 +2452,23 @@ const make = Effect.gen(function* () {
     ),
     Effect.forkScoped,
   );
-  // The page came back, for example after its DevTools closed. Reconnect now
-  // rather than on the next viewer or agent, or the tab's URL and title stop
-  // reaching every client in the meantime.
+  // The page came back, or mounted after the headless fallback started. Always
+  // adopt the desktop's current page; its URL and storage belong to the user.
   yield* desktopChannel.attached.pipe(
     Stream.runForEach((key) =>
       Effect.gen(function* () {
-        if (tabs.has(tabKey(key.threadId, key.tabId))) return;
+        const id = tabKey(key.threadId, key.tabId);
+        const opening = pendingTabs.get(id);
+        if (opening) yield* Effect.promise(() => opening.catch(constVoid));
+        const existing = tabs.get(id);
+        if (existing?.desktop) return;
         const { sessions } = yield* manager.list({ threadId: ThreadId.make(key.threadId) });
         const snapshot = sessions.find(
           (session) => session.tabId === key.tabId && session.runtime === "server",
         );
-        if (snapshot) yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));
+        if (!snapshot || !(yield* desktopChannel.isAttached(key))) return;
+        if (existing) dropTab(existing, false, true);
+        yield* Effect.promise(() => ensureTab(snapshot).catch(constVoid));
       }).pipe(Effect.ignore),
     ),
     Effect.forkScoped,

@@ -42,6 +42,7 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
     async contextFor(profileId: string, isolationKey?: string) {
       contextRequests.push({ profileId, isolated: isolationKey !== undefined });
       if (contextFailure) throw contextFailure;
+      contextRequested?.resolve();
       await contextGate?.promise;
       const context = makeContext(this.onClose);
       contexts.push(context);
@@ -51,7 +52,7 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
       return makeContext().page as unknown as Page;
     }
     async connectDesktopPage(endpoint: string) {
-      const context = makeContext();
+      const context = makeContext(undefined, desktopPageInitialUrl);
       desktopConnections.push({ endpoint, context });
       return { browser: { close: async () => {} }, page: context.page as unknown as Page };
     }
@@ -74,10 +75,10 @@ function makeSession() {
   };
 }
 
-function makeContext(onClose?: (context: BrowserContext) => void) {
+function makeContext(onClose?: (context: BrowserContext) => void, initialUrl = "about:blank") {
   const events = new NodeEvents.EventEmitter();
   const sessions: ReturnType<typeof makeSession>[] = [];
-  let url = "about:blank";
+  let url = initialUrl;
   let viewport = { width: 1280, height: 800 };
   let closed = false;
   let contextClosed = false;
@@ -154,6 +155,7 @@ const contexts: ReturnType<typeof makeContext>[] = [];
 /** The profile and isolation each headless tab asked its context for. */
 const contextRequests: Array<{ profileId: string; isolated: boolean }> = [];
 let contextGate: PromiseWithResolvers<void> | null = null;
+let contextRequested: PromiseWithResolvers<void> | null = null;
 type ClipboardBinding = (source: { page: unknown }, text: unknown) => void;
 let clipboardBinding: ClipboardBinding | null = null;
 let contextFailure: Error | null = null;
@@ -171,6 +173,7 @@ const desktopRenders = (tabId: string) => {
 };
 const releasedDesktopTabs: Array<string> = [];
 const desktopConnections: Array<{ endpoint: string; context: ReturnType<typeof makeContext> }> = [];
+let desktopPageInitialUrl = "about:blank";
 const testThread = {
   threadId: ThreadId.make("browser-test-thread"),
   providerSessionId: "agent-a",
@@ -259,6 +262,24 @@ const stallViewer = (
   const output = viewer.output as unknown as Queue.Queue<ServerBrowser.ServerBrowserViewerOutput>;
   while (Queue.offerUnsafe(output, item));
 };
+/** A following event's real manager read proves the preceding attachment handler finished. */
+const attachDesktop = (manager: Manager.PreviewManager["Service"], tabId: string) =>
+  Effect.gen(function* () {
+    const settled = Promise.withResolvers<void>();
+    const marker = ThreadId.make("attachment-test-marker");
+    const list = manager.list;
+    const observed = vi.spyOn(manager, "list").mockImplementation((input) => {
+      if (input.threadId === marker) settled.resolve();
+      return list(input);
+    });
+    yield* Effect.addFinalizer(() => Effect.sync(() => observed.mockRestore()));
+    while (desktopDetaches.listenerCount("attach") === 0) yield* Effect.yieldNow;
+    desktopTabs.add(tabId);
+    desktopDetaches.emit("attach", { threadId: scope.thread.threadId, tabId });
+    desktopDetaches.emit("attach", { threadId: marker, tabId: "marker" });
+    yield* Effect.promise(() => settled.promise);
+  });
+
 const viewerInput = (tabId: string, canOperate: boolean) => ({
   threadId: scope.thread.threadId,
   tabId,
@@ -272,11 +293,13 @@ beforeEach(() => {
   contexts.length = 0;
   contextRequests.length = 0;
   contextGate = null;
+  contextRequested = null;
   contextFailure = null;
   desktopTabs.clear();
   desktopRendersNext = false;
   releasedDesktopTabs.length = 0;
   desktopConnections.length = 0;
+  desktopPageInitialUrl = "about:blank";
 });
 
 it.live("readiness none responds immediately but takeover input waits for navigation commit", () =>
@@ -1347,6 +1370,127 @@ it.live("drives the desktop's own page for a tab the desktop renders", () =>
       expect(page.close).not.toHaveBeenCalled();
     }),
   ).pipe(Effect.provide(layer)),
+);
+
+it.live(
+  "a late desktop attachment replaces the headless fallback without navigating the user's page",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, broker, tabId } = yield* ready;
+        const manager = yield* Manager.PreviewManager;
+        yield* broker.invoke({
+          scope,
+          tabId,
+          operation: "navigate",
+          input: { url: "https://example.test/signed-out" },
+        });
+        const original = contexts[0]!;
+        const viewer = yield* browser.attachViewer(viewerInput(tabId, false));
+        yield* Queue.clear(viewer.output);
+        desktopPageInitialUrl = "https://example.test/apps";
+        yield* attachDesktop(manager, tabId);
+        expect(desktopConnections).toHaveLength(1);
+        const snapshot = yield* broker.invoke<PreviewAutomationSnapshot>({
+          scope,
+          tabId,
+          operation: "snapshot",
+          input: {},
+        });
+        expect(snapshot.url).toBe(desktopPageInitialUrl);
+        let end = yield* Queue.take(viewer.output);
+        while (end._tag !== "reconnect" && end._tag !== "gone")
+          end = yield* Queue.take(viewer.output);
+        expect(end._tag).toBe("reconnect");
+        expect(original.page.isClosed()).toBe(true);
+        const native = desktopConnections[0]!.context.page;
+        expect(native.goto).not.toHaveBeenCalled();
+        expect(native.close).not.toHaveBeenCalled();
+        expect(
+          (yield* manager.list({ threadId: scope.thread.threadId })).sessions.map(
+            (item) => item.tabId,
+          ),
+        ).toContain(tabId);
+      }),
+    ).pipe(Effect.provide(layer)),
+);
+
+it.live("an attachment during headless creation still adopts the existing desktop page", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const broker = yield* Broker.PreviewAutomationBroker;
+      const manager = yield* Manager.PreviewManager;
+      yield* ServerBrowser.ServerBrowser;
+      yield* Effect.yieldNow;
+      contextGate = Promise.withResolvers<void>();
+      contextRequested = Promise.withResolvers<void>();
+      yield* Effect.addFinalizer(() => Effect.sync(() => contextGate?.resolve()));
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* Effect.promise(() => contextRequested!.promise);
+      desktopPageInitialUrl = "https://example.test/already-authenticated";
+      const attaching = yield* attachDesktop(manager, opened.tabId).pipe(Effect.forkScoped);
+      yield* Effect.yieldNow;
+      contextGate.resolve();
+      yield* Fiber.join(attaching);
+      expect(desktopConnections).toHaveLength(1);
+      const snapshot = yield* broker.invoke<PreviewAutomationSnapshot>({
+        scope,
+        tabId: PreviewTabId.make(opened.tabId),
+        operation: "snapshot",
+        input: {},
+      });
+      expect(snapshot.url).toBe(desktopPageInitialUrl);
+      expect(contexts[0]!.page.isClosed()).toBe(true);
+      expect(desktopConnections[0]!.context.page.goto).not.toHaveBeenCalled();
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live(
+  "late attachment abandons an in-flight headless action without replaying it on the desktop",
+  () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { broker, tabId } = yield* ready;
+        const original = contexts[0]!;
+        const manager = yield* Manager.PreviewManager;
+        const started = Promise.withResolvers<void>();
+        const completed = Promise.withResolvers<void>();
+        yield* Effect.addFinalizer(() => Effect.sync(() => completed.resolve()));
+        const send = original.sessions[0]!.send.getMockImplementation()!;
+        original.sessions[0]!.send.mockImplementation(async (method, input) => {
+          if (method === "Runtime.evaluate") {
+            started.resolve();
+            await completed.promise;
+          }
+          return send(method, input);
+        });
+        const running = yield* broker
+          .invoke<string>({
+            scope,
+            tabId,
+            operation: "evaluate",
+            input: { expression: "performOnce()" },
+          })
+          .pipe(Effect.flip, Effect.forkScoped);
+        yield* Effect.promise(() => started.promise);
+        yield* attachDesktop(manager, tabId);
+        expect(desktopConnections).toHaveLength(1);
+        completed.resolve();
+        expect(yield* Fiber.join(running)).toMatchObject({
+          _tag: "PreviewAutomationControlInterruptedError",
+          reason: "interrupted",
+        });
+        expect(
+          desktopConnections[0]!.context.sessions
+            .flatMap((session) => session.send.mock.calls)
+            .filter(([method]) => method === "Runtime.evaluate"),
+        ).toEqual([]);
+        expect(
+          original.sessions[0]!.send.mock.calls.filter(([method]) => method === "Runtime.evaluate"),
+        ).toHaveLength(1);
+      }),
+    ).pipe(Effect.provide(layer)),
 );
 
 it.live("a desktop page the desktop takes back reconnects instead of closing", () =>
