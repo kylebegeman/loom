@@ -43,7 +43,7 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.release.tag_name || github.sha }}
-          persist-credentials: false
+          # Match CI: checkout defers cleanup of snapshot gitlinks to its post-job handler.
           sparse-checkout: |
             /*
             !/.repos/
