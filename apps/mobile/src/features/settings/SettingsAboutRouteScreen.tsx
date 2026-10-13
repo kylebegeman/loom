@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import Constants from "expo-constants";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -20,7 +21,7 @@ export function SettingsAboutRouteScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <SettingsScreen title="About T3 Code">
+    <SettingsScreen title={`About ${BRAND_NAME}`}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}

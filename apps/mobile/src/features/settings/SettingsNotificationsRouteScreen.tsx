@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { AuthRelayWriteScope } from "@t3tools/contracts";
 import { readEnvironmentScope } from "../../state/session";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
@@ -338,7 +339,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
 
       Alert.alert(
         "Disable notifications",
-        "Open system Settings to disable notifications for T3 Code.",
+        `Open system Settings to disable notifications for ${BRAND_NAME}.`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Open Settings", onPress: () => void Linking.openSettings() },
@@ -492,7 +493,7 @@ function ConfiguredSettingsNotificationsRouteScreen() {
                 void openAndroidLiveUpdateSettings().catch(() => {
                   Alert.alert(
                     "Couldn't open Settings",
-                    "Open Android Settings, select T3 Code, then enable Live Updates in Notifications.",
+                    `Open Android Settings, select ${BRAND_NAME}, then enable Live Updates in Notifications.`,
                   );
                 });
               }}

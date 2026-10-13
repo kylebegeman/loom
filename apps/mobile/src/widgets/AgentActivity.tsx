@@ -41,6 +41,7 @@ export interface AgentActivityRowProps {
 }
 
 export interface AgentActivityProps {
+  readonly appScheme?: string; // fork: mobile-identity
   readonly title: string;
   readonly subtitle: string;
   readonly activeCount: number;
@@ -167,12 +168,14 @@ export function AgentActivity(
       : `${props.activeCount} active`;
   const summary = attentionSuffix || activeLabel;
 
-  // Any registered scheme variant routes back to this app; taps are delivered
-  // to the widget's containing app, so the prod scheme is safe for all builds.
+  // Keep widget taps in the app variant that created the activity.
+  const appScheme = /^(loom|t3code)(-dev|-preview)?$/.test(props.appScheme ?? "")
+    ? props.appScheme
+    : "loom";
   const deepLinkRow = attentionRow ?? row0;
   const deepLink =
     deepLinkRow && deepLinkRow.deepLink.startsWith("/") && !deepLinkRow.deepLink.startsWith("//")
-      ? `t3code://${deepLinkRow.deepLink.slice(1)}`
+      ? `${appScheme}://${deepLinkRow.deepLink.slice(1)}`
       : null;
 
   // A scannable status glyph per phase — reads faster than colored words and

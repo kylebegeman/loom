@@ -78,7 +78,8 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
 
   try {
     const url = new URL(trimmed);
-    if (url.protocol === "t3code:") {
+    if (["loom:", "loom-dev:", "loom-preview:", "t3code:"].includes(url.protocol)) {
+      // fork: mobile-identity
       const pairingUrl = url.searchParams.get(MOBILE_PAIRING_URL_PARAM)?.trim() ?? "";
       if (pairingUrl.length > 0) {
         return pairingUrl;

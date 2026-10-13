@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -635,7 +636,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         armAgentAwarenessLiveActivityForLocalWork({
           environmentId: props.environmentId,
           threadTitle: props.selectedThread.title,
-          projectTitle: props.environmentLabel ?? "T3 Code",
+          projectTitle: props.environmentLabel ?? BRAND_NAME,
         });
       } finally {
         inFlightThreadIdsRef.current.delete(threadKey);

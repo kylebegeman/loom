@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
@@ -1193,7 +1194,7 @@ function renderFeedEntry(
             </Text>
           ) : presentation.attribution === "t3code" ? (
             <Text className="mb-1 pr-1 font-t3-medium text-2xs text-foreground-muted opacity-60">
-              Sent by T3 Code
+              Sent by {BRAND_NAME}
             </Text>
           ) : presentation.attribution === "agent" ? (
             <AgentMessageAttribution

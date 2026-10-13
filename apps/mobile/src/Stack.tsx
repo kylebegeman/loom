@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { WorkspaceHandoffScreen } from "./features/workspace-handoff/WorkspaceHandoffScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
 import { PullRequestInlineCommentScreen } from "./features/pull-requests/PullRequestInlineCommentScreen";
@@ -281,7 +282,7 @@ const SettingsContentStack = createV5SheetStackNavigator({
     SettingsAbout: createNativeStackScreen({
       screen: SettingsAboutRouteScreen,
       linking: "about",
-      options: { title: "About T3 Code" },
+      options: { title: `About ${BRAND_NAME}` },
     }),
     SettingsEnvironmentNew: createNativeStackScreen({
       screen: ConnectionsNewRouteScreen,

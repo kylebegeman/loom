@@ -62,3 +62,16 @@ describe("parsePairingUrl", () => {
     });
   });
 });
+
+// fork: mobile-identity
+it.each(["loom", "loom-dev", "loom-preview", "t3code"])(
+  "reads the %s app pairing wrapper",
+  (scheme) => {
+    const pairingUrl = "https://remote.example.test/pair#token=pairing-token";
+    expect(
+      extractPairingUrlFromQrPayload(
+        `${scheme}://pair?pairingUrl=${encodeURIComponent(pairingUrl)}`,
+      ),
+    ).toBe(pairingUrl);
+  },
+);

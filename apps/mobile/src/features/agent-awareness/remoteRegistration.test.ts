@@ -351,6 +351,23 @@ describe("makeRelayDeviceRegistrationRequest", () => {
     });
   });
 
+  // fork: mobile-identity
+  it("keeps cloud push disabled when Loom has no configured APNs delivery", () => {
+    Constants.expoConfig!.extra = { iosPushEnabled: false };
+    expect(
+      makeRelayDeviceRegistrationRequest({
+        deviceId: "device-1",
+        label: "Personal iPhone",
+        iosMajorVersion: 18,
+        appVersion: "2.0.0",
+        pushToken: "apns-token",
+        pushToStartToken: "activity-token",
+        notificationsEnabled: true,
+        preferences: { liveActivitiesEnabled: true },
+      }).preferences,
+    ).toMatchObject({ liveActivitiesEnabled: false, notificationsEnabled: false });
+  });
+
   it("marks notification delivery disabled when APNs permission is unavailable", () => {
     expect(
       makeRelayDeviceRegistrationRequest({

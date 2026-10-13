@@ -196,16 +196,12 @@ describe("AgentActivity widget layout", () => {
       },
       environment as never,
     );
-    expect(JSON.stringify(layout.banner)).toContain(
-      '"widgetURL":"t3code://threads/env-1/thread-2"',
-    );
+    expect(JSON.stringify(layout.banner)).toContain('"widgetURL":"loom://threads/env-1/thread-2"');
   });
 
   it("deep links the banner to the first row when nothing needs attention", () => {
     const layout = AgentActivity({ ...props, activities: [makeRow({})] }, environment as never);
-    expect(JSON.stringify(layout.banner)).toContain(
-      '"widgetURL":"t3code://threads/env-1/thread-1"',
-    );
+    expect(JSON.stringify(layout.banner)).toContain('"widgetURL":"loom://threads/env-1/thread-1"');
   });
 
   it("omits the deep link for unsafe paths and empty aggregates", () => {
@@ -301,4 +297,25 @@ describe("AgentActivity widget layout", () => {
     }
     expect(banner).not.toContain("Thread 6");
   });
+});
+
+// fork: mobile-identity
+it.each(["loom", "loom-dev", "loom-preview"])(
+  "keeps %s widget taps in the originating variant",
+  (appScheme) => {
+    const layout = AgentActivity(
+      { ...props, appScheme, activities: [makeRow({})] },
+      environment as never,
+    );
+    expect(JSON.stringify(layout.banner)).toContain(
+      `"widgetURL":"${appScheme}://threads/env-1/thread-1"`,
+    );
+  },
+);
+it("does not turn an untrusted widget scheme into an external URL", () => {
+  const layout = AgentActivity(
+    { ...props, appScheme: "javascript", activities: [makeRow({})] },
+    environment as never,
+  );
+  expect(JSON.stringify(layout.banner)).toContain('"widgetURL":"loom://threads/env-1/thread-1"');
 });

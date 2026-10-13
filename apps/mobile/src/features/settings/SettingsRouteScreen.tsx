@@ -1,3 +1,4 @@
+import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { useAuth, useUser } from "@clerk/expo";
 import { useNavigation } from "@react-navigation/native";
@@ -215,7 +216,7 @@ function SettingsIndexSections() {
 
       <SettingsSection title="App">
         <SettingsRow icon="chart.bar.xaxis" label="Usage" target="SettingsUsage" />
-        <SettingsRow icon="info.circle" label="About T3 Code" target="SettingsAbout" />
+        <SettingsRow icon="info.circle" label={`About ${BRAND_NAME}`} target="SettingsAbout" />
       </SettingsSection>
     </>
   );

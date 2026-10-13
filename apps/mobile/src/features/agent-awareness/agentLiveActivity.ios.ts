@@ -1,3 +1,4 @@
+import Constants from "expo-constants"; // fork: mobile-identity
 import AgentActivity, { type AgentActivityProps } from "../../widgets/AgentActivity";
 
 export function getAgentLiveActivities() {
@@ -5,5 +6,7 @@ export function getAgentLiveActivities() {
 }
 
 export function startAgentLiveActivity(props: AgentActivityProps, staleDate?: Date) {
-  return AgentActivity.start(props, undefined, staleDate);
+  const configuredScheme = Constants.expoConfig?.scheme;
+  const appScheme = Array.isArray(configuredScheme) ? configuredScheme[0] : configuredScheme;
+  return AgentActivity.start({ ...props, appScheme: appScheme ?? "loom" }, undefined, staleDate);
 }

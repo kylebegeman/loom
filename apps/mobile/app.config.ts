@@ -2,35 +2,22 @@ import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
-
-type AppVariant = "development" | "preview" | "production";
+import { resolveLoomMobileIdentity } from "../../scripts/fork/mobileIdentity.ts"; // fork: mobile-identity
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
 
-const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
-const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
+const identity = resolveLoomMobileIdentity(repoEnv);
+const APP_VARIANT = identity.appVariant;
+const isIosPersonalTeamBuild = identity.personalTeam;
 const runtimeVersionPolicy =
   process.env.MOBILE_VERSION_POLICY ??
   (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
-
-const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
-const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 // Android layers are rendered by scripts/export-android-icons.ts from the Icon Composer sources.
 // The wordmark sits inside the adaptive safe zone; the variant artwork is a full-bleed background.
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
-
-if (
-  isIosPersonalTeamBuild &&
-  (!personalTeamBundleIdentifier ||
-    !IOS_BUNDLE_IDENTIFIER_PATTERN.test(personalTeamBundleIdentifier))
-) {
-  throw new Error(
-    "T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID must be a reverse-DNS identifier such as com.example.t3code when T3CODE_IOS_PERSONAL_TEAM=1.",
-  );
-}
 
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
@@ -73,46 +60,21 @@ const RELEASE_ASSETS = {
 
 const VARIANT_CONFIG = {
   development: {
-    appName: "T3 Code Dev",
-    scheme: "t3code-dev",
-    iosBundleIdentifier: "com.t3tools.t3code.dev",
     androidPackage: "com.t3tools.t3code.dev",
-    relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
-    appName: "T3 Code Preview",
-    scheme: "t3code-preview",
-    iosBundleIdentifier: "com.t3tools.t3code.preview",
     androidPackage: "com.t3tools.t3code.preview",
-    relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
-    appName: "T3 Code",
-    scheme: "t3code",
-    iosBundleIdentifier: "com.t3tools.t3code",
     androidPackage: "com.t3tools.t3code",
-    relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
 } as const;
 
-function resolveAppVariant(value: string | undefined): AppVariant {
-  switch (value) {
-    case "development":
-    case "preview":
-    case "production":
-      return value;
-    default:
-      return "production";
-  }
-}
-
 const variant = VARIANT_CONFIG[APP_VARIANT];
-const iosBundleIdentifier = isIosPersonalTeamBuild
-  ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+const iosBundleIdentifier = identity.iosBundleIdentifier;
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -125,7 +87,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   {
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
-    enablePushNotifications: true,
+    enablePushNotifications: identity.pushEnabled,
     // Agent activity can update many times an hour; without the
     // frequent-updates entitlement iOS throttles the update budget sooner.
     frequentUpdates: true,
@@ -134,7 +96,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "SubscriptionUsage",
         displayName: "Subscription usage",
-        description: "Subscription quotas from your connected T3 Code environments.",
+        description: "Subscription quotas from your connected Loom environments.",
         ios: {
           configuration: {
             title: "Subscription usage",
@@ -185,7 +147,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
       {
         name: "AgentActivity",
         displayName: "Agent Activity",
-        description: "Shows the current state of active T3 Code agents.",
+        description: "Shows the current state of active Loom agents.",
         // Live Activity companion; there is no Android presentation for it.
         android: null,
         ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
@@ -225,10 +187,10 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // family names without waiting for runtime font loading.
 
 const config: ExpoConfig = {
-  name: variant.appName,
-  slug: "t3-code",
+  name: identity.appName,
+  slug: "loom",
   platforms: ["ios", "android"],
-  scheme: variant.scheme,
+  scheme: identity.scheme,
   version: "2.0.0",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
@@ -240,8 +202,8 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    enabled: identity.updatesEnabled,
+    ...(identity.updatesEnabled ? { url: `https://u.expo.dev/${identity.expoProjectId}` } : {}),
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -252,16 +214,11 @@ const config: ExpoConfig = {
     // showcase capture build requires full screen (see infoPlist below).
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
-    // does not fall back to a personal team (which cannot sign app groups,
-    // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    ...(identity.iosBuildNumber ? { buildNumber: identity.iosBuildNumber } : {}),
+    ...(identity.teamId ? { appleTeamId: identity.teamId } : {}),
+    associatedDomains: identity.associatedDomains,
     entitlements: {
-      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      "keychain-access-groups": [`$(AppIdentifierPrefix)${iosBundleIdentifier}`],
     },
     infoPlist: {
       UISupportedInterfaceOrientations: [
@@ -273,12 +230,13 @@ const config: ExpoConfig = {
         NSAllowsArbitraryLoads: true,
       },
       NSLocalNetworkUsageDescription:
-        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
-      NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",
+        "Allow Loom to connect to coding servers on your local network or tailnet.",
+      NSPhotoLibraryAddUsageDescription: "Allow Loom to save images to your photo library.",
       // "Audio, AirPlay, and Picture in Picture": the browser screen's system
       // picture in picture needs it to start and to stay up outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
+      ...(identity.sourceCommit ? { LoomSourceCommit: identity.sourceCommit } : {}),
       // The App Store screenshot harness rotates the iPad interface from
       // inside the app (CI denies osascript the Accessibility access that
       // Simulator menu scripting needs), and iPadOS ignores programmatic
@@ -321,6 +279,11 @@ const config: ExpoConfig = {
     favicon: variant.assets.appIcon,
   },
   plugins: [
+    // Runs after native plugins' entitlement mods while keeping local widgets and sharing.
+    [
+      "./plugins/withLoomIosCloudCapabilities.cjs",
+      { pushEnabled: identity.pushEnabled, appleSignInEnabled: identity.appleSignInEnabled },
+    ],
     "expo-asset",
     [
       "expo-font",
@@ -361,7 +324,7 @@ const config: ExpoConfig = {
     ],
     // appleSignIn must be gated here: withoutIosPersonalTeamCapabilities.cjs runs before
     // plugins earlier in this array, so it cannot strip the entitlement Clerk would add.
-    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],
+    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: identity.appleSignInEnabled }],
     "expo-web-browser",
     [
       "expo-quick-actions",
@@ -382,7 +345,7 @@ const config: ExpoConfig = {
     [
       "expo-audio",
       {
-        microphonePermission: "Allow T3 Code to use your microphone for voice input.",
+        microphonePermission: "Allow Loom to use your microphone for voice input.",
         recordAudioAndroid: false,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
@@ -391,7 +354,7 @@ const config: ExpoConfig = {
     [
       "expo-camera",
       {
-        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",
+        cameraPermission: "Allow Loom to access your camera so you can scan pairing QR codes.",
         microphonePermission: false,
         barcodeScannerEnabled: true,
         recordAudioAndroid: false,
@@ -471,32 +434,41 @@ const config: ExpoConfig = {
   extra: {
     appVariant: APP_VARIANT,
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
+    iosPushEnabled: identity.pushEnabled,
     relay: {
-      url: repoEnv.T3CODE_RELAY_URL ?? null,
+      url: identity.relayUrl ?? null,
     },
     clerk: {
-      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
-      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
+      publishableKey: identity.clerkPublishableKey ?? null,
+      jwtTemplate: identity.clerkJwtTemplate ?? null,
     },
     // Native Google sign-in credentials. @clerk/expo reads these from `extra`
     // under their exact env-var names (not nested), and its config plugin reads
     // the iOS URL scheme at prebuild to register it in Info.plist.
     // Unset values must be omitted (not null): the public manifest serializes
     // null to {}, which is truthy and would defeat Clerk's fallback checks.
-    EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
+    EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: identity.connectEnabled
+      ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID
+      : undefined,
+    EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: identity.connectEnabled
+      ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID
+      : undefined,
+    EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: identity.connectEnabled
+      ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID
+      : undefined,
+    EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: identity.connectEnabled
+      ? repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME
+      : undefined,
     observability: {
-      tracesUrl: repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? "https://api.axiom.co/v1/traces",
-      tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
-      tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
+      tracesUrl: identity.connectEnabled ? (repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? null) : null,
+      tracesDataset: identity.connectEnabled
+        ? (repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null)
+        : null,
+      tracesToken: identity.connectEnabled ? (repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null) : null,
     },
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-    },
+    ...(identity.expoProjectId ? { eas: { projectId: identity.expoProjectId } } : {}),
   },
-  owner: "pingdotgg",
+  ...(identity.expoOwner ? { owner: identity.expoOwner } : {}),
 };
 
 export default config;
