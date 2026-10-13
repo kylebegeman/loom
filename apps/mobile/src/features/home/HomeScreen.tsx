@@ -1,4 +1,14 @@
-import { AppActivityIndicator } from "../../components/AppActivityIndicator";
+import { useEnvironmentsWithScope } from "../../state/session";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { useProjectNavigationScroll } from "../../fork/project-navigation/useProjectNavigationScroll";
+// fork: project-navigation - Switch the existing list between threads and the durable project library.
+import { ProjectNavigationControl } from "../../fork/project-navigation/ProjectNavigationControl";
+import { ProjectLibraryRow } from "../../fork/project-navigation/ProjectLibraryRow";
+import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
+import {
+  useProjectLibrary,
+  type ProjectLibraryItem,
+} from "../../fork/project-navigation/useProjectLibrary";
 import { useAndroidControlSizing } from "../../components/useAndroidControlSizing";
 import type { ThreadMoveDestination } from "../threads/threadOrder";
 import { computeThreadMoveAvailability } from "../threads/threadOrder";
@@ -41,7 +51,6 @@ import {
   useNativeColumnLayoutMetrics,
   useNativeLayoutMetrics,
 } from "../../native/native-layout-metrics";
-import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useThreadSearch } from "../../state/queries";
 import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
@@ -132,6 +141,8 @@ interface HomeScreenProps {
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
 }
+
+type HomeNavigationItem = ThreadListV2ListItem | ProjectLibraryItem;
 
 /* ─── Layout constants ───────────────────────────────────────────────── */
 
@@ -274,6 +285,7 @@ function renderHomeScrollView(props: ScrollViewProps) {
 export function HomeScreen(props: HomeScreenProps) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const workspace = useWorkspaceTabs();
+  const { view: navigationView, setView: setNavigationView } = useProjectNavigation();
   const [initialScrollOffset] = useState(() => workspace?.getScrollOffset("threads") ?? 0);
   const primaryColumn = use(NativePrimaryColumnContext);
   const contentBackground = primaryColumn ? "bg-drawer" : "bg-screen";
@@ -315,7 +327,10 @@ export function HomeScreen(props: HomeScreenProps) {
           : [],
     [props.environments, props.selectedEnvironmentId],
   );
-  const threadSearch = useThreadSearch(searchEnvironmentIds, props.searchQuery);
+  const threadSearch = useThreadSearch(
+    searchEnvironmentIds,
+    navigationView === "threads" ? props.searchQuery : "",
+  );
   const threadSearchMatchByKey = useMemo(() => {
     const matches = new Map<string, EnvironmentThreadSearchMatch>();
     for (const match of threadSearch.matches) {
@@ -347,18 +362,25 @@ export function HomeScreen(props: HomeScreenProps) {
   }, []);
   const onMaterialFabScroll = useMaterialFabScroll();
   const listRef = useRef<LegendListRef>(null);
+  const recordNavigationScrollOffset = useProjectNavigationScroll(
+    navigationView,
+    listRef,
+    Platform.OS === "ios" ? insets.top : 0,
+    initialScrollOffset,
+  );
   const searchMode = workspace?.state.tabs.threads.searchMode;
   const restoredOffset = workspace?.state.tabs.threads.scrollOffset;
   useEffect(() => {
-    if (searchMode !== "resting" || restoredOffset === undefined) return;
+    if (navigationView !== "threads" || searchMode !== "resting" || restoredOffset === undefined)
+      return;
     listRef.current?.scrollToOffset({
       offset: restoredOffset - (Platform.OS === "ios" ? insets.top : 0),
       animated: false,
     });
-  }, [searchMode, insets.top, restoredOffset]);
+  }, [searchMode, insets.top, restoredOffset, navigationView]);
   const swipeRowActivation = useMemo(() => createSwipeRowActivation(), []);
   const activateVisibleRows = useCallback(
-    (rows: ReadonlyArray<ThreadListV2ListItem>) => {
+    (rows: ReadonlyArray<HomeNavigationItem>) => {
       const state = listRef.current?.getState();
       if (state === undefined || !(state.end >= 0)) return;
       swipeRowActivation.activate(
@@ -374,7 +396,8 @@ export function HomeScreen(props: HomeScreenProps) {
   const handleListScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       onMaterialFabScroll?.(event);
-      if (workspace)
+      recordNavigationScrollOffset(event.nativeEvent.contentOffset.y);
+      if (workspace && navigationView === "threads")
         workspace.recordScrollOffset(
           "threads",
           Math.max(0, event.nativeEvent.contentOffset.y + (Platform.OS === "ios" ? insets.top : 0)),
@@ -385,7 +408,14 @@ export function HomeScreen(props: HomeScreenProps) {
         200,
       );
     },
-    [activateVisibleRows, onMaterialFabScroll, workspace, insets.top],
+    [
+      activateVisibleRows,
+      onMaterialFabScroll,
+      workspace,
+      insets.top,
+      navigationView,
+      recordNavigationScrollOffset,
+    ],
   );
   const trackListTouches = useCallback(
     (event: GestureResponderEvent, started: boolean) => {
@@ -559,6 +589,43 @@ export function HomeScreen(props: HomeScreenProps) {
     titleRegenerationEnvironmentIds,
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
+  const connectedEnvironmentIds = useMemo(
+    () =>
+      new Set(
+        props.environments
+          .filter((environment) => environment.connectionState === "connected")
+          .map((environment) => environment.environmentId),
+      ),
+    [props.environments],
+  );
+  const operableEnvironmentIds = useEnvironmentsWithScope(
+    props.environments,
+    AuthOrchestrationOperateScope,
+  );
+  const computerNames = useMemo(
+    () =>
+      new Map(
+        props.environments.map((environment) => [
+          String(environment.environmentId),
+          environment.label,
+        ]),
+      ),
+    [props.environments],
+  );
+  const projectLibraryNow = useMemo(() => new Date().toISOString(), [nowMinute, snoozeWakeTick]);
+  const projectLibrary = useProjectLibrary({
+    scopes: projectScopes,
+    threads: props.threads,
+    pendingTasks: props.pendingTasks,
+    projectSortOrder: props.projectSortOrder,
+    searchQuery: props.searchQuery,
+    connectedEnvironmentIds,
+    settlementEnvironmentIds,
+    snoozeEnvironmentIds,
+    queuedThreadKeys,
+    now: projectLibraryNow,
+    enabled: navigationView === "projects",
+  });
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
   // Up/down menu availability for every card, computed once per section per
   // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
@@ -708,7 +775,10 @@ export function HomeScreen(props: HomeScreenProps) {
     ],
   );
 
-  useThreadJumpShortcuts(threadListV2Items, props.onSelectThread);
+  useThreadJumpShortcuts(
+    navigationView === "threads" ? threadListV2Items : [],
+    props.onSelectThread,
+  );
   useEffect(() => {
     if (swipeEnabled) activateVisibleRows(threadListV2Items);
   }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
@@ -883,7 +953,52 @@ export function HomeScreen(props: HomeScreenProps) {
       workingShelfEnabled,
     ],
   );
-  const v2KeyExtractor = useCallback((item: ThreadListV2ListItem) => item.key, []);
+  const navigationItems: ReadonlyArray<HomeNavigationItem> =
+    navigationView === "projects" ? projectLibrary.items : threadListV2Items;
+  const renderNavigationItem = useCallback(
+    ({ item }: { readonly item: HomeNavigationItem }) => {
+      if (item.type !== "loom-project") return renderV2Item({ item });
+      return (
+        <ProjectLibraryRow
+          item={item}
+          computerNames={computerNames}
+          connectedEnvironmentIds={connectedEnvironmentIds}
+          operableEnvironmentIds={operableEnvironmentIds}
+          selectedThreadKey={selectedThreadKey}
+          onToggle={projectLibrary.toggleExpanded}
+          onViewThreads={(scope) => {
+            props.onProjectChange(scope.key);
+            props.onSearchQueryChange("");
+            setNavigationView("threads");
+          }}
+          onSelectThread={props.onSelectThread}
+          onNewThreadInProject={props.onNewThreadInProject}
+        />
+      );
+    },
+    [
+      computerNames,
+      connectedEnvironmentIds,
+      operableEnvironmentIds,
+      projectLibrary.toggleExpanded,
+      props.onProjectChange,
+      props.onSelectThread,
+      props.onNewThreadInProject,
+      props.onSearchQueryChange,
+      renderV2Item,
+      selectedThreadKey,
+      setNavigationView,
+    ],
+  );
+  const navigationItemsAreEqual = useCallback(
+    (previous: HomeNavigationItem, item: HomeNavigationItem) => {
+      if (previous.type === "loom-project" || item.type === "loom-project")
+        return previous === item;
+      return threadListV2ListItemsAreEqual(previous, item);
+    },
+    [],
+  );
+  const v2KeyExtractor = useCallback((item: HomeNavigationItem) => item.key, []);
 
   // FlatList/LegendList treat a changed extraData identity as "re-render every
   // visible row", so an inline object literal would invalidate all rows on
@@ -891,6 +1006,7 @@ export function HomeScreen(props: HomeScreenProps) {
   // the same reason: the clock text is precomputed per item instead.
   const v2ExtraData = useMemo(
     () => ({
+      operableEnvironmentIds,
       projectByKey,
       projectTitleByProjectKey: v2ProjectTitleByProjectKey,
       listEnvironments,
@@ -902,6 +1018,7 @@ export function HomeScreen(props: HomeScreenProps) {
       workingShelfEnabled,
     }),
     [
+      operableEnvironmentIds,
       projectByKey,
       props.searchQuery,
       selectedThreadKey,
@@ -946,69 +1063,25 @@ export function HomeScreen(props: HomeScreenProps) {
       ? props.onOpenComputers
       : props.onAddConnection;
 
-  if (!hasAnyThreads) {
-    return (
-      <View className={containerClassName}>
-        <View
-          className={cn(
-            "flex-1 items-center justify-center px-8",
-            contentBackground,
-            Platform.OS === "android" && "overflow-hidden rounded-t-[28px]",
-          )}
-          style={{
-            paddingBottom: Platform.OS === "ios" ? iosBottomClearance : Math.max(insets.bottom, 24),
-            paddingTop: NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + 72 : 0,
-            paddingLeft: 32 + (contentSideInsets?.left ?? 0),
-            paddingRight: 32 + (contentSideInsets?.right ?? 0),
-          }}
-        >
-          <View className="w-full max-w-[430px]">
-            <EmptyState
-              title={emptyState.title}
-              detail={emptyState.detail}
-              actionLabel={emptyActionLabel}
-              onAction={emptyActionLabel ? emptyAction : undefined}
-              action={
-                Platform.OS === "android" && emptyActionLabel ? (
-                  <MaterialFloatingActionButton
-                    label={emptyActionLabel}
-                    icon={
-                      props.catalogState.hasReadyEnvironment
-                        ? "square.and.pencil"
-                        : props.catalogState.hasConnections
-                          ? "desktopcomputer"
-                          : "plus"
-                    }
-                    variant="extended"
-                    tone="primary"
-                    onPress={emptyAction}
-                  />
-                ) : undefined
-              }
-              variant="plain"
-            />
-            {emptyState.loading ? (
-              <View className="mt-4 items-center">
-                <AppActivityIndicator colorClassName="accent-icon-muted" />
-              </View>
-            ) : null}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
   const listHeader = Platform.OS === "ios" ? undefined : <HomeTopContentSpacer />;
 
   const v2ListHeader = (
     <>
       {listHeader}
+      <ProjectNavigationControl
+        view={navigationView}
+        onChange={(view) => {
+          openSwipeableRef.current?.close();
+          setNavigationView(view);
+        }}
+      />
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           environments={props.environments}
           projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}
           selectedEnvironmentId={props.selectedEnvironmentId}
           selectedProjectKey={props.selectedProjectKey}
+          projectView={navigationView === "projects"}
           onEnvironmentChange={props.onEnvironmentChange}
           onProjectChange={props.onProjectChange}
         />
@@ -1018,8 +1091,55 @@ export function HomeScreen(props: HomeScreenProps) {
 
   // Use the v2 project scope for its empty state. Snoozed threads need no
   // special empty state: their shelf header is a list row even while collapsed.
+  const waitingForProjectCatalog =
+    !props.catalogState.hasLoadedShellSnapshot || !props.catalogState.hasConnections;
   const v2ListEmpty =
-    hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
+    navigationView === "projects" ? (
+      <EmptyState
+        title={
+          hasSearchQuery
+            ? "No projects found"
+            : waitingForProjectCatalog
+              ? emptyState.title
+              : "No projects yet"
+        }
+        detail={
+          hasSearchQuery
+            ? `No projects or threads matching "${props.searchQuery}".`
+            : waitingForProjectCatalog
+              ? emptyState.detail
+              : "Create a task in a project. Its conversations stay available when its files are released."
+        }
+        actionLabel={hasSearchQuery ? undefined : emptyActionLabel}
+        onAction={hasSearchQuery || !emptyActionLabel ? undefined : emptyAction}
+        variant="plain"
+      />
+    ) : !hasAnyThreads ? (
+      <EmptyState
+        title={emptyState.title}
+        detail={emptyState.detail}
+        actionLabel={emptyActionLabel}
+        onAction={emptyActionLabel ? emptyAction : undefined}
+        action={
+          Platform.OS === "android" && emptyActionLabel ? (
+            <MaterialFloatingActionButton
+              label={emptyActionLabel}
+              icon={
+                props.catalogState.hasReadyEnvironment
+                  ? "square.and.pencil"
+                  : props.catalogState.hasConnections
+                    ? "desktopcomputer"
+                    : "plus"
+              }
+              variant="extended"
+              tone="primary"
+              onPress={emptyAction}
+            />
+          ) : undefined
+        }
+        variant="plain"
+      />
+    ) : hasSearchQuery && threadSearch.isPending ? undefined : hasSearchQuery ? (
       <EmptyState
         title="No results"
         detail={`No threads matching "${props.searchQuery}".`}
@@ -1045,19 +1165,6 @@ export function HomeScreen(props: HomeScreenProps) {
       />
     );
 
-  if (Platform.OS === "android" && threadListV2Items.length === 0) {
-    return (
-      <View className="flex-1 bg-header">
-        <View
-          className="flex-1 items-center justify-center overflow-hidden rounded-t-[28px] bg-screen px-4"
-          style={{ paddingBottom: insets.bottom }}
-        >
-          {v2ListEmpty}
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View className={containerClassName}>
       <View
@@ -1079,18 +1186,20 @@ export function HomeScreen(props: HomeScreenProps) {
               onTouchEnd={(event) => trackListTouches(event, false)}
               onTouchCancel={(event) => trackListTouches(event, false)}
               renderScrollComponent={Platform.OS === "ios" ? renderHomeScrollView : undefined}
-              data={threadListV2Items}
-              renderItem={renderV2Item}
+              data={navigationItems}
+              renderItem={renderNavigationItem}
               keyExtractor={v2KeyExtractor}
               getItemType={(item) => item.type}
-              itemsAreEqual={threadListV2ListItemsAreEqual}
+              itemsAreEqual={navigationItemsAreEqual}
               estimatedItemSize={ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT}
               drawDistance={THREAD_LIST_V2_DRAW_DISTANCE}
               recycleItems
               extraData={v2ExtraData}
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
-                settledShelfExpanded && threadListV2Layout.hiddenSettledCount > 0 ? (
+                navigationView === "threads" &&
+                settledShelfExpanded &&
+                threadListV2Layout.hiddenSettledCount > 0 ? (
                   <ThreadListV2ShowMoreRow
                     hiddenCount={threadListV2Layout.hiddenSettledCount}
                     onPress={showMoreSettled}

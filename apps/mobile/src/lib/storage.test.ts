@@ -177,6 +177,19 @@ describe("mobile connection storage", () => {
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 17 });
   });
 
+  it.each(["threads", "projects"] as const)(
+    "persists the Loom navigation view (%s)",
+    async (view) => {
+      await savePreferencesPatch({ loomNavigationView: view });
+      await expect(loadPreferences()).resolves.toEqual({ loomNavigationView: view });
+    },
+  );
+
+  it("discards an invalid navigation view without discarding other preferences", async () => {
+    mocks.setPreferencesJson(JSON.stringify({ loomNavigationView: "files", baseFontSize: 18 }), 10);
+    await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 18 });
+  });
+
   it("persists independent light and dark theme choices", async () => {
     mocks.setPreferencesJson(
       JSON.stringify({

@@ -3,6 +3,22 @@
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory.
 
+## Find work by thread or project
+
+Choose **Threads** to see current work and settled conversations, or **Projects**
+to browse your complete project library. Expand a project to preview its conversations;
+**View threads** scopes the thread list to that project. Project search matches project
+names and conversation titles. Thread search also searches conversation contents.
+
+Projects stay in the library when their working copies release or their computers go
+offline. Offline entries show last-known information. Browsing a project does not
+restore its files or start an agent. Use its existing settings to review storage, or
+start a conversation on a connected computer when you are ready to work.
+
+The selected view is remembered on each client. The same repository can appear as one
+project across computers, following your project-grouping settings; storage preferences
+and permissions still belong to the individual computer.
+
 ## Start a thread
 
 On web and desktop, a new thread keeps the current project and carries your model

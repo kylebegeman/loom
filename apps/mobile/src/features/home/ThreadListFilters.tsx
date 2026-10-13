@@ -1,3 +1,4 @@
+// fork: project-navigation - Project mode retains computer filtering without an invisible thread scope.
 import { Pressable, ScrollView } from "react-native";
 import { SymbolView } from "../../components/AppSymbol";
 import { ListFilterMenu } from "../workspace/ListFilterMenu";
@@ -12,7 +13,7 @@ export function ThreadListFilters(
     | "selectedProjectKey"
     | "onEnvironmentChange"
     | "onProjectChange"
-  >,
+  > & { readonly projectView?: boolean },
 ) {
   const selectedEnvironment = props.environments.find(
     (environment) => environment.environmentId === props.selectedEnvironmentId,
@@ -55,33 +56,36 @@ export function ThreadListFilters(
           }
         }}
       />
-      <ListFilterMenu
-        label={selectedProject?.label ?? "All projects"}
-        accessibilityLabel="Filter threads by project"
-        active={selectedProject !== undefined}
-        actions={[
-          {
-            id: "all",
-            title: "All projects",
-            state: props.selectedProjectKey === null ? "on" : "off",
-          },
-          ...props.projects.map((project) => ({
-            id: JSON.stringify(project.key),
-            title: project.label,
-            state: project.key === props.selectedProjectKey ? ("on" as const) : ("off" as const),
-          })),
-        ]}
-        onSelect={(id) => {
-          if (id === "all") props.onProjectChange(null);
-          else {
-            const project = props.projects.find(
-              (candidate) => JSON.stringify(candidate.key) === id,
-            );
-            if (project) props.onProjectChange(project.key);
-          }
-        }}
-      />
-      {props.selectedEnvironmentId !== null || props.selectedProjectKey !== null ? (
+      {!props.projectView ? (
+        <ListFilterMenu
+          label={selectedProject?.label ?? "All projects"}
+          accessibilityLabel="Filter threads by project"
+          active={selectedProject !== undefined}
+          actions={[
+            {
+              id: "all",
+              title: "All projects",
+              state: props.selectedProjectKey === null ? "on" : "off",
+            },
+            ...props.projects.map((project) => ({
+              id: JSON.stringify(project.key),
+              title: project.label,
+              state: project.key === props.selectedProjectKey ? ("on" as const) : ("off" as const),
+            })),
+          ]}
+          onSelect={(id) => {
+            if (id === "all") props.onProjectChange(null);
+            else {
+              const project = props.projects.find(
+                (candidate) => JSON.stringify(candidate.key) === id,
+              );
+              if (project) props.onProjectChange(project.key);
+            }
+          }}
+        />
+      ) : null}
+      {props.selectedEnvironmentId !== null ||
+      (!props.projectView && props.selectedProjectKey !== null) ? (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Reset thread filters"

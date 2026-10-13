@@ -1,9 +1,12 @@
+import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { resolveProjectSettingsScope } from "../../fork/project-navigation/projectNavigation.logic";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { AppText as Text, AppTextInput } from "../../components/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { StaticScreenProps } from "@react-navigation/native";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -19,9 +22,32 @@ import {
 } from "./components/SettingsEnvironmentFilterHeader";
 import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
 
-export function SettingsProjectOverviewRouteScreen() {
+// fork: project-navigation - A project library shortcut opens this existing settings flow in scope.
+export function SettingsProjectOverviewRouteScreen({
+  route,
+}: StaticScreenProps<
+  | { readonly initialEnvironmentId?: EnvironmentId; readonly initialProjectId?: ProjectId }
+  | undefined
+>) {
   const insets = useSafeAreaInsets();
-  const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
+  const { selectedTargets, projectGroups, selectedProjectKey, selectProject, selectAll } =
+    useSettingsEnvironmentFilter();
+  const initialEnvironmentId = route.params?.initialEnvironmentId;
+  const initialProjectId = route.params?.initialProjectId;
+  const appliedProjectRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (initialEnvironmentId === undefined || initialProjectId === undefined) return;
+    const projectRef = JSON.stringify([initialEnvironmentId, initialProjectId]);
+    if (appliedProjectRef.current === projectRef) return;
+    const settingsScope = resolveProjectSettingsScope(projectGroups, {
+      environmentId: initialEnvironmentId,
+      projectId: initialProjectId,
+    });
+    if (settingsScope === null) return;
+    appliedProjectRef.current = projectRef;
+    selectAll();
+    selectProject(settingsScope);
+  }, [initialEnvironmentId, initialProjectId, projectGroups, selectAll, selectProject]);
   const group = projectGroups.find((entry) => entry.key === selectedProjectKey);
   const selectedEnvironmentIds = new Set(selectedTargets.map((entry) => entry.environmentId));
   const members =

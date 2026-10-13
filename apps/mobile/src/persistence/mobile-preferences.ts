@@ -67,6 +67,8 @@ export interface Preferences {
   readonly codeWordBreak?: boolean;
   readonly connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
   readonly collapsedProjectGroups?: readonly string[];
+  // fork: project-navigation - Shared compact/sidebar navigation mode on this device.
+  readonly loomNavigationView?: "threads" | "projects";
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   /**
@@ -150,6 +152,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     codeWordBreak?: boolean;
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
+    loomNavigationView?: "threads" | "projects";
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
@@ -276,6 +279,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.threadListWorkingShelfExpanded === "boolean") {
     preferences.threadListWorkingShelfExpanded = parsed.threadListWorkingShelfExpanded;
+  }
+  if (parsed.loomNavigationView === "threads" || parsed.loomNavigationView === "projects") {
+    preferences.loomNavigationView = parsed.loomNavigationView;
   }
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;

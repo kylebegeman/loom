@@ -283,7 +283,16 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
-import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
+import { SidebarHeaderIconButton } from "./sidebar/SidebarThreadHeader";
+// fork: project-navigation keeps the durable project library beside the upstream thread navigator.
+import { ProjectNavigationSwitch } from "~/fork/project-navigation/ProjectNavigationSwitch";
+import { ProjectLibrary, ProjectLibraryHeader } from "~/fork/project-navigation/ProjectLibrary";
+import { useProjectNavigationView } from "~/fork/project-navigation/preference";
+import { useProjectNavigationScroll } from "~/fork/project-navigation/scroll";
+import {
+  ProjectNavigationThreadHeader,
+  ProjectNavigationThreadGroup,
+} from "~/fork/project-navigation/ThreadSurface";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuShortcut, MenuTrigger } from "./ui/menu";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 import { MiddleTruncate } from "./ui/middle-truncate";
@@ -2420,6 +2429,11 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
 });
 
 export default function Sidebar() {
+  const [navigatorView, saveNavigatorView] = useProjectNavigationView();
+  const { contentRef: navigatorContentRef, changeView: setNavigatorView } =
+    useProjectNavigationScroll(navigatorView, saveNavigatorView);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
+  const projectSearchInputRef = useRef<HTMLInputElement | null>(null);
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
@@ -2772,7 +2786,7 @@ export default function Sidebar() {
   // hidden now, and bulk actions must never count or touch invisible rows.
   useEffect(() => {
     clearSelection();
-  }, [clearSelection, projectScopeKey]);
+  }, [clearSelection, navigatorView, projectScopeKey]);
 
   const openProjectSettings = useCallback(
     (projectGroup: SidebarProjectSnapshot, projectRef?: ScopedProjectRef) => {
@@ -2973,8 +2987,20 @@ export default function Sidebar() {
     [activeThreads, pinnedThreads, settledThreads, snoozedThreads, workingThreads],
   );
   const searchEnvironmentIds = useConnectedEnvironmentIds();
+  const libraryConnectedEnvironmentIds = useMemo(
+    () => new Set<EnvironmentId>(searchEnvironmentIds),
+    [searchEnvironmentIds],
+  );
+  const libraryThreads = useMemo(
+    () =>
+      navigatorView === "projects" ? filterSidebarV2VisibleThreads(threads, null) : EMPTY_THREADS,
+    [navigatorView, threads],
+  );
   // useThreadSearch owns the debounce and the two-character floor.
-  const threadSearch = useThreadSearch(searchEnvironmentIds, threadSearchQuery);
+  const threadSearch = useThreadSearch(
+    searchEnvironmentIds,
+    navigatorView === "threads" ? threadSearchQuery : "",
+  );
   const threadSearchMatchByKey = useMemo(
     () =>
       new Map(threadSearch.matches.map((match) => [threadSearchMatchKey(match), match] as const)),
@@ -5057,17 +5083,47 @@ export default function Sidebar() {
     shortcutLabelForCommand(keybindings, "chat.new") ??
     (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const handleViewProjectThreads = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      setProjectScopeKey(project.projectKey);
+      clearThreadSearch();
+      setNavigatorView("threads", { resetScroll: true });
+    },
+    [clearThreadSearch, setNavigatorView, setProjectScopeKey],
+  );
+  const handleLibraryNewThread = useCallback(
+    (projectRef: ScopedProjectRef) => {
+      if (isMobile) setOpenMobile(false);
+      setNavigatorView("threads");
+      void newThreadContext.handleNewThread(projectRef);
+    },
+    [isMobile, newThreadContext, setNavigatorView, setOpenMobile],
+  );
   return (
     <>
       <ThreadContextDragGhost />
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarContent
+        ref={navigatorContentRef}
         className="min-h-full"
+        id="loom-project-navigation-panel"
+        role="tabpanel"
+        aria-labelledby={`loom-navigation-${navigatorView}-tab`}
         fixedHeader={
           // Lifted above the stage backdrop, whose fade bleeds below the
           // header and would otherwise paint across the search row's outline.
           <SidebarGroup className="z-[1]">
-            <SidebarThreadHeader
+            <ProjectNavigationSwitch view={navigatorView} onViewChange={setNavigatorView} />
+            {navigatorView === "projects" ? (
+              <ProjectLibraryHeader
+                query={projectSearchQuery}
+                onQueryChange={setProjectSearchQuery}
+                onAddProject={openAddProjectCommandPalette}
+                searchInputRef={projectSearchInputRef}
+              />
+            ) : null}
+            <ProjectNavigationThreadHeader
+              visible={navigatorView === "threads"}
               searchFieldRef={headerSearchRef}
               hasProjects={projectGroups.length > 0}
               projectScope={
@@ -5223,7 +5279,31 @@ export default function Sidebar() {
           </SidebarGroup>
         }
       >
-        <SidebarGroup className="flex-1" role="presentation">
+        {navigatorView === "projects" ? (
+          <SidebarGroup className="flex-1">
+            <ProjectLibrary
+              groups={projectGroups}
+              threads={libraryThreads}
+              query={projectSearchQuery}
+              serverConfigs={serverConfigs}
+              connectedEnvironmentIds={libraryConnectedEnvironmentIds}
+              environmentLabels={environmentLabelById}
+              activeThreadKey={routeThreadKey}
+              snapshotsReady={allProjectSnapshotsReady}
+              now={snoozeNow}
+              onAddProject={openAddProjectCommandPalette}
+              onViewThreads={handleViewProjectThreads}
+              onOpenSettings={openProjectSettings}
+              onNewThread={handleLibraryNewThread}
+              onOpenThread={navigateToThread}
+            />
+          </SidebarGroup>
+        ) : null}
+        <ProjectNavigationThreadGroup
+          visible={navigatorView === "threads"}
+          className="flex-1"
+          role="presentation"
+        >
           {isSearchingThreads ? (
             threadSearchResults.length > 0 ? (
               <TooltipProvider
@@ -5657,7 +5737,7 @@ export default function Sidebar() {
               )}
             </div>
           ) : null}
-        </SidebarGroup>
+        </ProjectNavigationThreadGroup>
       </SidebarContent>
       <SidebarChromeFooter />
     </>
