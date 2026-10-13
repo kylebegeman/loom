@@ -12,6 +12,7 @@ import {
   buildEnvironment,
   launchAgent,
   iosPublishConfig,
+  unlockIosSigningKeychain,
   iosSourceQualification,
   automaticIosEnvironment,
   prunePublishedBuilds,
@@ -229,6 +230,45 @@ describe("optional Loom iOS delivery", () => {
       profile: "loom-personal",
       groups: ["Personal testing"],
     });
+  });
+
+  it("requires both absolute paths for a dedicated signing keychain", () => {
+    const signing = {
+      signingKeychain: "/private/loom.keychain-db",
+      signingKeychainPasswordFile: "/private/keychain-password",
+    };
+    expect(iosPublishConfig({ ...ownConfig, ...signing })).toMatchObject(signing);
+    expect(() =>
+      iosPublishConfig({ ...ownConfig, signingKeychain: signing.signingKeychain }),
+    ).toThrow("paired absolute paths");
+    expect(() =>
+      iosPublishConfig({
+        ...ownConfig,
+        signingKeychainPasswordFile: signing.signingKeychainPasswordFile,
+      }),
+    ).toThrow("paired absolute paths");
+    expect(() =>
+      iosPublishConfig({ ...ownConfig, ...signing, signingKeychain: "relative" }),
+    ).toThrow("paired absolute paths");
+  });
+
+  it("rejects exposed or symlinked keychain password files before accessing a keychain", async () => {
+    const directory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "loom-keychain-password-"),
+    );
+    const passwordFile = NodePath.join(directory, "password");
+    const link = NodePath.join(directory, "password-link");
+    try {
+      await NodeFSP.writeFile(passwordFile, "test-only-password", { mode: 0o644 });
+      expect(() => unlockIosSigningKeychain("/nonexistent.keychain-db", passwordFile)).toThrow(
+        "private file",
+      );
+      await NodeFSP.chmod(passwordFile, 0o600);
+      await NodeFSP.symlink(passwordFile, link);
+      expect(() => unlockIosSigningKeychain("/nonexistent.keychain-db", link)).toThrow();
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("rejects upstream app/team targets before local automatic delivery", () => {

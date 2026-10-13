@@ -544,6 +544,8 @@ export function iosPublishConfig(raw: unknown) {
   const profile = value.profile;
   const groups = value.groups;
   const exportOptions = value.exportOptions;
+  const signingKeychain = value.signingKeychain;
+  const signingKeychainPasswordFile = value.signingKeychainPasswordFile;
   if (typeof teamId !== "string" || !/^[A-Z0-9]{10}$/.test(teamId) || teamId === "ARK85ZXQ4Z") {
     throw new Error("Configure your own Apple team for Loom iOS publishing.");
   }
@@ -568,13 +570,54 @@ export function iosPublishConfig(raw: unknown) {
   ) {
     throw new Error("Loom iOS export options must be an absolute plist path.");
   }
+  if (
+    (signingKeychain !== undefined || signingKeychainPasswordFile !== undefined) &&
+    (typeof signingKeychain !== "string" ||
+      !NodePath.isAbsolute(signingKeychain) ||
+      typeof signingKeychainPasswordFile !== "string" ||
+      !NodePath.isAbsolute(signingKeychainPasswordFile))
+  ) {
+    throw new Error(
+      "Loom iOS signing keychain and protected password file require paired absolute paths.",
+    );
+  }
   return {
     teamId,
     appId,
     profile,
+    signingKeychain: signingKeychain as string | undefined,
+    signingKeychainPasswordFile: signingKeychainPasswordFile as string | undefined,
     groups: groups as string[] | undefined,
     exportOptions: exportOptions as string | undefined,
   };
+}
+
+/** Unlock only the configured signing keychain without putting its password in process arguments. */
+export function unlockIosSigningKeychain(keychain: string, passwordFile: string) {
+  run("/usr/bin/python3", [
+    "-c",
+    `import ctypes, os, stat, sys
+fd = os.open(sys.argv[2], os.O_RDONLY | os.O_NOFOLLOW)
+with os.fdopen(fd, "rb") as source:
+    info = os.fstat(source.fileno())
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+        raise SystemExit("Signing keychain password must be a private file owned by this user.")
+    password = source.read(4097).rstrip(b"\\r\\n")
+if not password or len(password) > 4096 or b"\\0" in password:
+    raise SystemExit("Signing keychain password file has invalid contents.")
+security = ctypes.CDLL("/System/Library/Frameworks/Security.framework/Security")
+security.SecKeychainOpen.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
+security.SecKeychainUnlock.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_bool]
+keychain = ctypes.c_void_p()
+status = security.SecKeychainOpen(os.fsencode(sys.argv[1]), ctypes.byref(keychain))
+if status == 0:
+    status = security.SecKeychainUnlock(keychain, len(password), password, True)
+if status != 0:
+    raise SystemExit("Cannot unlock configured signing keychain (OSStatus %s)." % status)
+`,
+    keychain,
+    passwordFile,
+  ]);
 }
 
 /** Use the newest verification attempt for this exact source, including reruns. */
@@ -656,6 +699,8 @@ async function publishIos(release: Release) {
     );
     return;
   }
+  if (config.signingKeychain && config.signingKeychainPasswordFile)
+    unlockIosSigningKeychain(config.signingKeychain, config.signingKeychainPasswordFile);
   const result = NodeChildProcess.spawnSync(
     NodeProcess.execPath,
     [

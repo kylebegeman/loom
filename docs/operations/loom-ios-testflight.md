@@ -102,14 +102,22 @@ hook with the private file `~/Library/Application Support/Loom Updates/ios.json`
   "appId": "1234567890",
   "profile": "loom-personal",
   "groups": ["Loom Internal"],
-  "exportOptions": "/Users/kyle/Library/Application Support/Loom Updates/ios-export-options.plist"
+  "exportOptions": "/Users/kyle/Library/Application Support/Loom Updates/ios-export-options.plist",
+  "signingKeychain": "/Users/kyle/Library/Keychains/loom-distribution.keychain-db",
+  "signingKeychainPasswordFile": "/Users/kyle/Library/Application Support/Loom Updates/apple-personal/signing-keychain-password"
 }
 ```
 
 Replace the example team and app IDs with the verified personal Apple team and Loom
 app, and use an existing TestFlight group. `groups` and `exportOptions` are optional;
 omitting groups uploads without assigning testers. The export-options path must be
-absolute. The named `asc` profile must already be authenticated; the hook uses strict
+absolute. When using a dedicated signing keychain, provide both absolute
+`signingKeychain` and `signingKeychainPasswordFile` paths so delivery can unlock it
+after sleep or login. The password file must be owned by the publishing user,
+restricted to that user (for example, mode `0600`), and contain the existing
+keychain password. The publisher uses macOS Security through the Python supplied
+with Xcode and never places the password in process arguments or logs. Omit both
+fields when the signing identity already uses an unlocked keychain. The named `asc` profile must already be authenticated; the hook uses strict
 profile authentication so another account cannot supply credentials as a fallback.
 Keep this file private and outside Git. Remove it or set `"enabled": false` to disable
 automatic iOS delivery. No API key contents belong in this configuration.
