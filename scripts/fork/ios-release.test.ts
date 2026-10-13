@@ -19,6 +19,8 @@ import {
   validateArtifactInfo,
   validateIosReleaseConfig,
   validateSigningEntitlements,
+  confirmedUploadedBuild,
+  pruneCompletedIosBuilds,
 } from "./ios-release.ts";
 
 const TEAM = "LOOMTEST01";
@@ -276,6 +278,28 @@ describe("Loom iOS release boundaries", () => {
         "com.kylebegeman.loom",
       ),
     ).toThrow("app groups");
+    for (const bundleId of [
+      "com.kylebegeman.loom",
+      "com.kylebegeman.loom.sharing",
+      "com.kylebegeman.loom.widgets",
+    ]) {
+      const target = { ...entitlements, "application-identifier": `${TEAM}.${bundleId}` };
+      expect(() => validateSigningEntitlements(target, receipt, bundleId)).not.toThrow();
+      expect(() =>
+        validateSigningEntitlements(
+          { ...target, "com.apple.security.application-groups": undefined },
+          receipt,
+          bundleId,
+        ),
+      ).toThrow("required app group");
+      expect(() =>
+        validateSigningEntitlements(
+          { ...target, "com.apple.security.application-groups": [] },
+          receipt,
+          bundleId,
+        ),
+      ).toThrow("required app group");
+    }
   });
 
   it("fails closed on malformed receipts and unrecognized Apple responses", () => {
@@ -337,6 +361,139 @@ describe("Loom iOS release boundaries", () => {
         TEAM,
       ),
     ).toThrow("explicitly map");
+  });
+
+  it("reuses only a recorded valid Apple build after its local IPA is pruned", () => {
+    const published = { ...receipt, artifactSha256: "b".repeat(64), buildId: "confirmed" };
+    const builds = [{ id: "confirmed", buildNumber: "1", processingState: "VALID" }];
+    expect(confirmedUploadedBuild(published, builds)).toEqual(builds[0]);
+    expect(() =>
+      confirmedUploadedBuild(
+        { buildNumber: published.buildNumber, artifactSha256: published.artifactSha256 },
+        builds,
+      ),
+    ).toThrow("confirmed upload receipt");
+    expect(() =>
+      confirmedUploadedBuild(
+        { buildNumber: published.buildNumber, buildId: published.buildId },
+        builds,
+      ),
+    ).toThrow("confirmed upload receipt");
+    expect(() =>
+      confirmedUploadedBuild(published, [{ ...builds[0]!, id: "someone-else" }]),
+    ).toThrow("recorded Apple build");
+    expect(() => confirmedUploadedBuild(published, [{ ...builds[0]!, buildNumber: "2" }])).toThrow(
+      "recorded Apple build",
+    );
+    expect(() =>
+      confirmedUploadedBuild(published, [{ ...builds[0]!, processingState: "INVALID" }]),
+    ).toThrow("valid");
+  });
+
+  it("bounds completed build artifacts and retains upload evidence and unconfirmed records", async () => {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-ios-retention-"));
+    const create = async (
+      name: string,
+      buildNumber: string,
+      confirmed = true,
+      sourceRoot = receipt.sourceRoot,
+    ) => {
+      const output = NodePath.join(directory, name);
+      await NodeFSP.mkdir(NodePath.join(output, "Loom.xcarchive"), { recursive: true });
+      await NodeFSP.mkdir(NodePath.join(output, "DerivedData"));
+      await NodeFSP.writeFile(NodePath.join(output, "Loom.ipa"), "owned artifact");
+      const saved = {
+        ...receipt,
+        buildNumber,
+        sourceRoot,
+        artifactSha256: "b".repeat(64),
+        ...(confirmed ? { buildId: name } : {}),
+      };
+      await NodeFSP.writeFile(
+        NodePath.join(output, "loom-ios-release.json"),
+        JSON.stringify(saved),
+      );
+      await NodeFSP.writeFile(NodePath.join(output, "testflight-result.json"), "{}");
+      return { output, saved };
+    };
+    try {
+      const old = await create("old", "1");
+      await create("middle", "2");
+      await create("recent", "3");
+      const current = await create("current", "4");
+      const unknown = await create("ambiguous", "5", false);
+      const unrelated = await create("other-source", "1", true, NodePath.resolve("someone-else"));
+      await pruneCompletedIosBuilds(current.output, current.saved);
+      expect(await NodeFSP.readdir(old.output)).toEqual([
+        "loom-ios-release.json",
+        "testflight-result.json",
+      ]);
+      expect(
+        JSON.parse(
+          await NodeFSP.readFile(NodePath.join(old.output, "loom-ios-release.json"), "utf8"),
+        ),
+      ).toEqual(old.saved);
+      expect(await NodeFSP.readdir(NodePath.join(directory, "recent"))).toContain("Loom.ipa");
+      expect(await NodeFSP.readdir(current.output)).toContain("Loom.ipa");
+      expect(await NodeFSP.readdir(unknown.output)).toContain("Loom.xcarchive");
+      expect(await NodeFSP.readdir(unrelated.output)).toContain("Loom.ipa");
+      await pruneCompletedIosBuilds(current.output, current.saved);
+      expect(await NodeFSP.readdir(old.output)).toEqual([
+        "loom-ios-release.json",
+        "testflight-result.json",
+      ]);
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("skips symlinked records, receipts and artifacts during retention", async () => {
+    const directory = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "loom-ios-retention-links-"),
+    );
+    const outside = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-ios-unrelated-"));
+    try {
+      await NodeFSP.writeFile(NodePath.join(outside, "keep"), "unrelated");
+      const saved = { ...receipt, artifactSha256: "b".repeat(64), buildId: "old" };
+      await NodeFSP.writeFile(
+        NodePath.join(outside, "loom-ios-release.json"),
+        JSON.stringify(saved),
+      );
+      await NodeFSP.symlink(outside, NodePath.join(directory, "linked-record"));
+      for (const name of ["linked-receipt", "linked-artifact"]) {
+        const output = NodePath.join(directory, name);
+        await NodeFSP.mkdir(output);
+        await NodeFSP.writeFile(NodePath.join(output, "Loom.ipa"), "retain");
+        if (name === "linked-receipt") {
+          await NodeFSP.symlink(
+            NodePath.join(outside, "loom-ios-release.json"),
+            NodePath.join(output, "loom-ios-release.json"),
+          );
+        } else {
+          await NodeFSP.writeFile(
+            NodePath.join(output, "loom-ios-release.json"),
+            JSON.stringify(saved),
+          );
+          await NodeFSP.symlink(outside, NodePath.join(output, "Loom.xcarchive"));
+        }
+      }
+      const current = NodePath.join(directory, "current");
+      await NodeFSP.mkdir(current);
+      const currentReceipt = { ...saved, buildNumber: "3", buildId: "current" };
+      await NodeFSP.writeFile(
+        NodePath.join(current, "loom-ios-release.json"),
+        JSON.stringify(currentReceipt),
+      );
+      await pruneCompletedIosBuilds(current, currentReceipt, 1);
+      expect(await NodeFSP.readFile(NodePath.join(outside, "keep"), "utf8")).toBe("unrelated");
+      for (const name of ["linked-receipt", "linked-artifact"])
+        expect(await NodeFSP.readFile(NodePath.join(directory, name, "Loom.ipa"), "utf8")).toBe(
+          "retain",
+        );
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+      await NodeFSP.rm(outside, { recursive: true, force: true });
+    }
   });
 
   it("serializes different records for one app and releases its lock after failures", async () => {

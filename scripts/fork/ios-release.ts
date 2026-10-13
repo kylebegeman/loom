@@ -16,6 +16,14 @@ const UPSTREAM_APP_ID = "6787819824";
 const UPSTREAM_TEAM_ID = "ARK85ZXQ4Z";
 const SOURCE_ROOT = NodePath.resolve(NodeURL.fileURLToPath(new URL("../..", import.meta.url)));
 const RECEIPT_FILE = "loom-ios-release.json";
+const COMPLETED_ARTIFACT_LIMIT = 2;
+const BULKY_ARTIFACTS = [
+  "Loom.ipa",
+  "Loom.xcarchive",
+  "Loom-pending.xcarchive",
+  "DerivedData",
+  "archive-signing",
+] as const;
 
 type Environment = Readonly<Record<string, string | undefined>>;
 type JsonRecord = Record<string, unknown>;
@@ -211,6 +219,8 @@ export function validateSigningEntitlements(
   }
   const appGroups = entitlements["com.apple.security.application-groups"] ?? [];
   if (!Array.isArray(appGroups)) throw new Error("Invalid signing app groups.");
+  if (!appGroups.includes(`group.${BUNDLE_ID}`))
+    throw new Error(`Missing required app group in ${bundleId}.`);
   for (const group of appGroups) {
     if (group !== `group.${BUNDLE_ID}`) throw new Error(`Unexpected app group in ${bundleId}.`);
   }
@@ -343,6 +353,92 @@ export function parseReceipt(input: unknown): IosReleaseReceipt {
   };
 }
 
+/** A pruned local artifact may only reuse the exact upload already confirmed in its receipt. */
+export function confirmedUploadedBuild(
+  receipt: Pick<IosReleaseReceipt, "buildId" | "artifactSha256" | "buildNumber">,
+  builds: ReturnType<typeof uploadedBuilds>,
+) {
+  if (!receipt.buildId || !receipt.artifactSha256)
+    throw new Error("A confirmed upload receipt is required to reuse a pruned IPA.");
+  const build = builds.find(
+    (item) => item.id === receipt.buildId && item.buildNumber === receipt.buildNumber,
+  );
+  if (!build)
+    throw new Error("The recorded Apple build was not found; do not recreate its upload.");
+  if (build.processingState !== "VALID")
+    throw new Error("The recorded Apple build is no longer valid; inspect it before proceeding.");
+  return build;
+}
+
+async function ownedPath(filename: string) {
+  let info;
+  try {
+    info = await NodeFSP.lstat(filename);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  if (info.isSymbolicLink() || (NodeProcess.getuid && info.uid !== NodeProcess.getuid()))
+    throw new Error(`Build cleanup requires an owned path without symlinks: ${filename}`);
+  return info;
+}
+
+async function removeOwnedArtifact(filename: string) {
+  if (await ownedPath(filename)) await NodeFSP.rm(filename, { recursive: true, force: true });
+}
+
+/** Keep upload receipts, ambiguous uploads, and unrelated directories; prune only named owned artifacts. */
+export async function pruneCompletedIosBuilds(
+  outputDir: string,
+  current: Pick<IosReleaseReceipt, "sourceRoot" | "teamId" | "appId">,
+  limit = COMPLETED_ARTIFACT_LIMIT,
+) {
+  if (!Number.isSafeInteger(limit) || limit < 1)
+    throw new Error("Keep at least one completed build.");
+  const parent = NodePath.dirname(outputDir);
+  await ownedPath(parent);
+  const completed: { directory: string; receipt: IosReleaseReceipt }[] = [];
+  for (const name of await NodeFSP.readdir(parent)) {
+    const directory = NodePath.join(parent, name);
+    try {
+      if (!(await ownedPath(directory))?.isDirectory()) continue;
+      if (!(await ownedPath(NodePath.join(directory, RECEIPT_FILE)))?.isFile()) continue;
+      const receipt = await readReceipt(directory);
+      if (
+        !receipt.buildId ||
+        !receipt.artifactSha256 ||
+        receipt.sourceRoot !== current.sourceRoot ||
+        receipt.teamId !== current.teamId ||
+        receipt.appId !== current.appId
+      )
+        continue;
+      // Check the whole record before deleting anything; a symlink leaves all its evidence intact.
+      for (const artifact of BULKY_ARTIFACTS) await ownedPath(NodePath.join(directory, artifact));
+      completed.push({ directory, receipt });
+    } catch {
+      // This directory is not an intact, owned release record and cannot be cleaned automatically.
+    }
+  }
+  completed.sort((a, b) => compareBuildNumbers(b.receipt.buildNumber, a.receipt.buildNumber));
+  const retained = new Set([outputDir]);
+  for (const item of completed) {
+    if (retained.size >= limit) break;
+    retained.add(item.directory);
+  }
+  const removed: string[] = [];
+  for (const item of completed) {
+    if (retained.has(item.directory)) continue;
+    for (const artifact of BULKY_ARTIFACTS) {
+      const filename = NodePath.join(item.directory, artifact);
+      if (await ownedPath(filename)) {
+        await removeOwnedArtifact(filename);
+        removed.push(filename);
+      }
+    }
+  }
+  return removed;
+}
+
 export function parseIosReleaseArgs(args: readonly string[]) {
   const [command, ...flags] = args;
   if (
@@ -448,6 +544,7 @@ function assertOwnApp(appId: string) {
 }
 
 async function readReceipt(outputDir: string) {
+  await ownedPath(NodePath.join(outputDir, RECEIPT_FILE));
   return parseReceipt(
     JSON.parse(await NodeFSP.readFile(NodePath.join(outputDir, RECEIPT_FILE), "utf8")),
   );
@@ -508,7 +605,12 @@ async function prepare(outputDir: string, sourceSha?: string): Promise<IosReleas
 
 async function build(outputDir: string, receipt: IosReleaseReceipt) {
   assertReceiptContext(receipt);
-  if (NodeFS.existsSync(NodePath.join(outputDir, "Loom.ipa"))) return;
+  if (receipt.buildId && receipt.artifactSha256) {
+    assertOwnApp(receipt.appId);
+    confirmedUploadedBuild(receipt, buildList(receipt.appId));
+    return;
+  }
+  if (await ownedPath(NodePath.join(outputDir, "Loom.ipa"))) return;
   const mobileRoot = NodePath.join(receipt.sourceRoot, "apps/mobile");
   const env = iosBuildEnvironment(NodeProcess.env, receipt.buildNumber, receipt.sourceSha);
   const exportOptions = NodeProcess.env.LOOM_IOS_EXPORT_OPTIONS?.trim();
@@ -523,7 +625,10 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
   }
   const archive = NodePath.join(outputDir, "Loom.xcarchive");
   const pendingArchive = NodePath.join(outputDir, "Loom-pending.xcarchive");
-  if (!NodeFS.existsSync(archive)) {
+  const derivedData = NodePath.join(outputDir, "DerivedData");
+  await ownedPath(pendingArchive);
+  await ownedPath(derivedData);
+  if (!(await ownedPath(archive))) {
     // A release gets fresh native sources; Expo's clean prebuild only replaces its generated ios directory.
     run(
       NodePath.join(mobileRoot, "node_modules/.bin/expo"),
@@ -610,18 +715,24 @@ async function build(outputDir: string, receipt: IosReleaseReceipt) {
       pendingArchive,
       "--xcodebuild-flag=-destination",
       "--xcodebuild-flag=generic/platform=iOS",
+      "--xcodebuild-flag=-derivedDataPath",
+      `--xcodebuild-flag=${derivedData}`,
       `--xcodebuild-flag=DEVELOPMENT_TEAM=${receipt.teamId}`,
       `--xcodebuild-flag=CURRENT_PROJECT_VERSION=${receipt.buildNumber}`,
       `--xcodebuild-flag=MARKETING_VERSION=${receipt.version}`,
       "--output",
       "json",
     ];
+    // An interrupted archive may leave a partial directory; only this record owns it.
+    await removeOwnedArtifact(pendingArchive);
     try {
       run("asc", args, mobileRoot, env, true);
       await NodeFSP.rename(pendingArchive, archive);
     } catch (error) {
-      await NodeFSP.rm(pendingArchive, { recursive: true, force: true });
+      await removeOwnedArtifact(pendingArchive);
       throw error;
+    } finally {
+      await removeOwnedArtifact(derivedData);
     }
   }
   const args = [
@@ -656,6 +767,7 @@ async function sha256(filename: string) {
 async function inspect(outputDir: string, receipt: IosReleaseReceipt) {
   assertReceiptContext(receipt);
   const ipa = NodePath.join(outputDir, "Loom.ipa");
+  if (!(await ownedPath(ipa))?.isFile()) throw new Error("The signed IPA is missing.");
   const digest = await sha256(ipa);
   if (receipt.artifactSha256 && receipt.artifactSha256 !== digest)
     throw new Error("Prepared IPA digest changed; do not publish it.");
@@ -727,11 +839,14 @@ async function inspect(outputDir: string, receipt: IosReleaseReceipt) {
 
 async function publish(outputDir: string, receipt: IosReleaseReceipt) {
   if (!receipt.artifactSha256) throw new Error("Inspect the signed IPA before publishing.");
-  receipt = await inspect(outputDir, receipt);
+  assertReceiptContext(receipt);
+  const ipaExists = Boolean(await ownedPath(NodePath.join(outputDir, "Loom.ipa")));
+  if (ipaExists) receipt = await inspect(outputDir, receipt);
   assertOwnApp(receipt.appId);
-  const existing = buildList(receipt.appId).find(
-    (build) => build.buildNumber === receipt.buildNumber,
-  );
+  const builds = buildList(receipt.appId);
+  const existing = !ipaExists
+    ? confirmedUploadedBuild(receipt, builds)
+    : builds.find((build) => build.buildNumber === receipt.buildNumber);
   if (existing && (!receipt.buildId || existing.id !== receipt.buildId))
     throw new Error(
       "This build number already exists in Apple without a matching local upload receipt. Inspect it before retrying; no duplicate upload was attempted.",
@@ -769,10 +884,12 @@ async function publish(outputDir: string, receipt: IosReleaseReceipt) {
     throw new Error(
       "TestFlight did not confirm a valid processed build. Check Apple before retrying upload.",
     );
-  await writeReceipt(outputDir, { ...receipt, buildId: uploaded.id });
+  const published = { ...receipt, buildId: uploaded.id };
+  await writeReceipt(outputDir, published);
   console.log(
     `TestFlight build ${receipt.version} (${receipt.buildNumber}) is processed. Source: ${receipt.sourceSha}`,
   );
+  return published;
 }
 
 export async function withIosReleaseLock<T>(
@@ -823,6 +940,7 @@ async function main() {
   const outputDir = args.outputDir!;
   await NodeFSP.mkdir(outputDir, { recursive: true, mode: 0o700 });
   const realOutput = await NodeFSP.realpath(outputDir);
+  await ownedPath(realOutput);
   const relative = NodePath.relative(await NodeFSP.realpath(SOURCE_ROOT), realOutput);
   if (
     !relative ||
@@ -839,10 +957,19 @@ async function main() {
         : await readReceipt(realOutput);
     assertReceiptContext(receipt, args.sourceSha);
     if (args.command === "build" || args.command === "release") await build(realOutput, receipt);
-    if (["build", "inspect", "release"].includes(args.command))
+    if (
+      args.command === "inspect" ||
+      (["build", "release"].includes(args.command) &&
+        (await ownedPath(NodePath.join(realOutput, "Loom.ipa"))))
+    )
       receipt = await inspect(realOutput, receipt);
     if (args.command === "publish" || args.command === "release")
-      await publish(realOutput, receipt);
+      receipt = await publish(realOutput, receipt);
+    if (receipt.buildId && receipt.artifactSha256 && args.command !== "prepare") {
+      await removeOwnedArtifact(NodePath.join(realOutput, "DerivedData"));
+      await removeOwnedArtifact(NodePath.join(realOutput, "Loom-pending.xcarchive"));
+      await pruneCompletedIosBuilds(realOutput, receipt);
+    }
     if (args.command === "prepare") console.log(JSON.stringify(receipt, null, 2));
   });
 }

@@ -79,7 +79,12 @@ release, beta review submission, tester notification, installation, or app resta
 Apple may send its own account or processing notifications independently.
 
 Repeating completed phases reuses the prepared record and signed artifact. A confirmed
-uploaded build is reconciled by its Apple build ID rather than uploaded again. If an
+uploaded build is reconciled by its Apple build ID rather than uploaded again. Xcode
+intermediates stay inside the release record and are removed after archiving. The
+publisher keeps bulky artifacts for two completed records, preserving all unpublished
+or ambiguous uploads. Older confirmed records keep their source, IPA digest and Apple
+build ID; retries verify that exact valid Apple build and reuse it without rebuilding.
+Retention skips symlinked or unrelated records. If an
 upload times out after Apple accepts it but before a local receipt records that ID,
 the publisher stops on the existing build number. Inspect Apple's build and recover
 the local record before retrying. It deliberately does not assume an unrelated
