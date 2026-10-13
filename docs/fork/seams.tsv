@@ -164,3 +164,9 @@ packages/shared/src/cliRelease.test.ts	fleet-connect	3
 packages/shared/src/cliRelease.ts	fleet-connect	3
 packages/ssh/src/tunnel.test.ts	fleet-connect	2
 packages/ssh/src/tunnel.ts	fleet-connect	3
+
+apps/mobile/src/features/cloud/linkEnvironment.ts	fleet-connect	2
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	fleet-connect	1
+
+apps/mobile/src/features/cloud/linkEnvironment.test.ts	fleet-connect	1
+apps/mobile/src/features/cloud/ConnectOnboardingRouteScreen.tsx	fleet-connect	1

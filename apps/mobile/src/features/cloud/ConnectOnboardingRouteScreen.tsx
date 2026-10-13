@@ -16,11 +16,12 @@ import { useConnectionController } from "../connection/useConnectionController";
 import { optOutOfConnectOnboarding } from "./connectOnboardingOptOut";
 import { hasCloudPublicConfig } from "./publicConfig";
 
+// fork: fleet-connect - Account onboarding consumes previously linked computers.
 /**
- * Post-sign-in onboarding sheet for T3 Connect. Mobile never publishes
- * environments itself — it consumes ones published elsewhere — so this simply
- * surfaces the account's T3 Connect environments right after sign-in so every
- * device can be connected in one go. It shows on every sign-in: sign-out
+ * Post-sign-in onboarding sheet for T3 Connect. This lists computers already
+ * linked to the account so each device can connect after sign-in. New computer
+ * links are managed from the details of a directly paired computer.
+ * fork: fleet-connect It shows on every sign-in: sign-out
  * clears the connected environments, so each new session starts from zero.
  */
 export function ConnectOnboardingRouteScreen() {

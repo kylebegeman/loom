@@ -79,6 +79,9 @@ jobs:
             scripts/lib/public-config.test.ts \
             apps/mobile/src/fork/connect/connectEmailSignIn.test.ts \
             apps/mobile/src/fork/connect/connectEmailSignIn.secondary.test.ts \
+            apps/mobile/src/fork/connect/ConnectEmailAccountView.test.tsx \
+            apps/mobile/src/fork/connect/rpc/selectedComputer.test.ts \
+            apps/mobile/src/features/cloud/linkEnvironment.test.ts \
             apps/mobile/src/fork/connections/ComputerNameSection.test.tsx \
             scripts/fork/ios-release.test.ts \
             scripts/fork/ios-release.config.test.ts \

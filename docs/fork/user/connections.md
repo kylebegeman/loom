@@ -7,15 +7,21 @@ working computer runs one Loom environment.
 
 ## Find your computers on another device
 
-Sign in to the same Connect account in Loom on your Mac and iPhone. On each
-computer, enable Connect in that computer's connection settings, or use the
-installed CLI's `t3 connect` setup for a headless host. Computers linked to your
+Sign in to the same Connect account in Loom on your Mac and iPhone. Link each computer from its connection settings, or use the installed CLI's
+`t3 connect` setup for a headless host. On iPhone, open a directly paired
+computer's details and choose **Link this computer**. That connection must allow
+Connect management. Computers linked to your
 account appear on your other signed-in clients. Direct pairing remains available
 for a local network or VPN without an account.
 
 A direct pairing link grants access on the client that opens it. It does not
 link that computer to your Connect account. Account discovery shares the computer
 inventory, not its project files or conversation storage.
+
+Open **Manage account > Linked computers** to review your account's computers
+and remove a link. Removing an account link revokes its Connect access; removing
+a connection from this device only changes this device. Direct pairing routes
+remain available after an account link is removed.
 
 Loom's iOS release supports email-code sign-in and enrolled account verification
 methods. Account creation and profile changes open the account website. Native

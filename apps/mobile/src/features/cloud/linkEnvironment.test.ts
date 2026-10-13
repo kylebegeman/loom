@@ -10,7 +10,7 @@ import { HttpClient } from "effect/http";
 
 import * as MobileStorage from "../../persistence/mobile-storage";
 
-import { linkEnvironmentToCloudWithPreference } from "./linkEnvironment";
+import { linkEnvironmentToCloudWithPreference, linkEnvironmentToCloud } from "./linkEnvironment";
 
 vi.mock("expo-constants", () => ({
   default: {
@@ -148,6 +148,78 @@ describe("mobile cloud link environment client", () => {
     vi.restoreAllMocks();
     createProofMock.mockClear();
   });
+
+  it.effect("stops before the next mutation when account or host permission changes", () =>
+    Effect.gen(function* () {
+      for (const changedAt of ["challenge", "proof", "link"] as const) {
+        let current = true;
+        const fetchMock = vi.fn((url: string | URL, _init?: RequestInit) => {
+          if (String(url).endsWith("/v1/client/environment-link-challenges")) {
+            if (changedAt === "challenge") current = false;
+            return Promise.resolve(Response.json(validLinkChallengeResponse()));
+          }
+          if (String(url).endsWith("/api/connect/link-proof")) {
+            if (changedAt === "proof") current = false;
+            return Promise.resolve(Response.json(validLinkProof()));
+          }
+          if (String(url).endsWith("/v1/client/environment-links")) {
+            if (changedAt === "link") current = false;
+            return Promise.resolve(Response.json(validLinkResponse()));
+          }
+          throw new Error("No later host mutation should run after access changes.");
+        });
+        vi.stubGlobal("fetch", fetchMock);
+        const error = yield* withCloudServices(
+          linkEnvironmentToCloud({
+            clerkToken: "clerk-token",
+            connection: savedConnection,
+            notificationsEnabled: false,
+            liveActivitiesEnabled: false,
+            canContinue: () => current,
+          }),
+        ).pipe(Effect.flip);
+        expect(error.message).toContain("account or computer access changed");
+        expect(fetchMock).toHaveBeenCalledTimes(
+          changedAt === "challenge" ? 1 : changedAt === "proof" ? 2 : 3,
+        );
+      }
+    }),
+  );
+
+  // fork: fleet-connect - Account discovery does not opt the device into notifications or Live Activities.
+  it.effect("links one selected computer without enabling delivery preferences", () =>
+    Effect.gen(function* () {
+      const fetchMock = vi.fn((url: string | URL, _init?: RequestInit) => {
+        if (String(url).endsWith("/v1/client/environment-link-challenges"))
+          return Promise.resolve(Response.json(validLinkChallengeResponse()));
+        if (String(url).endsWith("/api/connect/link-proof"))
+          return Promise.resolve(Response.json(validLinkProof()));
+        if (String(url).endsWith("/api/connect/relay-config"))
+          return Promise.resolve(
+            Response.json({ ok: true, endpointRuntimeStatus: { status: "running" } }),
+          );
+        return Promise.resolve(Response.json(validLinkResponse()));
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      yield* withCloudServices(
+        linkEnvironmentToCloud({
+          clerkToken: "clerk-token",
+          connection: savedConnection,
+          notificationsEnabled: false,
+          liveActivitiesEnabled: false,
+        }),
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      for (const index of [0, 2]) {
+        const init = fetchMock.mock.calls[index]?.[1] as RequestInit;
+        expect(JSON.parse(requestBodyText(init.body))).toMatchObject({
+          notificationsEnabled: false,
+          liveActivitiesEnabled: false,
+          managedTunnelsEnabled: true,
+        });
+      }
+    }),
+  );
 
   it.effect(
     "rejects relay link credentials for a different environment before persisting relay config",

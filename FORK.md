@@ -422,6 +422,10 @@ See [Connections help](docs/fork/user/connections.md).
 | `apps/mobile/src/features/settings/SettingsAuthRouteScreen.tsx`              | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `computer-naming`   | Publish and project the canonical computer name.                           |
 | `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
+| `apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx` | `fleet-connect`     | Manage the selected computer’s account link.                               |
+| `apps/mobile/src/features/cloud/linkEnvironment.ts`                          | `fleet-connect`     | Reuse host linking with explicit delivery preferences.                     |
+| `apps/mobile/src/features/cloud/ConnectOnboardingRouteScreen.tsx`            | `fleet-connect`     | Keep onboarding guidance consistent with native computer linking.          |
+| `apps/mobile/src/features/cloud/linkEnvironment.test.ts`                     | `fleet-connect`     | Cover scoped host linking and preserve notification setup behavior.        |
 | `apps/mobile/src/features/settings/SettingsEnvironmentsRouteScreen.tsx`      | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/features/settings/SettingsRouteScreen.tsx`                  | `fleet-connections` | Unify computer work, routes and access in Connections.                     |
 | `apps/mobile/src/state/remote-environment-projections.test.ts`               | `computer-naming`   | Publish and project the canonical computer name.                           |

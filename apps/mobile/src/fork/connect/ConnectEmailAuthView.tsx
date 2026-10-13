@@ -1,6 +1,7 @@
 import { useClerk, useSignIn, useUser } from "@clerk/expo";
 import { useEffect, useRef, useState } from "react";
-import { Linking, View } from "react-native";
+import { Linking, Platform, View } from "react-native";
+import { NativeHeaderToolbar } from "../../native/StackHeader";
 
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { AppText, AppTextInput } from "../../components/AppText";
@@ -20,7 +21,8 @@ import {
   sendConnectEmailCode,
   verifyConnectEmailCode,
 } from "./connectEmailSignIn";
-import { resolveCloudPublicConfig } from "../../features/cloud/publicConfig";
+import { hasCloudPublicConfig, resolveCloudPublicConfig } from "../../features/cloud/publicConfig";
+import { T3ConnectProfilePage } from "../../features/cloud/T3ConnectProfilePage";
 
 const RESEND_DELAY_MS = 30_000;
 
@@ -264,6 +266,8 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
   const clerk = useClerk();
   const { user } = useUser();
   const accountPortalUrl = resolveCloudPublicConfig().clerk.accountPortalUrl;
+  const linkedComputersAvailable = hasCloudPublicConfig();
+  const [page, setPage] = useState<"account" | "computers">("account");
   const [pending, setPending] = useState<"open" | "signout" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
@@ -288,6 +292,29 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
       if (mounted.current) setPending(null);
     }
   };
+  if (page === "computers" && linkedComputersAvailable) {
+    return (
+      <View className="flex-1 bg-sheet">
+        <ScreenHeader
+          title="Linked computers"
+          sidebar={false}
+          options={{ headerBackVisible: false }}
+          onBack={() => setPage("account")}
+        />
+        {Platform.OS === "ios" ? (
+          <NativeHeaderToolbar placement="left">
+            <NativeHeaderToolbar.Button
+              accessibilityLabel="Back to account"
+              icon="chevron.left"
+              onPress={() => setPage("account")}
+              separateBackground
+            />
+          </NativeHeaderToolbar>
+        ) : null}
+        <T3ConnectProfilePage />
+      </View>
+    );
+  }
   return (
     <View className="flex-1 bg-sheet">
       <ScreenHeader title="Connect account" sidebar={false} onBack={props.onBack} />
@@ -297,9 +324,18 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
             {user?.primaryEmailAddress?.emailAddress ?? "Signed in"}
           </AppText>
           <AppText className="text-foreground-secondary">
-            Your linked computers are available in Connections. Manage your account and sign-in
-            methods in the browser.
+            Manage your account's linked computers here, or open profile and sign-in settings in the
+            browser. Connections manages access on this device.
           </AppText>
+          {linkedComputersAvailable ? (
+            <MaterialButton
+              label="Linked computers"
+              tone="primary"
+              disabled={pending !== null}
+              onPress={() => setPage("computers")}
+              fullWidth
+            />
+          ) : null}
           <MaterialButton
             label="Manage account"
             tone="primary"

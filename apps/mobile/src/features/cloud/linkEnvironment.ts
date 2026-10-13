@@ -154,10 +154,26 @@ type LinkEnvironmentToCloudRequirements =
   | ManagedRelay.ManagedRelayClient
   | MobileStorage.MobileStorage;
 
-export function linkEnvironmentToCloudWithPreference(
-  input: LinkEnvironmentToCloudInput & { readonly liveActivitiesEnabled: boolean },
+// fork: fleet-connect - Host linking and notification setup share one flow with explicit preferences.
+export function linkEnvironmentToCloud(
+  input: LinkEnvironmentToCloudInput & {
+    readonly notificationsEnabled: boolean;
+    readonly liveActivitiesEnabled: boolean;
+    readonly canContinue?: () => boolean;
+  },
 ): Effect.Effect<void, CloudEnvironmentLinkError, LinkEnvironmentToCloudRequirements> {
+  function requireCurrentAccess() {
+    return input.canContinue?.() === false
+      ? Effect.fail(
+          new CloudEnvironmentLinkError({
+            message:
+              "Your account or computer access changed. Reconnect and sign in before linking again.",
+          }),
+        )
+      : Effect.void;
+  }
   return Effect.gen(function* () {
+    yield* requireCurrentAccess();
     if (!input.connection.bearerToken) {
       return yield* new CloudEnvironmentLinkError({
         message: "Only a locally paired bearer connection can be linked to the cloud.",
@@ -171,11 +187,12 @@ export function linkEnvironmentToCloudWithPreference(
       Effect.mapError(cloudEnvironmentLinkError("Could not load the mobile device id.")),
     );
     const liveActivitiesEnabled = input.liveActivitiesEnabled;
+    yield* requireCurrentAccess();
     const challenge = yield* relayClient
       .createEnvironmentLinkChallenge({
         clerkToken: input.clerkToken,
         payload: {
-          notificationsEnabled: true,
+          notificationsEnabled: input.notificationsEnabled,
           liveActivitiesEnabled,
           managedTunnelsEnabled: true,
         },
@@ -186,6 +203,7 @@ export function linkEnvironmentToCloudWithPreference(
         ),
       );
     const environmentClient = yield* makeEnvironmentHttpApiClient(input.connection.httpBaseUrl);
+    yield* requireCurrentAccess();
     const proof = yield* environmentClient.connect
       .linkProof({
         headers: { authorization: `Bearer ${localBearerToken}` },
@@ -201,13 +219,14 @@ export function linkEnvironmentToCloudWithPreference(
         },
       })
       .pipe(Effect.mapError(cloudEnvironmentLinkError("Could not obtain environment link proof.")));
+    yield* requireCurrentAccess();
     const link = yield* relayClient
       .linkEnvironment({
         clerkToken: input.clerkToken,
         payload: {
           deviceId,
           proof,
-          notificationsEnabled: true,
+          notificationsEnabled: input.notificationsEnabled,
           liveActivitiesEnabled,
           managedTunnelsEnabled: true,
         },
@@ -221,6 +240,7 @@ export function linkEnvironmentToCloudWithPreference(
       link,
     });
 
+    yield* requireCurrentAccess();
     yield* environmentClient.connect
       .relayConfig({
         headers: { authorization: `Bearer ${localBearerToken}` },
@@ -237,4 +257,11 @@ export function linkEnvironmentToCloudWithPreference(
         Effect.mapError(cloudEnvironmentLinkError("Could not configure environment relay access.")),
       );
   });
+}
+
+// fork: fleet-connect - Preserve the existing notification setup policy for its callers.
+export function linkEnvironmentToCloudWithPreference(
+  input: LinkEnvironmentToCloudInput & { readonly liveActivitiesEnabled: boolean },
+) {
+  return linkEnvironmentToCloud({ ...input, notificationsEnabled: true });
 }

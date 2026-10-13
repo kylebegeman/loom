@@ -23,6 +23,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 // fork: fleet-connections - Computer work and access live beside its routes and permissions.
 import { ComputerNameSection } from "../../fork/connections/ComputerNameSection"; // fork: computer-naming
+import { ComputerConnectSection } from "../../fork/connect/ComputerConnectSection"; // fork: fleet-connect
 import { ComputerWorkSection } from "../../fork/connections/ComputerWorkSection";
 import { DevicesWithAccessSection } from "../../fork/connections/DevicesWithAccessSection";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
@@ -194,6 +195,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
             <ComputerWorkSection environmentId={environmentId} connected={connected} />
             {/* fork: computer-naming - One name follows the computer across clients. */}
             <ComputerNameSection environmentId={environmentId} connected={connected} />
+            <ComputerConnectSection environmentId={environmentId} connected={connected} />
             <SettingsSection title="Connection">
               <ConnectionEnvironmentRow
                 environment={environment}
