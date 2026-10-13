@@ -1,0 +1,79 @@
+# Fork-owned: validates the exact merged source used by the authenticated local Mac publisher.
+# Signing and TestFlight upload run on that Mac, using its existing keychain and asc profile.
+name: Loom iOS TestFlight verification
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+      - packages/client-runtime/**
+      - packages/contracts/**
+      - packages/shared/**
+      - scripts/**
+      - assets/**
+      - patches/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/loom-ios-testflight.yml
+
+concurrency:
+  group: loom-ios-verification-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'kylebegeman/loom'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      APP_VARIANT: production
+      LOOM_IOS_TEAM_ID: LOOMTEST01
+      LOOM_IOS_BUILD_NUMBER: "1"
+      LOOM_MOBILE_CONNECT_ENABLED: "0"
+      LOOM_MOBILE_UPDATES_ENABLED: "0"
+      EXPO_NO_DOTENV: "1"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || github.sha }}
+          persist-credentials: false
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --frozen-lockfile
+      - name: Check iOS identity and release boundaries
+        run: node scripts/fork/ios-release.ts verify-config
+      - name: Check affected packages
+        run: |
+          vp run --filter @t3tools/mobile --filter @t3tools/contracts --filter @t3tools/client-runtime --filter @t3tools/scripts typecheck
+          vp run lint:mobile
+      - name: Check release, project, and handoff contracts
+        run: |
+          vp test run \
+            scripts/fork/ios-release.test.ts \
+            scripts/fork/mobileIdentity.test.ts \
+            apps/mobile/src/fork/mobile-identity/appConfig.test.ts \
+            apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts \
+            apps/mobile/src/features/projects/AddProjectScreen.test.ts \
+            apps/mobile/src/features/threads/new-task-project-selection.test.ts \
+            packages/client-runtime/src/fork/workspace-handoff-flow.test.ts \
+            packages/client-runtime/src/fork/workspace-handoff-destinations.test.ts
+      - name: Record qualified source
+        run: |
+          git rev-parse HEAD > "$RUNNER_TEMP/loom-ios-qualified-source.txt"
+          echo "The local Mac publisher archives this exact source with Loom's own signing identity and uploads to TestFlight." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: loom-ios-qualified-source-${{ github.sha }}
+          path: ${{ runner.temp }}/loom-ios-qualified-source.txt
+          retention-days: 14
