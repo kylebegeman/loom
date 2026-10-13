@@ -1,3 +1,4 @@
+// fork: mini-native-retention
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
@@ -61,6 +62,7 @@ describe("storage cleanup settings", () => {
       worktreeOnSettle: false,
       worktreeUnchanged: false,
       worktreeKeepWhen: "uncommitted-changes",
+      scratchAfterDays: null,
       browserArtifactsAfterDays: null,
       logsAfterDays: null,
     });

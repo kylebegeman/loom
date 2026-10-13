@@ -1,8 +1,10 @@
+// fork: mini-native-retention
 import type {
   StorageCleanupReport,
   StorageCleanupSettings,
   WorktreeCleanupRules,
 } from "@t3tools/contracts";
+import { loomFeaturesOf } from "@t3tools/client-runtime/fork";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import { useMemo, useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -182,9 +184,11 @@ function CleanupResults({
         const name =
           entry.kind === "worktree"
             ? (entry.path?.split(/[\\/]/).findLast(Boolean) ?? "Worktrees")
-            : entry.kind === "logs"
-              ? "Rotated logs"
-              : "Browser artifacts";
+            : entry.kind === "scratch"
+              ? (entry.path?.split(/[\\/]/).findLast(Boolean) ?? "Scratch")
+              : entry.kind === "logs"
+                ? "Rotated logs"
+                : "Browser artifacts";
         return (
           <SettingsRow
             key={`${entry.path ?? entry.kind}:${entry.threadId ?? index}`}
@@ -201,7 +205,7 @@ function CleanupResults({
               entry.outcome === "removed" && (
                 <span className="text-xs text-muted-foreground">
                   {[
-                    entry.kind !== "worktree" && entry.files !== null
+                    entry.kind !== "worktree" && entry.kind !== "scratch" && entry.files !== null
                       ? `${entry.files.toLocaleString()} ${entry.files === 1 ? "file" : "files"}`
                       : null,
                     entry.bytes !== null ? formatBytes(entry.bytes) : null,
@@ -276,6 +280,7 @@ function CleanupSection() {
       rules.worktreeOnSettle ||
       rules.worktreeUnchanged;
     return (
+      settings.storageCleanup.scratchAfterDays !== null ||
       settings.storageCleanup.browserArtifactsAfterDays !== null ||
       settings.storageCleanup.logsAfterDays !== null ||
       enabled(resolveWorktreeCleanup(settings, null)) ||
@@ -625,6 +630,28 @@ export function StorageSettingsPanel() {
         )}
       </SettingsSection>
 
+      {!isProjectScope &&
+        connectedEnvironments.every((environment) =>
+          loomFeaturesOf(environment.serverConfig?.environment.capabilities).includes(
+            "mini-native-retention",
+          ),
+        ) && (
+          <SettingsSection id="storage-scratch" title="Scratch">
+            <SettingsRow
+              title="Release inactive Scratch folders"
+              status={ruleStatus("scratchAfterDays")}
+              description="Release clean Scratch repositories after this many inactive days. Pinned conversations and unsaved files are kept. Saved work and checkpoints are restored when you continue."
+              serverScoped
+              control={
+                <RetentionControl
+                  label="Release inactive Scratch folders"
+                  value={settings.scratchAfterDays}
+                  onChange={(scratchAfterDays) => update({ scratchAfterDays })}
+                />
+              }
+            />
+          </SettingsSection>
+        )}
       {!isProjectScope && (
         <SettingsSection id="storage-artifacts" title="Artifacts and logs">
           <SettingsRow

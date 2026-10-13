@@ -76,3 +76,19 @@ apps/server/src/cli/config.ts	mini-managed-projects	1
 apps/server/src/project/ManagedProjectFolders.ts	mini-managed-projects	1
 apps/server/src/cli/config.test.ts	mini-managed-projects	1
 apps/server/src/project/ManagedProjectFolders.test.ts	mini-managed-projects	1
+
+apps/server/src/storageCleanup.ts	mini-native-retention	1
+apps/server/src/storageCleanup.test.ts	mini-native-retention	1
+apps/server/src/workspace/ScratchCheckout.ts	mini-native-retention	1
+apps/server/src/workspace/ScratchCheckout.test.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	mini-native-retention	1
+apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	1
+apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	1
+apps/server/src/mcp/toolkits/environment/handlers.test.ts	mini-native-retention	1
+apps/server/src/mcp/toolkits/worktree/registration.test.ts	mini-native-retention	1
+apps/web/src/components/settings/StorageSettings.tsx	mini-native-retention	1
+packages/contracts/src/settings.ts	mini-native-retention	1
+packages/contracts/src/settings.test.ts	mini-native-retention	1
+packages/shared/src/serverSettings.test.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	1

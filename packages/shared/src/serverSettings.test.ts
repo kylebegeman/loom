@@ -1,3 +1,4 @@
+// fork: mini-native-retention
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
@@ -68,6 +69,7 @@ describe("serverSettings helpers", () => {
       worktreeOnSettle: false,
       worktreeUnchanged: false,
       worktreeKeepWhen: "uncommitted-changes",
+      scratchAfterDays: null,
       browserArtifactsAfterDays: null,
       logsAfterDays: 30,
     });

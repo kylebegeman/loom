@@ -1,3 +1,4 @@
+// fork: mini-native-retention
 import { expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -17,6 +18,7 @@ import { McpSchema, McpServer } from "effect/ai";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as StorageCleanup from "../../../storageCleanup.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpHttpServer from "../../McpHttpServer.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -88,6 +90,9 @@ it.effect("updates preferences for a thread caller through the /mcp registration
         ),
         Layer.provide(layerEnvironment),
         Layer.provide(Settings.layerTest()),
+        Layer.provide(
+          Layer.mock(StorageCleanup.StorageCleanup)({ latestReport: Effect.succeed(null) }),
+        ),
       ),
     ),
   ),
@@ -164,4 +169,41 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
       ),
     );
   }),
+);
+
+it.effect("reads cleanup reports without running cleanup and refuses another environment", () =>
+  Effect.gen(function* () {
+    const toolkit = yield* EnvironmentToolkit;
+    const read = (scope: McpInvocationContext.McpInvocationScope) =>
+      toolkit
+        .handle("loom_storage_cleanup_report", {})
+        .pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        );
+    const results = yield* read(caller);
+    expect(results.at(-1)?.result).toBeNull();
+    const denied = yield* read({ ...caller, environmentId: EnvironmentId.make("other") });
+    expect(denied.at(-1)?.result).toMatchObject({ code: "capability_denied" });
+  }).pipe(
+    Effect.provide(
+      McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
+        Layer.provideMerge(ThreadCommandExecutor.layer),
+        Layer.provideMerge(layerEnvironment),
+        Layer.provideMerge(Settings.layerTest()),
+        Layer.provideMerge(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (id) => Effect.succeed(liveThreadShell(id)),
+          }),
+        ),
+        Layer.provideMerge(
+          Layer.mock(StorageCleanup.StorageCleanup)({
+            latestReport: Effect.succeed(null),
+            runNow: Effect.die("A read must not run cleanup"),
+          }),
+        ),
+      ),
+    ),
+  ),
 );

@@ -1,3 +1,4 @@
+// fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import {
@@ -20,7 +21,10 @@ import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
-import { restoreWorktree } from "../workspace/restoreWorktree.ts";
+import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts";
+import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as Option from "effect/Option";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as Path from "effect/Path";
@@ -96,6 +100,7 @@ export const layer: Layer.Layer<
   | ProjectSetupScriptRunner.ProjectSetupScriptRunner
   | WorktreeSetupTracker.WorktreeSetupTracker
   | GitWorkflowService.GitWorkflowService
+  | GitVcsDriver.GitVcsDriver
   | ProjectService.ProjectService
   | ProviderAuthService.ProviderAuthService
   | ProjectionStore.ProjectionStoreV2
@@ -105,8 +110,13 @@ export const layer: Layer.Layer<
 > = Layer.effect(
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
-    const restorationServices =
-      yield* Effect.context<Effect.Services<ReturnType<typeof restoreWorktree>>>();
+    const restorationServices = yield* Effect.context<
+      | Effect.Services<ReturnType<typeof restoreWorktree>>
+      | Effect.Services<ReturnType<typeof restoreScratchCheckout>>
+    >();
+    const projects = yield* ProjectService.ProjectService;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -461,12 +471,55 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (worktreePath !== null && branch !== null) {
-        const preparation = yield* restoreWorktree({
-          threadId: projection.thread.id,
-          projectId: projection.thread.projectId,
-          worktreePath,
-          branch,
+      if (worktreePath !== null) {
+        const preparation = yield* Effect.gen(function* () {
+          if (branch !== null) {
+            yield* restoreWorktree({
+              threadId: projection.thread.id,
+              projectId: projection.thread.projectId,
+              worktreePath,
+              branch,
+            });
+          } else {
+            const project = yield* projects
+              .getById(projection.thread.projectId)
+              .pipe(
+                Effect.mapError(
+                  () =>
+                    new ScratchCheckoutError({ message: "The Scratch project is unavailable." }),
+                ),
+              );
+            if (Option.isSome(project)) {
+              const restored = yield* restoreScratchCheckout({
+                threadId: projection.thread.id,
+                projectId: projection.thread.projectId,
+                scratchRoot: project.value.workspaceRoot,
+                worktreePath,
+              });
+              const marker = `${worktreePath}.t3-setup-pending`;
+              if (restored || (yield* fileSystem.exists(marker))) {
+                const setup = yield* setupScripts.runForThread({
+                  threadId: projection.thread.id,
+                  projectId: projection.thread.projectId,
+                  worktreePath,
+                  trigger: "setup",
+                });
+                if (setup.status === "started") {
+                  if (setup.completion === undefined)
+                    return yield* new WorkspacePreparationError({
+                      message: "Scratch setup did not provide a completion result.",
+                    });
+                  const completion = yield* setup.completion;
+                  if (completion.exitCode !== 0)
+                    return yield* new WorkspacePreparationError({
+                      message:
+                        "Scratch setup did not finish successfully. Fix its setup script and retry.",
+                    });
+                }
+                yield* fileSystem.remove(marker);
+              }
+            }
+          }
         }).pipe(Effect.provide(restorationServices), Effect.result);
         if (preparation._tag === "Failure") {
           if (input.willRetry === true)

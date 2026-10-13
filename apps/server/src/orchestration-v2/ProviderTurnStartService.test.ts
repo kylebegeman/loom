@@ -1,8 +1,11 @@
+// fork: mini-native-retention
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
   GitCommandError,
   CheckpointScopeId,
+  CheckpointId,
+  CheckpointRef,
   MessageId,
   NodeId,
   ProviderSessionId,
@@ -25,6 +28,10 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as ServerConfig from "../config.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { archiveScratchCheckout } from "../workspace/ScratchCheckout.ts";
 import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
@@ -215,6 +222,13 @@ function makeLocalCommandHarness(input: {
   readonly writeFailure?: unknown;
   /** Loads the thread and starts the run, then fails every later state read. */
   readonly failReadsAfterRunning?: boolean;
+  readonly restoredWorkspace?: {
+    readonly cwd: string;
+    readonly scratchRoot: string;
+    readonly fs: FileSystem.FileSystem;
+    readonly git: GitVcsDriver.GitVcsDriver["Service"];
+    readonly beforeOpen: Effect.Effect<void>;
+  };
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
   const threadId = ThreadId.make("thread-native-account-command");
@@ -252,7 +266,13 @@ function makeLocalCommandHarness(input: {
     providerSessionId,
     appThreadId: threadId,
     ownerNodeId: null,
-    nativeThreadRef: null,
+    nativeThreadRef: input.restoredWorkspace
+      ? {
+          driver: ProviderDriverKind.make("codex"),
+          nativeId: "retained-scratch-native-thread",
+          strength: "strong",
+        }
+      : null,
     nativeConversationHeadRef: null,
     status: "not_loaded",
     firstRunOrdinal: 2,
@@ -281,7 +301,8 @@ function makeLocalCommandHarness(input: {
       id: threadId,
       activeProviderThreadId: providerThreadId,
       branch: null,
-      worktreePath: null,
+      worktreePath: input.restoredWorkspace?.cwd ?? null,
+      projectId: ProjectId.make("scratch-resume-project"),
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
       ...(input.previousNativeSession
@@ -292,7 +313,10 @@ function makeLocalCommandHarness(input: {
               ordinal: 1,
               status: "completed" as const,
               providerInstanceId: oldInstanceId,
-              providerThreadId: oldProviderThreadId,
+              providerThreadId: input.restoredWorkspace ? providerThreadId : oldProviderThreadId,
+              checkpointId: input.restoredWorkspace
+                ? CheckpointId.make("retained-scratch-checkpoint")
+                : null,
             },
           ]
         : []),
@@ -374,7 +398,22 @@ function makeLocalCommandHarness(input: {
         createdAt: now,
       },
     ],
-    providerSessions: [],
+    providerSessions: input.restoredWorkspace
+      ? [
+          {
+            id: providerSessionId,
+            driver: ProviderDriverKind.make("codex"),
+            providerInstanceId: newInstanceId,
+            status: "stopped",
+            cwd: input.restoredWorkspace.cwd,
+            model: null,
+            capabilities: CodexProviderCapabilitiesV2,
+            createdAt: now,
+            updatedAt: now,
+            lastError: null,
+          },
+        ]
+      : [],
     providerTurns: [],
     contextHandoffs: [],
     contextTransfers: [],
@@ -383,7 +422,24 @@ function makeLocalCommandHarness(input: {
     runtimeRequests: [],
     subagents: [],
     plans: [],
-    checkpoints: [],
+    checkpoints: input.restoredWorkspace
+      ? [
+          {
+            id: CheckpointId.make("retained-scratch-checkpoint"),
+            threadId,
+            scopeId: checkpointScopeId,
+            runId: RunId.make("previous-native-run"),
+            nodeId: rootNodeId,
+            parentCheckpointId: null,
+            ordinalWithinScope: 1,
+            appRunOrdinal: 1,
+            ref: CheckpointRef.make("refs/t3/orchestration-v2/checkpoints/retained/ordinal/1"),
+            status: "ready",
+            files: [],
+            capturedAt: now,
+          },
+        ]
+      : [],
     updatedAt: now,
   };
   if ("historyReadFailureAfterFallback" in input) {
@@ -438,49 +494,58 @@ function makeLocalCommandHarness(input: {
     ensureThread: () => Effect.succeed(providerThread),
   };
   const open = vi.fn(() =>
-    input.interruptOpen === true
-      ? Effect.interrupt
-      : "historyReadFailureAfterFallback" in input
-        ? Effect.succeed(resumeFallbackSession as never)
-        : "ensureThreadFailure" in input
-          ? Effect.succeed({ driver: providerThread.driver, ensureThread } as never)
-          : "openFailure" in input
-            ? Effect.sync(() => {
-                if (input.interruptRunBeforeOpenFailure === true) interruptRun();
-              }).pipe(
-                Effect.andThen(
-                  Effect.fail(
-                    new ProviderSessionManager.ProviderSessionOpenError({
-                      instanceId: newInstanceId,
-                      providerSessionId,
-                      cause: input.openFailure,
-                    }),
+    input.restoredWorkspace
+      ? input.restoredWorkspace.beforeOpen.pipe(
+          Effect.as({
+            driver: providerThread.driver,
+            providerSession: projection.providerSessions[0],
+            ensureThread: () => Effect.succeed(providerThread),
+            resumeThread: () => Effect.succeed(providerThread),
+          } as never),
+        )
+      : input.interruptOpen === true
+        ? Effect.interrupt
+        : "historyReadFailureAfterFallback" in input
+          ? Effect.succeed(resumeFallbackSession as never)
+          : "ensureThreadFailure" in input
+            ? Effect.succeed({ driver: providerThread.driver, ensureThread } as never)
+            : "openFailure" in input
+              ? Effect.sync(() => {
+                  if (input.interruptRunBeforeOpenFailure === true) interruptRun();
+                }).pipe(
+                  Effect.andThen(
+                    Effect.fail(
+                      new ProviderSessionManager.ProviderSessionOpenError({
+                        instanceId: newInstanceId,
+                        providerSessionId,
+                        cause: input.openFailure,
+                      }),
+                    ),
                   ),
-                ),
-              )
-            : input.failReadsAfterRunning === true
-              ? Effect.succeed({
-                  driver: providerThread.driver,
-                  providerSession: {
-                    id: providerSessionId,
+                )
+              : input.failReadsAfterRunning === true
+                ? Effect.succeed({
                     driver: providerThread.driver,
-                    providerInstanceId: newInstanceId,
-                    status: "ready",
-                    cwd: "/tmp/native-account-command",
-                    model: null,
-                    capabilities: CodexProviderCapabilitiesV2,
-                    createdAt: now,
-                    updatedAt: now,
-                    lastError: null,
-                  },
-                  ensureThread: () => Effect.succeed(providerThread),
-                } as never)
-              : Effect.die("A local command must not open a native session."),
+                    providerSession: {
+                      id: providerSessionId,
+                      driver: providerThread.driver,
+                      providerInstanceId: newInstanceId,
+                      status: "ready",
+                      cwd: "/tmp/native-account-command",
+                      model: null,
+                      capabilities: CodexProviderCapabilitiesV2,
+                      createdAt: now,
+                      updatedAt: now,
+                      lastError: null,
+                    },
+                    ensureThread: () => Effect.succeed(providerThread),
+                  } as never)
+                : Effect.die("A local command must not open a native session."),
   );
   const startRootRun = vi.fn<
     (input: RunExecutionService.RunExecutionServiceV2StartRootRunInput) => Effect.Effect<void>
   >(() =>
-    input.failReadsAfterRunning === true
+    input.failReadsAfterRunning === true || input.restoredWorkspace !== undefined
       ? Effect.void
       : Effect.die("A local command must not start a native turn."),
   );
@@ -536,9 +601,19 @@ function makeLocalCommandHarness(input: {
         }),
         Layer.mock(EventSink.EventSinkV2)({ writeIfRunCurrent }),
         IdAllocator.layer,
-        FileSystem.layerNoop({}),
+        input.restoredWorkspace
+          ? Layer.succeed(FileSystem.FileSystem, input.restoredWorkspace.fs)
+          : FileSystem.layerNoop({}),
+        Layer.mock(GitVcsDriver.GitVcsDriver)(input.restoredWorkspace?.git ?? {}),
         Layer.mock(GitWorkflow.GitWorkflowService)({}),
-        Layer.mock(ProjectService.ProjectService)({}),
+        Layer.mock(ProjectService.ProjectService)({
+          getById: () =>
+            input.restoredWorkspace
+              ? Effect.succeed(
+                  Option.some({ workspaceRoot: input.restoredWorkspace.scratchRoot } as never),
+                )
+              : Effect.succeed(Option.none()),
+        }),
         Layer.mock(ProjectionStore.ProjectionStoreV2)({
           getTurnStartContext: () =>
             Effect.succeed({
@@ -900,3 +975,76 @@ for (const previousMessages of [[], ["/compact", " /COMPACT "]]) {
       }),
   );
 }
+
+effectIt.effect(
+  "restores released Scratch before reopening a retained native provider session",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const git = yield* GitVcsDriver.GitVcsDriver;
+      const managed = yield* fs
+        .makeTempDirectoryScoped()
+        .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
+      const scratchRoot = `${managed}/scratch`;
+      const cwd = `${scratchRoot}/resumed-thread`;
+      yield* fs.makeDirectory(cwd, { recursive: true });
+      const command = (args: string[]) =>
+        git.execute({ operation: "scratch-provider-test", cwd, args });
+      yield* command(["init", "-b", "main"]);
+      yield* fs.writeFileString(`${cwd}/proof.txt`, "restored before provider");
+      yield* command(["add", "."]);
+      yield* command([
+        "-c",
+        "user.name=Scratch test",
+        "-c",
+        "user.email=scratch@example.test",
+        "commit",
+        "-m",
+        "local completed work",
+      ]);
+      yield* command([
+        "update-ref",
+        "refs/t3/orchestration-v2/checkpoints/retained/ordinal/1",
+        "HEAD",
+      ]);
+      const head = (yield* command(["rev-parse", "HEAD"])).stdout;
+      yield* archiveScratchCheckout({
+        scratchRoot,
+        worktreePath: cwd,
+        projectId: ProjectId.make("scratch-resume-project"),
+        threadId: ThreadId.make("thread-native-account-command"),
+      });
+      yield* fs.remove(cwd, { recursive: true });
+      const beforeOpen = Effect.gen(function* () {
+        expect(yield* fs.readFileString(`${cwd}/proof.txt`)).toBe("restored before provider");
+        expect(
+          (yield* command(["rev-parse", "refs/t3/orchestration-v2/checkpoints/retained/ordinal/1"]))
+            .stdout,
+        ).toBe(head);
+        expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
+      }).pipe(Effect.orDie);
+      const harness = makeLocalCommandHarness({
+        text: "Continue the prior work",
+        previousNativeSession: true,
+        restoredWorkspace: { cwd, scratchRoot, fs, git, beforeOpen },
+      });
+      yield* harness.start;
+      expect(harness.open).toHaveBeenCalledWith(
+        expect.objectContaining({
+          initialNativeThreadId: "retained-scratch-native-thread",
+          resumeFromSession: expect.objectContaining({ status: "stopped", cwd }),
+        }),
+      );
+      expect(harness.startRootRun).toHaveBeenCalledOnce();
+    }).pipe(
+      Effect.provide(
+        GitVcsDriver.layer.pipe(
+          Layer.provideMerge(
+            ServerConfig.layerTest(process.cwd(), { prefix: "scratch-provider-" }),
+          ),
+          Layer.provideMerge(NodeServices.layer),
+        ),
+      ),
+      Effect.scoped,
+    ),
+);
