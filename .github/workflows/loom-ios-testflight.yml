@@ -65,6 +65,8 @@ jobs:
         run: |
           vp test run \
             scripts/fork/ios-release.test.ts \
+            scripts/fork/updates.test.ts \
+            scripts/mobile-native-client.test.ts \
             scripts/fork/mobileIdentity.test.ts \
             apps/mobile/src/fork/mobile-identity/appConfig.test.ts \
             apps/mobile/src/features/projects/AddProjectScreen.logic.test.ts \
