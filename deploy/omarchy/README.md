@@ -328,6 +328,15 @@ skin's printed `loom-branding.sh` only when publishing changed protected assets.
 Loom desktop/server and Switchboard artifacts retain their existing release
 workflows; the pack does not silently upgrade their runtimes.
 
+## Reproducible setup
+
+Use a [portable recipe and recovery kit](recipes/README.md) to commission an existing
+Omarchy machine with pinned component releases and resumable local setup. The kit
+supports both profiles, expands paths for the destination user, preserves personal
+data/settings and reuses normal connection, appearance and T3 service workflows.
+The native **Machine setup and recovery** action lists verified releases and remaining
+steps. `loom-os commission status --human` gives the same read-only status.
+
 ## Guided connections
 
 **Loom connections** in the launcher and **AI and connections → Set up connections**

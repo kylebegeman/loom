@@ -305,3 +305,18 @@ test("native conflict resolution keeps the proposed preset and existing custom o
   assert.equal(applied.bindings["open-loom"], "SUPER + F12");
   assert.equal(applied.bindings["open-office"], "SUPER + F11");
 });
+test("an unchanged owned preset introduces no conflict from opaque native Lua callbacks", async (t) => {
+  const f = await fixture(t);
+  const prefs = { version: 1, preset: "standard", bindings: { actions: "none" } };
+  const native = {
+    query: async () => ({
+      stdout: JSON.stringify([{ modmask: 76, key: "L", dispatcher: "__lua", arg: "57" }]),
+    }),
+  };
+  const before = await NodeFSP.readFile(f.file, "utf8");
+  assert.equal((await shortcutPreview(config, f.env, prefs, native)).conflicts.length, 0);
+  await applyShortcuts(config, f.env, prefs, native);
+  assert.equal(await NodeFSP.readFile(f.file, "utf8"), before);
+  const changed = { ...prefs, bindings: { ...prefs.bindings, "open-office": "Super+Ctrl+Alt+L" } };
+  assert.ok((await shortcutPreview(config, f.env, changed, native)).conflicts.length > 0);
+});

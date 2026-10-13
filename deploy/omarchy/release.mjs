@@ -14,6 +14,7 @@ const packFiles = [
   "connections.mjs",
   "availability.mjs",
   "notifications.mjs",
+  "commission.mjs",
 ];
 const statusFiles = ["manifest.json", "LoomStatus.qml", "StatusModel.js"];
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
@@ -64,9 +65,13 @@ export async function buildRelease(output, version, sourceDir = source) {
         includedPackFiles.push(name);
       } catch (error) {
         if (
-          !["capture.mjs", "connections.mjs", "availability.mjs", "notifications.mjs"].includes(
-            name,
-          ) ||
+          ![
+            "capture.mjs",
+            "connections.mjs",
+            "availability.mjs",
+            "notifications.mjs",
+            "commission.mjs",
+          ].includes(name) ||
           error.code !== "ENOENT"
         )
           throw error;
@@ -308,7 +313,13 @@ async function adoptInstalled(p, directory, releases) {
       } catch (e) {
         if (
           e.code === "ENOENT" &&
-          ["capture.mjs", "connections.mjs", "availability.mjs", "notifications.mjs"].includes(name)
+          [
+            "capture.mjs",
+            "connections.mjs",
+            "availability.mjs",
+            "notifications.mjs",
+            "commission.mjs",
+          ].includes(name)
         )
           continue;
         if (e.code !== "ENOENT" || !["install.sh", "release.mjs"].includes(name)) throw e;

@@ -1100,7 +1100,7 @@
     >
       <summary>
         <span class="number">#10</span><span class="title">Reproducible LoomOS setup</span
-        ><span class="status">approved</span>
+        ><span class="status">completed</span>
       </summary>
       <div class="body">
         <p>Commission an existing Omarchy machine from a portable, versioned recipe.</p>
@@ -1139,7 +1139,78 @@
           reachable; secure lock and necessary local authentication remain normal user flows.
         </p>
         <h3>Evidence</h3>
-        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+        <ul>
+          <li>
+            Portable version 1 recipes and verified recovery kits are implemented in the
+            repository-owned commissioner. The kit pins the integration, custom Loom desktop/server,
+            Office/Atlas CLIs and Switchboard client, uses destination HOME/XDG paths and contains
+            no account homes, credentials, browser profiles or application databases. One kit
+            supports laptop/workstation; the laptop omits standalone hosting.
+          </li>
+          <li>
+            178 focused integration checks passed on macOS and native x64 Linux, with scoped lint
+            and generated packet checks. Fifteen commissioning cases cover both clean profile homes,
+            interruption/resumption, amended-recipe journal retirement, source/installed tampering,
+            safe relative links, missing prerequisites, unsupported architecture/Omarchy,
+            private-file exclusion, personal settings preservation, native lock/foreign-service
+            refusal and runtime mirror cleanup. Physical laptop commissioning remains separate from
+            these isolated fixtures.
+          </li>
+          <li>
+            The same final kit also commissioned fresh isolated laptop and workstation homes on
+            Workstation using its actual Omarchy installation and real release payloads. Fresh-login
+            bindings and inactive hosting observations were modeled; live connection probes were
+            omitted; no real service was created and local appearance/branding/widget/hosting steps
+            were correctly reported unfinished. Laptop installation omitted the standalone server
+            runtime.
+          </li>
+          <li>
+            Workstation is commissioned and all 16 installed checks report ready. Pack 20261012.40
+            has manifest SHA256 3e2bfe15c0ce879920f400c6ecdb993f87264d030aa52726088aef4ca7572055.
+            The Mac and Workstation independently built identical complete kits with recipe SHA256
+            98cd6f8dcaf96a13d10fec2e9c8f1f9a7c4a821b60f0923e9364fa0615994b68. The kit is retained on
+            both machines outside the source repository.
+          </li>
+          <li>
+            Actual native recovery exercised .40 -&gt; .39 rollback and .39 -&gt; .40 reapplication
+            through the saved kit bootstrap. The source commissioner works independently of the
+            installed CLI. Original T3 service PID 1152, off DND, app windows, current Iris
+            appearance, protected branding and 27 preserved file hashes remain unchanged. Existing
+            Office/Atlas CLI and Switchboard access were reused without new authorizations or
+            provider inference.
+          </li>
+          <li>
+            Native Omarchy exposes Machine setup and recovery in Maintenance and the existing
+            searchable action catalog. Its installed terminal visibly renders all 16 ready checks
+            and local continuation actions. Local protected publishing, initial hosting, appearance
+            and widget actions retain existing owner workflows and secure-lock checks. No protected
+            publication or real new service installation occurred in the live check.
+          </li>
+          <li>
+            Live acceptance found opaque Lua callbacks falsely conflicting with unchanged presets. A
+            failing regression proves the issue; unchanged owned binding blocks now introduce no new
+            conflict. Commissioning preserves an existing machine's implicit keys even without a
+            preset file. An early interrupted candidate journal was archived explicitly without
+            discarding installed data or services.
+          </li>
+          <li>
+            Recovery acceptance also caught an incomplete copied T3 executable. The final kit
+            includes the full checked release with SDKs, client assets and resource monitor; setup
+            and status require its isolated exact-version check. A real loopback mirror
+            checksum/download, standard tar extraction and extracted t3 v0.0.45-loomos.20261011.5
+            version proof passed. The normal T3 installer remains authoritative; initial runtime
+            mirror is temporary and the persisted custom fork origin is retained. No live service
+            restart or replacement was used.
+          </li>
+          <li>
+            Setup and recovery guidance: deploy/omarchy/recipes/README.md. Evidence, independent kit
+            and private native screenshot:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/reproducible-setup. Fresh full-disk
+            Omarchy provisioning, physical laptop checks and first-time privileged/service-manager
+            commissioning remain normal machine acceptance; fixtures and the live existing
+            workstation are distinguished. Packet #14 remains excluded.
+          </li>
+        </ul>
       </div>
     </details>
     <details

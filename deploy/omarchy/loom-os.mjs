@@ -397,7 +397,9 @@ export async function shortcutPreview(
         reason: "Another proposed Loom action uses this shortcut.",
       });
     seen.add(token);
+    // An unchanged owned block adds no live shortcut or collision.
     if (
+      patch.before !== patch.after &&
       live.some(
         (v) =>
           liveBindingToken(v) === token &&
@@ -784,6 +786,15 @@ export async function installationPlan(
     content: await NodeFSP.readFile(NodePath.join(packDir, "release.mjs"), "utf8"),
     mode: 0o644,
   });
+  // Retained packs before recipe support remain valid rollback targets.
+  try {
+    writes.set(NodePath.join(p.root, "commission.mjs"), {
+      content: await NodeFSP.readFile(NodePath.join(packDir, "commission.mjs"), "utf8"),
+      mode: 0o644,
+    });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
   writes.set(p.bin, {
     content: `#!/bin/sh\nexec node ${shellQuote(NodePath.join(p.root, "loom-os.mjs"))} "$@"\n`,
     mode: 0o755,
@@ -883,6 +894,10 @@ while true; do
   esac
 done
 `,
+    mode: 0o755,
+  });
+  writes.set(NodePath.join(p.root, "commission-terminal"), {
+    content: `#!/bin/bash\nprintf '\\033]0;LoomOS setup\\007'\n${shellQuote(p.bin)} commission --inline\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
     mode: 0o755,
   });
   writes.set(NodePath.join(p.root, "pack-status-terminal"), {
@@ -1055,6 +1070,11 @@ done
       action: command("compatibility --terminal"),
     };
     entries["loomos.maintenance"] = { label: "Maintenance" };
+    entries["loomos.maintenance.setup"] = {
+      label: "Machine setup and recovery",
+      description: "Reviewed recipe, remaining connections and local setup steps",
+      action: command("commission"),
+    };
     entries["loomos.maintenance.status"] = {
       label: "Installed integration",
       description: "Version, machine profile, theme and retained rollback",
@@ -2395,6 +2415,12 @@ export function loomActionCatalog(config, context = {}) {
       shortcut: context.shortcuts === undefined ? shortcut : (context.shortcuts[id] ?? ""),
     });
   };
+  add(
+    "commission",
+    "Machine setup and recovery",
+    "Check the portable recipe and finish this machine's setup",
+    ["commission"],
+  );
   add("actions", "Loom actions", "Find native utilities", ["actions"]);
   add("shortcuts", "Shortcuts", "Review keyboard presets and personal bindings", ["shortcuts"]);
   add("readability", "Readability controls", "Larger dialog text, fonts and theme contrast", [
@@ -3169,7 +3195,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3178,6 +3204,26 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const p = paths(env);
+  if (action === "commission") {
+    const commissioner = await import("./commission.mjs");
+    if (!rest.length || (rest.length === 1 && rest[0] === "--inline")) {
+      if (!rest.length)
+        await run(
+          "omarchy-launch-tui",
+          ["--app-id=org.omarchy.loom-commission", NodePath.join(p.root, "commission-terminal")],
+          { env },
+        );
+      else {
+        if (!process.stdin.isTTY) throw Error("Setup needs an interactive terminal.");
+        await commissioner.nativeCommission(env);
+      }
+    } else {
+      const result = await commissioner.main(rest, env);
+      if (typeof result === "string") console.log(result);
+      else if (result !== undefined) print(result);
+    }
+    return;
+  }
   if (action === "pack") {
     const release = await import("./release.mjs");
     if (["status", "rollback"].includes(rest[0]) && rest[1] === "--terminal") {
