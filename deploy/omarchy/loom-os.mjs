@@ -728,16 +728,34 @@ async function readReadability(env) {
 export async function loomTuiCommand(args, env, resolve = executable) {
   const prefs = await readReadability(env);
   if (prefs.size === "system") return { command: "omarchy-launch-tui", args };
-  const terminal = resolve("alacritty");
+  const foot = resolve("foot"),
+    terminal = foot ?? resolve("alacritty");
   // Keep the preference's recovery screen reachable if its chosen terminal is removed.
   if (!terminal && args[0] === "--app-id=org.omarchy.loom-readability")
     return { command: "omarchy-launch-tui", args };
   if (!terminal)
     throw Error(
-      "Larger Loom dialogs require the included Alacritty terminal. Restore system sizing in Readability controls.",
+      "Larger Loom dialogs require Foot or Alacritty. Restore system sizing in Readability controls.",
     );
   const [appId, ...command] = args;
   if (!appId.startsWith("--app-id=")) throw Error("Loom dialog needs an app identity.");
+  if (foot) {
+    return {
+      command: "uwsm-app",
+      args: [
+        "--",
+        foot,
+        "--app-id",
+        appId.slice(9),
+        "--override",
+        "font=monospace:size=14",
+        "--override",
+        "pad=12x12",
+        "--",
+        ...command,
+      ],
+    };
+  }
   return {
     command: "uwsm-app",
     args: [
@@ -756,14 +774,17 @@ export async function loomTuiCommand(args, env, resolve = executable) {
     ],
   };
 }
-async function nativeReadability(env) {
+export async function nativeReadability(
+  env,
+  { choose = (args) => finderChoice(args, env), resolve = executable, show = console.log } = {},
+) {
   while (true) {
-    console.log(
+    show(
       "Loom utility dialogs: " +
         (await readReadability(env)).size +
         ". Existing terminal, display and theme settings stay yours.",
     );
-    const choice = await finderChoice(
+    const choice = await choose(
       [
         "choose",
         "--header",
@@ -780,15 +801,15 @@ async function nativeReadability(env) {
     if (choice === null || choice === "Close") return;
     if (["System terminal sizing", "Larger Loom dialogs"].includes(choice)) {
       const size = choice === "Larger Loom dialogs" ? "larger" : "system";
-      if (size === "larger" && !executable("alacritty")) {
-        console.log("Alacritty is unavailable. System sizing remains active.");
+      if (size === "larger" && !resolve("foot") && !resolve("alacritty")) {
+        show("Foot or Alacritty is required for larger dialogs. System sizing remains active.");
         continue;
       }
       await write(
         NodePath.join(paths(env).config, "loom-os/readability.json"),
         JSON.stringify({ version: 1, size }) + "\n",
       );
-      console.log("Saved for the next Loom utility dialog.");
+      show("Saved for the next Loom utility dialog.");
     } else if (choice === "Native font chooser" || choice === "Native theme chooser") {
       await run(
         "omarchy-menu",

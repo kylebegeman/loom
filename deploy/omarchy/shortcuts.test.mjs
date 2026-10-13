@@ -16,6 +16,7 @@ import {
   nativeShortcuts,
   recoverShortcuts,
   loomTuiCommand,
+  nativeReadability,
 } from "./loom-os.mjs";
 const config = {
   version: 1,
@@ -214,19 +215,68 @@ test("larger dialogs pass literal arguments and change only per-window terminal 
     NodePath.join(f.p.config, "loom-os/readability.json"),
     JSON.stringify({ version: 1, size: "larger" }),
   );
-  const spec = await loomTuiCommand(args, f.env, () => "/usr/bin/alacritty");
+  const spec = await loomTuiCommand(args, f.env, (name) =>
+    name === "alacritty" ? "/usr/bin/alacritty" : null,
+  );
   assert.equal(spec.command, "uwsm-app");
   assert.ok(spec.args.includes("font.size=14"));
   assert.deepEqual(spec.args.slice(-3), args.slice(1));
   await assert.rejects(
     loomTuiCommand(args, f.env, () => null),
-    /Alacritty/,
+    /Foot or Alacritty/,
   );
   const recovery = ["--app-id=org.omarchy.loom-readability", "/fixture/readability"];
   assert.deepEqual(await loomTuiCommand(recovery, f.env, () => null), {
     command: "omarchy-launch-tui",
     args: recovery,
   });
+});
+
+test("larger dialogs work with Foot when Alacritty is absent and preserve normal configuration", async (t) => {
+  const f = await fixture(t);
+  const footConfig = NodePath.join(f.p.config, "foot/foot.ini");
+  await NodeFSP.mkdir(NodePath.dirname(footConfig), { recursive: true });
+  const before = "[main]\nfont=monospace:size=12\npad=14x14\n";
+  await NodeFSP.writeFile(footConfig, before);
+  const choices = ["Larger Loom dialogs", "Close"];
+  await nativeReadability(f.env, {
+    choose: async () => choices.shift(),
+    resolve: (name) => (name === "foot" ? "/usr/bin/foot" : null),
+    show: () => {},
+  });
+  const args = ["--app-id=org.omarchy.loom-actions", "/fixture/script", "$(literal) with spaces"];
+  const spec = await loomTuiCommand(args, f.env, (name) =>
+    name === "foot" ? "/usr/bin/foot" : null,
+  );
+  assert.equal(spec.command, "uwsm-app");
+  assert.ok(spec.args.includes("/usr/bin/foot"));
+  assert.ok(spec.args.includes("font=monospace:size=14"));
+  assert.ok(spec.args.includes("pad=12x12"));
+  assert.ok(spec.args.includes("org.omarchy.loom-actions"));
+  assert.deepEqual(spec.args.slice(-2), args.slice(1));
+  assert.equal(await NodeFSP.readFile(footConfig, "utf8"), before);
+  assert.deepEqual(
+    JSON.parse(
+      await NodeFSP.readFile(NodePath.join(f.p.config, "loom-os/readability.json"), "utf8"),
+    ),
+    { version: 1, size: "larger" },
+  );
+});
+
+test("unsupported larger-dialog selection leaves preferences intact and explains recovery", async (t) => {
+  const f = await fixture(t);
+  const file = NodePath.join(f.p.config, "loom-os/readability.json");
+  await NodeFSP.writeFile(file, '{"version":1,"size":"system"}\n');
+  const before = await NodeFSP.readFile(file, "utf8");
+  const choices = ["Larger Loom dialogs", "Close"],
+    messages = [];
+  await nativeReadability(f.env, {
+    choose: async () => choices.shift(),
+    resolve: () => null,
+    show: (message) => messages.push(message),
+  });
+  assert.equal(await NodeFSP.readFile(file, "utf8"), before);
+  assert.ok(messages.some((message) => /Foot or Alacritty/.test(message)));
 });
 
 test("reviewed previews cannot overwrite a concurrent edit and recovery never overwrites later edits", async (t) => {

@@ -314,9 +314,9 @@
             changes; recovery refuses later edits.
           </li>
           <li>
-            Readability controls provide per-window Alacritty text/padding without changing global
-            terminal settings, plus existing native Font/Theme actions. The sizing recovery screen
-            remains reachable if Alacritty becomes unavailable.
+            Readability controls provide per-window Foot or Alacritty text/padding without changing
+            global terminal settings, plus existing native Font/Theme actions. The sizing recovery
+            screen remains reachable if both terminals become unavailable.
           </li>
           <li>
             Actual Linux Gum 2.0.0 terminal interaction checks pass for cancellation, keeping
@@ -338,11 +338,11 @@
             and existing personal bindings during acceptance.
           </li>
           <li>
-            Remaining acceptance is physical keyboard use and additional actual display scales.
-            Workstation native keyboard navigation, cancellation, default Keep current, reviewed
-            temporary none preset apply/restore, native Hyprland reload and larger-dialog rendering
-            at scale 1.25 now pass. Laptop hardware and suspend/wake acceptance remain with packet
-            #15.
+            Remaining acceptance is physical keyboard use. Workstation native keyboard navigation,
+            cancellation, default Keep current, reviewed temporary none preset apply/restore, native
+            Hyprland reload and larger-dialog rendering at scale 1.25 now pass. Additional
+            display-scale acceptance is recorded below; laptop hardware and suspend/wake acceptance
+            remain with packet #15.
           </li>
           <li>
             Native review found historical Restore recreated an absent shortcuts.json file. The
@@ -362,6 +362,18 @@
             existing Atlas window and T3 PID 1154 are preserved. This is native
             virtual-input/current-scale proof, not a physical keyboard or every display
             certification.
+          </li>
+          <li>
+            Workstation native scale checks cover 1, 1.6 and 2 on its 3840x2160 display. Standard
+            shortcut/readability windows render without clipping. Testing found current Omarchy
+            includes Foot, not Alacritty, so larger dialogs now support Foot per-window font and
+            padding overrides. The actual native menu saves Larger mode and launches Foot with the
+            reviewed overrides at all three scales; original readability bytes and Foot
+            configuration are restored. User-requested scale 1 is saved through upstream Omarchy.
+            Pack 20261013.52 passes all 383 pack tests, scoped lint, 17 native shortcut/readability
+            tests, owner verification, ready commissioning and zero compatibility errors/warnings.
+            All 39 preservation checks, Iris Dark, the existing Atlas window and T3 PID 1154 are
+            unchanged. Physical keyboard acceptance remains pending.
           </li>
         </ul>
       </div>
@@ -1835,8 +1847,19 @@
             401/403. This proves the link grants no access; no credential or server was copied and
             no inference occurred. Physical phone scanning, revoked-device UI recovery, laptop/phone
             authenticated handoff, lid/suspend/wake, Wi-Fi transition and battery acceptance remain
-            unverified on applicable hardware. Native virtual-input and scale-1.25 readability proof
-            are recorded separately from physical keyboard and other display scales.
+            unverified on applicable hardware. Native virtual-input and display-scale proof are
+            recorded with packet #6, separately from physical keyboard acceptance.
+          </li>
+          <li>
+            Isolated running-server pairing and recovery acceptance passes: unpaired reads return
+            401, one-time pairing grants protected reads, credential replay returns 401, owner
+            revocation closes the existing WebSocket and refuses reads/new tickets, fresh pairing
+            restores the same project/thread workspace, and the old grant remains revoked. Test
+            grants are cleaned up. This is actual server protocol proof, not authenticated physical
+            device handoff or recovery UI proof. T3 Browser panel snapshot attempts timed out twice,
+            so browser UI recovery remains unverified. Workstation remains at user-requested scale 1
+            with pack 20261013.52; physical phone scan/handoff, laptop lid/wake, Wi-Fi, battery and
+            keyboard checks remain pending because no hands-on hardware is available.
           </li>
         </ul>
       </div>

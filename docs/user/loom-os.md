@@ -33,9 +33,9 @@ After saving, choose Reload shortcuts now while unlocked, or activate later thro
 normal Hyprland reload/sign-in. Reloading shortcuts does not restart background Loom.
 
 Readability controls offer system terminal sizing or larger text and padding for
-Loom utility dialogs. Larger dialogs use Omarchy's included Alacritty without
-editing your terminal configuration. Restore System terminal sizing to use your
-normal terminal again. The native Font and Theme choosers remain available for
+Loom utility dialogs. Larger dialogs use Foot or Alacritty with per-window
+settings, without editing your terminal configuration. Restore System terminal
+sizing to use your normal terminal again. The native Font and Theme choosers remain available for
 system appearance and contrast.
 
 ```sh
