@@ -102,6 +102,7 @@ interface HomeScreenProps {
   readonly onProjectChange: (projectKey: string | null) => void;
   readonly onAddConnection: () => void;
   readonly onOpenSettings: () => void;
+  readonly onOpenComputers: () => void;
   readonly onStartNewTask: () => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onArchiveThread: (thread: EnvironmentThreadShell) => void;
@@ -167,16 +168,16 @@ function deriveEmptyState(props: {
   const { catalogState } = props;
   if (catalogState.isLoadingConnections) {
     return {
-      title: "Loading environments",
-      detail: "Checking saved environments on this device.",
+      title: "Loading computers",
+      detail: "Checking saved computers on this device.",
       loading: true,
     };
   }
 
   if (!catalogState.hasConnections) {
     return {
-      title: "No environments connected",
-      detail: "Add an environment to load projects and start coding sessions.",
+      title: "Connect a computer",
+      detail: "Connect a computer to open projects and start tasks there.",
       loading: false,
     };
   }
@@ -186,43 +187,43 @@ function deriveEmptyState(props: {
       catalogState.connectionState === "offline" ||
       catalogState.connectionState === "error" ||
       catalogState.connectionState === "unsupported") &&
-    !catalogState.hasLoadedShellSnapshot
+    !catalogState.hasReadyEnvironment
   ) {
     return {
       title:
         catalogState.connectionState === "unsupported"
           ? "Client not supported"
-          : "Environment unavailable",
+          : "Computer unavailable",
       detail:
         catalogState.connectionError ??
-        "The saved environment is offline. Check the URL or start the environment, then retry.",
+        "The saved computer is offline. Reconnect it or choose another computer to start working.",
       loading: false,
     };
   }
 
   if (
     catalogState.hasConnectingEnvironment &&
-    !catalogState.hasLoadedShellSnapshot &&
+    !catalogState.hasReadyEnvironment &&
     catalogState.connectionError === null
   ) {
     return {
-      title: "Connecting to environment",
-      detail: "Loading projects and threads from the saved environment.",
+      title: "Connecting to computer",
+      detail: "Loading projects and conversations from the saved computer.",
       loading: true,
     };
   }
 
   if (props.projectCount === 0 && catalogState.hasLoadedShellSnapshot) {
     return {
-      title: "No projects found",
-      detail: "The connected environment did not report any projects.",
+      title: "Start your first task",
+      detail: "Choose a project or start without one. Your work runs on the connected computer.",
       loading: false,
     };
   }
 
   return {
     title: "No threads yet",
-    detail: "Create a task to start a new coding runtime in one of your connected projects.",
+    detail: "Start a task in a project, or work without one.",
     loading: false,
   };
 }
@@ -932,6 +933,19 @@ export function HomeScreen(props: HomeScreenProps) {
     projectCount: props.projects.length,
   });
 
+  const emptyActionLabel = emptyState.loading
+    ? undefined
+    : props.catalogState.hasReadyEnvironment
+      ? "Start a task"
+      : props.catalogState.hasConnections
+        ? "Manage computers"
+        : "Add computer";
+  const emptyAction = props.catalogState.hasReadyEnvironment
+    ? props.onStartNewTask
+    : props.catalogState.hasConnections
+      ? props.onOpenComputers
+      : props.onAddConnection;
+
   if (!hasAnyThreads) {
     return (
       <View className={containerClassName}>
@@ -952,16 +966,22 @@ export function HomeScreen(props: HomeScreenProps) {
             <EmptyState
               title={emptyState.title}
               detail={emptyState.detail}
-              actionLabel={!props.catalogState.hasReadyEnvironment ? "Add environment" : undefined}
-              onAction={!props.catalogState.hasReadyEnvironment ? props.onAddConnection : undefined}
+              actionLabel={emptyActionLabel}
+              onAction={emptyActionLabel ? emptyAction : undefined}
               action={
-                Platform.OS === "android" && !props.catalogState.hasReadyEnvironment ? (
+                Platform.OS === "android" && emptyActionLabel ? (
                   <MaterialFloatingActionButton
-                    label="Add environment"
-                    icon="plus"
+                    label={emptyActionLabel}
+                    icon={
+                      props.catalogState.hasReadyEnvironment
+                        ? "square.and.pencil"
+                        : props.catalogState.hasConnections
+                          ? "desktopcomputer"
+                          : "plus"
+                    }
                     variant="extended"
                     tone="primary"
-                    onPress={props.onAddConnection}
+                    onPress={emptyAction}
                   />
                 ) : undefined
               }

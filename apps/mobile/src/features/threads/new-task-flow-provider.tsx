@@ -211,7 +211,7 @@ type NewTaskFlowContextValue = {
    * to a fresh one.
    */
   readonly openDraft: (draftKey: string) => boolean;
-  readonly selectEnvironment: (environmentId: EnvironmentId) => void;
+  readonly selectEnvironment: (environmentId: EnvironmentId) => boolean;
   /**
    * Moves the draft to another machine. A draft without a project resolves to
    * that machine's "No project" folder first, creating it when needed.
@@ -285,11 +285,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const [selectedEnvironmentIdOverride, setSelectedEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
-  const selectedEnvironmentId =
-    selectedEnvironmentIdOverride !== null &&
-    projects.some((project) => project.environmentId === selectedEnvironmentIdOverride)
-      ? selectedEnvironmentIdOverride
-      : (projects[0]?.environmentId ?? null);
+  const selectedEnvironmentId = selectedEnvironmentIdOverride ?? projects[0]?.environmentId ?? null;
   const [selectedProjectKey, setSelectedProjectKey] = useState<string | null>(null);
   // The new-task draft the composer is bound to. Null until a project is
   // chosen; each New Task entry mints its own, so a project can hold several.
@@ -369,7 +365,9 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     selectedProjectKey ===
       scopedProjectKey(editingPendingProject.environmentId, editingPendingProject.id)
       ? editingPendingProject
-      : (projectsForEnvironment[0] ?? null));
+      : selectedProjectKey === null
+        ? (projectsForEnvironment[0] ?? null)
+        : null);
 
   const selectedEnvironmentServerConfig = useEnvironmentServerConfig(
     selectedProject?.environmentId ?? null,
@@ -464,9 +462,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   // scoped to the queued message, so new-task drafts stay intact.
   const selectedProjectDraftKey = editingPendingTask
     ? pendingTaskDraftKey(editingPendingTask.messageId)
-    : selectedProject
-      ? activeDraftKey
-      : null;
+    : activeDraftKey;
   // selectedProject can resolve without setProject ever running (the
   // environment's first project is the fallback, and the draft screen skips
   // setProject when the route's project already matches it). The composer
@@ -841,17 +837,30 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
 
   const selectEnvironment = useCallback(
     (environmentId: EnvironmentId) => {
+      if (selectedProjectKey !== null && selectedProject === null) {
+        Alert.alert(
+          "Project unavailable",
+          "Choose a project before switching computers. Your saved draft is unchanged.",
+        );
+        return false;
+      }
       const match = resolveEnvironmentProjectMatch(
         projects.filter((project) => project.environmentId === environmentId),
         selectedProject,
       );
-      if (match) {
-        carryDraftContentTo(match);
+      if (!match) {
+        Alert.alert(
+          "Project unavailable on this computer",
+          "Your draft stays on its current computer. Choose another computer, or add this repository on the destination first.",
+        );
+        return false;
       }
+      carryDraftContentTo(match);
       setSelectedEnvironmentId(environmentId);
-      setSelectedProjectKey(match ? scopedProjectKey(match.environmentId, match.id) : null);
+      setSelectedProjectKey(scopedProjectKey(match.environmentId, match.id));
+      return true;
     },
-    [projects, selectedProject, carryDraftContentTo],
+    [projects, selectedProject, selectedProjectKey, carryDraftContentTo],
   );
 
   const openScratch = useAtomCommand(projectEnvironment.openScratch, { reportFailure: false });
@@ -868,8 +877,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         return true;
       }
       if (!isScratchDraft) {
-        selectEnvironment(environmentId);
-        return true;
+        return selectEnvironment(environmentId);
       }
       const request = {};
       latestSwitchRef.current = request;

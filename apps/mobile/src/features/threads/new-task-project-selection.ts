@@ -47,10 +47,9 @@ function getOnlySelectableProject(
  * Picks the project on a target environment that corresponds to the project
  * currently selected in the new-task flow, so switching computers follows the
  * same repo. Repository identity is preferred; projects without one (e.g. not
- * yet indexed) fall back to workspace basename, then title. When nothing
- * matches, the first project on the target stands in — the same fallback the
- * render path applies when no key is selected — so the draft always has a
- * concrete key to carry over to.
+ * yet indexed) fall back to workspace basename, then title. An existing
+ * selection never falls back to an unrelated project. A fresh flow without
+ * a selection may take the target's first project.
  */
 export function resolveEnvironmentProjectMatch(
   projectsOnTarget: ReadonlyArray<EnvironmentProject>,
@@ -92,7 +91,7 @@ export function resolveEnvironmentProjectMatch(
           (project) => !isKnownMismatch(project) && project.title === selectedProject.title,
         )
       : undefined) ??
-    projectsOnTarget[0] ??
+    (selectedProject === null ? projectsOnTarget[0] : null) ??
     null
   );
 }
@@ -109,6 +108,9 @@ export function resolveDraftProjectSelection(
     );
   if (hasExplicitProjectSelection) {
     return { kind: "preserve" };
+  }
+  if (selectedProjectKey !== null) {
+    return { kind: "pick" };
   }
 
   const onlyProject = getOnlySelectableProject(projectScopes);

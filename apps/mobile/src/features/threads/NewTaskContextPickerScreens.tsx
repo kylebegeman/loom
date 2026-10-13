@@ -1,5 +1,6 @@
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { MaterialListRow } from "../../components/MaterialListRow";
+import { MaterialButton } from "../../components/MaterialButton";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { shouldCheckoutNewTaskBranch } from "./new-task-context-presentation";
 import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
@@ -205,15 +206,11 @@ export function NewTaskEnvironmentPickerRouteScreen() {
       <NativeStackScreenOptions
         options={{
           headerShown: Platform.OS !== "android",
-          title: "Environment",
+          title: "Computer",
         }}
       />
       {Platform.OS === "android" ? (
-        <AndroidScreenHeader
-          title="Environment"
-          hideBottomBorder
-          onBack={() => navigation.goBack()}
-        />
+        <AndroidScreenHeader title="Computer" hideBottomBorder onBack={() => navigation.goBack()} />
       ) : null}
       <MaterialScreenContent>
         <ScrollView
@@ -243,7 +240,7 @@ export function NewTaskEnvironmentPickerRouteScreen() {
                 onPress={() => {
                   void Haptics.selectionAsync();
                   void flow.switchEnvironment(environment.environmentId).then((switched) => {
-                    if (switched) navigation.goBack();
+                    if (switched && navigation.isFocused()) navigation.goBack();
                   });
                 }}
                 selected={flow.selectedEnvironmentId === environment.environmentId}
@@ -251,6 +248,12 @@ export function NewTaskEnvironmentPickerRouteScreen() {
               />
             ))}
           </PickerSurface>
+          <MaterialButton
+            label="Manage computers"
+            tone="text"
+            disabled={flow.switchingToEnvironmentId !== null}
+            onPress={() => navigation.navigate("Connections")}
+          />
         </ScrollView>
       </MaterialScreenContent>
     </View>

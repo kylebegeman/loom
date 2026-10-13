@@ -107,16 +107,20 @@ describe("resolveEnvironmentProjectMatch", () => {
     });
     const unindexed = makeProject("unindexed", "server", { workspaceRoot: "/srv/t3code" });
     expect(resolveEnvironmentProjectMatch([fork, unindexed], selected)).toBe(unindexed);
-    // Without any weaker match the fork is still the first-project fallback.
-    expect(resolveEnvironmentProjectMatch([fork], selected)).toBe(fork);
+    expect(resolveEnvironmentProjectMatch([fork], selected)).toBeNull();
   });
 
-  it("falls back to the first project on the target so the draft has a key to carry over to", () => {
+  it("does not retarget an existing draft when the target has no matching repository", () => {
     const selected = makeProject("t3code", "mac", { repositoryKey: "github.com/t3tools/t3code" });
     const target = [makeProject("unrelated", "server"), makeProject("also-unrelated", "server")];
-    expect(resolveEnvironmentProjectMatch(target, selected)).toBe(target[0]);
+    expect(resolveEnvironmentProjectMatch(target, selected)).toBeNull();
     expect(resolveEnvironmentProjectMatch([], selected)).toBeNull();
   });
+});
+
+it("may choose the first project when no project has been selected yet", () => {
+  const target = [makeProject("first", "server"), makeProject("second", "server")];
+  expect(resolveEnvironmentProjectMatch(target, null)).toBe(target[0]);
 });
 
 describe("resolveDraftProjectSelection", () => {
@@ -143,14 +147,11 @@ describe("resolveDraftProjectSelection", () => {
     });
   });
 
-  it("does not preserve a project key that is missing from the catalog", () => {
+  it("returns to the picker when an explicit project disappears instead of choosing another", () => {
     const project = makeProject("t3code");
     expect(
       resolveDraftProjectSelection("environment:removed", [project], [makeScope([project])]),
-    ).toEqual({
-      kind: "select",
-      project,
-    });
+    ).toEqual({ kind: "pick" });
   });
 });
 

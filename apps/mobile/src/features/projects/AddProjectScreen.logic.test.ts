@@ -38,4 +38,18 @@ describe("resolveAddProjectEnvironment", () => {
       )?.environmentId,
     ).toBe(ENVIRONMENT_B);
   });
+  it("does not substitute another computer when an explicitly selected computer is removed", () => {
+    expect(
+      resolveAddProjectEnvironment([environment(ENVIRONMENT_B, "connected")], ENVIRONMENT_A),
+    ).toBeNull();
+  });
+
+  it("does not offer a saved computer for creation while every computer is offline", () => {
+    expect(
+      resolveAddProjectEnvironment(
+        [environment(ENVIRONMENT_A, "offline"), environment(ENVIRONMENT_B, "error")],
+        null,
+      ),
+    ).toBeNull();
+  });
 });

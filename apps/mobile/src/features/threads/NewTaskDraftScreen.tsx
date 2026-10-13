@@ -1526,7 +1526,7 @@ export function NewTaskDraftScreen(props: {
 
   const environmentControl = (
     <ComposerInlineControl
-      accessibilityLabel={`Environment: ${selectedEnvironmentLabel}`}
+      accessibilityLabel={`Computer: ${selectedEnvironmentLabel}`}
       chevronDirection="right"
       disabled={isComposerInteractionLocked || voiceInput.isBusy}
       renderIcon={(size) => (

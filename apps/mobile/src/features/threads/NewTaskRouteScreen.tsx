@@ -9,6 +9,7 @@ import {
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/AppSymbol";
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -27,7 +28,10 @@ import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useRemoteConnectionStatus } from "../../state/use-remote-environment-registry";
+import {
+  useRemoteConnectionStatus,
+  useSavedRemoteConnections,
+} from "../../state/use-remote-environment-registry";
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
 import { useAdaptiveWorkspaceLayout } from "../layout/AdaptiveWorkspaceLayout";
@@ -53,16 +57,16 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
 } {
   if (catalogState.isLoadingConnections) {
     return {
-      title: "Loading environments",
-      detail: "Checking saved environments on this device.",
+      title: "Loading computers",
+      detail: "Checking saved computers on this device.",
       loading: true,
     };
   }
 
   if (!catalogState.hasConnections) {
     return {
-      title: "No environments connected",
-      detail: "Add an environment before creating a task.",
+      title: "Connect a computer",
+      detail: "Connect a computer before starting a task.",
       loading: false,
     };
   }
@@ -70,33 +74,37 @@ function deriveProjectEmptyState(catalogState: WorkspaceState): {
   if (
     (catalogState.connectionState === "available" ||
       catalogState.connectionState === "offline" ||
-      catalogState.connectionState === "error") &&
-    !catalogState.hasLoadedShellSnapshot
+      catalogState.connectionState === "error" ||
+      catalogState.connectionState === "unsupported") &&
+    !catalogState.hasReadyEnvironment
   ) {
     return {
-      title: "Environment unavailable",
+      title:
+        catalogState.connectionState === "unsupported"
+          ? "Client not supported"
+          : "Computer unavailable",
       detail:
         catalogState.connectionError ??
-        "The saved environment is offline. Check the URL or start the environment, then retry.",
+        "The saved computer is offline. Reconnect it or choose another computer to start working.",
       loading: false,
     };
   }
 
   if (
     catalogState.hasConnectingEnvironment &&
-    !catalogState.hasLoadedShellSnapshot &&
+    !catalogState.hasReadyEnvironment &&
     catalogState.connectionError === null
   ) {
     return {
-      title: "Connecting to environment",
-      detail: "Loading projects from the saved environment.",
+      title: "Connecting to computer",
+      detail: "Loading projects from the saved computer.",
       loading: true,
     };
   }
 
   return {
-    title: "No projects found",
-    detail: "The connected environment did not report any projects.",
+    title: "Start your first task",
+    detail: "Add a project or start without one on the connected computer.",
     loading: false,
   };
 }
@@ -184,6 +192,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       ) ?? null)
     : null;
   const { connectedEnvironments } = useRemoteConnectionStatus();
+  const { savedConnectionsById } = useSavedRemoteConnections();
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
@@ -386,15 +395,23 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               <Text className="text-center text-sm leading-normal text-foreground-muted">
                 {projectEmptyState.detail}
               </Text>
-              {Platform.OS === "android" ? (
+              {!projectEmptyState.loading ? (
                 <>
                   <MaterialButton
-                    label={catalogState.hasReadyEnvironment ? "Add new project" : "Add environment"}
+                    label={
+                      catalogState.hasReadyEnvironment
+                        ? "Add project"
+                        : catalogState.hasConnections
+                          ? "Manage computers"
+                          : "Add computer"
+                    }
                     tone="primary"
                     onPress={() =>
                       catalogState.hasReadyEnvironment
                         ? navigation.dispatch(StackActions.push("AddProject"))
-                        : navigation.navigate("ConnectionsNew")
+                        : navigation.navigate(
+                            catalogState.hasConnections ? "Connections" : "ConnectionsNew",
+                          )
                     }
                   />
                   {canStartScratch ? (
@@ -405,37 +422,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                     />
                   ) : null}
                 </>
-              ) : !catalogState.hasReadyEnvironment ? (
-                <Pressable
-                  className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                  onPress={() => navigation.navigate("ConnectionsNew")}
-                >
-                  <Text className="text-sm font-t3-bold text-primary-foreground">
-                    Add environment
-                  </Text>
-                </Pressable>
-              ) : (
-                <>
-                  <Pressable
-                    className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-                    onPress={() => navigation.dispatch(StackActions.push("AddProject"))}
-                  >
-                    <Text className="text-sm font-t3-bold text-primary-foreground">
-                      Add new project
-                    </Text>
-                  </Pressable>
-                  {canStartScratch ? (
-                    <Pressable
-                      className="rounded-full bg-subtle px-4 py-2.5 active:opacity-70"
-                      onPress={() => void startScratch()}
-                    >
-                      <Text className="text-sm font-t3-bold text-foreground">
-                        Start without a project
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </>
-              )}
+              ) : null}
             </View>
           ) : visibleScopes.length === 0 ? (
             <View className="items-center gap-2 px-6 py-8">
@@ -461,17 +448,31 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   scope,
                   selectedEnvironmentId,
                 );
+                const computerLabel =
+                  savedConnectionsById[selectionTarget.environmentId]?.environmentLabel ??
+                  "Computer";
+                const connectionPhase =
+                  connectedEnvironments.find(
+                    (environment) => environment.environmentId === selectionTarget.environmentId,
+                  )?.connectionState ?? "available";
+                const projectSubtitle = [
+                  computerLabel,
+                  connectionPhase === "connected"
+                    ? null
+                    : connectionStatusTitle({ phase: connectionPhase, error: null, traceId: null }),
+                  hasMultipleProjects
+                    ? `${scope.projects.length} workspaces`
+                    : selectionTarget.workspaceRoot,
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
                 if (Platform.OS === "android") {
                   return (
                     <MaterialListRow
                       className="bg-grouped-card"
                       key={scope.key}
                       title={scope.title}
-                      subtitle={
-                        hasMultipleProjects
-                          ? `${scope.projects.length} workspaces`
-                          : selectionTarget.workspaceRoot
-                      }
+                      subtitle={projectSubtitle}
                       subtitleNumberOfLines={1}
                       subtitleEllipsizeMode="middle"
                       disabled={reservedDestinationProject !== null}
@@ -496,7 +497,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   >
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={scope.title}
+                      accessibilityLabel={`${scope.title}, ${projectSubtitle}`}
                       disabled={reservedDestinationProject !== null}
                       onPress={() => void selectProject(selectionTarget)}
                       className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
@@ -520,9 +521,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           ellipsizeMode="middle"
                           numberOfLines={1}
                         >
-                          {hasMultipleProjects
-                            ? `${scope.projects.length} workspaces`
-                            : selectionTarget.workspaceRoot}
+                          {projectSubtitle}
                         </Text>
                       </View>
                       <SymbolView

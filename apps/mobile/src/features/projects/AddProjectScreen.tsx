@@ -209,13 +209,24 @@ function ListRow(props: {
         trailing={props.right}
         disabled={props.disabled}
         onPress={props.onPress}
-        accessibilityRole={props.selected !== undefined ? "radio" : "button"}
-        accessibilityState={props.selected !== undefined ? { checked: props.selected } : undefined}
+        accessibilityRole={
+          props.selected !== undefined ? "radio" : props.onPress ? "button" : "text"
+        }
+        accessibilityState={{
+          disabled: props.disabled,
+          ...(props.selected !== undefined ? { checked: props.selected } : {}),
+        }}
       />
     );
   }
   return (
     <Pressable
+      accessibilityLabel={[props.title, props.subtitle].filter(Boolean).join(", ")}
+      accessibilityRole={props.selected !== undefined ? "radio" : props.onPress ? "button" : "text"}
+      accessibilityState={{
+        disabled: props.disabled,
+        ...(props.selected !== undefined ? { checked: props.selected } : {}),
+      }}
       disabled={props.disabled}
       onPress={props.onPress}
       className={cn(
@@ -422,54 +433,95 @@ function useEnvironmentOptions(): ReadonlyArray<EnvironmentOption> {
         supportsCloneTracking: config?.environment.capabilities.projectCloneTracking === true,
       };
     });
-    return Arr.sort(
-      options.filter((environment) => canCreateProjectInEnvironment(environment.connectionState)),
-      environmentOptionOrder,
-    );
+    return Arr.sort(options, environmentOptionOrder);
   }, [connectedEnvironments, savedConnectionsById, serverConfigByEnvironmentId]);
 }
 
 function useSelectedEnvironment(): {
   readonly environmentOptions: ReadonlyArray<EnvironmentOption>;
   readonly selectedEnvironment: EnvironmentOption | null;
+  readonly selectedEnvironmentId: EnvironmentId | null;
   readonly setSelectedEnvironmentId: (environmentId: EnvironmentId) => void;
 } {
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
   const environmentOptions = useEnvironmentOptions();
-  const selectedEnvironment =
-    environmentOptions.find(
-      (environment) =>
-        environment.environmentId === selectedEnvironmentId &&
-        canCreateProjectInEnvironment(environment.connectionState),
-    ) ??
-    environmentOptions.find((environment) =>
-      canCreateProjectInEnvironment(environment.connectionState),
-    ) ??
-    null;
+  const selectedEnvironment = resolveAddProjectEnvironment(
+    environmentOptions,
+    selectedEnvironmentId,
+  );
+  // Freeze the first visible choice so a reconnect cannot redirect creation
+  // to a different computer after the user starts this flow.
+  if (selectedEnvironmentId === null && selectedEnvironment !== null) {
+    setSelectedEnvironmentId(selectedEnvironment.environmentId);
+  }
 
   return {
     environmentOptions,
     selectedEnvironment,
+    selectedEnvironmentId: selectedEnvironmentId ?? selectedEnvironment?.environmentId ?? null,
     setSelectedEnvironmentId,
   };
 }
 
 function EmptyEnvironmentState() {
   const navigation = useNavigation();
+  const { isLoadingSavedConnection, savedConnectionsById } = useSavedRemoteConnections();
+  const hasSavedComputers = Object.keys(savedConnectionsById).length > 0;
 
   return (
     <View className="items-center gap-3 rounded-2xl bg-grouped-card px-5 py-8">
-      <Text className="text-center text-lg font-t3-bold">Environment unavailable</Text>
-      <Text className="text-center text-sm leading-normal text-foreground-muted">
-        Start or reconnect an environment before adding a project.
+      {isLoadingSavedConnection ? (
+        <AppActivityIndicator colorClassName="accent-icon-muted" />
+      ) : null}
+      <Text className="text-center text-lg font-t3-bold">
+        {isLoadingSavedConnection
+          ? "Loading computers"
+          : hasSavedComputers
+            ? "Computer unavailable"
+            : "Connect a computer"}
       </Text>
-      <Pressable
-        onPress={() => navigation.dispatch(StackActions.replace("ConnectionsNew"))}
-        className="mt-1 rounded-full bg-primary px-4 py-2.5 active:opacity-70"
-      >
-        <Text className="text-sm font-t3-bold text-primary-foreground">Add environment</Text>
-      </Pressable>
+      <Text className="text-center text-sm leading-normal text-foreground-muted">
+        {isLoadingSavedConnection
+          ? "Checking saved computers on this device."
+          : hasSavedComputers
+            ? "Reconnect the selected computer or choose another before adding a project."
+            : "Connect a computer to create a project, open a folder, or clone a repository there."}
+      </Text>
+      {!isLoadingSavedConnection ? (
+        <MaterialButton
+          label={hasSavedComputers ? "Manage computers" : "Add computer"}
+          tone="primary"
+          onPress={() => navigation.navigate(hasSavedComputers ? "Connections" : "ConnectionsNew")}
+        />
+      ) : null}
     </View>
+  );
+}
+
+function ComputerSummary(props: { readonly environment: EnvironmentOption }) {
+  return (
+    <>
+      <SectionTitle>Computer</SectionTitle>
+      <ListSection>
+        <ListRow
+          title={props.environment.label}
+          subtitle={connectionStatusText({
+            phase: props.environment.connectionState,
+            error: props.environment.connectionError,
+            traceId: props.environment.connectionErrorTraceId,
+          })}
+          icon={
+            <EnvironmentMachineSymbol
+              kind={props.environment.machine}
+              size={Platform.OS === "android" ? 24 : 17}
+              tintColorClassName="accent-icon"
+            />
+          }
+          isFirst
+          right={null}
+        />
+      </ListSection>
+    </>
   );
 }
 
@@ -529,8 +581,12 @@ function SourceControlRow(props: {
 
 export function AddProjectSourceScreen() {
   const navigation = useNavigation();
-  const { environmentOptions, selectedEnvironment, setSelectedEnvironmentId } =
-    useSelectedEnvironment();
+  const {
+    environmentOptions,
+    selectedEnvironment,
+    selectedEnvironmentId,
+    setSelectedEnvironmentId,
+  } = useSelectedEnvironment();
   const canWriteSourceControl = useEnvironmentScope(
     selectedEnvironment?.environmentId ?? null,
     AuthSourceControlWriteScope,
@@ -555,25 +611,19 @@ export function AddProjectSourceScreen() {
 
   return (
     <AddProjectShell title="Add project">
-      {selectedEnvironment === null ? <EmptyEnvironmentState /> : null}
-
-      {environmentOptions.length > 1 ? (
+      {environmentOptions.length > 0 ? (
         <>
-          <SectionTitle>Environments</SectionTitle>
+          <SectionTitle>Computer</SectionTitle>
           <ListSection>
             {environmentOptions.map((environment, index) => (
               <ListRow
                 key={environment.environmentId}
                 title={environment.label}
-                subtitle={
-                  canCreateProjectInEnvironment(environment.connectionState)
-                    ? undefined
-                    : connectionStatusText({
-                        phase: environment.connectionState,
-                        error: environment.connectionError,
-                        traceId: environment.connectionErrorTraceId,
-                      })
-                }
+                subtitle={connectionStatusText({
+                  phase: environment.connectionState,
+                  error: environment.connectionError,
+                  traceId: environment.connectionErrorTraceId,
+                })}
                 icon={
                   <EnvironmentMachineSymbol
                     kind={environment.machine}
@@ -581,11 +631,11 @@ export function AddProjectSourceScreen() {
                     tintColorClassName="accent-icon"
                   />
                 }
-                selected={environment.environmentId === selectedEnvironment?.environmentId}
+                selected={environment.environmentId === selectedEnvironmentId}
                 disabled={!canCreateProjectInEnvironment(environment.connectionState)}
                 isFirst={index === 0}
                 right={
-                  environment.environmentId === selectedEnvironment?.environmentId ? (
+                  environment.environmentId === selectedEnvironmentId ? (
                     <SymbolView
                       name="checkmark"
                       size={Platform.OS === "android" ? 20 : 14}
@@ -601,13 +651,19 @@ export function AddProjectSourceScreen() {
         </>
       ) : null}
 
+      {selectedEnvironment === null ? <EmptyEnvironmentState /> : null}
       {selectedEnvironment ? (
         <>
           <ListSection>
             {selectedEnvironment.newProjectsRoot !== null ? (
               <ListRow
                 title="New project"
-                subtitle="Start a new Git repository from a name"
+                subtitle={
+                  canCreateProject
+                    ? "Start a new Git repository from a name"
+                    : "This connection cannot add projects."
+                }
+                disabled={!canCreateProject}
                 icon={
                   <SymbolView
                     name="plus"
@@ -627,10 +683,10 @@ export function AddProjectSourceScreen() {
               />
             ) : null}
             <ListRow
-              title="Local folder"
+              title="Existing folder"
               subtitle={
                 canCreateProject
-                  ? "Browse a folder on disk"
+                  ? `Browse folders on ${selectedEnvironment.label}`
                   : "This connection cannot add projects."
               }
               icon={
@@ -673,6 +729,11 @@ export function AddProjectSourceScreen() {
           {discoveryState.isPending ? (
             <AppActivityIndicator colorClassName="accent-icon-muted" />
           ) : null}
+          <MaterialButton
+            label="Manage computers"
+            tone="text"
+            onPress={() => navigation.navigate("Connections")}
+          />
         </>
       ) : null}
     </AddProjectShell>
@@ -706,7 +767,10 @@ async function draftWithPrompt(
   return draftId;
 }
 
-function useCreateProject(environment: EnvironmentOption | null) {
+function useCreateProject(
+  environment: EnvironmentOption | null,
+  createWorkspaceRootIfMissing: boolean,
+) {
   const navigation = useNavigation();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const projects = useProjects();
@@ -751,11 +815,14 @@ function useCreateProject(environment: EnvironmentOption | null) {
       }
 
       const projectId = ProjectId.make(uuidv4());
-      const command = buildProjectCreateCommand({
-        commandId: CommandId.make(uuidv4()),
-        projectId,
-        workspaceRoot,
-      });
+      const command = {
+        ...buildProjectCreateCommand({
+          commandId: CommandId.make(uuidv4()),
+          projectId,
+          workspaceRoot,
+        }),
+        createWorkspaceRootIfMissing,
+      };
       const result = await createProject({
         environmentId: environment.environmentId,
         input: command,
@@ -780,7 +847,7 @@ function useCreateProject(environment: EnvironmentOption | null) {
       );
       return result;
     },
-    [createProject, environment, projects, navigation],
+    [createProject, createWorkspaceRootIfMissing, environment, projects, navigation],
   );
 }
 
@@ -855,6 +922,7 @@ export function AddProjectRepositoryScreen(props: {
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
+          <ComputerSummary environment={environment} />
           <TextInput
             className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
             value={repositoryInput}
@@ -1008,6 +1076,14 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
     () => stringParam(props.environmentId) as EnvironmentId | null,
   );
   const environment = resolveAddProjectEnvironment(environmentOptions, selectedEnvironmentId);
+  const canCreateProject = useEnvironmentScope(
+    environment?.environmentId ?? null,
+    AuthOrchestrationOperateScope,
+  );
+  const canPublishRepository = useEnvironmentScope(
+    environment?.environmentId ?? null,
+    AuthSourceControlWriteScope,
+  );
   const createNew = useAtomCommand(projectEnvironment.createNew, { reportFailure: false });
   const publishRepository = useAtomCommand(sourceControlEnvironment.publishRepository, {
     reportFailure: false,
@@ -1034,18 +1110,24 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
       ? getNewProjectPathPreview(environment.newProjectsRoot, trimmedName)
       : null;
 
-  // Shown when there is a choice, or when the selected machine went away and
-  // another one can take over.
-  const showMachines =
-    environmentOptions.length > 1 || (environment === null && environmentOptions.length > 0);
+  if (selectedEnvironmentId === null && environment !== null) {
+    setSelectedEnvironmentId(environment.environmentId);
+  }
+  const showMachines = environmentOptions.length > 0;
   const machineRows = showMachines ? (
     <ListSection>
       {environmentOptions.map((option, index) => {
-        const selected = option.environmentId === environment?.environmentId;
+        const selected =
+          option.environmentId === (selectedEnvironmentId ?? environment?.environmentId);
         return (
           <ListRow
             key={option.environmentId}
             title={option.label}
+            subtitle={connectionStatusText({
+              phase: option.connectionState,
+              error: option.connectionError,
+              traceId: option.connectionErrorTraceId,
+            })}
             icon={
               <EnvironmentMachineSymbol
                 kind={option.machine}
@@ -1055,7 +1137,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
             }
             selected={selected}
             // The create in flight keeps the machine it started on.
-            disabled={isSubmitting}
+            disabled={isSubmitting || !canCreateProjectInEnvironment(option.connectionState)}
             isFirst={index === 0}
             right={
               selected ? (
@@ -1080,6 +1162,22 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
     if (!environment || trimmedName.length === 0 || submittingRef.current) return;
     submittingRef.current = true;
     setError(null);
+    if (!readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope)) {
+      submittingRef.current = false;
+      setError("This connection cannot add projects.");
+      return;
+    }
+    if (
+      publishes &&
+      (publishTarget === null ||
+        !readEnvironmentScope(environment.environmentId, AuthSourceControlWriteScope))
+    ) {
+      submittingRef.current = false;
+      setError(
+        "Repository publishing is unavailable. Turn off publishing to create the project here.",
+      );
+      return;
+    }
     setIsSubmitting(true);
     try {
       const result = await createNew({
@@ -1095,22 +1193,29 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
         Alert.alert("Created without a first commit", commitError);
       }
       if (publishes && publishTarget !== null) {
-        void publishRepository({
-          environmentId: environment.environmentId,
-          input: {
-            cwd: workspaceRoot,
-            provider: publishTarget.definition.kind,
-            repository: getNewProjectRepository(publishTarget, workspaceRoot),
-            visibility: "private",
-          },
-        }).then((publishResult) => {
-          if (AsyncResult.isFailure(publishResult)) {
-            Alert.alert(
-              `Could not create the ${publishTarget.definition.label} repository`,
-              errorMessage(Cause.squash(publishResult.cause)),
-            );
-          }
-        });
+        if (!readEnvironmentScope(environment.environmentId, AuthSourceControlWriteScope)) {
+          Alert.alert(
+            "Project created here",
+            "Publishing permission changed while the project was being created. The local project is ready; its private repository was not created.",
+          );
+        } else {
+          void publishRepository({
+            environmentId: environment.environmentId,
+            input: {
+              cwd: workspaceRoot,
+              provider: publishTarget.definition.kind,
+              repository: getNewProjectRepository(publishTarget, workspaceRoot),
+              visibility: "private",
+            },
+          }).then((publishResult) => {
+            if (AsyncResult.isFailure(publishResult)) {
+              Alert.alert(
+                `Could not create the ${publishTarget.definition.label} repository`,
+                errorMessage(Cause.squash(publishResult.cause)),
+              );
+            }
+          });
+        }
       }
       // The draft screen resolves its project from the client store, so it
       // must not open before the create event has arrived.
@@ -1142,6 +1247,11 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
+          {!canCreateProject ? (
+            <ErrorBanner message="This connection cannot add projects." />
+          ) : null}
+          <SectionTitle>Computer</SectionTitle>
+          {machineRows}
           <TextInput
             className="h-12 min-h-12 rounded-[24px] px-4 py-0 text-base leading-snug"
             value={name}
@@ -1160,16 +1270,18 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
               {showMachines ? ` on ${environment.label}` : null}
             </Text>
           ) : null}
-          {machineRows}
           {publishTarget !== null ? (
             <ListSection>
               <ListRow
                 title={`Create private repository on ${publishTarget.definition.label}`}
                 subtitle={
-                  trimmedName.length > 0 && pathPreview !== null
-                    ? getNewProjectRepository(publishTarget, pathPreview)
-                    : publishTarget.owner
+                  !canPublishRepository
+                    ? "This connection cannot publish repositories."
+                    : trimmedName.length > 0 && pathPreview !== null
+                      ? getNewProjectRepository(publishTarget, pathPreview)
+                      : publishTarget.owner
                 }
+                disabled={isSubmitting || (!canPublishRepository && !publishes)}
                 icon={
                   <SourceControlIcon
                     kind={publishTarget.definition.icon}
@@ -1182,6 +1294,7 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                   <ThemedSwitch
                     accessibilityLabel={`Create private repository on ${publishTarget.definition.label}`}
                     value={publishes}
+                    disabled={isSubmitting || (!canPublishRepository && !publishes)}
                     onValueChange={setPublishes}
                   />
                 }
@@ -1219,10 +1332,32 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
                   })
                 : null}
             </ListSection>
+          ) : publishes ? (
+            <ListSection>
+              <ListRow
+                title="Create private repository"
+                subtitle="Publishing is unavailable. Turn this off to create the project here."
+                icon={<SymbolView name="arrow.up" size={17} tintColorClassName="accent-icon" />}
+                isFirst
+                right={
+                  <ThemedSwitch
+                    accessibilityLabel="Create private repository"
+                    value={publishes}
+                    onValueChange={setPublishes}
+                  />
+                }
+                onPress={() => setPublishes(false)}
+              />
+            </ListSection>
           ) : null}
           <PrimaryActionButton
             label="Create project"
-            disabled={isSubmitting || trimmedName.length === 0}
+            disabled={
+              isSubmitting ||
+              trimmedName.length === 0 ||
+              !canCreateProject ||
+              (publishes && (!canPublishRepository || publishTarget === null))
+            }
             onPress={() => void submit()}
             loading={isSubmitting}
           />
@@ -1249,10 +1384,12 @@ export function AddProjectNewScreen(props: { readonly environmentId?: string | s
             />
           </ListSection>
         </>
-      ) : environmentOptions.length > 0 ? (
-        machineRows
       ) : (
-        <EmptyEnvironmentState />
+        <>
+          {environmentOptions.length > 0 ? <SectionTitle>Computer</SectionTitle> : null}
+          {machineRows}
+          <EmptyEnvironmentState />
+        </>
       )}
     </AddProjectShell>
   );
@@ -1264,7 +1401,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     environment?.environmentId ?? null,
     AuthOrchestrationOperateScope,
   );
-  const createProject = useCreateProject(environment);
+  const createProject = useCreateProject(environment, false);
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
     useBrowsePathInput(environment);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1286,22 +1423,30 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
     setIsSubmitting(true);
     const result = await createProject(resolved.path);
     if (result && AsyncResult.isFailure(result)) {
-      setError(errorMessage(Cause.squash(result.cause)));
+      const detail = errorMessage(Cause.squash(result.cause));
+      const meaningfulDetail =
+        detail === "Failed to mutate project." || detail === "An error occurred."
+          ? ""
+          : ` ${detail}`;
+      setError(
+        `Could not open ${resolved.path} on ${environment.label}. Check that the folder exists and Loom can access it.${meaningfulDetail}`,
+      );
     }
     setIsSubmitting(false);
   }, [createProject, environment, isBrowseNavigating, isSubmitting, pathInput]);
 
   return (
-    <AddProjectShell title="Local folder">
+    <AddProjectShell title="Existing folder">
       {error ? <ErrorBanner message={error} /> : null}
       {environment ? (
         <>
+          <ComputerSummary environment={environment} />
           {!canCreateProject ? (
             <ErrorBanner message="This connection cannot add projects." />
           ) : null}
           <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
           <PrimaryActionButton
-            label="Add project"
+            label="Open folder"
             disabled={!canCreateProject || isBrowseNavigating || isSubmitting}
             onPress={submitPath}
             loading={isSubmitting}
@@ -1344,7 +1489,7 @@ export function AddProjectDestinationScreen(props: {
     AuthOrchestrationOperateScope,
   );
   const canCloneProject = canWriteSourceControl && canCreateProject;
-  const createProject = useCreateProject(environment);
+  const createProject = useCreateProject(environment, true);
   const remoteUrl = stringParam(props.remoteUrl);
   const repositoryTitle = stringParam(props.repositoryTitle);
   const prompt = stringParam(props.prompt);
@@ -1474,6 +1619,7 @@ export function AddProjectDestinationScreen(props: {
       ) : null}
       {environment ? (
         <>
+          <ComputerSummary environment={environment} />
           <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
           <PrimaryActionButton
             label="Clone project"

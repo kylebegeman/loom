@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 import { isValidElement, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -14,13 +15,26 @@ const state = vi.hoisted(() => ({
   baseDirectory: "",
   projects: [] as string[],
   createRequests: [] as { environmentId: string; workspaceRoot: string }[],
+  newProjectName: "",
+  newProjectRequests: [] as { environmentId: string; name: string }[],
+  publishRequests: [] as { environmentId: string; cwd: string }[],
+  newProjectPublishes: false,
+  booleanStateCount: 0,
+  offerPublishTarget: false,
+  revokePublishAfterCreate: false,
+  checkDirectories: false,
 }));
 
 vi.mock("react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react")>()),
   useCallback: (callback: unknown) => callback,
   useMemo: (factory: () => unknown) => factory(),
-  useState: (initial: unknown) => [typeof initial === "function" ? initial() : initial, () => {}],
+  useState: (initial: unknown) => {
+    const value = typeof initial === "function" ? initial() : initial;
+    const publishes =
+      typeof initial === "boolean" && state.booleanStateCount++ === 0 && state.newProjectPublishes;
+    return [publishes ? true : value === "" ? state.newProjectName : value, () => {}];
+  },
   useRef: (current: unknown) => ({ current }),
   useEffect: () => {},
 }));
@@ -61,6 +75,7 @@ vi.mock("../../state/session", () => ({
 }));
 vi.mock("../../state/entities", () => ({
   useProjects: () => [],
+  waitForProject: async () => ({ title: state.newProjectName }),
   useServerConfigs: () =>
     new Map([
       [
@@ -68,6 +83,7 @@ vi.mock("../../state/entities", () => ({
         {
           environment: { platform: { os: "linux" }, capabilities: {} },
           settings: { addProjectBaseDirectory: state.baseDirectory },
+          newProjectsRoot: state.baseDirectory,
         },
       ],
       [
@@ -75,6 +91,7 @@ vi.mock("../../state/entities", () => ({
         {
           environment: { platform: { os: "linux" }, capabilities: {} },
           settings: { addProjectBaseDirectory: state.baseDirectory },
+          newProjectsRoot: state.baseDirectory,
         },
       ],
     ]),
@@ -96,13 +113,42 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("../../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => () => {} }));
-vi.mock("../../state/query", () => ({ useEnvironmentQuery: () => ({ data: null }) }));
+vi.mock("../../state/query", () => ({
+  useEnvironmentQuery: () => ({
+    data: state.offerPublishTarget
+      ? {
+          versionControlSystems: [],
+          sourceControlProviders: [
+            {
+              kind: "github",
+              label: "GitHub",
+              status: "available",
+              installHint: "",
+              version: Option.none(),
+              detail: Option.none(),
+              auth: {
+                status: "authenticated",
+                account: Option.none(),
+                host: Option.none(),
+                detail: Option.none(),
+              },
+            },
+          ],
+        }
+      : null,
+  }),
+}));
 vi.mock("../../state/presentation", () => ({
   useEnvironmentPresentation: () => ({ isReady: true, presentation: null }),
 }));
 vi.mock("../../state/filesystem", () => ({ filesystemEnvironment: {} }));
 vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: {
+    discovery: () => null,
+    publishRepository: async (request: { environmentId: string; input: { cwd: string } }) => {
+      state.publishRequests.push({ environmentId: request.environmentId, cwd: request.input.cwd });
+      return AsyncResult.success(undefined);
+    },
     cloneRepository: async ({ input }: { input: { destinationPath: string } }) => {
       NodeFS.mkdirSync(input.destinationPath);
       return AsyncResult.success({ cwd: input.destinationPath });
@@ -111,17 +157,34 @@ vi.mock("../../state/sourceControl", () => ({
 }));
 vi.mock("../../state/projects", () => ({
   projectEnvironment: {
+    createNew: async (request: { environmentId: string; input: { name: string } }) => {
+      state.newProjectRequests.push({
+        environmentId: request.environmentId,
+        name: request.input.name,
+      });
+      if (state.revokePublishAfterCreate) state.scopes.delete(AuthSourceControlWriteScope);
+      return AsyncResult.success({
+        projectId: "project",
+        workspaceRoot: `${state.baseDirectory}/project`,
+      });
+    },
     create: async ({
       environmentId,
       input,
     }: {
       environmentId: string;
-      input: { workspaceRoot: string };
+      input: { workspaceRoot: string; createWorkspaceRootIfMissing: boolean };
     }) => {
       state.createRequests.push({ environmentId, workspaceRoot: input.workspaceRoot });
       const scopes = environmentId === "environment" ? state.scopes : state.otherScopes;
       if (!scopes.has(AuthOrchestrationOperateScope)) {
         return AsyncResult.failure(Cause.fail(new Error("Project creation denied")));
+      }
+      if (state.checkDirectories && !NodeFS.existsSync(input.workspaceRoot)) {
+        if (!input.createWorkspaceRootIfMissing) {
+          return AsyncResult.failure(Cause.fail(new Error("Folder does not exist")));
+        }
+        NodeFS.mkdirSync(input.workspaceRoot, { recursive: true });
       }
       state.projects.push(input.workspaceRoot);
       return AsyncResult.success(undefined);
@@ -129,7 +192,11 @@ vi.mock("../../state/projects", () => ({
   },
 }));
 
-import { AddProjectDestinationScreen, AddProjectLocalFolderScreen } from "./AddProjectScreen";
+import {
+  AddProjectDestinationScreen,
+  AddProjectLocalFolderScreen,
+  AddProjectNewScreen,
+} from "./AddProjectScreen";
 
 function findAction(node: ReactNode, label: string): (() => unknown) | null {
   if (Array.isArray(node)) {
@@ -160,8 +227,8 @@ function cloneAction() {
 }
 
 function localProjectAction(environmentId = "environment") {
-  const action = findAction(AddProjectLocalFolderScreen({ environmentId }), "Add project");
-  if (!action) throw new Error("Add project action missing");
+  const action = findAction(AddProjectLocalFolderScreen({ environmentId }), "Open folder");
+  if (!action) throw new Error("Open folder action missing");
   return action;
 }
 
@@ -270,4 +337,135 @@ describe("local project permissions", () => {
       expect(state.projects).toEqual(allowSelectedEnvironment ? [state.baseDirectory] : []);
     },
   );
+});
+
+describe("new project permissions", () => {
+  beforeEach(() => {
+    state.baseDirectory = "/workspace/projects";
+    state.newProjectName = "New project";
+    state.scopes = new Set();
+    state.otherScopes = new Set();
+    state.newProjectRequests = [];
+    state.publishRequests = [];
+    state.newProjectPublishes = false;
+    state.offerPublishTarget = false;
+    state.revokePublishAfterCreate = false;
+  });
+
+  afterEach(() => {
+    state.newProjectName = "";
+    state.newProjectPublishes = false;
+    state.offerPublishTarget = false;
+  });
+
+  function newProjectAction(environmentId = "environment") {
+    state.booleanStateCount = 0;
+    const action = findAction(AddProjectNewScreen({ environmentId }), "Create project");
+    if (!action) throw new Error("Create project action missing");
+    return action;
+  }
+
+  it.each([false, true])(
+    "does not dispatch new-project creation without the current grant (revoked: %s)",
+    async (revokeBeforeSubmit) => {
+      if (revokeBeforeSubmit) state.scopes.add(AuthOrchestrationOperateScope);
+      const submit = newProjectAction();
+      state.scopes.delete(AuthOrchestrationOperateScope);
+
+      await submit();
+
+      expect(state.newProjectRequests).toEqual([]);
+    },
+  );
+
+  it.each([false, true])(
+    "uses the selected computer's creation grant (allowed: %s)",
+    async (allowSelectedEnvironment) => {
+      (allowSelectedEnvironment ? state.otherScopes : state.scopes).add(
+        AuthOrchestrationOperateScope,
+      );
+
+      await newProjectAction("other-environment")();
+
+      expect(state.newProjectRequests).toEqual(
+        allowSelectedEnvironment
+          ? [{ environmentId: "other-environment", name: "New project" }]
+          : [],
+      );
+    },
+  );
+  it("uses a creation grant added while the form is open", async () => {
+    const submit = newProjectAction();
+    state.scopes.add(AuthOrchestrationOperateScope);
+    await submit();
+    expect(state.newProjectRequests).toEqual([
+      { environmentId: "environment", name: "New project" },
+    ]);
+  });
+
+  it.each([false, true])(
+    "requires a current publishing grant before a requested private repository is created (revoked: %s)",
+    async (revokeBeforeSubmit) => {
+      state.scopes.add(AuthOrchestrationOperateScope);
+      state.newProjectPublishes = true;
+      state.offerPublishTarget = true;
+      if (revokeBeforeSubmit) state.scopes.add(AuthSourceControlWriteScope);
+      const submit = newProjectAction();
+      state.scopes.delete(AuthSourceControlWriteScope);
+      await submit();
+      expect(state.newProjectRequests).toEqual([]);
+      expect(state.publishRequests).toEqual([]);
+    },
+  );
+
+  it("publishes a new project when both grants are current", async () => {
+    state.scopes = new Set([AuthOrchestrationOperateScope, AuthSourceControlWriteScope]);
+    state.newProjectPublishes = true;
+    state.offerPublishTarget = true;
+    await newProjectAction()();
+    expect(state.newProjectRequests).toEqual([
+      { environmentId: "environment", name: "New project" },
+    ]);
+    expect(state.publishRequests).toEqual([
+      { environmentId: "environment", cwd: "/workspace/projects/project" },
+    ]);
+  });
+
+  it("keeps the created local project without dispatching publication if its grant is revoked during creation", async () => {
+    state.scopes = new Set([AuthOrchestrationOperateScope, AuthSourceControlWriteScope]);
+    state.newProjectPublishes = true;
+    state.offerPublishTarget = true;
+    state.revokePublishAfterCreate = true;
+    await newProjectAction()();
+    expect(state.newProjectRequests).toEqual([
+      { environmentId: "environment", name: "New project" },
+    ]);
+    expect(state.publishRequests).toEqual([]);
+  });
+});
+
+describe("open an existing folder", () => {
+  let temporaryRoot: string;
+  beforeEach(async () => {
+    temporaryRoot = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-open-existing-"));
+    state.baseDirectory = NodePath.join(temporaryRoot, "existing");
+    state.scopes = new Set([AuthOrchestrationOperateScope]);
+    state.projects = [];
+    state.createRequests = [];
+    state.checkDirectories = true;
+  });
+  afterEach(async () => {
+    state.checkDirectories = false;
+    await NodeFSP.rm(temporaryRoot, { recursive: true, force: true });
+  });
+  it("reports a missing folder without creating it or registering a project", async () => {
+    await localProjectAction()();
+    expect(NodeFS.existsSync(state.baseDirectory)).toBe(false);
+    expect(state.projects).toEqual([]);
+  });
+  it("opens a directory that already exists", async () => {
+    await NodeFSP.mkdir(state.baseDirectory);
+    await localProjectAction()();
+    expect(state.projects).toEqual([state.baseDirectory]);
+  });
 });
