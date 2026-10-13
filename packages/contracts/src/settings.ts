@@ -1539,6 +1539,8 @@ export const ServerSettingsPatch = Schema.Struct({
       worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
       worktreeOnSettle: Schema.optionalKey(Schema.Boolean),
       worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+      projectAfterDays: Schema.optionalKey(StorageRetentionDays), // fork: project-lifecycle
+      projectOnSettle: Schema.optionalKey(Schema.Boolean),
       scratchAfterDays: Schema.optionalKey(StorageRetentionDays),
       browserArtifactsAfterDays: Schema.optionalKey(StorageRetentionDays),
       logsAfterDays: Schema.optionalKey(StorageRetentionDays),

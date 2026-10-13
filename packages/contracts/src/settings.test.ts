@@ -53,6 +53,16 @@ describe("ServerSettings response streaming", () => {
 });
 
 describe("storage cleanup settings", () => {
+  // fork: project-lifecycle
+  it.each([
+    { projectOnSettle: true },
+    { projectOnSettle: false },
+    { projectAfterDays: 8 },
+    { projectAfterDays: null },
+  ])("preserves managed project cleanup fields in RPC patches: %j", (storageCleanup) => {
+    expect(decodeServerSettingsPatch({ storageCleanup })).toEqual({ storageCleanup });
+  });
+
   it("keeps cleanup disabled for existing installations", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({

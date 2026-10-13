@@ -37,6 +37,10 @@ import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.t
 const decodeSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
+const encodeModelSelectionJson = Schema.encodeEffect(Schema.fromJsonString(ModelSelection));
+const encodeProjectScriptsJson = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Array(ProjectScript)),
+);
 
 const layerServerSettings = () =>
   ServerSettingsModule.layer.pipe(
@@ -99,6 +103,41 @@ const recordProviderUsage = (provider: string, instanceId: string | null = provi
   });
 
 it.layer(NodeServices.layer)("server settings", (it) => {
+  // fork: project-lifecycle
+  it.effect(
+    "persists and broadcasts managed project cleanup RPC patches without clearing sibling policies",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const changes = yield* service.subscribeChanges;
+        const enabled = { projectOnSettle: true, projectAfterDays: 8, logsAfterDays: 30 };
+        yield* service.updateSettings(yield* decodeSettingsPatch({ storageCleanup: enabled }));
+        const received = Option.getOrThrow(yield* Stream.runHead(changes));
+        assert.equal(received.storageCleanup.projectOnSettle, true);
+        assert.equal(received.storageCleanup.projectAfterDays, 8);
+        const saved = yield* decodeServerSettingsJson(
+          yield* fs.readFileString(config.settingsPath),
+        );
+        assert.equal(saved.storageCleanup.projectOnSettle, true);
+        assert.equal(saved.storageCleanup.projectAfterDays, 8);
+        yield* service.updateSettings(
+          yield* decodeSettingsPatch({ storageCleanup: { projectOnSettle: false } }),
+        );
+        const disabled = yield* service.updateSettings(
+          yield* decodeSettingsPatch({ storageCleanup: { projectAfterDays: null } }),
+        );
+        assert.equal(disabled.storageCleanup.projectOnSettle, false);
+        assert.equal(disabled.storageCleanup.projectAfterDays, null);
+        assert.equal(disabled.storageCleanup.logsAfterDays, 30);
+        const persisted = yield* decodeServerSettingsJson(
+          yield* fs.readFileString(config.settingsPath),
+        );
+        assert.deepEqual(persisted.storageCleanup, disabled.storageCleanup);
+      }).pipe(Effect.provide(layerServerSettings())),
+  );
+
   it.effect("serializes concurrent model preference edits without cancelling duplicate adds", () =>
     Effect.gen(function* () {
       const service = yield* ServerSettingsModule.ServerSettingsService;
@@ -2054,10 +2093,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         runOnWorktreeCreate: false,
       };
       const model = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.5");
-      const modelJson = yield* Schema.encodeEffect(Schema.fromJsonString(ModelSelection))(model);
-      const scriptsJson = yield* Schema.encodeEffect(
-        Schema.fromJsonString(Schema.Array(ProjectScript)),
-      )([script]);
+      const modelJson = yield* encodeModelSelectionJson(model);
+      const scriptsJson = yield* encodeProjectScriptsJson([script]);
       for (const [projectId, modelColumn, envMode, autoPull, scripts] of [
         // The legacy project also carries aggregate scripts, but its stored
         // null override reset them; the fold must not bring them back.

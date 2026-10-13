@@ -70,6 +70,8 @@ describe("serverSettings helpers", () => {
       worktreeOnSettle: false,
       worktreeUnchanged: false,
       worktreeKeepWhen: "uncommitted-changes",
+      projectAfterDays: null,
+      projectOnSettle: false,
       scratchAfterDays: null,
       browserArtifactsAfterDays: null,
       logsAfterDays: 30,
