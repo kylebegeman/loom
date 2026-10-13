@@ -17,12 +17,39 @@ import {
   automaticIosEnvironment,
   prunePublishedBuilds,
   releaseForTag,
+  releaseFromRepository,
   restoreBuildInputs,
+  reservePublicationTag,
   updateManifest,
   validateFeedConfig,
 } from "./updates.ts";
 
 const COMMIT = "cdbf78ca63edbd1289a81deecba28c2bcfcf73fd";
+
+async function publicationFixture() {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-publication-tags-"));
+  const source = NodePath.join(root, "source");
+  const remote = NodePath.join(root, "origin.git");
+  await NodeFSP.mkdir(source);
+  const executeGit = (cwd: string, args: string[]) =>
+    NodeChildProcess.execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  const git = (...args: string[]) => executeGit(source, args);
+  executeGit(root, ["init", "--quiet", "--bare", remote]);
+  git("init", "--quiet");
+  git("config", "user.name", "Fixture");
+  git("config", "user.email", "fixture@example.invalid");
+  git("remote", "add", "origin", remote);
+  return {
+    root,
+    source,
+    git,
+    remoteGit: (...args: string[]) => executeGit(remote, args),
+    commit: (message: string) => {
+      git("commit", "--quiet", "--allow-empty", "-m", message);
+      return git("rev-parse", "HEAD");
+    },
+  };
+}
 
 describe("Loom update publishing", () => {
   it("cleans generated build inputs so the next integration can check out", async () => {
@@ -121,7 +148,7 @@ describe("Loom update publishing", () => {
       await NodeFSP.rm(directory, { recursive: true, force: true });
     }
   });
-  it("keeps the upstream app version while using a distinct semver release tag", () => {
+  it("uses the initial requested version before Loom has publication history", () => {
     const release = releaseForTag("loom-v0.0.43-nightly.20260928.2375", COMMIT);
     expect(release.version).toBe("0.0.43-nightly.20260928.2375");
     expect(release.releaseTag).toBe("0.0.43-nightly.20260928.2375");
@@ -142,6 +169,161 @@ describe("Loom update publishing", () => {
 
   it("rejects a mutable branch name as the release source", () => {
     expect(() => releaseForTag("loom-v0.0.43", "main")).toThrow("Invalid Loom integration");
+  });
+
+  it("advances Loom's patch after an upstream integration with an older version base", () => {
+    const release = releaseForTag("loom-v0.0.46-nightly.20261013.3044", COMMIT, {
+      publications: [{ tag: "0.0.47-nightly.20261013.3043", commit: "a".repeat(40) }],
+    });
+    expect(release.version).toBe("0.0.48-nightly.20261013.3044");
+    expect(release.releaseTag).toBe(release.version);
+  });
+
+  it("reuses an immutable publication for the same source and channel", () => {
+    const release = releaseForTag("loom-v0.0.46-nightly.20261014.1", COMMIT, {
+      publications: [{ tag: "0.0.47-nightly.20261013.3044", commit: COMMIT }],
+    });
+    expect(release.version).toBe("0.0.47-nightly.20261013.3044");
+    expect(release.recordName).toBe(`0.0.47-nightly.20261013.3044-${COMMIT.slice(0, 10)}`);
+  });
+
+  it.each(["20261012.9000", "20261015.1"])(
+    "keeps the patch monotonic despite incoming nightly date/counter %s",
+    (suffix) => {
+      expect(
+        releaseForTag(`loom-v0.0.46-nightly.${suffix}`, COMMIT, {
+          publications: [{ tag: "0.0.47-nightly.20261014.9000", commit: "a".repeat(40) }],
+        }).version,
+      ).toBe(`0.0.48-nightly.${suffix}`);
+    },
+  );
+
+  it("keeps automatic changes within the last approved major and minor", () => {
+    expect(
+      releaseForTag("loom-v2.3.0-nightly.20261013.3044", COMMIT, {
+        publications: [{ tag: "0.0.47-nightly.20261013.3043", commit: "a".repeat(40) }],
+      }).version,
+    ).toBe("0.0.48-nightly.20261013.3044");
+  });
+
+  it("accepts an explicit newer own version through the integration annotation", () => {
+    expect(
+      releaseForTag("loom-v1.0.0-nightly.20261013.3044", COMMIT, {
+        annotation: "Loom approved major release\nloom-release=1.0.0-nightly.20261013.3044",
+        publications: [{ tag: "0.0.47-nightly.20261013.3043", commit: "a".repeat(40) }],
+      }).version,
+    ).toBe("1.0.0-nightly.20261013.3044");
+  });
+
+  it("rejects an explicit own version that would downgrade the update feed", () => {
+    expect(() =>
+      releaseForTag("loom-v0.0.46-nightly.20261013.3044", COMMIT, {
+        annotation: "loom-release=0.0.46-nightly.20261013.3044",
+        publications: [{ tag: "0.0.47-nightly.20261013.3043", commit: "a".repeat(40) }],
+      }),
+    ).toThrow("newer than");
+  });
+
+  it("keeps stable and nightly publications distinct when source is promoted", () => {
+    const stable = releaseForTag("loom-v0.0.46", COMMIT, {
+      publications: [{ tag: "0.0.47-nightly.20261013.3044", commit: COMMIT }],
+    });
+    expect(stable.version).toBe("0.0.48");
+    expect(stable.channel).toBe("latest");
+    const nightly = releaseForTag("loom-v0.0.46-nightly.20261014.1", "b".repeat(40), {
+      publications: [{ tag: stable.version, commit: COMMIT }],
+    });
+    expect(nightly.version).toBe("0.0.49-nightly.20261014.1");
+    expect(nightly.channel).toBe("nightly");
+  });
+
+  it("keeps genuine annotated upstream provenance separate from Loom's patch", () => {
+    const upstream = "v0.0.46-nightly.20261013.3042";
+    const release = releaseForTag("loom-v0.0.47-nightly.20261013.3044", COMMIT, {
+      annotation: `loom-release=0.0.47-nightly.20261013.3044\nupstream=${upstream}`,
+      upstreamTags: [upstream],
+    });
+    expect(release.upstreamTag).toBe(upstream);
+    expect(() =>
+      releaseForTag("loom-v0.0.47-nightly.20261013.3044", COMMIT, {
+        annotation: "upstream=v9.0.0",
+        upstreamTags: [upstream],
+      }),
+    ).toThrow("source history");
+  });
+
+  it("uses numeric patch and nightly counters rather than lexical tag order", () => {
+    const release = releaseForTag("loom-v0.0.1-nightly.20261013.1", COMMIT, {
+      publications: [
+        { tag: "0.0.9-nightly.20261015.9999", commit: "a".repeat(40) },
+        { tag: "0.0.10-nightly.20261013.2", commit: "b".repeat(40) },
+        { tag: "0.0.10-nightly.20261013.10", commit: "c".repeat(40) },
+      ],
+    });
+    expect(release.version).toBe("0.0.11-nightly.20261013.1");
+    expect(
+      releaseForTag("loom-v0.0.1-nightly.20261014.1", COMMIT, {
+        publications: [
+          { tag: "0.0.10-nightly.20261013.2", commit: COMMIT },
+          { tag: "0.0.10-nightly.20261013.10", commit: COMMIT },
+        ],
+      }).version,
+    ).toBe("0.0.10-nightly.20261013.10");
+  });
+
+  it("reserves source/version identity before publication and reuses it on retry", async () => {
+    const fixture = await publicationFixture();
+    try {
+      const first = fixture.commit("first");
+      fixture.git("tag", "v0.0.46-nightly.20261013.3042", first);
+      fixture.git("tag", "0.0.47-nightly.20261013.3043", first);
+      const source = fixture.commit("new source");
+      const integration = "loom-v0.0.46-nightly.20261013.3044";
+      fixture.git(
+        "tag",
+        "-a",
+        integration,
+        "-m",
+        "Loom built from upstream v0.0.46-nightly.20261013.3042",
+        source,
+      );
+      const release = releaseFromRepository(fixture.source, integration);
+      expect(release.version).toBe("0.0.48-nightly.20261013.3044");
+      expect(release.upstreamTag).toBe("v0.0.46-nightly.20261013.3042");
+      reservePublicationTag(release, fixture.source);
+      expect(fixture.remoteGit("rev-parse", `${release.releaseTag}^{commit}`)).toBe(source);
+      const retryTag = "loom-v0.0.46-nightly.20261014.1";
+      fixture.git("tag", "-a", retryTag, "-m", "upstream=v0.0.46-nightly.20261013.3042", source);
+      const retry = releaseFromRepository(fixture.source, retryTag);
+      expect(retry.recordName).toBe(release.recordName);
+      reservePublicationTag(retry, fixture.source);
+      expect(fixture.remoteGit("tag", "--list")).toBe(release.releaseTag);
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("never overwrites a remote reservation won by another source", async () => {
+    const fixture = await publicationFixture();
+    try {
+      const other = fixture.commit("other source");
+      const source = fixture.commit("selected source");
+      const release = releaseForTag("loom-v0.0.48-nightly.20261013.3044", source);
+      fixture.git("push", "--quiet", "origin", `${other}:refs/tags/${release.releaseTag}`);
+      expect(() => reservePublicationTag(release, fixture.source)).toThrow();
+      expect(fixture.git("tag", "--list", release.releaseTag)).toBe("");
+      expect(fixture.remoteGit("rev-parse", `${release.releaseTag}^{commit}`)).toBe(other);
+      fixture.git(
+        "fetch",
+        "--quiet",
+        "origin",
+        `refs/tags/${release.releaseTag}:refs/tags/${release.releaseTag}`,
+      );
+      expect(() => reservePublicationTag(release, fixture.source)).toThrow("different source");
+      expect(fixture.git("rev-parse", `${release.releaseTag}^{commit}`)).toBe(other);
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
   });
 
   it("refuses upstream, missing and mock update feeds", () => {

@@ -290,7 +290,9 @@ On Kyle's Apple Silicon Mac, the local publisher checks GitHub every 30 minutes 
 logged in. It builds the newest `loom-v*` integration tag contained in `origin/main`, in
 an isolated checkout under `~/Library/Application Support/Loom Updates`. It does not
 pull, stash or reset the working checkout. A failed or unmerged integration is not a
-release candidate.
+release candidate. Publication versions belong to Loom: each new source gets the next
+patch above its immutable published version tags, independently of the upstream version.
+The genuine upstream `v*` tags and merge commits stay intact.
 
 ```sh
 node scripts/fork/updates.ts publish
@@ -321,27 +323,33 @@ not make those legacy snapshots. Do not assume every in-app update has a rollbac
 
 ### Versions and updates
 
-Loom keeps upstream's version numbers. Every build is stamped with the upstream tag it
-was built from (the newest `loom-<tag>` on `main`), and the build record's commit tells
-two Loom builds of one tag apart. Don't give Loom a version of its own:
+The automatic publisher assigns Loom an independent, increasing patch version. A
+checked `loom-v*` tag selects the source; its name does not determine the published app
+version. An immutable bare-version tag reserves that version for the source commit, so
+retries reuse it. An integration annotation can carry `loom-release=<version>` for an
+explicit release version and `upstream=v<version>` for genuine upstream provenance.
+Minor or major version changes require Kyle's explicit approval.
 
-- A remote SSH environment installs upstream's `t3` release of exactly the desktop's
-  version (`packages/shared/src/cliRelease.ts`). Only upstream versions exist there.
-- Clients compare their version with the server's (`apps/web/src/versionSkew.ts`), so the
-  mobile app and app.t3.codes would report a mismatch against every Loom server.
-- The `-nightly.<date>.<run>` suffix is what makes a build "Loom (Nightly)" with the
-  nightly icon; a stable tag builds plain "Loom". Following nightlies, Loom is nearly
-  always a nightly build: upstream cuts each stable from its latest nightly, which `main`
-  usually has already.
+The app and bundled server share the Loom publication version. Build records store that
+in `version`, the candidate tag in `integration`, the actual upstream tag in `upstream`,
+and the exact source in `commit`. Older records used `upstream` for the app version and
+remain readable. `loom.sh status` reports the real merged upstream tag. Direct local
+`loom.sh build`, `integrate` and `land` builds retain their requested upstream version;
+the automatic publisher owns the independent publication sequence.
+
+Standalone remote `t3` installers still use upstream's CLI release catalog. Loom's own
+publication version is not an upstream archive coordinate; consult its recorded upstream
+provenance when selecting upstream source, and check host capabilities for Loom features.
+The `-nightly.<date>.<run>` suffix selects the "Loom (Nightly)" name and icon; a stable
+version builds plain "Loom".
 
 Loom's feed is `kylebegeman/loom`, never `pingdotgg/t3code`: both apps share an app id,
 so an upstream feed would replace Loom. Both the local build script and publisher reject
-an app with the wrong feed. The app and server keep the exact upstream version. Published
-release tags use the plain upstream version without a leading `v`: unlike `loom-v*`,
-these are valid semantic versions that the GitHub updater can discover, and they stay
-out of the sync scripts' upstream tag selection. Do not add `+` build metadata to those
-tags: GitHub encodes it in the Atom feed, and the updater rejects the encoded version.
-Upstream's tags are never moved.
+an app with the wrong feed. Published release tags use the plain Loom version without a
+leading `v`: unlike `loom-v*`, these are semantic versions the GitHub updater can discover,
+and they stay out of the sync scripts' upstream tag selection. Do not add `+` build
+metadata to those tags: GitHub encodes it in the Atom feed, and the updater rejects the
+encoded version. Upstream's tags and merge history are never rewritten.
 
 ### GitHub Actions on the fork
 

@@ -26,25 +26,157 @@ const STAMPED_PACKAGES = ["apps/server", "apps/desktop", "apps/web", "packages/c
   (directory) => `${directory}/package.json`,
 );
 
-export function releaseForTag(tag: string, commit: string) {
-  const match = /^loom-v(\d+\.\d+\.\d+(?:-nightly\.\d{8}\.\d+)?)$/.exec(tag);
-  if (!match?.[1] || !/^[a-f0-9]{40}$/.test(commit)) {
+const LOOM_VERSION =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-nightly\.([1-9]\d{7})\.(0|[1-9]\d*))?$/;
+const SOURCE_COMMIT = /^[a-f0-9]{40}$/;
+
+type PublicationTag = { readonly tag: string; readonly commit: string };
+type ReleaseContext = {
+  readonly publications?: readonly PublicationTag[];
+  readonly annotation?: string;
+  /** Genuine upstream tags already verified as ancestors of the selected source. */
+  readonly upstreamTags?: readonly string[];
+};
+
+const parsedVersion = (version: string) => {
+  const match = LOOM_VERSION.exec(version);
+  if (!match) throw new Error(`Invalid Loom publication version: ${version}`);
+  return {
+    core: [BigInt(match[1]!), BigInt(match[2]!), BigInt(match[3]!)] as const,
+    nightly: match[4] === undefined ? null : ([match[4], BigInt(match[5]!)] as const),
+  };
+};
+
+const compareVersions = (left: string, right: string) => {
+  const a = parsedVersion(left);
+  const b = parsedVersion(right);
+  for (let index = 0; index < 3; index++) {
+    if (a.core[index]! !== b.core[index]!) return a.core[index]! > b.core[index]! ? 1 : -1;
+  }
+  if (a.nightly === null || b.nightly === null)
+    return a.nightly === b.nightly ? 0 : a.nightly === null ? 1 : -1;
+  const date = a.nightly[0].localeCompare(b.nightly[0]);
+  if (date) return date;
+  return a.nightly[1] === b.nightly[1] ? 0 : a.nightly[1] > b.nightly[1] ? 1 : -1;
+};
+
+const annotationValue = (annotation: string, key: string) => {
+  const values = annotation.split(/\r?\n/).filter((line) => line.startsWith(`${key}=`));
+  if (values.length > 1) throw new Error(`Repeated ${key} in Loom integration annotation.`);
+  return values[0]?.slice(key.length + 1).trim();
+};
+
+export function releaseForTag(tag: string, commit: string, context: ReleaseContext = {}) {
+  const requested = tag.startsWith("loom-v") ? tag.slice("loom-v".length) : "";
+  if (!LOOM_VERSION.test(requested) || !SOURCE_COMMIT.test(commit)) {
     throw new Error(`Invalid Loom integration tag or commit: ${tag}`);
   }
-  const version = match[1];
+  const annotation = context.annotation ?? "";
+  const explicit = annotationValue(annotation, "loom-release");
+  if (explicit !== undefined && explicit !== requested)
+    throw new Error("The annotated Loom release version must match its integration tag.");
+  const publications = (context.publications ?? [])
+    .filter((item) => LOOM_VERSION.test(item.tag))
+    .map((item) => {
+      if (!SOURCE_COMMIT.test(item.commit))
+        throw new Error(`Loom publication tag does not identify a commit: ${item.tag}`);
+      return item;
+    })
+    .toSorted((a, b) => compareVersions(b.tag, a.tag));
+  const channel = requested.includes("-nightly.") ? "nightly" : "latest";
+  const existing = publications.find(
+    (item) =>
+      item.commit === commit && (item.tag.includes("-nightly.") ? "nightly" : "latest") === channel,
+  );
+  let version = existing?.tag ?? requested;
+  const latest = publications[0]?.tag;
+  if (!existing && latest) {
+    if (explicit !== undefined) {
+      if (compareVersions(explicit, latest) <= 0)
+        throw new Error(`The explicit Loom release must be newer than ${latest}.`);
+      version = explicit;
+    } else {
+      // Upstream owns its version train. Loom stays within its last approved
+      // major/minor and advances one patch for each newly published source.
+      const { core } = parsedVersion(latest);
+      version = `${core[0]}.${core[1]}.${core[2] + 1n}${requested.includes("-nightly.") ? requested.slice(requested.indexOf("-nightly.")) : ""}`;
+    }
+  }
+  const upstreamTags = (context.upstreamTags ?? []).filter(
+    (item) => item.startsWith("v") && LOOM_VERSION.test(item.slice(1)),
+  );
+  const claimed =
+    annotationValue(annotation, "upstream") ??
+    /^Loom built from upstream (v[^\s]+)$/m.exec(annotation)?.[1];
+  if (claimed !== undefined && !upstreamTags.includes(claimed))
+    throw new Error("The annotated upstream tag is not present in this source history.");
+  const upstreamTag = claimed ?? upstreamTags[0];
   return {
     tag,
     commit,
     version,
-    // electron-updater ignores non-semver release tags such as loom-v… .
-    // No leading v: the sync scripts reserve v* tags for upstream releases.
-    // Avoid +metadata too: GitHub encodes + in Atom URLs, which the updater
-    // does not decode before checking whether a tag is a semantic version.
+    upstreamTag,
+    // Bare-version tags belong to Loom publication; v* tags remain upstream's.
     releaseTag: version,
-    channel: version.includes("-nightly.") ? "nightly" : "latest",
+    channel,
     filename: `Loom-${version}-arm64.zip`,
     recordName: `${version}-${commit.slice(0, 10)}`,
   };
+}
+
+/** Read immutable version state from Git, including reserved and draft publications. */
+export function releaseFromRepository(sourceDir: string, tag: string) {
+  const commit = run("git", ["rev-parse", `${tag}^{commit}`], { cwd: sourceDir });
+  const publications = run(
+    "git",
+    [
+      "for-each-ref",
+      "--format=%(refname:short)%09%(objecttype)%09%(objectname)%09%(*objecttype)%09%(*objectname)",
+      "refs/tags",
+    ],
+    { cwd: sourceDir },
+  )
+    .split("\n")
+    .flatMap((line) => {
+      const [name, kind, object, peeledKind, peeled] = line.split("\t");
+      if (!name || !LOOM_VERSION.test(name)) return [];
+      const sha = kind === "commit" ? object : peeledKind === "commit" ? peeled : undefined;
+      if (!sha) throw new Error(`Loom publication tag does not identify a commit: ${name}`);
+      return [{ tag: name, commit: sha }];
+    });
+  const annotated =
+    run("git", ["cat-file", "-t", `refs/tags/${tag}`], { cwd: sourceDir }) === "tag";
+  const annotation = annotated
+    ? run("git", ["for-each-ref", "--format=%(contents)", `refs/tags/${tag}`], { cwd: sourceDir })
+    : "";
+  const upstreamTags = run(
+    "git",
+    ["tag", "--list", "v[0-9]*", "--merged", commit, "--sort=-creatordate"],
+    { cwd: sourceDir },
+  ).split("\n");
+  return releaseForTag(tag, commit, { publications, annotation, upstreamTags });
+}
+
+/** Reserve the publication identity before building; failed runs retry the same immutable tag. */
+export function reservePublicationTag(release: Release, sourceDir = SOURCE_DIR) {
+  const exists = run("git", ["tag", "--list", release.releaseTag], { cwd: sourceDir }) !== "";
+  if (
+    exists &&
+    run("git", ["rev-parse", `${release.releaseTag}^{commit}`], { cwd: sourceDir }) !==
+      release.commit
+  )
+    throw new Error("The Loom publication tag already belongs to a different source.");
+  if (!exists) run("git", ["tag", release.releaseTag, release.commit], { cwd: sourceDir });
+  try {
+    run("git", ["push", "--quiet", "origin", `refs/tags/${release.releaseTag}`], {
+      cwd: sourceDir,
+    });
+  } catch (cause) {
+    // Only this attempt's local reservation can be removed. Remote and preexisting
+    // tags stay immutable; a concurrent host's winning reservation is fetched next time.
+    if (!exists) run("git", ["tag", "-d", release.releaseTag], { cwd: sourceDir });
+    throw cause;
+  }
 }
 
 type Release = ReturnType<typeof releaseForTag>;
@@ -162,7 +294,7 @@ async function installedRecordName() {
   const embedded = NodePath.join(APP_PATH, "Contents/Resources/loom-build.env");
   if (await exists(embedded)) {
     const raw = await NodeFSP.readFile(embedded, "utf8");
-    const version = /^upstream=(.+)$/m.exec(raw)?.[1];
+    const version = /^version=(.+)$/m.exec(raw)?.[1] ?? /^upstream=(.+)$/m.exec(raw)?.[1];
     const commit = /^commit=([a-f0-9]{40})$/m.exec(raw)?.[1];
     if (version && commit) return `${version}-${commit.slice(0, 10)}`;
   }
@@ -202,7 +334,8 @@ async function latestIntegration() {
       "--quiet",
       "origin",
       "+refs/heads/main:refs/remotes/origin/main",
-      "refs/tags/loom-*:refs/tags/loom-*",
+      // Include bare Loom publication state and genuine upstream provenance.
+      "refs/tags/*:refs/tags/*",
     ],
     { cwd: SOURCE_DIR },
   );
@@ -218,7 +351,7 @@ async function latestIntegration() {
     { cwd: SOURCE_DIR },
   ).split("\n")[0];
   if (!tag) throw new Error("No merged Loom integration tag is available.");
-  return releaseForTag(tag, run("git", ["rev-parse", `${tag}^{commit}`], { cwd: SOURCE_DIR }));
+  return releaseFromRepository(SOURCE_DIR, tag);
 }
 
 async function releaseState(release: Release) {
@@ -340,7 +473,7 @@ async function prepare(release: Release) {
     if (apps[0] !== "Loom.app") await NodeFSP.rename(NodePath.join(unpacked, apps[0]!), app);
     const resources = NodePath.join(app, "Contents/Resources");
     validateFeedConfig(await NodeFSP.readFile(NodePath.join(resources, "app-update.yml"), "utf8"));
-    const buildRecord = `upstream=${release.version}\ncommit=${release.commit}\nbuilt=${new Date().toISOString()}\n`;
+    const buildRecord = `version=${release.version}\nintegration=${release.tag}\nupstream=${release.upstreamTag ?? ""}\ncommit=${release.commit}\nbuilt=${new Date().toISOString()}\n`;
     await NodeFSP.writeFile(NodePath.join(resources, "loom-build.env"), buildRecord);
     run("codesign", ["--force", "--deep", "--sign", SIGNING_IDENTITY, app], { stream: true });
     run("codesign", ["--verify", "--deep", "--strict", app], { stream: true });
@@ -395,7 +528,7 @@ async function publish(release: Release, prepared: Awaited<ReturnType<typeof pre
     notes,
     `Loom built from the checked integration [${release.tag}](https://github.com/${REPOSITORY}/tree/${release.tag}).
 
-Includes upstream T3 Code [v${release.version}](https://github.com/pingdotgg/t3code/releases/tag/v${release.version}).
+${release.upstreamTag ? `Includes upstream T3 Code [${release.upstreamTag}](https://github.com/pingdotgg/t3code/releases/tag/${release.upstreamTag}).` : ""}
 
 Use Loom's update button to download, then restart and install when ready.
 
@@ -768,6 +901,7 @@ async function main(command: string | undefined) {
       await publishIos(release);
       return;
     }
+    if (command === "publish") reservePublicationTag(release);
     const prepared = await prepare(release);
     console.log(`Prepared ${prepared.record}/Loom.app`);
     if (command === "publish") {

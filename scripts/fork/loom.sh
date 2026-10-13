@@ -72,14 +72,28 @@ die() { printf 'loom: %s\n' "$*" >&2; exit 1; }
 
 latest_stable() { git tag -l 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 1p; }
 latest_nightly() { git tag -l 'v*-nightly.*' --sort=-creatordate | sed -n 1p; }
-# The upstream tag main was last built from: the newest loom-<tag> on main,
-# or the newest upstream stable tag main contains.
-current_upstream() {
-  local t
-  t=$(git tag -l 'loom-v*' --merged main --sort=-creatordate | sed -n 1p)
-  if [ -n "$t" ]; then echo "${t#loom-}"; return; fi
-  git tag -l 'v[0-9]*' --merged main --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n 1p
+# Loom release versions and upstream tags can differ. Only trust provenance
+# naming a real upstream tag contained in the requested source history.
+upstream_at() {
+  local ref=$1 integration annotation upstream
+  integration=$(git tag -l 'loom-v*' --merged "$ref" --sort=-v:refname --sort=-creatordate | sed -n 1p)
+  if [ -n "$integration" ] && [ "$(git cat-file -t "refs/tags/$integration")" = tag ]; then
+    annotation=$(git for-each-ref --format='%(contents)' "refs/tags/$integration")
+    upstream=$(printf '%s\n' "$annotation" | sed -n 's/^upstream=\(v[^[:space:]]*\)$/\1/p' | sed -n 1p)
+    if [ -z "$upstream" ]; then
+      upstream=$(printf '%s\n' "$annotation" | sed -nE 's/^.*[Bb]uilt from upstream (v[^[:space:]]+).*$/\1/p' | sed -n 1p)
+    fi
+    if printf '%s\n' "$upstream" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' \
+      && git show-ref --verify --quiet "refs/tags/$upstream" \
+      && git merge-base --is-ancestor "refs/tags/$upstream" "$ref"; then
+      printf '%s\n' "$upstream"
+      return 0
+    fi
+  fi
+  git tag -l 'v[0-9]*' --merged "$ref" --sort=-v:refname --sort=-creatordate \
+    | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$' | sed -n 1p || true
 }
+current_upstream() { upstream_at main; }
 installed_version() {
   [ -d "$APP_PATH" ] && /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist" 2>/dev/null || echo "not installed"
 }
@@ -179,7 +193,7 @@ run_checks() {
 }
 
 # Build the macOS app for this Mac from the current checkout, stamped with
-# the upstream version it was built from.
+# the requested local build version and recording upstream provenance separately.
 build_app() {
   local version=$1
   # Dependencies must match the checkout being built: switching branches (or a
@@ -219,7 +233,11 @@ build_app() {
     rm -rf "$record"
     die "the built app does not use the Loom update feed"
   fi
-  printf 'upstream=%s\ncommit=%s\nbuilt=%s\n' "$version" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
+  local integration upstream
+  integration=$(git tag -l 'loom-v*' --points-at HEAD --sort=-v:refname --sort=-creatordate | sed -n 1p)
+  upstream=$(upstream_at HEAD)
+  printf 'version=%s\nintegration=%s\nupstream=%s\ncommit=%s\nbuilt=%s\n' \
+    "$version" "$integration" "$upstream" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
   cp "$record/build.env" "$record/Loom.app/Contents/Resources/loom-build.env"
   sign_app "$record/Loom.app"
   echo "Built $name $version into $record"
@@ -291,8 +309,10 @@ installed_record() {
   local name version commit
   local embedded="$APP_PATH/Contents/Resources/loom-build.env"
   if [ -f "$embedded" ]; then
-    version=$(sed -n 's/^upstream=//p' "$embedded")
-    commit=$(sed -n 's/^commit=//p' "$embedded")
+    version=$(sed -n 's/^version=//p' "$embedded" | sed -n 1p)
+    # Before independent Loom versions, upstream held the app version.
+    [ -n "$version" ] || version=$(sed -n 's/^upstream=//p' "$embedded" | sed -n 1p)
+    commit=$(sed -n 's/^commit=//p' "$embedded" | sed -n 1p)
     name="$version-${commit:0:10}"
     [ -d "$BUILDS_DIR/$name" ] && echo "$BUILDS_DIR/$name"
     return 0
@@ -414,7 +434,7 @@ cmd_install() {
 }
 
 cmd_rollback() {
-  local current previous
+  local current previous commit
   current=$(installed_record)
   [ -n "$current" ] || die "the installed app has no build record, so there is nothing to roll back to"
   previous=$(records | grep -v -x -F "$current" | sed -n 1p)
@@ -437,7 +457,12 @@ cmd_rollback() {
   done
   install_record "$previous"
   echo "Rolled back to $(basename "$previous"). main still points at the newer code;"
-  echo "to move it back too: git reset --hard loom-$(grep '^upstream=' "$previous/build.env" | cut -d= -f2) && git push --force-with-lease origin main"
+  commit=$(sed -n 's/^commit=//p' "$previous/build.env" | sed -n 1p)
+  if printf '%s\n' "$commit" | grep -qE '^[0-9a-f]{40}$|^[0-9a-f]{64}$'; then
+    echo "to move it back too: git reset --hard $commit && git push --force-with-lease origin main"
+  else
+    echo "The previous build has no recorded source commit. Choose its source revision before changing main."
+  fi
 }
 
 cmd_integrate() {
