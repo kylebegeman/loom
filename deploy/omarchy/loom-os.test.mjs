@@ -214,6 +214,11 @@ test("reconfiguration removes optional launchers when their app endpoint is disa
   delete updated.switchboardDashboardUrl;
   await install(updated, { env: f.env });
   await missing(NodePath.join(f.p.data, "applications/loom-os-atlas.desktop"));
+  await missing(NodePath.join(f.p.data, "applications/loom-os-device-atlas.desktop"));
+  await NodeFSP.access(NodePath.join(f.p.data, "applications/loom-os-device-office.desktop"));
+  const menu = await NodeFSP.readFile(f.menuFile, "utf8");
+  NodeAssert.ok(menu.includes('"loomos.connections.device-office"'));
+  NodeAssert.ok(!menu.includes('"loomos.connections.device-atlas"'));
   await missing(NodePath.join(f.p.data, "applications/loom-os-switchboard.desktop"));
   await NodeFSP.access(NodePath.join(f.p.data, "applications/loom-os-office.desktop"));
   const manifest = JSON.parse(await NodeFSP.readFile(f.p.manifest, "utf8"));

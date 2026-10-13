@@ -107,3 +107,36 @@ test("capability status distinguishes offline support, live search and unknown p
   assert.equal(view(JSON.stringify(partial), now).state, "attention");
   assert.equal(view(JSON.stringify(partial), now).aiReady, true);
 });
+
+test("device review is an owner handoff, never a fresh queue observation", () => {
+  const conditional = { state: "conditional", detail: "Check the installed profile." };
+  const app = {
+    id: "office",
+    server: "reachable",
+    cli: "connected",
+    declaration: "live",
+    reading: conditional,
+    writing: conditional,
+    search: { state: "available", detail: "App permissions apply." },
+    pending: { state: "unknown", detail: "Review in Office." },
+    pendingCount: null,
+    deviceReview: { state: "available", detail: "The app owns device status." },
+  };
+  const ecosystem = { ...report, version: 2, apps: [app] };
+  const ready = view(JSON.stringify(ecosystem), now);
+  assert.equal(ready.aiReady, true);
+  assert.match(
+    ready.tooltip,
+    /Device status: review saved copies, conflicts and storage in Office/,
+  );
+  assert.match(ready.tooltip, /Pending changes: not reported/);
+  for (const review of [
+    { state: "current", detail: "Invented device state." },
+    { state: "available", detail: "bad\u001btext" },
+  ])
+    assert.equal(
+      view(JSON.stringify({ ...ecosystem, apps: [{ ...app, deviceReview: review }] }), now).aiReady,
+      false,
+    );
+  assert.equal(view(JSON.stringify(ecosystem), now + 90001).aiReady, false);
+});

@@ -108,7 +108,7 @@ actual registry CLI words, formats and length units. Commands remain literal arg
 Only a missing declaration (404 or 410) selects the existing limited adapter. Network,
 authorization, redirect, malformed and incompatible responses never select that fallback.
 Ordinary app opening remains available without discovery, including offline reading in
-an already-used Office browser profile. Atlas exposes no durable offline client support yet.
+an already-used Office browser profile. The app declaration reports its current bounded offline support; successful browser caching alone does not establish durable offline capability.
 
 Exact-item handoff uses each app's declared read-only item resolver and validated
 same-origin route. A temporary native launch asks the existing same-profile window to
@@ -118,7 +118,7 @@ stateless handoff window if the browser refuses to close it. Chromium identifies
 app windows by hostname and path, omitting ports. Configured apps with colliding identities
 refuse native focus and request distinct hostnames instead of selecting another app.
 Older app releases retain
-in-app search guidance. Unified notifications and live device availability remain unavailable.
+in-app search guidance. Unified notifications remain unavailable. Device availability is reviewed inside each app's profile through its declared owner route, not a remote CLI session.
 
 Check real producer interoperability from a Mac with Go and the app checkouts:
 
@@ -421,8 +421,19 @@ read-only retry and owner-app opening. Offline support comes from validated app
 integration declarations; retained declarations are origin-bound, expire after
 seven days and contain no grants, account data or browser credentials. Refused
 CLI access disables live search availability independently of offline support.
-Current app contracts decline device cache/outbox reporting, so those observations
-remain unconfirmed rather than reporting invented zero pending changes.
+The versioned `device-status-in-app-v1` availability capability opens `/app/device`
+through `loom-device-handoff-v1`, independently of server item resolution or CLI
+sign-in. **Review Office device** and **Review Atlas device** are available from the
+native status screen, launcher, Loom actions and connections menu. Run
+`loom-os device office` or `loom-os device atlas` for the same owner handoff.
+A verified, origin-bound retained declaration can enable that route during an
+outage for up to seven days. Older or unsupported app releases explain the missing
+route and open their ordinary app instead.
+
+Device counts, conflict details and storage management stay in the installed
+browser profile's owning app. LoomOS reads no browser cookies or private IndexedDB
+records and does not resubmit pending writes or clear storage. Pending counts
+remain unknown outside the app; unknown never means zero.
 
 The widget clears status on logind sleep signals, rejects in-flight pre-sleep
 results by generation, and also handles wall-clock gaps/backwards changes. Its

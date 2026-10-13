@@ -52,7 +52,7 @@ async function retainedDeclaration(app, origin, now, env) {
       value.origin !== origin ||
       !Number.isFinite(age) ||
       age < -60_000 ||
-      age > declarationMaxAgeMs
+      age >= declarationMaxAgeMs
     )
       return null;
     return validateAppIntegration(value.manifest, app);
@@ -61,6 +61,28 @@ async function retainedDeclaration(app, origin, now, env) {
   }
 }
 const capability = (state, detail) => ({ state, detail });
+
+/** Only anonymous build declarations are retained. Device state stays in the owning profile. */
+export async function appAvailabilityDeclaration(app, config, env, dependencies = {}) {
+  if (!Object.hasOwn(names, app) || !config[`${app}Url`])
+    throw Error("Configure the app address before reviewing this device.");
+  const now = dependencies.now ?? Date.now();
+  const declaration =
+    dependencies.declaration ??
+    (await (dependencies.discover ?? discoverAppIntegration)(app, config));
+  const origin = config[`${app}Url`];
+  if (declaration?.state === "available") {
+    const manifest = validateAppIntegration(declaration.manifest, app);
+    try {
+      await retainDeclaration(app, origin, manifest, now, env);
+    } catch {
+      /* A read-only desktop still gets live build support. */
+    }
+    return { state: "live", manifest };
+  }
+  const retained = await retainedDeclaration(app, origin, now, env);
+  return { state: retained ? "retained" : "unknown", manifest: retained };
+}
 
 export function appAvailability(app, { step, declaration }, retained = null) {
   const manifest = declaration?.state === "available" ? declaration.manifest : retained;
@@ -102,7 +124,20 @@ export function appAvailability(app, { step, declaration }, retained = null) {
               step.state === "approval-needed" ? "approval-needed" : "unavailable",
               "Connect or retry this app's CLI access. Browser sign-in is separate.",
             ),
-    // The current owner contracts explicitly decline device cache/outbox reporting.
+    deviceReview: manifest?.capabilities.availability.supported
+      ? capability(
+          "available",
+          retained && !live
+            ? "Open this profile's device status using the last verified app declaration."
+            : "Review this profile's saved copies, pending changes, conflicts and storage in the app.",
+        )
+      : capability(
+          manifest ? "unsupported" : "unknown",
+          manifest
+            ? "This app release has no supported device-status route. Open the app to inspect saved work."
+            : "This app's device status route could not be confirmed. Open the app to inspect saved work.",
+        ),
+    // Build support and CLI access never reveal a browser profile's personal queue.
     pending: capability(
       "unknown",
       "The app has not reported this profile's pending changes. Open the app to inspect them.",
@@ -119,15 +154,11 @@ export async function collectAvailability(config, env, dependencies = {}) {
       const probe = await (dependencies.probe ?? probeAppConnection)(app, config, env);
       if (!probe.declaration)
         probe.declaration = await (dependencies.discover ?? discoverAppIntegration)(app, config);
-      let retained = null;
-      if (probe.declaration?.state === "available") {
-        try {
-          await retainDeclaration(app, config[`${app}Url`], probe.declaration.manifest, now, env);
-        } catch {
-          /* A read-only desktop still gets live status; it cannot retain this hint. */
-        }
-      } else retained = await retainedDeclaration(app, config[`${app}Url`], now, env);
-      return appAvailability(app, probe, retained);
+      const support = await appAvailabilityDeclaration(app, config, env, {
+        now,
+        declaration: probe.declaration,
+      });
+      return appAvailability(app, probe, support.state === "retained" ? support.manifest : null);
     });
   const [privateReport, apps] = await Promise.all([
     (dependencies.privateReport ?? collectPrivateConnections)(config, env),
@@ -168,6 +199,7 @@ export function formatAvailability(report) {
         ["Offline writing", app.writing],
         ["Live search", app.search],
         ["Pending changes", app.pending],
+        ["Device review", app.deviceReview],
       ].map(([title, value]) => `  ${title}: ${labels[value.state]}. ${value.detail}`),
     ]),
     "App sign-in, cached copies and queued work stay in their owning apps. Unknown pending changes does not mean zero.",
@@ -194,6 +226,7 @@ export async function nativeAvailability(config, env, dependencies = {}) {
     const choice = await choose([
       "Check again",
       "Set up connections",
+      ...apps.map((app) => "Review " + names[app] + " device"),
       ...apps.map((app) => "Open " + names[app]),
       "Loom service status",
       "Close",
@@ -203,8 +236,12 @@ export async function nativeAvailability(config, env, dependencies = {}) {
       if (choice === "Set up connections") await dispatch(["setup", "--inline"]);
       else if (choice === "Loom service status") await dispatch(["service", "status"]);
       else {
-        const app = apps.find((app) => choice === "Open " + names[app]);
-        if (app) await dispatch(["open", app]);
+        const deviceApp = apps.find((app) => choice === "Review " + names[app] + " device");
+        if (deviceApp) await dispatch(["device", deviceApp]);
+        else {
+          const app = apps.find((app) => choice === "Open " + names[app]);
+          if (app) await dispatch(["open", app]);
+        }
       }
     } catch {
       show(

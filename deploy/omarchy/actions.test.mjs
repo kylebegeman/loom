@@ -40,6 +40,8 @@ test("actions are discoverable by ordinary words and keep existing shortcut hint
     ["approvals", "desk"],
     ["updates", "updates"],
     ["component versions", "updates"],
+    ["pending changes", "device-office"],
+    ["offline writing", "device-atlas"],
   ])
     NodeAssert.ok(
       filterLoomActions(actions, query).some((a) => a.id === id),
@@ -67,6 +69,13 @@ test("missing configuration, executables, themes and rollback have clear unavail
     NodeAssert.ok(a.unavailableReason.length > 8, id);
   }
   NodeAssert.equal(actions.find((a) => a.id === "open-atlas").available, true);
+  NodeAssert.equal(actions.find((a) => a.id === "device-atlas").available, true);
+  NodeAssert.equal(
+    loomActionCatalog({ ...config, atlasUrl: undefined }, context).find(
+      (a) => a.id === "device-atlas",
+    ).available,
+    false,
+  );
   NodeAssert.equal(actions.find((a) => a.id === "connections").available, true);
   NodeAssert.equal(
     loomActionCatalog(config, { ...context, pendingActivation: true }).find(

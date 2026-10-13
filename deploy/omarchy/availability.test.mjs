@@ -5,12 +5,13 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import {
   appAvailability,
+  appAvailabilityDeclaration,
   collectAvailability,
   nativeAvailability,
   declarationMaxAgeMs,
   formatAvailability,
 } from "./availability.mjs";
-import { validateAppIntegration } from "./loom-os.mjs";
+import { validateAppIntegration, openAppDevice, focusExistingApp } from "./loom-os.mjs";
 const test = NodeTest.test,
   assert = NodeAssert;
 const now = Date.parse("2026-10-12T20:00:00Z");
@@ -237,4 +238,231 @@ test("recovery dispatches only explicit existing actions, never replay, restart 
     ["setup", "--inline"],
     ["service", "status"],
   ]);
+});
+
+function deviceManifest(app) {
+  const value = manifest(app);
+  value.capabilities.availability = {
+    version: 1,
+    supported: true,
+    format: "device-status-in-app-v1",
+    path: "/app/device",
+    handoff: "loom-device-handoff-v1",
+  };
+  return value;
+}
+
+test("owner device review uses retained origin-bound support without promising browser observations", async (t) => {
+  const f = await fixture(t);
+  const discover = async (app) => ({ state: "available", manifest: deviceManifest(app) });
+  const live = await appAvailabilityDeclaration("office", config, f.env, { now, discover });
+  assert.equal(live.state, "live");
+  const offline = { now: now + 1000, discover: async () => ({ state: "unavailable" }) };
+  const retained = await appAvailabilityDeclaration("office", config, f.env, offline);
+  assert.equal(retained.state, "retained");
+  const app = appAvailability(
+    "office",
+    { step: { state: "unavailable" }, declaration: { state: "unavailable" } },
+    retained.manifest,
+  );
+  assert.equal(app.deviceReview.state, "available");
+  assert.match(app.deviceReview.detail, /last verified/);
+  assert.equal(app.pendingCount, null);
+  assert.equal(app.pending.state, "unknown");
+  assert.equal(
+    (
+      await appAvailabilityDeclaration(
+        "office",
+        { ...config, officeUrl: "https://other.test" },
+        f.env,
+        offline,
+      )
+    ).state,
+    "unknown",
+  );
+  for (const checkTime of [now + declarationMaxAgeMs + 1, now - 60001])
+    assert.equal(
+      (await appAvailabilityDeclaration("office", config, f.env, { ...offline, now: checkTime }))
+        .state,
+      "unknown",
+    );
+});
+
+test("device review cold and existing-window launches need no CLI, resolver, cookies or browser database", async () => {
+  for (const app of ["office", "atlas"])
+    for (const existing of [false, true]) {
+      const launches = [];
+      const cfg = {
+        officeUrl: config.officeUrl,
+        atlasUrl: config.atlasUrl,
+        browserExecutable: "/chromium",
+      };
+      const result = await openAppDevice(
+        app,
+        cfg,
+        { HOME: "/device-home" },
+        {
+          support: async () => ({ state: "retained", manifest: deviceManifest(app) }),
+          focus: async () => existing,
+          launch: async (spec) => launches.push(spec),
+        },
+      );
+      assert.equal(result.state, "launched");
+      assert.equal(launches.length, 1);
+      assert.equal(launches[0].command, "/chromium");
+      assert.ok(
+        launches[0].args.includes(
+          "--user-data-dir=/device-home/.local/share/loom-os/browser-profiles/office",
+        ),
+      );
+      const url = new URL(launches[0].args.find((arg) => arg.startsWith("--app=")).slice(6));
+      assert.equal(url.origin, cfg[app + "Url"]);
+      assert.equal(url.pathname, "/app/device");
+      assert.match(url.searchParams.get("loomHandoff"), /^[a-f0-9-]{36}$/);
+      assert.equal(url.searchParams.get("loomReuse"), existing ? "1" : null);
+      assert.deepEqual(
+        [...url.searchParams.keys()].sort(),
+        existing ? ["loomHandoff", "loomReuse"] : ["loomHandoff"],
+      );
+    }
+});
+
+test("older, unknown and future device contracts explain an ordinary owner opening", async () => {
+  for (const support of [
+    { state: "live", manifest: manifest("office") },
+    { state: "unknown", manifest: null },
+    {
+      state: "live",
+      manifest: {
+        ...deviceManifest("office"),
+        capabilities: {
+          ...deviceManifest("office").capabilities,
+          availability: { version: 2, supported: true },
+        },
+      },
+    },
+  ])
+    for (const existing of [false, true]) {
+      const shown = [],
+        launches = [];
+      const result = await openAppDevice(
+        "office",
+        { ...config, browserExecutable: "/chromium" },
+        {},
+        {
+          support: async () => support,
+          focus: async () => existing,
+          show: (line) => shown.push(line),
+          launch: async (spec) => launches.push(spec),
+        },
+      );
+      assert.equal(result.state, "owner-opened");
+      assert.equal(shown.length, 1);
+      assert.equal(launches.length, existing ? 0 : 1);
+      if (!existing) assert.ok(launches[0].args.includes(`--app=${config.officeUrl}/app/`));
+    }
+  await assert.rejects(openAppDevice("other", config, {}, {}), /Configure/);
+});
+
+test("native availability cancellation is inert and device review dispatches only its owning app", async (t) => {
+  const f = await fixture(t);
+  const report = await collectAvailability(config, f.env, f.deps);
+  const choices = ["Review Office device", "Review Atlas device", null];
+  const calls = [];
+  await nativeAvailability(config, f.env, {
+    collect: async () => report,
+    show: () => {},
+    choose: async (offered) => {
+      assert.ok(offered.includes("Review Office device"));
+      return choices.shift();
+    },
+    dispatch: async (args) => calls.push(args),
+  });
+  assert.deepEqual(calls, [
+    ["device", "office"],
+    ["device", "atlas"],
+  ]);
+});
+
+test("native device handoff closes only its exact route and nonce, preserving workspace and login windows", async () => {
+  for (const failed of [false, true]) {
+    const calls = [];
+    let nonce;
+    const work = openAppDevice(
+      "office",
+      { ...config, browserExecutable: "/chromium" },
+      {},
+      {
+        support: async () => ({ state: "live", manifest: deviceManifest("office") }),
+        focus: async () => true,
+        launch: async (spec) => {
+          nonce = new URL(
+            spec.args.find((arg) => arg.startsWith("--app=")).slice(6),
+          ).searchParams.get("loomHandoff");
+        },
+        query: async (args) => {
+          calls.push(args);
+          return {
+            stdout:
+              args[0] === "clients"
+                ? JSON.stringify([
+                    {
+                      class: "chrome-office.test__app_-Default",
+                      address: "0x01",
+                      title: `Loom handoff ${nonce}: complete`,
+                    },
+                    {
+                      class: "chrome-office.test__app_device-Default",
+                      address: "0x02",
+                      title: "Sign in to Office",
+                    },
+                    {
+                      class: "chrome-office.test__app_device-Default",
+                      address: "0x03",
+                      title: `Loom handoff ${nonce}: ${failed ? "unavailable" : "complete"}`,
+                    },
+                  ])
+                : "ok",
+          };
+        },
+      },
+    );
+    if (failed) await assert.rejects(work, /could not open device status/);
+    else assert.equal((await work).state, "handed-off");
+    const mutations = JSON.stringify(calls.filter((args) => args[0] !== "clients"));
+    assert.match(mutations, /address:0x03/);
+    assert.doesNotMatch(mutations, /address:0x01|address:0x02/);
+  }
+});
+
+test("ordinary opening reuses a cold device window and rejects ambiguous configured origins", async () => {
+  const calls = [];
+  assert.equal(
+    await focusExistingApp("atlas", config, {}, async (args) => {
+      calls.push(args);
+      return {
+        stdout:
+          args[0] === "clients"
+            ? JSON.stringify([
+                {
+                  class: "chrome-atlas.test__app_device-Default",
+                  address: "0x21",
+                  title: "Atlas device",
+                },
+              ])
+            : "ok",
+      };
+    }),
+    true,
+  );
+  assert.match(JSON.stringify(calls), /address:0x21/);
+  await assert.rejects(
+    focusExistingApp(
+      "office",
+      { ...config, atlasUrl: config.officeUrl + ":8443" },
+      {},
+      async () => ({ stdout: "[]" }),
+    ),
+    /same native window identity/,
+  );
 });

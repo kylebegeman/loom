@@ -119,6 +119,16 @@ function view(raw, now, minimum) {
         )
           return empty;
         if (app.pending.state !== "unknown") return empty;
+        if (
+          app.deviceReview !== undefined &&
+          (!app.deviceReview ||
+            ["available", "unsupported", "unknown"].indexOf(app.deviceReview.state) < 0 ||
+            typeof app.deviceReview.detail !== "string" ||
+            app.deviceReview.detail.length > 512 ||
+            hasControls(app.deviceReview.detail))
+        )
+          return empty;
+
         if (report.state === "ok" && (app.server !== "reachable" || app.cli !== "connected"))
           return empty;
         lines.push(
@@ -134,6 +144,10 @@ function view(raw, now, minimum) {
         lines.push("  Offline writing: " + capLabels[app.writing.state]);
         lines.push("  Live search: " + capLabels[app.search.state]);
         lines.push("  Pending changes: not reported by app");
+        if (app.deviceReview && app.deviceReview.state === "available")
+          lines.push(
+            "  Device status: review saved copies, conflicts and storage in " + appNames[app.id],
+          );
         apps.push(app);
       }
     }

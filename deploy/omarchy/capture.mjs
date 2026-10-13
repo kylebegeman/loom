@@ -1,16 +1,15 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
 import * as NodeZlib from "node:zlib";
-import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import {
   appCommand,
   discoverAppIntegration,
-  validateAppIntegration,
   paths,
   focusExistingApp,
   launchExactItem,
 } from "./loom-os.mjs";
+import { appAvailabilityDeclaration } from "./availability.mjs";
 const names = { office: "Office", atlas: "Atlas" };
 const labels = {
   note: "Office Note",
@@ -63,14 +62,14 @@ export function captureEnvelope(
   }
   return { version: 1, app, id, target, title, text, url, reuse };
 }
+const reviewedCapture = (cap) =>
+  cap?.supported === true &&
+  cap.handoff === "loom-capture-review-v1" &&
+  cap.format === "review-in-app-v1" &&
+  cap.reviewed === true &&
+  cap.path === "/app/share";
 export function reviewedCaptureCommand(envelope, cap, config, env) {
-  if (
-    cap.handoff !== "loom-capture-review-v1" ||
-    cap.format !== "review-in-app-v1" ||
-    cap.reviewed !== true ||
-    cap.path !== "/app/share"
-  )
-    throw Error("Update the app before using reviewed capture.");
+  if (!reviewedCapture(cap)) throw Error("Update the app before using reviewed capture.");
   const frame =
     "v1." + NodeZlib.deflateSync(Buffer.from(JSON.stringify(envelope))).toString("base64url");
   if (frame.length > 100000)
@@ -102,30 +101,22 @@ export async function captureCapabilities(
   app,
   config,
   env,
-  { discover = discoverAppIntegration } = {},
+  { discover = discoverAppIntegration, now = Date.now() } = {},
 ) {
-  const cache = NodePath.join(paths(env).state, "loom-os", "capture-" + app + ".json");
   const report = await discover(app, config);
-  if (report.state === "available") {
-    const record = { origin: config[app + "Url"], manifest: report.manifest };
-    try {
-      await NodeFSP.mkdir(NodePath.dirname(cache), { recursive: true, mode: 0o700 });
-      await NodeFSP.writeFile(cache, JSON.stringify(record), { mode: 0o600 });
-    } catch {
-      /* Optional offline build metadata. */
-    }
-    return { ...report, fromCache: false };
-  }
-  if (app === "office" && report.state === "unavailable") {
-    try {
-      const saved = JSON.parse(await NodeFSP.readFile(cache, "utf8"));
-      const manifest = validateAppIntegration(saved.manifest, app);
-      if (saved.origin === config.officeUrl && manifest.offline.supportedWriting)
-        return { app, state: "available", manifest, fromCache: true };
-    } catch {
-      /* No prior usable declaration. */
-    }
-  }
+  if (!["available", "unavailable"].includes(report.state)) return report;
+  const support = await appAvailabilityDeclaration(app, config, env, {
+    now,
+    declaration: report,
+  });
+  if (support.state === "live") return { ...report, manifest: support.manifest, fromCache: false };
+  // Retention confirms a build's browser handoff, never this profile's session or saved data.
+  if (
+    support.state === "retained" &&
+    support.manifest.offline.supportedWriting &&
+    reviewedCapture(support.manifest.capabilities.capture)
+  )
+    return { app, state: "available", manifest: support.manifest, fromCache: true };
   return report;
 }
 export async function nativeCapture(
@@ -195,12 +186,7 @@ export async function nativeCapture(
     const candidates = [];
     for (const { app, report } of reports) {
       const cap = report.manifest?.capabilities.capture;
-      if (
-        report.state !== "available" ||
-        !cap?.supported ||
-        cap.handoff !== "loom-capture-review-v1" ||
-        !cap.reviewed
-      ) {
+      if (report.state !== "available" || !reviewedCapture(cap)) {
         show(`${names[app]}: ${report.detail ?? "Update the app to enable reviewed capture."}`);
         continue;
       }
@@ -225,7 +211,7 @@ export async function nativeCapture(
       const spec = reviewedCaptureCommand(envelope, dest.cap, config, env);
       if (dest.cached)
         show(
-          "Office will use its previously saved workspace where available. Review before saving.",
+          `${names[dest.app]} may use this profile's saved workspace where available. Review before saving.`,
         );
       await (
         deps.launch ??

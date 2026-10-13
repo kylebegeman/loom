@@ -147,6 +147,11 @@ Office capture supports 200 characters of title, 4,000 of text and 2,048 of link
 It asks you to review the content before saving and preserves the intent through
 login. It does not fetch the supplied link.
 
+During a server outage, Capture can open Office or Atlas's review screen using a
+supported declaration checked within the last seven days. The app decides whether
+this profile has an enabled saved workspace and can queue that destination. Review
+before saving; LoomOS does not confirm sign-in or submit the change itself.
+
 ## Notifications and focus
 
 Choose **LoomOS → Notifications and focus**, or search for Notifications in Loom actions.
@@ -236,8 +241,9 @@ Apps on different ports must use distinct hostnames if their app paths are the s
 Chromium omits ports from its native window identity. Ambiguous matches refuse opening
 and explain the configuration change.
 
-The terminal `loom-os search` command returns the app's JSON results. Atlas capture saves a private source tagged
-`omarchy`. Its server must be reachable from this machine.
+The terminal `loom-os search` command returns the app's JSON results. Atlas capture
+opens its Research source review screen. Supported saved writing can be queued there
+during an outage; live search still needs the app server.
 
 ## AI routing and health
 
@@ -293,12 +299,19 @@ recovery controls; its tooltip shows separate app, network, AI and workstation
 states. Symbols and text distinguish attention and unavailable states as well
 as color.
 
-Office supports saved copies and some queued changes after prior use in that
-browser profile. Atlas currently declares no durable offline reading or writing.
-**Check in app** describes support and asks you to verify this device's saved
-copies; it does not promise that an uncached item is available. The apps do not
-currently report their browser cache or pending-change count to LoomOS, so
-**Not confirmed** never means an empty queue. Open the owning app to inspect it.
+Offline support follows each app's current release and prior use in that browser
+profile. **Check in app** asks you to verify this device's saved copies; it does not
+promise that an uncached item is available. Choose **Review Office device** or
+**Review Atlas device** to inspect saved reading, pending changes, conflicts and
+storage inside the installed app. These actions also appear in Loom actions, the
+launcher and **LoomOS → AI and connections**. You can run `loom-os device office`
+or `loom-os device atlas`.
+
+The device view uses your existing app profile and can open during a server outage
+after supported prior use. Browser sign-in and CLI access remain separate. LoomOS
+does not inspect private app storage or report pending-change counts, so
+**Not confirmed** never means an empty queue. Older app releases open their
+ordinary workspace with guidance to review saved work there.
 
 Live search needs the app server and CLI access, with permissions checked when
 searching. Shared AI needs Switchboard's private route. A stopped workstation

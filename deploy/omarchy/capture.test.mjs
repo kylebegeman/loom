@@ -12,7 +12,9 @@ import {
   reviewedCaptureCommand,
   nativeCapture,
   watchCapture,
+  captureCapabilities,
 } from "./capture.mjs";
+import { appAvailabilityDeclaration, declarationMaxAgeMs } from "./availability.mjs";
 const config = {
   officeUrl: "https://office.example.test",
   atlasUrl: "https://atlas.example.test",
@@ -260,6 +262,262 @@ NodeTest.test(
     NodeAssert.deepEqual(
       calls.filter((args) => args[0] === "eval"),
       [["eval", 'hl.dispatch(hl.dsp.window.close({window="address:0x111"}))']],
+    );
+  },
+);
+
+const declarationNow = Date.parse("2026-10-12T20:00:00Z");
+function reviewedDeclaration(app) {
+  const unavailable = { version: 1, supported: false, reason: "Use the owning app." };
+  return {
+    format: "loom-app-integration",
+    version: { major: 1, minor: 3 },
+    app,
+    name: app,
+    actions: [],
+    capabilities: {
+      launch: { version: 1, supported: true, path: "/app/" },
+      search: unavailable,
+      capture: { version: 1, ...cap(app) },
+      links: unavailable,
+      notifications: unavailable,
+      availability: unavailable,
+    },
+    offline: {
+      savedReading: true,
+      supportedWriting: true,
+      requiresPriorUse: true,
+      detail: "Local writing depends on this browser profile's prior use and account.",
+    },
+  };
+}
+async function captureFixture(t) {
+  const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-offline-capture-"));
+  t.after(() => NodeFSP.rm(home, { recursive: true, force: true }));
+  return {
+    env: { HOME: home },
+    offline: {
+      now: declarationNow + 1000,
+      discover: async (app) => ({ app, state: "unavailable", detail: "Disconnected." }),
+    },
+    retain: (app, manifest = reviewedDeclaration(app)) =>
+      appAvailabilityDeclaration(
+        app,
+        config,
+        { HOME: home },
+        {
+          now: declarationNow,
+          declaration: { state: "available", manifest },
+        },
+      ),
+  };
+}
+NodeTest.test(
+  "both apps use shared retained declarations for reviewed offline capture, without claiming device state",
+  async (t) => {
+    const f = await captureFixture(t);
+    for (const app of ["office", "atlas"]) {
+      await f.retain(app);
+      const report = await captureCapabilities(app, config, f.env, f.offline);
+      NodeAssert.equal(report.state, "available");
+      NodeAssert.equal(report.fromCache, true);
+      NodeAssert.equal(report.manifest.capabilities.capture.handoff, "loom-capture-review-v1");
+      NodeAssert.equal(report.manifest.capabilities.capture.operation, undefined);
+      NodeAssert.equal(report.pendingCount, undefined);
+      NodeAssert.equal(report.authenticated, undefined);
+      const messages = [],
+        launches = [],
+        choices = [
+          "Choose destination",
+          app === "office" ? "Office Note" : "Atlas Research source",
+        ];
+      const result = await nativeCapture(config, f.env, {
+        initialApp: app,
+        payload: { text: "Offline capture" },
+        capabilities: () => captureCapabilities(app, config, f.env, f.offline),
+        choose: async () => choices.shift(),
+        show: (message) => messages.push(message),
+        focus: async () => false,
+        launch: async (spec) => launches.push(spec),
+        watch: async () => {},
+      });
+      NodeAssert.equal(result.state, "reviewing");
+      NodeAssert.equal(launches.length, 1);
+      NodeAssert.ok(launches[0].args.some((arg) => arg.includes("/app/share#loomCapture=v1.")));
+      NodeAssert.ok(
+        messages.some(
+          (message) =>
+            message.includes(app === "office" ? "Office" : "Atlas") &&
+            message.includes("Review before saving"),
+        ),
+      );
+    }
+  },
+);
+NodeTest.test(
+  "offline capture refuses expired and future-dated declarations and foreign configured origins",
+  async (t) => {
+    const f = await captureFixture(t);
+    for (const app of ["office", "atlas"]) {
+      await f.retain(app);
+      for (const now of [
+        declarationNow + declarationMaxAgeMs,
+        declarationNow + declarationMaxAgeMs + 1,
+        declarationNow - 60_001,
+      ]) {
+        NodeAssert.equal(
+          (await captureCapabilities(app, config, f.env, { ...f.offline, now })).state,
+          "unavailable",
+        );
+      }
+      NodeAssert.equal(
+        (
+          await captureCapabilities(
+            app,
+            { ...config, [app + "Url"]: "https://foreign.example.test" },
+            f.env,
+            f.offline,
+          )
+        ).state,
+        "unavailable",
+      );
+    }
+  },
+);
+NodeTest.test(
+  "tampered origin/app/manifest and malformed retained capture metadata cannot launch",
+  async (t) => {
+    const f = await captureFixture(t);
+    await f.retain("atlas");
+    const directory = NodePath.join(paths(f.env).state, "loom-os/capabilities");
+    const file = NodePath.join(directory, (await NodeFSP.readdir(directory))[0]);
+    const original = JSON.parse(await NodeFSP.readFile(file, "utf8"));
+    for (const value of [
+      { ...original, origin: config.officeUrl },
+      { ...original, app: "office" },
+      { ...original, manifest: { ...original.manifest, app: "office" } },
+      { ...original, manifest: { ...original.manifest, capabilities: {} } },
+      {},
+    ]) {
+      await NodeFSP.writeFile(file, JSON.stringify(value));
+      NodeAssert.equal(
+        (await captureCapabilities("atlas", config, f.env, f.offline)).state,
+        "unavailable",
+      );
+    }
+    await NodeFSP.writeFile(file, "not json");
+    NodeAssert.equal(
+      (await captureCapabilities("atlas", config, f.env, f.offline)).state,
+      "unavailable",
+    );
+  },
+);
+NodeTest.test(
+  "offline capture requires app-owned writing and exact supported reviewed browser capture",
+  async (t) => {
+    const f = await captureFixture(t);
+    for (const app of ["office", "atlas"]) {
+      const base = reviewedDeclaration(app);
+      for (const delta of [
+        { supported: false, reason: "Capture is unsupported." },
+        { handoff: "future-handoff" },
+        { reviewed: false },
+        { path: "/app/another" },
+        { version: 2 },
+      ]) {
+        await f.retain(app, {
+          ...base,
+          capabilities: {
+            ...base.capabilities,
+            capture: { ...base.capabilities.capture, ...delta },
+          },
+        });
+        NodeAssert.equal(
+          (await captureCapabilities(app, config, f.env, f.offline)).state,
+          "unavailable",
+        );
+      }
+      await f.retain(app, { ...base, offline: { ...base.offline, supportedWriting: false } });
+      NodeAssert.equal(
+        (await captureCapabilities(app, config, f.env, f.offline)).state,
+        "unavailable",
+      );
+    }
+  },
+);
+NodeTest.test(
+  "retained private-source CLI capture never becomes offline browser capture",
+  async (t) => {
+    const f = await captureFixture(t);
+    const manifest = reviewedDeclaration("atlas");
+    manifest.capabilities.capture = {
+      ...manifest.capabilities.capture,
+      format: "private-source-v1",
+      path: undefined,
+      handoff: undefined,
+      reviewed: false,
+      operation: {
+        id: "atlas.sources.capture",
+        method: "POST",
+        path: "/api/atlas/sources/capture",
+        command: ["atlas", "sources-capture"],
+        scopes: ["atlas:write"],
+        surfaces: ["api", "cli"],
+        effect: "write",
+        mutation: "idempotent",
+        approval: "none",
+      },
+    };
+    await f.retain("atlas", manifest);
+    NodeAssert.equal(
+      (await captureCapabilities("atlas", config, f.env, f.offline)).state,
+      "unavailable",
+    );
+  },
+);
+NodeTest.test(
+  "legacy declaration and the obsolete unbounded Office cache do not authorize offline capture",
+  async (t) => {
+    const f = await captureFixture(t);
+    await f.retain("office");
+    NodeAssert.equal(
+      (
+        await captureCapabilities("office", config, f.env, {
+          ...f.offline,
+          discover: async () => ({ state: "legacy", detail: "No versioned declaration." }),
+        })
+      ).state,
+      "legacy",
+    );
+    await NodeFSP.rm(NodePath.join(paths(f.env).state, "loom-os/capabilities"), {
+      recursive: true,
+    });
+    await NodeFSP.writeFile(
+      NodePath.join(paths(f.env).state, "loom-os/capture-office.json"),
+      JSON.stringify({ origin: config.officeUrl, manifest: reviewedDeclaration("office") }),
+    );
+    NodeAssert.equal(
+      (await captureCapabilities("office", config, f.env, f.offline)).state,
+      "unavailable",
+    );
+  },
+);
+NodeTest.test(
+  "live support refresh replaces retained writing support without turning capture into a CLI write",
+  async (t) => {
+    const f = await captureFixture(t);
+    await f.retain("atlas");
+    const manifest = reviewedDeclaration("atlas");
+    manifest.offline.supportedWriting = false;
+    const live = await captureCapabilities("atlas", config, f.env, {
+      now: declarationNow + 500,
+      discover: async () => ({ state: "available", manifest }),
+    });
+    NodeAssert.equal(live.state, "available");
+    NodeAssert.equal(live.fromCache, false);
+    NodeAssert.equal(
+      (await captureCapabilities("atlas", config, f.env, f.offline)).state,
+      "unavailable",
     );
   },
 );

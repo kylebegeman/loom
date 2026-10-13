@@ -398,3 +398,32 @@ test("native Finder consumes modern Atlas results and recovers from unavailable 
   });
   NodeAssert.ok(shown.some((line) => line.includes("version 2")));
 });
+
+test("device review negotiates only the app-local versioned route, never a server operation", () => {
+  const capability = {
+    version: 1,
+    supported: true,
+    format: "device-status-in-app-v1",
+    path: "/app/device",
+    handoff: "loom-device-handoff-v1",
+  };
+  for (const app of ["office", "atlas"]) {
+    const m = declaration(app);
+    m.capabilities.availability = capability;
+    NodeAssert.deepEqual(validateAppIntegration(m, app).capabilities.availability, capability);
+    for (const changed of [
+      { format: "device-status-v2" },
+      { path: "/app/" },
+      { handoff: "loom-item-handoff-v1" },
+      { operation: m.capabilities.search.operation },
+    ]) {
+      m.capabilities.availability = { ...capability, ...changed };
+      const normalized = validateAppIntegration(m, app);
+      NodeAssert.equal(normalized.capabilities.availability.supported, false);
+      NodeAssert.equal(normalized.capabilities.launch.supported, true);
+      NodeAssert.match(normalized.capabilities.availability.reason, /inside the app/);
+    }
+    m.capabilities.availability = { ...capability, path: "//foreign.test/app/device" };
+    NodeAssert.throws(() => validateAppIntegration(m, app), /path/);
+  }
+});

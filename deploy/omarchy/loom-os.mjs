@@ -904,6 +904,13 @@ export async function installationPlan(
     content: `[Desktop Entry]\nType=Application\nName=What works now\nComment=Inspect app offline support, live search and private AI availability\nExec=${desktopArg(p.bin)} availability\nIcon=network-workgroup\nTerminal=false\nCategories=Utility;\n`,
     mode: 0o644,
   });
+  for (const app of ["office", "atlas"]) {
+    if (!config[`${app}Url`]) continue;
+    writes.set(NodePath.join(p.data, `applications/loom-os-device-${app}.desktop`), {
+      content: `[Desktop Entry]\nType=Application\nName=Review ${appNames[app]} device\nComment=Review saved copies, pending changes, conflicts and device storage\nExec=${desktopArg(p.bin)} device ${app}\nIcon=drive-harddisk\nTerminal=false\nCategories=Utility;\n`,
+      mode: 0o644,
+    });
+  }
   writes.set(NodePath.join(p.root, "doctor-terminal"), {
     content: `#!/bin/bash\nprintf '\\033]0;Check connections\\007'\n${shellQuote(p.bin)} doctor --human\nstatus=$?\nprintf '\\nPress Enter to close. '\nread -r _\nexit "$status"\n`,
     mode: 0o755,
@@ -1054,6 +1061,13 @@ done
       label: "What works now",
       action: command("availability"),
     };
+    for (const app of ["office", "atlas"]) {
+      if (config[`${app}Url`])
+        entries[`loomos.connections.device-${app}`] = {
+          label: `Review ${appNames[app]} device`,
+          action: command(`device ${app}`),
+        };
+    }
     entries["loomos.connections.setup"] = { label: "Set up connections", action: command("setup") };
     entries["loomos.connections.status"] = {
       label: "Connection status",
@@ -1416,18 +1430,30 @@ export function appCommand(app, config, env = process.env, urlOverride) {
     env,
   };
 }
-function nativeAppWindowIdentity(app, config) {
+function browserWindowIdentity(url) {
+  return `chrome-${url.hostname}_${url.pathname.replaceAll("/", "_")}-Default`;
+}
+function nativeAppWindowIdentities(app, config) {
   const urls = {
-    office: config.officeUrl && new URL(`${config.officeUrl}/app/`),
-    atlas: config.atlasUrl && new URL(`${config.atlasUrl}/app/`),
-    switchboard: config.switchboardDashboardUrl && new URL(config.switchboardDashboardUrl),
+    office: config.officeUrl && [
+      new URL(`${config.officeUrl}/app/`),
+      new URL(`${config.officeUrl}/app/device`),
+    ],
+    atlas: config.atlasUrl && [
+      new URL(`${config.atlasUrl}/app/`),
+      new URL(`${config.atlasUrl}/app/device`),
+    ],
+    switchboard: config.switchboardDashboardUrl && [new URL(config.switchboardDashboardUrl)],
   };
-  // Chromium's Wayland app identity uses the hostname and path, omitting the
-  // port. Distinct configured origins can therefore have the same identity.
-  const identity = (url) => `chrome-${url.hostname}_${url.pathname.replaceAll("/", "_")}-Default`;
-  const selected = identity(urls[app]);
-  for (const [other, url] of Object.entries(urls)) {
-    if (other !== app && url && identity(url) === selected)
+  // Chromium's Wayland app identity uses the hostname and launch path, omitting
+  // the port. Both the workspace and cold device route must remain owner-specific.
+  const selected = urls[app].map(browserWindowIdentity);
+  for (const [other, routes] of Object.entries(urls)) {
+    if (
+      other !== app &&
+      routes &&
+      routes.some((url) => selected.includes(browserWindowIdentity(url)))
+    )
       throw Error(
         `${appNames[app]} and ${appNames[other]} have the same native window identity. Configure distinct hostnames to keep their windows separate.`,
       );
@@ -1459,7 +1485,7 @@ export async function focusExistingApp(app, config, env = process.env, query) {
   if (!origin) return false;
   // Chromium uses the app URL as its Wayland identity. --class is also used by
   // extension popups, so matching that flag can focus 1Password instead.
-  const identity = nativeAppWindowIdentity(app, config);
+  const identities = nativeAppWindowIdentities(app, config);
   let clients;
   try {
     clients = JSON.parse((await query(["clients", "-j"])).stdout);
@@ -1473,7 +1499,7 @@ export async function focusExistingApp(app, config, env = process.env, query) {
     (c) =>
       c.mapped !== false &&
       !/^Loom handoff [0-9a-f-]{36}:/.test(c.title ?? "") &&
-      (c.class === identity || c.initialClass === identity) &&
+      (identities.includes(c.class) || identities.includes(c.initialClass)) &&
       /^0x[0-9a-f]+$/i.test(c.address),
   );
   if (!client) return false;
@@ -1647,6 +1673,19 @@ export function validateAppIntegration(value, app) {
     if (cap.operation !== undefined)
       normalized.operation = integrationOperation(cap.operation, app);
     if (cap.supported && id === "launch" && !cap.path) throw Error("App launch path is missing.");
+    if (
+      cap.supported &&
+      id === "availability" &&
+      (cap.format !== "device-status-in-app-v1" ||
+        cap.path !== "/app/device" ||
+        cap.handoff !== "loom-device-handoff-v1" ||
+        cap.operation !== undefined)
+    ) {
+      normalized.supported = false;
+      normalized.reason =
+        "This device-status format needs a newer LoomOS adapter. Review saved work inside the app.";
+    }
+
     if (cap.supported && id === "search") {
       if (
         !cap.operation ||
@@ -2075,16 +2114,23 @@ export async function resolveExactItem(
     config[`${app}Url`],
   );
 }
-export async function launchExactItem(
+async function launchAppHandoff(
   app,
   destination,
   config,
   env = process.env,
   dependencies = {},
+  kind = "item",
 ) {
+  const target = new URL(destination);
+  const identity = browserWindowIdentity(target);
+  if (
+    target.origin !== new URL(config[`${app}Url`]).origin ||
+    !nativeAppWindowIdentities(app, config).includes(identity)
+  )
+    throw Error("The app handoff has an unsupported native window identity.");
   const reused = await (dependencies.focus ?? focusExistingApp)(app, config, env);
   const nonce = NodeCrypto.randomUUID();
-  const target = new URL(destination);
   target.searchParams.set("loomHandoff", nonce);
   if (reused) target.searchParams.set("loomReuse", "1");
   const spec = appCommand(app, config, env, target.href);
@@ -2095,7 +2141,6 @@ export async function launchExactItem(
   if (!dependencies.query && !env.HYPRLAND_INSTANCE_SIGNATURE)
     return { state: "launched", target: target.href };
   const query = dependencies.query ?? ((args) => queryHyprland(args, env));
-  const identity = nativeAppWindowIdentity(app, config);
   const pause = dependencies.pause ?? (() => new Promise((resolve) => setTimeout(resolve, 100)));
   // Close only our nonce-labelled stateless handoff, never a login or business window.
   for (let attempt = 0; attempt < 80; attempt++) {
@@ -2123,10 +2168,13 @@ export async function launchExactItem(
           /* Legacy dispatcher. */
         }
       }
-      if (!closed) throw Error("The item handoff finished. Close its temporary window manually.");
+      if (!closed)
+        throw Error(`The ${kind} handoff finished. Close its temporary window manually.`);
       if (client.title.endsWith(": unavailable"))
         throw Error(
-          "The existing app could not accept this item. Save your work, update or reopen it, then search again.",
+          kind === "device status"
+            ? "The existing app could not open device status. Save your work, update or reopen the app, then review this device again."
+            : "The existing app could not accept this item. Save your work, update or reopen it, then search again.",
         );
       await (dependencies.focus ?? focusExistingApp)(app, config, env);
       return { state: "handed-off", target: target.href };
@@ -2136,6 +2184,65 @@ export async function launchExactItem(
   // A sign-in window or cold launch retains the destination and remains under user control.
   return { state: "launched", target: target.href };
 }
+export async function launchExactItem(
+  app,
+  destination,
+  config,
+  env = process.env,
+  dependencies = {},
+) {
+  return launchAppHandoff(app, destination, config, env, dependencies);
+}
+
+export async function openAppDevice(app, config, env = process.env, dependencies = {}) {
+  if (!["office", "atlas"].includes(app) || !config[`${app}Url`])
+    throw Error("Configure Office or Atlas before reviewing this device.");
+  const support = await (
+    dependencies.support ??
+    (async () =>
+      (await import("./availability.mjs")).appAvailabilityDeclaration(
+        app,
+        config,
+        env,
+        dependencies,
+      ))
+  )();
+  const manifest = support.manifest && validateAppIntegration(support.manifest, app);
+  const cap = manifest?.capabilities.availability;
+  if (!["live", "retained"].includes(support.state) || !cap?.supported) {
+    const detail =
+      cap?.reason ??
+      "This app's device-status route could not be confirmed. Open the app to inspect saved work.";
+    if (dependencies.show) await dependencies.show(detail);
+    else {
+      console.log(detail);
+      // Launcher/menu actions have no terminal. Keep their owner fallback visible.
+      if (!process.stdout.isTTY)
+        await run(
+          "notify-send",
+          ["--app-name=LoomOS", "--", `Review ${appNames[app]} device`, detail.slice(0, 512)],
+          { env },
+        ).catch(() => {});
+    }
+    const spec = appCommand(app, config, env);
+    if (!(await (dependencies.focus ?? focusExistingApp)(app, config, env)))
+      await (
+        dependencies.launch ??
+        ((spec) => run(spec.command, spec.args, { env: spec.env, detached: true }))
+      )(spec);
+    return { state: "owner-opened", detail };
+  }
+  // This is an app-local view, not a server operation or an OS view of private browser storage.
+  return launchAppHandoff(
+    app,
+    new URL(cap.path, config[`${app}Url`]),
+    config,
+    env,
+    dependencies,
+    "device status",
+  );
+}
+
 export async function openExactItem(app, reference, config, env = process.env, dependencies = {}) {
   const destination = await resolveExactItem(app, reference, config, env, dependencies);
   return launchExactItem(app, destination, config, env, dependencies);
@@ -2528,6 +2635,15 @@ export function loomActionCatalog(config, context = {}) {
     "Configure the Atlas address and restore the configured browser.",
     "Super+Ctrl+Alt+A",
   );
+  for (const app of ["office", "atlas"])
+    add(
+      `device-${app}`,
+      `Review ${appNames[app]} device`,
+      "Saved copies, offline writing, pending changes, conflicts and storage in the owning app",
+      ["device", app],
+      configured(`${app}Url`) && !missing.has("browserExecutable"),
+      `Configure the ${appNames[app]} address and restore the configured browser.`,
+    );
   add(
     "open-switchboard",
     "Open Switchboard",
@@ -3284,7 +3400,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3792,6 +3908,12 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       return checks.summary.errors ? 1 : 0;
     }
     print(checks);
+    return;
+  }
+  if (action === "device") {
+    if (rest.length !== 1 || !["office", "atlas"].includes(rest[0]))
+      throw Error("Usage: loom-os device office|atlas");
+    await openAppDevice(rest[0], config, env);
     return;
   }
   if (action === "open-item") {
