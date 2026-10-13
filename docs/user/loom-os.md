@@ -343,6 +343,27 @@ status. `loom-os connections --terminal` opens the native recovery console.
 If the status icon is absent, use `loom-os connections --enable-status` to place
 it through Omarchy's plugin controls. It preserves an existing placement.
 
+Open **LoomOS → AI and connections → Private AI hub**, find **Private AI hub** in
+Loom actions or the launcher, or run `loom-os hub`. It shows cached model eligibility,
+credit requirements and Office/Atlas client restrictions. A reachable catalog can
+still have no eligible route. Ask AI checks its provider and any explicitly selected
+model before launching; the selected model stays unchanged.
+
+**Check readiness** reads Switchboard's cache. **Wait for hub readiness** waits up
+to 90 seconds and can be cancelled with Escape. Neither action polls provider usage,
+starts AI or retries interrupted work. **Open Switchboard** returns to the hub's
+existing account and allowance controls.
+
+A **Wake hub on the local network** action appears only for a commissioned wake
+method, a fresh origin-bound declaration and a matching current LAN. It asks for
+confirmation before sending one reviewed request. Sending does not prove that the
+hub is awake or AI is ready; check readiness afterward. Tailscale alone cannot
+carry a LAN wake broadcast, and an unreachable computer is not assumed asleep.
+Unproven wake methods, additional hubs and local-model routes stay uncommissioned.
+
+Use `loom-os hub --json --provider codex --model MODEL` for an explicit cached
+model check, or `--client office` / `--client atlas` to inspect those client rules.
+
 ## Updates and recovery
 
 Choose **LoomOS → Maintenance → Updates and recovery**, find it in Loom actions,

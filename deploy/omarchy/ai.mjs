@@ -43,10 +43,11 @@ while true; do
     exit "$status"
   fi
   while true; do
-    choice=$(gum choose --header 'Ask AI recovery' 'Retry Ask AI' 'Connection status' 'Open Tailscale' 'Open Switchboard' 'Close') || exit "$status"
+    choice=$(gum choose --header 'Ask AI recovery' 'Retry Ask AI' 'Connection status' 'Private AI hub' 'Open Tailscale' 'Open Switchboard' 'Close') || exit "$status"
     case "$choice" in
       'Retry Ask AI') break ;;
       'Connection status') ${quote(p.bin)} connections --human ;;
+      'Private AI hub') ${quote(p.bin)} hub --inline ;;
       'Open Tailscale') omarchy-shell omarchy.tailscale open || printf '%s\n' 'Open Tailscale from the system bar.' ;;
       'Open Switchboard') ${quote(p.bin)} open switchboard ;;
       *) exit "$status" ;;
@@ -301,9 +302,13 @@ export async function aiAction(
   run,
   { connections = collectPrivateConnections } = {},
 ) {
-  const readyEnvironment = async () => {
+  const readyEnvironment = async (provider, model) => {
     const routed = await routedEnvironment(config, env, p);
-    const report = await connections(config, env, { includeServer: false });
+    const report = await connections(config, env, {
+      includeServer: false,
+      provider,
+      ...(model ? { model } : {}),
+    });
     if (!report.aiReady) throw new Error(formatPrivateConnections(report));
     return routed;
   };
@@ -344,10 +349,11 @@ export async function aiAction(
         { env: { ...env, PATH: aiPath(p, env.PATH) } },
       );
     } else {
-      const routed = await readyEnvironment();
+      const provider = await defaultAgent(p);
+      const routed = await readyEnvironment(provider);
       await run(
         config.switchboardCli,
-        ["run", await defaultAgent(p), ...(prompt === undefined ? [] : ["--", prompt])],
+        ["run", provider, ...(prompt === undefined ? [] : ["--", prompt])],
         { env: routed },
       );
     }
@@ -355,7 +361,24 @@ export async function aiAction(
     if (!providers.includes(args[0]))
       throw new Error("Usage: loom-os ai claude|codex [native CLI args]");
     await run(config.switchboardCli, ["run", ...args], {
-      env: await readyEnvironment(),
+      env: await readyEnvironment(
+        args[0],
+        (() => {
+          let selected;
+          for (let i = 1; i < args.length; i++) {
+            if (args[i] === "--") break;
+            if (["--model", "-m"].includes(args[i])) {
+              if (!args[i + 1] || args[i + 1].startsWith("-"))
+                throw Error("The selected model needs a value.");
+              selected = args[++i];
+            } else if (args[i].startsWith("--model=")) {
+              selected = args[i].slice(8);
+              if (!selected) throw Error("The selected model needs a value.");
+            }
+          }
+          return selected;
+        })(),
+      ),
     });
   }
   return true;

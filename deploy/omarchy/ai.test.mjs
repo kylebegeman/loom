@@ -334,3 +334,41 @@ test("Ask AI recovery retries only by explicit choice and retains the original p
     ["agent", "--inline"],
   ]);
 });
+
+test("explicit model readiness respects literal prompt boundaries and rejects empty selections", async (t) => {
+  const f = await fixture(t),
+    calls = [],
+    selections = [];
+  const run = async (...args) => calls.push(args);
+  const options = {
+    connections: async (_, __, selection) => {
+      selections.push(selection);
+      return { aiReady: true };
+    },
+  };
+  for (const args of [
+    ["codex", "--", "--model", "literal-prompt"],
+    ["codex", "--model", "gpt-6.1-sol", "--", "--model=literal"],
+    ["claude", "--model=claude-opus-4"],
+  ])
+    await aiAction("ai", args, f.config, f.env, f.p, run, options);
+  assert.deepEqual(
+    selections.map(({ provider, model }) => ({ provider, model })),
+    [
+      { provider: "codex", model: undefined },
+      { provider: "codex", model: "gpt-6.1-sol" },
+      { provider: "claude", model: "claude-opus-4" },
+    ],
+  );
+  assert.deepEqual(calls[0][1], ["run", "codex", "--", "--model", "literal-prompt"]);
+  for (const args of [
+    ["codex", "--model="],
+    ["codex", "--model", "--"],
+    ["codex", "-m"],
+  ])
+    await assert.rejects(
+      aiAction("ai", args, f.config, f.env, f.p, run, options),
+      /model needs a value/,
+    );
+  assert.equal(calls.length, 3);
+});

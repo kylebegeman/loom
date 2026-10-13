@@ -441,6 +441,18 @@ one-second clock check performs no network request; connection checks run at mos
 once per widget at a time on the 30-second cadence or explicit recovery. Sleep
 never cancels an owning CLI credential refresh or replays queued work.
 
+## Private hub readiness
+
+`loom-os hub` opens the native cached model/readiness and recovery view. Its launcher,
+Loom action and AI/connections menu share `hub-readiness-v1` from Switchboard's
+existing private controller. Ask AI consumes provider/explicit-model eligibility;
+network/catalog reachability alone is insufficient. `--json` and `--human` support
+provider, model and existing app-client inspection. Waiting and reviewed wake
+stay in the portable Switchboard owner, with bounded cancellation and no task replay.
+Wake needs a commissioned target, an unexpired origin-bound declaration and the
+matching current LAN; unsupported wake, secondary hubs and local routes remain
+explicit. See [Using LoomOS](../../docs/user/loom-os.md#private-ai-status-and-recovery).
+
 ## Implementation packets
 
 Kyle selected 17 further improvements, excluding saved project workspaces (#14).

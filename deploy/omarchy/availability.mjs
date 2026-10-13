@@ -226,6 +226,7 @@ export async function nativeAvailability(config, env, dependencies = {}) {
     const choice = await choose([
       "Check again",
       "Set up connections",
+      "Private AI hub",
       ...apps.map((app) => "Review " + names[app] + " device"),
       ...apps.map((app) => "Open " + names[app]),
       "Loom service status",
@@ -234,6 +235,7 @@ export async function nativeAvailability(config, env, dependencies = {}) {
     if (!choice || choice === "Close") return;
     try {
       if (choice === "Set up connections") await dispatch(["setup", "--inline"]);
+      else if (choice === "Private AI hub") await dispatch(["hub", "--inline"]);
       else if (choice === "Loom service status") await dispatch(["service", "status"]);
       else {
         const deviceApp = apps.find((app) => choice === "Review " + names[app] + " device");

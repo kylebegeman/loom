@@ -858,6 +858,14 @@ export async function installationPlan(
       mode: 0o644,
     });
   }
+  writes.set(NodePath.join(p.root, "hub.mjs"), {
+    content: await NodeFSP.readFile(NodePath.join(packDir, "hub.mjs"), "utf8"),
+    mode: 0o644,
+  });
+  writes.set(NodePath.join(p.data, "applications/loom-os-hub.desktop"), {
+    content: `[Desktop Entry]\nType=Application\nName=Private AI hub\nComment=Review cached model eligibility and supported hub recovery\nExec=${desktopArg(p.bin)} hub\nIcon=network-workgroup\nTerminal=false\nCategories=Utility;\n`,
+    mode: 0o644,
+  });
   writes.set(NodePath.join(p.root, "health.mjs"), {
     content: await NodeFSP.readFile(NodePath.join(packDir, "health.mjs"), "utf8"),
     mode: 0o644,
@@ -881,6 +889,7 @@ export async function installationPlan(
     "app-integration",
     "setup",
     "availability",
+    "hub",
     "notifications",
   ]) {
     writes.set(NodePath.join(p.root, action + "-terminal"), {
@@ -923,11 +932,12 @@ while true; do
   if ! command -v gum >/dev/null 2>&1; then
     printf '\nPress Enter to close. '; read -r _; exit 0
   fi
-  choice=$(gum choose --header 'Loom connections' 'Check again' 'What works now' 'Set up connections' 'Open Tailscale' 'Open Switchboard' 'Loom service status' 'Close') || exit 0
+  choice=$(gum choose --header 'Loom connections' 'Check again' 'What works now' 'Set up connections' 'Private AI hub' 'Open Tailscale' 'Open Switchboard' 'Loom service status' 'Close') || exit 0
   case "$choice" in
     'Check again') ;;
     'What works now') ${shellQuote(p.bin)} availability --inline ;;
     'Set up connections') ${shellQuote(p.bin)} setup --inline ;;
+    'Private AI hub') ${shellQuote(p.bin)} hub --inline ;;
     'Open Tailscale') omarchy-shell omarchy.tailscale open || printf '%s\n' 'Open Tailscale from the system bar.' ;;
     'Open Switchboard') ${shellQuote(p.bin)} open switchboard ;;
     'Loom service status') ${shellQuote(p.bin)} service status ;;
@@ -1076,6 +1086,11 @@ done
     entries["loomos.connections.tailscale"] = {
       label: "Open Tailscale",
       action: "omarchy-shell omarchy.tailscale open",
+    };
+    entries["loomos.connections.hub"] = {
+      label: "Private AI hub",
+      description: "Cached model readiness and supported wake/recovery",
+      action: command("hub"),
     };
     if (config.switchboardDashboardUrl)
       entries["loomos.connections.switchboard"] = {
@@ -2750,6 +2765,14 @@ export function loomActionCatalog(config, context = {}) {
     ["setup"],
   );
   add(
+    "hub",
+    "Private AI hub",
+    "Review model eligibility, credits and supported wake/readiness recovery",
+    ["hub"],
+    configured("switchboardDashboardUrl") || configured("switchboardStatusUrl"),
+    "Configure the private Switchboard controller first.",
+  );
+  add(
     "connections",
     "Connection status",
     "Check apps, private network and AI; recover connections",
@@ -3400,7 +3423,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\ndevice office|atlas  (review saved copies, pending changes, conflicts and storage in the app)\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nhub [--json|--human] [--provider claude|codex] [--model ID] [--client kyle|office|atlas]  (cached readiness and supported recovery)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\nupdates [status|stage|apply|verify|recover|rollback|discard]  (review local component updates and owner recovery)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3740,6 +3763,47 @@ export async function main(args = process.argv.slice(2), env = process.env) {
         { env },
       );
     } else throw Error("Usage: loom-os notifications [--json|focus on|focus off]");
+    return;
+  }
+  if (action === "hub") {
+    const hub = await import("./hub.mjs");
+    let mode = "native",
+      selection = {};
+    const seen = new Set();
+    for (let i = 0; i < rest.length; i++) {
+      const option = rest[i];
+      if (seen.has(option)) throw Error("Duplicate private hub option.");
+      seen.add(option);
+      if (["--json", "--human", "--inline"].includes(option)) {
+        if (mode !== "native") throw Error("Choose one hub view mode.");
+        mode = option;
+      } else if (["--provider", "--model", "--client"].includes(option) && rest[i + 1]) {
+        const value = rest[++i];
+        if (
+          (option === "--provider" && !["claude", "codex"].includes(value)) ||
+          (option === "--client" && !["kyle", "office", "atlas"].includes(value)) ||
+          (option === "--model" && !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,179}$/.test(value))
+        )
+          throw Error("Invalid hub selection.");
+        selection[option.slice(2)] = value;
+      } else
+        throw Error(
+          "Usage: loom-os hub [--json|--human] [--provider claude|codex] [--model ID] [--client kyle|office|atlas]",
+        );
+    }
+    if (mode === "--inline") {
+      if (!process.stdin.isTTY) throw Error("Private hub controls need an interactive terminal.");
+      await hub.nativeHub(config, env, { initialSelection: selection });
+    } else if (mode === "--json" || mode === "--human") {
+      const report = await hub.collectHubStatus(config, env, selection);
+      if (mode === "--json") print(report);
+      else console.log(hub.formatHubStatus(report));
+    } else
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-hub", NodePath.join(p.root, "hub-terminal")],
+        { env },
+      );
     return;
   }
   if (action === "availability") {

@@ -56,6 +56,13 @@ function view(raw, now, minimum) {
       if (!part || !titles[part.id] || !labels[part.state] || seen[part.id]) return empty;
       seen[part.id] = true;
       lines.push(titles[part.id] + ": " + labels[part.state]);
+      if (
+        part.id === "switchboard" &&
+        typeof part.detail === "string" &&
+        part.detail.length <= 512 &&
+        !hasControls(part.detail)
+      )
+        lines.push("AI readiness: " + part.detail);
     }
     if (!seen.tailscale || !seen.switchboard) return empty;
     var gateway = report.components.find(function (part) {

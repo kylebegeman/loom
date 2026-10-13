@@ -1,4 +1,5 @@
 import * as NodeChildProcess from "node:child_process";
+import { collectHubStatus } from "./hub.mjs";
 export const usageMaxAgeMs = 15 * 60_000;
 
 function execute(file, args, env) {
@@ -156,13 +157,32 @@ export async function collectConnections(
       );
     }
   };
-  const [apps, cache, clients, service] = await Promise.all([
+  const [apps, cache, clients, service, hub] = await Promise.all([
     Promise.all(appChecks),
     cacheCheck(),
     clientConnections(config, env, command),
     serviceCheck(),
+    config.switchboardUrl ? collectHubStatus(config, env, { request, now }) : Promise.resolve(null),
   ]);
-  diagnostics.push(...apps, ...(cache ? [cache] : []), ...clients, ...(service ? [service] : []));
+  diagnostics.push(
+    ...apps,
+    ...(cache ? [cache] : []),
+    ...clients,
+    ...(service ? [service] : []),
+    ...(hub
+      ? [
+          record(
+            "switchboard-readiness",
+            "Shared AI readiness",
+            ["ready", "credits"].includes(hub.state) ? "ok" : hub.reachable ? "warning" : "error",
+            hub.detail,
+            ["ready", "credits"].includes(hub.state)
+              ? null
+              : "Open the Private AI hub view to inspect cached model constraints and supported recovery.",
+          ),
+        ]
+      : []),
+  );
   return { endpoints, diagnostics };
 }
 export function connectionSummary(report) {
@@ -250,7 +270,15 @@ async function clientConnections(config, env, command) {
 export async function collectPrivateConnections(
   config,
   env,
-  { command = execute, request = fetch, now = Date.now(), includeServer = true } = {},
+  {
+    command = execute,
+    request = fetch,
+    now = Date.now(),
+    includeServer = true,
+    provider,
+    model,
+    hub: collectHub = collectHubStatus,
+  } = {},
 ) {
   const loomCheck = async () => {
     if (!includeServer || config.profile !== "workstation") return null;
@@ -304,11 +332,16 @@ export async function collectPrivateConnections(
       );
     }
   };
-  const [clients, loom] = await Promise.all([clientConnections(config, env, command), loomCheck()]);
+  const [clients, loom, hub] = await Promise.all([
+    clientConnections(config, env, command),
+    loomCheck(),
+    collectHub(config, env, { request, now, provider, model }),
+  ]);
   const tailnet = clients.find((check) => check.id === "client-tailnet");
   const failure = clients.find((check) => check.state === "error");
   const catalog = clients.find((check) => check.id === "client-catalog");
-  const aiReady = !failure && catalog?.state === "ok";
+  const transportReady = !failure && catalog?.state === "ok";
+  const aiReady = transportReady && ["ready", "credits"].includes(hub.state);
   const components = [
     record(
       "tailscale",
@@ -324,26 +357,23 @@ export async function collectPrivateConnections(
     record(
       "switchboard",
       "Switchboard",
-      failure ? "error" : aiReady ? "ok" : "warning",
-      aiReady
-        ? "Private AI is available."
-        : failure
-          ? failure.detail
-          : "No usable private model catalog is available.",
+      failure || !hub.reachable ? "error" : aiReady ? "ok" : "warning",
+      aiReady ? hub.detail : failure ? failure.detail : hub.detail,
       aiReady
         ? null
         : failure?.repair ||
             catalog?.repair ||
-            "Open Switchboard to review the private gateway and client access.",
+            "Open Private AI hub to review account constraints, model eligibility and supported recovery.",
     ),
     ...(loom ? [loom] : []),
   ];
-  const state = !aiReady
-    ? "offline"
-    : components.some((check) => check.state !== "ok")
-      ? "attention"
-      : "ok";
-  return { version: 1, generatedAt: new Date(now).toISOString(), state, aiReady, components };
+  const state =
+    !transportReady || !hub.reachable
+      ? "offline"
+      : components.some((check) => check.state !== "ok")
+        ? "attention"
+        : "ok";
+  return { version: 1, generatedAt: new Date(now).toISOString(), state, aiReady, components, hub };
 }
 export function formatPrivateConnections(report) {
   return [

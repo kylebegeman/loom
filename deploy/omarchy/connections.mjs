@@ -104,11 +104,12 @@ export async function guidedConnectionReport(config, env, dependencies = {}) {
   const credential = checks.find((check) => check.id === "client-credential");
   const endpoint = checks.find((check) => check.id === "client-endpoint");
   const catalog = checks.find((check) => check.id === "client-catalog");
+  const readiness = checks.find((check) => check.id === "switchboard-readiness");
   const clientError = checks.some(
     (check) => check.id.startsWith("client-") && check.state === "error",
   );
   const ai =
-    !clientError && catalog?.state === "ok"
+    !clientError && catalog?.state === "ok" && (!readiness || readiness.state === "ok")
       ? "connected"
       : endpoint?.state === "error"
         ? "setup-needed"

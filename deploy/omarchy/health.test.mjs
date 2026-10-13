@@ -16,6 +16,38 @@ const config = {
 };
 const env = { HOME: "/private/home" };
 const now = Date.now();
+function freshHubStatus(at = now) {
+  return {
+    version: 1,
+    service: "switchboard",
+    kind: "hub-readiness-v1",
+    evaluatedAt: new Date(at).toISOString(),
+    updatedAt: new Date(at).toISOString(),
+    client: "kyle",
+    provider: null,
+    state: "ready",
+    health: { state: "ok", stale: false },
+    selected: null,
+    models: [
+      {
+        id: "gpt-6-luna",
+        provider: "codex",
+        state: "ready",
+        creditUse: "none",
+        reason: "Applied plan allowance",
+        eligibleRoutes: 1,
+        resetAt: null,
+      },
+    ],
+    summary: { readyModels: 1, creditModels: 0, unavailableModels: 0, unknownModels: 0 },
+  };
+}
+const readyHub = async () => ({
+  state: "ready",
+  reachable: true,
+  detail: "Applied plan allowance",
+  models: [],
+});
 const clientReport = {
   baseUrl: config.switchboardUrl,
   checks: [
@@ -35,6 +67,11 @@ async function command(file, args) {
   return { exit: 0, stdout: "active\n" };
 }
 function request(url, options) {
+  if (url.includes("/api/v1/readiness")) {
+    assert.equal(options.redirect, "error");
+    assert.equal(options.headers, undefined);
+    return Promise.resolve(Response.json(freshHubStatus()));
+  }
   assert.equal(options.redirect, "manual");
   assert.equal(options.method, "GET");
   assert.equal(options.headers, undefined);
@@ -156,6 +193,9 @@ test("doctor CLI preserves JSON and human reports, returns failure for broken ro
     if (req.url === "/status") {
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ updatedAt: new Date().toISOString(), accounts: [] }));
+    } else if (req.url.startsWith("/api/v1/readiness")) {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(freshHubStatus(Date.now())));
     } else {
       res.writeHead(303, { location: "/login" });
       res.end();
@@ -228,6 +268,10 @@ test("private connection status requires a usable catalog and checks the running
       },
       request: async (url, options) => {
         urls.push(url);
+        if (url.includes("/api/v1/readiness")) {
+          assert.equal(options.redirect, "error");
+          return Response.json(freshHubStatus());
+        }
         assert.equal(options.redirect, "manual");
         return new Response(null, { status: 401 });
       },
@@ -243,7 +287,10 @@ test("private connection status requires a usable catalog and checks the running
       ["loom", "ok"],
     ],
   );
-  assert.deepEqual(urls, ["http://127.0.0.1:3774/"]);
+  assert.deepEqual(
+    urls.sort(),
+    ["http://127.0.0.1:3774/", "https://dorothy.test/api/v1/readiness?client=kyle"].sort(),
+  );
   assert.ok(
     calls.every(
       ([, args]) => !args.some((arg) => ["run", "restart", "install", "up"].includes(arg)),
@@ -255,6 +302,7 @@ test("private status recovers after an unavailable hub without restarting an age
   const deps = {
     now,
     includeServer: false,
+    hub: readyHub,
     command: async () => ({
       exit: connected ? 0 : 1,
       stdout: JSON.stringify({
@@ -308,6 +356,7 @@ test("no visible models, unreadable diagnostics and endpoint errors never report
   ]) {
     const report = await collectPrivateConnections(config, env, {
       includeServer: false,
+      hub: readyHub,
       now,
       command: async () => ({ exit: 1, stdout: JSON.stringify({ checks }) }),
     });
@@ -320,6 +369,7 @@ test("laptop private status omits background service and a stopped workstation s
   for (const profile of ["laptop", "workstation"]) {
     const report = await collectPrivateConnections({ ...config, profile }, env, {
       now,
+      hub: readyHub,
       command: async (file) =>
         file === config.switchboardCli
           ? { exit: 0, stdout: JSON.stringify({ checks: healthyClientChecks }) }
