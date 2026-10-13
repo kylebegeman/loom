@@ -1,3 +1,5 @@
+import * as ProjectCheckoutManagement from "../project/ProjectCheckoutManagement.ts";
+import * as StorageCleanup from "../storageCleanup.ts";
 import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
 import * as GitHubHostSetup from "../sourceControl/GitHubHostSetup.ts";
 import { FetchHttpClient } from "effect/http";
@@ -28,6 +30,11 @@ import { SwitchboardLive } from "./switchboard/switchboard.ts";
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  ProjectCheckoutManagement.layer.pipe(
+    Layer.provide(ProcessRunner.layer),
+    Layer.provide(StorageCleanup.layer),
+    Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer)),
+  ),
   GitHubSetupFlow.layer.pipe(
     Layer.provide(GitHubHostSetup.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   ),

@@ -16,6 +16,7 @@ import {
   MINI_OFFLOAD_WS_METHODS as O,
   MODEL_PREVIEW_3D_WS_METHODS as M,
   PCB_PREVIEW_WS_METHODS as P,
+  PROJECT_CHECKOUT_WS_METHODS as C,
 } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "@effect/vitest";
 
@@ -248,4 +249,56 @@ it.effect("computer renaming requires settings write without mutating on a denie
       "Current",
     );
   }),
+);
+
+it.effect("checkout previews require read access and never start without it", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("checkout-preview-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    let inspected = false;
+    const inspect = Effect.sync(() => {
+      inspected = true;
+      return "preview";
+    });
+    const denied = yield* auth([]).effect(C.preview, inspect).pipe(Effect.flip);
+    expect(denied.requiredScope).toBe(AuthOrchestrationReadScope);
+    expect(inspected).toBe(false);
+    expect(yield* auth([AuthOrchestrationReadScope]).effect(C.preview, inspect)).toBe("preview");
+    expect(inspected).toBe(true);
+  }),
+);
+
+it.effect.each([C.adopt, C.setRetention])(
+  "checkout %s requires settings write before any ownership or policy mutation",
+  (method) =>
+    Effect.gen(function* () {
+      const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+        makeForkRpcAuth({
+          sessionId: AuthSessionId.make("checkout-mutation-test"),
+          subject: "test",
+          method: "bearer-access-token",
+          scopes,
+        });
+      let changed = false;
+      const update = Effect.sync(() => {
+        changed = true;
+        return "saved";
+      });
+      const denied = yield* auth([
+        AuthOrchestrationReadScope,
+        AuthOrchestrationOperateScope,
+        AuthTerminalOperateScope,
+      ])
+        .effect(method, update)
+        .pipe(Effect.flip);
+      expect(denied.requiredScope).toBe(AuthSettingsWriteScope);
+      expect(changed).toBe(false);
+      expect(yield* auth([AuthSettingsWriteScope]).effect(method, update)).toBe("saved");
+      expect(changed).toBe(true);
+    }),
 );

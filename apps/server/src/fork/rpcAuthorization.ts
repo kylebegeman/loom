@@ -1,3 +1,4 @@
+import { PROJECT_CHECKOUT_WS_METHODS as C } from "@t3tools/contracts/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "@t3tools/contracts/fork";
@@ -25,6 +26,9 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [C.preview]: AuthOrchestrationReadScope,
+  [C.adopt]: AuthSettingsWriteScope,
+  [C.setRetention]: AuthSettingsWriteScope,
   [N.rename]: AuthSettingsWriteScope,
   [N.get]: AuthOrchestrationReadScope,
   [GH.start]: AuthTerminalOperateScope,

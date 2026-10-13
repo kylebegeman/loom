@@ -15,6 +15,7 @@ import {
   scratchCheckoutOwned,
   type ScratchCheckoutManifest,
 } from "./ScratchCheckout.ts";
+import { ProjectCheckoutRetention } from "@t3tools/contracts/fork";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
 class ManagedProjectCheckoutError extends Schema.TaggedError<ManagedProjectCheckoutError>()(
@@ -22,7 +23,7 @@ class ManagedProjectCheckoutError extends Schema.TaggedError<ManagedProjectCheck
   { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
 ) {}
 
-const Receipt = Schema.Struct({
+const LegacyReceipt = Schema.Struct({
   version: Schema.Literal(1),
   workspaceRoot: Schema.String,
   repositoryIdentity: RepositoryIdentity,
@@ -35,7 +36,16 @@ const Receipt = Schema.Struct({
   released: Schema.Boolean,
   removalPath: Schema.NullOr(Schema.String),
 });
-type ManagedProjectCheckoutReceipt = typeof Receipt.Type;
+const CurrentReceipt = Schema.Struct({
+  ...LegacyReceipt.fields,
+  version: Schema.Literal(2),
+  ownershipSource: Schema.Literals(["clone", "adopted"]),
+  retention: ProjectCheckoutRetention,
+});
+const Receipt = Schema.Union([LegacyReceipt, CurrentReceipt]);
+type ManagedProjectCheckoutReceipt = Omit<typeof CurrentReceipt.Type, "version"> & {
+  readonly version: 1 | 2;
+};
 const Codec = Schema.fromJsonString(Receipt);
 const decode = Schema.decodeEffect(Codec);
 const encode = Schema.encodeEffect(Codec);
@@ -66,7 +76,10 @@ const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckou
   const target = receiptPath(receipt.workspaceRoot);
   const stage = `${target}.pending-${yield* randomUuidV4}`;
   yield* Effect.gen(function* () {
-    yield* fs.writeFileString(stage, yield* encode(receipt), { flag: "wx", mode: 0o600 });
+    yield* fs.writeFileString(stage, yield* encode({ ...receipt, version: 2 }), {
+      flag: "wx",
+      mode: 0o600,
+    });
     yield* Effect.scoped(fs.open(stage).pipe(Effect.flatMap((file) => file.sync)));
     yield* fs.rename(stage, target);
     const path = yield* Path.Path;
@@ -74,10 +87,15 @@ const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckou
   }).pipe(Effect.ensuring(fs.remove(stage, { force: true }).pipe(Effect.ignore)));
 });
 
-/** Only successful Loom clones create this durable proof. Opening a user's folder never does. */
+/** Clones and explicitly reviewed adoption create ownership proof. Opening a folder does not. */
 export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark")(function* (
   workspaceRoot: string,
   repositoryIdentity: RepositoryIdentity,
+  options?: {
+    readonly ownershipSource: "clone" | "adopted";
+    readonly retention: typeof ProjectCheckoutRetention.Type;
+    readonly projectId: ProjectId;
+  },
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -102,10 +120,12 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
   if ((yield* fs.realPath(path.join(cwd, ".git"))) !== path.join(cwd, ".git"))
     return yield* fail("The clone uses an external Git directory.");
   yield* writeReceipt({
-    version: 1,
+    version: 2,
     workspaceRoot: cwd,
     repositoryIdentity: { ...repositoryIdentity, rootPath: cwd },
-    projectId: null,
+    projectId: options?.projectId ?? null,
+    ownershipSource: options?.ownershipSource ?? "clone",
+    retention: options?.retention ?? "inherit",
     checkoutInode: root.ino.value,
     gitInode: git.ino.value,
     device: root.dev,
@@ -140,7 +160,11 @@ export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read
   const receipt = yield* decode(yield* fs.readFileString(target));
   if (receipt.workspaceRoot !== cwd || receipt.uid !== uid)
     return yield* fail("The project receipt belongs to a different folder or host.");
-  return receipt;
+  return {
+    ...receipt,
+    ownershipSource: receipt.version === 2 ? receipt.ownershipSource : "clone",
+    retention: receipt.version === 2 ? receipt.retention : "inherit",
+  } satisfies ManagedProjectCheckoutReceipt;
 }, mapFailure);
 
 export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.assertOwned")(function* (
@@ -151,6 +175,8 @@ export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.asser
   const path = yield* Path.Path;
   if ((yield* fs.realPath(target)) !== target)
     return yield* fail("The managed checkout is a symbolic link.");
+  if ((yield* fs.realPath(path.join(target, ".git"))) !== path.join(target, ".git"))
+    return yield* fail("The managed checkout uses an external Git directory.");
   const root = yield* fs.stat(target);
   const git = yield* fs.stat(path.join(target, ".git"));
   if (
@@ -168,6 +194,31 @@ export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.asser
     return yield* fail("The checkout was replaced or its ownership changed.");
 }, mapFailure);
 
+/** Call under the workspace lease when changing reviewed project metadata. */
+export const setManagedProjectRetention = Effect.fn("ManagedProjectCheckout.setRetention")(
+  function* (
+    workspaceRoot: string,
+    retention: typeof ProjectCheckoutRetention.Type,
+    projectId: ProjectId,
+    workspaceLeaseHeld = false,
+  ) {
+    const path = yield* Path.Path;
+    const cwd = path.resolve(workspaceRoot);
+    const update = Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const receipt = yield* readManagedProjectCheckout(cwd);
+      if (receipt === null) return yield* fail("This project is not a managed checkout.");
+      if (receipt.projectId !== null && receipt.projectId !== projectId)
+        return yield* fail("The managed checkout belongs to another project.");
+      if (yield* fs.exists(cwd)) yield* assertManagedProjectOwned(receipt);
+      else if (!receipt.released) return yield* fail("The managed checkout is missing.");
+      yield* writeReceipt({ ...receipt, projectId, retention });
+    });
+    return yield* workspaceLeaseHeld ? update : withWorkspaceLease(cwd, update);
+  },
+  mapFailure,
+);
+
 const recoveryInput = (receipt: ManagedProjectCheckoutReceipt, projectId: ProjectId) => ({
   scratchRoot: receipt.workspaceRoot.replace(/[\\/][^\\/]+$/, ""),
   worktreePath: receipt.workspaceRoot,
@@ -181,6 +232,8 @@ export const archiveManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.a
   receipt: ManagedProjectCheckoutReceipt,
   projectId: ProjectId,
 ) {
+  if (receipt.projectId !== null && receipt.projectId !== projectId)
+    return yield* fail("The managed checkout belongs to another project.");
   yield* assertManagedProjectOwned(receipt);
   const input = recoveryInput(receipt, projectId);
   const archive = yield* archiveScratchCheckout(input);
@@ -194,6 +247,8 @@ export const releaseManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
   archive: ScratchCheckoutManifest,
 ) {
   const fs = yield* FileSystem.FileSystem;
+  if (receipt.projectId !== null && receipt.projectId !== projectId)
+    return yield* fail("The managed checkout belongs to another project.");
   yield* assertManagedProjectOwned(receipt);
   if (receipt.removalPath !== null && (yield* fs.exists(receipt.removalPath)))
     return yield* fail(
@@ -259,7 +314,22 @@ export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
   const restore = Effect.gen(function* () {
     // Re-read state under the lease. Two clients can request the same released
     // checkout at once, and the later caller should use the first restoration.
-    if (yield* fs.exists(cwd)) return false;
+    if (yield* fs.exists(cwd)) {
+      const interrupted = yield* readManagedProjectCheckout(cwd);
+      if (interrupted === null || !interrupted.released) return false;
+      // A failed rename can leave the verified original checkout beside a durable tombstone.
+      // Explicit use cancels that incomplete release without trusting a replacement folder.
+      yield* assertManagedProjectOwned(interrupted);
+      yield* writeReceipt({
+        ...interrupted,
+        released: false,
+        removalPath:
+          interrupted.removalPath !== null && (yield* fs.exists(interrupted.removalPath))
+            ? interrupted.removalPath
+            : null,
+      });
+      return true;
+    }
     const receipt = yield* readManagedProjectCheckout(cwd);
     if (receipt === null || !receipt.released || receipt.projectId === null) return false;
     const projectId = receipt.projectId;
@@ -334,3 +404,14 @@ export const managedProjectProcessReason = Effect.fn("ManagedProjectCheckout.pro
   (effect) =>
     effect.pipe(Effect.orElseSucceed(() => "process working directories could not be verified")),
 );
+
+/** Explicit project policy takes precedence over environment defaults. */
+export const resolveManagedProjectRetention = (
+  retention: typeof ProjectCheckoutRetention.Type,
+  settings: { readonly projectOnSettle: boolean; readonly projectAfterDays: number | null },
+) =>
+  retention === "keep"
+    ? { projectOnSettle: false, projectAfterDays: null }
+    : retention === "release-on-settle"
+      ? { projectOnSettle: true, projectAfterDays: null }
+      : { projectOnSettle: settings.projectOnSettle, projectAfterDays: settings.projectAfterDays };

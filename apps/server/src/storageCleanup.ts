@@ -59,6 +59,7 @@ import {
   archiveManagedProjectCheckout,
   releaseManagedProjectCheckout,
   managedProjectProcessReason,
+  resolveManagedProjectRetention,
 } from "./workspace/ManagedProjectCheckout.ts";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
@@ -168,6 +169,61 @@ export class StorageCleanup extends Context.Service<
     readonly drain: Effect.Effect<void>;
   }
 >()("t3/storageCleanup") {}
+
+/** Coalesces automatic sweeps while preserving every manual result and drain barrier. */
+export const makeStorageCleanupWorker = <A, E, R>(
+  sweep: (trigger: StorageCleanupReport["trigger"]) => Effect.Effect<A, E, R>,
+) =>
+  Effect.gen(function* () {
+    let automaticState: "idle" | "queued" | "running" = "idle";
+    let followUp = false;
+    // Scheduling the flag and queue item must not be interrupted between the two.
+    const requestSweep: Effect.Effect<void> = Effect.uninterruptible(
+      Effect.suspend(() => {
+        if (automaticState === "running") {
+          followUp = true;
+          return Effect.void;
+        }
+        if (automaticState === "queued") return Effect.void;
+        automaticState = "queued";
+        return worker.enqueue(undefined);
+      }),
+    );
+    const worker = yield* makeDrainableWorker((completion: Deferred.Deferred<A, E> | undefined) =>
+      Effect.gen(function* () {
+        if (completion === undefined) {
+          automaticState = "running";
+          followUp = false;
+        }
+        const exit = yield* Effect.suspend(() =>
+          sweep(completion === undefined ? "automatic" : "manual"),
+        ).pipe(Effect.exit);
+        if (completion !== undefined) return yield* Deferred.done(completion, exit);
+        return yield* exit.pipe(
+          Effect.asVoid,
+          Effect.catchCause((cause) => Effect.logWarning("storage cleanup failed", { cause })),
+        );
+      }).pipe(
+        Effect.ensuring(
+          completion === undefined
+            ? Effect.suspend(() => {
+                automaticState = "idle";
+                const rerun = followUp;
+                followUp = false;
+                // Enqueue before the current item finishes so drain includes the rerun.
+                return rerun ? requestSweep : Effect.void;
+              })
+            : Effect.void,
+        ),
+      ),
+    );
+    const runNow = Effect.gen(function* () {
+      const completion = yield* Deferred.make<A, E>();
+      yield* worker.enqueue(completion);
+      return yield* Deferred.await(completion);
+    });
+    return { requestSweep, runNow, drain: worker.drain };
+  });
 
 const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
@@ -718,13 +774,15 @@ const make = Effect.gen(function* () {
     }
   });
 
+  let hasExplicitProjectSettlementPolicy = false;
+
   const cleanProjects = Effect.fn("StorageCleanup.cleanProjects")(function* (
     settings: ServerSettings["storageCleanup"],
     now: number,
     entries: StorageCleanupReportEntry[],
   ) {
-    if (settings.projectAfterDays === null && !settings.projectOnSettle) return;
     const snapshot = yield* readThreads();
+    let foundExplicitSettlementPolicy = false;
     for (const project of snapshot.projects) {
       const cwd = path.resolve(project.workspaceRoot);
       const entry: StorageCleanupReportEntry = {
@@ -741,9 +799,15 @@ const make = Effect.gen(function* () {
       yield* withWorkspaceLease(
         cwd,
         Effect.gen(function* () {
-          if (!(yield* fs.exists(cwd))) return;
           const receipt = yield* readManagedProjectCheckout(cwd);
-          if (receipt === null) return; // User-opened and pre-ownership clones are never candidates.
+          if (receipt === null) return; // User-opened roots require explicit reviewed adoption.
+          if (receipt.projectId !== null && receipt.projectId !== project.id)
+            return keep("managed checkout belongs to another project");
+          if (receipt.retention === "release-on-settle") foundExplicitSettlementPolicy = true;
+          if (!(yield* fs.exists(cwd))) return;
+          const projectPolicy = resolveManagedProjectRetention(receipt.retention, settings);
+          if (receipt.retention === "keep") return keep("project folder is kept on this computer");
+          if (projectPolicy.projectAfterDays === null && !projectPolicy.projectOnSettle) return;
           if (receipt.workspaceRoot !== cwd) return keep("project path is not canonical");
           if (receipt.removalPath !== null && (yield* fs.exists(receipt.removalPath)))
             return keep(`recovery files are retained in ${receipt.removalPath}`);
@@ -757,10 +821,30 @@ const make = Effect.gen(function* () {
             const currentProject = latest.projects.find((candidate) => candidate.id === project.id);
             if (currentProject === undefined || path.resolve(currentProject.workspaceRoot) !== cwd)
               return "project identity changed since check";
-            const policy = (yield* settingsService.getSettings).storageCleanup;
+            const currentReceipt = yield* readManagedProjectCheckout(cwd);
             if (
-              policy.projectAfterDays !== settings.projectAfterDays ||
-              policy.projectOnSettle !== settings.projectOnSettle
+              currentReceipt === null ||
+              currentReceipt.projectId !== receipt.projectId ||
+              currentReceipt.retention !== receipt.retention
+            )
+              return "project storage policy changed since check";
+            if (
+              currentReceipt.checkoutInode !== receipt.checkoutInode ||
+              currentReceipt.gitInode !== receipt.gitInode ||
+              currentReceipt.device !== receipt.device ||
+              currentReceipt.uid !== receipt.uid ||
+              currentReceipt.released !== receipt.released ||
+              currentReceipt.repositoryIdentity.canonicalKey !==
+                receipt.repositoryIdentity.canonicalKey
+            )
+              return "managed checkout identity changed since check";
+            const policy = resolveManagedProjectRetention(
+              currentReceipt.retention,
+              (yield* settingsService.getSettings).storageCleanup,
+            );
+            if (
+              policy.projectAfterDays !== projectPolicy.projectAfterDays ||
+              policy.projectOnSettle !== projectPolicy.projectOnSettle
             )
               return "settings changed since check";
             const currentHolders = latest.threads.filter(
@@ -799,10 +883,10 @@ const make = Effect.gen(function* () {
               ...currentHolders.map(storageCleanupActivityAt),
             );
             if (
-              !(settings.projectOnSettle && allSettled) &&
+              !(projectPolicy.projectOnSettle && allSettled) &&
               !(
-                settings.projectAfterDays !== null &&
-                activity < now - settings.projectAfterDays * DAY_MS
+                projectPolicy.projectAfterDays !== null &&
+                activity < now - projectPolicy.projectAfterDays * DAY_MS
               )
             )
               return "project retention has not elapsed";
@@ -836,6 +920,13 @@ const make = Effect.gen(function* () {
           // parent status. Their checkout/data lifecycle is not managed here.
           const tracked = (yield* cleanupGit(cwd, ["ls-files", "--stage"], "git files")).stdout;
           if (/^160000 /m.test(tracked)) return keep("repository contains submodules");
+          const worktrees = (yield* cleanupGit(
+            cwd,
+            ["worktree", "list", "--porcelain"],
+            "git worktrees",
+          )).stdout;
+          if (worktrees.split("\n").filter((line) => line.startsWith("worktree ")).length > 1)
+            return keep("project has linked worktrees");
           // Fetch every publication remote into a private namespace. Local remote-tracking
           // refs alone are stale evidence, and custom fetch mappings must not hide branches.
           const origin = (yield* cleanupGit(
@@ -937,6 +1028,7 @@ const make = Effect.gen(function* () {
         ),
       );
     }
+    hasExplicitProjectSettlementPolicy = foundExplicitSettlementPolicy;
   });
 
   const cleanScratch = Effect.fn("StorageCleanup.cleanScratch")(function* (
@@ -1234,30 +1326,14 @@ const make = Effect.gen(function* () {
     yield* SubscriptionRef.set(reportRef, latestReport);
     return latestReport;
   });
-  const worker = yield* makeDrainableWorker(
-    (completion: Deferred.Deferred<StorageCleanupReport, ServerSettingsError> | undefined) =>
-      sweep(completion === undefined ? "automatic" : "manual").pipe(
-        Effect.exit,
-        Effect.flatMap((exit) =>
-          completion === undefined
-            ? exit.pipe(
-                Effect.asVoid,
-                Effect.catchCause((cause) =>
-                  Effect.logWarning("storage cleanup failed", { cause }),
-                ),
-              )
-            : Deferred.done(completion, exit).pipe(Effect.asVoid),
-        ),
-      ),
-  );
-  const runNow = Effect.gen(function* () {
-    const completion = yield* Deferred.make<StorageCleanupReport, ServerSettingsError>();
-    yield* worker.enqueue(completion);
-    return yield* Deferred.await(completion);
-  });
+  const worker = yield* makeStorageCleanupWorker(sweep);
 
   const start = Effect.fn("StorageCleanup.start")(function* () {
     let lastSettings = yield* settingsService.getSettings.pipe(Effect.orDie);
+    const settlementCleanupEnabled = () =>
+      hasExplicitProjectSettlementPolicy ||
+      lastSettings.storageCleanup.projectOnSettle ||
+      anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnSettle);
     const unsubscribe = yield* terminals.subscribeMetadata((event) =>
       Effect.sync(() => {
         if (event.type === "snapshot") {
@@ -1275,9 +1351,8 @@ const make = Effect.gen(function* () {
           event.type !== "snapshot" &&
             (event.type !== "upsert" ||
               (event.terminal.status !== "running" && event.terminal.status !== "starting")) &&
-            (lastSettings.storageCleanup.projectOnSettle ||
-              anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnSettle))
-            ? worker.enqueue(undefined)
+            settlementCleanupEnabled()
+            ? worker.requestSweep
             : Effect.void,
         ),
       ),
@@ -1286,13 +1361,11 @@ const make = Effect.gen(function* () {
     const changes = yield* settingsService.subscribeChanges;
     const events = engine.streamDomainEvents;
     yield* forkParked(
-      worker
-        .enqueue(undefined)
-        .pipe(
-          Effect.andThen(worker.drain),
-          Effect.repeat(Schedule.spaced("1 hour")),
-          Effect.asVoid,
-        ),
+      worker.requestSweep.pipe(
+        Effect.andThen(worker.drain),
+        Effect.repeat(Schedule.spaced("1 hour")),
+        Effect.asVoid,
+      ),
     );
     yield* forkParked(
       Stream.runForEach(changes, (settings) => {
@@ -1303,20 +1376,17 @@ const make = Effect.gen(function* () {
         )
           return Effect.void;
         lastSettings = settings;
-        return worker.enqueue(undefined);
+        return worker.requestSweep;
       }),
     );
     yield* forkParked(
       Stream.runForEach(events, (event) =>
         (event.type === "thread.deleted" ||
           event.type === "thread.archived" ||
-          event.type === "provider-session.updated") &&
-        (lastSettings.storageCleanup.projectOnSettle ||
-          anyWorktreePolicy(
-            lastSettings,
-            (rules) => rules.worktreeOnDelete || rules.worktreeOnSettle,
-          ))
-          ? worker.enqueue(undefined)
+          (event.type === "provider-session.updated" && event.payload.status === "stopped")) &&
+        (settlementCleanupEnabled() ||
+          anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnDelete))
+          ? worker.requestSweep
           : Effect.void,
       ).pipe(
         Effect.catchCause((cause) =>
@@ -1327,8 +1397,8 @@ const make = Effect.gen(function* () {
   });
   yield* start();
   return StorageCleanup.of({
-    requestSweep: worker.enqueue(undefined),
-    runNow,
+    requestSweep: worker.requestSweep,
+    runNow: worker.runNow,
     latestReport: SubscriptionRef.get(reportRef),
     reports: SubscriptionRef.changes(reportRef),
     drain: worker.drain,

@@ -1,3 +1,4 @@
+import { PROJECT_CHECKOUT_WS_METHODS as C } from "./project-checkout.ts";
 import { AuthSettingsWriteScope } from "../auth.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "./computer-naming.ts";
 import { GITHUB_HOST_SETUP_WS_METHODS as GH } from "./github-host-setup.ts";
@@ -14,6 +15,8 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [C.adopt]: AuthSettingsWriteScope,
+  [C.setRetention]: AuthSettingsWriteScope,
   [N.rename]: AuthSettingsWriteScope,
   [GH.start]: AuthTerminalOperateScope,
   [GH.cancel]: AuthTerminalOperateScope,

@@ -173,16 +173,15 @@ function azureDevOpsRepositoryKey(host: string, segments: ReadonlyArray<string>)
  * Normalize a git remote URL into a stable comparison key.
  */
 export function normalizeGitRemoteUrl(value: string): string {
-  const normalized = value
-    .trim()
-    .replace(/\/+$/g, "")
-    .replace(/\.git$/i, "")
-    .toLowerCase();
+  const trimmed = value.trim().toLowerCase();
+  const normalized = trimmed.replace(/\/+$/g, "").replace(/\.git$/i, "");
 
-  if (/^(?:ssh|https?|git):\/\//i.test(normalized)) {
+  if (/^(?:ssh|https?|git):\/\//i.test(trimmed)) {
     try {
-      const url = new URL(normalized);
-      const repositorySegments = url.pathname.split("/").filter((segment) => segment.length > 0);
+      const url = new URL(trimmed);
+      // Query and fragment metadata must not prevent trimming the repository's suffix.
+      const repositoryPath = url.pathname.replace(/\/+$/g, "").replace(/\.git$/i, "");
+      const repositorySegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
       if (url.hostname && repositorySegments.length > 1) {
         return (
           azureDevOpsRepositoryKey(url.hostname, repositorySegments) ??

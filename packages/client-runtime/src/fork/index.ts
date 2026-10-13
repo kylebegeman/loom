@@ -15,3 +15,5 @@ export * from "./mini-offload.ts";
 export * from "./workspace-handoff-destinations.ts";
 
 export * from "./computer-naming.ts";
+
+export * from "./project-checkout.ts";

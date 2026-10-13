@@ -29,6 +29,33 @@ describe("normalizeGitRemoteUrl", () => {
     );
   });
 
+  it.each([
+    "https://user:private-token@github.com/T3Tools/T3Code.git?access_token=secret#secret",
+    "https://github.com/T3Tools/T3Code.git#revision",
+    "ssh://git@github.com/T3Tools/T3Code.git?option=value#revision",
+    "git://github.com/T3Tools/T3Code.git///?option=value#revision",
+  ])(
+    "keeps the same repository identity after removing credentials and URL metadata: %s",
+    (remote) => {
+      expect(normalizeGitRemoteUrl(remote)).toBe(
+        normalizeGitRemoteUrl("https://github.com/T3Tools/T3Code.git"),
+      );
+    },
+  );
+
+  it("removes only one repository suffix and preserves non-URL fallback keys", () => {
+    expect(normalizeGitRemoteUrl("https://github.com/team/repo.git.git")).toBe(
+      "github.com/team/repo.git",
+    );
+    expect(normalizeGitRemoteUrl("git@github.com:team/repo.git.git")).toBe(
+      "github.com/team/repo.git",
+    );
+    expect(normalizeGitRemoteUrl("  /Local/Repository.git/  ")).toBe("/local/repository");
+    expect(normalizeGitRemoteUrl("https://invalid host/team/repo.git")).toBe(
+      "https://invalid host/team/repo",
+    );
+  });
+
   it("preserves nested group paths for providers like GitLab", () => {
     expect(normalizeGitRemoteUrl("git@gitlab.com:T3Tools/platform/T3Code.git")).toBe(
       "gitlab.com/t3tools/platform/t3code",

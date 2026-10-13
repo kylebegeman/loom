@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
+import * as PlatformError from "effect/PlatformError";
 import * as Layer from "effect/Layer";
 import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
@@ -34,6 +35,8 @@ import * as ProcessRunner from "./processRunner.ts";
 import {
   markManagedProjectCheckout,
   restoreManagedProjectCheckout,
+  readManagedProjectCheckout,
+  setManagedProjectRetention,
 } from "./workspace/ManagedProjectCheckout.ts";
 import { buildRepositoryIdentity } from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
@@ -279,6 +282,7 @@ const cleanupFixture = Effect.gen(function* () {
   let editBeforeRemoval = false;
   let openSessionCwd: string | null = null;
   let fullStatusCalls = 0;
+  let onPublicationFetch: Effect.Effect<void, PlatformError.PlatformError> | undefined;
   let terminalListener:
     | Parameters<TerminalManager.TerminalManager["Service"]["subscribeMetadata"]>[0]
     | undefined;
@@ -289,6 +293,11 @@ const cleanupFixture = Effect.gen(function* () {
         Effect.gen(function* () {
           if (editBeforeRemoval && input.args.includes("remove"))
             yield* fs.writeFileString(`${worktree}/tracked.txt`, "late edit\n");
+          if (onPublicationFetch !== undefined && input.args[0] === "fetch") {
+            const change = onPublicationFetch;
+            onPublicationFetch = undefined;
+            yield* change;
+          }
           return yield* git.execute(input);
         }),
       statusDetailsLocal: (...args) => {
@@ -450,6 +459,9 @@ const cleanupFixture = Effect.gen(function* () {
           projectOnSettle,
         },
       };
+    },
+    onPublicationFetch: (change: Effect.Effect<void, PlatformError.PlatformError>) => {
+      onPublicationFetch = change;
     },
     fullStatusCalls: () => fullStatusCalls,
   };
@@ -1372,6 +1384,180 @@ const primaryFixture = Effect.gen(function* () {
   return { ...f, cwd, mark };
 });
 describe("primary project storage cleanup", () => {
+  it.live(
+    "project-specific settlement releases with environment cleanup off and survives restoration",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(null);
+          f.setThreads([shell({ settledOverride: "settled" })]);
+          yield* setManagedProjectRetention(
+            f.cwd,
+            "release-on-settle",
+            ProjectId.make("project-1"),
+          );
+          const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+          expect(entry?.outcome, entry?.reason).toBe("removed");
+          expect(yield* f.fs.exists(f.cwd)).toBe(false);
+          expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(true);
+          expect((yield* readManagedProjectCheckout(f.cwd))?.retention).toBe("release-on-settle");
+          expect(yield* f.fs.readFileString(`${f.cwd}/tracked.txt`)).toBe("original\n");
+        }),
+      ),
+  );
+  it.live(
+    "explicit settlement policy releases after terminal close, including after restoration",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(null);
+          f.setThreads([shell({ settledOverride: "settled" })]);
+          yield* setManagedProjectRetention(
+            f.cwd,
+            "release-on-settle",
+            ProjectId.make("project-1"),
+          );
+          const openTerminal = () =>
+            f.noteTerminal({
+              type: "upsert",
+              terminal: {
+                threadId: "thread-1",
+                terminalId: "primary-terminal",
+                cwd: f.cwd,
+                worktreePath: null,
+                status: "running",
+                pid: 123,
+                exitCode: null,
+                exitSignal: null,
+                hasRunningSubprocess: true,
+                label: "Development server",
+                updatedAt: DateTime.formatIso(at(0)),
+              },
+            });
+          const closeTerminal = () =>
+            f.noteTerminal({
+              type: "remove",
+              threadId: "thread-1",
+              terminalId: "primary-terminal",
+            });
+          yield* openTerminal();
+          expect(
+            (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.reason,
+          ).toBe("Open terminal");
+          yield* closeTerminal();
+          yield* f.service.drain;
+          expect(yield* f.fs.exists(f.cwd)).toBe(false);
+          // A sweep while absent must retain the policy used by terminal-close events.
+          yield* f.service.runNow;
+          expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(true);
+          yield* openTerminal();
+          yield* closeTerminal();
+          yield* f.service.drain;
+          const afterRestore = yield* f.service.latestReport;
+          expect(afterRestore?.entries.find((entry) => entry.kind === "project")?.reason).toBe(
+            "Workspace preparation is pending",
+          );
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+          // Restoration retains this marker until setup completes successfully.
+          expect(yield* f.fs.exists(`${f.cwd}.t3-setup-pending`)).toBe(true);
+          yield* f.fs.remove(`${f.cwd}.t3-setup-pending`);
+          yield* openTerminal();
+          yield* closeTerminal();
+          yield* f.service.drain;
+          const afterSetup = yield* f.service.latestReport;
+          expect(
+            yield* f.fs.exists(f.cwd),
+            afterSetup?.entries.find((entry) => entry.kind === "project")?.reason,
+          ).toBe(false);
+        }),
+      ),
+  );
+  it.live.each(["age", "settlement"] as const)(
+    "project-specific keep overrides environment %s cleanup",
+    (policy) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(policy === "age" ? 8 : null, policy === "settlement");
+          f.setThreads([shell({ settledOverride: "settled" })]);
+          yield* setManagedProjectRetention(f.cwd, "keep", ProjectId.make("project-1"));
+          const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+          expect(entry?.outcome, entry?.reason).toBe("kept");
+          expect(entry?.reason).toMatch(/kept on this computer/i);
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        }),
+      ),
+  );
+  it.live("project-specific inherit preserves disabled environment cleanup", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        yield* f.mark;
+        f.setProjectPolicy(null);
+        f.setThreads([shell({ settledOverride: "settled" })]);
+        expect(
+          (yield* f.service.runNow).entries.some(
+            (entry) => entry.kind === "project" && entry.outcome === "removed",
+          ),
+        ).toBe(false);
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      }),
+    ),
+  );
+  it.live("project-specific cleanup rejects a receipt bound to another project", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        yield* f.mark;
+        yield* setManagedProjectRetention(
+          f.cwd,
+          "release-on-settle",
+          ProjectId.make("another-project"),
+        );
+        f.setThreads([shell({ settledOverride: "settled" })]);
+        const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+        expect(entry?.outcome, entry?.reason).toBe("kept");
+        expect(entry?.reason).toMatch(/another project/i);
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      }),
+    ),
+  );
+  it.live(
+    "project-specific cleanup rechecks a keep policy written during publication verification",
+    () =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(null);
+          f.setThreads([shell({ settledOverride: "settled" })]);
+          yield* setManagedProjectRetention(
+            f.cwd,
+            "release-on-settle",
+            ProjectId.make("project-1"),
+          );
+          f.onPublicationFetch(
+            Effect.gen(function* () {
+              const receiptPath = `${f.cwd}.t3-project-owned.json`;
+              const receipt = JSON.parse(yield* f.fs.readFileString(receiptPath));
+              yield* f.fs.writeFileString(
+                receiptPath,
+                JSON.stringify({ ...receipt, retention: "keep" }),
+              );
+            }),
+          );
+          const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+          expect(entry?.outcome, entry?.reason).toBe("kept");
+          expect(entry?.reason).toMatch(/policy changed/i);
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        }),
+      ),
+  );
   it.live("keeps unowned project roots, then releases and restores a published managed clone", () =>
     runCleanupTest(
       Effect.gen(function* () {
@@ -1452,9 +1638,7 @@ describe("primary project storage cleanup", () => {
         }
         const report = yield* f.service.runNow;
         const entry = report.entries.find((entry) => entry.kind === "project");
-        expect(entry?.outcome, entry?.reason).toBe(
-          protection === "linked-worktree" ? "failed" : "kept",
-        );
+        expect(entry?.outcome, entry?.reason).toBe("kept");
         expect(yield* f.fs.exists(f.cwd)).toBe(true);
       }),
     ),

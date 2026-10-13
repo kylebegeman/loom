@@ -1,3 +1,4 @@
+import { ProjectCheckoutRpcGroup } from "./project-checkout.ts";
 import { ComputerNamingRpcGroup } from "./computer-naming.ts";
 import { GitHubHostSetupRpcGroup, GITHUB_HOST_SETUP_WS_METHODS } from "./github-host-setup.ts";
 import { WorkspaceHandoffRpcGroup } from "./workspace-handoff.ts";
@@ -39,6 +40,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  ProjectCheckoutRpcGroup,
   ComputerNamingRpcGroup,
   MiniOffloadRpcGroup,
   SwitchboardRpcGroup,
