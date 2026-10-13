@@ -530,6 +530,163 @@ async function withLock(body: () => Promise<void>) {
   }
 }
 
+/** Optional local iOS delivery uses the same already-published source as desktop. */
+export function iosPublishConfig(raw: unknown) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Loom iOS publishing configuration must be an object.");
+  }
+  const value = raw as Record<string, unknown>;
+  if (value.enabled === false) return null;
+  if (value.enabled !== true)
+    throw new Error("Loom iOS publishing requires an explicit enabled setting.");
+  const teamId = value.teamId;
+  const appId = value.appId;
+  const profile = value.profile;
+  const groups = value.groups;
+  const exportOptions = value.exportOptions;
+  if (typeof teamId !== "string" || !/^[A-Z0-9]{10}$/.test(teamId) || teamId === "ARK85ZXQ4Z") {
+    throw new Error("Configure your own Apple team for Loom iOS publishing.");
+  }
+  if (typeof appId !== "string" || !/^[1-9][0-9]+$/.test(appId) || appId === "6787819824") {
+    throw new Error("Configure your own App Store Connect app for Loom iOS publishing.");
+  }
+  if (typeof profile !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(profile)) {
+    throw new Error("Configure a named asc authentication profile for Loom iOS publishing.");
+  }
+  if (
+    groups !== undefined &&
+    (!Array.isArray(groups) ||
+      !groups.every(
+        (group) => typeof group === "string" && group.trim() !== "" && !/[\r\n,]/.test(group),
+      ))
+  ) {
+    throw new Error("Loom iOS TestFlight groups must be an array of nonempty names or IDs.");
+  }
+  if (
+    exportOptions !== undefined &&
+    (typeof exportOptions !== "string" || !NodePath.isAbsolute(exportOptions))
+  ) {
+    throw new Error("Loom iOS export options must be an absolute plist path.");
+  }
+  return {
+    teamId,
+    appId,
+    profile,
+    groups: groups as string[] | undefined,
+    exportOptions: exportOptions as string | undefined,
+  };
+}
+
+/** Use the newest verification attempt for this exact source, including reruns. */
+export function iosSourceQualification(
+  runs: readonly {
+    headSha: string;
+    path: string;
+    status: string;
+    conclusion: string | null;
+    databaseId: number;
+  }[],
+  commit: string,
+) {
+  const latest = runs
+    .filter(
+      (item) =>
+        item.headSha === commit && item.path === ".github/workflows/loom-ios-testflight.yml",
+    )
+    .sort((a, b) => b.databaseId - a.databaseId)[0];
+  return latest?.status === "completed" && latest.conclusion === "success"
+    ? "qualified"
+    : "pending";
+}
+
+export function automaticIosEnvironment(env: NodeJS.ProcessEnv) {
+  const result = { ...env };
+  for (const key of ["LOOM_IOS_BUILD_NUMBER", "LOOM_IOS_SOURCE_SHA", "LOOM_IOS_EXPORT_OPTIONS"])
+    delete result[key];
+  return result;
+}
+
+async function publishIos(release: Release) {
+  const configPath = NodePath.join(STATE_DIR, "ios.json");
+  if (!(await exists(configPath))) return;
+  const config = iosPublishConfig(JSON.parse(await NodeFSP.readFile(configPath, "utf8")));
+  if (!config) return;
+  const runs = JSON.parse(
+    run("gh", [
+      "run",
+      "list",
+      "--repo",
+      REPOSITORY,
+      "--workflow",
+      "loom-ios-testflight.yml",
+      "--commit",
+      release.commit,
+      "--limit",
+      "20",
+      "--json",
+      "headSha,workflowName,status,conclusion,databaseId",
+    ]),
+  ) as {
+    headSha: string;
+    workflowName: string;
+    status: string;
+    conclusion: string | null;
+    databaseId: number;
+  }[];
+  const qualification = iosSourceQualification(
+    runs.map((item) => ({ ...item, path: ".github/workflows/loom-ios-testflight.yml" })),
+    release.commit,
+  );
+  if (qualification !== "qualified") {
+    console.log(
+      "Desktop is published; waiting for successful Loom iOS verification of this exact source before TestFlight delivery.",
+    );
+    return;
+  }
+  if (run("git", ["status", "--porcelain", "--untracked-files=no"], { cwd: SOURCE_DIR })) {
+    throw new Error(
+      "The isolated publisher checkout has changes; iOS delivery cannot change its source.",
+    );
+  }
+  run("git", ["checkout", "--quiet", "--detach", release.commit], { cwd: SOURCE_DIR });
+  const script = NodePath.join(SOURCE_DIR, "scripts/fork/ios-release.ts");
+  if (!(await exists(script))) {
+    console.log(
+      "This published source predates Loom iOS delivery; waiting for the next qualified release.",
+    );
+    return;
+  }
+  const result = NodeChildProcess.spawnSync(
+    NodeProcess.execPath,
+    [
+      script,
+      "release",
+      "--output-dir",
+      NodePath.join(STATE_DIR, "ios", release.recordName),
+      "--source-sha",
+      release.commit,
+    ],
+    {
+      cwd: SOURCE_DIR,
+      env: {
+        ...automaticIosEnvironment(buildEnvironment(SOURCE_DIR, NodeProcess.env)),
+        ASC_PROFILE: config.profile,
+        ASC_STRICT_AUTH: "true",
+        LOOM_IOS_TEAM_ID: config.teamId,
+        LOOM_IOS_ASC_APP_ID: config.appId,
+        LOOM_IOS_TESTFLIGHT_GROUPS: config.groups?.join(",") ?? "",
+        ...(config.exportOptions ? { LOOM_IOS_EXPORT_OPTIONS: config.exportOptions } : {}),
+      },
+      stdio: "inherit",
+    },
+  );
+  if (result.error) throw new Error("Could not start Loom iOS delivery.", { cause: result.error });
+  if (result.status !== 0)
+    throw new Error(
+      "Desktop is published; Loom iOS delivery failed and will retry on the next publisher run.",
+    );
+}
+
 async function main(command: string | undefined) {
   if (!NodeProcess.versions.node.startsWith("24."))
     throw new Error(
@@ -561,10 +718,17 @@ async function main(command: string | undefined) {
     const release = await latestIntegration();
     const state = await releaseState(release);
     console.log(`${new Date().toISOString()} ${release.tag}: ${state}`);
-    if (command === "check" || (command === "publish" && state === "published")) return;
+    if (command === "check") return;
+    if (command === "publish" && state === "published") {
+      await publishIos(release);
+      return;
+    }
     const prepared = await prepare(release);
     console.log(`Prepared ${prepared.record}/Loom.app`);
-    if (command === "publish") await publish(release, prepared);
+    if (command === "publish") {
+      await publish(release, prepared);
+      await publishIos(release);
+    }
   });
 }
 

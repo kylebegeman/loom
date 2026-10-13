@@ -2,10 +2,10 @@
  * Loom fork branding. This file is fork-owned: upstream T3 Code never edits it,
  * and every upstream file that reads it marks the seam with `fork: brand`.
  *
- * Only what a person sees changes. Identifiers that locate existing data keep
- * their T3 names: the app id, the userData folder, `~/.t3`, URL schemes,
- * storage keys, and the packaged `package.json` name that Electron derives the
- * macOS Keychain "Safe Storage" item from. See FORK.md at the repository root.
+ * Desktop identifiers that locate existing data keep their T3 names: the app
+ * id, userData folder, `~/.t3`, URL schemes, storage keys, and the package name
+ * Electron derives its macOS Keychain "Safe Storage" item from. Native iOS
+ * uses a separate Loom identity and TestFlight channel. See FORK.md.
  */
 export const BRAND_NAME = "Loom";
 

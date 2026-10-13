@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off globalDate:off - Host-side simulator and emulator automation uses Node subprocess and timing APIs directly.
 
+// fork: mobile-identity - Native iOS artifacts use Loom identifiers.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeNet from "node:net";
@@ -10,6 +11,8 @@ import * as NodeProcess from "node:process";
 import * as NodeURL from "node:url";
 
 import { PNG } from "pngjs";
+
+import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts";
 
 import showcaseConfig, {
   type ShowcaseAppearance,
@@ -33,7 +36,9 @@ import {
 const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
 const ANDROID_PACKAGE = "com.t3tools.t3code";
-const APP_SCHEME = "t3code";
+const productionIdentity = resolveLoomMobileIdentity({ APP_VARIANT: "production" });
+const APP_SCHEME = productionIdentity.scheme;
+const IOS_PRODUCT_NAME = productionIdentity.appName;
 // expo-dev-launcher reads these off the manifest URL and updates the dev menu
 // preferences before the app loads, keeping captures free of dev chrome.
 const DEV_CLIENT_LAUNCH_FLAGS = "disableOnboarding=1&disableFab=1&disableAutoLaunch=1";
@@ -42,7 +47,7 @@ const SERVER_HOST = "0.0.0.0";
 const IOS_SIMULATOR_ARCH = NodeProcess.arch === "arm64" ? "arm64" : "x86_64";
 const IOS_APP_PATH = NodePath.join(
   MOBILE_ROOT,
-  ".showcase/ios-derived-data/Build/Products/Debug-iphonesimulator/T3Code.app",
+  `.showcase/ios-derived-data/Build/Products/Debug-iphonesimulator/${IOS_PRODUCT_NAME}.app`,
 );
 const ANDROID_APK_PATH = NodePath.join(
   MOBILE_ROOT,
@@ -707,9 +712,9 @@ async function buildIos(): Promise<string> {
     "xcodebuild",
     [
       "-workspace",
-      NodePath.join(MOBILE_ROOT, "ios/T3Code.xcworkspace"),
+      NodePath.join(MOBILE_ROOT, `ios/${IOS_PRODUCT_NAME}.xcworkspace`),
       "-scheme",
-      "T3Code",
+      IOS_PRODUCT_NAME,
       "-configuration",
       "Debug",
       "-sdk",

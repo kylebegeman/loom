@@ -1,3 +1,4 @@
+// fork: mobile-identity - Native iOS artifacts use Loom identifiers.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -11,6 +12,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Argument, Command } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+
+import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts";
 
 export type NativePlatform = "ios" | "android";
 const NativeClientRecord = Schema.Struct({ fingerprint: Schema.String, binary: Schema.String });
@@ -135,7 +138,10 @@ export const hashBundle = Effect.fn("hashBundle")(function* (root: string) {
 });
 type FileSystemError = import("effect/PlatformError").PlatformError;
 
-const bundleId = "com.t3tools.t3code.dev";
+const developmentIdentity = resolveLoomMobileIdentity({ APP_VARIANT: "development" });
+const developmentBundleId = (platform: NativePlatform) =>
+  platform === "ios" ? developmentIdentity.iosBundleIdentifier : "com.t3tools.t3code.dev";
+const iosProductName = developmentIdentity.appName.replace(/\s/g, "");
 const roots = Effect.gen(function* () {
   const path = yield* Path.Path;
   const repo = yield* path.fromFileUrl(new URL("../", import.meta.url));
@@ -267,6 +273,7 @@ export const installedBinary = Effect.fn("installedBinary")(function* (
   device: string,
   run: typeof command = command,
 ) {
+  const bundleId = developmentBundleId(platform);
   if (platform === "ios") {
     const apps = yield* run("xcrun", ["simctl", "listapps", device]);
     if (!apps.includes(`"${bundleId}"`)) return null;
@@ -360,15 +367,17 @@ const main = Command.make(
             [
               "xcodebuild",
               "-workspace",
-              path.join(mobile, "ios/T3CodeDev.xcworkspace"),
+              path.join(mobile, `ios/${iosProductName}.xcworkspace`),
               "-scheme",
-              "T3CodeDev",
+              iosProductName,
               "-configuration",
               "Debug",
               "-destination",
               `id=${device}`,
               "-derivedDataPath",
               output,
+              "CODE_SIGNING_ALLOWED=NO",
+              "CODE_SIGNING_REQUIRED=NO",
               "build",
             ],
             true,
@@ -379,7 +388,7 @@ const main = Command.make(
               "simctl",
               "install",
               device,
-              path.join(output, "Build/Products/Debug-iphonesimulator/T3CodeDev.app"),
+              path.join(output, `Build/Products/Debug-iphonesimulator/${iosProductName}.app`),
             ],
             true,
           );

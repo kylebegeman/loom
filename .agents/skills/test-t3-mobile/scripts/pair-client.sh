@@ -15,6 +15,15 @@ mobile_origin="$3"
 agent_device_command="$4"
 shift 4
 
+mobile_app_id="com.kylebegeman.loom.dev"
+previous_argument=""
+for argument in "$@"; do
+  if [[ "$previous_argument" == "--platform" && "$argument" == "android" ]] || [[ "$argument" == "--platform=android" ]]; then
+    mobile_app_id="com.t3tools.t3code.dev"
+  fi
+  previous_argument="$argument"
+done
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
@@ -40,11 +49,11 @@ const query = new URLSearchParams({
   pairingUrl: process.env.PAIRING_URL,
   autoConnect: "1",
 });
-process.stdout.write(`t3code-dev://connections/new?${query}`);
+process.stdout.write(`loom-dev://connections/new?${query}`);
 NODE
 )"
 
-if ! "$agent_device_command" open com.t3tools.t3code.dev "$deep_link" "$@" \
+if ! "$agent_device_command" open "$mobile_app_id" "$deep_link" "$@" \
   >/dev/null 2>&1; then
   echo "AgentDevice could not open the pairing route. Check the Device panel and retry with a fresh credential." >&2
   exit 1

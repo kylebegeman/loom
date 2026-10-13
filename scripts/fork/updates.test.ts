@@ -11,6 +11,9 @@ import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
   buildEnvironment,
   launchAgent,
+  iosPublishConfig,
+  iosSourceQualification,
+  automaticIosEnvironment,
   prunePublishedBuilds,
   releaseForTag,
   restoreBuildInputs,
@@ -206,4 +209,84 @@ describe("Loom update publishing", () => {
     expect(plist).toContain("<string>/Users/Kyle &amp; Co/Loom Updates/updates.ts</string>");
     expect(plist).toContain("<string>/tmp/Loom &lt;updates&gt;.log</string>");
   });
+});
+
+describe("optional Loom iOS delivery", () => {
+  const ownConfig = {
+    enabled: true,
+    teamId: "23W93ZUURR",
+    appId: "1234567890",
+    profile: "loom-personal",
+    groups: ["Personal testing"],
+  };
+
+  it("keeps desktop publishing independent until iOS delivery is enabled", () => {
+    expect(iosPublishConfig({ enabled: false })).toBeNull();
+    expect(() => iosPublishConfig({ ...ownConfig, enabled: undefined })).toThrow(
+      "explicit enabled",
+    );
+    expect(iosPublishConfig(ownConfig)).toMatchObject({
+      profile: "loom-personal",
+      groups: ["Personal testing"],
+    });
+  });
+
+  it("rejects upstream app/team targets before local automatic delivery", () => {
+    expect(() => iosPublishConfig({ ...ownConfig, appId: "6787819824" })).toThrow(
+      "your own App Store Connect app",
+    );
+    expect(() => iosPublishConfig({ ...ownConfig, teamId: "ARK85ZXQ4Z" })).toThrow(
+      "your own Apple team",
+    );
+  });
+
+  it("rejects ambiguous credential and export/group configuration", () => {
+    expect(() => iosPublishConfig({ ...ownConfig, profile: "" })).toThrow("named asc");
+    expect(() => iosPublishConfig({ ...ownConfig, exportOptions: "relative.plist" })).toThrow(
+      "absolute plist",
+    );
+    expect(() => iosPublishConfig({ ...ownConfig, groups: ["Internal,External"] })).toThrow(
+      "groups",
+    );
+    expect(() => iosPublishConfig({ ...ownConfig, groups: ["Internal\nExternal"] })).toThrow(
+      "groups",
+    );
+  });
+});
+
+it("waits for the latest successful iOS verification of the exact published commit", () => {
+  const run = {
+    headSha: COMMIT,
+    path: ".github/workflows/loom-ios-testflight.yml",
+    status: "completed",
+    conclusion: "success",
+    databaseId: 1,
+  };
+  expect(iosSourceQualification([], COMMIT)).toBe("pending");
+  expect(iosSourceQualification([run], COMMIT)).toBe("qualified");
+  expect(iosSourceQualification([{ ...run, headSha: "f".repeat(40) }], COMMIT)).toBe("pending");
+  expect(iosSourceQualification([{ ...run, path: ".github/workflows/release.yml" }], COMMIT)).toBe(
+    "pending",
+  );
+  expect(
+    iosSourceQualification(
+      [run, { ...run, databaseId: 2, status: "in_progress", conclusion: null }],
+      COMMIT,
+    ),
+  ).toBe("pending");
+  expect(
+    iosSourceQualification([run, { ...run, databaseId: 2, conclusion: "failure" }], COMMIT),
+  ).toBe("pending");
+});
+
+it("does not inherit interactive build or export overrides into automatic iOS delivery", () => {
+  const env = {
+    LOOM_IOS_BUILD_NUMBER: "1",
+    LOOM_IOS_SOURCE_SHA: COMMIT,
+    LOOM_IOS_EXPORT_OPTIONS: "/stale.plist",
+    ASC_PROFILE: "some-profile",
+    PATH: "/usr/bin",
+  };
+  expect(automaticIosEnvironment(env)).toEqual({ ASC_PROFILE: "some-profile", PATH: "/usr/bin" });
+  expect(env.LOOM_IOS_BUILD_NUMBER).toBe("1");
 });
