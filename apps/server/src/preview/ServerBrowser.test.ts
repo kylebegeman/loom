@@ -54,7 +54,23 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
     async connectDesktopPage(endpoint: string) {
       const context = makeContext(undefined, desktopPageInitialUrl);
       desktopConnections.push({ endpoint, context });
-      return { browser: { close: async () => {} }, page: context.page as unknown as Page };
+      const failure = desktopInitializationFailure;
+      desktopInitializationFailure = null;
+      if (failure) {
+        context.newCDPSession = async () => {
+          desktopInitializationRejected?.resolve();
+          throw failure;
+        };
+      }
+      return {
+        browser: {
+          close: async () => {
+            desktopCloseStarted?.resolve();
+            await desktopCloseGate?.promise;
+          },
+        },
+        page: context.page as unknown as Page,
+      };
     }
     async close() {
       for (const context of contexts) await context.close();
@@ -174,6 +190,12 @@ const desktopRenders = (tabId: string) => {
 const releasedDesktopTabs: Array<string> = [];
 const desktopConnections: Array<{ endpoint: string; context: ReturnType<typeof makeContext> }> = [];
 let desktopPageInitialUrl = "about:blank";
+let desktopDetachListening = Promise.withResolvers<void>();
+let desktopCloseGate: PromiseWithResolvers<void> | null = null;
+let desktopCloseStarted: PromiseWithResolvers<void> | null = null;
+let desktopAttachChecked: PromiseWithResolvers<void> | null = null;
+let desktopInitializationFailure: Error | null = null;
+let desktopInitializationRejected: PromiseWithResolvers<void> | null = null;
 const testThread = {
   threadId: ThreadId.make("browser-test-thread"),
   providerSessionId: "agent-a",
@@ -206,13 +228,18 @@ const dependencies = Layer.mergeAll(
   Layer.succeed(DesktopChannel.DesktopBrowserChannel, {
     // Only tabs a test marks render on the desktop; the rest stay headless.
     available: true,
-    awaitAttached: (key) => Effect.sync(() => desktopRenders(key.tabId)),
+    awaitAttached: (key) =>
+      Effect.sync(() => {
+        desktopAttachChecked?.resolve();
+        return desktopRenders(key.tabId);
+      }),
     detached: Stream.callback<{ threadId: string; tabId: string }>((queue) =>
       Effect.acquireRelease(
         Effect.sync(() => {
           const onDetach = (key: { threadId: string; tabId: string }) =>
             Queue.offerUnsafe(queue, key);
           desktopDetaches.on("detach", onDetach);
+          desktopDetachListening.resolve();
           return onDetach;
         }),
         (onDetach) => Effect.sync(() => desktopDetaches.off("detach", onDetach)),
@@ -300,6 +327,12 @@ beforeEach(() => {
   releasedDesktopTabs.length = 0;
   desktopConnections.length = 0;
   desktopPageInitialUrl = "about:blank";
+  desktopDetachListening = Promise.withResolvers<void>();
+  desktopCloseGate = null;
+  desktopCloseStarted = null;
+  desktopAttachChecked = null;
+  desktopInitializationFailure = null;
+  desktopInitializationRejected = null;
 });
 
 it.live("readiness none responds immediately but takeover input waits for navigation commit", () =>
@@ -1514,6 +1547,57 @@ it.live("a desktop page the desktop takes back reconnects instead of closing", (
       // The session survives, and the next viewer reaches the page again.
       const { sessions } = yield* manager.list({ threadId: scope.thread.threadId });
       expect(sessions.map((session) => session.tabId)).toContain(opened.tabId);
+      yield* browser.attachViewer(viewerInput(opened.tabId, false));
+      expect(desktopConnections).toHaveLength(2);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("a desktop reconnect waits until its previous relay has been released", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      const manager = yield* Manager.PreviewManager;
+      yield* Effect.yieldNow;
+      desktopRendersNext = true;
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* browser.attachViewer(viewerInput(opened.tabId, false));
+      desktopCloseGate = Promise.withResolvers<void>();
+      desktopCloseStarted = Promise.withResolvers<void>();
+      yield* Effect.promise(() => desktopDetachListening.promise);
+      desktopDetaches.emit("detach", { threadId: scope.thread.threadId, tabId: opened.tabId });
+      yield* Effect.promise(() => desktopCloseStarted!.promise);
+      desktopAttachChecked = Promise.withResolvers<void>();
+      const reconnecting = yield* browser
+        .attachViewer(viewerInput(opened.tabId, false))
+        .pipe(Effect.forkChild);
+      yield* Effect.promise(() => desktopAttachChecked!.promise);
+      // Drain queued promise continuations while the old close is deliberately held.
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      expect(desktopConnections).toHaveLength(1);
+      expect(releasedDesktopTabs).toEqual([]);
+      desktopCloseGate.resolve();
+      yield* Fiber.join(reconnecting);
+      expect(releasedDesktopTabs).toEqual([opened.tabId]);
+      expect(desktopConnections).toHaveLength(2);
+    }).pipe(Effect.ensuring(Effect.sync(() => desktopCloseGate?.resolve()))),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live("failed desktop initialization releases its relay without closing the native page", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const browser = yield* ServerBrowser.ServerBrowser;
+      const manager = yield* Manager.PreviewManager;
+      yield* Effect.yieldNow;
+      desktopRendersNext = true;
+      desktopInitializationFailure = new Error("CDP session initialization failed");
+      desktopInitializationRejected = Promise.withResolvers<void>();
+      const opened = yield* manager.open({ threadId: scope.thread.threadId, runtime: "server" });
+      yield* Effect.promise(() => desktopInitializationRejected!.promise);
+      yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)));
+      expect(releasedDesktopTabs).toEqual([opened.tabId]);
+      expect(desktopConnections[0]!.context.page.close).not.toHaveBeenCalled();
       yield* browser.attachViewer(viewerInput(opened.tabId, false));
       expect(desktopConnections).toHaveLength(2);
     }),

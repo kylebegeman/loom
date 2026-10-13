@@ -69,6 +69,10 @@ export function createCdpRelayConnection(
 ): CdpRelayConnection {
   const send = (message: Record<string, unknown>) => write(JSON.stringify(message));
   let attached = false;
+  // Relay connections share Electron's debugger, whose enabled Runtime domain
+  // survives a disconnect. Reset it once so the new client hears existing
+  // default document contexts; Runtime.enable alone does not report them again.
+  let runtimeReset: Promise<unknown> | undefined;
   /**
    * Sessions this relay invented. Extra page sessions (Playwright's
    * `newCDPSession`) all reach the one real debugger session, so each gets the
@@ -157,7 +161,7 @@ export function createCdpRelayConnection(
     }
   };
 
-  const pageCommand = (command: CdpCommand): Promise<unknown> => {
+  const pageCommand = async (command: CdpCommand): Promise<unknown> => {
     const child = sessions.get(command.sessionId!) === "page" ? undefined : command.sessionId;
     // The page itself is already running, but its child frames are not:
     // Playwright auto-attaches with waitForDebuggerOnStart, so Chromium pauses
@@ -165,6 +169,10 @@ export function createCdpRelayConnection(
     // it left sign-in checks and captchas, which run in such frames, frozen.
     if (command.method === "Runtime.runIfWaitingForDebugger" && child === undefined) {
       return Promise.resolve({});
+    }
+    if (command.method === "Runtime.enable" && child === undefined) {
+      runtimeReset ??= target.send("Runtime.disable", {}, undefined);
+      await runtimeReset;
     }
     return target.send(command.method, command.params ?? {}, child);
   };

@@ -97,6 +97,60 @@ describe("CDP relay", () => {
     expect(send.mock.calls).toEqual([["Runtime.runIfWaitingForDebugger", {}, "iframe-session"]]);
   });
 
+  it("reports existing document contexts again when a server reconnects", async () => {
+    let runtimeEnabled = false;
+    let relay: ReturnType<typeof createCdpRelayConnection>;
+    const written: Array<Record<string, unknown>> = [];
+    const send = vi.fn(async (method: string) => {
+      if (method === "Runtime.disable") runtimeEnabled = false;
+      if (method === "Runtime.enable" && !runtimeEnabled) {
+        runtimeEnabled = true;
+        relay.event(
+          "Runtime.executionContextCreated",
+          { context: { id: 1, name: "", auxData: { isDefault: true } } },
+          "",
+        );
+      }
+      return {};
+    });
+    const connect = async () => {
+      relay = createCdpRelayConnection(makeTarget(send), (raw) => written.push(JSON.parse(raw)));
+      relay.receive(JSON.stringify({ id: 1, method: "Target.setAutoAttach", params: {} }));
+      await settle();
+      written.length = 0;
+      relay.receive(
+        JSON.stringify({ id: 2, method: "Runtime.enable", sessionId: "t3-preview-page" }),
+      );
+      await settle();
+    };
+    await connect();
+    expect(written).toContainEqual(
+      expect.objectContaining({ method: "Runtime.executionContextCreated" }),
+    );
+    await connect();
+    expect(written).toContainEqual(
+      expect.objectContaining({ method: "Runtime.executionContextCreated" }),
+    );
+  });
+
+  it("resets Runtime only once and leaves child execution contexts alone", async () => {
+    const send = vi.fn<CdpRelayTarget["send"]>(async () => ({}));
+    const relay = createCdpRelayConnection(makeTarget(send), () => {});
+    for (const [id, sessionId] of [
+      [1, "t3-preview-page"],
+      [2, "t3-preview-page"],
+      [3, "iframe-session"],
+    ] as const) {
+      relay.receive(JSON.stringify({ id, method: "Runtime.enable", sessionId }));
+    }
+    await settle();
+    expect(send.mock.calls.filter(([method]) => method === "Runtime.disable")).toEqual([
+      ["Runtime.disable", {}, undefined],
+    ]);
+    expect(send).toHaveBeenCalledWith("Runtime.enable", {}, "iframe-session");
+    expect(send.mock.calls.filter(([method]) => method === "Runtime.enable")).toHaveLength(3);
+  });
+
   it("routes tab events to the page session once the page is announced", async () => {
     const written: Array<Record<string, unknown>> = [];
     const relay = createCdpRelayConnection(makeTarget(vi.fn()), (raw) =>
