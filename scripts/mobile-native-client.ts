@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { Argument, Command } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import Plist from "plist";
 
 import { resolveLoomMobileIdentity } from "./fork/mobileIdentity.ts";
 
@@ -277,9 +278,28 @@ export const installedBinary = Effect.fn("installedBinary")(function* (
   if (platform === "ios") {
     const apps = yield* run("xcrun", ["simctl", "listapps", device]);
     if (!apps.includes(`"${bundleId}"`)) return null;
-    return yield* hashBundle(
-      yield* run("xcrun", ["simctl", "get_app_container", device, bundleId, "app"]),
+    const app = yield* run("xcrun", ["simctl", "get_app_container", device, bundleId, "app"]);
+    // Linker-only simulator signatures can launch but cannot use Keychain or App Groups.
+    const encoded = yield* run("codesign", ["-d", "--entitlements", "-", "--xml", app]).pipe(
+      Effect.catchTags({ NativeClientError: () => Effect.succeed("") }),
     );
+    const decoded = yield* Effect.try(() => Plist.parse(encoded)).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    const schema = Schema.Struct({
+      "keychain-access-groups": Schema.Array(Schema.String),
+      "com.apple.security.application-groups": Schema.Array(Schema.String),
+    });
+    if (
+      !Schema.is(schema)(decoded) ||
+      !decoded["keychain-access-groups"].some(
+        (group) =>
+          group === bundleId || (/^[A-Z0-9]{10}\./.test(group) && group.slice(11) === bundleId),
+      ) ||
+      !decoded["com.apple.security.application-groups"].includes(`group.${bundleId}`)
+    )
+      return null;
+    return yield* hashBundle(app);
   }
   const installed = yield* run("adb", ["-s", device, "shell", "pm", "list", "packages", bundleId]);
   if (!installed.split("\n").some((line) => line.trim() === `package:${bundleId}`)) return null;
@@ -376,8 +396,13 @@ const main = Command.make(
               `id=${device}`,
               "-derivedDataPath",
               output,
-              "CODE_SIGNING_ALLOWED=NO",
-              "CODE_SIGNING_REQUIRED=NO",
+              // Preserve entitlements with local ad-hoc signing, without an Apple account.
+              "CODE_SIGNING_ALLOWED=YES",
+              "CODE_SIGN_IDENTITY=-",
+              "CODE_SIGN_STYLE=Manual",
+              "DEVELOPMENT_TEAM=",
+              "PROVISIONING_PROFILE=",
+              "PROVISIONING_PROFILE_SPECIFIER=",
               "build",
             ],
             true,
