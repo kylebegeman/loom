@@ -473,6 +473,10 @@ test("service setup updates its owned gateway environment and preserves later us
   NodeAssert.ok(
     (await NodeFSP.readFile(dropIn, "utf8")).includes("http://gateway.example.test:8317"),
   );
+  const serviceEnvironment = await NodeFSP.readFile(dropIn, "utf8");
+  NodeAssert.ok(serviceEnvironment.includes(NodePath.dirname(process.execPath)));
+  NodeAssert.ok(serviceEnvironment.includes(NodePath.join(f.p.home, ".local/share/mise/shims")));
+  NodeAssert.ok(serviceEnvironment.includes(NodePath.join(f.p.home, ".local/bin")));
   const updated = { ...config, switchboardUrl: "https://other-gateway.example.test" };
   await install(updated, { env: f.env });
   await main(["service", "install"], f.env);

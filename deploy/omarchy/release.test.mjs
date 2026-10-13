@@ -301,3 +301,23 @@ test("retained releases without native status members remain verifiable", async 
   const hash = createHash("sha256").update(bytes).digest("hex");
   assert.equal((await verifyRelease(f.bundle, hash)).version, "test-1");
 });
+
+test("partial contextual runtimes are refused while pre-feature releases remain valid", async (t) => {
+  const f = await fixture(t);
+  const manifestFile = NodePath.join(f.bundle, "release.json");
+  const manifest = JSON.parse(await NodeFSP.readFile(manifestFile, "utf8"));
+  const { createHash } = await import("node:crypto");
+  async function removeMember(name) {
+    delete manifest.files["pack/" + name];
+    await NodeFSP.rm(NodePath.join(f.bundle, "pack", name));
+    await NodeFSP.chmod(manifestFile, 0o600);
+    const bytes = JSON.stringify(manifest, null, 2) + "\n";
+    await NodeFSP.writeFile(manifestFile, bytes);
+    return createHash("sha256").update(bytes).digest("hex");
+  }
+  let hash = await removeMember("loom-environment.mjs");
+  await assert.rejects(verifyRelease(f.bundle, hash), /inventory is incomplete/);
+  hash = await removeMember("workbench.mjs");
+  hash = await removeMember("control-desk.mjs");
+  assert.equal((await verifyRelease(f.bundle, hash)).version, "test-1");
+});

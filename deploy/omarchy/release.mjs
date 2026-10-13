@@ -15,7 +15,12 @@ const packFiles = [
   "availability.mjs",
   "notifications.mjs",
   "commission.mjs",
+  "workbench.mjs",
+  "control-desk.mjs",
+  "loom-environment.mjs",
 ];
+const contextualFiles = ["workbench.mjs", "control-desk.mjs", "loom-environment.mjs"];
+const contextualDependencies = [...contextualFiles, "capture.mjs", "connections.mjs"];
 const statusFiles = ["manifest.json", "LoomStatus.qml", "StatusModel.js"];
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 async function ordinary(path, directory = false) {
@@ -71,12 +76,20 @@ export async function buildRelease(output, version, sourceDir = source) {
             "availability.mjs",
             "notifications.mjs",
             "commission.mjs",
+            "workbench.mjs",
+            "control-desk.mjs",
+            "loom-environment.mjs",
           ].includes(name) ||
           error.code !== "ENOENT"
         )
           throw error;
       }
     }
+    if (
+      contextualFiles.some((name) => includedPackFiles.includes(name)) &&
+      !contextualDependencies.every((name) => includedPackFiles.includes(name))
+    )
+      throw Error("The contextual utilities need their complete runtime dependencies.");
     const entries = [
       ...includedPackFiles.map((name) => ["pack/" + name, NodePath.join(sourceDir, name)]),
       ...statusEntries,
@@ -149,6 +162,8 @@ export async function verifyRelease(directory, expected) {
     JSON.stringify(actual) !== JSON.stringify(expectedFiles) ||
     !requiredPackFiles.every((file) => manifest.files["pack/" + file]) ||
     !manifest.files["iris/manifest.json"] ||
+    (contextualFiles.some((file) => manifest.files["pack/" + file]) &&
+      !contextualDependencies.every((file) => manifest.files["pack/" + file])) ||
     (statusFiles.some((file) => manifest.files["pack/status/" + file]) &&
       !statusFiles.every((file) => manifest.files["pack/status/" + file]))
   )
@@ -319,6 +334,9 @@ async function adoptInstalled(p, directory, releases) {
             "availability.mjs",
             "notifications.mjs",
             "commission.mjs",
+            "workbench.mjs",
+            "control-desk.mjs",
+            "loom-environment.mjs",
           ].includes(name)
         )
           continue;

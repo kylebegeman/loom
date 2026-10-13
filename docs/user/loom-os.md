@@ -62,6 +62,73 @@ menu parser, Theme picker, About action, Loom entries, file ownership and interr
 updates. It reports personal overrides that could break an integration rather than
 rewriting them. It does not contact app servers, read AI credentials or run inference.
 
+## AI workbench
+
+Choose **LoomOS → AI workbench**, or find it in Loom actions. Deliberately select
+text, a text file, a saved screenshot, or context exported by an app. Review the
+preview before explaining, summarizing or capturing it. The workbench reads only
+the chosen input and freezes it for retries, so a later clipboard change does not
+change the request.
+
+Explanation and summary run in the configured Loom environment through Switchboard.
+You can cancel a running request and review its thread in Loom. Requests use a
+separate scratch thread with the provider's normal plan and approval controls. A missing route,
+connection or permission produces recovery guidance; the workbench never changes
+to a direct provider. Review the result before copying it or sending it to Office
+or Atlas. The receiving app keeps its existing review and permission checks.
+
+```sh
+loom-os workbench --selected --operation explain
+loom-os workbench --file /absolute/path/to/error.txt --operation explain
+loom-os workbench --screenshot /absolute/path/to/screenshot.png
+loom-os workbench --text "A deliberately selected excerpt" --operation summarize
+loom-os workbench --file /absolute/path/to/source.txt --json
+```
+
+The last command prints a local preview without inference or capture. Screenshots
+must be selected saved images; opening the workbench does not take a screenshot
+or read another window. App context is explicit exported context, not permission
+to read other app records. Original context and generated results retain their
+source information through reviewed capture.
+
+Text and results are limited to 64 KiB. PNG/JPEG screenshots are limited to 4 MiB
+and 20 million pixels and require a visual preview. Results can be edited before
+capture when an app has a smaller limit; source information is retained.
+
+App-provided files use the `loom-workbench-context` version 1 JSON format with
+`app`, `title`, `text` and `url`. Optional `reference` follows the app's exact-item
+format. Optional `permissions` contains annotations rather than access grants.
+These files are an integration boundary; Office and Atlas do not currently offer
+an automatic workbench export control. Selected text remains their everyday path.
+
+## Workstation control desk
+
+Choose **LoomOS → Workstation control desk**, or find it in Loom actions. Review
+running, waiting, failed and completed work from the configured Loom environment
+and the app services that expose authorized access. Refresh is deliberate and
+bounded. Opening the desk starts no agent, job or service restart.
+
+Select a record to open its exact thread or app destination. Approvals remain in
+the owning service; a notification, a task row or an OS connection does not grant
+approval. Unsupported controls and disconnected sources explain their limits.
+Exact Loom threads open the owning environment's existing web client, which may
+request normal browser pairing.
+
+Connect the local Loom environment explicitly once. Its scoped credential stays
+in the desktop Secret Service, separate from app browser logins and Switchboard
+credentials. A revoked or expired connection needs reconnecting. Disconnect
+revokes only native access and preserves running work.
+
+```sh
+loom-os desk connect
+loom-os desk --json
+loom-os desk disconnect
+```
+
+Office and Atlas enforce their existing CLI permissions. Operator-only queues
+remain unavailable when the app does not expose them to that client. Use the
+owning app to review those queues.
+
 ## Open and capture
 
 Open the applications from your launcher or the LoomOS menu. You can also use

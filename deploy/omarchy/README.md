@@ -166,6 +166,21 @@ approval behavior. Failed launches keep the terminal open with the diagnostic so
 an unreachable hub is visible. Install and uninstall ownership checks preserve
 edited adapters and personal settings.
 
+## Context and background-work utilities
+
+The native **AI workbench** previews deliberately selected text, files, saved
+screenshots and app-exported context. Explanation and summary use the owning Loom
+environment with verified Switchboard routing. Copying and app capture require
+review; Office and Atlas retain capture authorization and provenance.
+
+The **Workstation control desk** reads the existing Loom environment and supported
+app service records. It exposes exact destinations, supported controls and
+explicit disconnected or unavailable states. Its refresh is bounded and opening
+it neither executes work nor restarts a service. `loom-os desk connect` explicitly
+commissions the local scoped connection in Secret Service; credentials never go
+in pack configuration or portable recipes. See [Using LoomOS](../../docs/user/loom-os.md)
+for input selection, review and connection commands.
+
 ## Profiles and background work
 
 Both profiles install the same applications and utilities. Laptop is the default
@@ -196,7 +211,7 @@ Avoid unqualified `t3 update`: its release discovery still targets upstream.
 
 A user systemd drop-in persists the non-secret `LOOM_SWITCHBOARD_*`,
 `T3CODE_RELEASE_BASE_URL`, `T3CODE_HOME`, and configured `T3CODE_HOST`/`T3CODE_PORT`
-settings. It lives beside T3's unit in `$HOME/.config/systemd/user`, including when
+settings plus the commissioned Node and user CLI search paths. It lives beside T3's unit in `$HOME/.config/systemd/user`, including when
 the pack's own configuration uses another XDG directory. These service settings do
 not change the native desktop app's environment. T3 uses one `t3code.service` per
 user; the pack preserves a unit that belongs to another data directory. Choose a

@@ -30,8 +30,8 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [8. Iris consistency](08-iris-consistency.md)                                        | completed            | #9              |
 | [7. Respectful actionable notifications](07-respectful-actionable-notifications.md)  | completed            | #2, #12         |
 | [10. Reproducible LoomOS setup](10-reproducible-loomos-setup.md)                     | completed            | #4, #6, #8, #9  |
-| [11. Contextual actions and AI workbench](11-contextual-actions-and-ai-workbench.md) | approved             | #3, #12         |
-| [13. Native workstation control desk](13-native-workstation-control-desk.md)         | approved             | #2, #7, #12     |
+| [11. Contextual actions and AI workbench](11-contextual-actions-and-ai-workbench.md) | completed            | #3, #12         |
+| [13. Native workstation control desk](13-native-workstation-control-desk.md)         | completed            | #2, #7, #12     |
 | [17. Coordinated updates and recovery](17-coordinated-updates-and-recovery.md)       | approved             | #9, #10, #13    |
 | [16. Coherent offline ecosystem](16-coherent-offline-ecosystem.md)                   | approved             | #12             |
 | [15. Laptop/workstation continuity](15-laptop-workstation-continuity.md)             | approved             | #2, #4, #5, #16 |

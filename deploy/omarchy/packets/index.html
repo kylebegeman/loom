@@ -1219,7 +1219,7 @@
     >
       <summary>
         <span class="number">#11</span><span class="title">Contextual actions and AI workbench</span
-        ><span class="status">approved</span>
+        ><span class="status">completed</span>
       </summary>
       <div class="body">
         <p>
@@ -1263,7 +1263,72 @@
           reachable; secure lock and necessary local authentication remain normal user flows.
         </p>
         <h3>Evidence</h3>
-        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+        <ul>
+          <li>
+            Implemented explicit selection, clipboard, UTF-8 file, saved PNG/JPEG screenshot and
+            version 1 app-exported JSON context through the native workbench, LoomOS menu, Loom
+            actions and CLI. Preview freezes the chosen input for retries; cancellation,
+            error/recovery, edited results, copying and reviewed Office/Atlas capture retain source
+            provenance. Opening reads no unrelated window or record.
+          </li>
+          <li>
+            Explanation and summary reuse visible T3 scratch threads and the verified Switchboard
+            route. Native credentials use separate HTTP/MCP audiences in Secret Service, scoped to
+            orchestration read/operate with expiry and explicit revocation. Provider plan and
+            approval controls remain authoritative; prompts prohibit tools but the existing runtime
+            does not enforce an answer-only sandbox. No direct-provider fallback is introduced.
+          </li>
+          <li>
+            All 262 integration-pack tests pass on Mac and native x64 Linux, covering context
+            limits, malformed files/images, required image preview, changed clipboard, routing
+            refusal, retry/cancellation, capture limits, permissions and retained provenance. The
+            Mac pack gate, scoped lint/format and generated-view checks pass. Five
+            failing-before-fix transport cases prove bounded session cleanup on success, denial,
+            cancellation, initialization-body cancellation and cleanup failure. Native full-gate
+            formatting was not claimed because the extracted source lacks the workspace formatter
+            setup.
+          </li>
+          <li>
+            Authorized native text explanation and selected-image summary completed through
+            Switchboard in separate fresh threads. The image request uploaded exactly one explicitly
+            selected 592-byte synthetic PNG and correctly described purple/yellow panels. Both
+            recorded zero tool calls, subagents or runtime approval requests and left zero active
+            jobs. In-flight cancellation uses focused synthetic coverage; interrupting the completed
+            exact run was an idempotent no-op.
+          </li>
+          <li>
+            Inspected native preview/result screens and actual Office summary and Atlas source
+            reviews. The Office review contained the generated summary, original image hash and Loom
+            thread identity; Atlas contained deliberately selected source text and its hash. Neither
+            review saved personal fixture records, and original app windows were retained. Real
+            namespaced T3 IDs and the installed capture-watcher subprocess defect were corrected
+            with regressions.
+          </li>
+          <li>
+            Workstation runs immutable pack 20261012.43, manifest SHA256
+            c00943b7494a1192efc1fd6479e94b3f6de33de18a9b2b582f4f316d7e6f53c1. All 35 members verify
+            and match installed bytes. Actual .43 to .42 rollback and .43 reapplication passed; no
+            activation is pending. Native compatibility and connection health report zero errors and
+            warnings.
+          </li>
+          <li>
+            Independently built Mac and Workstation recovery kits match recipe SHA256
+            2eb0d8f90d8c77d19d295336271c6b939728b5de72c44485602cb27d69272f69. Supported
+            commissioning reports all 16 checks ready and preserves all 40 recorded file/mode
+            checks, Iris Dark, gradient branding, credentials, personal bindings and DND off. The
+            existing Loom, Office, Switchboard and server inventories are reused; the reviewed Atlas
+            client is pinned. Pack rollback and recovery refresh preserve running T3 PID 319427 and
+            earlier kits.
+          </li>
+          <li>
+            App-provided context has a supported explicit file contract; automatic Office/Atlas
+            export controls remain a future app feature. Selected text is the current everyday
+            integration. Text/results are bounded to 64 KiB, images to 4 MiB and 20 million pixels,
+            and optional instructions to 2,000 bytes. Evidence:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/. Packet #14 remains
+            excluded.
+          </li>
+        </ul>
       </div>
     </details>
     <details
@@ -1272,7 +1337,7 @@
     >
       <summary>
         <span class="number">#13</span><span class="title">Native workstation control desk</span
-        ><span class="status">approved</span>
+        ><span class="status">completed</span>
       </summary>
       <div class="body">
         <p>See and manage existing background work, failures and approvals from Omarchy.</p>
@@ -1308,7 +1373,78 @@
           reachable; secure lock and necessary local authentication remain normal user flows.
         </p>
         <h3>Evidence</h3>
-        <p class="muted">No completion evidence yet. Approved scope remains open.</p>
+        <ul>
+          <li>
+            Implemented the native workstation control desk through the LoomOS menu, launcher, Loom
+            actions and CLI. It reads existing Loom threads/schedules, Office health/approval
+            metadata and bounded authorized Atlas run metadata. Refresh is explicit and limited to
+            once every five seconds; opening starts no job, approval, inference or service restart.
+          </li>
+          <li>
+            Exact destinations and reviewed controls stay with their owners. Loom exposes exact-run
+            interruption and schedule pause/resume; Atlas cancellation requires its advertised
+            operation and current permissions. Approvals, retries and unsupported operator controls
+            remain in their owning app with explicit reasons. Exact Loom threads use the existing
+            web route with encoded namespaced IDs; native desktop has no supported exact-thread
+            ingress.
+          </li>
+          <li>
+            Atlas added atlas.runs.list and enforced existing evidence/history/private permission
+            fencing on cancellation. Source f2742e75c961ecda54b832fe2785dc03c13b6a92 is deployed as
+            release-20261012-workbench-f2742e7-runtime with service-plan-23-workbench and
+            commission-plan-23-workbench. Its reviewed client is installed on Workstation. Required
+            Atlas checks passed 105 script tests with eight documented opt-in skips, 529 frontend
+            tests, server checks and four actual PostgreSQL metadata-bound/permission-race tests. No
+            schema, dependency or Iris release was needed.
+          </li>
+          <li>
+            Atlas original-key verification, fresh encrypted pre-release capture/retrieved restore
+            proof f0efa664dabcb2ec1ab47baf844ce65dc4aca11e5f8f1e83048ccac8a94bf3c6 and installed
+            commissioning passed. Private HTTPS advertises release d790ffe4532452249f7a; the service
+            and 60-second backup timer are healthy, with first tick exit 0. Retained authorities and
+            accepted backups remain available. The current authority guide is owned by Atlas.
+          </li>
+          <li>
+            All 262 pack tests pass on Mac and native x64 Linux, including
+            running/waiting/failed/completed/disconnected states, stale exact-run checks, missing
+            controls, owner denial and refresh limits. Final review found that T3 MCP transport
+            sessions lack idle expiry; bounded DELETE cleanup now releases each allocated session
+            without changing the original operation outcome. Actual native read-only proof records
+            two initialized/two terminated sessions, zero active jobs and unchanged service PID
+            319427.
+          </li>
+          <li>
+            Final native desk shows connected Loom, Office and bounded Atlas sources and correct
+            completed/failed rows. Selecting the Office failure shows unavailable stop/resume
+            reasons. Exact Loom thread opening reached the owning web client and its ordinary
+            browser pairing gate; signed-in browser thread rendering is not claimed. The acceptance
+            browser was closed without touching personal app windows; a fresh .43 desk is left open
+            for review. Existing Office backlog was recorded as a separate owner follow-up without
+            retrying jobs or making approval decisions.
+          </li>
+          <li>
+            Workstation runs immutable pack 20261012.43, manifest SHA256
+            c00943b7494a1192efc1fd6479e94b3f6de33de18a9b2b582f4f316d7e6f53c1. All 35 members verify
+            and match installed bytes. Actual .43 to .42 rollback and .43 reapplication passed; no
+            activation is pending. Native compatibility and connection health report zero errors and
+            warnings.
+          </li>
+          <li>
+            Independently built Mac and Workstation recovery kits match recipe SHA256
+            2eb0d8f90d8c77d19d295336271c6b939728b5de72c44485602cb27d69272f69. Supported
+            commissioning reports all 16 checks ready and preserves all 40 recorded file/mode
+            checks, Iris Dark, gradient branding, credentials, personal bindings and DND off. The
+            existing Loom, Office, Switchboard and server inventories are reused; the reviewed Atlas
+            client is pinned. Pack rollback and recovery refresh preserve running T3 PID 319427 and
+            earlier kits.
+          </li>
+          <li>
+            Evidence and scoped Office follow-up:
+            /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/. The desk reads
+            bounded metadata rather than broad Atlas state or conversation/evidence history. No
+            replacement runner or execution authority was introduced. Packet #14 remains excluded.
+          </li>
+        </ul>
       </div>
     </details>
     <details

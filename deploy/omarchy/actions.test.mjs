@@ -36,6 +36,8 @@ test("actions are discoverable by ordinary words and keep existing shortcut hint
     ["AI", "ask-ai"],
     ["connection", "connections"],
     ["notes", "open-office"],
+    ["screenshot", "workbench"],
+    ["approvals", "desk"],
   ])
     NodeAssert.ok(
       filterLoomActions(actions, query).some((a) => a.id === id),
@@ -238,4 +240,49 @@ test("retry is explicit and rechecks the selected capability before executing ag
   NodeAssert.equal(executes, 1);
   NodeAssert.equal(catalogs, 2);
   NodeAssert.ok(messages.some((m) => m.includes("Restore the installed Loom executable")));
+});
+
+test("workbench CLI preview works before AI connection and applies app origin validation", async (t) => {
+  const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-workbench-cli-"));
+  t.after(() => NodeFSP.rm(root, { recursive: true, force: true }));
+  const env = { HOME: root };
+  const p = paths(env);
+  await NodeFSP.mkdir(NodePath.dirname(p.configFile), { recursive: true });
+  await NodeFSP.writeFile(
+    p.configFile,
+    JSON.stringify({
+      version: 1,
+      profile: "laptop",
+      officeUrl: config.officeUrl,
+      loomExecutable: "/test/loom",
+    }),
+  );
+  const saved = console.log;
+  let output;
+  console.log = (value) => {
+    output = value;
+  };
+  t.after(() => {
+    console.log = saved;
+  });
+  await main(["workbench", "--text", "Deliberately selected fixture", "--json"], env);
+  const preview = JSON.parse(output);
+  NodeAssert.equal(preview.readOnly, true);
+  NodeAssert.match(preview.preview, /Deliberately selected fixture/);
+  NodeAssert.match(preview.preview, /not configured/);
+  const file = NodePath.join(root, "app-context.json");
+  await NodeFSP.writeFile(
+    file,
+    JSON.stringify({
+      format: "loom-workbench-context",
+      version: 1,
+      app: "office",
+      text: "fixture",
+      url: "https://other.example.test/item",
+    }),
+  );
+  await NodeAssert.rejects(
+    main(["workbench", "--app-context", file, "--json"], env),
+    /configured app/,
+  );
 });

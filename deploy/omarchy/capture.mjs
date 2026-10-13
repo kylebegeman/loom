@@ -1,8 +1,8 @@
-import * as cp from "node:child_process";
-import * as crypto from "node:crypto";
-import * as zlib from "node:zlib";
-import * as fs from "node:fs/promises";
-import * as path from "node:path";
+import * as NodeChildProcess from "node:child_process";
+import * as NodeCrypto from "node:crypto";
+import * as NodeZlib from "node:zlib";
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
 import {
   appCommand,
   discoverAppIntegration,
@@ -29,7 +29,7 @@ export function captureEnvelope(
   target,
   payload,
   cap,
-  { id = crypto.randomUUID(), reuse = false } = {},
+  { id = NodeCrypto.randomUUID(), reuse = false } = {},
 ) {
   const { title = "", text = "", url = "" } = payload;
   if (
@@ -72,7 +72,7 @@ export function reviewedCaptureCommand(envelope, cap, config, env) {
   )
     throw Error("Update the app before using reviewed capture.");
   const frame =
-    "v1." + zlib.deflateSync(Buffer.from(JSON.stringify(envelope))).toString("base64url");
+    "v1." + NodeZlib.deflateSync(Buffer.from(JSON.stringify(envelope))).toString("base64url");
   if (frame.length > 100000)
     throw Error("This capture exceeds the native transport limit. Capture inside the app.");
   const url = new URL(cap.path, config[envelope.app + "Url"]);
@@ -81,7 +81,10 @@ export function reviewedCaptureCommand(envelope, cap, config, env) {
 }
 async function choice(args, env) {
   return new Promise((resolve, reject) => {
-    const child = cp.spawn("gum", args, { env, stdio: ["inherit", "pipe", "inherit"] });
+    const child = NodeChildProcess.spawn("gum", args, {
+      env,
+      stdio: ["inherit", "pipe", "inherit"],
+    });
     let value = "";
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (s) => (value += s));
@@ -101,13 +104,13 @@ export async function captureCapabilities(
   env,
   { discover = discoverAppIntegration } = {},
 ) {
-  const cache = path.join(paths(env).state, "loom-os", "capture-" + app + ".json");
+  const cache = NodePath.join(paths(env).state, "loom-os", "capture-" + app + ".json");
   const report = await discover(app, config);
   if (report.state === "available") {
     const record = { origin: config[app + "Url"], manifest: report.manifest };
     try {
-      await fs.mkdir(path.dirname(cache), { recursive: true, mode: 0o700 });
-      await fs.writeFile(cache, JSON.stringify(record), { mode: 0o600 });
+      await NodeFSP.mkdir(NodePath.dirname(cache), { recursive: true, mode: 0o700 });
+      await NodeFSP.writeFile(cache, JSON.stringify(record), { mode: 0o600 });
     } catch {
       /* Optional offline build metadata. */
     }
@@ -115,7 +118,7 @@ export async function captureCapabilities(
   }
   if (app === "office" && report.state === "unavailable") {
     try {
-      const saved = JSON.parse(await fs.readFile(cache, "utf8"));
+      const saved = JSON.parse(await NodeFSP.readFile(cache, "utf8"));
       const manifest = validateAppIntegration(saved.manifest, app);
       if (saved.origin === config.officeUrl && manifest.offline.supportedWriting)
         return { app, state: "available", manifest, fromCache: true };
@@ -139,12 +142,16 @@ export async function nativeCapture(
     const read =
       deps.clipboard ??
       (() =>
-        cp.spawnSync("wl-paste", ["--no-newline", ...(selected ? ["--primary"] : [])], {
-          env,
-          encoding: "utf8",
-          maxBuffer: 128 * 1024,
-          timeout: 3000,
-        }));
+        NodeChildProcess.spawnSync(
+          "wl-paste",
+          ["--no-newline", ...(selected ? ["--primary"] : [])],
+          {
+            env,
+            encoding: "utf8",
+            maxBuffer: 128 * 1024,
+            timeout: 3000,
+          },
+        ));
     const result = await read();
     if (result.error || result.status !== 0)
       throw Error(
@@ -223,7 +230,7 @@ export async function nativeCapture(
       await (
         deps.launch ??
         (async (spec) => {
-          const child = cp.spawn(spec.command, spec.args, {
+          const child = NodeChildProcess.spawn(spec.command, spec.args, {
             env: spec.env,
             stdio: "ignore",
             detached: true,
@@ -238,9 +245,14 @@ export async function nativeCapture(
       await (
         deps.watch ??
         (async (envelope) => {
-          const child = cp.spawn(
+          const child = NodeChildProcess.spawn(
             process.execPath,
-            [paths(env).bin, "capture-watch", envelope.app, envelope.id],
+            [
+              NodePath.join(paths(env).root, "loom-os.mjs"),
+              "capture-watch",
+              envelope.app,
+              envelope.id,
+            ],
             { env, stdio: "ignore", detached: true },
           );
           child.unref();
@@ -261,7 +273,8 @@ export async function nativeCapture(
 export async function watchCapture(app, id, config, env, { query, pause } = {}) {
   if (!["office", "atlas"].includes(app) || !uuid.test(id)) throw Error("Invalid capture watcher.");
   const identity = `chrome-${new URL(config[app + "Url"]).hostname}__app_share-Default`;
-  const run = query ?? ((args) => cp.execFileSync("hyprctl", args, { env, encoding: "utf8" }));
+  const run =
+    query ?? ((args) => NodeChildProcess.execFileSync("hyprctl", args, { env, encoding: "utf8" }));
   const wait = pause ?? (() => new Promise((r) => setTimeout(r, 1000)));
   let ownedAddress = "";
   for (let n = 0; n < 1800; n++) {

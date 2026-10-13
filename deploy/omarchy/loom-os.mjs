@@ -795,6 +795,33 @@ export async function installationPlan(
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
   }
+  // New feature modules are optional in retained releases used for rollback.
+  const featureModules = new Set();
+  for (const name of ["workbench.mjs", "control-desk.mjs", "loom-environment.mjs"]) {
+    try {
+      writes.set(NodePath.join(p.root, name), {
+        content: await NodeFSP.readFile(NodePath.join(packDir, name), "utf8"),
+        mode: 0o644,
+      });
+      featureModules.add(name);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  for (const [action, title, module] of [
+    ["workbench", "AI workbench", "workbench.mjs"],
+    ["desk", "Workstation control desk", "control-desk.mjs"],
+  ]) {
+    if (!featureModules.has(module)) continue;
+    writes.set(NodePath.join(p.root, action + "-terminal"), {
+      content: `#!/bin/bash\nprintf '\\033]0;${title}\\007'\n${shellQuote(p.bin)} ${action} --inline "$@"\nstatus=$?\nif (( status != 0 )); then printf '\\nPress Enter to close. '; read -r _; fi\nexit "$status"\n`,
+      mode: 0o755,
+    });
+    writes.set(NodePath.join(p.data, `applications/loom-os-${action}.desktop`), {
+      content: `[Desktop Entry]\nType=Application\nName=${title}\nComment=${action === "workbench" ? "Preview selected context and review private AI results" : "Review background work and approvals in their owning apps"}\nExec=${desktopArg(p.bin)} ${action}\nIcon=${action === "workbench" ? "utilities-terminal" : "view-list-details"}\nTerminal=false\nCategories=Utility;\n`,
+      mode: 0o644,
+    });
+  }
   writes.set(p.bin, {
     content: `#!/bin/sh\nexec node ${shellQuote(NodePath.join(p.root, "loom-os.mjs"))} "$@"\n`,
     mode: 0o755,
@@ -1036,6 +1063,23 @@ done
       };
     if (aiEnabled)
       entries["loomos.connections.ask-ai"] = { label: "Ask AI", action: command("agent") };
+    if (featureModules.has("workbench.mjs")) {
+      entries["loomos.workbench"] = {
+        label: "AI workbench",
+        description: "Preview selected context, explain, summarize or capture",
+        action: command("workbench"),
+      };
+      entries["loomos.workbench-selected"] = {
+        label: "Explain selected text",
+        action: command("workbench --selected --operation explain"),
+      };
+    }
+    if (featureModules.has("control-desk.mjs"))
+      entries["loomos.desk"] = {
+        label: "Workstation control desk",
+        description: "Review work, failures and approvals in their owning services",
+        action: command("desk"),
+      };
     entries["loomos.notifications"] = {
       label: "Notifications and focus",
       description: "Native banners, app privacy and actionable alerts",
@@ -2532,6 +2576,26 @@ export function loomActionCatalog(config, context = {}) {
     "Super+Shift+A",
   );
   add(
+    "workbench",
+    "AI workbench",
+    "Preview text, files, screenshots or app context; explain, summarize and capture",
+    ["workbench"],
+  );
+  add(
+    "workbench-selected",
+    "Explain selected text",
+    "Review the selection before asking Loom through Switchboard",
+    ["workbench", "--selected", "--operation", "explain"],
+    configured("switchboardCli", "switchboardUrl"),
+    "Connect Switchboard and the owning Loom environment before explaining context.",
+  );
+  add(
+    "desk",
+    "Workstation control desk",
+    "Review running work, waiting approvals, failures and exact threads or jobs",
+    ["desk"],
+  );
+  add(
     "notifications",
     "Notifications and focus",
     "Quiet native banners and app-owned alert controls",
@@ -3195,7 +3259,7 @@ function formatCompatibility(report) {
   ].join("\n");
 }
 
-const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
+const help = `LoomOS: native Omarchy integration for your existing apps\n\ninstall|configure --loom-executable /absolute/Loom.AppImage [--profile laptop|workstation]\n  [--office-url ORIGIN] [--atlas-url ORIGIN] [--office-cli PATH] [--atlas-cli PATH]\n  [--browser-executable PATH] [--switchboard-url ORIGIN] [--switchboard-status-url URL]\n  [--switchboard-dashboard-url URL] [--switchboard-key-helper PATH] [--switchboard-cli PATH]\n  [--server-executable PATH] [--server-base-dir PATH] [--server-release-base-url URL]\n  [--server-host HOST] [--server-port PORT] [--dry-run]\nactions [--query TEXT] [--json]  (discover native actions; listing is offline and read-only)\nshortcuts [show|preview PRESET|apply PRESET|set ACTION CHORD|restore|recover] [--dry-run]\nreadability  (native utility text sizing and font/theme controls)\ncompatibility [--human|--terminal]  (read-only native menu and ownership checks)\napp-integration [--human|--terminal]  (app-owned capabilities and offline bounds)\nopen loom|office|atlas|switchboard\nopen-item office|atlas JSON_REFERENCE  (resolve and open an exact saved item)\ncapture [office|atlas] [--clipboard|--selected] [--title TITLE] [--text TEXT] [--url URL]  (preview and review in the app)\nsearch office|atlas QUERY\nfind [office|atlas]  (native read-only search picker)\navailability [--human|--json]  (app offline support, live search and private AI status)\nworkbench [--selected|--clipboard|--text TEXT|--file PATH|--screenshot PATH|--app-context PATH] [--operation explain|summarize|capture] [--json]\ndesk [--json|connect|disconnect]  (read existing work and approvals; manual refresh)\nnotifications [--json|focus on|focus off]  (native focus and app alert controls)\ncommission plan|apply KIT --review-sha256 HASH [--profile laptop|workstation]\ncommission status [--human] | commission  (portable setup, local steps and recovery)\nsetup [--human|--json]  (resumable app, private network and AI connections)\nconnect office|atlas  (open search access setup)\nlogin office|atlas\nai claude|codex [native CLI args]\nagent [--inline] [--prompt TEXT]\ndefault-agent [claude|codex]\nai-usage [--limits-only]\npair [--terminal] [--tailscale-serve-port PORT]  (private workstation pairing)\nservice status|install|restart|uninstall  (existing T3 CLI, explicit operations)\nservice install [--release-base-url URL]  (install-only verified archive mirror)\npack install DIRECTORY SHA256 [--dry-run]  (verified integration update)\npack rollback [--dry-run|--terminal]  (review the previous integration release)\npack status [--human|--terminal]  (version, profile, theme and verified retained releases)\nstatus\nconnections [--human|--terminal|--enable-status]  (private AI and workstation recovery)\ndoctor [--human|--terminal]  (read-only connection checks and recovery guidance)\nuninstall [--dry-run]\n\nProfiles share app behavior. Laptop starts no background service. Workstation\ncan enable the fork's existing T3 service explicitly. Offline capabilities\ncome from Office/Atlas, with their browser storage preserved.\n`;
 
 export async function main(args = process.argv.slice(2), env = process.env) {
   const [action, ...rest] = args;
@@ -3295,6 +3359,62 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     return;
   }
   const config = validateConfig(await readJson(p.configFile));
+  if (action === "workbench") {
+    const workbench = await import("./workbench.mjs");
+    const options = workbench.workbenchArgs(rest);
+    if (options.json) {
+      const context = await workbench.loadWorkbenchContext(options, env, { config });
+      print({
+        readOnly: true,
+        preview: workbench.formatWorkbenchPreview(context, {
+          environment: "Configured Loom environment",
+          gateway: config.switchboardUrl ?? "Switchboard is not configured",
+        }),
+      });
+    } else if (options.inline) {
+      if (!process.stdin.isTTY) throw Error("The AI workbench needs an interactive terminal.");
+      await workbench.nativeWorkbench(config, env, options);
+    } else {
+      await run(
+        "omarchy-launch-tui",
+        [
+          "--app-id=org.omarchy.loom-workbench",
+          NodePath.join(p.root, "workbench-terminal"),
+          ...rest,
+        ],
+        { env },
+      );
+    }
+    return;
+  }
+  if (action === "desk") {
+    if (
+      rest.length > 1 ||
+      (rest.length && !["--inline", "--json", "connect", "disconnect"].includes(rest[0]))
+    )
+      throw Error("Usage: loom-os desk [--json|connect|disconnect]");
+    const desk = await import("./control-desk.mjs");
+    if (["connect", "disconnect"].includes(rest[0])) {
+      const transport = await import("./loom-environment.mjs");
+      print(
+        await transport[
+          rest[0] === "connect" ? "connectLoomEnvironment" : "disconnectLoomEnvironment"
+        ](config, env),
+      );
+    } else if (rest[0] === "--json") {
+      print(await desk.collectControlDesk(config, env));
+    } else if (rest[0] === "--inline") {
+      if (!process.stdin.isTTY) throw Error("The control desk needs an interactive terminal.");
+      await desk.nativeControlDesk(config, env);
+    } else {
+      await run(
+        "omarchy-launch-tui",
+        ["--app-id=org.omarchy.loom-desk", NodePath.join(p.root, "desk-terminal")],
+        { env },
+      );
+    }
+    return;
+  }
   if (action === "app-integration") {
     if (rest.length > 1 || (rest.length && !["--human", "--terminal"].includes(rest[0])))
       throw Error("Usage: app-integration [--human|--terminal]");
@@ -3748,7 +3868,24 @@ export async function main(args = process.argv.slice(2), env = process.env) {
     if (["install", "restart"].includes(operation)) {
       const quote = (s) =>
         `"${s.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%")}"`;
-      const variables = serverEnvironment(config, {});
+      // The service cannot inherit an interactive shell's Node or provider tools.
+      // Persist the commissioned runtime and ordinary user tool locations explicitly.
+      const variables = {
+        ...serverEnvironment(config, {}),
+        PATH: [
+          ...new Set([
+            NodePath.dirname(process.execPath),
+            NodePath.join(p.home, ".local/share/mise/shims"),
+            NodePath.join(p.home, ".local/bin"),
+            "/usr/local/sbin",
+            "/usr/local/bin",
+            "/usr/sbin",
+            "/usr/bin",
+            "/sbin",
+            "/bin",
+          ]),
+        ].join(":"),
+      };
       const content = `[Service]\n${Object.entries(variables)
         .map(([key, value]) => `Environment=${quote(`${key}=${value}`)}`)
         .join("\n")}\n`;
