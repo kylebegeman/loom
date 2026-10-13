@@ -564,6 +564,7 @@ export const make = Effect.gen(function* () {
         projectId: thread.projectId,
         worktreePath,
         trigger: "settle",
+        workspaceLeaseHeld: true,
         // A clean exit closes the script's shell so it does not hold the worktree.
         observeCompletion: {},
       });

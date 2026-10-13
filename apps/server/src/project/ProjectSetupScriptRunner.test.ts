@@ -12,20 +12,24 @@ import * as ProjectService from "./ProjectService.ts";
 import * as ProjectSetupScriptRunner from "./ProjectSetupScriptRunner.ts";
 
 it.effect("resolves setup scripts through the standalone project service", () => {
-  const open = vi.fn((input: Parameters<TerminalManager.TerminalManager["Service"]["open"]>[0]) =>
-    Effect.succeed({
-      threadId: input.threadId,
-      terminalId: input.terminalId,
-      cwd: input.cwd,
-      worktreePath: input.worktreePath ?? null,
-      status: "running" as const,
-      pid: 123,
-      history: "",
-      exitCode: null,
-      exitSignal: null,
-      label: "Shell",
-      updatedAt: "2026-06-20T00:00:00.000Z",
-    }),
+  const open = vi.fn(
+    (
+      input: Parameters<TerminalManager.TerminalManager["Service"]["open"]>[0],
+      _options?: Parameters<TerminalManager.TerminalManager["Service"]["open"]>[1],
+    ) =>
+      Effect.succeed({
+        threadId: input.threadId,
+        terminalId: input.terminalId,
+        cwd: input.cwd,
+        worktreePath: input.worktreePath ?? null,
+        status: "running" as const,
+        pid: 123,
+        history: "",
+        exitCode: null,
+        exitSignal: null,
+        label: "Shell",
+        updatedAt: "2026-06-20T00:00:00.000Z",
+      }),
   );
   const write = vi.fn(
     (_input: Parameters<TerminalManager.TerminalManager["Service"]["write"]>[0]) => Effect.void,
@@ -107,8 +111,10 @@ it.effect("resolves setup scripts through the standalone project service", () =>
       FORCE_COLOR: "0",
     });
     assert.equal(write.mock.calls[0]?.[0].data, "vp install\r");
+    assert.equal(open.mock.calls[0]?.[1], undefined);
     const lines: string[] = [];
     const observed = yield* runner.runForThread({
+      workspaceLeaseHeld: true,
       threadId: "thread-1",
       projectId,
       worktreePath: "/repo-worktree",
@@ -130,6 +136,7 @@ it.effect("resolves setup scripts through the standalone project service", () =>
     assert.deepEqual(lines, ["Downloading 10%", "Downloading 20%", "Done"]);
     yield* listener({ type: "closed", threadId: "thread-1", terminalId: "setup-setup" });
 
+    assert.deepEqual(open.mock.calls[1]?.[1], { workspaceLeaseHeld: true });
     const settle = yield* runner.runForThread({
       threadId: "thread-1",
       projectId,

@@ -31,6 +31,13 @@ import * as Schema from "effect/Schema";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import {
+  markManagedProjectCheckout,
+  readManagedProjectCheckout,
+  archiveManagedProjectCheckout,
+  releaseManagedProjectCheckout,
+} from "../workspace/ManagedProjectCheckout.ts";
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
 import { archiveScratchCheckout } from "../workspace/ScratchCheckout.ts";
 import * as ProviderTurnStartTestkit from "./ProviderTurnStartService.testkit.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
@@ -228,6 +235,8 @@ function makeLocalCommandHarness(input: {
     readonly fs: FileSystem.FileSystem;
     readonly git: GitVcsDriver.GitVcsDriver["Service"];
     readonly beforeOpen: Effect.Effect<void>;
+    readonly primary?: boolean;
+    readonly runSetup?: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"];
   };
 }) {
   const now = DateTime.makeUnsafe("2026-09-04T12:00:00Z");
@@ -301,7 +310,9 @@ function makeLocalCommandHarness(input: {
       id: threadId,
       activeProviderThreadId: providerThreadId,
       branch: null,
-      worktreePath: input.restoredWorkspace?.cwd ?? null,
+      worktreePath: input.restoredWorkspace?.primary
+        ? null
+        : (input.restoredWorkspace?.cwd ?? null),
       projectId: ProjectId.make("scratch-resume-project"),
     } as OrchestrationV2ThreadProjection["thread"],
     runs: [
@@ -610,7 +621,11 @@ function makeLocalCommandHarness(input: {
           getById: () =>
             input.restoredWorkspace
               ? Effect.succeed(
-                  Option.some({ workspaceRoot: input.restoredWorkspace.scratchRoot } as never),
+                  Option.some({
+                    workspaceRoot: input.restoredWorkspace.primary
+                      ? input.restoredWorkspace.cwd
+                      : input.restoredWorkspace.scratchRoot,
+                  } as never),
                 )
               : Effect.succeed(Option.none()),
         }),
@@ -640,6 +655,10 @@ function makeLocalCommandHarness(input: {
                 cause: input.historyReadFailureAfterFallback,
               }),
             ),
+        }),
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          runForThread:
+            input.restoredWorkspace?.runSetup ?? (() => Effect.succeed({ status: "no-script" })),
         }),
         Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({ open }),
         Layer.mock(ProviderAuthService.ProviderAuthService)({ tryHandlePromptCommand }),
@@ -1048,3 +1067,102 @@ effectIt.effect(
       Effect.scoped,
     ),
 );
+
+// fork: project-lifecycle
+for (const primary of [false, true]) {
+  effectIt.effect(
+    `waits for restored ${primary ? "primary project" : "Scratch"} setup and retries after failure`,
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const git = yield* GitVcsDriver.GitVcsDriver;
+        const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+        const scratchRoot = `${parent}/projects`;
+        const cwd = `${scratchRoot}/resumed`;
+        yield* fs.makeDirectory(cwd, { recursive: true });
+        const command = (args: string[]) =>
+          git.execute({ operation: "managed-provider-test", cwd, args });
+        yield* command(["init", "-b", "main"]);
+        yield* fs.writeFileString(`${cwd}/proof.txt`, "restored before provider");
+        yield* command(["add", "."]);
+        yield* command([
+          "-c",
+          "user.name=Recovery test",
+          "-c",
+          "user.email=recovery@example.test",
+          "commit",
+          "-m",
+          "initial",
+        ]);
+        const projectId = ProjectId.make("scratch-resume-project");
+        if (primary) {
+          yield* markManagedProjectCheckout(
+            cwd,
+            buildRepositoryIdentity({
+              rootPath: cwd,
+              remoteName: "origin",
+              remoteUrl: "https://github.com/example/restore.git",
+              originUrl: undefined,
+            }),
+          );
+          const receipt = (yield* readManagedProjectCheckout(cwd))!;
+          const recovery = yield* archiveManagedProjectCheckout(receipt, projectId);
+          yield* releaseManagedProjectCheckout(receipt, projectId, recovery.archive);
+        } else {
+          yield* archiveScratchCheckout({
+            scratchRoot,
+            worktreePath: cwd,
+            projectId,
+            threadId: ThreadId.make("thread-native-account-command"),
+          });
+          yield* fs.remove(cwd, { recursive: true });
+        }
+        let setupCount = 0;
+        const runSetup: ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"] =
+          (input) =>
+            Effect.gen(function* () {
+              expect(input.observeCompletion).toBeDefined();
+              expect(yield* fs.readFileString(`${cwd}/proof.txt`)).toBe("restored before provider");
+              setupCount++;
+              return {
+                status: "started" as const,
+                async: true,
+                scriptId: "setup",
+                scriptName: "Setup",
+                scriptCommand: "fixture setup",
+                terminalId: "setup-terminal",
+                cwd,
+                completion: Effect.succeed({ exitCode: setupCount === 1 ? 1 : 0, durationMs: 0 }),
+              };
+            }).pipe(Effect.orDie);
+        const beforeOpen = Effect.gen(function* () {
+          expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(false);
+          expect(setupCount).toBe(2);
+        }).pipe(Effect.orDie);
+        const input = {
+          text: "Continue retained work",
+          previousNativeSession: true,
+          restoredWorkspace: { cwd, scratchRoot, fs, git, primary, runSetup, beforeOpen },
+        };
+        const failed = makeLocalCommandHarness(input);
+        yield* failed.start;
+        expect(failed.open).not.toHaveBeenCalled();
+        expect(failed.projection().runs.at(-1)?.status).toBe("failed");
+        expect(yield* fs.exists(`${cwd}.t3-setup-pending`)).toBe(true);
+        const retry = makeLocalCommandHarness(input);
+        yield* retry.start;
+        expect(retry.open).toHaveBeenCalledOnce();
+        expect(retry.startRootRun).toHaveBeenCalledOnce();
+      }).pipe(
+        Effect.provide(
+          GitVcsDriver.layer.pipe(
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), { prefix: "project-provider-" }),
+            ),
+            Layer.provideMerge(NodeServices.layer),
+          ),
+        ),
+        Effect.scoped,
+      ),
+  );
+}

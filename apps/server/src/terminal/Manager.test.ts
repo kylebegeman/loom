@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   DEFAULT_TERMINAL_ID,
+  ProjectId,
   type TerminalAttachStreamEvent,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
@@ -40,6 +41,15 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import {
+  markManagedProjectCheckout,
+  readManagedProjectCheckout,
+  archiveManagedProjectCheckout,
+  releaseManagedProjectCheckout,
+} from "../workspace/ManagedProjectCheckout.ts";
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
+import { runCheckoutProcess } from "../workspace/checkoutProcess.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -584,6 +594,63 @@ it.layer(
     Effect.flatMap(Effect.service(FileSystem.FileSystem), (fs) =>
       fs.writeFileString(filePath, contents),
     );
+
+  // fork: project-lifecycle
+  it.effect("restores a released primary checkout before opening a terminal", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const { manager, baseDir, ptyAdapter } = yield* createManager();
+      const cwd = `${yield* fs.realPath(baseDir)}/clone`;
+      yield* fs.makeDirectory(cwd);
+      const command = (args: string[]) =>
+        runCheckoutProcess({ command: "git", args: ["-C", cwd, ...args] });
+      yield* command(["init", "-b", "main"]);
+      yield* fs.writeFileString(`${cwd}/proof.txt`, "restored for terminal");
+      yield* command(["add", "."]);
+      yield* command([
+        "-c",
+        "user.name=Recovery test",
+        "-c",
+        "user.email=recovery@example.test",
+        "commit",
+        "-m",
+        "initial",
+      ]);
+      yield* markManagedProjectCheckout(
+        cwd,
+        buildRepositoryIdentity({
+          rootPath: cwd,
+          remoteName: "origin",
+          remoteUrl: "https://github.com/example/managed.git",
+          originUrl: undefined,
+        }),
+      );
+      const receipt = (yield* readManagedProjectCheckout(cwd))!;
+      const projectId = ProjectId.make("terminal-recovery-project");
+      const recovery = yield* archiveManagedProjectCheckout(receipt, projectId);
+      yield* releaseManagedProjectCheckout(receipt, projectId, recovery.archive);
+      const opened = yield* manager.open(openInput({ cwd, worktreePath: cwd }));
+      expect(opened.status).toBe("running");
+      expect(ptyAdapter.spawnInputs[0]?.cwd).toBe(cwd);
+      expect(yield* fs.readFileString(`${cwd}/proof.txt`)).toBe("restored for terminal");
+    }),
+  );
+
+  // fork: project-lifecycle
+  it.effect("opens setup terminals under an explicitly held checkout lease", () =>
+    Effect.gen(function* () {
+      const { manager, baseDir, ptyAdapter } = yield* createManager();
+      const opened = yield* withWorkspaceLease(
+        baseDir,
+        manager.open(openInput({ cwd: baseDir, worktreePath: baseDir }), {
+          workspaceLeaseHeld: true,
+        }),
+      );
+      expect(opened.status).toBe("running");
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.spawnInputs[0]?.cwd).toBe(baseDir);
+    }),
+  );
 
   it.effect("reports a missing cwd without an artificial cause", () =>
     Effect.gen(function* () {
@@ -1500,7 +1567,7 @@ it.layer(
       expect(events.filter((event) => event.type === "output").map((event) => event.data)).toEqual(
         writes,
       );
-      const snapshot = events.filter((event) => event.type === "snapshot").at(-1)?.snapshot;
+      const snapshot = events.findLast((event) => event.type === "snapshot")?.snapshot;
       expect(snapshot?.history).toBe("aa😀\rEND");
       expect(snapshot?.sequence).toBe(reopened.sequence);
     }),

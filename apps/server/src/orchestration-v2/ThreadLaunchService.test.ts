@@ -1,3 +1,11 @@
+import {
+  markManagedProjectCheckout,
+  readManagedProjectCheckout,
+  archiveManagedProjectCheckout,
+  releaseManagedProjectCheckout,
+} from "../workspace/ManagedProjectCheckout.ts";
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
+import { runCheckoutProcess } from "../workspace/checkoutProcess.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
@@ -98,6 +106,7 @@ const adapter = {
 } as ProviderAdapter.ProviderAdapterV2["Service"];
 
 interface HarnessOptions {
+  readonly workspaceRoot?: string;
   readonly managedFolders?: Layer.Layer<ManagedProjectFolders.ManagedProjectFolders>;
   readonly createWorktree?: GitWorkflow.GitWorkflowService["Service"]["createWorktree"];
   readonly fetchRemote?: GitWorkflow.GitWorkflowService["Service"]["fetchRemote"];
@@ -112,6 +121,10 @@ interface HarnessOptions {
 }
 
 function makeHarness(options: HarnessOptions = {}) {
+  const currentProject = {
+    ...project,
+    workspaceRoot: options.workspaceRoot ?? project.workspaceRoot,
+  };
   const layerDatabase = SqlitePersistence.layerMemory;
   const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([adapter]);
   const layerOrchestrator = ProviderReplayHarness.layerWithRegistry(
@@ -163,7 +176,7 @@ function makeHarness(options: HarnessOptions = {}) {
       getById: (id) =>
         Effect.succeed(
           id === projectId
-            ? Option.some(project)
+            ? Option.some(currentProject)
             : id === otherProjectId
               ? Option.some(otherProject)
               : Option.none(),
@@ -201,6 +214,7 @@ function makeHarness(options: HarnessOptions = {}) {
       }),
   );
   const layerLaunch = ThreadLaunch.layer.pipe(
+    Layer.provide(NodeServices.layer),
     Layer.provide(
       Layer.mergeAll(
         layerExternalServices,
@@ -217,7 +231,7 @@ function makeHarness(options: HarnessOptions = {}) {
           ? Option.some({
               projectId,
               title: project.title,
-              workspaceRoot: project.workspaceRoot,
+              workspaceRoot: currentProject.workspaceRoot,
               defaultModelSelection: project.defaultModelSelection,
               defaultThreadEnvMode: null,
               autoPull: false,
@@ -2913,3 +2927,91 @@ it.effect("replays an accepted message.dispatch after the project disables the i
     }
   }).pipe(Effect.provide(Layer.mergeAll(harness.layer, layerFiles)));
 });
+
+// fork: project-lifecycle
+it.effect(
+  "restores a primary checkout and waits for restored setup before starting a new thread",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
+      const cwd = `${parent}/clone`;
+      yield* fs.makeDirectory(cwd);
+      const command = (args: string[]) =>
+        runCheckoutProcess({ command: "git", args: ["-C", cwd, ...args] });
+      yield* command(["init", "-b", "main"]);
+      yield* fs.writeFileString(`${cwd}/proof.txt`, "restored launch");
+      yield* command(["add", "."]);
+      yield* command([
+        "-c",
+        "user.name=Recovery test",
+        "-c",
+        "user.email=recovery@example.test",
+        "commit",
+        "-m",
+        "initial",
+      ]);
+      yield* markManagedProjectCheckout(
+        cwd,
+        buildRepositoryIdentity({
+          rootPath: cwd,
+          remoteName: "origin",
+          remoteUrl: "https://github.com/example/launch.git",
+          originUrl: undefined,
+        }),
+      );
+      const receipt = (yield* readManagedProjectCheckout(cwd))!;
+      const recovery = yield* archiveManagedProjectCheckout(receipt, projectId);
+      yield* releaseManagedProjectCheckout(receipt, projectId, recovery.archive);
+      const setupStarted = yield* Deferred.make<void>();
+      const finishSetup = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        workspaceRoot: cwd,
+        runSetup: () =>
+          Effect.gen(function* () {
+            assert.equal(yield* fs.readFileString(`${cwd}/proof.txt`), "restored launch");
+            yield* Deferred.succeed(setupStarted, undefined);
+            return {
+              status: "started" as const,
+              async: true,
+              scriptId: "setup",
+              scriptName: "Setup",
+              scriptCommand: "fixture",
+              terminalId: "setup",
+              cwd,
+              completion: Deferred.await(finishSetup).pipe(
+                Effect.as({ exitCode: 0, durationMs: 0 }),
+              ),
+            };
+          }).pipe(Effect.orDie),
+      });
+      yield* Effect.gen(function* () {
+        const launches = yield* ThreadLaunch.ThreadLaunchService;
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const threadId = ThreadId.make("thread:launch:restored-root");
+        const result = yield* launches.launch(
+          launchInput({
+            command: "command:launch:restored-root",
+            thread: threadId,
+            message: "Continue in a new conversation",
+            workspace: { type: "root" },
+          }),
+        );
+        yield* Deferred.await(setupStarted);
+        assert.equal(yield* fs.exists(`${cwd}.t3-setup-pending`), true);
+        assert.notEqual(
+          (yield* threads.getThreadProjection(result.threadId)).runs[0]?.status,
+          "starting",
+        );
+        yield* Deferred.succeed(finishSetup, undefined);
+        yield* threads.streamStoredEventsFrom({ threadId: result.threadId }).pipe(
+          Stream.filter(
+            (stored) =>
+              stored.event.type === "run.updated" && stored.event.payload.status === "starting",
+          ),
+          Stream.runHead,
+        );
+        assert.equal(yield* fs.exists(`${cwd}.t3-setup-pending`), false);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+);

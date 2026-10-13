@@ -61,6 +61,8 @@ export interface ProjectSetupScriptRunnerInput {
   readonly projectCwd?: string;
   readonly worktreePath: string;
   readonly preferredTerminalId?: string;
+  /** Internal restoration/settlement callers hold the checkout lease through completion. */
+  readonly workspaceLeaseHeld?: boolean;
   /** Which project script to run. Defaults to the worktree setup script. */
   readonly trigger?: "setup" | "settle";
   readonly project?: {
@@ -406,25 +408,28 @@ export const make = Effect.gen(function* () {
           )
         : script.command;
 
-    yield* terminalManager
-      .open({
-        threadId: input.threadId,
-        terminalId,
-        cwd,
-        worktreePath: input.worktreePath,
-        // Setup may run before a terminal client attaches to answer color probes.
-        env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
-      })
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProjectSetupScriptOperationError({
-              ...errorContext,
-              operation: "openTerminal",
-              cause,
-            }),
-        ),
-      );
+    const terminalInput = {
+      threadId: input.threadId,
+      terminalId,
+      cwd,
+      worktreePath: input.worktreePath,
+      // Setup may run before a terminal client attaches to answer color probes.
+      env: { ...env, NO_COLOR: "1", FORCE_COLOR: "0" },
+    };
+    yield* (
+      input.workspaceLeaseHeld
+        ? terminalManager.open(terminalInput, { workspaceLeaseHeld: true })
+        : terminalManager.open(terminalInput)
+    ).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProjectSetupScriptOperationError({
+            ...errorContext,
+            operation: "openTerminal",
+            cause,
+          }),
+      ),
+    );
     // Subscribe before writing so the sentinel cannot race past the listener.
     const observed =
       observe && completionToken

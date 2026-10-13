@@ -10,6 +10,7 @@ import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
 export class WorkspacePreparationError extends Schema.TaggedError<WorkspacePreparationError>()(
@@ -54,6 +55,7 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
               message: "The project is unavailable. Restore its checkout before continuing.",
             }),
           );
+        yield* restoreManagedProjectCheckout(project.value.workspaceRoot);
         if (!exists) {
           yield* tracker.stageStatus(input.threadId, "checkout", "running");
           yield* fs.makeDirectory(path.dirname(cwd), { recursive: true });
@@ -77,6 +79,7 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
           projectId: input.projectId,
           worktreePath: cwd,
           trigger: "setup",
+          workspaceLeaseHeld: true,
           observeCompletion: {
             onOutputLine: (line) => tracker.appendTail(input.threadId, "setup-script", line),
           },

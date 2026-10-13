@@ -204,6 +204,7 @@ export const make = Effect.gen(function* () {
     workspacePaths
       .normalizeWorkspaceRoot(input.workspaceRoot, {
         createIfMissing: input.createIfMissing ?? false,
+        restoreManagedCheckout: true,
       })
       .pipe(
         Effect.mapError(

@@ -1,3 +1,5 @@
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import * as FileSystem from "effect/FileSystem";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -204,6 +206,9 @@ function failureDetail(error: unknown): string {
 }
 
 const make = Effect.gen(function* () {
+  const restorationServices =
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
+  const fileSystem = yield* FileSystem.FileSystem;
   const projects = yield* ProjectService.ProjectService;
   const setupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
   const cloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -337,6 +342,10 @@ const make = Effect.gen(function* () {
       });
     }
     yield* Effect.gen(function* () {
+      yield* restoreManagedProjectCheckout(project.workspaceRoot).pipe(
+        Effect.provide(restorationServices),
+        Effect.mapError(mapError(input, "resolve-project", threadId)),
+      );
       const initialMessage = input.initialMessage;
       const generateBranchNameFor = (cwd: string, message: ThreadLaunchInitialMessage) =>
         Effect.gen(function* () {
@@ -567,6 +576,12 @@ const make = Effect.gen(function* () {
         })
         .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId)));
 
+      const rootSetupMarker = `${project.workspaceRoot}.t3-setup-pending`;
+      const rootSetupPending =
+        cwd === project.workspaceRoot &&
+        (yield* fileSystem
+          .exists(rootSetupMarker)
+          .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId))));
       let awaitAsyncSetup = Effect.void;
       if (setup.status === "started") {
         setupTerminalId = setup.terminalId;
@@ -585,14 +600,17 @@ const make = Effect.gen(function* () {
               status: completion.exitCode === 0 ? "done" : "failed",
               detail: `exited with ${completion.exitCode ?? "no exit code"}`,
             });
-            if (completion.exitCode !== 0 && (!setup.async || input.waitForPreparation === true))
+            if (
+              completion.exitCode !== 0 &&
+              (!setup.async || input.waitForPreparation === true || rootSetupPending)
+            )
               return yield* mapError(
                 input,
                 "run-setup-script",
                 threadId,
               )(`Setup script exited with ${completion.exitCode ?? "no exit code"}.`);
           });
-          if (setup.async && input.waitForPreparation !== true) {
+          if (setup.async && input.waitForPreparation !== true && !rootSetupPending) {
             awaitAsyncSetup = awaitCompletion.pipe(
               Effect.catchCause((cause) =>
                 setupTracker.stage(threadId, "setup-script", {
@@ -605,7 +623,7 @@ const make = Effect.gen(function* () {
             yield* awaitCompletion;
           }
         } else {
-          if (input.waitForPreparation === true)
+          if (input.waitForPreparation === true || rootSetupPending)
             return yield* mapError(
               input,
               "run-setup-script",
@@ -616,6 +634,10 @@ const make = Effect.gen(function* () {
       } else {
         yield* setupTracker.stageStatus(threadId, "setup-script", "skipped");
       }
+      if (rootSetupPending)
+        yield* fileSystem
+          .remove(rootSetupMarker)
+          .pipe(Effect.mapError(mapError(input, "run-setup-script", threadId)));
       yield* setupTracker.markUncancellable(threadId);
       yield* setupTracker.stageStatus(threadId, "agent", "running");
       if (runId !== null) {

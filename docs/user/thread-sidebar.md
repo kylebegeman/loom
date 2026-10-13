@@ -135,8 +135,10 @@ terminals that wait at an idle prompt, and keeps their output. A terminal that
 runs a command, such as a dev server, stays open.
 
 To release a published managed checkout once every thread using it has settled, enable
-**Settings → Storage → Release settled worktrees**. Local data and busy workspaces are kept.
-Continuing the conversation restores the checkout and runs workspace setup before the agent starts.
+**Settings → Storage → Release settled worktrees**. To release an entire clone created by Loom,
+use **Release settled project checkouts**. Folders opened manually stay in place. Local data,
+pinned conversations and busy workspaces are kept. Continuing the conversation restores the
+checkout and runs workspace setup before the agent starts.
 
 To remove build output while keeping the checkout, turn on **Run in the thread's worktree when the
 thread settles** for one of the project's actions, or set `"runOnSettle": true` on a

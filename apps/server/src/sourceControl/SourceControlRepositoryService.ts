@@ -30,6 +30,8 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { markManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
+import { buildRepositoryIdentity } from "../project/RepositoryIdentityResolver.ts";
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isBitbucketRepositoryLocatorError = Schema.is(BitbucketApi.BitbucketRepositoryLocatorError);
@@ -346,6 +348,20 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+    // A failed ownership receipt keeps the completed clone permanently ineligible for release.
+    yield* markManagedProjectCheckout(
+      prepared.destinationPath,
+      buildRepositoryIdentity({
+        rootPath: prepared.destinationPath,
+        remoteName: "origin",
+        remoteUrl: prepared.remoteUrl,
+        originUrl: prepared.remoteUrl,
+      }),
+    ).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+      Effect.catch(() => Effect.logWarning("Completed clone could not register managed ownership")),
+    );
     return {
       cwd: prepared.destinationPath,
       remoteUrl: prepared.remoteUrl,

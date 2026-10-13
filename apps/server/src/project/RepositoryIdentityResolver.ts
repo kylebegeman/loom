@@ -11,6 +11,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
 import * as ProcessRunner from "../processRunner.ts";
+import { readManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 // Background sweeps resolve every project each minute. A long TTL keeps them
@@ -85,7 +86,7 @@ function buildRepositoryOrigin(
   return { canonicalKey: originKey, ...(displayName ? { displayName } : {}) };
 }
 
-function buildRepositoryIdentity(input: {
+export function buildRepositoryIdentity(input: {
   readonly remoteName: string;
   readonly remoteUrl: string;
   readonly originUrl: string | undefined;
@@ -164,6 +165,8 @@ const resolveRepositoryIdentityFromCacheKey = Effect.fn(
 export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
   options: RepositoryIdentityResolverOptions = {},
 ) {
+  const ownershipServices =
+    yield* Effect.context<Effect.Services<ReturnType<typeof readManagedProjectCheckout>>>();
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
   const refine = options.refine ?? Effect.succeed;
@@ -204,7 +207,13 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
     function* (cwd, options) {
       if (options?.refresh) yield* Cache.invalidate(repositoryRootCache, cwd);
       const cacheKey = yield* Cache.get(repositoryRootCache, cwd);
-      if (cacheKey === null) return null;
+      if (cacheKey === null)
+        return (
+          (yield* readManagedProjectCheckout(cwd).pipe(
+            Effect.provide(ownershipServices),
+            Effect.orElseSucceed(() => null),
+          ))?.repositoryIdentity ?? null
+        );
       if (options?.refresh) yield* Cache.invalidate(repositoryIdentityCache, cacheKey);
       return yield* Cache.get(repositoryIdentityCache, cacheKey);
     },

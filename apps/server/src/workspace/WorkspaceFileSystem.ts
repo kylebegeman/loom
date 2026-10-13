@@ -32,6 +32,7 @@ import * as Schema from "effect/Schema";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
 import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
@@ -266,134 +267,177 @@ export const make = Effect.gen(function* () {
 
   const readFile: WorkspaceFileSystem["Service"]["readFile"] = Effect.fn(
     "WorkspaceFileSystem.readFile",
-  )(function* (input) {
-    const target = yield* resolveReadTarget(input);
-    const realTargetPath = target.realTargetPath;
+  )(
+    function* (input) {
+      if (!path.isAbsolute(input.relativePath.trim()))
+        yield* workspacePaths
+          .normalizeWorkspaceRoot(input.cwd, {
+            restoreManagedCheckout: true,
+            workspaceLeaseHeld: true,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new WorkspaceFileSystemOperationError({
+                  workspaceRoot: input.cwd,
+                  relativePath: input.relativePath,
+                  resolvedPath: input.cwd,
+                  operationPath: input.cwd,
+                  operation: "realpath-workspace-root",
+                  cause,
+                }),
+            ),
+          );
+      const target = yield* resolveReadTarget(input);
+      const realTargetPath = target.realTargetPath;
 
-    return yield* Effect.acquireUseRelease(
-      Effect.tryPromise({
-        // Non-blocking so a FIFO cannot hang the open; the stat below rejects
-        // it. Regular files ignore the flag. Windows lacks it.
-        try: () =>
-          NodeFSP.open(
-            realTargetPath,
-            NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NONBLOCK ?? 0),
-          ),
-        catch: (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: input.cwd,
-            relativePath: input.relativePath,
-            resolvedPath: realTargetPath,
-            operationPath: realTargetPath,
-            operation: "open",
-            cause,
-          }),
-      }),
-      (handle) =>
-        Effect.gen(function* () {
-          const stat = yield* Effect.tryPromise({
-            try: () => handle.stat(),
-            catch: (cause) =>
-              new WorkspaceFileSystemOperationError({
-                workspaceRoot: input.cwd,
-                relativePath: input.relativePath,
-                resolvedPath: realTargetPath,
-                operationPath: realTargetPath,
-                operation: "stat",
-                cause,
-              }),
-          });
-          if (!stat.isFile()) {
-            return yield* new WorkspacePathNotFileError({
-              workspaceRoot: input.cwd,
-              relativePath: input.relativePath,
-              resolvedPath: realTargetPath,
-            });
-          }
-
-          const bytesToRead = Math.min(stat.size, PROJECT_READ_FILE_MAX_BYTES);
-          const buffer = Buffer.alloc(bytesToRead);
-          const { bytesRead } = yield* Effect.tryPromise({
-            try: () => handle.read(buffer, 0, bytesToRead, 0),
-            catch: (cause) =>
-              new WorkspaceFileSystemOperationError({
-                workspaceRoot: input.cwd,
-                relativePath: input.relativePath,
-                resolvedPath: realTargetPath,
-                operationPath: realTargetPath,
-                operation: "read",
-                cause,
-              }),
-          });
-          const fileBytes = buffer.subarray(0, bytesRead);
-          if (fileBytes.includes(0)) {
-            return yield* new WorkspaceBinaryFileError({
-              workspaceRoot: input.cwd,
-              relativePath: input.relativePath,
-              resolvedPath: realTargetPath,
-            });
-          }
-
-          return {
-            relativePath: target.relativePath,
-            contents: new TextDecoder("utf-8").decode(fileBytes),
-            byteLength: stat.size,
-            truncated: stat.size > PROJECT_READ_FILE_MAX_BYTES,
-          };
-        }),
-      (handle) =>
+      return yield* Effect.acquireUseRelease(
         Effect.tryPromise({
-          try: () => handle.close(),
+          // Non-blocking so a FIFO cannot hang the open; the stat below rejects
+          // it. Regular files ignore the flag. Windows lacks it.
+          try: () =>
+            NodeFSP.open(
+              realTargetPath,
+              NodeFS.constants.O_RDONLY | (NodeFS.constants.O_NONBLOCK ?? 0),
+            ),
           catch: (cause) =>
             new WorkspaceFileSystemOperationError({
               workspaceRoot: input.cwd,
               relativePath: input.relativePath,
               resolvedPath: realTargetPath,
               operationPath: realTargetPath,
-              operation: "close",
+              operation: "open",
               cause,
             }),
         }),
-    );
-  });
+        (handle) =>
+          Effect.gen(function* () {
+            const stat = yield* Effect.tryPromise({
+              try: () => handle.stat(),
+              catch: (cause) =>
+                new WorkspaceFileSystemOperationError({
+                  workspaceRoot: input.cwd,
+                  relativePath: input.relativePath,
+                  resolvedPath: realTargetPath,
+                  operationPath: realTargetPath,
+                  operation: "stat",
+                  cause,
+                }),
+            });
+            if (!stat.isFile()) {
+              return yield* new WorkspacePathNotFileError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: realTargetPath,
+              });
+            }
+
+            const bytesToRead = Math.min(stat.size, PROJECT_READ_FILE_MAX_BYTES);
+            const buffer = Buffer.alloc(bytesToRead);
+            const { bytesRead } = yield* Effect.tryPromise({
+              try: () => handle.read(buffer, 0, bytesToRead, 0),
+              catch: (cause) =>
+                new WorkspaceFileSystemOperationError({
+                  workspaceRoot: input.cwd,
+                  relativePath: input.relativePath,
+                  resolvedPath: realTargetPath,
+                  operationPath: realTargetPath,
+                  operation: "read",
+                  cause,
+                }),
+            });
+            const fileBytes = buffer.subarray(0, bytesRead);
+            if (fileBytes.includes(0)) {
+              return yield* new WorkspaceBinaryFileError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: realTargetPath,
+              });
+            }
+
+            return {
+              relativePath: target.relativePath,
+              contents: new TextDecoder("utf-8").decode(fileBytes),
+              byteLength: stat.size,
+              truncated: stat.size > PROJECT_READ_FILE_MAX_BYTES,
+            };
+          }),
+        (handle) =>
+          Effect.tryPromise({
+            try: () => handle.close(),
+            catch: (cause) =>
+              new WorkspaceFileSystemOperationError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: realTargetPath,
+                operationPath: realTargetPath,
+                operation: "close",
+                cause,
+              }),
+          }),
+      );
+    },
+    (effect, input) => withWorkspaceLease(path.resolve(input.cwd), effect),
+  );
 
   const writeFile: WorkspaceFileSystem["Service"]["writeFile"] = Effect.fn(
     "WorkspaceFileSystem.writeFile",
-  )(function* (input) {
-    const target = yield* workspacePaths.resolveRelativePathWithinRoot({
-      workspaceRoot: input.cwd,
-      relativePath: input.relativePath,
-    });
+  )(
+    function* (input) {
+      yield* workspacePaths
+        .normalizeWorkspaceRoot(input.cwd, {
+          restoreManagedCheckout: true,
+          workspaceLeaseHeld: true,
+        })
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new WorkspaceFileSystemOperationError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: input.cwd,
+                operationPath: input.cwd,
+                operation: "realpath-workspace-root",
+                cause,
+              }),
+          ),
+        );
+      const target = yield* workspacePaths.resolveRelativePathWithinRoot({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+      });
 
-    yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: input.cwd,
-            relativePath: input.relativePath,
-            resolvedPath: target.absolutePath,
-            operationPath: path.dirname(target.absolutePath),
-            operation: "make-directory",
-            cause,
-          }),
-      ),
-    );
-    yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
-      Effect.mapError(
-        (cause) =>
-          new WorkspaceFileSystemOperationError({
-            workspaceRoot: input.cwd,
-            relativePath: input.relativePath,
-            resolvedPath: target.absolutePath,
-            operationPath: target.absolutePath,
-            operation: "write-file",
-            cause,
-          }),
-      ),
-    );
-    yield* workspaceEntries.refresh(input.cwd);
-    return { relativePath: target.relativePath };
-  });
+      yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: path.dirname(target.absolutePath),
+              operation: "make-directory",
+              cause,
+            }),
+        ),
+      );
+      yield* fileSystem.writeFileString(target.absolutePath, input.contents).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceFileSystemOperationError({
+              workspaceRoot: input.cwd,
+              relativePath: input.relativePath,
+              resolvedPath: target.absolutePath,
+              operationPath: target.absolutePath,
+              operation: "write-file",
+              cause,
+            }),
+        ),
+      );
+      yield* workspaceEntries.refresh(input.cwd);
+      return { relativePath: target.relativePath };
+    },
+    (effect, input) => withWorkspaceLease(path.resolve(input.cwd), effect),
+  );
 
   return WorkspaceFileSystem.of({ getMetadata, readFile, writeFile });
 });

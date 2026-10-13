@@ -62,6 +62,8 @@ describe("storage cleanup settings", () => {
       worktreeOnSettle: false,
       worktreeUnchanged: false,
       worktreeKeepWhen: "uncommitted-changes",
+      projectAfterDays: null,
+      projectOnSettle: false,
       scratchAfterDays: null,
       browserArtifactsAfterDays: null,
       logsAfterDays: null,

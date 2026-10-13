@@ -21,6 +21,8 @@ import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts";
 import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -96,6 +98,7 @@ export const layer: Layer.Layer<
   | ContextHandoffService.ContextHandoffServiceV2
   | IdAllocator.IdAllocatorV2
   | FileSystem.FileSystem
+  | Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>
   | Path.Path
   | ProjectSetupScriptRunner.ProjectSetupScriptRunner
   | WorktreeSetupTracker.WorktreeSetupTracker
@@ -113,6 +116,7 @@ export const layer: Layer.Layer<
     const restorationServices = yield* Effect.context<
       | Effect.Services<ReturnType<typeof restoreWorktree>>
       | Effect.Services<ReturnType<typeof restoreScratchCheckout>>
+      | Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>
     >();
     const projects = yield* ProjectService.ProjectService;
     const fileSystem = yield* FileSystem.FileSystem;
@@ -471,8 +475,35 @@ export const layer: Layer.Layer<
         }
       }
       const { worktreePath, branch } = projection.thread;
-      if (worktreePath !== null) {
+      {
         const preparation = yield* Effect.gen(function* () {
+          const project = yield* projects.getById(projection.thread.projectId);
+          if (Option.isSome(project)) {
+            yield* restoreManagedProjectCheckout(project.value.workspaceRoot);
+            const marker = `${project.value.workspaceRoot}.t3-setup-pending`;
+            yield* withWorkspaceLease(
+              marker,
+              Effect.gen(function* () {
+                if (!(yield* fileSystem.exists(marker))) return;
+                const setup = yield* setupScripts.runForThread({
+                  threadId: projection.thread.id,
+                  projectId: projection.thread.projectId,
+                  worktreePath: project.value.workspaceRoot,
+                  trigger: "setup",
+                  observeCompletion: {},
+                });
+                if (setup.status === "started") {
+                  if (setup.completion === undefined || (yield* setup.completion).exitCode !== 0)
+                    return yield* new WorkspacePreparationError({
+                      message:
+                        "Project setup did not finish successfully. Fix its setup script and retry.",
+                    });
+                }
+                yield* fileSystem.remove(marker);
+              }),
+            );
+          }
+          if (worktreePath === null) return;
           if (branch !== null) {
             yield* restoreWorktree({
               threadId: projection.thread.id,
@@ -503,6 +534,7 @@ export const layer: Layer.Layer<
                   projectId: projection.thread.projectId,
                   worktreePath,
                   trigger: "setup",
+                  observeCompletion: {},
                 });
                 if (setup.status === "started") {
                   if (setup.completion === undefined)

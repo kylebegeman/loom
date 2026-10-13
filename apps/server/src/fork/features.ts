@@ -7,6 +7,7 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "mini-shared-resources",
   "mini-managed-projects",
   "mini-native-retention",
+  "managed-project-checkouts",
   "switchboard",
   "model-preview-3d",
   "model-ortho-camera",

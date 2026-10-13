@@ -76,6 +76,7 @@ import {
 } from "../observability/Metrics.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProcessRunner from "../processRunner.ts";
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -160,6 +161,8 @@ export class TerminalManager extends Context.Service<
      */
     readonly open: (
       input: TerminalOpenInput,
+      /** Internal scripts may already hold this exact checkout's lease. Never supplied by RPC. */
+      options?: { readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<TerminalSessionSnapshot, TerminalError>;
 
     /**
@@ -1482,6 +1485,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const restorationServices =
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const context = yield* Effect.context<never>();
   const runFork = Effect.runForkWith(context);
 
@@ -1950,6 +1955,15 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const assertValidCwd = Effect.fn("terminal.assertValidCwd")(function* (cwd: string) {
     const stats = yield* fileSystem.stat(cwd).pipe(
+      Effect.catchIf(
+        (cause) => cause.reason._tag === "NotFound",
+        () =>
+          restoreManagedProjectCheckout(cwd, true).pipe(
+            Effect.provide(restorationServices),
+            Effect.mapError((cause) => new TerminalCwdStatError({ cwd, cause })),
+            Effect.andThen(fileSystem.stat(cwd)),
+          ),
+      ),
       Effect.catchTags({
         PlatformError: (cause) =>
           cause.reason._tag === "NotFound"
@@ -2730,10 +2744,16 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       openWithWorkspaceLease(input),
     );
 
-  const open: TerminalManager["Service"]["open"] = (input) =>
+  const open: TerminalManager["Service"]["open"] = (input, options) =>
     withThreadLock(
       input.threadId,
-      resolveLaunchInputEnvironment(input).pipe(Effect.flatMap(openLocked)),
+      resolveLaunchInputEnvironment(input).pipe(
+        Effect.flatMap((resolvedInput) =>
+          options?.workspaceLeaseHeld
+            ? openWithWorkspaceLease(resolvedInput)
+            : openLocked(resolvedInput),
+        ),
+      ),
     );
 
   const openOrAttachForStream = (input: TerminalAttachInput) =>

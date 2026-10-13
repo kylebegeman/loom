@@ -27,6 +27,7 @@ function layer(input: {
     ),
     Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
     Layer.provide(Layer.mock(GitManager.GitManager)({})),
+    Layer.provide(NodeServices.layer),
   );
 }
 
@@ -123,6 +124,7 @@ describe("GitWorkflowService", () => {
     const status = vi.fn();
 
     const layerTest = GitWorkflowService.layer.pipe(
+      Layer.provide(NodeServices.layer),
       Layer.provide(
         Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
           detect: () => Effect.succeed(null),

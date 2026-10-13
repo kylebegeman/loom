@@ -15,6 +15,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import type * as Path from "effect/Path";
 import type * as Scope from "effect/Scope";
+import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -29,6 +30,12 @@ import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Settings from "./serverSettings.ts";
+import * as ProcessRunner from "./processRunner.ts";
+import {
+  markManagedProjectCheckout,
+  restoreManagedProjectCheckout,
+} from "./workspace/ManagedProjectCheckout.ts";
+import { buildRepositoryIdentity } from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -239,7 +246,10 @@ const cleanupFixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const config = yield* ServerConfig.ServerConfig;
   const git = yield* GitVcsDriver.GitVcsDriver;
-  const repo = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-repo-" });
+  const runner = yield* ProcessRunner.make();
+  const repoParent = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-repo-" });
+  const repo = `${repoParent}/repo`;
+  yield* fs.makeDirectory(repo);
   const command = (cwd: string, args: string[]) =>
     git.execute({ operation: "cleanup-test", cwd, args });
   yield* command(repo, ["init", "-b", "main"]);
@@ -257,7 +267,14 @@ const cleanupFixture = Effect.gen(function* () {
     storageCleanup: { ...DEFAULT_SERVER_SETTINGS.storageCleanup, worktreeAfterDays: 8 },
   };
   let threads = [shell({ branch: "feature", worktreePath: worktree })];
-  let projectRoots = [{ id: ProjectId.make("project-1"), workspaceRoot: repo }];
+  let projectRoots = [
+    {
+      id: ProjectId.make("project-1"),
+      title: "Project",
+      workspaceRoot: repo,
+      createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
+    },
+  ];
   let pendingEffects = false;
   let editBeforeRemoval = false;
   let openSessionCwd: string | null = null;
@@ -278,6 +295,21 @@ const cleanupFixture = Effect.gen(function* () {
         fullStatusCalls++;
         return git.statusDetailsLocal(...args);
       },
+    }),
+    Effect.provideService(ProcessRunner.ProcessRunner, {
+      run: (input) =>
+        input.command === "/usr/sbin/lsof"
+          ? Effect.succeed({
+              stdout: "",
+              stderr: "",
+              code: 0,
+              timedOut: false,
+              stdoutTruncated: false,
+              stderrTruncated: false,
+              stdoutInvalidUtf8: false,
+              stderrInvalidUtf8: false,
+            })
+          : runner.run(input),
     }),
     Effect.provideService(Settings.ServerSettingsService, {
       getSettings: Effect.sync(() => settings),
@@ -397,7 +429,7 @@ const cleanupFixture = Effect.gen(function* () {
       threads = next;
     },
     setProjectRoot: (workspaceRoot: string) => {
-      projectRoots = [{ id: ProjectId.make("project-1"), workspaceRoot }];
+      projectRoots = [{ ...projectRoots[0]!, workspaceRoot }];
     },
     setScratchRetention: (scratchAfterDays: number | null) => {
       settings = { ...settings, storageCleanup: { ...settings.storageCleanup, scratchAfterDays } };
@@ -407,6 +439,17 @@ const cleanupFixture = Effect.gen(function* () {
     },
     setOpenSessionCwd: (cwd: string | null) => {
       openSessionCwd = cwd;
+    },
+    setProjectPolicy: (projectAfterDays: number | null, projectOnSettle = false) => {
+      settings = {
+        ...settings,
+        storageCleanup: {
+          ...settings.storageCleanup,
+          worktreeAfterDays: null,
+          projectAfterDays,
+          projectOnSettle,
+        },
+      };
     },
     fullStatusCalls: () => fullStatusCalls,
   };
@@ -420,6 +463,7 @@ const runCleanupTest = <A, E>(
     A,
     E,
     | FileSystem.FileSystem
+    | ChildProcessSpawner.ChildProcessSpawner
     | ServerConfig.ServerConfig
     | GitVcsDriver.GitVcsDriver
     | Path.Path
@@ -1305,3 +1349,148 @@ it.live("retains a managed worktree containing a same-device bind mount", () =>
     }),
   ),
 );
+
+// fork: project-lifecycle
+const primaryFixture = Effect.gen(function* () {
+  const f = yield* cleanupFixture;
+  const remote = yield* f.publish();
+  yield* f.command(f.repo, ["worktree", "remove", f.worktree]);
+  yield* f.command(f.repo, ["push", "-u", "origin", "main"]);
+  const cwd = yield* f.fs.realPath(f.repo);
+  f.setProjectRoot(cwd);
+  f.setThreads([shell()]);
+  f.setProjectPolicy(8);
+  const mark = markManagedProjectCheckout(
+    cwd,
+    buildRepositoryIdentity({
+      rootPath: cwd,
+      remoteName: "origin",
+      remoteUrl: remote,
+      originUrl: remote,
+    }),
+  );
+  return { ...f, cwd, mark };
+});
+describe("primary project storage cleanup", () => {
+  it.live("keeps unowned project roots, then releases and restores a published managed clone", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        expect((yield* f.service.runNow).entries.some((entry) => entry.kind === "project")).toBe(
+          false,
+        );
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        yield* f.mark;
+        const report = yield* f.service.runNow;
+        const entry = report.entries.find((entry) => entry.kind === "project");
+        expect(entry?.outcome, entry?.reason).toBe("removed");
+        expect(yield* f.fs.exists(f.cwd)).toBe(false);
+        expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(true);
+        expect(yield* f.fs.readFileString(`${f.cwd}/tracked.txt`)).toBe("original\n");
+      }),
+    ),
+  );
+  it.live.each([
+    "pinned",
+    "running",
+    "pending-effect",
+    "provider",
+    "untracked",
+    "ignored",
+    "unpublished",
+    "linked-worktree",
+    "submodule",
+    "stale-publication",
+  ] as const)("keeps a managed primary checkout with %s protection", (protection) =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        yield* f.mark;
+        switch (protection) {
+          case "pinned":
+            f.setThreads([shell({ pinnedAt: at(-1) })]);
+            break;
+          case "running":
+            f.setThreads([shell({ status: "running" })]);
+            break;
+          case "pending-effect":
+            f.setPendingEffects(true);
+            break;
+          case "provider":
+            f.setOpenSessionCwd(f.cwd);
+            break;
+          case "untracked":
+            yield* f.fs.writeFileString(`${f.cwd}/notes.txt`, "keep");
+            break;
+          case "ignored":
+            yield* f.fs.writeFileString(`${f.cwd}/.env`, "private fixture");
+            break;
+          case "unpublished":
+            yield* f.command(f.repo, ["commit", "--allow-empty", "-m", "local only"]);
+            break;
+          case "linked-worktree":
+            yield* f.command(f.repo, ["worktree", "add", "-b", "linked", f.worktree]);
+            break;
+          case "submodule": {
+            const head = (yield* f.command(f.repo, ["rev-parse", "HEAD"])).stdout.trim();
+            yield* f.command(f.repo, [
+              "update-index",
+              "--add",
+              "--cacheinfo",
+              `160000,${head},nested`,
+            ]);
+            yield* f.command(f.repo, ["commit", "-m", "submodule"]);
+            yield* f.command(f.repo, ["push", "origin", "main"]);
+            break;
+          }
+          case "stale-publication": {
+            yield* f.command(f.repo, ["commit", "--allow-empty", "-m", "local only"]);
+            const head = (yield* f.command(f.repo, ["rev-parse", "HEAD"])).stdout.trim();
+            yield* f.command(f.repo, ["update-ref", "refs/t3/publication/9/heads/old", head]);
+            break;
+          }
+        }
+        const report = yield* f.service.runNow;
+        const entry = report.entries.find((entry) => entry.kind === "project");
+        expect(entry?.outcome, entry?.reason).toBe(
+          protection === "linked-worktree" ? "failed" : "kept",
+        );
+        expect(yield* f.fs.exists(f.cwd)).toBe(true);
+      }),
+    ),
+  );
+  it.live("releases a published revision when its remote branch has advanced", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        yield* f.mark;
+        yield* f.command(f.repo, ["branch", "-D", "feature"]);
+        yield* f.command(f.repo, ["push", "origin", "--delete", "feature"]);
+        yield* f.command(f.repo, ["commit", "--allow-empty", "-m", "remote advanced"]);
+        yield* f.command(f.repo, ["push", "origin", "main"]);
+        yield* f.command(f.repo, ["reset", "--hard", "HEAD~1"]);
+        const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+        expect(entry?.outcome, entry?.reason).toBe("removed");
+      }),
+    ),
+  );
+  it.live("requires every conversation to settle when retention is disabled", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        yield* f.mark;
+        f.setProjectPolicy(null, true);
+        f.setThreads([
+          shell({ settledOverride: "settled" }),
+          shell({ id: ThreadId.make("active-thread") }),
+        ]);
+        expect(
+          (yield* f.service.runNow).entries.find((entry) => entry.kind === "project")?.outcome,
+        ).toBe("kept");
+        f.setThreads([shell({ settledOverride: "settled" })]);
+        const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+        expect(entry?.outcome, entry?.reason).toBe("removed");
+      }),
+    ),
+  );
+});

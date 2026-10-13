@@ -164,9 +164,23 @@ Enable **Release settled worktrees** to reclaim a managed checkout after its las
 settles. The server waits for settlement actions, open terminals and provider sessions. It fetches
 the branch's upstream and keeps the checkout if its current commits are unpublished. This rule
 always protects local files, including ignored data other than `node_modules`, regardless of the
-local-change setting above. Your project's main checkout stays in place. Continuing a released
-conversation recreates its checkout and waits for workspace setup before starting the agent.
+local-change setting above. This rule keeps the project's main checkout. Continuing a released
+conversation recreates its worktree checkout and waits for workspace setup before starting the agent.
 Failed setup keeps the checkout and retries when you continue again, including after a restart.
+
+Enable **Release settled project checkouts** or **Release inactive project checkouts**
+to reclaim complete clones created by Loom. Folders you opened yourself and clones created
+before managed ownership was available stay on disk. Every conversation must be settled for
+the settlement rule; inactivity uses the most recent conversation activity. Pinned conversations,
+active agents or terminals, pending actions, local files and linked worktrees keep the checkout.
+All local branches and tags must be published, and the remote must be reachable when releasing.
+Repositories with submodules are kept.
+
+Projects and conversations stay discoverable after release. Opening a file or terminal, using
+Git, or continuing work restores the saved revision from its recovery archive. Starting an agent
+also waits for project setup to finish; failed setup can be retried. Compact Git recovery data
+stays on the same machine, so release frees checkout and dependency space without deleting
+history or requiring another download to resume. Cleanup results report the space reclaimed.
 
 Enable **Delete worktrees with deleted threads** to remove safe worktrees after their last
 thread is deleted, including archived threads and worktrees left by earlier deletions. The

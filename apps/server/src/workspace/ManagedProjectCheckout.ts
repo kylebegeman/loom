@@ -1,0 +1,336 @@
+// fork: project-lifecycle
+import { ProjectId, RepositoryIdentity, ThreadId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { runCheckoutProcess } from "./checkoutProcess.ts";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import {
+  archiveScratchCheckout,
+  restoreScratchCheckout,
+  scratchArchiveMatches,
+  scratchCheckoutOwned,
+  type ScratchCheckoutManifest,
+} from "./ScratchCheckout.ts";
+import { withWorkspaceLease } from "./workspaceLease.ts";
+
+class ManagedProjectCheckoutError extends Schema.TaggedError<ManagedProjectCheckoutError>()(
+  "ManagedProjectCheckoutError",
+  { message: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {}
+
+const Receipt = Schema.Struct({
+  version: Schema.Literal(1),
+  workspaceRoot: Schema.String,
+  repositoryIdentity: RepositoryIdentity,
+  projectId: Schema.NullOr(ProjectId),
+  checkoutInode: Schema.Number,
+  gitInode: Schema.Number,
+  device: Schema.Number,
+  uid: Schema.Number,
+  birthtime: Schema.NullOr(Schema.Number),
+  released: Schema.Boolean,
+  removalPath: Schema.NullOr(Schema.String),
+});
+type ManagedProjectCheckoutReceipt = typeof Receipt.Type;
+const Codec = Schema.fromJsonString(Receipt);
+const decode = Schema.decodeEffect(Codec);
+const encode = Schema.encodeEffect(Codec);
+const fail = (message: string) => new ManagedProjectCheckoutError({ message });
+const receiptPath = (cwd: string) => `${cwd}.t3-project-owned.json`;
+const isManagedError = Schema.is(ManagedProjectCheckoutError);
+const mapFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(
+    Effect.mapError((error) =>
+      isManagedError(error)
+        ? error
+        : new ManagedProjectCheckoutError({
+            message: "The managed project checkout could not be prepared safely.",
+            cause: error,
+          }),
+    ),
+  );
+
+const canonicalPath = Effect.fnUntraced(function* (cwd: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const resolved = path.resolve(cwd);
+  return path.join(yield* fs.realPath(path.dirname(resolved)), path.basename(resolved));
+});
+
+const writeReceipt = Effect.fnUntraced(function* (receipt: ManagedProjectCheckoutReceipt) {
+  const fs = yield* FileSystem.FileSystem;
+  const target = receiptPath(receipt.workspaceRoot);
+  const stage = `${target}.pending-${yield* randomUuidV4}`;
+  yield* Effect.gen(function* () {
+    yield* fs.writeFileString(stage, yield* encode(receipt), { flag: "wx", mode: 0o600 });
+    yield* Effect.scoped(fs.open(stage).pipe(Effect.flatMap((file) => file.sync)));
+    yield* fs.rename(stage, target);
+    const path = yield* Path.Path;
+    yield* Effect.scoped(fs.open(path.dirname(target)).pipe(Effect.flatMap((file) => file.sync)));
+  }).pipe(Effect.ensuring(fs.remove(stage, { force: true }).pipe(Effect.ignore)));
+});
+
+/** Only successful Loom clones create this durable proof. Opening a user's folder never does. */
+export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark")(function* (
+  workspaceRoot: string,
+  repositoryIdentity: RepositoryIdentity,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const cwd = yield* canonicalPath(workspaceRoot);
+  if ((yield* fs.realPath(cwd)) !== cwd) return yield* fail("The clone is a symbolic link.");
+  if (yield* fs.exists(receiptPath(cwd)))
+    return yield* fail("A managed project receipt already exists for this folder.");
+  const root = yield* fs.stat(cwd);
+  const git = yield* fs.stat(path.join(cwd, ".git"));
+  const uid = yield* HostProcess.UserId;
+  if (
+    uid === undefined ||
+    root.type !== "Directory" ||
+    git.type !== "Directory" ||
+    Option.getOrNull(root.uid) !== uid ||
+    Option.getOrNull(git.uid) !== uid ||
+    !Option.isSome(root.ino) ||
+    !Option.isSome(git.ino) ||
+    root.dev !== git.dev
+  )
+    return yield* fail("Clone ownership could not be proven on this filesystem.");
+  if ((yield* fs.realPath(path.join(cwd, ".git"))) !== path.join(cwd, ".git"))
+    return yield* fail("The clone uses an external Git directory.");
+  yield* writeReceipt({
+    version: 1,
+    workspaceRoot: cwd,
+    repositoryIdentity: { ...repositoryIdentity, rootPath: cwd },
+    projectId: null,
+    checkoutInode: root.ino.value,
+    gitInode: git.ino.value,
+    device: root.dev,
+    uid,
+    birthtime: Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull),
+    released: false,
+    removalPath: null,
+  });
+}, mapFailure);
+
+/** Metadata remains readable when the checkout is absent, including after a server restart. */
+export const readManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.read")(function* (
+  workspaceRoot: string,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  if (!(yield* fs.exists(receiptPath(path.resolve(workspaceRoot))))) return null;
+  const cwd = yield* canonicalPath(workspaceRoot);
+  const target = receiptPath(cwd);
+  if (!(yield* fs.exists(target))) return null;
+  if ((yield* fs.realPath(target)) !== target)
+    return yield* fail("The project receipt is a symbolic link.");
+  const info = yield* fs.stat(target);
+  const uid = yield* HostProcess.UserId;
+  if (
+    uid === undefined ||
+    info.type !== "File" ||
+    Option.getOrNull(info.uid) !== uid ||
+    Number(info.size) > 64 * 1024
+  )
+    return yield* fail("The project receipt is not owned by this host.");
+  const receipt = yield* decode(yield* fs.readFileString(target));
+  if (receipt.workspaceRoot !== cwd || receipt.uid !== uid)
+    return yield* fail("The project receipt belongs to a different folder or host.");
+  return receipt;
+}, mapFailure);
+
+export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.assertOwned")(function* (
+  receipt: ManagedProjectCheckoutReceipt,
+  target = receipt.workspaceRoot,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  if ((yield* fs.realPath(target)) !== target)
+    return yield* fail("The managed checkout is a symbolic link.");
+  const root = yield* fs.stat(target);
+  const git = yield* fs.stat(path.join(target, ".git"));
+  if (
+    root.type !== "Directory" ||
+    git.type !== "Directory" ||
+    root.dev !== receipt.device ||
+    git.dev !== receipt.device ||
+    Option.getOrNull(root.uid) !== receipt.uid ||
+    Option.getOrNull(git.uid) !== receipt.uid ||
+    Option.getOrNull(root.ino) !== receipt.checkoutInode ||
+    Option.getOrNull(git.ino) !== receipt.gitInode ||
+    Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull) !==
+      receipt.birthtime
+  )
+    return yield* fail("The checkout was replaced or its ownership changed.");
+}, mapFailure);
+
+const recoveryInput = (receipt: ManagedProjectCheckoutReceipt, projectId: ProjectId) => ({
+  scratchRoot: receipt.workspaceRoot.replace(/[\\/][^\\/]+$/, ""),
+  worktreePath: receipt.workspaceRoot,
+  projectId,
+  // This archive belongs to the project, independent of which conversation resumes it.
+  threadId: ThreadId.make(`managed-project:${projectId}`),
+  recoveryKind: "project" as const,
+});
+
+export const archiveManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.archive")(function* (
+  receipt: ManagedProjectCheckoutReceipt,
+  projectId: ProjectId,
+) {
+  yield* assertManagedProjectOwned(receipt);
+  const input = recoveryInput(receipt, projectId);
+  const archive = yield* archiveScratchCheckout(input);
+  return { input, archive };
+}, mapFailure);
+
+/** A durable tombstone makes a crash during recursive removal recoverable. */
+export const releaseManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.release")(function* (
+  receipt: ManagedProjectCheckoutReceipt,
+  projectId: ProjectId,
+  archive: ScratchCheckoutManifest,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  yield* assertManagedProjectOwned(receipt);
+  if (receipt.removalPath !== null && (yield* fs.exists(receipt.removalPath)))
+    return yield* fail(
+      "A previous project recovery folder is retained; inspect it before releasing again.",
+    );
+  if (!(yield* scratchArchiveMatches(archive)))
+    return yield* fail("The project changed while archiving.");
+  const removalPath = `${receipt.workspaceRoot}.t3-released-${yield* randomUuidV4}`;
+  const released = { ...receipt, projectId, released: true, removalPath };
+  yield* writeReceipt(released);
+  yield* fs.rename(receipt.workspaceRoot, removalPath);
+  // Verify the moved tree before any recursive mutation. Its archive has already been synced.
+  yield* assertManagedProjectOwned(released, removalPath);
+  yield* scratchCheckoutOwned({ ...recoveryInput(released, projectId), worktreePath: removalPath });
+  if (!(yield* scratchArchiveMatches({ ...archive, worktreePath: removalPath })))
+    return yield* fail("The project changed during release; its recovery folder is retained.");
+  // Cwd-dependent tools now see the sibling, not the original path. A final status
+  // check catches files written during the move, after the caller's last check.
+  const status = yield* runCheckoutProcess({
+    command: "git",
+    args: ["-C", removalPath, "status", "--porcelain=v1", "--untracked-files=all", "-z"],
+    timeout: "30 seconds",
+    maxOutputBytes: 64 * 1024,
+    outputMode: "truncate",
+  });
+  const ignored = yield* runCheckoutProcess({
+    command: "git",
+    args: [
+      "-C",
+      removalPath,
+      "ls-files",
+      "--others",
+      "--ignored",
+      "--exclude-standard",
+      "--directory",
+      "-z",
+    ],
+    timeout: "30 seconds",
+    maxOutputBytes: 64 * 1024,
+    outputMode: "truncate",
+  });
+  if (
+    status.code !== 0 ||
+    status.stdoutTruncated ||
+    status.stdout !== "" ||
+    ignored.code !== 0 ||
+    ignored.stdoutTruncated ||
+    ignored.stdout.split("\0").some((file) => file !== "" && !/(^|\/)node_modules\/$/.test(file))
+  )
+    return yield* fail("Local files changed during release; the recovery folder is retained.");
+  yield* fs.remove(removalPath, { recursive: true });
+  yield* writeReceipt({ ...released, removalPath: null });
+}, mapFailure);
+
+/** Restore files on explicit use. Setup remains a separate retryable provider/launch stage. */
+export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.restore")(function* (
+  workspaceRoot: string,
+  workspaceLeaseHeld = false,
+) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const cwd = path.resolve(workspaceRoot);
+  const restore = Effect.gen(function* () {
+    // Re-read state under the lease. Two clients can request the same released
+    // checkout at once, and the later caller should use the first restoration.
+    if (yield* fs.exists(cwd)) return false;
+    const receipt = yield* readManagedProjectCheckout(cwd);
+    if (receipt === null || !receipt.released || receipt.projectId === null) return false;
+    const projectId = receipt.projectId;
+    const restored = yield* restoreScratchCheckout({
+      ...recoveryInput(receipt, projectId),
+      workspaceLeaseHeld: true,
+    });
+    if (!restored) return yield* fail("The managed project's recovery archive is unavailable.");
+    const root = yield* fs.stat(receipt.workspaceRoot);
+    const git = yield* fs.stat(path.join(receipt.workspaceRoot, ".git"));
+    if (!Option.isSome(root.ino) || !Option.isSome(git.ino))
+      return yield* fail("The restored checkout cannot be identified safely.");
+    // A partially removed old folder is never reused. It stays retained if deletion was interrupted.
+    yield* writeReceipt({
+      ...receipt,
+      checkoutInode: root.ino.value,
+      gitInode: git.ino.value,
+      birthtime: Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull),
+      released: false,
+      removalPath:
+        receipt.removalPath !== null && (yield* fs.exists(receipt.removalPath))
+          ? receipt.removalPath
+          : null,
+    });
+    return true;
+  });
+  return yield* workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
+}, mapFailure);
+
+/** Unknown process visibility keeps data. Inspect cwd without walking package/build trees. */
+export const managedProjectProcessReason = Effect.fn("ManagedProjectCheckout.processReason")(
+  function* (workspaceRoot: string) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const platform = yield* HostProcess.Platform;
+    const uid = yield* HostProcess.UserId;
+    const inside = (cwd: string) => {
+      const relative = path.relative(workspaceRoot, cwd);
+      return (
+        relative === "" ||
+        (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+      );
+    };
+    if (platform === "linux") {
+      for (const pid of (yield* fs.readDirectory("/proc")).filter((entry) => /^\d+$/.test(entry))) {
+        const directory = `/proc/${pid}`;
+        const info = yield* fs.stat(directory).pipe(Effect.option);
+        if (Option.isNone(info) || Option.getOrNull(info.value.uid) !== uid) continue;
+        const cwd = yield* fs.readLink(`${directory}/cwd`).pipe(Effect.option);
+        if (Option.isSome(cwd) && inside(cwd.value.replace(/ \(deleted\)$/, "")))
+          return "a process is using the project folder";
+        if (Option.isNone(cwd) && (yield* fs.exists(directory)))
+          return "process working directories could not be verified";
+      }
+      return null;
+    }
+    if (platform !== "darwin" || uid === undefined)
+      return "process inspection is unavailable on this host";
+    const result = yield* runCheckoutProcess({
+      command: "/usr/sbin/lsof",
+      args: ["-a", "-u", `${uid}`, "-d", "cwd", "-Fn"],
+      timeout: "10 seconds",
+      maxOutputBytes: 1024 * 1024,
+      outputMode: "truncate",
+    });
+    if (result.code !== 0 || result.stdoutTruncated || result.stderr.trim() !== "")
+      return "process working directories could not be verified";
+    return result.stdout.split("\n").some((line) => line.startsWith("n") && inside(line.slice(1)))
+      ? "a process is using the project folder"
+      : null;
+  },
+  (effect) =>
+    effect.pipe(Effect.orElseSucceed(() => "process working directories could not be verified")),
+);

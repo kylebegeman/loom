@@ -182,7 +182,7 @@ function CleanupResults({
     <>
       {report.entries.map((entry, index) => {
         const name =
-          entry.kind === "worktree"
+          entry.kind === "worktree" || entry.kind === "project"
             ? (entry.path?.split(/[\\/]/).findLast(Boolean) ?? "Worktrees")
             : entry.kind === "scratch"
               ? (entry.path?.split(/[\\/]/).findLast(Boolean) ?? "Scratch")
@@ -280,6 +280,8 @@ function CleanupSection() {
       rules.worktreeOnSettle ||
       rules.worktreeUnchanged;
     return (
+      settings.storageCleanup.projectAfterDays !== null ||
+      settings.storageCleanup.projectOnSettle ||
       settings.storageCleanup.scratchAfterDays !== null ||
       settings.storageCleanup.browserArtifactsAfterDays !== null ||
       settings.storageCleanup.logsAfterDays !== null ||
@@ -630,6 +632,39 @@ export function StorageSettingsPanel() {
         )}
       </SettingsSection>
 
+      {!isProjectScope &&
+        connectedEnvironments.every((environment) =>
+          loomFeaturesOf(environment.serverConfig?.environment.capabilities).includes(
+            "managed-project-checkouts",
+          ),
+        ) && (
+          <SettingsSection id="storage-projects" title="Project checkouts">
+            <SettingsRow
+              title="Release settled project checkouts"
+              status={ruleStatus("projectOnSettle")}
+              description="Release published clones created by Loom after all conversations settle. User-opened folders, pinned conversations, active work, local files and clones with linked worktrees are kept."
+              control={
+                <Switch
+                  aria-label="Release settled project checkouts"
+                  checked={settings.projectOnSettle}
+                  onCheckedChange={(projectOnSettle) => update({ projectOnSettle })}
+                />
+              }
+            />
+            <SettingsRow
+              title="Release inactive project checkouts"
+              status={ruleStatus("projectAfterDays")}
+              description="Release safe published clones after this many inactive days. Projects and conversations stay available; using a released project restores its saved revision and reruns setup."
+              control={
+                <RetentionControl
+                  label="Release inactive project checkouts"
+                  value={settings.projectAfterDays}
+                  onChange={(projectAfterDays) => update({ projectAfterDays })}
+                />
+              }
+            />
+          </SettingsSection>
+        )}
       {!isProjectScope &&
         connectedEnvironments.every((environment) =>
           loomFeaturesOf(environment.serverConfig?.environment.capabilities).includes(

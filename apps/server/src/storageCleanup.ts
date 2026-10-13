@@ -53,6 +53,14 @@ import {
   assertScratchUnmounted,
 } from "./workspace/ScratchCheckout.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import {
+  readManagedProjectCheckout,
+  assertManagedProjectOwned,
+  archiveManagedProjectCheckout,
+  releaseManagedProjectCheckout,
+  managedProjectProcessReason,
+} from "./workspace/ManagedProjectCheckout.ts";
+import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 
 const decodeCleanupThread = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJson),
@@ -377,7 +385,7 @@ const make = Effect.gen(function* () {
       allowNonZeroExit: true,
       timeoutMs: 300_000,
     });
-    if (result.exitCode !== 0)
+    if (result.exitCode !== 0 || result.stdoutTruncated)
       return yield* Effect.fail(
         new GitCommandError({
           operation: "StorageCleanup.cleanupGit",
@@ -386,6 +394,7 @@ const make = Effect.gen(function* () {
           detail: result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
         }),
       );
+    return result;
   });
 
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
@@ -709,6 +718,227 @@ const make = Effect.gen(function* () {
     }
   });
 
+  const cleanProjects = Effect.fn("StorageCleanup.cleanProjects")(function* (
+    settings: ServerSettings["storageCleanup"],
+    now: number,
+    entries: StorageCleanupReportEntry[],
+  ) {
+    if (settings.projectAfterDays === null && !settings.projectOnSettle) return;
+    const snapshot = yield* readThreads();
+    for (const project of snapshot.projects) {
+      const cwd = path.resolve(project.workspaceRoot);
+      const entry: StorageCleanupReportEntry = {
+        kind: "project",
+        outcome: "kept",
+        reason: "",
+        path: cwd,
+        threadId: null,
+        threadTitle: project.title,
+        bytes: null,
+        files: null,
+      };
+      const keep = (reason: string) => entries.push({ ...entry, reason: sentence(reason) });
+      yield* withWorkspaceLease(
+        cwd,
+        Effect.gen(function* () {
+          if (!(yield* fs.exists(cwd))) return;
+          const receipt = yield* readManagedProjectCheckout(cwd);
+          if (receipt === null) return; // User-opened and pre-ownership clones are never candidates.
+          if (receipt.workspaceRoot !== cwd) return keep("project path is not canonical");
+          if (receipt.removalPath !== null && (yield* fs.exists(receipt.removalPath)))
+            return keep(`recovery files are retained in ${receipt.removalPath}`);
+          const holders = snapshot.threads.filter((thread) => thread.projectId === project.id);
+          const fileRules = {
+            ...resolveWorktreeCleanup(yield* settingsService.getSettings, project.id),
+            worktreeKeepWhen: "any-local-files" as const,
+          };
+          const blocked = Effect.fnUntraced(function* () {
+            const latest = yield* readThreads();
+            const currentProject = latest.projects.find((candidate) => candidate.id === project.id);
+            if (currentProject === undefined || path.resolve(currentProject.workspaceRoot) !== cwd)
+              return "project identity changed since check";
+            const policy = (yield* settingsService.getSettings).storageCleanup;
+            if (
+              policy.projectAfterDays !== settings.projectAfterDays ||
+              policy.projectOnSettle !== settings.projectOnSettle
+            )
+              return "settings changed since check";
+            const currentHolders = latest.threads.filter(
+              (thread) => thread.projectId === project.id,
+            );
+            if (
+              currentHolders.length !== holders.length ||
+              currentHolders.some(
+                (thread) =>
+                  !holders.some(
+                    (prior) =>
+                      prior.id === thread.id &&
+                      storageCleanupActivityAt(prior) === storageCleanupActivityAt(thread),
+                  ),
+              )
+            )
+              return "thread identity or activity changed since check";
+            if (currentHolders.some((thread) => thread.pinnedAt != null)) return "thread is pinned";
+            if (currentHolders.some((thread) => !threadWorkspaceIdle(thread, now)))
+              return "thread is running or has pending work";
+            if (hasTerminal(cwd)) return "open terminal";
+            if (
+              yield* containsProjectRoot(
+                cwd,
+                latest.projects.filter((candidate) => candidate.id !== project.id),
+              )
+            )
+              return "contains another project checkout";
+            const allSettled =
+              currentHolders.length > 0 &&
+              currentHolders.every(
+                (thread) => thread.settledOverride === "settled" || thread.archivedAt != null,
+              );
+            const activity = Math.max(
+              Date.parse(project.createdAt),
+              ...currentHolders.map(storageCleanupActivityAt),
+            );
+            if (
+              !(settings.projectOnSettle && allSettled) &&
+              !(
+                settings.projectAfterDays !== null &&
+                activity < now - settings.projectAfterDays * DAY_MS
+              )
+            )
+              return "project retention has not elapsed";
+            if (yield* fs.exists(`${cwd}.t3-setup-pending`))
+              return "workspace preparation is pending";
+            for (const thread of currentHolders) {
+              const pending = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
+              WHERE thread_id = ${thread.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1`;
+              if (pending.length > 0) return "thread effects are still pending";
+            }
+            const rows = yield* sql<{ payload_json: string }>`SELECT payload_json
+            FROM orchestration_v2_projection_provider_sessions WHERE status != 'stopped'`;
+            const sessions = yield* Effect.forEach(rows, (row) =>
+              decodeCleanupSession(row.payload_json),
+            );
+            if (
+              sessions.some(
+                (session) =>
+                  path.resolve(session.cwd) === cwd || inside(cwd, path.resolve(session.cwd)),
+              )
+            )
+              return "provider session is still open";
+            return yield* managedProjectProcessReason(cwd);
+          });
+          const initialBlock = yield* blocked();
+          if (initialBlock !== null) return keep(initialBlock);
+          yield* assertManagedProjectOwned(receipt);
+          const changes = yield* localChangesReason(cwd, fileRules);
+          if (changes !== null) return keep(changes);
+          // Submodule worktrees can contain local/ignored files invisible to the
+          // parent status. Their checkout/data lifecycle is not managed here.
+          const tracked = (yield* cleanupGit(cwd, ["ls-files", "--stage"], "git files")).stdout;
+          if (/^160000 /m.test(tracked)) return keep("repository contains submodules");
+          // Fetch every publication remote into a private namespace. Local remote-tracking
+          // refs alone are stale evidence, and custom fetch mappings must not hide branches.
+          const origin = (yield* cleanupGit(
+            cwd,
+            ["remote", "get-url", "origin"],
+            "git remote",
+          )).stdout.trim();
+          if (normalizeGitRemoteUrl(origin) !== receipt.repositoryIdentity.canonicalKey)
+            return keep("repository identity changed since clone");
+          const remotes = (yield* cleanupGit(cwd, ["remote"], "git remote")).stdout
+            .trim()
+            .split("\n")
+            .filter(Boolean);
+          if (remotes.length === 0) return keep("no publication remote");
+          for (const [index, remote] of remotes.entries())
+            yield* cleanupGit(
+              cwd,
+              [
+                "fetch",
+                "--prune",
+                "--no-tags",
+                "--",
+                remote,
+                `+refs/heads/*:refs/t3/publication/${index}/heads/*`,
+                `+refs/tags/*:refs/t3/publication/${index}/tags/*`,
+              ],
+              "git fetch",
+            );
+          const local = (yield* cleanupGit(
+            cwd,
+            ["for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags"],
+            "git refs",
+          )).stdout
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) => line.split(" "));
+          const published = (yield* cleanupGit(
+            cwd,
+            [
+              "for-each-ref",
+              "--format=%(objectname)",
+              ...remotes.map((_, index) => `refs/t3/publication/${index}/`),
+            ],
+            "git refs",
+          )).stdout;
+          const publishedObjects = new Set(published.trim().split("\n").filter(Boolean));
+          if (publishedObjects.size === 0) return keep("no published revisions");
+          if (
+            local.some(
+              ([name, sha]) => name?.startsWith("refs/tags/") && !publishedObjects.has(sha!),
+            )
+          )
+            return keep("local tags have unpublished revisions");
+          const head = (yield* git.resolveCommit({ cwd, revision: "HEAD" })).commitSha;
+          const localHeads = local
+            .filter(([name]) => name?.startsWith("refs/heads/"))
+            .map(([, sha]) => sha!);
+          // A published branch may advance while this checkout is inactive. Check
+          // reachability rather than requiring each local branch to equal a remote tip.
+          const unpublished = (yield* cleanupGit(
+            cwd,
+            [
+              "rev-list",
+              "--max-count=1",
+              ...new Set([head, ...localHeads]),
+              "--not",
+              ...publishedObjects,
+            ],
+            "git published revisions",
+          )).stdout.trim();
+          if (unpublished !== "")
+            return keep("local branches or current revision have unpublished commits");
+          const bytes = yield* measureWorktree(cwd);
+          const recovery = yield* archiveManagedProjectCheckout(receipt, project.id);
+          const archiveBytes = yield* measureWorktree(
+            path.resolve(scratchArchivePaths(recovery.input).archive),
+          );
+          const afterArchive = yield* blocked();
+          if (afterArchive !== null) return keep(afterArchive);
+          if ((yield* git.resolveCommit({ cwd, revision: "HEAD" })).commitSha !== head)
+            return keep("commit changed since check");
+          const finalChanges = yield* localChangesReason(cwd, fileRules);
+          if (finalChanges !== null) return keep(finalChanges);
+          yield* releaseManagedProjectCheckout(receipt, project.id, recovery.archive);
+          entries.push({
+            ...entry,
+            outcome: "removed",
+            reason: "Published checkout released; recovery archive saved",
+            bytes:
+              bytes === null || archiveBytes === null ? null : Math.max(0, bytes - archiveBytes),
+          });
+        }),
+      ).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() =>
+            entries.push({ ...entry, outcome: "failed", reason: cleanupFailureReason(error) }),
+          ),
+        ),
+      );
+    }
+  });
+
   const cleanScratch = Effect.fn("StorageCleanup.cleanScratch")(function* (
     retention: number | null,
     now: number,
@@ -931,6 +1161,9 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+    yield* cleanProjects(settings, now, entries).pipe(
+      Effect.catch((error) => Effect.logWarning("Project cleanup failed", { error })),
+    );
     yield* cleanScratch(settings.scratchAfterDays, now, entries).pipe(
       Effect.catch((error) => Effect.logWarning("Scratch cleanup failed", { error })),
     );
@@ -1042,7 +1275,8 @@ const make = Effect.gen(function* () {
           event.type !== "snapshot" &&
             (event.type !== "upsert" ||
               (event.terminal.status !== "running" && event.terminal.status !== "starting")) &&
-            anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnSettle)
+            (lastSettings.storageCleanup.projectOnSettle ||
+              anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnSettle))
             ? worker.enqueue(undefined)
             : Effect.void,
         ),
@@ -1074,8 +1308,14 @@ const make = Effect.gen(function* () {
     );
     yield* forkParked(
       Stream.runForEach(events, (event) =>
-        (event.type === "thread.deleted" || event.type === "provider-session.updated") &&
-        anyWorktreePolicy(lastSettings, (rules) => rules.worktreeOnDelete || rules.worktreeOnSettle)
+        (event.type === "thread.deleted" ||
+          event.type === "thread.archived" ||
+          event.type === "provider-session.updated") &&
+        (lastSettings.storageCleanup.projectOnSettle ||
+          anyWorktreePolicy(
+            lastSettings,
+            (rules) => rules.worktreeOnDelete || rules.worktreeOnSettle,
+          ))
           ? worker.enqueue(undefined)
           : Effect.void,
       ).pipe(

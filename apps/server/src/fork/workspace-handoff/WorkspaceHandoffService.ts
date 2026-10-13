@@ -19,6 +19,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { restoreManagedProjectCheckout } from "../../workspace/ManagedProjectCheckout.ts";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -68,6 +69,8 @@ export class WorkspaceHandoffService extends Context.Service<
 const isHandoffError = Schema.is(WorkspaceHandoffError);
 const stringify = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const make = Effect.gen(function* () {
+  const restorationServices =
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
   const threads = yield* ThreadManagement.ThreadManagementService;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
@@ -183,6 +186,10 @@ const make = Effect.gen(function* () {
     const shell = yield* shellFor(input.threadId);
     if (!handoffThreadIdle(shell, yield* Clock.currentTimeMillis)) return yield* fail("busy");
     const project = yield* projectFor(shell.projectId);
+    yield* restoreManagedProjectCheckout(project.workspaceRoot).pipe(
+      Effect.provide(restorationServices),
+      Effect.mapError((cause) => new WorkspaceHandoffError({ reason: "unavailable", cause })),
+    );
     const cwd = shell.worktreePath ?? project.workspaceRoot;
     const status = yield* git.statusDetailsLocal(cwd);
     if (!status.isRepo || status.branch === null) return yield* fail("unavailable");
@@ -361,6 +368,10 @@ const make = Effect.gen(function* () {
     const modelSelection = resolved.defaultModelSelection ?? resolved.textGenerationModelSelection;
     const runtimeMode = input.runtimeMode ?? resolved.defaultRuntimeMode;
     yield* assertProviderReady(modelSelection, runtimeMode);
+    yield* restoreManagedProjectCheckout(project.workspaceRoot).pipe(
+      Effect.provide(restorationServices),
+      Effect.mapError((cause) => new WorkspaceHandoffError({ reason: "unavailable", cause })),
+    );
     if (
       !(yield* fs.exists(project.workspaceRoot)) ||
       (yield* fs.readDirectory(project.workspaceRoot)).length === 0

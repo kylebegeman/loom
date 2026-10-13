@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import { runCheckoutProcess } from "./checkoutProcess.ts";
 import { withWorkspaceLease } from "./workspaceLease.ts";
 
 export class ScratchCheckoutError extends Schema.TaggedError<ScratchCheckoutError>()(
@@ -22,6 +23,10 @@ export interface ScratchCheckoutInput {
   readonly worktreePath: string;
   readonly projectId: ProjectId;
   readonly threadId: ThreadId;
+  /** Primary projects share a recovery key across conversations. */
+  readonly recoveryKind?: "project";
+  /** Internal callers may hold the non-reentrant workspace lease already. */
+  readonly workspaceLeaseHeld?: boolean;
 }
 const Manifest = Schema.Struct({
   version: Schema.Literal(1),
@@ -42,7 +47,10 @@ const digest = (bytes: string | Uint8Array) =>
 
 /** Archives sit beside Scratch on the same filesystem, never beneath a released checkout. */
 export function scratchArchivePaths(input: ScratchCheckoutInput) {
-  const root = `${input.scratchRoot}/../.t3-scratch-archives`;
+  const root =
+    input.recoveryKind === "project"
+      ? `${input.scratchRoot}/.t3-project-archives`
+      : `${input.scratchRoot}/../.t3-scratch-archives`;
   return { root, archive: `${root}/${digest(input.threadId)}` };
 }
 
@@ -117,15 +125,36 @@ export const assertScratchUnmounted = Effect.fnUntraced(function* (cwd: string) 
   }
 });
 
-const gitRead = Effect.fnUntraced(function* (cwd: string, args: string[]) {
-  const git = yield* GitVcsDriver.GitVcsDriver;
-  const result = yield* git.execute({
-    operation: "ScratchCheckout",
-    cwd,
-    args,
-    timeoutMs: 300_000,
+// Normal workspace callers reuse the existing Git service. File and terminal paths can
+// restore an archive without constructing the entire Git/project service graph.
+const archiveGit = Effect.fnUntraced(function* (
+  cwd: string,
+  args: string[],
+  allowNonZeroExit = false,
+) {
+  const existing = yield* Effect.serviceOption(GitVcsDriver.GitVcsDriver);
+  if (Option.isSome(existing))
+    return yield* existing.value.execute({
+      operation: "ScratchCheckout",
+      cwd,
+      args,
+      timeoutMs: 300_000,
+      maxOutputBytes: 8 * 1024 * 1024,
+      allowNonZeroExit,
+    });
+  const result = yield* runCheckoutProcess({
+    command: "git",
+    args: ["-C", cwd, ...args],
+    timeout: "5 minutes",
     maxOutputBytes: 8 * 1024 * 1024,
+    outputMode: "truncate",
   });
+  if (result.code === null || (!allowNonZeroExit && result.code !== 0))
+    return yield* fail("Git could not prepare the recovery archive.");
+  return { ...result, exitCode: result.code };
+});
+const gitRead = Effect.fnUntraced(function* (cwd: string, args: string[]) {
+  const result = yield* archiveGit(cwd, args);
   if (result.stdoutTruncated)
     return yield* fail("Scratch Git metadata exceeds the inspection limit.");
   return result.stdout;
@@ -264,24 +293,18 @@ export const archiveScratchCheckout = Effect.fn("ScratchCheckout.archive")(funct
       (yield* fs.exists(path.join(gitDir, "objects", "info", "alternates")))
     )
       return yield* fail("Scratch repository uses shared object storage.");
-    const git = yield* GitVcsDriver.GitVcsDriver;
-    const configuredWorktree = yield* git.execute({
-      operation: "ScratchCheckout.config",
-      cwd,
-      args: ["config", "--get", "core.worktree"],
-      allowNonZeroExit: true,
-    });
+    const configuredWorktree = yield* archiveGit(cwd, ["config", "--get", "core.worktree"], true);
     if (configuredWorktree.exitCode === 0)
       return yield* fail("Scratch repository has a custom worktree binding.");
     const worktrees = yield* gitRead(cwd, ["worktree", "list", "--porcelain"]);
     if ((worktrees.match(/^worktree /gm)?.length ?? 0) !== 1)
       return yield* fail("Scratch repository has linked worktrees.");
   }
-  const archiveRoot = path.join(path.dirname(root), ".t3-scratch-archives");
+  const archiveRoot = path.resolve(scratchArchivePaths({ ...input, scratchRoot: root }).root);
   yield* fs.makeDirectory(archiveRoot, { recursive: true, mode: 0o700 });
   if (
     (yield* fs.realPath(archiveRoot)) !==
-    path.join(yield* fs.realPath(path.dirname(root)), ".t3-scratch-archives")
+    path.resolve(scratchArchivePaths({ ...input, scratchRoot: yield* fs.realPath(root) }).root)
   )
     return yield* fail("Scratch archive folder must be canonical.");
   const archiveInfo = yield* fs.stat(archiveRoot);
@@ -413,79 +436,74 @@ export const restoreScratchCheckout = Effect.fn("ScratchCheckout.restore")(funct
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const cwd = path.resolve(input.worktreePath);
-  return yield* withWorkspaceLease(
-    cwd,
-    Effect.gen(function* () {
-      if (yield* fs.exists(cwd)) return false;
-      const paths = scratchArchivePaths(input);
-      const archive = path.resolve(paths.archive);
-      const manifestPath = path.join(archive, "manifest.json");
-      if (!(yield* fs.exists(manifestPath))) return false;
-      const { root, cwd: canonicalCwd, rootInfo } = yield* canonicalRoot(input);
-      const canonicalArchive = path.join(
-        path.dirname(root),
-        ".t3-scratch-archives",
-        digest(input.threadId),
-      );
-      if (
-        (yield* fs.realPath(archive)) !== canonicalArchive ||
-        (yield* fs.stat(archive)).dev !== rootInfo.dev
-      )
-        return yield* fail("Scratch archive ownership or filesystem changed.");
-      const manifest = yield* decodeManifest(yield* fs.readFileString(manifestPath));
-      if (
-        manifest.threadId !== input.threadId ||
-        manifest.projectId !== input.projectId ||
-        manifest.worktreePath !== canonicalCwd ||
-        manifest.scratchRoot !== root
-      )
-        return yield* fail("Scratch recovery receipt does not match the registered thread.");
-      yield* assertScratchUnmounted(archive);
-      const archiveInfo = yield* fs.stat(archive);
-      const archiveRootInfo = yield* fs.stat(path.dirname(archive));
-      if (
-        Option.getOrNull(archiveInfo.uid) !== Option.getOrNull(rootInfo.uid) ||
-        Option.getOrNull(archiveRootInfo.uid) !== Option.getOrNull(rootInfo.uid)
-      )
-        return yield* fail("Scratch recovery archive is not owned by this host.");
-      const stage = `${canonicalCwd}.t3-restore-${NodeCrypto.randomUUID()}`;
-      yield* fs.makeDirectory(stage, { mode: manifest.mode });
-      return yield* Effect.gen(function* () {
-        if (manifest.kind === "git") {
-          const bundle = path.join(archive, "repository.bundle");
-          if ((yield* fileDigest(bundle)) !== manifest.bundleDigest)
-            return yield* fail("Scratch recovery bundle checksum does not match.");
-          yield* gitRead(stage, ["init"]);
-          yield* gitRead(stage, ["bundle", "unbundle", bundle]);
-          if (
-            (yield* metadata(path.join(canonicalArchive, "git-metadata"))) !==
-            manifest.metadataDigest
-          )
-            return yield* fail("Scratch recovery metadata checksum does not match.");
-          yield* fs.copy(path.join(canonicalArchive, "git-metadata"), path.join(stage, ".git"), {
-            overwrite: true,
-          });
-          if ((yield* metadata(path.join(stage, ".git"))) !== manifest.metadataDigest)
-            return yield* fail("Scratch recovery metadata checksum does not match.");
-          yield* gitRead(stage, ["reset", "--hard", manifest.head!]);
-          if ((yield* refsAt(stage)) !== manifest.refs)
-            return yield* fail("Scratch recovery refs do not match.");
-          yield* gitRead(stage, ["fsck", "--full", "--no-reflogs"]);
-        }
-        const marker = `${cwd}.t3-setup-pending`;
-        if (!(yield* fs.exists(marker)))
-          yield* fs.writeFileString(
-            marker,
-            "Restored Scratch checkout must finish workspace setup.\n",
-            { flag: "wx", mode: 0o600 },
-          );
-        if (yield* fs.exists(cwd))
-          return yield* fail("Scratch checkout appeared during restoration.");
-        yield* fs.rename(stage, cwd);
-        return true;
-      }).pipe(
-        Effect.ensuring(fs.remove(stage, { recursive: true, force: true }).pipe(Effect.ignore)),
-      );
-    }),
-  );
+  const restore = Effect.gen(function* () {
+    if (yield* fs.exists(cwd)) return false;
+    const paths = scratchArchivePaths(input);
+    const archive = path.resolve(paths.archive);
+    const manifestPath = path.join(archive, "manifest.json");
+    if (!(yield* fs.exists(manifestPath))) return false;
+    const { root, cwd: canonicalCwd, rootInfo } = yield* canonicalRoot(input);
+    const canonicalArchive = path.resolve(
+      scratchArchivePaths({ ...input, scratchRoot: root }).archive,
+    );
+    if (
+      (yield* fs.realPath(archive)) !== canonicalArchive ||
+      (yield* fs.stat(archive)).dev !== rootInfo.dev
+    )
+      return yield* fail("Scratch archive ownership or filesystem changed.");
+    const manifest = yield* decodeManifest(yield* fs.readFileString(manifestPath));
+    if (
+      manifest.threadId !== input.threadId ||
+      manifest.projectId !== input.projectId ||
+      manifest.worktreePath !== canonicalCwd ||
+      manifest.scratchRoot !== root
+    )
+      return yield* fail("Scratch recovery receipt does not match the registered thread.");
+    yield* assertScratchUnmounted(archive);
+    const archiveInfo = yield* fs.stat(archive);
+    const archiveRootInfo = yield* fs.stat(path.dirname(archive));
+    if (
+      Option.getOrNull(archiveInfo.uid) !== Option.getOrNull(rootInfo.uid) ||
+      Option.getOrNull(archiveRootInfo.uid) !== Option.getOrNull(rootInfo.uid)
+    )
+      return yield* fail("Scratch recovery archive is not owned by this host.");
+    const stage = `${canonicalCwd}.t3-restore-${NodeCrypto.randomUUID()}`;
+    yield* fs.makeDirectory(stage, { mode: manifest.mode });
+    return yield* Effect.gen(function* () {
+      if (manifest.kind === "git") {
+        const bundle = path.join(archive, "repository.bundle");
+        if ((yield* fileDigest(bundle)) !== manifest.bundleDigest)
+          return yield* fail("Scratch recovery bundle checksum does not match.");
+        yield* gitRead(stage, ["init"]);
+        yield* gitRead(stage, ["bundle", "unbundle", bundle]);
+        if (
+          (yield* metadata(path.join(canonicalArchive, "git-metadata"))) !== manifest.metadataDigest
+        )
+          return yield* fail("Scratch recovery metadata checksum does not match.");
+        yield* fs.copy(path.join(canonicalArchive, "git-metadata"), path.join(stage, ".git"), {
+          overwrite: true,
+        });
+        if ((yield* metadata(path.join(stage, ".git"))) !== manifest.metadataDigest)
+          return yield* fail("Scratch recovery metadata checksum does not match.");
+        yield* gitRead(stage, ["reset", "--hard", manifest.head!]);
+        if ((yield* refsAt(stage)) !== manifest.refs)
+          return yield* fail("Scratch recovery refs do not match.");
+        yield* gitRead(stage, ["fsck", "--full", "--no-reflogs"]);
+      }
+      const marker = `${cwd}.t3-setup-pending`;
+      if (!(yield* fs.exists(marker)))
+        yield* fs.writeFileString(
+          marker,
+          "Restored Scratch checkout must finish workspace setup.\n",
+          { flag: "wx", mode: 0o600 },
+        );
+      if (yield* fs.exists(cwd))
+        return yield* fail("Scratch checkout appeared during restoration.");
+      yield* fs.rename(stage, cwd);
+      return true;
+    }).pipe(
+      Effect.ensuring(fs.remove(stage, { recursive: true, force: true }).pipe(Effect.ignore)),
+    );
+  });
+  return yield* input.workspaceLeaseHeld ? restore : withWorkspaceLease(cwd, restore);
 }, mapFailure);

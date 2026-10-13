@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema";
 
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { restoreManagedProjectCheckout } from "./ManagedProjectCheckout.ts";
 
 export class WorkspaceRootNotExistsError extends Schema.TaggedError<WorkspaceRootNotExistsError>()(
   "WorkspaceRootNotExistsError",
@@ -96,7 +97,11 @@ export class WorkspacePaths extends Context.Service<
     /** Normalize a user-provided workspace root and verify it exists as a directory. */
     readonly normalizeWorkspaceRoot: (
       workspaceRoot: string,
-      options?: { readonly createIfMissing?: boolean },
+      options?: {
+        readonly createIfMissing?: boolean;
+        readonly restoreManagedCheckout?: boolean;
+        readonly workspaceLeaseHeld?: boolean;
+      },
     ) => Effect.Effect<
       string,
       | WorkspaceRootNotExistsError
@@ -126,6 +131,8 @@ function toPosixRelativePath(input: string): string {
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const restorationServices =
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
 
   const statWorkspaceRoot = Effect.fn("WorkspacePaths.statWorkspaceRoot")(function* (
     workspaceRoot: string,
@@ -156,6 +163,22 @@ export const make = Effect.gen(function* () {
     const normalizedWorkspaceRoot = path.resolve(
       expandHomePath(workspaceRoot.trim(), yield* HostProcess.HomeDirectory),
     );
+    if (options?.restoreManagedCheckout)
+      yield* restoreManagedProjectCheckout(
+        normalizedWorkspaceRoot,
+        options.workspaceLeaseHeld,
+      ).pipe(
+        Effect.provide(restorationServices),
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceRootStatFailedError({
+              workspaceRoot,
+              normalizedWorkspaceRoot,
+              phase: "validate-existing",
+              cause,
+            }),
+        ),
+      );
     let workspaceStat = yield* statWorkspaceRoot(
       workspaceRoot,
       normalizedWorkspaceRoot,

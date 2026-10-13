@@ -1,3 +1,4 @@
+import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectCheckout.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -168,11 +169,25 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const restorationServices =
+    yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
 
   const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
     operation: string,
     cwd: string,
   ) {
+    yield* restoreManagedProjectCheckout(cwd).pipe(
+      Effect.provide(restorationServices),
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation,
+            cwd,
+            detail: "The project checkout could not be restored.",
+            cause,
+          }),
+      ),
+    );
     const handle = yield* registry.resolve({ cwd }).pipe(
       Effect.mapError(
         (cause) =>
@@ -197,6 +212,19 @@ export const make = Effect.gen(function* () {
     operation: string,
     cwd: string,
   ) {
+    yield* restoreManagedProjectCheckout(cwd).pipe(
+      Effect.provide(restorationServices),
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation,
+            command: "restore-checkout",
+            cwd,
+            detail: "The project checkout could not be restored.",
+            cause,
+          }),
+      ),
+    );
     const handle = yield* registry.resolve({ cwd }).pipe(
       Effect.mapError(
         (cause) =>
@@ -249,6 +277,19 @@ export const make = Effect.gen(function* () {
   const detectGitRepositoryForCommand = Effect.fn(
     "GitWorkflowService.detectGitRepositoryForCommand",
   )(function* (operation: string, cwd: string) {
+    yield* restoreManagedProjectCheckout(cwd).pipe(
+      Effect.provide(restorationServices),
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation,
+            command: "restore-checkout",
+            cwd,
+            detail: "The project checkout could not be restored.",
+            cause,
+          }),
+      ),
+    );
     const handle = yield* registry.detect({ cwd }).pipe(
       Effect.mapError(
         (cause) =>

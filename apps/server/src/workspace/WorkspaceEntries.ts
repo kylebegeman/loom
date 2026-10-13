@@ -143,13 +143,14 @@ export const make = Effect.gen(function* () {
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
+    restoreManagedCheckout = true,
   ): Effect.fn.Return<string, WorkspaceEntriesError> {
-    return yield* workspacePaths.normalizeWorkspaceRoot(cwd);
+    return yield* workspacePaths.normalizeWorkspaceRoot(cwd, { restoreManagedCheckout });
   });
 
   const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(
     function* (cwd) {
-      const normalizedCwd = yield* normalizeWorkspaceRoot(cwd).pipe(
+      const normalizedCwd = yield* normalizeWorkspaceRoot(cwd, false).pipe(
         Effect.orElseSucceed(() => cwd),
       );
       for (const variant of WorkspaceSearchIndex.WORKSPACE_SEARCH_INDEX_VARIANTS) {
