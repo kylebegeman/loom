@@ -70,10 +70,10 @@ The 2026-09-27 review identified these items to revisit:
   [TESTING.md](./L09-device-qa/TESTING.md#results).
 - **L10:** on `main` (PR #13). Builds run through the thread's L19 lane when it has one. The
   checks still open are listed in [TESTING.md](./L10-apple-build-tooling/TESTING.md#results).
-- **L19:** lanes are on `main`: capped per-thread space for disposable output, pressure
-  handling and agent self-cleanup (phase 1) and leases (phase 2). Deferred: the agreed
-  persistent machine pool with on-demand checkouts, publication and safe parking
-  ([phase 3](./L19-project-lifecycle/PRODUCT.md#phase-3-persistent-machine-pool)).
+- **L19:** lanes and leases are implemented, along with selected-computer preparation and
+  published linked continuation. Opt-in managed primary-checkout release/reopen is implemented
+  locally; existing project records remain discoverable without their directory. Publication
+  uses the existing Git workflow. See [PRODUCT.md](./L19-project-lifecycle/PRODUCT.md).
 - **Shared surfaces and App Kit:** the extension SDK/server/dock stack is a separate draft
   proposal. Record the overlap without assuming acceptance, APIs or a delivery date.
   Its author closed it on 2026-10-02; a smaller upstream plugin stack (#16047 and up) is
@@ -169,7 +169,7 @@ means the packet registers nothing in server core and needs it only as the prere
 | L16 | [`provider-sign-in`](./L16-provider-sign-in/)             | Sign Codex and Claude accounts in and out inside Loom, add accounts, manage Codex tools.                                   | F5                              | core, settings, palette, providers                                      | Deferred: V2                                                        |
 | L17 | [`more-providers`](./L17-more-providers/)                 | DeepSeek, Ollama and LM Studio model endpoints.                                                                            | F6                              | core, settings, palette                                                 | Deferred: V2                                                        |
 | L18 | [`project-profiles`](./L18-project-profiles/)             | Private per-project agent notes, command mappings, token budgets, and `.env.schema` status.                                | F11                             | core, root, panels, settings, palette, mcp, composer, composer-menu     | Deferred: V2                                                        |
-| L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | Capped lanes for every thread's disposable output, storage pressure handling, then the machine pool and safe parking.      | F12                             | core, root, settings, palette, mcp                                      | Phases 1, 2 implemented; phase 3 deferred                           |
+| L19 | [`project-lifecycle`](./L19-project-lifecycle/)           | Owned lanes and leases, selected-computer preparation, published linked continuation and safe checkout release/reopen.     | F12                             | core, root, settings, palette, mcp                                      | Lanes, handoff implemented; primary release implemented locally     |
 | L20 | [`small-extras`](./L20-small-extras/)                     | A per-project No AI identification mode, a containers panel, and CLI tool versions.                                        | F23                             | core, root, panels, settings, palette, turn-input                       | Deferred: V2                                                        |
 | L21 | [`skill-registry`](./L21-skill-registry/)                 | See, toggle, install and create agent skills across providers and accounts in one panel.                                   | Skill registry                  | core, root, panels, palette, keys                                       | Deferred: V2                                                        |
 | L22 | [`instruction-modes`](./L22-instruction-modes/)           | Reusable rule packs such as "Minimal code" applied to every turn of a thread, for any provider.                            | Repository review               | core, root, settings, palette, keys, composer, turn-input               | Deferred: V2                                                        |

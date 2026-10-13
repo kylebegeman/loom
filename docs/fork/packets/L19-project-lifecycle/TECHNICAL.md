@@ -1,6 +1,7 @@
 # L19 technical design
 
-Phase 1: lanes. Phase 2: [leases](#phase-2-leases). Phase 3 gets its own design when it starts.
+Lanes and [resource leases](#phase-2-leases) support the implemented
+[selected-computer checkout lifecycle](#selected-computer-checkouts-and-handoff).
 
 ## Overview
 
@@ -22,7 +23,8 @@ its lane. The lane directory is `<lanesRoot>/<project>/<lane>/` and holds:
 lane id, first port), `lanes.zsh` (the hook), `shims/` (`xcodebuild`, `xcrun`, `lane-run`,
 `lane-slot`) and `slots/` (the build slot count, locks and holders).
 
-Everything lives in fork modules. Upstream files are not touched (see SEAMS).
+Lane ownership stays in fork modules. Checkout preparation, release and restoration also
+integrate with existing server services; [SEAMS.md](./SEAMS.md) records the merge constraints.
 
 ## Contracts
 
@@ -69,7 +71,8 @@ Everything lives in fork modules. Upstream files are not touched (see SEAMS).
   startup reconcile, a lane with no active holder is detached and its directory removed. A
   holder is a thread whose checkout is the lane's and which is neither archived nor settled
   (`settledOverride === "settled"`, or `settledAt` set without an `active` override). The
-  checkout itself is never touched.
+  lane service never removes the checkout itself; storage cleanup applies its separate
+  publication and recovery policy.
 - **Reconcile at startup**: attach every image lane that is not mounted (images detach on
   reboot), reclaim lanes without holders, rewrite the shell files. Lanes stay mounted when the
   server stops so running processes keep their files across server restarts.
@@ -78,7 +81,7 @@ Everything lives in fork modules. Upstream files are not touched (see SEAMS).
 
 - `diskutil image create blank --format ASIF --size <cap> --volumeName loom-<id> <img>`
   needs no root and takes about a second. An empty 2 GB image uses 15 MB.
-- `diskutil image attach --mountPoint <space> <img>` prints the whole disk first
+- `diskutil image attach --nobrowse --mountPoint <space> <img>` prints the whole disk first
   (`/dev/diskN`); the row stores it for detach. `diskutil info -plist <space>` gives
   `APFSPhysicalStores` as a fallback.
 - Detach is `diskutil unmount <space>` (fails while files are open, which Loom reports as
@@ -227,6 +230,34 @@ release behavior on 2026-10-08 (see PRODUCT).
   `test-without-building` (device runners), `clean` and queries never wait. The default count
   is one slot per three CPU threads, at least two.
 
+## Selected-computer checkouts and handoff
+
+Reuse upstream connected environments, repository identity, tracked cloning and thread launch.
+Checkout location is chosen on the owning host; it is not required to be inside a lane.
+Managed Mini hosts can supply canonical SSD defaults. Dependencies and development fixtures
+belong to repeatable setup on that host, not a shared production or development database.
+
+A successful Loom clone writes an owned receipt beside the checkout. Storage cleanup can
+release only roots matching that receipt, and only after checking current activity,
+publication, local files, process ownership and filesystem safety. User-opened roots and
+pre-receipt clones remain ineligible. Managed worktree release continues to use its own
+branch and holder checks. See [storageCleanup.ts](../../../../apps/server/src/storageCleanup.ts)
+and [ManagedProjectCheckout.ts](../../../../apps/server/src/workspace/ManagedProjectCheckout.ts).
+
+Project records outlive the directory. Repository identity resolution reads the owned receipt
+when Git files are absent, without restoring them. Explicit workspace use restores a verified
+Git archive; provider resume and new-thread preparation wait for setup. A sibling pending
+marker survives failed setup and host restarts. Workspace leases serialize removal and
+restoration; setup/settlement callers propagate a held lease to terminal opening so scripts
+do not reacquire the same non-reentrant lock. Interrupted removal keeps its recovery-folder
+receipt and prevents another release from forgetting it.
+
+Publication remains an explicit Git operation. Release checks freshly fetched remote refs,
+including all local branches and tags. Handoff prepares an already-published revision and
+uses a linked destination conversation; it does not migrate provider sessions, checkpoints
+or original history. The destination independently verifies repository identity, Git access,
+setup and provider readiness. See [WorkspaceHandoffService.ts](../../../../apps/server/src/fork/workspace-handoff/WorkspaceHandoffService.ts).
+
 ## Alternatives considered
 
 - **Docker or VMs**: cannot run Xcode or simulators; macOS VMs are limited to two.
@@ -235,6 +266,6 @@ release behavior on 2026-10-08 (see PRODUCT).
 - **A folder per lane with `du` polling everywhere**: no hard cap, and polling large trees
   costs more than it saves. Kept only as the fallback backend.
 - **Injecting env into providers**: no single upstream hook covers every provider and
-  terminal; the shell hook covers all of them with zero seams. Candidate upstream PRs:
+  terminal; the shell hook covers their shell commands without separate provider environment seams. Candidate upstream PRs:
   per-thread provider environment, a worktree-removal hook, configurable safe ignored paths
   in worktree cleanup.

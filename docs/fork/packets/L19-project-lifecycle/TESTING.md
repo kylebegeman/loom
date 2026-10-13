@@ -29,12 +29,24 @@
   simulator and closes device panels, shutting down only the device no active thread shares.
 - `mcp/registration.test.ts` covers the new toolkit.
 
+## Checkout and machine-workflow coverage
+
+Focused tests cover owned primary release/restore, passive identity lookup, file and terminal
+reopen, new-thread preparation, retained provider resume, setup failure/retry and concurrent
+restoration. Storage tests cover publication, advanced remote branches, stale refs, local and
+ignored files, pins, active work, providers, pending effects, linked worktrees and submodules.
+Recovery tests protect replaced roots, writes during removal and interrupted deletion.
+Handoff tests verify published revision preparation, destination readiness, linked history
+and source-change/retry behavior. GitHub host setup has separate credential-readiness tests.
+
 ## Commands
 
 ```bash
 vp test run apps/server/src/fork/project-lifecycle
 vp test run apps/server/src/fork/mcp/registration.test.ts
-scripts/fork/loom.sh check
+vp test run apps/server/src/workspace/ManagedProjectCheckout.test.ts apps/server/src/storageCleanup.test.ts
+vp test run apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts apps/server/src/orchestration-v2/ThreadLaunchService.test.ts apps/server/src/terminal/Manager.test.ts
+vp test run apps/server/src/fork/workspace-handoff
 ```
 
 ## Manual check
@@ -61,5 +73,8 @@ status tool scans fresh.
 
 ## Merge safety
 
-No upstream files are touched. `scripts/fork/loom.sh check` after each integration covers
-the fork registries.
+Checkout lifecycle touches upstream service boundaries. Check the marker manifest and run
+focused tests plus typechecks for the consumers changed by an integration. Native handoff
+qualification must use an isolated server home and repository; do not reuse production state
+or infer private Git access from provider readiness. Full fork checks belong to the release
+integration gate, not every documentation edit.

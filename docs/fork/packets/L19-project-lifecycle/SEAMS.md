@@ -1,33 +1,30 @@
-# L19 seams
+# L19 merge constraints
 
-Every upstream file this packet touches. Extension point seams are listed only if this packet
-creates the extension point.
+The lane and resource services use existing fork registries. Checkout lifecycle also relies
+on narrow upstream integrations, so this packet can conflict during an upstream merge.
 
-## Extension points created by this packet
+## Boundaries to preserve
 
-None: all existed.
+- Successful cloning records primary-checkout ownership; opening an existing folder does not.
+- Project and repository identity remain available after release. Passive status and identity
+  queries do not restore directories.
+- Explicit Git, file, terminal, new-thread and provider-start paths restore managed roots.
+  Restored setup must finish before provider execution and remain retryable after failure.
+- Storage cleanup verifies fresh publication and protects busy work, local files, pins,
+  pending actions, nested projects, linked worktrees and retained recovery folders.
+- Setup and settlement script terminals accept an internal held lease; clients cannot supply
+  that bypass through RPC.
+- Settings decoding supplies disabled defaults for older hosts, and client controls respect
+  the advertised capability.
 
-## Packet seams
-
-None. Phase 1 uses only fork registries: `ForkLayer`, `ForkServices`, `LOOM_SERVER_FEATURES`,
-`FORK_MIGRATION_SETS`, `ForkRpcGroup`, `FORK_RPC_REQUIRED_SCOPES`,
-`FORK_CLIENT_GUARDED_RPC_SCOPES`, `FORK_MCP_TOOLKITS`, `FORK_SETTINGS_SECTIONS`,
-`FORK_COMMAND_PALETTE_SOURCES` and `FORK_ROOT_COMPONENTS`.
-
-Routing agent output into lanes is done by the opt-in shell hook rather than a provider or
-terminal environment seam: no single upstream hook covers every provider adapter and the
-terminal manager, and providers already run commands through the user's shell.
-
-Upstream PR candidates that would let later phases drop the shell hook or reuse upstream
-cleanup: a per-thread provider environment, a worktree-removal hook, and configurable safe
-ignored paths in `storageCleanup.ts`.
+[docs/fork/seams.tsv](../../seams.tsv) is the executable marker manifest. It covers actual
+`project-lifecycle` markers in the recovery helpers and focused integration tests, alongside
+`mini-native-retention` and `mini-managed-projects` markers. Keep it aligned with source.
+The source and tests record individual integrations; this page records the behavior a merge
+must preserve rather than duplicating their file catalog.
 
 ## Merge check
 
-No upstream file changes, so upstream merges cannot conflict with this packet. Run
-`scripts/fork/loom.sh check` after each integration: it typechecks the fork registries this
-packet appends to and runs its tests.
-
-## FORK.md rows
-
-None.
+Run the seam check and the affected lifecycle tests and consumer typechecks described in
+[TESTING.md](./TESTING.md). A full maintenance check is a separate integration gate; a docs
+or marker-manifest correction does not require running every fork suite.

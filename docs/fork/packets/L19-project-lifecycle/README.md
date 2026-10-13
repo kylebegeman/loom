@@ -1,68 +1,47 @@
 # L19: Project lifecycle
 
-Status: Phases 1 and 2 on `main` 2026-10-08. Phase 3 deferred.
+Status: lanes, resource leases, selected-computer project preparation and linked machine
+handoff are implemented. Managed primary-checkout release and reopen are implemented locally.
 
-Every thread gets a **lane**: a capped space for the disposable output its agent produces
-(scratch files, DerivedData, package caches, build products). Loom creates the lane when
-the thread starts work, keeps it inside its cap, lets the agent clean it, and throws it away
-when the thread settles. Free space stops swinging by hundreds of gigabytes because output no
-longer lands in shared, unowned places like `/tmp` and `~/Library/Developer/Xcode/DerivedData`.
-
-Later phases build on lanes: leases for simulators, databases, ports and build slots
-(phase 2), then the persistent machine pool with on-demand checkouts, publication and safe
-parking that Kyle agreed on 2026-09-27 (phase 3).
+A lane owns disposable output and leased resources for a checkout. The connected computer
+owns its project records, conversation history, providers and credentials. The checkout can
+be released when publication and local-data checks prove it safe, while those durable records
+remain available.
 
 ## Scope
 
-Phases 1 and 2 (this branch):
+- Capped lane space, storage pressure handling, agent cleanup tools and optional shell routing.
+- Owned processes, ports, simulators, labelled Docker resources and machine-wide build slots.
+- Create, clone or open a project on a selected connected computer; reuse its existing checkout
+  and run repeatable project setup when preparing work.
+- Opt-in release of published managed worktrees and primary clones, with local recovery and
+  automatic restoration on explicit use. Folders opened manually are not adopted for deletion.
+- Move work by preparing a published revision on another computer and creating a linked
+  continuation. The original conversation remains on its host.
+- Per-host GitHub setup and provider readiness. Connecting a host does not copy credentials.
 
-- In: a lane per (project, checkout), created on the first run in that checkout, under
-  `~/Developer/lanes/<project>/<lane>/`.
-- In: on macOS, each lane's space is a sparse ASIF disk image mounted at the lane, so its cap
-  is enforced by the filesystem. Elsewhere, a plain folder with a soft cap.
-- In: generous default caps (100 GB for Apple projects, 40 GB otherwise), a per-project
-  override and a 40 GB machine reserve.
-- In: pressure handling: steer a running agent at 75%, clear an idle lane's `tmp` at 90%,
-  grow an idle full lane by half when the machine has room, warn and steer when the machine
-  drops below its reserve.
-- In: agent tools to read lane status, free scratch, build output or everything rebuildable,
-  and grow the lane.
-- In: opt-in shell integration that points `TMPDIR` and `xcodebuild` at the lane when a
-  command runs inside a lane's checkout.
-- In: reclaim on settle, archive and delete: the space is detached and deleted once no
-  active thread uses the checkout.
-- In: a Storage section in Loom settings with lanes, usage and actions; a palette entry; a
-  low-space notice.
-- In (phase 2): leases released with the lane: processes started with `lane-run` and
-  listeners on the lane's 20 ports, simulators created in the lane, Docker containers and
-  volumes labelled `loom.lane=<lane id>`. Released threads close their device panels and shut
-  down devices no other active thread uses. Machine-wide build slots for heavy builds.
-- Out (phase 3): Loom-owned checkout preparation (moving checkouts under the lane), the
-  machine pool, publication policy, park and reopen. Checkout removal stays with upstream's
-  worktree cleanup rules (Settings, Storage cleanup) until then.
+Cloud provisioning, live file synchronization, complete thread-history migration and a new
+runner system are outside this packet. Publication uses the existing Git workflow; cleanup
+and handoff verify commits already pushed rather than making commits or pushes themselves.
 
 ## Surfaces
 
-Web and desktop: the Storage section and notices. Mobile: none; lanes still work for threads
-started from mobile because everything is server-side. Remote: the server owns the lanes, so
-local, tailnet and T3 Connect clients all see the same state. A client connected to a plain
-T3 server or an older Loom server hides the section (`project-lifecycle` capability).
+Web and desktop expose lane and checkout storage policies. Web and native mobile can select
+computers for project creation and continuation. Mobile turns use the same server preparation
+and restoration paths. Local, tailnet and relay connections retain the same host ownership.
+Capabilities gate lanes, managed checkout cleanup and handoff independently.
 
-## Extension points used
+## Extension points and seams
 
-`ext-core` (service, migrations, RPC, capability), `ext-settings`, `ext-palette`, `ext-root`
-(low-space notice host), `ext-mcp`. Phase 2 consumes upstream's `DeviceService` without
-changing it.
-
-## Packet seams
-
-None. See [SEAMS.md](./SEAMS.md).
+The lane and handoff services use the existing fork registries. Checkout ownership,
+restoration and cleanup also have narrow integrations in upstream clone, project, Git,
+filesystem, terminal and provider-start services. See [SEAMS.md](./SEAMS.md).
 
 ## Documents
 
-- [PRODUCT.md](./PRODUCT.md): what and why, for Kyle.
-- [TECHNICAL.md](./TECHNICAL.md): the design.
-- [SEAMS.md](./SEAMS.md): every upstream touch.
-- [IMPLEMENTATION.md](./IMPLEMENTATION.md): ordered steps for the implementing agent.
-- [TESTING.md](./TESTING.md): how it is proven.
+- [PRODUCT.md](./PRODUCT.md): daily workflow and product boundaries.
+- [TECHNICAL.md](./TECHNICAL.md): ownership, recovery and host constraints.
+- [SEAMS.md](./SEAMS.md): merge constraints.
+- [IMPLEMENTATION.md](./IMPLEMENTATION.md): implementation boundaries to preserve.
+- [TESTING.md](./TESTING.md): focused verification.
 - [REFERENCES.md](./REFERENCES.md): prior art and sources.

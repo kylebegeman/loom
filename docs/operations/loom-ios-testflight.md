@@ -92,10 +92,38 @@ upload contains the same binary.
 
 ## Nightly automation and verification
 
-The authenticated local Mac publisher is the delivery path. Its opt-in iOS hook
-invokes `release` after a successful desktop nightly publication with the same exact
-source SHA. Keep its iOS account configuration outside source. Signing remains on
-the existing Mac, with no new runner or Expo publishing account required.
+The authenticated local Mac publisher is the delivery path. Enable its optional iOS
+hook with the private file `~/Library/Application Support/Loom Updates/ios.json`:
+
+```json
+{
+  "enabled": true,
+  "teamId": "ABCDE12345",
+  "appId": "1234567890",
+  "profile": "loom-personal",
+  "groups": ["Loom Internal"],
+  "exportOptions": "/Users/kyle/Library/Application Support/Loom Updates/ios-export-options.plist"
+}
+```
+
+Replace the example team and app IDs with the verified personal Apple team and Loom
+app, and use an existing TestFlight group. `groups` and `exportOptions` are optional;
+omitting groups uploads without assigning testers. The export-options path must be
+absolute. The named `asc` profile must already be authenticated; the hook uses strict
+profile authentication so another account cannot supply credentials as a fallback.
+Keep this file private and outside Git. Remove it or set `"enabled": false` to disable
+automatic iOS delivery. No API key contents belong in this configuration.
+
+After successful desktop publication, the hook checks the newest
+`loom-ios-testflight.yml` run for that release's exact commit SHA. That run must be
+completed with conclusion `success`; a green run on another commit or an older success
+superseded by a pending, failed or cancelled rerun does not qualify. If there is no
+qualifying run, desktop stays published and iOS waits until a later publisher attempt.
+Trigger the verification workflow on the release's immutable integration tag when a
+path-filtered main push did not run it, and confirm the recorded source matches the
+published desktop commit. The hook then builds and uploads that same SHA with the
+configured personal identity. Signing stays on the existing Mac; no new runner or Expo
+publishing account is required.
 
 The fork-owned `Loom iOS TestFlight verification` workflow checks production identity,
 release boundaries, focused project/handoff tests and mobile, contracts,

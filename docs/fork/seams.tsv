@@ -92,3 +92,37 @@ packages/contracts/src/settings.ts	mini-native-retention	1
 packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	mini-native-retention	1
+apps/mobile/app.config.ts	mobile-identity	1
+apps/mobile/src/App.tsx	mobile-identity	1
+apps/mobile/src/lib/appLinking.ts	mobile-identity	1
+apps/mobile/src/lib/appLinking.test.ts	mobile-identity	1
+apps/mobile/src/features/connection/pairing.ts	mobile-identity	1
+apps/mobile/src/features/connection/pairing.test.ts	mobile-identity	1
+apps/mobile/src/features/agent-awareness/capabilities.ts	mobile-identity	1
+apps/mobile/src/features/agent-awareness/agentLiveActivity.ios.ts	mobile-identity	1
+apps/mobile/src/features/agent-awareness/remoteRegistration.test.ts	mobile-identity	1
+apps/mobile/src/widgets/AgentActivity.tsx	mobile-identity	1
+apps/mobile/src/widgets/AgentActivity.test.ts	mobile-identity	1
+scripts/mobile-native-client.ts	mobile-identity	1
+scripts/mobile-showcase.ts	mobile-identity	1
+apps/mobile/src/components/BrandMark.tsx	brand	1
+apps/mobile/src/components/CompactBrandTitle.tsx	brand	1
+apps/mobile/src/Stack.tsx	brand	1
+apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx	brand	1
+apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx	brand	1
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	brand	1
+apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx	brand	1
+apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx	brand	1
+apps/mobile/src/features/threads/ThreadComposer.tsx	brand	1
+apps/mobile/src/features/threads/ThreadFeed.tsx	brand	1
+apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx	brand	1
+apps/mobile/eas.json	-	"LOOM_MOBILE_UPDATES_ENABLED": "0"
+apps/mobile/package.json	-	--scheme loom-dev
+
+apps/server/src/workspace/ManagedProjectCheckout.ts	project-lifecycle	1
+apps/server/src/workspace/ManagedProjectCheckout.test.ts	project-lifecycle	1
+apps/server/src/workspace/checkoutProcess.ts	project-lifecycle	1
+apps/server/src/orchestration-v2/ProviderTurnStartService.test.ts	project-lifecycle	1
+apps/server/src/orchestration-v2/ThreadLaunchService.test.ts	project-lifecycle	1
+apps/server/src/terminal/Manager.test.ts	project-lifecycle	2
+apps/server/src/storageCleanup.test.ts	project-lifecycle	1
