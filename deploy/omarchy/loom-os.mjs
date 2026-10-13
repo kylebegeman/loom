@@ -858,7 +858,7 @@ export async function installationPlan(
       mode: 0o755,
     });
     writes.set(NodePath.join(p.data, `applications/loom-os-${action}.desktop`), {
-      content: `[Desktop Entry]\nType=Application\nName=${title}\nComment=${action === "workbench" ? "Preview selected context and review private AI results" : action === "desk" ? "Review background work and approvals in their owning apps" : "Review component updates and their recovery boundaries"}\nExec=${desktopArg(p.bin)} ${action}\nIcon=${action === "workbench" ? "utilities-terminal" : action === "desk" ? "view-list-details" : "system-software-update"}\nTerminal=false\nCategories=Utility;\n`,
+      content: `[Desktop Entry]\nType=Application\nName=${title}\nComment=${action === "workbench" ? "Preview selected context and review private AI results" : action === "desk" ? "Review background work and approvals in their owning apps" : action === "continuity" ? "Continue work across devices and review OS power controls" : "Review component updates and their recovery boundaries"}\nExec=${desktopArg(p.bin)} ${action}\nIcon=${action === "workbench" ? "utilities-terminal" : action === "desk" ? "view-list-details" : action === "continuity" ? "network-workgroup" : "system-software-update"}\nTerminal=false\nCategories=Utility;\n`,
       mode: 0o644,
     });
   }
