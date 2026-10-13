@@ -284,6 +284,8 @@ const cleanupFixture = Effect.gen(function* () {
   let pendingEffects = false;
   let editBeforeRemoval = false;
   let openSessionCwd: string | null = null;
+  let processCwd: string | null = null;
+  let processInspectionFails = false;
   let fullStatusCalls = 0;
   let onPublicationFetch: Effect.Effect<void, PlatformError.PlatformError> | undefined;
   let terminalListener:
@@ -317,16 +319,16 @@ const cleanupFixture = Effect.gen(function* () {
     Effect.provideService(ProcessRunner.ProcessRunner, {
       run: (input) =>
         input.command === "/usr/sbin/lsof"
-          ? Effect.succeed({
-              stdout: "",
+          ? Effect.sync(() => ({
+              stdout: processCwd === null ? "" : `p42\nn${processCwd}\n`,
               stderr: "",
-              code: 0,
+              code: processInspectionFails ? 1 : 0,
               timedOut: false,
               stdoutTruncated: false,
               stderrTruncated: false,
               stdoutInvalidUtf8: false,
               stderrInvalidUtf8: false,
-            })
+            }))
           : runner.run(input),
     }),
     Effect.provideService(Settings.ServerSettingsService, {
@@ -499,6 +501,12 @@ const cleanupFixture = Effect.gen(function* () {
     },
     setOpenSessionCwd: (cwd: string | null) => {
       openSessionCwd = cwd;
+    },
+    setProcessCwd: (cwd: string) => {
+      processCwd = cwd;
+    },
+    failProcessInspection: () => {
+      processInspectionFails = true;
     },
     setProjectPolicy: (projectAfterDays: number | null, projectOnSettle = false) => {
       settings = {
@@ -1442,7 +1450,9 @@ it.live("retains a managed worktree containing a same-device bind mount", () =>
 
 // fork: project-lifecycle
 const primaryFixture = Effect.gen(function* () {
-  const f = yield* cleanupFixture;
+  // This fixture mocks lsof, so explicitly use its matching host path on every runner.
+  // Dedicated Linux filesystem guards keep their separate Linux fixture override.
+  const f = yield* cleanupFixture.pipe(Effect.provideService(HostProcess.Platform, "darwin"));
   const remote = yield* f.publish();
   yield* f.command(f.repo, ["worktree", "remove", f.worktree]);
   yield* f.command(f.repo, ["push", "-u", "origin", "main"]);
@@ -1462,6 +1472,26 @@ const primaryFixture = Effect.gen(function* () {
   return { ...f, cwd, mark };
 });
 describe("primary project storage cleanup", () => {
+  it.live.each(["busy", "unverifiable"] as const)(
+    "keeps a managed primary checkout when process inspection is %s",
+    (inspection) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          if (inspection === "busy") f.setProcessCwd(f.cwd);
+          else f.failProcessInspection();
+          const entry = (yield* f.service.runNow).entries.find((entry) => entry.kind === "project");
+          expect(entry?.outcome).toBe("kept");
+          expect(entry?.reason).toBe(
+            inspection === "busy"
+              ? "A process is using the project folder"
+              : "Process working directories could not be verified",
+          );
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        }),
+      ),
+  );
   it.live(
     "automatically releases after the final conversation emits thread.settled with global policy off",
     () =>
