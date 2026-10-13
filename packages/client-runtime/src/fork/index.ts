@@ -17,3 +17,4 @@ export * from "./workspace-handoff-destinations.ts";
 export * from "./computer-naming.ts";
 
 export * from "./project-checkout.ts";
+export * from "./project-navigation.ts";
