@@ -35,4 +35,4 @@ Dependencies determine this order; independent packets can proceed when useful. 
 | [17. Coordinated updates and recovery](17-coordinated-updates-and-recovery.md)       | completed            | #9, #10, #13    |
 | [16. Coherent offline ecosystem](16-coherent-offline-ecosystem.md)                   | completed            | #12             |
 | [15. Laptop/workstation continuity](15-laptop-workstation-continuity.md)             | approved             | #2, #4, #5, #16 |
-| [18. Resilient private AI hub](18-resilient-private-ai-hub.md)                       | approved             | #4, #5          |
+| [18. Resilient private AI hub](18-resilient-private-ai-hub.md)                       | verification_pending | #4, #5          |
