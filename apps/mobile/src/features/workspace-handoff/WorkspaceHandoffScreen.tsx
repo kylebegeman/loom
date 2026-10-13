@@ -375,7 +375,7 @@ function WorkspaceHandoffContent({
                 : "Loading saved move…"}
           </AppText>
         )}
-        {(selected || attempt?.destinationKey || attempt?.receipt) && (
+        {(attempt?.offer || attempt?.receipt) && (
           <View className="gap-1 rounded-xl bg-subtle p-4">
             <AppText className="text-sm text-foreground-muted">
               {phase === "done" ? "Moved to" : "Move to"}
