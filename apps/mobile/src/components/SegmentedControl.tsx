@@ -42,7 +42,7 @@ export function SegmentedControl<Value extends number | string>(
       {
         translateX:
           position.value *
-          (compactIcons ? 28 : width / props.options.length) *
+          (compactIcons ? 58 : width / props.options.length) *
           (I18nManager.isRTL ? -1 : 1),
       },
     ],
@@ -57,7 +57,7 @@ export function SegmentedControl<Value extends number | string>(
       className={cn(
         "flex-row",
         compactIcons
-          ? "h-[44px] w-[88px]"
+          ? "h-[44px] w-[120px]"
           : "overflow-hidden rounded-full border-continuous bg-card",
         props.iconOnly && "self-start",
         props.className,
@@ -67,8 +67,8 @@ export function SegmentedControl<Value extends number | string>(
         <View
           pointerEvents="none"
           accessible={false}
-          className="absolute h-[32px] w-[60px] rounded-full border-continuous bg-card"
-          style={{ top: 6, start: 14 }}
+          className="absolute h-[32px] w-[120px] rounded-full border-continuous bg-card"
+          style={{ top: 6, start: 0 }}
         />
       ) : null}
       <Animated.View
@@ -79,7 +79,7 @@ export function SegmentedControl<Value extends number | string>(
         )}
         style={[
           compactIcons
-            ? { width: 28, start: 16 }
+            ? { width: 58, start: 2 }
             : { width: `${100 / props.options.length}%`, start: 0 },
           indicatorStyle,
         ]}
@@ -96,7 +96,7 @@ export function SegmentedControl<Value extends number | string>(
             className={cn(
               "items-center justify-center rounded-full",
               compactIcons
-                ? "h-[44px] w-[44px]"
+                ? "h-[44px] w-[60px]"
                 : props.iconOnly
                   ? "h-[48px] w-[48px]"
                   : cn("flex-1", compact ? "h-9" : "h-11"),
@@ -111,7 +111,7 @@ export function SegmentedControl<Value extends number | string>(
                     ? {
                         transform: [
                           {
-                            translateX: (optionIndex === 0 ? 8 : -8) * (I18nManager.isRTL ? -1 : 1),
+                            translateX: (optionIndex === 0 ? 1 : -1) * (I18nManager.isRTL ? -1 : 1),
                           },
                         ],
                       }

@@ -32,7 +32,6 @@ export function ProjectNavigationControl(props: {
       <SegmentedControl
         iconOnly
         size="compact"
-        className="-ms-[14px]"
         options={OPTIONS}
         selected={props.view}
         onSelect={props.onChange}
