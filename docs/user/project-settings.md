@@ -48,12 +48,18 @@ and other phone-only settings ignore the filter.
 
 ## Project home and another computer
 
-Open a project from **Projects** to see its conversations and working copies together.
+Open a project from **Projects** to browse its threads. Expand a project for a short
+thread preview, or open its home for **Open**, **Snoozed**, **History**, and **All** views.
+Title search includes every thread, even when another view is selected. Clear search
+to return to that view. **Open in Threads** switches to the thread navigator scoped
+to the project.
+
 Choose the connected computer and checkout before starting a new task. That choice
 does not move existing work, and an offline or read-only computer requires reconnection
 or another explicit choice.
 
-To add a working copy elsewhere, choose **Prepare on another computer** in Project home.
+Expand **Computers and storage** in Project home to review each working folder.
+To add a working copy elsewhere, choose **Prepare on another computer** there.
 Review the source computer's actual Git origin, choose the destination computer, and
 review its destination folder before cloning. A fork is prepared from its own origin,
 not from the upstream repository it may be grouped with. The destination uses its

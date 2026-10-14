@@ -1,11 +1,15 @@
-import type { ProjectHomeSectionId, ProjectHomeThreadRow } from "@t3tools/client-runtime/fork";
-import { buildProjectHome } from "@t3tools/client-runtime/fork";
+import type {
+  ProjectHomeSectionId,
+  ProjectHomeThreadRow,
+  ProjectConversationSection,
+} from "@t3tools/client-runtime/fork";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 
 export const PROJECT_HOME_PAGE_SIZE = 20;
-export type ProjectHomeModel = ReturnType<typeof buildProjectHome<EnvironmentThreadShell>>;
 export type ProjectHomeListItem =
   | { readonly type: "overview"; readonly key: "overview" }
+  | { readonly type: "conversations"; readonly key: "conversations" }
+  | { readonly type: "empty"; readonly key: "empty" }
   | {
       readonly type: "section";
       readonly key: string;
@@ -28,10 +32,13 @@ export type ProjectHomeListItem =
 
 /** Bound rendered shells per section without losing full history or cross-computer identity. */
 export function projectHomeListItems(
-  model: ProjectHomeModel,
+  model: { readonly sections: ReadonlyArray<ProjectConversationSection<EnvironmentThreadShell>> },
   visible: Partial<Record<ProjectHomeSectionId, number>>,
 ): ReadonlyArray<ProjectHomeListItem> {
-  const items: ProjectHomeListItem[] = [{ type: "overview", key: "overview" }];
+  const items: ProjectHomeListItem[] = [
+    { type: "overview", key: "overview" },
+    { type: "conversations", key: "conversations" },
+  ];
   for (const section of model.sections) {
     if (section.rows.length === 0) continue;
     const count = visible[section.id] ?? PROJECT_HOME_PAGE_SIZE;
@@ -56,6 +63,8 @@ export function projectHomeListItems(
         hiddenCount: section.rows.length - count,
       });
   }
+  if (!model.sections.some((section) => section.rows.length > 0))
+    items.push({ type: "empty", key: "empty" });
   items.push({ type: "computers", key: "computers" });
   return items;
 }

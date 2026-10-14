@@ -3,7 +3,13 @@ import { useAtomValue } from "@effect/atom-react";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
   buildProjectHome,
+  buildProjectHomeComputerChoices,
+  projectHomeComputerChoiceKey,
   resolveProjectHomeDestination,
+  selectProjectHomeConversations,
+  PROJECT_CONVERSATION_VIEWS,
+  supportsLoomFeature,
+  type ProjectConversationView,
   type ProjectHomeSectionId,
 } from "@t3tools/client-runtime/fork";
 import {
@@ -16,22 +22,26 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
 import { EmptyState } from "../../components/EmptyState";
 import { ListChoiceRow } from "../../components/ListChoiceRow";
 import { ControlPillMenu } from "../../components/ControlPill";
-import { projectHomeThreadActions } from "./projectHomeThreadActions";
+import { projectHomeThreadMenuActions } from "./projectHomeThreadMenuActions";
+import { pinProjectHomeView } from "./projectHomeView";
+import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { cn } from "../../lib/cn";
+import { appAtomRegistry } from "../../state/atom-registry";
+import { environmentPresentations } from "../../state/presentation";
 import { useThreadListActions } from "../../features/home/useThreadListActions";
 import { MaterialButton } from "../../components/MaterialButton";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
 import { buildHomeProjectScopes, findHomeProjectScope } from "../../features/home/homeThreadList";
 import { useHomeThreadSelection } from "../../features/home/home-thread-navigation";
-import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { scopedProjectKey } from "../../lib/scopedEntities";
 import { relativeTime } from "../../lib/time";
-import { useProjects, useNavigationThreadShells } from "../../state/entities";
+import { useProjects, useNavigationThreadShells, useServerConfigs } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
@@ -86,6 +96,7 @@ function ProjectHomeContent(props: {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const projects = useProjects();
+  const configs = useServerConfigs();
   const threads = useNavigationThreadShells();
   const { environments } = useEnvironments();
   const { state: catalog } = useWorkspaceState();
@@ -102,6 +113,10 @@ function ProjectHomeContent(props: {
     {},
   );
   const [reviewProjectKey, setReviewProjectKey] = useState<string | null>(null);
+  const [threadView, setThreadView] = useState<ProjectConversationView | null>(null);
+  const [query, setQuery] = useState("");
+  const [destinationExpanded, setDestinationExpanded] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [now, setNow] = useState(() => new Date().toISOString());
   const preferredProjectRef = useMemo(
     () => ({ environmentId: props.environmentId, projectId: props.projectId }),
@@ -160,10 +175,12 @@ function ProjectHomeContent(props: {
       queuedThreadKeys,
     ],
   );
-  const listExtraData = useMemo(
-    () => ({ chosenProjectRef, reviewProjectKey, permittedEnvironmentIds, environments }),
-    [chosenProjectRef, reviewProjectKey, permittedEnvironmentIds, environments],
+  const conversations = useMemo(
+    () => selectProjectHomeConversations({ sections: model.sections, view: threadView, query }),
+    [model.sections, threadView, query],
   );
+  const pinnedView = pinProjectHomeView(threadView, conversations);
+  if (threadView !== pinnedView) setThreadView(pinnedView);
   const taskProject = resolveProjectHomeDestination({
     memberProjects: scope?.projects ?? [],
     preferredProjectRef,
@@ -171,13 +188,45 @@ function ProjectHomeContent(props: {
     connectedEnvironmentIds,
     permittedEnvironmentIds,
   });
+  const availableTaskProject = resolveProjectHomeDestination({
+    memberProjects: scope?.projects ?? [],
+    connectedEnvironmentIds,
+    permittedEnvironmentIds,
+  });
+  const selectedProject = scope?.projects.find(
+    (project) =>
+      project.environmentId === (chosenProjectRef ?? preferredProjectRef).environmentId &&
+      project.id === (chosenProjectRef ?? preferredProjectRef).projectId,
+  );
   const onlineProject = scope?.projects.find((project) =>
     connectedEnvironmentIds.has(project.environmentId),
   );
+  const environmentLabels = useMemo(
+    () =>
+      new Map(environments.map((environment) => [environment.environmentId, environment.label])),
+    [environments],
+  );
   const environmentLabel = (environmentId: EnvironmentId) =>
-    environments.find((environment) => environment.environmentId === environmentId)?.label ??
-    "Computer";
-  const computerLabel = taskProject ? environmentLabel(taskProject.environmentId) : null;
+    environmentLabels.get(environmentId) ?? "Computer";
+  const computerChoices = useMemo(
+    () =>
+      buildProjectHomeComputerChoices({
+        projects: scope?.projects ?? [],
+        environmentLabels,
+        connectedEnvironmentIds,
+        permittedEnvironmentIds,
+      }),
+    [scope?.projects, environmentLabels, connectedEnvironmentIds, permittedEnvironmentIds],
+  );
+  const selectedChoice = selectedProject
+    ? computerChoices.find(
+        (choice) => choice.value === projectHomeComputerChoiceKey(selectedProject),
+      )
+    : undefined;
+  const selectedComputer =
+    selectedChoice?.triggerLabel ??
+    (selectedProject ? environmentLabel(selectedProject.environmentId) : null);
+  const computerCount = new Set(scope?.projects.map((project) => project.environmentId) ?? []).size;
   const selectThread = useHomeThreadSelection();
   const { settleThread, unsettleThread, unsnoozeThread } = useThreadListActions();
   const openSettings = () => {
@@ -190,6 +239,32 @@ function ProjectHomeContent(props: {
           initialEnvironmentId: onlineProject.environmentId,
           initialProjectId: onlineProject.id,
         },
+      },
+    });
+  };
+  const prepareComputer = () => {
+    if (!onlineProject) return;
+    navigation.navigate("ProjectPreparation", {
+      environmentId: onlineProject.environmentId,
+      projectId: onlineProject.id,
+    });
+  };
+  const startTask = () => {
+    if (
+      !taskProject ||
+      !readEnvironmentScope(taskProject.environmentId, AuthOrchestrationOperateScope)
+    )
+      return;
+    const current = appAtomRegistry.get(
+      environmentPresentations.presentationAtom(taskProject.environmentId),
+    );
+    if (current?.entry.enabled !== true || current.connection.phase !== "connected") return;
+    navigation.navigate("NewTaskSheet", {
+      screen: "NewTaskDraft",
+      params: {
+        environmentId: taskProject.environmentId,
+        projectId: taskProject.id,
+        title: scope?.title,
       },
     });
   };
@@ -215,139 +290,270 @@ function ProjectHomeContent(props: {
     );
     return () => clearTimeout(timer);
   }, [nextSnoozeWakeAt, now]);
-  const items = useMemo(() => projectHomeListItems(model, visibleCounts), [model, visibleCounts]);
+  const items = useMemo(
+    () => projectHomeListItems(conversations, visibleCounts),
+    [conversations, visibleCounts],
+  );
+  const listExtraData = useMemo(
+    () => ({
+      chosenProjectRef,
+      reviewProjectKey,
+      destinationExpanded,
+      detailsExpanded,
+      permittedEnvironmentIds,
+      environments,
+      configs,
+      threadView,
+      query,
+    }),
+    [
+      chosenProjectRef,
+      reviewProjectKey,
+      destinationExpanded,
+      detailsExpanded,
+      permittedEnvironmentIds,
+      environments,
+      configs,
+      threadView,
+      query,
+    ],
+  );
   const renderItem = ({ item }: { readonly item: ProjectHomeListItem }) => {
     if (item.type === "overview")
       return (
-        <View className="gap-5 px-4 pt-4 pb-6">
-          <View className="gap-2">
-            <Text accessibilityRole="header" className="text-2xl font-t3-bold text-foreground">
-              {scope?.title}
-            </Text>
-            <Text className="text-sm text-foreground-muted">
-              {model.counts.total} {model.counts.total === 1 ? "conversation" : "conversations"}{" "}
-              across {scope?.projects.length}{" "}
-              {scope?.projects.length === 1 ? "checkout" : "checkouts"}
-            </Text>
-            <Text className="text-sm leading-normal text-foreground-muted">
-              Your project and conversations stay here when working files are released. Starting a
-              task restores its selected checkout when needed.
-            </Text>
-            {model.counts.offline > 0 ? (
-              <Text className="text-sm text-foreground-muted">
-                {model.counts.offline} conversations are last known on offline computers. Their
-                saved activity is not live.
-              </Text>
+        <View className="gap-5 px-4 pt-4 pb-5">
+          <View className="flex-row items-start gap-3">
+            {scope ? (
+              <View
+                className="pt-0.5"
+                accessibilityElementsHidden
+                importantForAccessibility="no-hide-descendants"
+              >
+                <ProjectFavicon
+                  environmentId={scope.representative.environmentId}
+                  projectTitle={scope.representative.title}
+                  workspaceRoot={scope.representative.workspaceRoot}
+                  faviconPath={scope.representative.faviconPath}
+                  projectIcon={scope.representative.projectIcon}
+                  size={36}
+                />
+              </View>
             ) : null}
+            <View className="min-w-0 flex-1 gap-1">
+              <Text accessibilityRole="header" className="text-xl font-t3-bold text-foreground">
+                {scope?.title}
+              </Text>
+              <Text className="text-xs text-foreground-muted">
+                {model.counts.total} {model.counts.total === 1 ? "thread" : "threads"} on{" "}
+                {computerCount} {computerCount === 1 ? "computer" : "computers"}
+              </Text>
+            </View>
           </View>
-          <SettingsSection title="Start work">
-            <View className="gap-3 p-4">
-              <Text className="text-sm text-foreground-muted">
-                Choose the computer for the next task. Changing this choice leaves existing work
-                where it is.
+          <View className="flex-row items-start gap-3">
+            <MaterialButton
+              tone="primary"
+              label="New task"
+              disabled={taskProject === null}
+              onPress={startTask}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={
+                selectedProject
+                  ? `Change task computer, ${selectedComputer}`
+                  : "Choose task computer"
+              }
+              accessibilityHint={selectedProject?.workspaceRoot}
+              accessibilityState={{ expanded: destinationExpanded }}
+              onPress={() => setDestinationExpanded((expanded) => !expanded)}
+              className="min-h-[48px] min-w-0 flex-1 flex-row items-center gap-2 rounded-xl px-2 py-1.5 active:opacity-70"
+            >
+              <View className="pt-0.5">
+                <SymbolView
+                  name="desktopcomputer"
+                  size={17}
+                  tintColorClassName="accent-icon-muted"
+                />
+              </View>
+              <View className="min-w-0 flex-1 gap-0.5">
+                <Text className="text-sm font-t3-medium text-foreground">
+                  {selectedComputer ?? "Choose a computer"}
+                </Text>
+                {!selectedProject ? (
+                  <Text className="text-2xs text-foreground-muted">Checkout unavailable</Text>
+                ) : null}
+              </View>
+              <SymbolView
+                name={destinationExpanded ? "chevron.up" : "chevron.down"}
+                size={12}
+                tintColorClassName="accent-icon-muted"
+              />
+            </Pressable>
+          </View>
+          {destinationExpanded ? (
+            <View className="overflow-hidden rounded-xl bg-card">
+              {scope?.projects.map((project, index) => {
+                const connected = connectedEnvironmentIds.has(project.environmentId);
+                const allowed = permittedEnvironmentIds.has(project.environmentId);
+                return (
+                  <ListChoiceRow
+                    key={scopedProjectKey(project.environmentId, project.id)}
+                    label={
+                      computerChoices.find(
+                        (choice) => choice.value === projectHomeComputerChoiceKey(project),
+                      )?.triggerLabel ?? environmentLabel(project.environmentId)
+                    }
+                    description={`${connected ? (allowed ? "Connected with task access" : "Connected, read-only") : "Offline, reconnect to start work"}\n${project.workspaceRoot}`}
+                    selected={
+                      selectedProject?.environmentId === project.environmentId &&
+                      selectedProject.id === project.id
+                    }
+                    disabled={!connected || !allowed}
+                    separated={index > 0}
+                    onPress={() => {
+                      setChosenProjectRef({
+                        environmentId: project.environmentId,
+                        projectId: project.id,
+                      });
+                      setDestinationExpanded(false);
+                    }}
+                  />
+                );
+              })}
+            </View>
+          ) : null}
+          {taskProject === null ? (
+            <View className="gap-1">
+              <Text className="text-xs text-foreground-muted">
+                {onlineProject
+                  ? "Choose a connected checkout with task access, or review the source to prepare another copy. Existing threads stay on their current computer."
+                  : "Reconnect a computer with this project to start work or review its origin before preparing another copy."}
               </Text>
               <MaterialButton
-                tone="primary"
-                label={computerLabel ? `New task on ${computerLabel}` : "New task"}
-                disabled={taskProject === null}
-                onPress={() => {
-                  if (
-                    !taskProject ||
-                    !readEnvironmentScope(taskProject.environmentId, AuthOrchestrationOperateScope)
-                  )
-                    return;
-                  navigation.navigate("NewTaskSheet", {
-                    screen: "NewTaskDraft",
-                    params: {
-                      environmentId: taskProject.environmentId,
-                      projectId: taskProject.id,
-                      title: scope?.title,
-                    },
-                  });
-                }}
+                tone="text"
+                label={
+                  availableTaskProject
+                    ? "Choose another computer"
+                    : onlineProject
+                      ? "Prepare another computer"
+                      : "Reconnect a computer"
+                }
+                onPress={
+                  availableTaskProject
+                    ? () => setDestinationExpanded(true)
+                    : onlineProject
+                      ? prepareComputer
+                      : () => navigation.navigate("Connections")
+                }
               />
-              {taskProject === null ? (
-                <Text className="text-sm text-foreground-muted">
-                  {chosenProjectRef
-                    ? "Your chosen checkout is unavailable or read-only. Choose another computer to start a task."
-                    : "Reconnect a computer with task access to start work."}
-                </Text>
-              ) : null}
             </View>
-            {scope?.projects.map((project, index) => {
-              const connected = connectedEnvironmentIds.has(project.environmentId);
-              const allowed = permittedEnvironmentIds.has(project.environmentId);
-              const selected = chosenProjectRef
-                ? chosenProjectRef.environmentId === project.environmentId &&
-                  chosenProjectRef.projectId === project.id
-                : taskProject?.environmentId === project.environmentId &&
-                  taskProject.id === project.id;
-              return (
-                <ListChoiceRow
-                  key={scopedProjectKey(project.environmentId, project.id)}
-                  label={environmentLabel(project.environmentId)}
-                  description={`${
-                    connected
-                      ? allowed
-                        ? "Connected with task access"
-                        : "Connected, read-only"
-                      : "Offline, reconnect to start work"
-                  }
-${project.workspaceRoot}`}
-                  selected={selected}
-                  disabled={!connected || !allowed}
-                  separated={index > 0}
-                  onPress={() =>
-                    setChosenProjectRef({
-                      environmentId: project.environmentId,
-                      projectId: project.id,
-                    })
-                  }
-                />
-              );
-            })}
-          </SettingsSection>
-          <View className="flex-row flex-wrap gap-3">
-            <MaterialButton
-              label="Project settings"
-              disabled={onlineProject === undefined}
-              onPress={openSettings}
-            />
-            <MaterialButton
-              label="Prepare another computer"
-              disabled={onlineProject === undefined}
-              onPress={() => {
-                if (onlineProject)
-                  navigation.navigate("ProjectPreparation", {
-                    environmentId: onlineProject.environmentId,
-                    projectId: onlineProject.id,
-                  });
-              }}
-            />
-            <MaterialButton
-              label="Review storage"
-              onPress={() => navigation.navigate("ProjectStorageInventory")}
-            />
-          </View>
-          {model.counts.total === 0 ? (
-            <Text className="text-sm text-foreground-muted">
-              No conversations yet. Start a task to begin this project.
-            </Text>
           ) : null}
+        </View>
+      );
+    if (item.type === "conversations")
+      return (
+        <View className="gap-3 px-4 pb-2">
+          <Text accessibilityRole="header" className="text-lg font-t3-medium text-foreground">
+            Threads
+          </Text>
+          <View className="min-h-[44px] flex-row items-center gap-2 rounded-xl border border-input-border bg-input pl-3">
+            <SymbolView name="magnifyingglass" size={16} tintColorClassName="accent-icon-muted" />
+            <TextInput
+              accessibilityLabel="Search all thread titles"
+              placeholder="Search threads"
+              value={query}
+              onChangeText={setQuery}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              className="min-h-[44px] min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-2 text-sm"
+            />
+            {query.length > 0 ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Clear thread search"
+                onPress={() => setQuery("")}
+                className="h-[44px] w-[44px] items-center justify-center"
+              >
+                <SymbolView
+                  name="xmark.circle.fill"
+                  size={17}
+                  tintColorClassName="accent-icon-muted"
+                />
+              </Pressable>
+            ) : (
+              <View className="w-3" />
+            )}
+          </View>
+          {conversations.searching ? (
+            <Text accessibilityLiveRegion="polite" className="py-2 text-xs text-foreground-muted">
+              {conversations.matchingCount}{" "}
+              {conversations.matchingCount === 1 ? "match" : "matches"} across all threads
+            </Text>
+          ) : (
+            <View className="flex-row flex-wrap gap-1">
+              {PROJECT_CONVERSATION_VIEWS.map((view) => (
+                <Pressable
+                  key={view.id}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`${view.label}, ${conversations.counts[view.id]} threads`}
+                  accessibilityState={{ selected: conversations.view === view.id }}
+                  onPress={() => setThreadView(view.id)}
+                  className={cn(
+                    "min-h-[44px] flex-row items-center gap-1.5 rounded-lg px-2 py-2 active:opacity-70",
+                    conversations.view === view.id && "bg-subtle-strong",
+                  )}
+                >
+                  <Text
+                    className={cn(
+                      "text-xs",
+                      conversations.view === view.id
+                        ? "font-t3-medium text-foreground"
+                        : "text-foreground-muted",
+                    )}
+                  >
+                    {view.label}
+                  </Text>
+                  <Text className="text-2xs text-foreground-muted">
+                    {conversations.counts[view.id]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+      );
+    if (item.type === "empty")
+      return (
+        <View className="gap-1 px-4 py-6">
+          <Text className="text-sm font-t3-medium text-foreground">
+            {conversations.searching
+              ? "No matching threads"
+              : conversations.counts.all === 0
+                ? "No threads yet"
+                : `No ${conversations.view === "all" ? "saved" : conversations.view} threads`}
+          </Text>
+          <Text className="text-xs text-foreground-muted">
+            {conversations.searching
+              ? "Try another title or clear the search."
+              : conversations.counts.all === 0
+                ? "Start a new task to begin this project."
+                : "Choose another view to browse this project's threads."}
+          </Text>
         </View>
       );
     if (item.type === "section")
       return (
-        <View className="flex-row items-center justify-between px-4 pt-5 pb-2">
-          <Text accessibilityRole="header" className="text-lg font-t3-semibold text-foreground">
-            {item.title}
+        <View className="flex-row items-center justify-between gap-2 px-4 pt-4 pb-1">
+          <Text accessibilityRole="header" className="text-xs font-t3-medium text-foreground-muted">
+            {item.id === "offline" ? "Offline computers" : item.title}
           </Text>
-          <Text className="text-sm text-foreground-muted">{item.count}</Text>
+          <Text className="text-2xs text-foreground-muted">{item.count}</Text>
         </View>
       );
     if (item.type === "more")
       return (
-        <View className="px-4 py-2">
+        <View className="px-4 py-1">
           <MaterialButton
             label={`Show more (${item.hiddenCount})`}
             tone="text"
@@ -362,51 +568,81 @@ ${project.workspaceRoot}`}
       );
     if (item.type === "thread") {
       const { thread, activity, connected } = item.row;
-      const lifecycleActions = projectHomeThreadActions({
+      const actions = projectHomeThreadMenuActions({
         activity,
         connected,
         permitted: permittedEnvironmentIds.has(thread.environmentId),
         settlementSupported: settlementEnvironmentIds.has(thread.environmentId),
         snoozeSupported: snoozeEnvironmentIds.has(thread.environmentId),
+        handoffSupported: supportsLoomFeature(
+          configs.get(thread.environmentId)?.environment.capabilities,
+          "workspace-handoff",
+        ),
       });
       return (
         <View className="flex-row items-center">
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Open ${thread.title}, ${connected ? ACTIVITY_LABELS[activity] : "Offline, last known"}, ${environmentLabel(thread.environmentId)}`}
+            accessibilityLabel={`Open ${thread.title}, ${connected ? ACTIVITY_LABELS[activity] : `Offline, last known ${ACTIVITY_LABELS[activity]}`}, ${environmentLabel(thread.environmentId)}`}
             onPress={() => selectThread(thread)}
-            className="min-h-[56px] min-w-0 flex-1 flex-row items-center gap-3 px-4 py-3 active:opacity-70"
+            className="min-h-[56px] min-w-0 flex-1 flex-row items-start gap-3 px-4 py-2.5 active:opacity-70"
           >
-            <SymbolView
-              name={connected ? ACTIVITY_ICONS[activity] : "wifi.slash"}
-              size={20}
-              tintColorClassName={
-                connected && activity === "failed"
-                  ? "accent-danger-foreground"
-                  : connected && activity === "attention"
-                    ? "accent-warning-foreground"
-                    : "accent-icon-muted"
-              }
-            />
-            <View className="min-w-0 flex-1 gap-1">
-              <Text className="text-sm font-t3-medium text-foreground" numberOfLines={2}>
-                {thread.title}
-              </Text>
-              <Text className="text-xs text-foreground-muted" numberOfLines={2}>
-                {environmentLabel(thread.environmentId)} ·{" "}
-                {connected ? ACTIVITY_LABELS[activity] : `Last known: ${ACTIVITY_LABELS[activity]}`}{" "}
-                · {relativeTime(thread.updatedAt)}
-              </Text>
+            <View className="pt-0.5">
+              <SymbolView
+                name={connected ? ACTIVITY_ICONS[activity] : "wifi.slash"}
+                size={17}
+                tintColorClassName={
+                  connected && activity === "failed"
+                    ? "accent-danger-foreground"
+                    : connected && activity === "attention"
+                      ? "accent-warning-foreground"
+                      : "accent-icon-muted"
+                }
+              />
             </View>
-            <SymbolView name="chevron.right" size={13} tintColorClassName="accent-icon-muted" />
+            <View className="min-w-0 flex-1 gap-1">
+              <Text className="text-sm font-t3-medium text-foreground">{thread.title}</Text>
+              <View className="flex-row flex-wrap items-center gap-x-2 gap-y-0.5">
+                <Text
+                  className={cn(
+                    "text-2xs",
+                    connected && activity === "failed"
+                      ? "text-danger-foreground"
+                      : connected && activity === "attention"
+                        ? "text-warning-foreground"
+                        : connected && activity === "working"
+                          ? "text-adaptive-sky-600-400"
+                          : "text-foreground-muted",
+                  )}
+                >
+                  {connected
+                    ? ACTIVITY_LABELS[activity]
+                    : `Last known: ${ACTIVITY_LABELS[activity]}`}
+                </Text>
+                <Text className="text-2xs text-foreground-muted">
+                  {environmentLabel(thread.environmentId)}
+                </Text>
+                <Text className="text-2xs text-foreground-muted">
+                  {relativeTime(thread.updatedAt)}
+                </Text>
+              </View>
+            </View>
           </Pressable>
-          {lifecycleActions.length > 0 ? (
+          {actions.length > 0 ? (
             <ControlPillMenu
-              actions={[...lifecycleActions]}
+              actions={[...actions]}
               onPressAction={({ nativeEvent }) => {
                 if (nativeEvent.event === "settle") void settleThread(thread);
                 if (nativeEvent.event === "reopen") void unsettleThread(thread);
                 if (nativeEvent.event === "wake") void unsnoozeThread(thread);
+                if (
+                  nativeEvent.event === "move-work" &&
+                  readEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope)
+                )
+                  navigation.navigate("WorkspaceHandoff", {
+                    environmentId: thread.environmentId,
+                    threadId: thread.id,
+                  });
               }}
             >
               <Pressable
@@ -414,7 +650,7 @@ ${project.workspaceRoot}`}
                 accessibilityLabel={`Actions for ${thread.title}`}
                 className="h-[44px] w-[44px] items-center justify-center"
               >
-                <SymbolView name="ellipsis" size={18} tintColorClassName="accent-icon-muted" />
+                <SymbolView name="ellipsis" size={17} tintColorClassName="accent-icon-muted" />
               </Pressable>
             </ControlPillMenu>
           ) : null}
@@ -422,48 +658,89 @@ ${project.workspaceRoot}`}
       );
     }
     return (
-      <View className="gap-4 px-4 pt-6 pb-4">
-        <Text accessibilityRole="header" className="text-lg font-t3-semibold text-foreground">
-          Computers and working files
-        </Text>
-        <Text className="text-sm leading-normal text-foreground-muted">
-          Review a checkout to see its current storage state and choose Keep, Release when settled,
-          or the computer's default. Reviewing does not restore files.
-        </Text>
-        {scope?.projects.map((project) => {
-          const key = scopedProjectKey(project.environmentId, project.id);
-          const connected = connectedEnvironmentIds.has(project.environmentId);
-          return (
-            <View key={key} className="gap-3 rounded-2xl bg-card p-4">
-              <Text className="text-base font-t3-medium text-foreground">
-                {environmentLabel(project.environmentId)}
-              </Text>
-              <Text className="text-sm text-foreground-muted">
-                {connected ? "Connected" : "Offline. Reconnect to review storage."}
-              </Text>
-              <Text selectable className="text-xs leading-normal text-foreground-muted">
-                {project.workspaceRoot}
-              </Text>
+      <View className="px-4 pt-5 pb-4">
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Computers and storage"
+          accessibilityState={{ expanded: detailsExpanded }}
+          onPress={() => setDetailsExpanded((expanded) => !expanded)}
+          className="min-h-[44px] flex-row items-center justify-between gap-3 py-2 active:opacity-70"
+        >
+          <View className="min-w-0 flex-1 gap-0.5">
+            <Text className="text-sm font-t3-medium text-foreground">Computers and storage</Text>
+            <Text className="text-2xs text-foreground-muted">
+              {scope?.projects.length ?? 0} working{" "}
+              {(scope?.projects.length ?? 0) === 1 ? "copy" : "copies"}
+            </Text>
+          </View>
+          <SymbolView
+            name={detailsExpanded ? "chevron.down" : "chevron.right"}
+            size={13}
+            tintColorClassName="accent-icon-muted"
+          />
+        </Pressable>
+        {detailsExpanded ? (
+          <View className="gap-5 pt-3">
+            <Text className="text-xs leading-normal text-foreground-muted">
+              Your project and threads remain available when working files are released. Starting
+              work restores its selected checkout when needed. Reviewing storage leaves released
+              files released.
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
               <MaterialButton
-                label={
-                  connected && reviewProjectKey === key
-                    ? "Hide storage review"
-                    : "Review this checkout"
-                }
-                disabled={!connected}
-                onPress={() => setReviewProjectKey((current) => (current === key ? null : key))}
+                label="Prepare another computer"
+                disabled={onlineProject === undefined}
+                onPress={prepareComputer}
               />
-              {connected && reviewProjectKey === key ? (
-                <ProjectCheckoutSection
-                  environmentId={project.environmentId}
-                  projectId={project.id}
-                  workspaceRoot={project.workspaceRoot}
-                  computerLabel={environmentLabel(project.environmentId)}
-                />
-              ) : null}
+              <MaterialButton
+                label="Review storage"
+                onPress={() => navigation.navigate("ProjectStorageInventory")}
+              />
+              <MaterialButton
+                label="Manage computers"
+                tone="text"
+                onPress={() => navigation.navigate("Connections")}
+              />
             </View>
-          );
-        })}
+            {scope?.projects.map((project) => {
+              const key = scopedProjectKey(project.environmentId, project.id);
+              const connected = connectedEnvironmentIds.has(project.environmentId);
+              return (
+                <View key={key} className="gap-2">
+                  <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
+                    <Text className="text-sm font-t3-medium text-foreground">
+                      {environmentLabel(project.environmentId)}
+                    </Text>
+                    <Text className="text-2xs text-foreground-muted">
+                      {connected ? "Connected" : "Offline"}
+                    </Text>
+                  </View>
+                  <Text selectable className="text-xs leading-normal text-foreground-muted">
+                    {project.workspaceRoot}
+                  </Text>
+                  <MaterialButton
+                    label={
+                      connected && reviewProjectKey === key
+                        ? "Hide storage review"
+                        : "Review this checkout"
+                    }
+                    tone="text"
+                    disabled={!connected}
+                    onPress={() => setReviewProjectKey((current) => (current === key ? null : key))}
+                  />
+                  {connected && reviewProjectKey === key ? (
+                    <ProjectCheckoutSection
+                      environmentId={project.environmentId}
+                      projectId={project.id}
+                      workspaceRoot={project.workspaceRoot}
+                      computerLabel={environmentLabel(project.environmentId)}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
       </View>
     );
   };

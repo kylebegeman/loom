@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, type ComponentProps, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { AsyncResult } from "effect/reactivity";
@@ -6,10 +6,17 @@ import * as Cause from "effect/Cause";
 import { ThreadId, type ServerConfig } from "@t3tools/contracts";
 import { makeThreadFixture } from "~/test-fixtures";
 import { ProjectHomeThreads } from "./ProjectHomeThreads";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { ProjectHomeSectionId, ProjectHomeThreadRow } from "@t3tools/client-runtime/fork";
 const state = vi.hoisted(() => ({ canOperate: true }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => state.canOperate }));
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
 vi.mock("~/components/ui/input", () => ({ Input: "input" }));
+vi.mock("~/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  TooltipPopup: () => null,
+}));
 let renderer: ReactTestRenderer | null = null;
 const thread = makeThreadFixture({ title: "Review storage", runtime: null });
 const configs = new Map([
@@ -34,14 +41,11 @@ afterEach(async () => {
   renderer = null;
   vi.unstubAllGlobals();
 });
-const mount = async (
-  rows = [{ thread, activity: "ready" as const, connected: true }],
-  id: "ready" | "history" | "offline" = "ready",
-) => {
+const mountSections = async (sections: ComponentProps<typeof ProjectHomeThreads>["sections"]) => {
   await act(async () => {
     renderer = create(
       <ProjectHomeThreads
-        sections={[{ id, title: id, rows }]}
+        sections={sections}
         environmentLabels={labels}
         serverConfigs={configs}
         onOpenThread={open}
@@ -49,6 +53,16 @@ const mount = async (
       />,
     );
   });
+};
+const mount = async (
+  rows: readonly ProjectHomeThreadRow<EnvironmentThreadShell>[] = [
+    { thread, activity: "ready", connected: true },
+  ],
+  id: ProjectHomeSectionId = "ready",
+) => mountSections([{ id, title: id, rows }]);
+const chooseView = async (label: string) => {
+  const button = renderer!.root.findAllByType("button").find((item) => item.children[0] === label)!;
+  await act(async () => button.props.onClick());
 };
 
 describe("project home conversation interaction", () => {
@@ -121,5 +135,93 @@ describe("project home conversation interaction", () => {
     ).toBeDefined();
     await act(async () => search.props.onChange({ currentTarget: { value: "" } }));
     expect(renderer!.root.findAllByType("li")).toHaveLength(12);
+  });
+  it("searches all project history and restores the explicitly chosen view after clearing", async () => {
+    const settled = makeThreadFixture({
+      id: ThreadId.make("settled-thread"),
+      title: "Earlier decision",
+      runtime: null,
+    });
+    await mountSections([
+      { id: "ready", title: "Ready", rows: [{ thread, activity: "ready", connected: true }] },
+      {
+        id: "history",
+        title: "History",
+        rows: [{ thread: settled, activity: "settled", connected: true }],
+      },
+    ]);
+    await chooseView("History");
+    expect(renderer!.root.findAllByType("li")).toHaveLength(1);
+    expect(renderer!.root.findByProps({ "aria-label": "Reopen Earlier decision" })).toBeDefined();
+    const search = renderer!.root.findByProps({ "aria-label": "Search project conversations" });
+    await act(async () => search.props.onChange({ currentTarget: { value: "Review storage" } }));
+    expect(renderer!.root.findByProps({ "aria-label": "Settle Review storage" })).toBeDefined();
+    expect(renderer!.root.findAllByProps({ "aria-label": "Thread view" })).toHaveLength(0);
+    await act(async () =>
+      renderer!.root.findByProps({ "aria-label": "Clear thread search" }).props.onClick(),
+    );
+    expect(renderer!.root.findByProps({ "aria-label": "Reopen Earlier decision" })).toBeDefined();
+    expect(renderer!.root.findAllByProps({ "aria-label": "Settle Review storage" })).toHaveLength(
+      0,
+    );
+  });
+
+  it("keeps the All and Snoozed views readable when cached computers are offline", async () => {
+    const snoozed = makeThreadFixture({
+      id: ThreadId.make("snoozed-thread"),
+      title: "Later review",
+      runtime: null,
+    });
+    await mountSections([
+      { id: "ready", title: "Ready", rows: [{ thread, activity: "ready", connected: true }] },
+      {
+        id: "offline",
+        title: "Offline",
+        rows: [{ thread: snoozed, activity: "snoozed", connected: false }],
+      },
+    ]);
+    await chooseView("All");
+    expect(renderer!.root.findAllByType("li")).toHaveLength(2);
+    await chooseView("Snoozed");
+    expect(renderer!.root.findAllByType("li")).toHaveLength(1);
+    const cached = renderer!.root.findByProps({
+      "aria-label": "Open Later review, Last known, computer offline, Mac",
+    });
+    await act(async () => cached.props.onClick());
+    expect(open).toHaveBeenCalledWith({
+      environmentId: snoozed.environmentId,
+      threadId: snoozed.id,
+    });
+    expect(renderer!.root.findAllByProps({ "aria-label": "Wake Later review" })).toHaveLength(0);
+  });
+  it("keeps the initial Open view when its last thread settles", async () => {
+    await mount();
+    await act(async () => {
+      renderer!.update(
+        <ProjectHomeThreads
+          sections={[
+            {
+              id: "history",
+              title: "History",
+              rows: [{ thread, activity: "settled", connected: true }],
+            },
+          ]}
+          environmentLabels={labels}
+          serverConfigs={configs}
+          onOpenThread={open}
+          onThreadAction={action}
+        />,
+      );
+    });
+    expect(renderer!.root.findAllByType("li")).toHaveLength(0);
+    expect(
+      renderer!.root
+        .findAllByProps({ role: "status" })
+        .some(
+          (status) => status.children.join("") === "No open threads. Your past work is in History.",
+        ),
+    ).toBe(true);
+    await chooseView("History");
+    expect(renderer!.root.findByProps({ "aria-label": "Reopen Review storage" })).toBeDefined();
   });
 });

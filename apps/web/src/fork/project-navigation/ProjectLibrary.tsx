@@ -3,7 +3,8 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import {
   AlarmClockIcon,
   ArrowRightIcon,
-  ChevronDownIcon,
+  ChevronRightIcon,
+  EllipsisIcon,
   CircleAlertIcon,
   CircleCheckIcon,
   CircleDashedIcon,
@@ -30,8 +31,15 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
-import { Badge } from "~/components/ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import {
+  Menu,
+  MenuItem,
+  MenuItemLabel,
+  MenuPopup,
+  MenuSeparator,
+  MenuTrigger,
+} from "~/components/ui/menu";
 import { SidebarInput } from "~/components/ui/sidebar";
 import { SidebarHeaderIconButton } from "~/components/sidebar/SidebarThreadHeader";
 import { ProjectFavicon } from "~/components/ProjectFavicon";
@@ -289,6 +297,7 @@ function ProjectLibraryRow({
   const [savedExpanded, toggleExpanded] = useProjectLibraryExpansion(entry.key);
   const expanded = savedExpanded || previewForcedOpen;
   const detailsId = useId();
+  const childrenId = useId();
   const project = entry.group.originalGroup;
   const permittedEnvironmentIds = useEnvironmentsWithScope(
     project.memberProjects,
@@ -312,26 +321,54 @@ function ProjectLibraryRow({
   );
   const accessibilitySummary = `${presentation.accessibilitySummary}${previewForcedOpen ? ". Matching thread previews are shown while searching." : ""}`;
   const previewThreads = entry.previewThreads.slice(0, PROJECT_LIBRARY_PREVIEW_LIMIT);
-  const statusVariant =
-    presentation.status?.kind === "attention"
-      ? "warning"
-      : presentation.status?.kind === "failed"
-        ? "error"
-        : presentation.status?.kind === "working"
-          ? "info"
-          : "secondary";
+  const priority =
+    presentation.status &&
+    (presentation.status.kind === "attention" ||
+      presentation.status.kind === "failed" ||
+      presentation.status.kind === "working")
+      ? presentation.status
+      : null;
+  const PriorityIcon = priority?.kind === "working" ? CircleDashedIcon : CircleAlertIcon;
+  const canReachComputer = entry.environmentIds.some((id) => connectedEnvironmentIds.has(id));
+  const threadsViewLabel = `Open in Threads view, ${entry.threadCount} ${entry.threadCount === 1 ? "thread" : "threads"} for ${entry.title}`;
 
   return (
-    <li className="min-w-0 rounded-lg [content-visibility:auto] [contain-intrinsic-size:auto_64px]">
+    <li className="min-w-0 [content-visibility:auto] [contain-intrinsic-size:auto_60px]">
       <span id={detailsId} className="sr-only">
         {accessibilitySummary}
       </span>
       <div
         className={cn(
-          "flex min-w-0 items-start rounded-lg hover:bg-sidebar-row-hover",
+          "flex min-w-0 items-start gap-0.5 rounded-md px-1 hover:bg-sidebar-row-hover",
           current && "bg-sidebar-row-hover",
         )}
       >
+        {previewForcedOpen ? (
+          <span
+            aria-hidden="true"
+            className="mt-2 flex h-6 w-5 shrink-0 items-center justify-center"
+          >
+            <ChevronRightIcon className="size-3 rotate-90 text-sidebar-muted-foreground" />
+          </span>
+        ) : (
+          <button
+            type="button"
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.title}`}
+            aria-expanded={expanded}
+            aria-controls={expanded ? childrenId : undefined}
+            aria-describedby={detailsId}
+            onClick={toggleExpanded}
+            className="mt-2 flex h-6 w-5 shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <ChevronRightIcon
+              aria-hidden="true"
+              className={cn(
+                "size-3 shrink-0 text-sidebar-muted-foreground transition-transform duration-150 motion-reduce:transition-none",
+                expanded && "rotate-90",
+              )}
+            />
+          </button>
+        )}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -341,22 +378,32 @@ function ProjectLibraryRow({
                 aria-label={`Open project ${entry.title}`}
                 aria-current={current ? "true" : undefined}
                 aria-describedby={detailsId}
-                className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className="flex min-w-0 flex-1 cursor-pointer items-start gap-2 rounded-md py-2 pl-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               />
             }
           >
             <span className="pt-0.5">
-              <ProjectFavicon project={project} className="size-4 shrink-0" />
+              <ProjectFavicon project={project} className="size-3.5 shrink-0" />
             </span>
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 items-center gap-2">
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground">
                   {entry.title}
                 </span>
-                {presentation.status ? (
-                  <Badge size="sm" variant={statusVariant}>
-                    {presentation.status.label}
-                  </Badge>
+                {priority ? (
+                  <span
+                    className={cn(
+                      "inline-flex shrink-0 items-center gap-1 text-2xs",
+                      priority.kind === "attention"
+                        ? "text-warning-foreground"
+                        : priority.kind === "failed"
+                          ? "text-destructive-foreground"
+                          : "text-sidebar-muted-foreground",
+                    )}
+                  >
+                    <PriorityIcon aria-hidden="true" className="size-3" />
+                    {priority.label}
+                  </span>
                 ) : null}
               </span>
               <span className="mt-0.5 block truncate text-2xs text-sidebar-muted-foreground">
@@ -371,150 +418,141 @@ function ProjectLibraryRow({
             </div>
           </TooltipPopup>
         </Tooltip>
-        {previewForcedOpen ? (
-          <span
-            aria-hidden="true"
-            className="mt-1 mr-1 flex size-8 shrink-0 items-center justify-center"
-          >
-            <ChevronDownIcon className="size-3.5 rotate-180 text-sidebar-muted-foreground" />
-          </span>
-        ) : (
-          <button
-            type="button"
-            aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.title}`}
-            aria-expanded={expanded}
-            aria-describedby={detailsId}
-            onClick={toggleExpanded}
-            className="mt-1 mr-1 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            <ChevronDownIcon
-              aria-hidden="true"
-              className={cn(
-                "size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform duration-150 motion-reduce:transition-none",
-                expanded && "rotate-180",
-              )}
-            />
-          </button>
-        )}
+        <div className="mt-1.5 shrink-0">
+          <Menu>
+            <MenuTrigger render={<SidebarHeaderIconButton label={`Actions for ${entry.title}`} />}>
+              <EllipsisIcon className="size-3.5" />
+            </MenuTrigger>
+            <MenuPopup side="bottom" align="end">
+              <MenuItem
+                disabled={targetProject === null}
+                onClick={() => {
+                  if (targetProject)
+                    onNewThread({
+                      environmentId: targetProject.environmentId,
+                      projectId: targetProject.id,
+                    });
+                }}
+              >
+                <SquarePenIcon />
+                <MenuItemLabel>
+                  {targetComputerLabel ? `New thread on ${targetComputerLabel}` : "New thread"}
+                </MenuItemLabel>
+              </MenuItem>
+              {targetProject === null ? (
+                <p className="max-w-56 px-2 py-1 text-xs text-muted-foreground">
+                  {canReachComputer
+                    ? "These connections are read only. Connect with access to start work."
+                    : "Reconnect a computer to start new work."}
+                </p>
+              ) : null}
+              <MenuItem onClick={() => onViewThreads(project)} aria-label={threadsViewLabel}>
+                <MessageCircleIcon />
+                <MenuItemLabel>Open in Threads</MenuItemLabel>
+              </MenuItem>
+              <MenuSeparator />
+              <MenuItem onClick={() => onOpenSettings(project)}>
+                <SettingsIcon />
+                <MenuItemLabel>Project settings</MenuItemLabel>
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        </div>
       </div>
       {expanded ? (
-        <div className="ml-8 mr-1 pb-2">
-          <div className="mb-1 flex min-w-0 items-center gap-1">
-            {targetComputerLabel && entry.environmentIds.length > 1 ? (
-              <p className="min-w-0 flex-1 truncate text-2xs text-sidebar-muted-foreground">
-                New threads on {targetComputerLabel}
-              </p>
-            ) : (
-              <span className="flex-1" />
-            )}
-            <SidebarHeaderIconButton
-              label={`Project settings for ${entry.title}`}
-              tooltip="Project settings"
-              onClick={() => onOpenSettings(project)}
-            >
-              <SettingsIcon className="size-3.5" />
-            </SidebarHeaderIconButton>
-            <SidebarHeaderIconButton
-              label={`New thread in ${entry.title}`}
-              tooltip={
-                targetProject
-                  ? `New thread on ${targetComputerLabel}`
-                  : "Connect to this computer with permission to start a thread"
-              }
-              disabled={targetProject === null}
-              onClick={() => {
-                if (targetProject)
-                  onNewThread({
-                    environmentId: targetProject.environmentId,
-                    projectId: targetProject.id,
-                  });
-              }}
-            >
-              <SquarePenIcon className="size-3.5" />
-            </SidebarHeaderIconButton>
-          </div>
-          {previewThreads.length > 0 ? (
-            <ul aria-label={`Threads in ${entry.title}`} className="mb-1 flex flex-col gap-0.5">
-              {previewThreads.map((thread) => {
-                const threadRef = scopeThreadRef(thread.environmentId, thread.id);
-                const threadKey = scopedThreadKey(threadRef);
-                const connected = connectedEnvironmentIds.has(thread.environmentId);
-                const activity = resolveProjectThreadActivity(
-                  thread,
-                  serverConfigs.get(thread.environmentId),
-                  now,
-                );
-                const label = !connected
-                  ? "Last known, computer offline"
-                  : activity === "attention"
-                    ? "Needs attention"
-                    : activity === "failed"
-                      ? "Failed"
-                      : activity === "working"
-                        ? "Working"
-                        : activity === "settled"
-                          ? "Settled"
-                          : activity === "snoozed"
-                            ? "Snoozed"
-                            : "Ready";
-                const Icon = !connected
-                  ? MessageCircleIcon
-                  : activity === "attention" || activity === "failed"
-                    ? CircleAlertIcon
-                    : activity === "working"
-                      ? CircleDashedIcon
-                      : activity === "settled"
-                        ? CircleCheckIcon
-                        : activity === "snoozed"
-                          ? AlarmClockIcon
-                          : MessageCircleIcon;
-                return (
-                  <li key={threadKey}>
-                    <button
-                      type="button"
-                      aria-label={`${thread.title}, ${label}${entry.environmentIds.length > 1 ? `, ${environmentLabels.get(thread.environmentId) ?? "Computer"}` : ""}`}
-                      aria-current={activeThreadKey === threadKey ? "page" : undefined}
-                      onClick={() => onOpenThread(threadRef)}
-                      className={cn(
-                        "flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                        activeThreadKey === threadKey && "bg-sidebar-row-hover",
-                      )}
-                    >
-                      <Icon
-                        aria-hidden="true"
-                        className={cn(
-                          "mt-0.5 size-3.5 shrink-0",
-                          connected && (activity === "attention" || activity === "failed")
-                            ? "text-warning-foreground"
-                            : "text-sidebar-muted-foreground",
-                        )}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs text-sidebar-foreground">
-                          {thread.title}
-                        </span>
-                        <span className="mt-0.5 block truncate text-2xs text-sidebar-muted-foreground">
-                          {label}
-                          {entry.environmentIds.length > 1
-                            ? `, ${environmentLabels.get(thread.environmentId) ?? "Computer"}`
-                            : ""}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+        <ul
+          id={childrenId}
+          aria-label={`Threads in ${entry.title}`}
+          className="ml-10 mr-1 flex min-w-0 flex-col gap-0.5 pb-2"
+        >
+          {previewThreads.length === 0 ? (
+            <li className="px-2 py-2 text-2xs text-sidebar-muted-foreground">No threads yet.</li>
           ) : null}
-          <div className="flex items-center pt-0.5">
-            <Button variant="ghost-muted" size="xs" onClick={() => onViewThreads(project)}>
-              {entry.threadCount > previewThreads.length
-                ? `View all ${entry.threadCount} threads`
-                : "View threads"}
-              <ArrowRightIcon aria-hidden="true" className="size-3" />
-            </Button>
-          </div>
-        </div>
+          {previewThreads.map((thread) => {
+            const threadRef = scopeThreadRef(thread.environmentId, thread.id);
+            const threadKey = scopedThreadKey(threadRef);
+            const connected = connectedEnvironmentIds.has(thread.environmentId);
+            const activity = resolveProjectThreadActivity(
+              thread,
+              serverConfigs.get(thread.environmentId),
+              now,
+            );
+            const label = !connected
+              ? "Offline, last known"
+              : activity === "attention"
+                ? "Needs attention"
+                : activity === "failed"
+                  ? "Failed"
+                  : activity === "working"
+                    ? "Working"
+                    : activity === "settled"
+                      ? "Settled"
+                      : activity === "snoozed"
+                        ? "Snoozed"
+                        : "Ready";
+            const Icon = !connected
+              ? MessageCircleIcon
+              : activity === "attention" || activity === "failed"
+                ? CircleAlertIcon
+                : activity === "working"
+                  ? CircleDashedIcon
+                  : activity === "settled"
+                    ? CircleCheckIcon
+                    : activity === "snoozed"
+                      ? AlarmClockIcon
+                      : MessageCircleIcon;
+            const computer =
+              entry.environmentIds.length > 1
+                ? `, ${environmentLabels.get(thread.environmentId) ?? "Computer"}`
+                : "";
+            return (
+              <li key={threadKey}>
+                <button
+                  type="button"
+                  aria-label={`${thread.title}, ${label}${computer}`}
+                  aria-current={activeThreadKey === threadKey ? "page" : undefined}
+                  onClick={() => onOpenThread(threadRef)}
+                  className={cn(
+                    "flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    activeThreadKey === threadKey && "bg-sidebar-row-hover",
+                  )}
+                >
+                  <Icon
+                    aria-hidden="true"
+                    className={cn(
+                      "mt-0.5 size-3 shrink-0",
+                      connected && activity === "attention"
+                        ? "text-warning-foreground"
+                        : connected && activity === "failed"
+                          ? "text-destructive-foreground"
+                          : "text-sidebar-muted-foreground",
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs text-sidebar-foreground">
+                      {thread.title}
+                    </span>
+                    <span className="mt-0.5 block truncate text-2xs text-sidebar-muted-foreground">
+                      {label}
+                      {computer}
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+          <li>
+            <button
+              type="button"
+              onClick={() => onViewThreads(project)}
+              aria-label={threadsViewLabel}
+              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left text-2xs text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              <ArrowRightIcon aria-hidden="true" className="size-3 shrink-0" />
+              {entry.threadCount > 0 ? `Open in Threads (${entry.threadCount})` : "Open in Threads"}
+            </button>
+          </li>
+        </ul>
       ) : null}
     </li>
   );
