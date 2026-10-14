@@ -216,3 +216,8 @@ apps/server/src/ws.ts	project-preparation	3
 apps/server/src/project/ProjectEnrichmentService.ts	project-preparation	4
 apps/server/src/project/ProjectEnrichmentService.test.ts	project-preparation	1
 apps/server/src/project/ProjectCloneCompletion.test.ts	project-preparation	1
+apps/web/src/hooks/useHandleNewThread.ts	project-home	2
+apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	1
+apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	1
+apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	1
+apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1

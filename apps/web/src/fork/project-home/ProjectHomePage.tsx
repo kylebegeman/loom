@@ -45,6 +45,7 @@ import { ProjectPreparationDialog } from "./ProjectPreparationDialog";
 import { ProjectHomeThreads } from "./ProjectHomeThreads";
 import { useProjectHomeGroup } from "./useProjectHomeGroup";
 import { useProjectHomeClock } from "./useProjectHomeClock";
+import { useProjectHomeNewThreadShortcuts } from "./useProjectHomeNewThreadShortcuts";
 import type { ProjectHomeThreadAction } from "./threadActions";
 
 const EMPTY_PROJECT_REFS: readonly ScopedProjectRef[] = [];
@@ -190,7 +191,9 @@ function ProjectHomeContent({
     setStarting(true);
     setStartError(null);
     try {
-      await handleNewThread(scopeProjectRef(destination.environmentId, destination.id));
+      await handleNewThread(scopeProjectRef(destination.environmentId, destination.id), {
+        environmentSelection: "manual",
+      });
     } catch (error) {
       setStartError(
         error instanceof Error
@@ -202,6 +205,7 @@ function ProjectHomeContent({
       setStarting(false);
     }
   };
+  useProjectHomeNewThreadShortcuts(newThread);
   const openThread = useCallback(
     (threadRef: ScopedThreadRef) => {
       void navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(threadRef) });
@@ -221,9 +225,16 @@ function ProjectHomeContent({
     requestProjectThreadView(group.projectKey);
     setNavigatorView("threads");
   };
+  const computerCheckoutCounts = new Map<string, number>();
+  for (const project of group.memberProjects) {
+    computerCheckoutCounts.set(
+      project.environmentId,
+      (computerCheckoutCounts.get(project.environmentId) ?? 0) + 1,
+    );
+  }
   const choices = group.memberProjects.map((project) => ({
     value: projectRefKey(project),
-    label: `${environmentLabels.get(project.environmentId) ?? project.environmentLabel ?? "Computer"}${connectedEnvironmentIds.has(project.environmentId) ? (permittedEnvironmentIds.has(project.environmentId) ? "" : " (read only)") : " (offline)"}`,
+    label: `${environmentLabels.get(project.environmentId) ?? project.environmentLabel ?? "Computer"}${(computerCheckoutCounts.get(project.environmentId) ?? 0) > 1 ? `, ${project.workspaceRoot}` : ""}${connectedEnvironmentIds.has(project.environmentId) ? (permittedEnvironmentIds.has(project.environmentId) ? "" : " (read only)") : " (offline)"}`,
   }));
   return (
     <WorkspacePageContainer width="wide">

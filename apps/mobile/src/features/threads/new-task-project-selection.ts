@@ -100,7 +100,15 @@ export function resolveDraftProjectSelection(
   selectedProjectKey: string | null,
   projects: ReadonlyArray<EnvironmentProject>,
   projectScopes: ReadonlyArray<HomeProjectScope>,
+  requestedProject?: EnvironmentProject,
 ): DraftProjectSelectionResolution {
+  // fork: project-home - A route pins its checkout even when it matches the displayed fallback.
+  if (requestedProject !== undefined) {
+    return selectedProjectKey ===
+      scopedProjectKey(requestedProject.environmentId, requestedProject.id)
+      ? { kind: "preserve" }
+      : { kind: "select", project: requestedProject };
+  }
   const hasExplicitProjectSelection =
     selectedProjectKey !== null &&
     projects.some(

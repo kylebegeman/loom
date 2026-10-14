@@ -124,6 +124,41 @@ it("may choose the first project when no project has been selected yet", () => {
 });
 
 describe("resolveDraftProjectSelection", () => {
+  // fork: project-home - Explicit routes stay pinned through fallback and catalog changes.
+  it("pins a route's computer even when its checkout is the displayed first-project fallback", () => {
+    const mac = makeProject("code", "mac");
+    const pi = makeProject("code", "pi");
+    const scopes = [makeScope([mac]), makeScope([pi])];
+    expect(resolveDraftProjectSelection(null, [mac, pi], scopes, mac)).toEqual({
+      kind: "select",
+      project: mac,
+    });
+
+    // Catalog reordering must not turn the same draft into a task on the Pi.
+    expect(resolveDraftProjectSelection("mac:code", [pi, mac], scopes, mac)).toEqual({
+      kind: "preserve",
+    });
+    expect(resolveDraftProjectSelection("mac:code", [pi], [makeScope([pi])])).toEqual({
+      kind: "pick",
+    });
+  });
+
+  it("applies a fresh explicit route instead of preserving another selected checkout", () => {
+    const mac = makeProject("code", "mac");
+    const pi = makeProject("code", "pi");
+    expect(resolveDraftProjectSelection("pi:code", [mac, pi], [makeScope([mac, pi])], mac)).toEqual(
+      { kind: "select", project: mac },
+    );
+  });
+
+  it("keeps a generic task without a selection at the picker when multiple projects exist", () => {
+    const mac = makeProject("code", "mac");
+    const pi = makeProject("other", "pi");
+    expect(
+      resolveDraftProjectSelection(null, [mac, pi], [makeScope([mac]), makeScope([pi])]),
+    ).toEqual({ kind: "pick" });
+  });
+
   it("preserves an explicit project selection", () => {
     const project = makeProject("t3code");
     expect(

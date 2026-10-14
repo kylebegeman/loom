@@ -5118,7 +5118,7 @@ export default function Sidebar() {
     (projectRef: ScopedProjectRef) => {
       if (isMobile) setOpenMobile(false);
       setNavigatorView("threads");
-      void newThreadContext.handleNewThread(projectRef);
+      void newThreadContext.handleNewThread(projectRef, { environmentSelection: "manual" });
     },
     [isMobile, newThreadContext, setNavigatorView, setOpenMobile],
   );

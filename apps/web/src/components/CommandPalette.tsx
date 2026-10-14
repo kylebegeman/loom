@@ -1312,6 +1312,9 @@ function OpenCommandPaletteDialog(props: {
             contextualRefBelongsToGroup
               ? contextualProjectRef
               : scopeProjectRef(project.environmentId, project.id),
+            projectHomeContext && contextualRefBelongsToGroup
+              ? { environmentSelection: "manual" }
+              : undefined,
           );
         },
       }),
@@ -1338,6 +1341,7 @@ function OpenCommandPaletteDialog(props: {
     ];
   }, [
     contextualProjectRef,
+    projectHomeContext,
     handleNewThread,
     pickerProjects,
     projectEnvironmentLocationById,
@@ -1899,6 +1903,13 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newLocal",
         run: async () => {
+          // fork: project-home starts on its exact displayed checkout.
+          if (projectHomeContext) {
+            await handleNewThread(projectHomeContext.projectRef, {
+              environmentSelection: "manual",
+            });
+            return;
+          }
           await startNewThreadFromContext({
             activeDraftThread,
             activeThread: activeThread ?? undefined,

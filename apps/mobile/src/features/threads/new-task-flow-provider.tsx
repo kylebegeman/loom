@@ -463,13 +463,14 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
   const selectedProjectDraftKey = editingPendingTask
     ? pendingTaskDraftKey(editingPendingTask.messageId)
     : activeDraftKey;
-  // selectedProject can resolve without setProject ever running (the
-  // environment's first project is the fallback, and the draft screen skips
-  // setProject when the route's project already matches it). The composer
-  // still needs a draft to write into, so bind one the moment a project is
-  // in view and nothing else owns the key.
+  // fork: project-home - Bind only a pinned project, leaving a child route's draft authoritative.
   useEffect(() => {
-    if (activeDraftKey !== null || editingPendingTask !== null || selectedProject === null) {
+    if (
+      selectedProjectKey === null ||
+      activeDraftKey !== null ||
+      editingPendingTask !== null ||
+      selectedProject === null
+    ) {
       return;
     }
     setActiveDraftKey(
@@ -478,7 +479,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         projectId: selectedProject.id,
       }),
     );
-  }, [activeDraftKey, editingPendingTask, selectedProject]);
+  }, [activeDraftKey, editingPendingTask, selectedProject, selectedProjectKey]);
   const selectedProjectDraft = useComposerDraft(selectedProjectDraftKey);
   const prompt = selectedProjectDraft.text;
   const attachments = selectedProjectDraft.attachments;

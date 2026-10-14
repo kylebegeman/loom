@@ -708,12 +708,16 @@ export function NewTaskDraftScreen(props: {
         if (appliedInitialProjectKeyRef.current === directProjectKey) {
           return;
         }
+        // fork: project-home - Pin direct navigation before branch settings or task submission.
+        const directSelection = resolveDraftProjectSelection(
+          selectedProjectKey,
+          projects,
+          projectScopes,
+          directProject,
+        );
         if (props.initialProjectRef?.branch) {
-          if (
-            selectedProject?.environmentId !== directProject.environmentId ||
-            selectedProject.id !== directProject.id
-          ) {
-            setProject(directProject);
+          if (directSelection.kind === "select") {
+            setProject(directSelection.project);
             return;
           }
           if (!flow.draftKey) return;
@@ -729,13 +733,9 @@ export function NewTaskDraftScreen(props: {
           });
         }
         appliedInitialProjectKeyRef.current = directProjectKey;
-        if (
-          selectedProject?.environmentId === directProject.environmentId &&
-          selectedProject.id === directProject.id
-        ) {
-          return;
+        if (directSelection.kind === "select") {
+          setProject(directSelection.project);
         }
-        setProject(directProject);
         return;
       }
 
@@ -767,7 +767,6 @@ export function NewTaskDraftScreen(props: {
     props.pendingTaskId,
     props.draftId,
     navigation,
-    selectedProject,
     selectedProjectKey,
     setProject,
   ]);
