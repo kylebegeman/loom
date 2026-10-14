@@ -82,7 +82,18 @@ vi.mock("~/components/ui/dialog", () => ({
   DialogPanel: "section",
   DialogFooter: "footer",
 }));
-vi.mock("~/components/ui/radio-group", () => ({ RadioGroup: "fieldset", Radio: "input" }));
+vi.mock("~/components/ui/select", () => ({
+  Select: "select",
+  SelectTrigger: "button",
+  SelectValue: "span",
+  SelectPopup: "div",
+  SelectItem: "option",
+}));
+vi.mock("~/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  TooltipPopup: () => null,
+}));
 
 import { ProjectCheckoutSettings } from "./ProjectCheckoutSettings";
 
@@ -128,7 +139,7 @@ async function openReview() {
 function changeRetention(value: ProjectCheckoutPreview["retention"]) {
   renderer!.root
     .findByProps({ "aria-label": "Project folder retention" })
-    .props.onValueChange(value);
+    .parent!.props.onValueChange(value);
 }
 
 beforeEach(() => {

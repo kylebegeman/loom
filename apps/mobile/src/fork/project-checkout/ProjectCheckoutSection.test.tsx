@@ -67,6 +67,7 @@ vi.mock("../../state/use-atom-command", () => ({
 vi.mock("../../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => harness.preview }));
 vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Pressable: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../../components/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -103,21 +104,36 @@ vi.mock("../../components/MaterialButton", () => ({
     </button>
   ),
 }));
-vi.mock("../../components/ListChoiceRow", () => ({
-  ListChoiceRow: ({
-    label,
-    selected,
-    disabled,
-    onPress,
+vi.mock("../../components/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ControlPill", () => ({
+  ControlPillMenu: ({
+    children,
+    actions,
+    onPressAction,
   }: {
-    label: string;
-    selected: boolean;
-    disabled?: boolean;
-    onPress: () => void;
+    children: ReactNode;
+    actions: Array<{
+      id: string;
+      title: string;
+      state: string;
+      attributes: { disabled: boolean };
+    }>;
+    onPressAction: (event: { nativeEvent: { event: string } }) => void;
   }) => (
-    <button role="radio" aria-checked={selected} disabled={disabled} onClick={onPress}>
-      {label}
-    </button>
+    <div>
+      {children}
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          role="radio"
+          aria-checked={action.state === "on"}
+          disabled={action.attributes.disabled}
+          onClick={() => onPressAction({ nativeEvent: { event: action.id } })}
+        >
+          {action.title}
+        </button>
+      ))}
+    </div>
   ),
 }));
 
@@ -283,6 +299,30 @@ describe("reviewed native project storage management", () => {
       environmentId: mac,
       input: { projectId, reviewToken: "review-token", retention: "release-on-settle" },
     });
+  });
+
+  it("offers the computer default only for managed folders and saves the explicit menu choice", async () => {
+    render();
+    await click("Review folder");
+    expect(container.textContent).not.toContain("Use computer's default");
+    await click("Cancel review");
+    harness.preview.mockResolvedValueOnce(
+      AsyncResult.success(
+        preview({ state: "managed", ownershipSource: "clone", retention: "keep" }),
+      ),
+    );
+    await click("Review folder");
+    expect(button("Review preference change").disabled).toBe(true);
+    await click("Use computer's default");
+    await click("Review preference change");
+    expect(container.textContent).toContain("including already settled eligible work");
+    expect(harness.setRetention).not.toHaveBeenCalled();
+    await click("Confirm preference");
+    expect(harness.setRetention).toHaveBeenCalledWith({
+      environmentId: mac,
+      input: { projectId, reviewToken: "review-token", retention: "inherit" },
+    });
+    expect(harness.adopt).not.toHaveBeenCalled();
   });
 
   it("rejects permission revocation before a visible confirmation dispatches", async () => {

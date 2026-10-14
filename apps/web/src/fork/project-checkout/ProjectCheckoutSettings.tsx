@@ -6,10 +6,12 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { AuthOrchestrationReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import type { ProjectCheckoutPreview } from "@t3tools/contracts/fork";
+import { Link } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { SettingsRow, SettingsSection } from "~/components/settings/settingsLayout";
 import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import {
   Dialog,
   DialogDescription,
@@ -19,7 +21,13 @@ import {
   DialogPopup,
   DialogTitle,
 } from "~/components/ui/dialog";
-import { Radio, RadioGroup } from "~/components/ui/radio-group";
+import {
+  Select,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "~/components/ui/select";
 import { useEnvironment } from "~/state/environments";
 import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -66,7 +74,15 @@ function failureMessage(error: unknown) {
 /** Every physical checkout gets its own reviewed choice, even in a grouped project. */
 export function ProjectCheckoutSettings({ projects }: { projects: ReadonlyArray<CheckoutTarget> }) {
   return (
-    <SettingsSection id="project-checkout-storage" title="Project storage">
+    <SettingsSection
+      id="project-checkout-storage"
+      title="Project storage"
+      headerAction={
+        <Button size="xs" variant="link" render={<Link to="/projects/storage" />}>
+          Review all folders
+        </Button>
+      }
+    >
       {projects.map((project) => (
         <CheckoutSetting
           key={`${project.environmentId}:${project.id}:${project.workspaceRoot}`}
@@ -97,7 +113,23 @@ function CheckoutSetting({ project }: { project: CheckoutTarget }) {
   return reason ? (
     <SettingsRow
       title={computer}
-      description={<span className="wrap-anywhere">{project.workspaceRoot}</span>}
+      description={
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <span
+                tabIndex={0}
+                className="block truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              />
+            }
+          >
+            {project.workspaceRoot}
+          </TooltipTrigger>
+          <TooltipPopup>
+            <span className="wrap-anywhere">{project.workspaceRoot}</span>
+          </TooltipPopup>
+        </Tooltip>
+      }
       status={reason}
     />
   ) : (
@@ -227,7 +259,23 @@ function ManagedCheckoutSetting({
       <SettingsRow
         title={computer}
         description={
-          <span className="wrap-anywhere">{preview?.workspaceRoot ?? project.workspaceRoot}</span>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span
+                  tabIndex={0}
+                  className="block truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                />
+              }
+            >
+              {preview?.workspaceRoot ?? project.workspaceRoot}
+            </TooltipTrigger>
+            <TooltipPopup>
+              <span className="wrap-anywhere">
+                {preview?.workspaceRoot ?? project.workspaceRoot}
+              </span>
+            </TooltipPopup>
+          </Tooltip>
         }
         status={
           preview
@@ -263,21 +311,15 @@ function ManagedCheckoutSetting({
         <DialogPopup showCloseButton={!saving}>
           <DialogHeader>
             <DialogTitle>Project storage</DialogTitle>
-            <DialogDescription>
-              Review this primary project folder and choose how Loom keeps its working files.
-            </DialogDescription>
+            <DialogDescription>Choose what stays on {computer}.</DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <dl className="space-y-3 text-sm">
-              <div>
-                <dt className="text-xs text-muted-foreground">Computer</dt>
-                <dd className="wrap-anywhere">{computer}</dd>
-              </div>
-              <div>
-                <dt className="text-xs text-muted-foreground">Folder</dt>
-                <dd className="wrap-anywhere">{preview?.workspaceRoot ?? project.workspaceRoot}</dd>
-              </div>
-            </dl>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{computer}</p>
+              <p className="wrap-anywhere text-xs text-muted-foreground">
+                {preview?.workspaceRoot ?? project.workspaceRoot}
+              </p>
+            </div>
             {result.waiting || result._tag === "Initial" ? (
               <p role="status" className="text-sm text-muted-foreground">
                 Refreshing folder review…
@@ -295,35 +337,62 @@ function ManagedCheckoutSetting({
             ) : null}
             {preview ? (
               <>
-                <p className="text-sm">{checkoutStateLabel(preview)}</p>
-                <dl className="space-y-2 text-sm">
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Saved revision</dt>
-                    <dd className="wrap-anywhere">
-                      {preview.state === "released" ? (
-                        "Available when the working folder is restored"
-                      ) : (
-                        <>
-                          {preview.branch ?? "Detached revision"}
-                          {preview.head ? ` · ${preview.head.slice(0, 12)}` : " · No commit"}
-                        </>
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs text-muted-foreground">Local files</dt>
-                    <dd>
-                      {preview.localFiles.trackedChanges} tracked changes,{" "}
-                      {preview.localFiles.untrackedFiles} untracked files,{" "}
-                      {preview.localFiles.ignoredFiles} ignored files
-                      {preview.localFiles.truncated ? " (partial scan)" : ""}
-                    </dd>
-                  </div>
-                </dl>
+                <SettingsSection title="Working folder" hideTitle>
+                  <SettingsRow
+                    title={checkoutStateLabel(preview)}
+                    description={`${preview.localFiles.trackedChanges} tracked changes, ${preview.localFiles.untrackedFiles} untracked files, ${preview.localFiles.ignoredFiles} ignored files${preview.localFiles.truncated ? " (partial scan)" : ""}`}
+                  />
+                  {preview.state !== "blocked" ? (
+                    <SettingsRow
+                      title="Storage policy"
+                      description={
+                        retention === "keep"
+                          ? preview.state === "released"
+                            ? "Restore working files here and keep them. Setup runs on next use."
+                            : "Keep working files here until you change this choice."
+                          : retention === "release-on-settle"
+                            ? "Release after all work settles and safety checks pass. Continuing restores files and runs setup."
+                            : "Follow this computer's cleanup settings."
+                      }
+                      control={
+                        <div className="w-52 max-w-full">
+                          <Select
+                            value={retention}
+                            items={Object.entries(RETENTION_LABELS)
+                              .filter(([value]) => !external || value !== "inherit")
+                              .map(([value, label]) => ({ value, label }))}
+                            onValueChange={(value) => {
+                              if (
+                                value === "keep" ||
+                                value === "release-on-settle" ||
+                                (!external && value === "inherit")
+                              )
+                                setRetentionChoice(value);
+                            }}
+                            disabled={saving || result.waiting}
+                          >
+                            <SelectTrigger size="sm" aria-label="Project folder retention">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectPopup>
+                              <SelectItem value="keep">{RETENTION_LABELS.keep}</SelectItem>
+                              <SelectItem value="release-on-settle">
+                                {RETENTION_LABELS["release-on-settle"]}
+                              </SelectItem>
+                              {!external ? (
+                                <SelectItem value="inherit">{RETENTION_LABELS.inherit}</SelectItem>
+                              ) : null}
+                            </SelectPopup>
+                          </Select>
+                        </div>
+                      }
+                    />
+                  ) : null}
+                </SettingsSection>
                 {preview.blockers.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">Currently protected</p>
-                    <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+                  <div className="space-y-1 text-xs">
+                    <p className="font-medium">Current protections</p>
+                    <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
                       {preview.blockers.map((blocker) => (
                         <li key={blocker}>{blocker}</li>
                       ))}
@@ -332,62 +401,42 @@ function ManagedCheckoutSetting({
                 ) : null}
                 {preview.state !== "blocked" ? (
                   <>
-                    <p className="text-xs text-muted-foreground">
-                      These choices apply to the primary project folder. Worktree cleanup has
-                      separate rules.
-                    </p>
-                    <RadioGroup
-                      value={retention}
-                      onValueChange={(value) => {
-                        if (
-                          value === "keep" ||
-                          value === "release-on-settle" ||
-                          (!external && value === "inherit")
-                        )
-                          setRetentionChoice(value);
-                      }}
-                      disabled={saving || result.waiting}
-                      aria-label="Project folder retention"
-                    >
-                      <RetentionChoice
-                        value="keep"
-                        description={
-                          preview.state === "released"
-                            ? "Restore the primary project folder here and keep it until you change this choice. Setup runs when an agent next uses the project."
-                            : "Keep the primary project folder here until you change this choice."
-                        }
-                      />
-                      <RetentionChoice
-                        value="release-on-settle"
-                        description="Release the working copy after all conversations settle and the safety checks pass. Continuing restores it and runs setup."
-                      />
-                      {!external ? (
-                        <RetentionChoice
-                          value="inherit"
-                          description="Follow this computer's project checkout cleanup settings."
-                        />
-                      ) : null}
-                    </RadioGroup>
                     {external ? (
-                      <p className="text-sm text-muted-foreground">
-                        Loom will register this existing folder as managed. Its location, files and
-                        conversation history stay together.
+                      <p className="text-xs text-muted-foreground">
+                        Saving lets Loom manage this folder. Its location, files and conversation
+                        history stay together.
                       </p>
                     ) : null}
-                    <p className="text-sm text-muted-foreground">
-                      Release requires published work and keeps local files, pinned conversations,
-                      active work and linked worktrees. The project and conversations remain
-                      available.
-                    </p>
                     {retention !== "keep" ? (
-                      <p className="text-sm font-medium">
-                        Saving can release an already settled, eligible working copy during the next
-                        cleanup. Permanent application data must live outside the working folder and
-                        its disposable lane.
+                      <p className="text-xs font-medium">
+                        Saving can release an already settled, eligible folder during the next
+                        cleanup. Keep permanent application data outside working folders and
+                        disposable lanes.
                       </p>
                     ) : null}
                   </>
                 ) : null}
+                <details className="text-xs text-muted-foreground">
+                  <summary className="w-fit cursor-pointer rounded-sm py-1 text-foreground/80 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                    Revision and release safety
+                  </summary>
+                  <div className="space-y-2 pt-1">
+                    <p className="wrap-anywhere">
+                      {preview.state === "released"
+                        ? "Saved revision is available when the folder is restored."
+                        : `${preview.branch ?? "Detached revision"} · ${preview.head?.slice(0, 12) ?? "No commit"}`}
+                    </p>
+                    <p>
+                      Release requires published work and protects local files, pinned
+                      conversations, active work and linked worktrees. Cleanup checks safety again;
+                      review does not establish release readiness. Projects and conversations remain
+                      available.
+                    </p>
+                    <p>
+                      These choices cover the primary folder. Worktree cleanup has separate rules.
+                    </p>
+                  </div>
+                </details>
               </>
             ) : null}
             {message ? (
@@ -428,17 +477,5 @@ function ManagedCheckoutSetting({
         </DialogPopup>
       </Dialog>
     </>
-  );
-}
-
-function RetentionChoice({ value, description }: { value: Retention; description: string }) {
-  return (
-    <label className="flex items-start gap-3 rounded-lg border border-border p-3">
-      <Radio value={value} />
-      <span className="min-w-0 space-y-1">
-        <span className="block text-sm font-medium">{RETENTION_LABELS[value]}</span>
-        <span className="block text-xs text-muted-foreground">{description}</span>
-      </span>
-    </label>
   );
 }

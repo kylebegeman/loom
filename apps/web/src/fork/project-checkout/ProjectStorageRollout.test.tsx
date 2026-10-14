@@ -13,6 +13,30 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite
 import { ProjectStorageRollout } from "./ProjectStorageRollout";
 
 vi.mock("~/components/ui/button", () => ({ Button: "button" }));
+vi.mock("~/components/settings/settingsLayout", () => ({
+  SettingsSection: ({ children }: { children: ReactNode }) => <section>{children}</section>,
+  SettingsRow: ({
+    title,
+    description,
+    status,
+    control,
+    children,
+  }: {
+    title: ReactNode;
+    description?: ReactNode;
+    status?: ReactNode;
+    control?: ReactNode;
+    children?: ReactNode;
+  }) => (
+    <article>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {status}
+      {control}
+      {children}
+    </article>
+  ),
+}));
 vi.mock("~/components/ui/dialog", () => ({
   Dialog: ({ open, children }: { open: boolean; children: ReactNode }) => (open ? children : null),
   DialogPopup: "dialog",
@@ -22,7 +46,18 @@ vi.mock("~/components/ui/dialog", () => ({
   DialogPanel: "section",
   DialogFooter: "footer",
 }));
-vi.mock("~/components/ui/radio-group", () => ({ RadioGroup: "fieldset", Radio: "input" }));
+vi.mock("~/components/ui/select", () => ({
+  Select: "select",
+  SelectTrigger: "button",
+  SelectValue: "span",
+  SelectPopup: "div",
+  SelectItem: "option",
+}));
+vi.mock("~/components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => <span>{children}</span>,
+  TooltipPopup: () => null,
+}));
 
 const a: ProjectStorageRolloutTarget = {
   environmentId: EnvironmentId.make("computer-a"),
@@ -84,7 +119,7 @@ function choose(target: ProjectStorageRolloutTarget, value: ProjectCheckoutReten
     .findByProps({
       "aria-label": `Storage choice for ${target.projectName} on ${target.environmentLabel} at ${target.workspaceRoot}`,
     })
-    .props.onValueChange(value);
+    .parent!.props.onValueChange(value);
 }
 async function mount(targets = [a, b]) {
   controller.syncTargets(targets);
@@ -99,7 +134,7 @@ async function selectAndReview(targets = [a, b]) {
   });
 }
 async function confirm() {
-  await act(() => button("Review choices and save").props.onClick());
+  await act(() => button("Confirm choices").props.onClick());
 }
 async function save(count = 2) {
   await act(async () => {
@@ -142,16 +177,16 @@ describe("selected project storage rollout", () => {
   it("requires explicit review and per-folder choices before exact final confirmation", async () => {
     await mount();
     expect(preview).not.toHaveBeenCalled();
-    expect(button("Review selected folders").props.disabled).toBe(true);
+    expect(button("Review selected").props.disabled).toBe(true);
     await selectAndReview();
     expect(preview).toHaveBeenCalledTimes(2);
     expect(adopt).not.toHaveBeenCalled();
-    expect(button("Review choices and save").props.disabled).toBe(true);
-    expect(renderer!.root.findAllByType("input").map((input) => input.props.value)).not.toContain(
+    expect(button("Confirm choices").props.disabled).toBe(true);
+    expect(renderer!.root.findAllByType("option").map((input) => input.props.value)).not.toContain(
       "inherit",
     );
     await act(() => choose(a, "keep"));
-    expect(button("Review choices and save").props.disabled).toBe(true);
+    expect(button("Confirm choices").props.disabled).toBe(true);
     await act(() => choose(b, "release-on-settle"));
     await confirm();
     expect(
@@ -193,7 +228,7 @@ describe("selected project storage rollout", () => {
     await confirm();
     await save();
     expect(controller.getSnapshot().rows.map((row) => row.status)).toEqual(["saved", "error"]);
-    expect(button("Review choices and save").props.disabled).toBe(true);
+    expect(button("Confirm choices").props.disabled).toBe(true);
     expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toContain(
       "folder changed",
     );
@@ -205,7 +240,7 @@ describe("selected project storage rollout", () => {
       b.projectId,
       b.projectId,
     ]);
-    expect(button("Review choices and save").props.disabled).toBe(true);
+    expect(button("Confirm choices").props.disabled).toBe(true);
     await act(() => choose(b, "release-on-settle"));
     await confirm();
     await save(1);
@@ -230,9 +265,9 @@ describe("selected project storage rollout", () => {
     await act(async () => {
       await controller.review();
     });
-    expect(renderer!.root.findAllByType("fieldset")).toHaveLength(0);
+    expect(renderer!.root.findAllByType("select")).toHaveLength(0);
     expect(JSON.stringify(renderer!.toJSON())).toContain("Read-only review");
-    expect(button("Review choices and save").props.disabled).toBe(true);
+    expect(button("Confirm choices").props.disabled).toBe(true);
   });
 
   it("shows managed restoration/default choices and blockers without claiming release readiness", async () => {
@@ -241,7 +276,7 @@ describe("selected project storage rollout", () => {
     );
     await mount([a]);
     await selectAndReview([a]);
-    expect(renderer!.root.findAllByType("input").map((input) => input.props.value)).toContain(
+    expect(renderer!.root.findAllByType("option").map((input) => input.props.value)).toContain(
       "inherit",
     );
     await act(() => choose(a, "keep"));

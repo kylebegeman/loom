@@ -5,10 +5,11 @@ import { AuthOrchestrationReadScope, type EnvironmentId, type ProjectId } from "
 import type { ProjectCheckoutPreview } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/AppText";
-import { ListChoiceRow } from "../../components/ListChoiceRow";
+import { SymbolView } from "../../components/AppSymbol";
+import { ControlPillMenu } from "../../components/ControlPill";
 import { MaterialButton } from "../../components/MaterialButton";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
@@ -106,6 +107,9 @@ function ProjectCheckoutReview({
   const busy = useRef(false);
   const generation = useRef(0);
   const managed = preview?.ownershipSource != null;
+  const retentionChoices = managed
+    ? (["keep", "release-on-settle", "inherit"] as const)
+    : (["keep", "release-on-settle"] as const);
   const allowed = managed ? canSetRetention : canAdopt;
   const ready = connected && supported && canRead;
   const token = preview?.reviewToken;
@@ -215,10 +219,10 @@ function ProjectCheckoutReview({
   return (
     <SettingsSection
       title={`Project storage · ${computerLabel}`}
-      footer="This manages the project's main folder. Worktree cleanup has separate settings. Loom releases only published, idle checkouts after checking local files and active work. Starting work in a released project restores its files and setup."
+      footer="Release checks protect local files and active work. Returning to a released project restores its working files. Worktrees have separate cleanup settings."
     >
-      <View className="gap-3 p-4">
-        <Text className="text-sm text-foreground-muted">
+      <View className="gap-3 px-4 py-3">
+        <Text className="text-xs leading-normal text-foreground-muted">
           {!connected
             ? "Reconnect this computer to review and manage project storage."
             : !configReady
@@ -235,38 +239,51 @@ function ProjectCheckoutReview({
                         ? "Loom manages this checkout. Choose when its working files should stay on this computer."
                         : "Review this existing folder before letting Loom manage its working files."}
         </Text>
-        <Text selectable className="text-sm leading-normal text-foreground-muted">
+        <Text
+          selectable
+          numberOfLines={1}
+          ellipsizeMode="middle"
+          accessibilityLabel={preview?.workspaceRoot ?? workspaceRoot}
+          className="text-xs text-foreground-muted"
+        >
           {preview?.workspaceRoot ?? workspaceRoot}
         </Text>
         {preview ? (
           <>
             {preview.branch ? (
-              <Text className="text-sm text-foreground-muted">Branch: {preview.branch}</Text>
+              <Text className="text-xs leading-normal text-foreground-muted">
+                Branch: {preview.branch}
+              </Text>
             ) : null}
-            <Text className="text-sm text-foreground-muted">
+            <Text className="text-xs leading-normal text-foreground-muted">
               {preview.state === "released"
                 ? "Working files are currently released."
                 : `${preview.localFiles.trackedChanges} changed, ${preview.localFiles.untrackedFiles} new and ${preview.localFiles.ignoredFiles} ignored files${preview.localFiles.truncated ? " (partial count)" : ""}.`}
             </Text>
             {[...new Set(preview.blockers)].map((blocker) => (
-              <Text key={blocker} className="text-sm text-foreground-muted">
+              <Text key={blocker} className="text-xs leading-normal text-foreground-muted">
                 {blocker}
               </Text>
             ))}
             {preview.state === "blocked" || token == null ? (
-              <Text className="text-sm text-foreground-muted">
+              <Text className="text-xs leading-normal text-foreground-muted">
                 Resolve the issues above, then review this folder again.
               </Text>
             ) : null}
           </>
         ) : null}
         {confirming ? (
-          <View className="gap-3">
-            <Text className="text-base font-t3-medium text-foreground">
+          <View className="gap-2">
+            <Text className="text-sm font-t3-medium text-foreground">
               {managed ? "Confirm storage preference" : "Let Loom manage this folder?"}
             </Text>
-            <Text className="text-sm text-foreground-muted">{retentionLabels[retention]}</Text>
-            <Text className="text-sm text-foreground-muted">
+            <Text selectable className="text-xs leading-normal text-foreground-muted">
+              {computerLabel} · {preview?.workspaceRoot ?? workspaceRoot}
+            </Text>
+            <Text className="text-sm font-t3-medium text-foreground">
+              {retentionLabels[retention]}
+            </Text>
+            <Text className="text-xs leading-normal text-foreground-muted">
               {retention === "release-on-settle"
                 ? "An already settled checkout can be released as soon as it passes safety checks. Unpublished changes and local-only files keep it on disk."
                 : retention === "keep"
@@ -275,7 +292,7 @@ function ProjectCheckoutReview({
                     : "This checkout stays on this computer until you change its preference."
                   : "This checkout follows this computer's release settings, including already settled eligible work."}
             </Text>
-            <Text className="text-sm text-foreground-muted">
+            <Text className="text-xs leading-normal text-foreground-muted">
               Your project name and conversations stay in Loom. The folder keeps its current path.
               Keep permanent application data and configuration outside disposable project storage.
             </Text>
@@ -303,29 +320,51 @@ function ProjectCheckoutReview({
           </View>
         ) : preview && canChange ? (
           <>
-            <ListChoiceRow
-              label={retentionLabels.keep}
-              description="Keep the checkout available locally, even after settling."
-              selected={retention === "keep"}
-              disabled={pending !== null}
-              onPress={() => setChoice("keep")}
-            />
-            <ListChoiceRow
-              label={retentionLabels["release-on-settle"]}
-              description="Release safe working files after settling. Restore them when you return."
-              selected={retention === "release-on-settle"}
-              disabled={pending !== null}
-              onPress={() => setChoice("release-on-settle")}
-            />
-            {managed ? (
-              <ListChoiceRow
-                label={retentionLabels.inherit}
-                description="Follow this computer's project release settings."
-                selected={retention === "inherit"}
+            <ControlPillMenu
+              accessible
+              accessibilityRole="button"
+              accessibilityLabel={`Storage preference for ${workspaceRoot} on ${computerLabel}`}
+              title="Storage preference"
+              actions={retentionChoices.map((choice) => ({
+                id: choice,
+                title: retentionLabels[choice],
+                subtitle:
+                  choice === "keep"
+                    ? "Keep working files available here."
+                    : choice === "release-on-settle"
+                      ? "Release after work settles and safety checks pass."
+                      : "Follow this computer's cleanup settings.",
+                state: retention === choice ? ("on" as const) : ("off" as const),
+                attributes: { disabled: pending !== null },
+              }))}
+              onPressAction={({ nativeEvent }) => {
+                if (pending !== null) return;
+                if (
+                  nativeEvent.event === "keep" ||
+                  nativeEvent.event === "release-on-settle" ||
+                  (managed && nativeEvent.event === "inherit")
+                )
+                  setChoice(nativeEvent.event);
+              }}
+            >
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Storage preference: ${retentionLabels[retention]}`}
+                accessibilityState={{ disabled: pending !== null }}
                 disabled={pending !== null}
-                onPress={() => setChoice("inherit")}
-              />
-            ) : null}
+                className="min-h-11 flex-row flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 active:opacity-70 disabled:opacity-40"
+              >
+                <Text className="text-xs text-foreground-muted">Preference</Text>
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-sm text-primary-text">{retentionLabels[retention]}</Text>
+                  <SymbolView
+                    name="chevron.down"
+                    size={12}
+                    tintColorClassName="accent-primary-text"
+                  />
+                </View>
+              </Pressable>
+            </ControlPillMenu>
             <MaterialButton
               label={managed ? "Review preference change" : "Review management"}
               tone="primary"
@@ -335,12 +374,12 @@ function ProjectCheckoutReview({
           </>
         ) : null}
         {notice ? (
-          <Text accessibilityLiveRegion="polite" className="text-sm text-foreground-muted">
+          <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
             {notice}
           </Text>
         ) : null}
         {error ? (
-          <Text selectable accessibilityRole="alert" className="text-sm text-danger-foreground">
+          <Text selectable accessibilityRole="alert" className="text-xs text-danger-foreground">
             {error}
           </Text>
         ) : null}

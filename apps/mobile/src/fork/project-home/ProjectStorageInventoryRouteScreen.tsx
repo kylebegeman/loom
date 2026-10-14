@@ -59,7 +59,7 @@ export function ProjectStorageInventoryRouteScreen() {
   return (
     <View className="flex-1 bg-screen">
       <ScreenHeader
-        title="Review project storage"
+        title="Project storage"
         onBack={() => navigation.goBack()}
         backInSplitView={{ accessibilityLabel: "Back to projects", icon: "arrow.left" }}
         search={{
@@ -74,7 +74,7 @@ export function ProjectStorageInventoryRouteScreen() {
       <LegendList
         data={visibleRecords}
         keyExtractor={(entry) => entry.key}
-        estimatedItemSize={132}
+        estimatedItemSize={84}
         recycleItems={false}
         extraData={listExtraData}
         renderScrollComponent={Platform.OS === "ios" ? renderInventoryScrollView : undefined}
@@ -83,28 +83,31 @@ export function ProjectStorageInventoryRouteScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingHorizontal: 16,
+          paddingHorizontal: 20,
+          width: "100%",
+          maxWidth: 720,
+          alignSelf: "center",
           paddingBottom: Math.max(insets.bottom, 24) + 24,
         }}
         style={{ flex: 1 }}
         ListHeaderComponent={
-          <View className="gap-2 pt-4 pb-5">
-            <Text className="text-sm leading-normal text-foreground-muted">
-              Select the folders you want to review. Choose a storage preference for each, then
-              confirm the exact choices before saving. Opening this list changes no working files.
-            </Text>
-            <Text className="text-sm text-foreground-muted">
-              {records.length} {query.trim() ? "matching" : "known"}{" "}
-              {records.length === 1 ? "checkout" : "checkouts"}. This list uses projects already in
-              Loom and does not scan your filesystem.
+          <View className="gap-5 pt-4 pb-2">
+            <Text className="px-2 text-xs leading-normal text-foreground-muted">
+              Select known folders to review their storage preferences. No files change until you
+              confirm your choices.
             </Text>
             <ProjectStorageRolloutQueue controller={controller} snapshot={snapshot} />
-            <Text
-              accessibilityRole="header"
-              className="pt-3 text-base font-t3-medium text-foreground"
-            >
-              Known folders
-            </Text>
+            <View className="flex-row items-center justify-between gap-3 px-2 pt-1">
+              <Text
+                accessibilityRole="header"
+                className="text-sm font-t3-medium text-foreground-muted"
+              >
+                Known folders
+              </Text>
+              <Text className="text-xs tabular-nums text-foreground-muted">
+                {records.length} {query.trim() ? "matching" : "total"}
+              </Text>
+            </View>
           </View>
         }
         ListEmptyComponent={
@@ -136,7 +139,7 @@ export function ProjectStorageInventoryRouteScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const { project, computerLabel, key } = item;
           const row = rowsByKey.get(key);
           const selected = row?.selected === true;
@@ -152,7 +155,17 @@ export function ProjectStorageInventoryRouteScreen() {
                 ? "Selected for review"
                 : "Connected, select to review");
           return (
-            <View className="mb-3 overflow-hidden rounded-2xl bg-card">
+            <View
+              className={
+                index === 0 && visibleRecords.length === 1
+                  ? "overflow-hidden rounded-[24px] border-continuous bg-grouped-card"
+                  : index === 0
+                    ? "overflow-hidden rounded-t-[24px] border-continuous bg-grouped-card"
+                    : index === visibleRecords.length - 1
+                      ? "overflow-hidden rounded-b-[24px] border-continuous bg-grouped-card"
+                      : "overflow-hidden bg-grouped-card"
+              }
+            >
               <Pressable
                 accessibilityRole="checkbox"
                 accessibilityLabel={`${project.title} on ${computerLabel}`}
@@ -160,17 +173,21 @@ export function ProjectStorageInventoryRouteScreen() {
                 accessibilityState={{ checked: selected || saved, disabled: busy || saved || !row }}
                 disabled={busy || saved || !row}
                 onPress={() => controller.setSelected(key, !selected)}
-                className="min-h-[72px] flex-row items-center gap-3 p-4 active:opacity-70"
+                className={
+                  index === 0
+                    ? "min-h-[80px] flex-row items-center gap-3 px-4 py-3 active:opacity-70"
+                    : "min-h-[80px] flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
+                }
               >
                 <SymbolView
                   name={saved || selected ? "checkmark.circle.fill" : "circle"}
-                  size={22}
+                  size={18}
                   tintColorClassName={
                     selected || saved ? "accent-primary-text" : "accent-icon-muted"
                   }
                 />
-                <View className="min-w-0 flex-1 gap-1">
-                  <Text className="text-base font-t3-medium text-foreground" numberOfLines={2}>
+                <View className="min-w-0 flex-1 gap-0.5">
+                  <Text className="text-sm font-t3-medium text-foreground" numberOfLines={1}>
                     {project.title}
                   </Text>
                   <Text className="text-xs text-foreground-muted">
