@@ -19,6 +19,7 @@ export interface ProjectLibraryItem {
   readonly key: string;
   readonly entry: ProjectLibraryEntry;
   readonly expanded: boolean;
+  readonly previewForcedOpen: boolean;
 }
 
 export function useProjectLibrary(input: {
@@ -86,6 +87,7 @@ export function useProjectLibrary(input: {
         key: `loom-project:${entry.key}`,
         entry,
         expanded: expandedKeys.has(entry.key) || searchQuery.trim().length > 0,
+        previewForcedOpen: searchQuery.trim().length > 0,
       })),
     [entries, expandedKeys, searchQuery],
   );

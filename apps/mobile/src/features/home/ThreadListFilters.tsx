@@ -28,15 +28,17 @@ export function ThreadListFilters(
       contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 10, gap: 8 }}
     >
       <ListFilterMenu
-        label={selectedEnvironment?.label ?? "All environments"}
+        label={
+          selectedEnvironment?.label ?? (props.projectView ? "All computers" : "All environments")
+        }
         accessibilityLabel={
-          props.projectView ? "Filter projects by environment" : "Filter threads by environment"
+          props.projectView ? "Filter projects by computer" : "Filter threads by environment"
         }
         active={selectedEnvironment !== undefined}
         actions={[
           {
             id: "all",
-            title: "All environments",
+            title: props.projectView ? "All computers" : "All environments",
             state: props.selectedEnvironmentId === null ? "on" : "off",
           },
           ...props.environments.map((environment) => ({
