@@ -73,7 +73,7 @@ export function SegmentedControl<Value extends number | string>(
             onPress={() => props.onSelect(option.value)}
             className={cn(
               "items-center justify-center rounded-full",
-              props.iconOnly ? "h-[44px] w-[48px]" : cn("flex-1", compact ? "h-9" : "h-11"),
+              props.iconOnly ? "h-[48px] w-[48px]" : cn("flex-1", compact ? "h-9" : "h-11"),
             )}
           >
             {props.iconOnly && option.icon ? (

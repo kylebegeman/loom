@@ -68,7 +68,7 @@ export function ProjectNavigationSwitch({
                   onKeyDown={handleKeyDown}
                   onClick={() => onViewChange(option)}
                   className={cn(
-                    "relative flex h-8 w-9 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    "relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                     view === option ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
                   )}
                 >

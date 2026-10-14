@@ -18,3 +18,6 @@ export * from "./computer-naming.ts";
 
 export * from "./project-checkout.ts";
 export * from "./project-navigation.ts";
+
+export * from "./project-home.ts";
+export * from "./project-preparation.ts";
