@@ -42,7 +42,7 @@ export function SegmentedControl<Value extends number | string>(
       {
         translateX:
           position.value *
-          (compactIcons ? 58 : width / props.options.length) *
+          (compactIcons ? 43 : width / props.options.length) *
           (I18nManager.isRTL ? -1 : 1),
       },
     ],
@@ -57,7 +57,7 @@ export function SegmentedControl<Value extends number | string>(
       className={cn(
         "flex-row",
         compactIcons
-          ? "h-[44px] w-[120px]"
+          ? "h-[44px] w-[90px]"
           : "overflow-hidden rounded-full border-continuous bg-card",
         props.iconOnly && "self-start",
         props.className,
@@ -67,19 +67,19 @@ export function SegmentedControl<Value extends number | string>(
         <View
           pointerEvents="none"
           accessible={false}
-          className="absolute h-[32px] w-[120px] rounded-full border-continuous bg-card"
-          style={{ top: 6, start: 0 }}
+          className="absolute h-[24px] w-[90px] rounded-full border-continuous bg-card"
+          style={{ top: 10, start: 0 }}
         />
       ) : null}
       <Animated.View
         pointerEvents="none"
         className={cn(
           "absolute rounded-full bg-secondary",
-          compactIcons ? "top-[8px] h-[28px]" : "inset-y-0",
+          compactIcons ? "top-[12px] h-[20px]" : "inset-y-0",
         )}
         style={[
           compactIcons
-            ? { width: 58, start: 2 }
+            ? { width: 43, start: 2 }
             : { width: `${100 / props.options.length}%`, start: 0 },
           indicatorStyle,
         ]}
@@ -96,7 +96,7 @@ export function SegmentedControl<Value extends number | string>(
             className={cn(
               "items-center justify-center rounded-full",
               compactIcons
-                ? "h-[44px] w-[60px]"
+                ? "h-[44px] w-[45px]"
                 : props.iconOnly
                   ? "h-[48px] w-[48px]"
                   : cn("flex-1", compact ? "h-9" : "h-11"),
