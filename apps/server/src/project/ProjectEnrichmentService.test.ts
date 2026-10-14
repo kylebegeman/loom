@@ -1,3 +1,4 @@
+// fork: project-preparation - Clone completion keeps current metadata in connected clients.
 import { assert, it } from "@effect/vitest";
 import type { RepositoryIdentity } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -174,6 +175,47 @@ it.effect("publishes repository completion while favicon enrichment is still pen
       assert.equal(change.enrichment.repositoryIdentity?.canonicalKey, "example.test/v1/completed");
       assert.isNull(change.enrichment.faviconPath);
     }).pipe(Effect.provide(layer(layerMetadata)));
+  }),
+);
+
+it.effect("reruns invalidated pending identity work without publishing its superseded null", () =>
+  Effect.gen(function* () {
+    const oldLookupStarted = yield* Deferred.make<void>();
+    const releaseOldLookup = yield* Deferred.make<void>();
+    const calls = yield* Ref.make(0);
+    const layerMetadata = Layer.merge(
+      Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, {
+        resolve: (workspaceRoot) =>
+          Effect.gen(function* () {
+            const call = yield* Ref.updateAndGet(calls, (count) => count + 1);
+            if (call === 1) {
+              yield* Deferred.succeed(oldLookupStarted, undefined);
+              yield* Deferred.await(releaseOldLookup);
+              return null;
+            }
+            return identity(workspaceRoot, 2);
+          }),
+      }),
+      Layer.succeed(ProjectFaviconResolver.ProjectFaviconResolver, {
+        resolvePath: () => Effect.succeed(null),
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectEnrichment.ProjectEnrichmentService;
+      const changes = yield* service.subscribeChanges;
+      yield* service.request("/same-folder");
+      yield* Deferred.await(oldLookupStarted);
+      yield* service.invalidate(["/same-folder"]);
+      yield* service.request("/same-folder");
+      yield* Deferred.succeed(releaseOldLookup, undefined);
+      const change = yield* PubSub.take(changes);
+      assert.deepEqual(change.enrichment.repositoryIdentity, identity("/same-folder", 2));
+      assert.equal(yield* Ref.get(calls), 2);
+      assert.deepEqual(
+        (yield* service.peek("/same-folder")).repositoryIdentity,
+        identity("/same-folder", 2),
+      );
+    }).pipe(Effect.provide(layer(layerMetadata, { concurrency: 1, maxPending: 1 })));
   }),
 );
 

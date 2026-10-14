@@ -88,8 +88,9 @@ function isSuccessfullyResolved<A, E>(cached: Option.Option<Exit.Exit<A, E>>): b
   });
 }
 
+// fork: project-preparation - Pending revisions keep invalidated work in its bounded lane.
 interface EnrichmentWorkLane {
-  readonly pendingRoots: Ref.Ref<ReadonlySet<string>>;
+  readonly pendingRoots: Ref.Ref<ReadonlyMap<string, number>>;
   readonly queue: Queue.Queue<string>;
 }
 
@@ -126,7 +127,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     },
   );
   const makeWorkLane = Effect.gen(function* () {
-    const pendingRoots = yield* Ref.make<ReadonlySet<string>>(new Set());
+    const pendingRoots = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
     const queue = yield* Effect.acquireRelease(Queue.dropping<string>(maxPending), (queue) =>
       Queue.shutdown(queue),
     );
@@ -142,7 +143,7 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   const removePending = (lane: EnrichmentWorkLane, workspaceRoot: string) =>
     Ref.update(lane.pendingRoots, (current) => {
       if (!current.has(workspaceRoot)) return current;
-      const next = new Set(current);
+      const next = new Map(current);
       next.delete(workspaceRoot);
       return next;
     });
@@ -152,8 +153,8 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
       if (current.has(workspaceRoot) || current.size >= maxPending) {
         return [false, current] as const;
       }
-      const next = new Set(current);
-      next.add(workspaceRoot);
+      const next = new Map(current);
+      next.set(workspaceRoot, 0);
       return [true, next] as const;
     });
 
@@ -171,11 +172,14 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
       : Effect.void;
 
   const resolveRepositoryIdentity = Effect.fn("ProjectEnrichmentService.resolveRepositoryIdentity")(
-    function* (workspaceRoot: string) {
+    function* (workspaceRoot: string, revision: number) {
       const repositoryIdentity = yield* Cache.get(repositoryIdentityCache, workspaceRoot);
       yield* logFailure(workspaceRoot, "repositoryIdentity", repositoryIdentity);
       const faviconPath = yield* Cache.getSuccess(faviconCache, workspaceRoot);
       const repositoryIdentityResolved = Exit.isSuccess(repositoryIdentity);
+      // fork: project-preparation - An invalidated lookup cannot overwrite the current identity.
+      if ((yield* Ref.get(repositoryIdentityLane.pendingRoots)).get(workspaceRoot) !== revision)
+        return;
       yield* PubSub.publish(changes, {
         workspaceRoot,
         repositoryIdentityResolved,
@@ -202,13 +206,36 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     yield* logFailure(workspaceRoot, "faviconPath", faviconPath);
   });
 
+  // fork: project-preparation - Superseded work reruns in its reserved slot without stale publication.
   const startWorkers = (
     lane: EnrichmentWorkLane,
-    resolve: (workspaceRoot: string) => Effect.Effect<void>,
+    resolve: (workspaceRoot: string, revision: number) => Effect.Effect<void>,
+    invalidateCache: (workspaceRoot: string) => Effect.Effect<void>,
   ) => {
+    const resolvePending = (workspaceRoot: string) =>
+      Effect.gen(function* () {
+        while (true) {
+          const revision = (yield* Ref.get(lane.pendingRoots)).get(workspaceRoot);
+          if (revision === undefined) return;
+          yield* resolve(workspaceRoot, revision);
+          const completed = yield* Ref.modify(lane.pendingRoots, (current) => {
+            if (current.get(workspaceRoot) !== revision) return [false, current] as const;
+            const next = new Map(current);
+            next.delete(workspaceRoot);
+            return [true, next] as const;
+          });
+          if (completed) return;
+          // A lookup may insert its cache entry after invalidation. Discard that old result too.
+          yield* invalidateCache(workspaceRoot);
+        }
+      });
     const worker = Queue.take(lane.queue).pipe(
       Effect.flatMap((workspaceRoot) =>
-        resolve(workspaceRoot).pipe(Effect.ensuring(removePending(lane, workspaceRoot))),
+        resolvePending(workspaceRoot).pipe(
+          Effect.onExit((exit) =>
+            Exit.isFailure(exit) ? removePending(lane, workspaceRoot) : Effect.void,
+          ),
+        ),
       ),
       Effect.forever,
     );
@@ -218,8 +245,12 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
   };
   yield* Effect.all(
     [
-      startWorkers(repositoryIdentityLane, resolveRepositoryIdentity),
-      startWorkers(faviconLane, resolveFavicon),
+      startWorkers(repositoryIdentityLane, resolveRepositoryIdentity, (workspaceRoot) =>
+        Cache.invalidate(repositoryIdentityCache, workspaceRoot),
+      ),
+      startWorkers(faviconLane, resolveFavicon, (workspaceRoot) =>
+        Cache.invalidate(faviconCache, workspaceRoot),
+      ),
     ],
     { concurrency: "unbounded", discard: true },
   );
@@ -282,6 +313,17 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
     return available;
   });
 
+  // fork: project-preparation - Revisions exist only while a root occupies a bounded lane.
+  // Invalidated work keeps its slot and reruns before release rather than losing a deduplicated request.
+  const invalidatePending = (lane: EnrichmentWorkLane, workspaceRoot: string) =>
+    Ref.update(lane.pendingRoots, (current) => {
+      const revision = current.get(workspaceRoot);
+      if (revision === undefined) return current;
+      const next = new Map(current);
+      next.set(workspaceRoot, revision + 1);
+      return next;
+    });
+
   const invalidate: ProjectEnrichmentService["Service"]["invalidate"] = Effect.fn(
     "ProjectEnrichmentService.invalidate",
   )(function* (workspaceRoots) {
@@ -294,6 +336,16 @@ export const make = Effect.fn("ProjectEnrichmentService.make")(function* (
             Cache.invalidate(faviconCache, workspaceRoot),
           ],
           { concurrency: "unbounded", discard: true },
+        ).pipe(
+          Effect.andThen(
+            Effect.all(
+              [
+                invalidatePending(repositoryIdentityLane, workspaceRoot),
+                invalidatePending(faviconLane, workspaceRoot),
+              ],
+              { concurrency: "unbounded", discard: true },
+            ),
+          ),
         ),
       { discard: true },
     );

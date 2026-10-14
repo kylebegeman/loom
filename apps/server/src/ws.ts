@@ -1185,6 +1185,26 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
+// fork: project-preparation - Refresh both metadata caches after cloning into the saved folder.
+/** Post-clone wiring refreshes the saved project's metadata without changing its folder. */
+export const makeProjectCloneCompletion = Effect.gen(function* () {
+  const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
+  const projectEnrichment = yield* ProjectEnrichmentService.ProjectEnrichmentService;
+  const projectService = yield* ProjectService.ProjectService;
+  return (project: { readonly projectId: ProjectId; readonly workspaceRoot: string }) =>
+    repositoryIdentityResolver.resolve(project.workspaceRoot, { refresh: true }).pipe(
+      // Creation may have cached the empty folder. Updating the same root does not invalidate it.
+      Effect.andThen(projectEnrichment.invalidate([project.workspaceRoot])),
+      Effect.andThen(
+        projectService.update({
+          commandId: CommandId.make(`project-clone-done:${project.projectId}`),
+          projectId: project.projectId,
+        }),
+      ),
+      Effect.asVoid,
+    );
+});
+
 const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
   clientOrigin: OrchestrationClientOrigin,
@@ -1256,6 +1276,7 @@ const layerWsRpc = (
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
+      const completeProjectClone = yield* makeProjectCloneCompletion; // fork: project-preparation
       const repositoryIdentityResolver =
         yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
       const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
@@ -2589,13 +2610,8 @@ const layerWsRpc = (
                   ),
                 ),
             onCloned: (project) =>
-              repositoryIdentityResolver.resolve(project.workspaceRoot, { refresh: true }).pipe(
-                Effect.andThen(
-                  projectService.update({
-                    commandId: CommandId.make(`project-clone-done:${project.projectId}`),
-                    projectId: project.projectId,
-                  }),
-                ),
+              completeProjectClone(project).pipe(
+                // fork: project-preparation
                 Effect.andThen(refreshGitStatus(project.workspaceRoot)),
                 Effect.ignoreCause({ log: true }),
               ),
