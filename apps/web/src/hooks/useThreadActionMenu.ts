@@ -219,8 +219,9 @@ export function useThreadActionMenu(input: {
               logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
               deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
             void router.navigate({
-              to: "/projects/$projectKey",
-              params: { projectKey },
+              // fork: project-home preserves the scoped Project settings action.
+              to: "/settings/projects",
+              search: { project: projectKey, machine: undefined, checkout: undefined },
             });
             return;
           }

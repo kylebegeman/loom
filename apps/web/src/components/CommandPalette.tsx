@@ -55,6 +55,7 @@ import {
   resolveEnvironmentMachineKind,
 } from "@t3tools/contracts";
 import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
+import { useProjectHomePaletteContext } from "~/fork/project-home/useProjectHomePaletteContext"; // fork: project-home
 import {
   ArrowLeftIcon,
   ChartNoAxesColumnIcon,
@@ -878,15 +879,23 @@ function OpenCommandPaletteDialog(props: {
       ),
     [clientSettings.sidebarProjectSortOrder, threads, unsortedProjectGroups],
   );
+  const projectHomeContext = useProjectHomePaletteContext();
   const contextualProjectRef = useMemo(
     () =>
+      projectHomeContext?.projectRef ??
       resolveThreadActionProjectRef({
         activeDraftThread,
         activeThread: activeThread ?? undefined,
         defaultProjectRef,
         handleNewThread,
       }),
-    [activeDraftThread, activeThread, defaultProjectRef, handleNewThread],
+    [
+      activeDraftThread,
+      activeThread,
+      defaultProjectRef,
+      handleNewThread,
+      projectHomeContext?.projectRef,
+    ],
   );
   const projectPickerEntries = useMemo(
     () =>
@@ -2338,6 +2347,7 @@ function OpenCommandPaletteDialog(props: {
 
   // Target the active thread or draft's project, falling back to the first sidebar group.
   const contextualProjectGroup =
+    projectHomeContext?.group ??
     (contextualProjectRef
       ? projectGroupByTargetKey.get(
           `${contextualProjectRef.environmentId}:${contextualProjectRef.projectId}`,
@@ -2346,6 +2356,27 @@ function OpenCommandPaletteDialog(props: {
     projectGroups[0] ??
     null;
   if (contextualProjectGroup) {
+    // fork: project-home adds a project overview beside existing scoped settings.
+    actionItems.push({
+      kind: "action",
+      value: "action:loom:project-home:open",
+      searchTerms: ["project", "home", "overview", "conversations", "computers", "working folders"],
+      title: "Open project home",
+      description: contextualProjectGroup.displayName,
+      icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/projects/$projectKey",
+          params: { projectKey: contextualProjectGroup.projectKey },
+          search: contextualProjectRef
+            ? {
+                computer: contextualProjectRef.environmentId,
+                checkoutId: contextualProjectRef.projectId,
+              }
+            : {},
+        });
+      },
+    });
     actionItems.push({
       kind: "action",
       value: "action:project-settings",
@@ -2370,8 +2401,12 @@ function OpenCommandPaletteDialog(props: {
       icon: <FolderIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         await navigate({
-          to: "/projects/$projectKey",
-          params: { projectKey: contextualProjectGroup.projectKey },
+          to: "/settings/projects",
+          search: {
+            project: projectHomeContext?.settingsProjectKey ?? contextualProjectGroup.projectKey,
+            machine: undefined,
+            checkout: undefined,
+          },
         });
       },
     });

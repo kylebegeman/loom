@@ -1,4 +1,4 @@
-import { EnvironmentId, ProviderInstanceId, ScheduledTaskId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ScheduledTaskId } from "@t3tools/contracts";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -12,6 +12,7 @@ import { resolveSettingsScope } from "./settingsScope";
 import { retainSettingsScope, validateSettingsRouteSearch } from "./settingsScopeNavigation";
 
 import { validateScheduledTasksSearch } from "./scheduledTasksSettings.logic";
+import { validateProjectHomeSearch } from "~/fork/project-home/routeSearch"; // fork: project-home
 
 const checkoutSearch = {
   project: "repository:t3code",
@@ -53,16 +54,10 @@ function createSettingsRouter(initialEntry = "/settings/general") {
     path: "scheduled-tasks",
     validateSearch: validateScheduledTasksSearch,
   });
-  const legacyProject = createRoute({
+  const projectHome = createRoute({
     getParentRoute: () => root,
     path: "projects/$projectKey",
-    beforeLoad: ({ params }) => {
-      throw redirect({
-        to: "/settings/projects",
-        search: { project: params.projectKey, machine: undefined },
-        replace: true,
-      });
-    },
+    validateSearch: validateProjectHomeSearch,
   });
   return createRouter({
     routeTree: root.addChildren([
@@ -74,7 +69,7 @@ function createSettingsRouter(initialEntry = "/settings/general") {
         providers,
         scheduledTasks,
       ]),
-      legacyProject,
+      projectHome,
     ]),
     history: createMemoryHistory({ initialEntries: [initialEntry] }),
   });
@@ -242,17 +237,23 @@ describe("settings scope navigation", () => {
     expect(reloaded.state.location.search).toEqual(checkoutSearch);
   });
 
-  it("redirects legacy project links without carrying the prior checkout scope", async () => {
+  it("opens Project home separately and keeps Settings actions scoped without prior checkout filters", async () => {
     const router = createSettingsRouter();
     await router.navigate({ to: "/settings/general", search: checkoutSearch });
     await router.navigate({
       to: "/projects/$projectKey",
-      params: { projectKey: "legacy-project" },
+      params: { projectKey: "home-project" },
+      search: { computer: EnvironmentId.make("pi"), checkoutId: ProjectId.make("pi-checkout") },
     });
-    expect(router.state.redirect).not.toBeUndefined();
-    await router.navigate(router.state.redirect!.options);
+    expect(router.state.redirect).toBeUndefined();
+    expect(router.state.location.pathname).toBe("/projects/home-project");
+    expect(router.state.location.search).toEqual({ computer: "pi", checkoutId: "pi-checkout" });
+    await router.navigate({
+      to: "/settings/projects",
+      search: { project: "home-project", machine: undefined, checkout: undefined },
+    });
     expect(router.state.location.pathname).toBe("/settings/projects");
-    expect(router.state.location.search).toEqual({ project: "legacy-project" });
+    expect(router.state.location.search).toEqual({ project: "home-project" });
   });
 
   it("keeps scope through the settings index redirect", async () => {

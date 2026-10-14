@@ -1773,8 +1773,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         actionHandlers.set("project-settings", () => {
           if (isMobile) setOpenMobile(false);
           void router.navigate({
-            to: "/projects/$projectKey",
-            params: { projectKey: project.projectKey },
+            // fork: project-home preserves the scoped Project settings action.
+            to: "/settings/projects",
+            search: { project: project.projectKey, machine: undefined, checkout: undefined },
           });
         });
 
@@ -2331,8 +2332,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
       if (clicked === "project-settings") {
         if (isMobile) setOpenMobile(false);
         void router.navigate({
-          to: "/projects/$projectKey",
-          params: { projectKey: project.projectKey },
+          // fork: project-home preserves the scoped Project settings action.
+          to: "/settings/projects",
+          search: { project: project.projectKey, machine: undefined, checkout: undefined },
         });
         return;
       }

@@ -1,4 +1,5 @@
 import { useId, useMemo, type RefObject } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   AlarmClockIcon,
   ArrowRightIcon,
@@ -7,6 +8,7 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   FolderPlusIcon,
+  HardDriveIcon,
   MessageCircleIcon,
   MonitorIcon,
   SearchIcon,
@@ -16,7 +18,6 @@ import {
 } from "lucide-react";
 import { buildProjectNavigationEntries } from "@t3tools/client-runtime/fork";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
@@ -26,43 +27,15 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { Button } from "~/components/ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { SidebarInput } from "~/components/ui/sidebar";
 import { SidebarHeaderIconButton } from "~/components/sidebar/SidebarThreadHeader";
 import { ProjectFavicon } from "~/components/ProjectFavicon";
-import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 import type { SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
 import { useEnvironmentsWithScope } from "~/state/session";
 import { resolveProjectLibraryNewThreadTarget } from "./actions";
 import { useProjectLibraryExpansion } from "./expansion";
+import { resolveProjectThreadActivity } from "./activity";
 import { cn } from "~/lib/utils";
-
-function resolveProjectThreadActivity(
-  thread: EnvironmentThreadShell,
-  config: ServerConfig | undefined,
-  now: string,
-) {
-  if (config?.environment.capabilities.threadSnooze && effectiveSnoozed(thread, { now })) {
-    return "snoozed" as const;
-  }
-  if (config?.environment.capabilities.threadSettlement && thread.settledOverride === "settled") {
-    return "settled" as const;
-  }
-  const status = resolveSidebarThreadStatus(thread);
-  switch (status) {
-    case "approval":
-    case "input":
-      return "attention" as const;
-    case "working":
-    case "waiting":
-      return "working" as const;
-    case "failed":
-    case "limited":
-      return "failed" as const;
-    default:
-      return "ready" as const;
-  }
-}
 
 function buildLibraryEntries(input: {
   groups: readonly SidebarProjectSnapshot[];
@@ -95,6 +68,7 @@ type LibraryEntry = ReturnType<typeof buildLibraryEntries>[number];
 
 type LibraryActions = {
   onViewThreads: (project: SidebarProjectSnapshot) => void;
+  onOpenProject: (project: SidebarProjectSnapshot) => void;
   onOpenSettings: (project: SidebarProjectSnapshot) => void;
   onNewThread: (projectRef: ScopedProjectRef) => void;
   onOpenThread: (threadRef: ScopedThreadRef) => void;
@@ -111,6 +85,7 @@ export function ProjectLibraryHeader({
   onAddProject: () => void;
   searchInputRef: RefObject<HTMLInputElement | null>;
 }) {
+  const navigate = useNavigate();
   return (
     <div className="flex items-center gap-1">
       <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">
@@ -140,6 +115,12 @@ export function ProjectLibraryHeader({
           </Button>
         ) : null}
       </div>
+      <SidebarHeaderIconButton
+        label="Review project storage"
+        onClick={() => void navigate({ to: "/projects/storage" })}
+      >
+        <HardDriveIcon />
+      </SidebarHeaderIconButton>
       <SidebarHeaderIconButton label="Add project" onClick={onAddProject}>
         <FolderPlusIcon />
       </SidebarHeaderIconButton>
@@ -232,6 +213,7 @@ function ProjectLibraryRow({
   serverConfigs,
   now,
   onViewThreads,
+  onOpenProject,
   onOpenSettings,
   onNewThread,
   onOpenThread,
@@ -289,47 +271,51 @@ function ProjectLibraryRow({
 
   return (
     <li className="min-w-0 rounded-lg [content-visibility:auto] [contain-intrinsic-size:auto_88px]">
-      <button
-        type="button"
-        aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.title}`}
-        aria-expanded={expanded}
-        aria-describedby={detailsId}
-        onClick={toggleExpanded}
-        className="flex w-full cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      >
-        <span className="pt-0.5">
-          <ProjectFavicon project={project} className="size-4 shrink-0" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium text-sidebar-foreground">
-            {entry.title}
+      <div className="flex min-w-0 items-start rounded-lg hover:bg-sidebar-row-hover">
+        <button
+          type="button"
+          onClick={() => onOpenProject(project)}
+          aria-label={`Open project ${entry.title}`}
+          className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 rounded-lg px-2.5 py-2.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <span className="pt-0.5">
+            <ProjectFavicon project={project} className="size-4 shrink-0" />
           </span>
-          <span id={detailsId} className="block">
-            <span className="mt-1 flex min-w-0 items-center gap-1 text-2xs text-sidebar-muted-foreground">
-              <MonitorIcon aria-hidden="true" className="size-3 shrink-0" />
-              <Tooltip>
-                <TooltipTrigger render={<span className="truncate" />}>
-                  {computerLabels}
-                </TooltipTrigger>
-                <TooltipPopup>{computerLabels}</TooltipPopup>
-              </Tooltip>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-medium text-sidebar-foreground">
+              {entry.title}
             </span>
-            <span className="mt-1 block text-2xs leading-relaxed text-sidebar-muted-foreground">
-              {entry.threadCount === 0
-                ? "No threads yet"
-                : `${entry.threadCount} ${entry.threadCount === 1 ? "thread" : "threads"}`}
-              {activity ? <span className="block">{activity}</span> : null}
+            <span id={detailsId} className="block">
+              <span className="mt-1 flex min-w-0 items-center gap-1 text-2xs text-sidebar-muted-foreground">
+                <MonitorIcon aria-hidden="true" className="size-3 shrink-0" />
+                <span className="truncate">{computerLabels}</span>
+              </span>
+              <span className="mt-1 block text-2xs leading-relaxed text-sidebar-muted-foreground">
+                {entry.threadCount === 0
+                  ? "No threads yet"
+                  : `${entry.threadCount} ${entry.threadCount === 1 ? "thread" : "threads"}`}
+                {activity ? <span className="block">{activity}</span> : null}
+              </span>
             </span>
           </span>
-        </span>
-        <ChevronDownIcon
-          aria-hidden="true"
-          className={cn(
-            "mt-1 size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform duration-150 motion-reduce:transition-none",
-            expanded && "rotate-180",
-          )}
-        />
-      </button>
+        </button>
+        <button
+          type="button"
+          aria-label={`${expanded ? "Collapse" : "Expand"} ${entry.title}`}
+          aria-expanded={expanded}
+          aria-describedby={detailsId}
+          onClick={toggleExpanded}
+          className="mt-1.5 mr-1 flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={cn(
+              "mt-1 size-3.5 shrink-0 text-sidebar-muted-foreground transition-transform duration-150 motion-reduce:transition-none",
+              expanded && "rotate-180",
+            )}
+          />
+        </button>
+      </div>
       {expanded ? (
         <div className="ml-3 mr-1 px-1 pb-2">
           {entry.previewThreads.length > 0 ? (

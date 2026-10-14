@@ -14,7 +14,7 @@ export interface ProjectPreparationProject {
   readonly environmentId: EnvironmentId;
   readonly id: ProjectId;
   readonly workspaceRoot: string;
-  readonly repositoryIdentity: RepositoryIdentity | null;
+  readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
 }
 export interface ProjectPreparationHost {
   readonly environmentId: EnvironmentId;
@@ -34,6 +34,26 @@ export type ProjectPreparationSource =
 const repositoryKey = (remote: string) => canonicalRepositoryKey(normalizeGitRemoteUrl(remote));
 const unsafeCharacters = /[\s\p{Cc}\p{Cf}]/u;
 
+/** Normalize numeric host spellings even for SSH, without resolving DNS or contacting the host. */
+function machineLocalHostname(hostname: string): boolean {
+  let host: string;
+  try {
+    host = new URL(`http://${hostname}/`).hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return true;
+  }
+  return (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "0.0.0.0" ||
+    /^127(?:\.\d{1,3}){3}$/.test(host) ||
+    host === "[::]" ||
+    host === "[::1]" ||
+    host === "[::ffff:0:0]" ||
+    /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]+\]$/.test(host)
+  );
+}
+
 /** Network remotes reuse the chosen host's saved credentials. Local paths never cross machines. */
 function networkRemote(remote: string): string | null {
   if (remote.trim() !== remote || remote.length === 0 || unsafeCharacters.test(remote)) return null;
@@ -43,6 +63,7 @@ function networkRemote(remote: string): string | null {
       if (
         !["http:", "https:", "ssh:", "git:"].includes(url.protocol) ||
         !url.hostname ||
+        machineLocalHostname(url.hostname) ||
         url.pathname === "/" ||
         url.pathname === ""
       )
@@ -55,7 +76,8 @@ function networkRemote(remote: string): string | null {
     }
   }
   // Git's SCP syntax has a public SSH username; it contains no reusable source credential.
-  return /^[^@:/\\]+@[^:/\\]+:[^?#\\]+$/.test(remote) ? remote : null;
+  const scp = /^[^@:/\\]+@([^@:/\\]+):[^?#\\]+$/.exec(remote);
+  return scp && !machineLocalHostname(scp[1]!) ? remote : null;
 }
 
 /** Only an actual checkout review or published handoff offer establishes the source remote. */
@@ -63,6 +85,11 @@ export function projectPreparationSource(input: {
   readonly offer?: Pick<WorkspaceHandoffOffer, "remoteUrl" | "repositoryKey"> | null;
   readonly checkout?: Pick<ProjectCheckoutPreview, "repositoryIdentity" | "state"> | null;
 }): ProjectPreparationSource {
+  if (!input.offer && input.checkout?.state === "blocked")
+    return {
+      ready: false,
+      reason: "Resolve this checkout's storage review before preparing another copy.",
+    };
   const origin = input.checkout?.repositoryIdentity;
   const remote =
     input.offer?.remoteUrl ??
@@ -77,7 +104,7 @@ export function projectPreparationSource(input: {
     return {
       ready: false,
       reason:
-        "Use a network Git remote without embedded credentials or query tokens. Local repository paths cannot be prepared on another computer.",
+        "Use a network Git remote without embedded credentials or query tokens. Local-only addresses and repository paths cannot be prepared on another computer.",
     };
   const key = repositoryKey(safe);
   if (input.offer && repositoryKey(input.offer.repositoryKey) !== key)
@@ -131,6 +158,22 @@ const projectRepositoryKey = (project: ProjectPreparationProject) => {
   const identity = project.repositoryIdentity;
   return identity ? repositoryKey(identity.origin?.canonicalKey ?? identity.canonicalKey) : null;
 };
+/** Show each matching physical copy without substituting upstream grouping for actual origin. */
+export function matchingProjectPreparationCopies<
+  TProject extends ProjectPreparationProject,
+>(input: {
+  readonly source: ProjectPreparationSource;
+  readonly environmentId: EnvironmentId;
+  readonly projects: ReadonlyArray<TProject>;
+}): TProject[] {
+  if (!input.source.ready) return [];
+  const sourceKey = repositoryKey(input.source.repositoryKey);
+  return input.projects.filter(
+    (project) =>
+      project.environmentId === input.environmentId && projectRepositoryKey(project) === sourceKey,
+  );
+}
+
 export type ProjectPreparationPlan =
   | { readonly kind: "blocked"; readonly reason: string }
   | { readonly kind: "existing"; readonly project: ProjectPreparationProject }
@@ -173,8 +216,11 @@ export function buildProjectPreparationPlan(input: {
   const projects = input.projects.filter(
     (project) => project.environmentId === input.host.environmentId,
   );
-  const sourceKey = repositoryKey(input.source.repositoryKey);
-  const matching = projects.filter((project) => projectRepositoryKey(project) === sourceKey);
+  const matching = matchingProjectPreparationCopies({
+    source: input.source,
+    environmentId: input.host.environmentId,
+    projects,
+  });
   if (matching.length === 1) return { kind: "existing", project: matching[0]! };
   if (matching.length > 1)
     return {
@@ -247,11 +293,35 @@ export function getProjectPreparationRecovery(input: {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
   readonly repositoryKey: string;
+  readonly expectedDestinationPath?: string;
   readonly projects: ReadonlyArray<ProjectPreparationProject>;
   readonly clones: ReadonlyArray<ProjectCloneSnapshot>;
 }): ProjectPreparationRecovery {
   const clone = input.clones.find((snapshot) => snapshot.projectId === input.projectId);
-  if (clone && repositoryKey(clone.remoteUrl) !== repositoryKey(input.repositoryKey))
+  const project = input.projects.find(
+    (record) => record.environmentId === input.environmentId && record.id === input.projectId,
+  );
+  const expectedRepositoryKey = repositoryKey(input.repositoryKey);
+  const knownRepositoryKey = project ? projectRepositoryKey(project) : null;
+  if (knownRepositoryKey !== null && knownRepositoryKey !== expectedRepositoryKey)
+    return {
+      state: "inspect",
+      message:
+        "The saved project's actual origin changed. Inspect its folder before continuing or retrying this clone.",
+      canRetryTrackedClone: false,
+    };
+  if (
+    input.expectedDestinationPath !== undefined &&
+    ((clone && pathKey(clone.destinationPath) !== pathKey(input.expectedDestinationPath)) ||
+      (project && pathKey(project.workspaceRoot) !== pathKey(input.expectedDestinationPath)))
+  )
+    return {
+      state: "inspect",
+      message:
+        "The project or clone folder no longer matches the saved destination. Inspect it before continuing or retrying this request.",
+      canRetryTrackedClone: false,
+    };
+  if (clone && repositoryKey(clone.remoteUrl) !== expectedRepositoryKey)
     return {
       state: "inspect",
       message:
@@ -279,11 +349,8 @@ export function getProjectPreparationRecovery(input: {
         "The tracked clone stopped. Review its error and use the existing clone Retry control; other local files are not removed automatically.",
       canRetryTrackedClone: true,
     };
-  const project = input.projects.find(
-    (record) => record.environmentId === input.environmentId && record.id === input.projectId,
-  );
   if (project)
-    return projectRepositoryKey(project) === repositoryKey(input.repositoryKey)
+    return knownRepositoryKey === expectedRepositoryKey
       ? {
           state: "ready",
           message:

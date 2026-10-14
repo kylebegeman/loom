@@ -1,4 +1,5 @@
 import { randomUUID } from "~/lib/utils";
+import { ProjectPreparationDialog } from "../project-home/ProjectPreparationDialog";
 import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -31,10 +32,12 @@ function DestinationComputer({
   group,
   selectedKey,
   locked,
+  onPrepare,
 }: {
   group: WorkspaceHandoffDestinationGroup;
   selectedKey: string | undefined;
   locked: boolean;
+  onPrepare: (() => void) | undefined;
 }) {
   const permitted = useAtomValue(handoff.prepare.permissionAtom(group.environmentId));
   const reason =
@@ -43,7 +46,14 @@ function DestinationComputer({
     <div className="space-y-2">
       <p className="text-sm font-medium">{group.label}</p>
       {reason ? (
-        <p className="text-sm text-muted-foreground">{reason}</p>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">{reason}</p>
+          {group.connected && group.supportsHandoff && group.projects.length === 0 && onPrepare ? (
+            <Button variant="outline" size="sm" disabled={locked} onClick={onPrepare}>
+              Prepare project on {group.label}
+            </Button>
+          ) : null}
+        </div>
       ) : (
         group.projects.map(({ project, key, repositoryVerified }) => (
           <label
@@ -80,6 +90,9 @@ function HandoffContent() {
   const { environments, isReady } = useEnvironments();
   const navigate = useNavigate();
   const [running, setRunning] = useState(false);
+  const [preparationComputer, setPreparationComputer] = useState<
+    import("@t3tools/contracts").EnvironmentId | null
+  >(null);
   const sourceProject = projects.find(
     (project) =>
       project.environmentId === source.environmentId && project.id === sourceShell?.projectId,
@@ -312,6 +325,11 @@ function HandoffContent() {
                       group={group}
                       selectedKey={selected?.key}
                       locked={locked}
+                      onPrepare={
+                        sourceProject
+                          ? () => setPreparationComputer(group.environmentId)
+                          : undefined
+                      }
                     />
                   ))}
                 </RadioGroup>
@@ -406,6 +424,19 @@ function HandoffContent() {
           )}
         </DialogFooter>
       </DialogPopup>
+      {preparationComputer && sourceProject ? (
+        <ProjectPreparationDialog
+          sourceProject={sourceProject}
+          sourceOffer={state.offer}
+          initialEnvironmentId={preparationComputer}
+          onClose={() => setPreparationComputer(null)}
+          onPrepared={(projectRef) => {
+            useWorkspaceHandoff.setState({
+              destinationKey: `${projectRef.environmentId}/${projectRef.projectId}`,
+            });
+          }}
+        />
+      ) : null}
     </Dialog>
   );
 }

@@ -1,9 +1,9 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
-// Settings, Usage, Computers, and Pull Requests replace the sidebar utility row with a
-// Back button. Everything else is the main app. Legacy `/projects/<key>` links
-// redirect into settings, so they count too and are never remembered.
+// Settings, Usage, Computers, and Pull Requests use Back in the sidebar utility row.
+// fork: project-home overview pages also return to the previous conversation.
+// Other main app locations are remembered as that destination.
 export function isSidebarUtilityPage(pathname: string) {
   return (
     pathname === "/settings" ||

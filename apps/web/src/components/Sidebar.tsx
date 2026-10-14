@@ -289,6 +289,7 @@ import { ProjectNavigationSwitch } from "~/fork/project-navigation/ProjectNaviga
 import { ProjectLibrary, ProjectLibraryHeader } from "~/fork/project-navigation/ProjectLibrary";
 import { useProjectNavigationView } from "~/fork/project-navigation/preference";
 import { useProjectNavigationScroll } from "~/fork/project-navigation/scroll";
+import { onProjectThreadView } from "~/fork/project-navigation/threadView";
 import {
   ProjectNavigationThreadHeader,
   ProjectNavigationThreadGroup,
@@ -2794,9 +2795,12 @@ export default function Sidebar() {
         setOpenMobile(false);
       }
       void router.navigate({
-        to: "/projects/$projectKey",
-        params: {
-          projectKey: getSidebarProjectSettingsKey(
+        // fork: project-home keeps Settings actions scoped to the settings page.
+        to: "/settings/projects",
+        search: {
+          machine: undefined,
+          checkout: undefined,
+          project: getSidebarProjectSettingsKey(
             projectGroup,
             projectGroupingSettings,
             projects,
@@ -5083,6 +5087,17 @@ export default function Sidebar() {
     shortcutLabelForCommand(keybindings, "chat.new") ??
     (projectGroups.length <= 1 ? shortcutLabelForCommand(keybindings, "chat.newLocal") : undefined);
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
+  const handleOpenProjectHome = useCallback(
+    (project: SidebarProjectSnapshot) => {
+      if (isMobile) setOpenMobile(false);
+      void router.navigate({
+        to: "/projects/$projectKey",
+        params: { projectKey: project.projectKey },
+        search: {},
+      });
+    },
+    [isMobile, router, setOpenMobile],
+  );
   const handleViewProjectThreads = useCallback(
     (project: SidebarProjectSnapshot) => {
       setProjectScopeKey(project.projectKey);
@@ -5090,6 +5105,14 @@ export default function Sidebar() {
       setNavigatorView("threads", { resetScroll: true });
     },
     [clearThreadSearch, setNavigatorView, setProjectScopeKey],
+  );
+  useEffect(
+    () =>
+      onProjectThreadView(() => {
+        clearThreadSearch();
+        setNavigatorView("threads", { resetScroll: true });
+      }),
+    [clearThreadSearch, setNavigatorView],
   );
   const handleLibraryNewThread = useCallback(
     (projectRef: ScopedProjectRef) => {
@@ -5293,6 +5316,7 @@ export default function Sidebar() {
               now={snoozeNow}
               onAddProject={openAddProjectCommandPalette}
               onViewThreads={handleViewProjectThreads}
+              onOpenProject={handleOpenProjectHome}
               onOpenSettings={openProjectSettings}
               onNewThread={handleLibraryNewThread}
               onOpenThread={navigateToThread}

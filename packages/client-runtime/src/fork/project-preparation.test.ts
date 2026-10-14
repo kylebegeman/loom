@@ -9,6 +9,7 @@ import {
   buildProjectPreparationPlan,
   getProjectPreparationDestination,
   getProjectPreparationRecovery,
+  matchingProjectPreparationCopies,
   projectPreparationSource,
   type ProjectPreparationProject,
 } from "./project-preparation.ts";
@@ -105,6 +106,17 @@ describe("project preparation source", () => {
       remoteUrl: "https://git.example.test/team/repo.git",
     });
   });
+  it("requires a fresh review after a blocked checkout despite its cached identity", () => {
+    expect(
+      projectPreparationSource({ checkout: { state: "blocked", repositoryIdentity: origin } }),
+    ).toMatchObject({ ready: false });
+    expect(
+      projectPreparationSource({
+        offer: { remoteUrl: origin.locator.remoteUrl, repositoryKey: origin.canonicalKey },
+        checkout: { state: "blocked", repositoryIdentity: origin },
+      }),
+    ).toMatchObject({ ready: true, source: "handoff" });
+  });
   it("rejects a mismatched offer key", () => {
     expect(
       projectPreparationSource({
@@ -138,11 +150,42 @@ describe("project preparation source", () => {
     ).toMatchObject({ ready: false });
   });
   it.each([
+    "http://127.0.0.1:9000/team/repo.git",
+    "https://127.1/team/repo.git",
+    "ssh://git@127.1/team/repo.git",
+    "https://2130706433/team/repo.git",
+    "ssh://git@0x7f000001/team/repo.git",
+    "ssh://git@localhost/repo",
+    "git@localhost:repo",
+    "git@LOCALHOST.:repo",
+    "https://code.localhost/team/repo.git",
+    "git@127.0.0.2:repo",
+    "git@127.1:repo",
+    "http://0.0.0.0/team/repo.git",
+    "git://0/team/repo.git",
+    "http://[::1]/team/repo.git",
+    "ssh://git@[0:0:0:0:0:0:0:1]/team/repo.git",
+    "http://[::]/team/repo.git",
+    "http://[::ffff:127.0.0.1]/team/repo.git",
+  ])("rejects a cross-computer remote that resolves to the local host %s", (remoteUrl) => {
+    expect(
+      projectPreparationSource({
+        checkout: {
+          state: "managed",
+          repositoryIdentity: { ...origin, locator: { ...origin.locator, remoteUrl } },
+        },
+      }),
+    ).toMatchObject({ ready: false });
+  });
+  it.each([
     "ssh://git@code.example.test/team/repo.git",
     "git@code.example.test:team/repo.git",
     "git://code.example.test/team/repo.git",
     "https://code.example.test/team/repo.git",
     "http://192.168.4.27/team/repo.git",
+    "git@192.168.4.27:team/repo.git",
+    "ssh://git@[fd00::27]/team/repo.git",
+    "https://127.code.example.test/team/repo.git",
   ])("accepts supported network transport without a domain whitelist %s", (remoteUrl) => {
     expect(
       projectPreparationSource({
@@ -180,6 +223,27 @@ describe("explicit computer and destination preparation", () => {
       kind: "blocked",
       reason: expect.stringContaining("permission"),
     });
+  });
+  it("lists every matching physical copy on only the explicitly selected computer", () => {
+    const first = { ...project({ repositoryIdentity: fork }), title: "First copy" };
+    const second = {
+      ...project({ id: ProjectId.make("second-copy"), repositoryIdentity: origin }),
+      title: "Second copy",
+    };
+    expect(
+      matchingProjectPreparationCopies({
+        source,
+        environmentId: destinationHost,
+        projects: [first, second, { ...first, environmentId: sourceHost }],
+      }),
+    ).toEqual([first, second]);
+    expect(
+      matchingProjectPreparationCopies({
+        source: { ready: false, reason: "Needs review" },
+        environmentId: destinationHost,
+        projects: [first],
+      }),
+    ).toEqual([]);
   });
   it("selects an existing physical fork copy using origin instead of parent grouping", () => {
     const existing = project({ repositoryIdentity: fork });
@@ -275,11 +339,13 @@ describe("interrupted preparation recovery", () => {
   const recover = (
     projects: ReadonlyArray<ProjectPreparationProject>,
     clones: ReadonlyArray<ProjectCloneSnapshot>,
+    expectedDestinationPath?: string,
   ) =>
     getProjectPreparationRecovery({
       environmentId: destinationHost,
       projectId,
       repositoryKey: "github.com/kyle/fork",
+      ...(expectedDestinationPath === undefined ? {} : { expectedDestinationPath }),
       projects,
       clones,
     });
@@ -322,6 +388,104 @@ describe("interrupted preparation recovery", () => {
     expect(
       recover([], [{ ...clone("done"), remoteUrl: "https://github.com/unrelated/repo.git" }]),
     ).toMatchObject({ state: "inspect", canRetryTrackedClone: false });
+  });
+  it.each(["running", "done", "failed", "cancelled"] as const)(
+    "requires inspection when the saved actual origin changed despite a %s clone",
+    (phase) => {
+      expect(
+        recover(
+          [
+            project({
+              id: projectId,
+              workspaceRoot: clone(phase).destinationPath,
+              repositoryIdentity: {
+                ...fork,
+                canonicalKey: "github.com/kyle/fork",
+                origin: { canonicalKey: "github.com/unrelated/repo" },
+              },
+            }),
+          ],
+          [clone(phase)],
+        ),
+      ).toMatchObject({ state: "inspect", canRetryTrackedClone: false });
+    },
+  );
+  it.each(["done", "failed"] as const)(
+    "requires inspection when a %s clone moved away from the saved destination",
+    (phase) => {
+      expect(
+        recover(
+          [],
+          [{ ...clone(phase), destinationPath: "/changed/folder" }],
+          clone(phase).destinationPath,
+        ),
+      ).toMatchObject({ state: "inspect", canRetryTrackedClone: false });
+    },
+  );
+  it.each(["done", "failed"] as const)(
+    "requires inspection when the saved project folder changed despite a %s clone",
+    (phase) => {
+      expect(
+        recover(
+          [
+            project({
+              id: projectId,
+              workspaceRoot: "/changed/folder",
+              repositoryIdentity: origin,
+            }),
+          ],
+          [clone(phase)],
+          clone(phase).destinationPath,
+        ),
+      ).toMatchObject({ state: "inspect", canRetryTrackedClone: false });
+    },
+  );
+  it("requires inspection of a changed saved folder after clone tracking expires", () => {
+    expect(
+      recover(
+        [project({ id: projectId, repositoryIdentity: fork })],
+        [],
+        clone("done").destinationPath,
+      ),
+    ).toMatchObject({ state: "inspect", canRetryTrackedClone: false });
+  });
+  it("preserves callers without a saved destination", () => {
+    expect(
+      recover([project({ id: projectId, repositoryIdentity: fork })], [clone("failed")]),
+    ).toMatchObject({ state: "retry", canRetryTrackedClone: true });
+  });
+  it("keeps an in-progress clone when the saved project identity is not known yet", () => {
+    expect(
+      recover(
+        [project({ id: projectId, workspaceRoot: clone("running").destinationPath })],
+        [clone("running")],
+        clone("running").destinationPath,
+      ),
+    ).toMatchObject({ state: "running", canRetryTrackedClone: false });
+  });
+  it("matches Windows destinations by normalized folder spelling", () => {
+    expect(
+      recover(
+        [project({ id: projectId, workspaceRoot: "c:/projects/FORK/", repositoryIdentity: fork })],
+        [{ ...clone("done"), destinationPath: "C:\\Projects\\fork" }],
+        "C:\\projects\\Fork\\",
+      ),
+    ).toMatchObject({ state: "ready", canRetryTrackedClone: false });
+  });
+  it("ignores another computer's project with the same id during recovery", () => {
+    expect(
+      recover(
+        [
+          project({
+            id: projectId,
+            environmentId: sourceHost,
+            repositoryIdentity: { ...origin, canonicalKey: "github.com/unrelated/repo" },
+          }),
+        ],
+        [clone("done")],
+        clone("done").destinationPath,
+      ),
+    ).toMatchObject({ state: "ready", canRetryTrackedClone: false });
   });
   it("requires a refresh after a lost response with no visible durable record", () => {
     expect(recover([], [])).toMatchObject({
