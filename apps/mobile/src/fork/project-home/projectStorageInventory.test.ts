@@ -1,3 +1,4 @@
+import { projectStorageRolloutComputerLabels } from "@t3tools/client-runtime/fork";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -30,6 +31,34 @@ describe("known project storage inventory", () => {
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.project.environmentId)).toEqual([local, remote]);
     expect(new Set(rows.map((row) => row.key)).size).toBe(2);
+  });
+  it("distinguishes same-named computers even when project names and folders match", () => {
+    const projects = [
+      project(local, "Atlas"),
+      { ...project(remote, "Atlas"), workspaceRoot: "/work/local" },
+    ];
+    const qualified = projectStorageRolloutComputerLabels(
+      new Map([
+        [local, "Mac"],
+        [remote, "Mac"],
+      ]),
+    );
+    const rows = projectStorageInventory(projects, qualified, "");
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((entry) => entry.computerLabel)).size).toBe(2);
+    expect(new Set(rows.map((entry) => entry.key)).size).toBe(2);
+    const matching = projectStorageInventory(projects, qualified, qualified.get(remote)!);
+    expect(matching).toHaveLength(1);
+    expect(matching[0]!.project.environmentId).toBe(remote);
+  });
+  it("changes selection identity when a known project folder is replaced", () => {
+    const original = project(local, "Atlas");
+    const moved = { ...original, workspaceRoot: "/other/atlas", updatedAt: "2026-10-14T00:00:00Z" };
+    const first = projectStorageInventory([original], computers, "")[0]!;
+    const latest = projectStorageInventory([original, moved], computers, "");
+    expect(latest).toHaveLength(1);
+    expect(latest[0]!.key).not.toBe(first.key);
+    expect(latest[0]!.project.workspaceRoot).toBe("/other/atlas");
   });
   it("searches project names, remembered locations and computer names without losing target identity", () => {
     const projects = [project(local, "Atlas"), project(remote, "Loom")];

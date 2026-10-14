@@ -227,9 +227,19 @@ new storage metadata.
 
 Use **Review project storage** from Projects to review the registered folders across your
 computers. This inventory uses projects already known to Loom; it does not scan your computer
-for repositories. Open one folder's review at a time to see its current ownership, local-file
-summary, and retention choice. Offline folders keep their remembered location until their
-computer reconnects. Opening the inventory or a review does not adopt, release, or restore files.
+for repositories. Select the folders you want to review, then choose **Review selected folders** to
+check their ownership, local-file summary and current storage choice together. Choose Keep,
+Release, or the computer's defaults separately for each reviewed folder, then review the exact
+computers, folders and choices before saving. External folders require an explicit Keep or
+Release choice before Loom adopts them. Offline folders keep their remembered location until
+their computer reconnects. Opening the inventory or a review does not adopt, release, or restore files.
+
+Saving a release choice can soon release an already settled, eligible folder. Saving Keep for a
+released folder restores its working files. Cleanup still checks publication and active work
+before releasing files; a storage review is not a guarantee that release is currently possible.
+Completed saves remain visible if another folder fails. Review a failed or changed folder again
+before choosing and saving its policy. Stop prevents remaining saves from starting; a request
+already sent may still finish.
 
 Projects and conversations stay discoverable after release. Opening a file or terminal, using
 Git, or continuing work restores the saved revision from its recovery archive. Starting an agent

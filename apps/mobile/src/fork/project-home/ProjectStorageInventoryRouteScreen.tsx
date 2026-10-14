@@ -1,4 +1,8 @@
 import { LegendList } from "@legendapp/list/react-native";
+import {
+  projectStorageRolloutComputerLabels,
+  projectStorageRolloutTargetReason,
+} from "@t3tools/client-runtime/fork";
 import { useNavigation } from "@react-navigation/native";
 import { useMemo, useState, type ComponentProps } from "react";
 import { Platform, Pressable, View } from "react-native";
@@ -13,7 +17,8 @@ import { SymbolView } from "../../components/AppSymbol";
 import { useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useWorkspaceState } from "../../state/workspace";
-import { ProjectCheckoutSection } from "../project-checkout/ProjectCheckoutSection";
+import { ProjectStorageRolloutQueue } from "../project-checkout/storageRollout/ProjectStorageRolloutQueue";
+import { useProjectStorageRollout } from "../project-checkout/storageRollout/useProjectStorageRollout";
 import {
   PROJECT_STORAGE_INVENTORY_PAGE_SIZE,
   projectStorageInventory,
@@ -23,7 +28,7 @@ function renderInventoryScrollView(props: ComponentProps<typeof ScreenScrollView
   return <ScreenScrollView {...props} />;
 }
 
-/** Reviews are loaded one checkout at a time; opening this inventory never changes storage. */
+/** Only explicitly selected known folders are reviewed; opening this list changes nothing. */
 export function ProjectStorageInventoryRouteScreen() {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
@@ -32,21 +37,16 @@ export function ProjectStorageInventoryRouteScreen() {
   const { state: catalog } = useWorkspaceState();
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(PROJECT_STORAGE_INVENTORY_PAGE_SIZE);
-  const [reviewKey, setReviewKey] = useState<string | null>(null);
+  const { controller, snapshot } = useProjectStorageRollout();
+  const busy = snapshot.phase === "reviewing" || snapshot.phase === "saving";
+  const rowsByKey = useMemo(
+    () => new Map(snapshot.rows.map((row) => [row.key, row])),
+    [snapshot.rows],
+  );
   const computerNames = useMemo(
     () =>
-      new Map(environments.map((environment) => [environment.environmentId, environment.label])),
-    [environments],
-  );
-  const connectedEnvironmentIds = useMemo(
-    () =>
-      new Set(
-        environments
-          .filter(
-            (environment) =>
-              environment.entry.enabled && environment.connection.phase === "connected",
-          )
-          .map((environment) => environment.environmentId),
+      projectStorageRolloutComputerLabels(
+        new Map(environments.map((environment) => [environment.environmentId, environment.label])),
       ),
     [environments],
   );
@@ -55,10 +55,7 @@ export function ProjectStorageInventoryRouteScreen() {
     [projects, computerNames, query],
   );
   const visibleRecords = useMemo(() => records.slice(0, visibleCount), [records, visibleCount]);
-  const listExtraData = useMemo(
-    () => ({ reviewKey, connectedEnvironmentIds }),
-    [reviewKey, connectedEnvironmentIds],
-  );
+  const listExtraData = useMemo(() => ({ rowsByKey, busy }), [rowsByKey, busy]);
   return (
     <View className="flex-1 bg-screen">
       <ScreenHeader
@@ -71,7 +68,6 @@ export function ProjectStorageInventoryRouteScreen() {
           onChangeText: (value) => {
             setQuery(value);
             setVisibleCount(PROJECT_STORAGE_INVENTORY_PAGE_SIZE);
-            setReviewKey(null);
           },
         }}
       />
@@ -94,12 +90,20 @@ export function ProjectStorageInventoryRouteScreen() {
         ListHeaderComponent={
           <View className="gap-2 pt-4 pb-5">
             <Text className="text-sm leading-normal text-foreground-muted">
-              Review existing project folders one at a time before Loom manages their working files.
-              Nothing is adopted, released, or restored by opening this list.
+              Select the folders you want to review. Choose a storage preference for each, then
+              confirm the exact choices before saving. Opening this list changes no working files.
             </Text>
             <Text className="text-sm text-foreground-muted">
-              {records.length} known {records.length === 1 ? "checkout" : "checkouts"}. This list
-              uses projects already in Loom and does not scan your filesystem.
+              {records.length} {query.trim() ? "matching" : "known"}{" "}
+              {records.length === 1 ? "checkout" : "checkouts"}. This list uses projects already in
+              Loom and does not scan your filesystem.
+            </Text>
+            <ProjectStorageRolloutQueue controller={controller} snapshot={snapshot} />
+            <Text
+              accessibilityRole="header"
+              className="pt-3 text-base font-t3-medium text-foreground"
+            >
+              Known folders
             </Text>
           </View>
         }
@@ -134,49 +138,53 @@ export function ProjectStorageInventoryRouteScreen() {
         }
         renderItem={({ item }) => {
           const { project, computerLabel, key } = item;
-          const connected = connectedEnvironmentIds.has(project.environmentId);
-          const expanded = connected && reviewKey === key;
+          const row = rowsByKey.get(key);
+          const selected = row?.selected === true;
+          const saved = row?.status === "saved";
+          const reason = row
+            ? projectStorageRolloutTargetReason(row.target)
+            : "Loading storage access…";
+          const accessLabel =
+            reason ??
+            (!row?.target.canAdopt && !row?.target.canSetRetention
+              ? "Review only, settings permission required to save"
+              : selected
+                ? "Selected for review"
+                : "Connected, select to review");
           return (
             <View className="mb-3 overflow-hidden rounded-2xl bg-card">
               <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`Review ${project.title} on ${computerLabel}${connected ? "" : ", computer offline"}`}
-                accessibilityState={{ expanded, disabled: !connected }}
-                disabled={!connected}
-                onPress={() => setReviewKey((current) => (current === key ? null : key))}
+                accessibilityRole="checkbox"
+                accessibilityLabel={`${project.title} on ${computerLabel}`}
+                accessibilityHint={`${project.workspaceRoot}. ${saved ? "Preference saved." : accessLabel}`}
+                accessibilityState={{ checked: selected || saved, disabled: busy || saved || !row }}
+                disabled={busy || saved || !row}
+                onPress={() => controller.setSelected(key, !selected)}
                 className="min-h-[72px] flex-row items-center gap-3 p-4 active:opacity-70"
               >
-                <SymbolView name="folder" size={22} tintColorClassName="accent-icon" />
+                <SymbolView
+                  name={saved || selected ? "checkmark.circle.fill" : "circle"}
+                  size={22}
+                  tintColorClassName={
+                    selected || saved ? "accent-primary-text" : "accent-icon-muted"
+                  }
+                />
                 <View className="min-w-0 flex-1 gap-1">
                   <Text className="text-base font-t3-medium text-foreground" numberOfLines={2}>
                     {project.title}
                   </Text>
                   <Text className="text-xs text-foreground-muted">
-                    {computerLabel} ·{" "}
-                    {connected
-                      ? "Connected, open review for current storage state"
-                      : "Offline, reconnect to review storage"}
+                    {computerLabel} · {saved ? "Saved" : accessLabel}
                   </Text>
-                  <Text className="text-xs text-foreground-muted" numberOfLines={2}>
+                  <Text
+                    className="text-xs text-foreground-muted"
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                  >
                     {project.workspaceRoot}
                   </Text>
                 </View>
-                <SymbolView
-                  name={expanded ? "chevron.up" : "chevron.down"}
-                  size={14}
-                  tintColorClassName="accent-icon-muted"
-                />
               </Pressable>
-              {connected && expanded ? (
-                <View className="px-3 pb-3">
-                  <ProjectCheckoutSection
-                    environmentId={project.environmentId}
-                    projectId={project.id}
-                    workspaceRoot={project.workspaceRoot}
-                    computerLabel={computerLabel}
-                  />
-                </View>
-              ) : null}
             </View>
           );
         }}

@@ -1,3 +1,4 @@
+import { projectStorageRolloutKey } from "@t3tools/client-runtime/fork";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId } from "@t3tools/contracts";
 
@@ -20,7 +21,11 @@ export function projectStorageInventory(
   return [...records.values()]
     .map((project) => ({
       project,
-      key: JSON.stringify([project.environmentId, project.id]),
+      key: projectStorageRolloutKey({
+        environmentId: project.environmentId,
+        projectId: project.id,
+        workspaceRoot: project.workspaceRoot,
+      }),
       computerLabel: computerNames.get(project.environmentId) ?? "Computer",
     }))
     .filter(

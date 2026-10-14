@@ -142,7 +142,7 @@ export function projectStorageRolloutStateLabel(preview: ProjectCheckoutPreview)
 }
 export function projectStorageRolloutLocalFilesLabel(preview: ProjectCheckoutPreview): string {
   const files = preview.localFiles;
-  return `${files.trackedChanges} tracked changes, ${files.untrackedFiles} untracked files, ${files.ignoredFiles} ignored files${files.truncated ? " (partial count)" : ""}`;
+  return `${files.trackedChanges} tracked ${files.trackedChanges === 1 ? "change" : "changes"}, ${files.untrackedFiles} untracked ${files.untrackedFiles === 1 ? "file" : "files"}, ${files.ignoredFiles} ignored ${files.ignoredFiles === 1 ? "file" : "files"}${files.truncated ? " (partial count)" : ""}`;
 }
 
 function sameAccess(a: ProjectStorageRolloutTarget, b: ProjectStorageRolloutTarget): boolean {
