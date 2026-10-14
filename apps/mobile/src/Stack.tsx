@@ -1,3 +1,7 @@
+// fork: project-home - A durable project overview is a normal workspace route.
+import { ProjectHomeRouteScreen } from "./fork/project-home/ProjectHomeRouteScreen";
+import { ProjectStorageInventoryRouteScreen } from "./fork/project-home/ProjectStorageInventoryRouteScreen";
+import { ProjectPreparationRouteScreen } from "./fork/project-home/ProjectPreparationRouteScreen";
 import { BRAND_NAME } from "@t3tools/shared/brand"; // fork: brand
 import { WorkspaceHandoffScreen } from "./features/workspace-handoff/WorkspaceHandoffScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
@@ -791,6 +795,21 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ThreadRouteScreen,
       linking: THREAD_LINKING_PREFIX,
       options: GLASS_HEADER_OPTIONS,
+    }),
+    ProjectPreparation: createNativeStackScreen({
+      screen: ProjectPreparationRouteScreen,
+      linking: "projects/:environmentId/:projectId/prepare",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    ProjectStorageInventory: createNativeStackScreen({
+      screen: ProjectStorageInventoryRouteScreen,
+      linking: "project-storage",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    ProjectHome: createNativeStackScreen({
+      screen: ProjectHomeRouteScreen,
+      linking: "projects/:environmentId/:projectId",
+      options: SOLID_HEADER_OPTIONS,
     }),
     WorkspaceHandoff: createNativeStackScreen({
       screen: WorkspaceHandoffScreen,

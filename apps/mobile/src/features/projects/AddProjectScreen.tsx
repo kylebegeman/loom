@@ -1,3 +1,10 @@
+import { preparationReceiptKey } from "../../fork/project-home/projectPreparationReceipt";
+import { useProjectPreparationReceipt } from "../../fork/project-home/useProjectPreparationReceipt";
+// fork: project-home - Optional preparation requests reuse clone tracking and stable destination ownership.
+import {
+  buildProjectPreparationPlan,
+  getProjectPreparationRecovery,
+} from "@t3tools/client-runtime/fork";
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { MaterialListRow } from "../../components/MaterialListRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
@@ -47,7 +54,7 @@ import {
   AuthSourceControlWriteScope,
   AuthFilesystemReadScope,
   CommandId,
-  type EnvironmentId,
+  EnvironmentId,
   type EnvironmentMachineKind,
   ProjectId,
   resolveEnvironmentMachineKind,
@@ -68,7 +75,8 @@ import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
 import { environmentSession, useEnvironmentScope, readEnvironmentScope } from "../../state/session";
-import { useEnvironmentPresentation } from "../../state/presentation";
+import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
+import { appAtomRegistry } from "../../state/atom-registry";
 import { sourceControlEnvironment } from "../../state/sourceControl";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
@@ -312,15 +320,21 @@ function ProjectPathInput(props: {
 // `pinnedDirectoryName` is the repository folder the clone destination keeps
 // appended to whatever folder the user browses to. The plain add-project flow
 // passes nothing, so it keeps proposing the browsed folder itself.
-function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirectoryName = "") {
+function useBrowsePathInput(
+  environment: EnvironmentOption | null,
+  pinnedDirectoryName = "",
+  reviewedDestinationPath: string | null = null,
+) {
   const environmentId = environment?.environmentId ?? null;
   const environmentBaseDirectory = environment?.baseDirectory ?? null;
   const clonePathCaseSensitive = !isWindowsPlatform(environment?.platform ?? "");
-  const [pathInput, commitPathInput] = useState(() =>
-    getCloneDestinationPath(
-      getAddProjectInitialQuery(environmentBaseDirectory),
-      pinnedDirectoryName,
-    ),
+  const [pathInput, commitPathInput] = useState(
+    () =>
+      reviewedDestinationPath ??
+      getCloneDestinationPath(
+        getAddProjectInitialQuery(environmentBaseDirectory),
+        pinnedDirectoryName,
+      ),
   );
   const previousEnvironmentIdRef = useRef(environmentId);
   const environmentRuntime = useRemoteEnvironmentRuntime(environmentId);
@@ -390,13 +404,20 @@ function useBrowsePathInput(environment: EnvironmentOption | null, pinnedDirecto
     if (environmentId !== null && environmentId !== previousEnvironmentIdRef.current) {
       previousEnvironmentIdRef.current = environmentId;
       setPathInput(
-        getCloneDestinationPath(
-          getAddProjectInitialQuery(environmentBaseDirectory),
-          pinnedDirectoryName,
-        ),
+        reviewedDestinationPath ??
+          getCloneDestinationPath(
+            getAddProjectInitialQuery(environmentBaseDirectory),
+            pinnedDirectoryName,
+          ),
       );
     }
-  }, [environmentBaseDirectory, environmentId, pinnedDirectoryName, setPathInput]);
+  }, [
+    environmentBaseDirectory,
+    environmentId,
+    pinnedDirectoryName,
+    reviewedDestinationPath,
+    setPathInput,
+  ]);
 
   useEffect(
     () => () => {
@@ -1476,6 +1497,12 @@ export function AddProjectDestinationScreen(props: {
   readonly remoteUrl?: string | string[];
   readonly repositoryTitle?: string | string[];
   readonly repositoryName?: string | string[];
+  readonly preparationSourceEnvironmentId?: string | string[];
+  readonly preparationSourceProjectId?: string | string[];
+  readonly preparationProjectId?: string | string[];
+  readonly preparationCreatedAt?: string | string[];
+  readonly preparationRepositoryKey?: string | string[];
+  readonly preparationDestinationPath?: string | string[];
   readonly prompt?: string | string[];
 }) {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
@@ -1496,8 +1523,79 @@ export function AddProjectDestinationScreen(props: {
   );
   const canCloneProject = canWriteSourceControl && canCreateProject;
   const createProject = useCreateProject(environment, true);
-  const remoteUrl = stringParam(props.remoteUrl);
-  const repositoryTitle = stringParam(props.repositoryTitle);
+  const sourceEnvironmentId = stringParam(props.preparationSourceEnvironmentId);
+  const sourceProjectId = stringParam(props.preparationSourceProjectId);
+  const preparationRequested =
+    props.preparationSourceEnvironmentId !== undefined ||
+    props.preparationSourceProjectId !== undefined ||
+    props.preparationProjectId !== undefined ||
+    props.preparationCreatedAt !== undefined ||
+    props.preparationRepositoryKey !== undefined ||
+    props.preparationDestinationPath !== undefined;
+  const receiptState = useProjectPreparationReceipt(
+    preparationRequested && sourceEnvironmentId && sourceProjectId && environment
+      ? preparationReceiptKey(
+          EnvironmentId.make(sourceEnvironmentId),
+          ProjectId.make(sourceProjectId),
+          environment.environmentId,
+        )
+      : null,
+  );
+  const savedReceipt = receiptState.receipt;
+  const remoteUrl = savedReceipt?.remoteUrl ?? stringParam(props.remoteUrl);
+  const repositoryTitle = savedReceipt?.title ?? stringParam(props.repositoryTitle);
+  const projects = useProjects();
+  const preparationProjectId = savedReceipt?.projectId ?? stringParam(props.preparationProjectId);
+  const preparationCreatedAt = savedReceipt?.createdAt ?? stringParam(props.preparationCreatedAt);
+  const preparationRepositoryKey =
+    savedReceipt?.repositoryKey ?? stringParam(props.preparationRepositoryKey);
+  const preparation =
+    preparationProjectId && preparationCreatedAt && preparationRepositoryKey && remoteUrl
+      ? {
+          projectId: ProjectId.make(preparationProjectId),
+          createdAt: preparationCreatedAt,
+          title: repositoryTitle ?? getCloneDirectoryName(remoteUrl),
+          source: {
+            ready: true as const,
+            source: "checkout" as const,
+            remoteUrl,
+            repositoryKey: preparationRepositoryKey,
+          },
+        }
+      : null;
+  const preparationClones = useEnvironmentQuery(
+    preparation && environment?.supportsCloneTracking
+      ? sourceControlEnvironment.projectClones({
+          environmentId: environment.environmentId,
+          input: {},
+        })
+      : null,
+  );
+  const preparationProject = preparation
+    ? projects.find(
+        (project) =>
+          project.environmentId === environment?.environmentId &&
+          project.id === preparation.projectId,
+      )
+    : undefined;
+  const preparationClone = preparation
+    ? preparationClones.data?.find((clone) => clone.projectId === preparation.projectId)
+    : undefined;
+  const recovery =
+    preparation && environment
+      ? getProjectPreparationRecovery({
+          environmentId: environment.environmentId,
+          projectId: preparation.projectId,
+          repositoryKey: preparation.source.repositoryKey,
+          ...(savedReceipt ? { expectedDestinationPath: savedReceipt.destinationPath } : {}),
+          projects: projects.map((project) => ({
+            ...project,
+            repositoryIdentity: project.repositoryIdentity ?? null,
+          })),
+          clones: preparationClones.data ?? [],
+        })
+      : null;
+
   const prompt = stringParam(props.prompt);
   // A lookup derives this from "owner/repo", a pasted clone URL from its own
   // last segment. Older links without the param keep the browsed folder.
@@ -1507,6 +1605,7 @@ export function AddProjectDestinationScreen(props: {
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } = useBrowsePathInput(
     environment,
     repositoryName,
+    preparationRequested ? stringParam(props.preparationDestinationPath) : null,
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1522,9 +1621,19 @@ export function AddProjectDestinationScreen(props: {
     ) {
       return;
     }
+    const preparationHostConnected = () => {
+      const current = appAtomRegistry.get(
+        environmentPresentations.presentationAtom(environment.environmentId),
+      );
+      return current?.entry.enabled === true && current.connection.phase === "connected";
+    };
+    if (preparationRequested && !preparationHostConnected()) {
+      setError("Reconnect the selected computer before preparing this checkout.");
+      return;
+    }
     setError(null);
     const resolved = resolveAddProjectPath({
-      rawPath: pathInput,
+      rawPath: savedReceipt?.destinationPath ?? pathInput,
       currentProjectCwd: null,
       platform: environment.platform,
     });
@@ -1533,18 +1642,107 @@ export function AddProjectDestinationScreen(props: {
       return;
     }
 
+    if (preparationRequested) {
+      if (
+        !preparation ||
+        !sourceEnvironmentId ||
+        !sourceProjectId ||
+        !receiptState.loaded ||
+        receiptState.invalid ||
+        !environment.supportsCloneTracking ||
+        !preparationClones.isSuccess
+      ) {
+        setError(
+          !environment.supportsCloneTracking
+            ? "Update Loom on this computer to prepare a tracked checkout."
+            : "Wait for this computer's clone progress before preparing the checkout.",
+        );
+        return;
+      }
+      const plan = buildProjectPreparationPlan({
+        source: preparation.source,
+        host: {
+          environmentId: environment.environmentId,
+          connected: environment.connectionState === "connected",
+          canClone:
+            readEnvironmentScope(environment.environmentId, AuthSourceControlWriteScope) &&
+            readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope),
+          newProjectsRoot: environment.newProjectsRoot,
+        },
+        projectId: preparation.projectId,
+        title: preparation.title,
+        createdAt: preparation.createdAt,
+        destinationPath: resolved.path,
+        projects: projects.map((project) => ({
+          ...project,
+          repositoryIdentity: project.repositoryIdentity ?? null,
+        })),
+        clones: preparationClones.data ?? [],
+      });
+      if (plan.kind === "blocked") {
+        setError(plan.reason);
+        return;
+      }
+      if (plan.kind === "existing") {
+        openNewTaskDraft(navigation, {
+          environmentId: plan.project.environmentId,
+          projectId: plan.project.id,
+          title: preparation.title,
+        });
+        return;
+      }
+    }
     setIsSubmitting(true);
     if (environment.supportsCloneTracking) {
       // The server creates the project and clones in the background; the
       // draft screen shows progress and holds Start until the files land.
-      const projectId = ProjectId.make(uuidv4());
-      const title = inferProjectTitleFromPath(resolved.path);
+      const projectId = preparation?.projectId ?? ProjectId.make(uuidv4());
+      const title = preparation?.title ?? inferProjectTitleFromPath(resolved.path);
+      if (preparation) {
+        try {
+          if (!sourceEnvironmentId || !sourceProjectId)
+            throw new Error("The preparation source is unavailable.");
+          await receiptState.save({
+            sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
+            sourceProjectId: ProjectId.make(sourceProjectId),
+            destinationEnvironmentId: environment.environmentId,
+            projectId,
+            title,
+            createdAt: preparation.createdAt,
+            remoteUrl: preparation.source.remoteUrl,
+            repositoryKey: preparation.source.repositoryKey,
+            destinationPath: resolved.path,
+          });
+        } catch (cause) {
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : "The preparation receipt could not be saved. No clone was started.",
+          );
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      if (
+        preparation &&
+        (!preparationHostConnected() ||
+          !readEnvironmentScope(environment.environmentId, AuthSourceControlWriteScope) ||
+          !readEnvironmentScope(environment.environmentId, AuthOrchestrationOperateScope))
+      ) {
+        setError(
+          "Reconnect with cloning and project access before continuing this saved preparation.",
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
       const startResult = await startProjectClone({
         environmentId: environment.environmentId,
         input: {
           projectId,
           title,
-          createdAt: new Date().toISOString(),
+          createdAt: preparation?.createdAt ?? new Date().toISOString(),
           remoteUrl,
           destinationPath: resolved.path,
         },
@@ -1609,12 +1807,23 @@ export function AddProjectDestinationScreen(props: {
     pathInput,
     prompt,
     remoteUrl,
+    preparation,
+    preparationRequested,
+    preparationClones,
+    receiptState,
+    savedReceipt,
+    sourceEnvironmentId,
+    sourceProjectId,
+    projects,
     startProjectClone,
   ]);
 
   return (
     <AddProjectShell title="Clone destination">
       {error ? <ErrorBanner message={error} /> : null}
+      {receiptState.invalid ? (
+        <ErrorBanner message="The saved preparation receipt could not be read. Review the existing destination project before retrying." />
+      ) : null}
       {repositoryTitle ? (
         <View className="rounded-[24px] bg-grouped-card px-4 py-3">
           <Text className="text-base font-t3-bold">{repositoryTitle}</Text>
@@ -1626,25 +1835,85 @@ export function AddProjectDestinationScreen(props: {
       {environment ? (
         <>
           <ComputerSummary environment={environment} />
-          <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
+          {savedReceipt ? (
+            <View className="gap-2 p-3">
+              <Text selectable className="text-sm">
+                {savedReceipt.destinationPath}
+              </Text>
+              <Text className="text-xs text-foreground-muted">
+                This submitted preparation keeps its reviewed destination. Open its progress before
+                starting a separate copy.
+              </Text>
+            </View>
+          ) : (
+            <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
+          )}
           <PrimaryActionButton
             label="Clone project"
-            disabled={!canCloneProject || isBrowseNavigating || isSubmitting || !remoteUrl}
+            disabled={
+              !canCloneProject ||
+              isBrowseNavigating ||
+              isSubmitting ||
+              !remoteUrl ||
+              (preparationRequested &&
+                (!preparation ||
+                  !sourceEnvironmentId ||
+                  !sourceProjectId ||
+                  !receiptState.loaded ||
+                  receiptState.invalid ||
+                  !environment.supportsCloneTracking ||
+                  !preparationClones.isSuccess ||
+                  preparationProject !== undefined))
+            }
             onPress={submitPath}
             loading={isSubmitting}
           />
+          {preparationRequested &&
+          recovery &&
+          (savedReceipt !== null ||
+            preparationProject !== undefined ||
+            preparationClone !== undefined) ? (
+            <View className="gap-3 py-3">
+              <Text className="text-sm text-foreground-muted">{recovery.message}</Text>
+              {preparationProject ? (
+                <MaterialButton
+                  label={
+                    preparationClone && recovery.state !== "inspect"
+                      ? "Open clone progress"
+                      : "Review saved project"
+                  }
+                  onPress={() => {
+                    if (preparationClone && recovery.state !== "inspect")
+                      openNewTaskDraft(navigation, {
+                        environmentId: preparationProject.environmentId,
+                        projectId: preparationProject.id,
+                        title: preparationProject.title,
+                        cloning: "1",
+                      });
+                    else
+                      navigation.navigate("ProjectHome", {
+                        environmentId: preparationProject.environmentId,
+                        projectId: preparationProject.id,
+                      });
+                  }}
+                />
+              ) : null}
+            </View>
+          ) : null}
           {!canCloneProject ? (
             <Text className="text-sm text-foreground-muted">
               This connection cannot clone projects.
             </Text>
           ) : null}
-          <FolderBrowser
-            environment={environment}
-            navigateToBrowsePath={navigateToBrowsePath}
-            pathInput={pathInput}
-            setPathInput={setPathInput}
-            pinnedDirectoryName={repositoryName}
-          />
+          {!savedReceipt ? (
+            <FolderBrowser
+              environment={environment}
+              navigateToBrowsePath={navigateToBrowsePath}
+              pathInput={pathInput}
+              setPathInput={setPathInput}
+              pinnedDirectoryName={repositoryName}
+            />
+          ) : null}
         </>
       ) : (
         <EmptyEnvironmentState />

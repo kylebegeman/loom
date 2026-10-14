@@ -1,8 +1,16 @@
+// fork: project-home - Verify preparation retains its request after response loss and preserves normal cloning.
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
-import { AuthOrchestrationOperateScope, AuthSourceControlWriteScope } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  AuthSourceControlWriteScope,
+  EnvironmentId,
+  ProjectId,
+  type ProjectCloneSnapshot,
+} from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
@@ -23,6 +31,29 @@ const state = vi.hoisted(() => ({
   offerPublishTarget: false,
   revokePublishAfterCreate: false,
   checkDirectories: false,
+  trackedClones: false,
+  connected: true,
+  disconnectAfterReceiptSave: false,
+  revokeAfterReceiptSave: false,
+  failReceiptSave: false,
+  cloneSnapshots: [] as ProjectCloneSnapshot[],
+  navigationRequests: [] as { route: string; params: unknown }[],
+  draftRequests: [] as unknown[],
+  knownProjects: [] as EnvironmentProject[],
+  preparationReceipts: {} as Record<
+    string,
+    import("../../fork/project-home/projectPreparationReceipt").ProjectPreparationReceipt | null
+  >,
+  trackedCloneRequests: [] as {
+    environmentId: string;
+    input: {
+      projectId: string;
+      title: string;
+      createdAt: string;
+      remoteUrl: string;
+      destinationPath: string;
+    };
+  }[],
 }));
 
 vi.mock("react", async (importOriginal) => ({
@@ -52,7 +83,10 @@ vi.mock("react-native", () => ({
   View: "View",
 }));
 vi.mock("@react-navigation/native", () => ({
-  useNavigation: () => ({ dispatch: () => {} }),
+  useNavigation: () => ({
+    dispatch: (input: unknown) => state.draftRequests.push(input),
+    navigate: (route: string, params: unknown) => state.navigationRequests.push({ route, params }),
+  }),
   CommonActions: { reset: (input: unknown) => input },
   StackActions: {},
 }));
@@ -74,14 +108,17 @@ vi.mock("../../state/session", () => ({
     (environmentId === "environment" ? state.scopes : state.otherScopes).has(scope),
 }));
 vi.mock("../../state/entities", () => ({
-  useProjects: () => [],
+  useProjects: () => state.knownProjects,
   waitForProject: async () => ({ title: state.newProjectName }),
   useServerConfigs: () =>
     new Map([
       [
         "environment",
         {
-          environment: { platform: { os: "linux" }, capabilities: {} },
+          environment: {
+            platform: { os: "linux" },
+            capabilities: { projectCloneTracking: state.trackedClones },
+          },
           settings: { addProjectBaseDirectory: state.baseDirectory },
           newProjectsRoot: state.baseDirectory,
         },
@@ -89,7 +126,10 @@ vi.mock("../../state/entities", () => ({
       [
         "other-environment",
         {
-          environment: { platform: { os: "linux" }, capabilities: {} },
+          environment: {
+            platform: { os: "linux" },
+            capabilities: { projectCloneTracking: state.trackedClones },
+          },
           settings: { addProjectBaseDirectory: state.baseDirectory },
           newProjectsRoot: state.baseDirectory,
         },
@@ -114,36 +154,75 @@ vi.mock("../../state/use-remote-environment-registry", () => ({
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("../../state/use-atom-query-runner", () => ({ useAtomQueryRunner: () => () => {} }));
 vi.mock("../../state/query", () => ({
-  useEnvironmentQuery: () => ({
-    data: state.offerPublishTarget
-      ? {
-          versionControlSystems: [],
-          sourceControlProviders: [
-            {
-              kind: "github",
-              label: "GitHub",
-              status: "available",
-              installHint: "",
-              version: Option.none(),
-              detail: Option.none(),
-              auth: {
-                status: "authenticated",
-                account: Option.none(),
-                host: Option.none(),
-                detail: Option.none(),
-              },
-            },
-          ],
-        }
-      : null,
-  }),
+  useEnvironmentQuery: (atom: unknown) =>
+    atom === "project-clones"
+      ? { data: state.cloneSnapshots, isSuccess: true }
+      : {
+          data: state.offerPublishTarget
+            ? {
+                versionControlSystems: [],
+                sourceControlProviders: [
+                  {
+                    kind: "github",
+                    label: "GitHub",
+                    status: "available",
+                    installHint: "",
+                    version: Option.none(),
+                    detail: Option.none(),
+                    auth: {
+                      status: "authenticated",
+                      account: Option.none(),
+                      host: Option.none(),
+                      detail: Option.none(),
+                    },
+                  },
+                ],
+              }
+            : null,
+        },
 }));
 vi.mock("../../state/presentation", () => ({
   useEnvironmentPresentation: () => ({ isReady: true, presentation: null }),
+  environmentPresentations: { presentationAtom: () => "presentation" },
+}));
+vi.mock("../../state/atom-registry", () => ({
+  appAtomRegistry: {
+    get: () => ({
+      entry: { enabled: true },
+      connection: { phase: state.connected ? "connected" : "offline" },
+    }),
+  },
 }));
 vi.mock("../../state/filesystem", () => ({ filesystemEnvironment: {} }));
 vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: {
+    projectClones: () => "project-clones",
+    startProjectClone: async (request: {
+      environmentId: string;
+      input: {
+        projectId: string;
+        title: string;
+        createdAt: string;
+        remoteUrl: string;
+        destinationPath: string;
+      };
+    }) => {
+      state.trackedCloneRequests.push(request);
+      state.knownProjects.push({
+        environmentId: EnvironmentId.make(request.environmentId),
+        id: ProjectId.make(request.input.projectId),
+        title: request.input.title,
+        workspaceRoot: request.input.destinationPath,
+        repositoryIdentity: null,
+        defaultModelSelection: null,
+        scripts: [],
+        createdAt: request.input.createdAt,
+        updatedAt: request.input.createdAt,
+      });
+      return AsyncResult.failure(
+        Cause.fail(new Error("Connection lost after the project was saved")),
+      );
+    },
     discovery: () => null,
     publishRepository: async (request: { environmentId: string; input: { cwd: string } }) => {
       state.publishRequests.push({ environmentId: request.environmentId, cwd: request.input.cwd });
@@ -154,6 +233,23 @@ vi.mock("../../state/sourceControl", () => ({
       return AsyncResult.success({ cwd: input.destinationPath });
     },
   },
+}));
+vi.mock("../../fork/project-home/useProjectPreparationReceipt", () => ({
+  useProjectPreparationReceipt: (key: string | null) => ({
+    loaded: true,
+    invalid: false,
+    receipt: key ? (state.preparationReceipts[key] ?? null) : null,
+    save: async (
+      receipt: import("../../fork/project-home/projectPreparationReceipt").ProjectPreparationReceipt,
+    ) => {
+      if (state.failReceiptSave) throw new Error("Preferences could not be saved");
+      const { recordPreparationReceipt } =
+        await import("../../fork/project-home/projectPreparationReceipt");
+      state.preparationReceipts = recordPreparationReceipt(state.preparationReceipts, receipt);
+      if (state.disconnectAfterReceiptSave) state.connected = false;
+      if (state.revokeAfterReceiptSave) state.scopes.delete(AuthOrchestrationOperateScope);
+    },
+  }),
 }));
 vi.mock("../../state/projects", () => ({
   projectEnvironment: {
@@ -231,6 +327,192 @@ function localProjectAction(environmentId = "environment") {
   if (!action) throw new Error("Open folder action missing");
   return action;
 }
+
+describe("reviewed project preparation", () => {
+  beforeEach(() => {
+    state.trackedClones = true;
+    state.connected = true;
+    state.disconnectAfterReceiptSave = false;
+    state.revokeAfterReceiptSave = false;
+    state.failReceiptSave = false;
+    state.cloneSnapshots = [];
+    state.navigationRequests = [];
+    state.draftRequests = [];
+    state.scopes = new Set([AuthSourceControlWriteScope, AuthOrchestrationOperateScope]);
+    state.knownProjects = [];
+    state.trackedCloneRequests = [];
+    state.preparationReceipts = {};
+    state.baseDirectory = "/prepared/projects";
+  });
+  afterEach(() => {
+    state.trackedClones = false;
+    state.connected = true;
+    state.cloneSnapshots = [];
+    state.knownProjects = [];
+  });
+  const params = {
+    environmentId: "environment",
+    remoteUrl: "https://example.com/team/repo.git",
+    repositoryName: "repo",
+    repositoryTitle: "My project",
+    preparationSourceEnvironmentId: "source",
+    preparationSourceProjectId: "source-project",
+    preparationProjectId: "stable-project",
+    preparationCreatedAt: "2026-10-13T12:00:00.000Z",
+    preparationRepositoryKey: "example.com/team/repo",
+  };
+  it("submits the reviewed preparation folder instead of the ordinary clone base directory", async () => {
+    const reviewedPath = "/owned-ssd/projects/repo";
+    const start = findAction(
+      AddProjectDestinationScreen({ ...params, preparationDestinationPath: reviewedPath }),
+      "Clone project",
+    );
+    if (!start) throw new Error("Missing preparation clone action");
+    await start();
+    expect(state.trackedCloneRequests[0]?.input.destinationPath).toBe(reviewedPath);
+    const receipt = Object.values(state.preparationReceipts)[0];
+    expect(receipt?.destinationPath).toBe(reviewedPath);
+    // A restarted device may need to replay the saved ID before its project cache catches up.
+    state.knownProjects = [];
+    const reopen = findAction(
+      AddProjectDestinationScreen({
+        ...params,
+        preparationProjectId: "regenerated-project",
+        preparationDestinationPath: "/different/proposal",
+      }),
+      "Clone project",
+    );
+    if (!reopen) throw new Error("Missing saved preparation action");
+    await reopen();
+    expect(state.trackedCloneRequests[1]?.input).toEqual(state.trackedCloneRequests[0]?.input);
+    expect(Object.values(state.preparationReceipts)[0]).toEqual(receipt);
+  });
+  it("retains the exact request identity when the start response is lost and avoids creating another checkout", async () => {
+    const first = findAction(AddProjectDestinationScreen(params), "Clone project");
+    if (!first) throw new Error("Missing preparation clone action");
+    await first();
+    expect(state.trackedCloneRequests).toHaveLength(1);
+    expect(state.trackedCloneRequests[0]?.input).toMatchObject({
+      projectId: "stable-project",
+      title: "My project",
+      createdAt: params.preparationCreatedAt,
+    });
+    const retry = findAction(AddProjectDestinationScreen(params), "Clone project");
+    if (!retry) throw new Error("Missing retained preparation action");
+    await retry();
+    expect(state.trackedCloneRequests).toHaveLength(1);
+    expect(state.knownProjects).toHaveLength(1);
+    const receipt = Object.values(state.preparationReceipts)[0];
+    expect(receipt).toMatchObject({
+      projectId: "stable-project",
+      destinationPath: "/prepared/projects/repo",
+      remoteUrl: params.remoteUrl,
+    });
+    const reopened = findAction(
+      AddProjectDestinationScreen({
+        ...params,
+        preparationProjectId: "new-after-restart",
+        remoteUrl: "https://example.com/other.git",
+      }),
+      "Clone project",
+    );
+    if (!reopened) throw new Error("Missing reopened preparation action");
+    await reopened();
+    expect(state.trackedCloneRequests).toHaveLength(1);
+    expect(Object.values(state.preparationReceipts)[0]).toEqual(receipt);
+  });
+  it.each(["origin", "project-path", "clone-path"] as const)(
+    "routes a known %s mismatch to manual review instead of clone Retry",
+    async (mismatch) => {
+      const start = findAction(AddProjectDestinationScreen(params), "Clone project");
+      if (!start) throw new Error("Missing preparation action");
+      await start();
+      const project = state.knownProjects[0];
+      if (!project) throw new Error("Missing saved project");
+      state.knownProjects = [
+        {
+          ...project,
+          workspaceRoot: mismatch === "project-path" ? "/another/path" : project.workspaceRoot,
+          repositoryIdentity:
+            mismatch === "origin"
+              ? {
+                  rootPath: project.workspaceRoot,
+                  canonicalKey: "example.com/team/other",
+                  locator: {
+                    source: "git-remote",
+                    remoteName: "origin",
+                    remoteUrl: "https://example.com/team/other.git",
+                  },
+                }
+              : null,
+        },
+      ];
+      state.cloneSnapshots = [
+        {
+          projectId: project.id,
+          remoteUrl: params.remoteUrl,
+          destinationPath: mismatch === "clone-path" ? "/another/path" : project.workspaceRoot,
+          repository: null,
+          phase: "failed",
+          stage: "receiving",
+          percent: 50,
+          detail: null,
+          error: "Interrupted",
+          startedAt: params.preparationCreatedAt,
+          endedAt: null,
+          sequence: 1,
+        },
+      ];
+      const screen = AddProjectDestinationScreen(params);
+      expect(findAction(screen, "Open clone progress")).toBeNull();
+      const inspect = findAction(screen, "Review saved project");
+      if (!inspect) throw new Error("Missing manual recovery review");
+      await inspect();
+      expect(state.draftRequests).toEqual([]);
+      expect(state.navigationRequests).toEqual([
+        {
+          route: "ProjectHome",
+          params: { environmentId: project.environmentId, projectId: project.id },
+        },
+      ]);
+      expect(state.trackedCloneRequests).toHaveLength(1);
+    },
+  );
+  it.each(["disconnect", "grant-revoked", "save-failed"] as const)(
+    "starts no clone when receipt persistence ends with %s",
+    async (condition) => {
+      state.disconnectAfterReceiptSave = condition === "disconnect";
+      state.revokeAfterReceiptSave = condition === "grant-revoked";
+      state.failReceiptSave = condition === "save-failed";
+      const start = findAction(AddProjectDestinationScreen(params), "Clone project");
+      if (!start) throw new Error("Missing preparation action");
+      await start();
+      expect(state.trackedCloneRequests).toEqual([]);
+      expect(state.knownProjects).toEqual([]);
+    },
+  );
+  it("does not treat a partial preparation source as an ordinary clone", async () => {
+    const start = findAction(
+      AddProjectDestinationScreen({
+        environmentId: params.environmentId,
+        remoteUrl: params.remoteUrl,
+        repositoryName: params.repositoryName,
+        preparationSourceEnvironmentId: params.preparationSourceEnvironmentId,
+      }),
+      "Clone project",
+    );
+    if (!start) throw new Error("Missing clone action");
+    await start();
+    expect(state.trackedCloneRequests).toEqual([]);
+  });
+  it("rechecks both destination grants after the reviewed form is opened", async () => {
+    const action = findAction(AddProjectDestinationScreen(params), "Clone project");
+    if (!action) throw new Error("Missing preparation action");
+    state.scopes.delete(AuthOrchestrationOperateScope);
+    await action();
+    expect(state.trackedCloneRequests).toEqual([]);
+  });
+});
 
 describe("clone project permissions", () => {
   beforeEach(async () => {

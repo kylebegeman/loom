@@ -6,14 +6,21 @@ need a separate branch and working directory.
 ## Find work by thread or project
 
 Choose **Threads** to see current work and settled conversations, or **Projects**
-to browse your complete project library. Expand a project to preview its conversations;
-**View threads** scopes the thread list to that project. Project search matches project
-names and conversation titles. Thread search also searches conversation contents.
+to browse your project library. Open a project to see its Project home: conversations
+needing attention, running work, work ready to continue, snoozed conversations, and
+settled history. Search that project's conversation titles and load more rows as needed.
+Expand a library row for a quick preview. Thread search also searches conversation contents.
+
+Project home lets you choose the computer and checkout for the next task. Changing
+that choice leaves existing conversations where they are. An unavailable choice stays
+selected until you reconnect it or choose another computer; Loom does not silently
+start work elsewhere. Use **Prepare on another computer** when the repository is missing
+there, then review **Move work** separately to continue an existing conversation.
 
 Projects stay in the library when their working copies release or their computers go
-offline. Offline entries show last-known information. Browsing a project does not
-restore its files or start an agent. Use its existing settings to review storage, or
-start a conversation on a connected computer when you are ready to work.
+offline. Offline entries show last-known information rather than live activity.
+Browsing Project home does not restore files or start an agent. Review each computer's
+working folder and storage preference there, or start a task when you are ready to work.
 
 The selected view is remembered on each client. The same repository can appear as one
 project across computers, following your project-grouping settings; storage preferences

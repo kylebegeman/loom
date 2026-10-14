@@ -1,3 +1,4 @@
+// fork: project-home - Missing move destinations enter reviewed project preparation on the chosen computer.
 import { useEffect, useMemo, useRef, useState } from "react";
 import { View, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -411,6 +412,16 @@ function WorkspaceHandoffContent({
                   selectedKey={selected?.key ?? attempt?.destinationKey ?? ""}
                   disabled={running || savingSelection || !attempt}
                   onSelect={(key) => void chooseDestination(key)}
+                  onPrepare={
+                    sourceProject
+                      ? () =>
+                          navigation.navigate("ProjectPreparation", {
+                            environmentId: sourceProject.environmentId,
+                            projectId: sourceProject.id,
+                            destinationEnvironmentId: group.environmentId,
+                          })
+                      : undefined
+                  }
                 />
               ))
             )}
@@ -517,11 +528,13 @@ function DestinationComputer({
   selectedKey,
   disabled,
   onSelect,
+  onPrepare,
 }: {
   readonly group: WorkspaceHandoffDestinationGroup;
   readonly selectedKey: string;
   readonly disabled: boolean;
   readonly onSelect: (key: string) => void;
+  readonly onPrepare?: () => void;
 }) {
   const permitted = useAtomValue(handoff.prepare.permissionAtom(group.environmentId));
   const reason =
@@ -531,6 +544,13 @@ function DestinationComputer({
     <View className="gap-2 rounded-xl bg-subtle p-3">
       <AppText className="font-t3-medium">{group.label}</AppText>
       {reason && <AppText className="text-sm text-foreground-muted">{reason}</AppText>}
+      {group.projects.length === 0 && onPrepare ? (
+        <MaterialButton
+          label={`Prepare project on ${group.label}`}
+          disabled={disabled || !group.connected || !group.supportsHandoff || !permitted}
+          onPress={onPrepare}
+        />
+      ) : null}
       {group.projects.map((candidate) => {
         const unavailable = disabled || reason !== null;
         const checked = selectedKey === candidate.key;

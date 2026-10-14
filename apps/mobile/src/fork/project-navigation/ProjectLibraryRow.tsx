@@ -138,6 +138,19 @@ export function ProjectLibraryRow(props: {
           <View className="flex-row flex-wrap items-center gap-x-4 gap-y-2 px-4 pt-2 pb-3">
             <Pressable
               accessibilityRole="button"
+              accessibilityLabel={`Open project home for ${entry.title}`}
+              onPress={() =>
+                navigation.navigate("ProjectHome", {
+                  environmentId: entry.group.representative.environmentId,
+                  projectId: entry.group.representative.id,
+                })
+              }
+              className="min-h-[44px] justify-center active:opacity-70"
+            >
+              <Text className="text-sm font-t3-medium text-primary">Project home</Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
               accessibilityLabel={`View all threads in ${entry.title}`}
               onPress={() => props.onViewThreads(entry.group)}
               className="min-h-10 justify-center active:opacity-70"

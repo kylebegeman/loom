@@ -46,11 +46,15 @@ native context can differ, so the provider may still reject an input.
 ## Continue on another machine
 
 In Loom, use **Move work** from a thread's menu or the command palette.
-Choose the destination computer and a project for the same repository. Connect the computer
-and add that project there first if it is not listed. Both hosts
-need workspace operation permission, and the destination needs Git access and a working provider.
-Stop the source thread and its background work, commit local changes, and publish the branch
-before starting.
+Choose the destination computer and a project for the same repository. If it has no matching
+project yet, use **Prepare project** from Move work, or **Prepare on another computer** in
+Project home, to review the source origin and destination folder and create its working copy.
+You do not need to add the project separately. Preparing a copy does not move the conversation.
+
+Connect both computers before continuing. Both hosts need workspace operation permission;
+preparing a new copy also needs project creation and source-control write access on the
+destination. The destination needs Git access and a working provider. Stop the source thread
+and its background work, commit local changes, and publish the branch before starting.
 
 Loom prepares a separate destination workspace at the published commit and waits for workspace
 setup to succeed. It checks the destination provider, model, and runtime before settling the source,

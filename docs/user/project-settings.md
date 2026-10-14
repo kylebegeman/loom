@@ -46,6 +46,27 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
+## Project home and another computer
+
+Open a project from **Projects** to see its conversations and working copies together.
+Choose the connected computer and checkout before starting a new task. That choice
+does not move existing work, and an offline or read-only computer requires reconnection
+or another explicit choice.
+
+To add a working copy elsewhere, choose **Prepare on another computer** in Project home.
+Review the source computer's actual Git origin, choose the destination computer, and
+review its destination folder before cloning. A fork is prepared from its own origin,
+not from the upstream repository it may be grouped with. The destination uses its
+existing Git credentials; private repositories may need GitHub setup on that computer.
+If a matching copy already exists, open it instead of creating another.
+
+The destination project is saved before cloning finishes, and clone progress remains
+visible. If cloning fails, review the error before using Retry. If the computer restarts
+and progress is unavailable, inspect the saved folder before trying again. Loom does
+not automatically remove partial or existing files. Preparing a copy leaves the source
+conversation unchanged; use [Move work](portable-handoffs.md#continue-on-another-machine)
+for a reviewed linked continuation.
+
 ## Worktree branch names
 
 In **Settings → Source Control → Worktree branch naming**, choose a static prefix,
@@ -174,8 +195,9 @@ be settled for the settlement rule; inactivity uses the most recent conversation
 Folders opened manually and older clones stay on disk until you explicitly review and let
 Loom manage them. Enabling cleanup does not adopt existing folders.
 
-To manage an existing folder, select its project and open **Settings → Project → Project storage**
-on web or desktop, or **Settings → Projects & threads → Overview** on mobile. Review the folder
+To manage an existing folder, review its working copy in Project home, or select the project
+and open **Settings → Project → Project storage** on web or desktop,
+or **Settings → Projects & threads → Overview** on mobile. Review the folder
 on each computer, choose **Keep on this computer** or **Release when settled**, then confirm.
 Loom registers the existing folder without moving its files or changing its project history.
 Only primary Git repositories with their own Git directory and an origin remote can be adopted;
@@ -196,6 +218,12 @@ remote must be reachable when releasing. Ignored local data is protected except 
 outside the working folder and its disposable lane. Update Loom on a computer before managing
 its existing project folders; older server versions cannot reopen folders released with the
 new storage metadata.
+
+Use **Review project storage** from Projects to review the registered folders across your
+computers. This inventory uses projects already known to Loom; it does not scan your computer
+for repositories. Open one folder's review at a time to see its current ownership, local-file
+summary, and retention choice. Offline folders keep their remembered location until their
+computer reconnects. Opening the inventory or a review does not adopt, release, or restore files.
 
 Projects and conversations stay discoverable after release. Opening a file or terminal, using
 Git, or continuing work restores the saved revision from its recovery archive. Starting an agent

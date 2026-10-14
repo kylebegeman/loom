@@ -1,3 +1,7 @@
+import { useNavigation } from "@react-navigation/native";
+import { Pressable } from "react-native";
+import { AppText as Text } from "../../components/AppText";
+import { SymbolView } from "../../components/AppSymbol";
 import { View } from "react-native";
 
 import { SegmentedControl } from "../../components/SegmentedControl";
@@ -22,8 +26,9 @@ export function ProjectNavigationControl(props: {
   readonly view: ProjectNavigationView;
   readonly onChange: (view: ProjectNavigationView) => void;
 }) {
+  const navigation = useNavigation();
   return (
-    <View className="items-start px-4 pt-2 pb-3">
+    <View className="flex-row items-center justify-between gap-3 px-4 pt-2 pb-3">
       <SegmentedControl
         iconOnly
         options={OPTIONS}
@@ -31,6 +36,17 @@ export function ProjectNavigationControl(props: {
         onSelect={props.onChange}
         role="tab"
       />
+      {props.view === "projects" ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Review project storage"
+          onPress={() => navigation.navigate("ProjectStorageInventory")}
+          className="min-h-[44px] flex-row items-center gap-2 rounded-full px-2 active:opacity-70"
+        >
+          <SymbolView name="internaldrive" size={16} tintColorClassName="accent-icon-muted" />
+          <Text className="text-xs font-t3-medium text-foreground-muted">Review storage</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

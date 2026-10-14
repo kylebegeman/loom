@@ -14,6 +14,7 @@ import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironmentServerConfig } from "../../state/entities";
+import { environmentPresentations, useEnvironmentPresentation } from "../../state/presentation";
 import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -36,6 +37,15 @@ const retentionLabels: Record<Retention, string> = {
 /** A review belongs to one checkout, even when the settings filter changes hosts. */
 export function ProjectCheckoutSection(props: Props) {
   const config = useEnvironmentServerConfig(props.environmentId);
+  const { presentation } = useEnvironmentPresentation(props.environmentId);
+  const connected =
+    presentation?.entry.enabled === true && presentation.connection.phase === "connected";
+  const computerConnected = () => {
+    const current = appAtomRegistry.get(
+      environmentPresentations.presentationAtom(props.environmentId),
+    );
+    return current?.entry.enabled === true && current.connection.phase === "connected";
+  };
   const supported = supportsLoomFeature(
     config?.environment.capabilities,
     "project-checkout-management",
@@ -46,8 +56,10 @@ export function ProjectCheckoutSection(props: Props) {
   return (
     <ProjectCheckoutReview
       // Any loss of access invalidates the old confirmation and in-flight review.
-      key={`${props.environmentId}:${props.projectId}:${props.workspaceRoot}:${supported}:${canRead}:${canAdopt}:${canSetRetention}`}
+      key={`${props.environmentId}:${props.projectId}:${props.workspaceRoot}:${supported}:${canRead}:${canAdopt}:${canSetRetention}:${connected}`}
       {...props}
+      connected={connected}
+      computerConnected={computerConnected}
       configReady={config != null}
       supported={supported}
       canRead={canRead}
@@ -63,12 +75,16 @@ function ProjectCheckoutReview({
   workspaceRoot,
   computerLabel,
   configReady,
+  connected,
+  computerConnected,
   supported,
   canRead,
   canAdopt,
   canSetRetention,
 }: Props & {
   readonly configReady: boolean;
+  readonly connected: boolean;
+  readonly computerConnected: () => boolean;
   readonly supported: boolean;
   readonly canRead: boolean;
   readonly canAdopt: boolean;
@@ -91,7 +107,7 @@ function ProjectCheckoutReview({
   const generation = useRef(0);
   const managed = preview?.ownershipSource != null;
   const allowed = managed ? canSetRetention : canAdopt;
-  const ready = supported && canRead;
+  const ready = connected && supported && canRead;
   const token = preview?.reviewToken;
   const canChange = ready && allowed && token != null && preview?.state !== "blocked";
   const changed = !managed || retention !== preview?.retention;
@@ -113,6 +129,7 @@ function ProjectCheckoutReview({
       busy.current ||
       !mounted.current ||
       !ready ||
+      !computerConnected() ||
       !readEnvironmentScope(environmentId, AuthOrchestrationReadScope)
     )
       return;
@@ -151,6 +168,7 @@ function ProjectCheckoutReview({
       !changed ||
       !preview ||
       !token ||
+      !computerConnected() ||
       !appAtomRegistry.get(
         (managed ? checkout.setRetention : checkout.adopt).permissionAtom(environmentId),
       )
@@ -197,23 +215,25 @@ function ProjectCheckoutReview({
   return (
     <SettingsSection
       title={`Project storage · ${computerLabel}`}
-      footer="This manages the project's main folder. Worktree cleanup has separate settings. Loom releases only published, idle checkouts after checking local files and active work. Opening a released project restores its files and setup."
+      footer="This manages the project's main folder. Worktree cleanup has separate settings. Loom releases only published, idle checkouts after checking local files and active work. Starting work in a released project restores its files and setup."
     >
       <View className="gap-3 p-4">
         <Text className="text-sm text-foreground-muted">
-          {!configReady
-            ? "Loading this computer's capabilities…"
-            : !supported
-              ? "Update Loom on this computer to review and manage project storage."
-              : !canRead
-                ? "Project read permission is required to review this folder."
-                : !allowed
-                  ? "Settings permission is required to manage project storage."
-                  : preview?.state === "released"
-                    ? "This checkout has been released. Your project and conversations remain in Loom."
-                    : managed
-                      ? "Loom manages this checkout. Choose when its working files should stay on this computer."
-                      : "Review this existing folder before letting Loom manage its working files."}
+          {!connected
+            ? "Reconnect this computer to review and manage project storage."
+            : !configReady
+              ? "Loading this computer's capabilities…"
+              : !supported
+                ? "Update Loom on this computer to review and manage project storage."
+                : !canRead
+                  ? "Project read permission is required to review this folder."
+                  : !allowed
+                    ? "Settings permission is required to manage project storage."
+                    : preview?.state === "released"
+                      ? "This checkout has been released. Your project and conversations remain in Loom."
+                      : managed
+                        ? "Loom manages this checkout. Choose when its working files should stay on this computer."
+                        : "Review this existing folder before letting Loom manage its working files."}
         </Text>
         <Text selectable className="text-sm leading-normal text-foreground-muted">
           {preview?.workspaceRoot ?? workspaceRoot}

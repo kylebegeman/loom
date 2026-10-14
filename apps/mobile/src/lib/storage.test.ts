@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const mocks = vi.hoisted(() => {
@@ -189,6 +189,38 @@ describe("mobile connection storage", () => {
   it("discards an invalid navigation view without discarding other preferences", async () => {
     mocks.setPreferencesJson(JSON.stringify({ loomNavigationView: "files", baseFontSize: 18 }), 10);
     await expect(loadPreferences()).resolves.toEqual({ baseFontSize: 18 });
+  });
+
+  // fork: project-home - Submitted preparation receipts survive preference storage and malformed claims remain blockers.
+  it("persists exact preparation receipts without dropping other device preferences", async () => {
+    const key = '["source","project","destination"]';
+    const receipt = {
+      sourceEnvironmentId: EnvironmentId.make("source"),
+      sourceProjectId: ProjectId.make("project"),
+      destinationEnvironmentId: EnvironmentId.make("destination"),
+      projectId: ProjectId.make("stable"),
+      title: "Loom",
+      createdAt: "2026-10-13T12:00:00Z",
+      remoteUrl: "https://example.test/loom.git",
+      repositoryKey: "example.test/loom",
+      destinationPath: "/ssd/loom",
+    };
+    await savePreferencesPatch({ baseFontSize: 18, loomProjectPreparations: { [key]: receipt } });
+    await expect(loadPreferences()).resolves.toEqual({
+      baseFontSize: 18,
+      loomProjectPreparations: { [key]: receipt },
+    });
+    mocks.setPreferencesJson(
+      JSON.stringify({
+        loomProjectPreparations: { [key]: { projectId: "partial" } },
+        baseFontSize: 18,
+      }),
+      20,
+    );
+    await expect(loadPreferences()).resolves.toEqual({
+      baseFontSize: 18,
+      loomProjectPreparations: { [key]: null },
+    });
   });
 
   it("persists independent light and dark theme choices", async () => {

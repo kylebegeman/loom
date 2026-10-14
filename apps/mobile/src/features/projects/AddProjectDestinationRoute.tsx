@@ -1,3 +1,4 @@
+// fork: project-home - Reviewed preparation keeps its stable clone request through the existing destination flow.
 import type { StaticScreenProps } from "@react-navigation/native";
 import { AddProjectDestinationScreen } from "./AddProjectScreen";
 
@@ -7,6 +8,12 @@ type AddProjectDestinationRouteParams = {
   readonly remoteUrl?: string | string[];
   readonly repositoryTitle?: string | string[];
   readonly repositoryName?: string | string[];
+  readonly preparationSourceEnvironmentId?: string | string[];
+  readonly preparationSourceProjectId?: string | string[];
+  readonly preparationProjectId?: string | string[];
+  readonly preparationCreatedAt?: string | string[];
+  readonly preparationRepositoryKey?: string | string[];
+  readonly preparationDestinationPath?: string | string[];
   /** A prompt link's prompt, for the draft the clone opens. */
   readonly prompt?: string | string[];
 };

@@ -1,3 +1,8 @@
+// fork: project-home - Preparation receipts keep an exact clone destination through restart/cache cleanup.
+import {
+  sanitizePreparationReceipts,
+  type ProjectPreparationReceipts,
+} from "../fork/project-home/projectPreparationReceipt";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -69,6 +74,7 @@ export interface Preferences {
   readonly collapsedProjectGroups?: readonly string[];
   // fork: project-navigation - Shared compact/sidebar navigation mode on this device.
   readonly loomNavigationView?: "threads" | "projects";
+  readonly loomProjectPreparations?: ProjectPreparationReceipts;
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   /**
@@ -153,6 +159,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     loomNavigationView?: "threads" | "projects";
+    loomProjectPreparations?: ProjectPreparationReceipts;
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
@@ -283,6 +290,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (parsed.loomNavigationView === "threads" || parsed.loomNavigationView === "projects") {
     preferences.loomNavigationView = parsed.loomNavigationView;
   }
+  const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
+  if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;
   if (isThreadListFilters(parsed.threadListFilters)) {
     preferences.threadListFilters = parsed.threadListFilters;
   }

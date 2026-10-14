@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 const harness = vi.hoisted(() => ({
   supported: true,
+  connected: true,
   canRead: true,
   canAdopt: true,
   canSetRetention: true,
@@ -33,14 +34,30 @@ vi.mock("../../connection/runtime", () => ({ connectionAtomRuntime: {} }));
 vi.mock("../../state/entities", () => ({
   useEnvironmentServerConfig: () => ({ environment: { capabilities: {} } }),
 }));
+vi.mock("../../state/presentation", () => ({
+  useEnvironmentPresentation: () => ({
+    presentation: {
+      entry: { enabled: true },
+      connection: { phase: harness.connected ? "connected" : "offline" },
+    },
+  }),
+  environmentPresentations: { presentationAtom: () => "presentation" },
+}));
 vi.mock("../../state/session", () => ({
   useEnvironmentScope: () => harness.canRead,
   readEnvironmentScope: () => harness.canRead,
 }));
 vi.mock("../../state/atom-registry", () => ({
   appAtomRegistry: {
-    get: (atom: "adopt" | "retention") =>
-      atom === "adopt" ? harness.canAdopt : harness.canSetRetention,
+    get: (atom: "adopt" | "retention" | "presentation") =>
+      atom === "presentation"
+        ? {
+            entry: { enabled: true },
+            connection: { phase: harness.connected ? "connected" : "offline" },
+          }
+        : atom === "adopt"
+          ? harness.canAdopt
+          : harness.canSetRetention,
   },
 }));
 vi.mock("../../state/use-atom-command", () => ({
@@ -158,6 +175,7 @@ async function confirmAdoption() {
 beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   harness.supported = true;
+  harness.connected = true;
   harness.canRead = true;
   harness.canAdopt = true;
   harness.canSetRetention = true;
@@ -190,6 +208,40 @@ afterEach(() => {
 });
 
 describe("reviewed native project storage management", () => {
+  it("does not inspect an offline checkout and rejects a disconnect before confirmation dispatch", async () => {
+    harness.connected = false;
+    render();
+    expect(container.textContent).toContain("Reconnect this computer");
+    await click("Review folder");
+    expect(harness.preview).not.toHaveBeenCalled();
+    harness.connected = true;
+    render();
+    await confirmAdoption();
+    harness.connected = false;
+    await click("Confirm management");
+    expect(harness.adopt).not.toHaveBeenCalled();
+    render();
+    expect(container.textContent).not.toContain("Confirm management");
+  });
+
+  it("invalidates an in-flight review when its computer disconnects", async () => {
+    let complete!: (value: ReturnType<typeof AsyncResult.success<ProjectCheckoutPreview>>) => void;
+    harness.preview.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    render();
+    await click("Review folder");
+    harness.connected = false;
+    render();
+    await act(async () => complete(AsyncResult.success(preview())));
+    expect(container.textContent).toContain("Reconnect this computer");
+    expect(container.textContent).not.toContain("Review management");
+    expect(harness.adopt).not.toHaveBeenCalled();
+  });
+
   it("does not inspect or adopt on open, then adopts only after explicit review and confirmation", async () => {
     render();
     expect(harness.preview).not.toHaveBeenCalled();
