@@ -4,8 +4,18 @@ import { SegmentedControl } from "../../components/SegmentedControl";
 import type { ProjectNavigationView } from "./useProjectNavigation";
 
 const OPTIONS = [
-  { value: "threads", label: "Threads", accessibilityLabel: "Show threads", icon: "text.bubble" },
-  { value: "projects", label: "Projects", accessibilityLabel: "Show projects", icon: "folder" },
+  {
+    value: "threads",
+    label: "Threads",
+    accessibilityLabel: "Show threads",
+    icon: { ios: "text.bubble.fill", android: "chat_bubble" },
+  },
+  {
+    value: "projects",
+    label: "Projects",
+    accessibilityLabel: "Show projects",
+    icon: { ios: "folder.fill", android: "folder" },
+  },
 ] as const;
 
 export function ProjectNavigationControl(props: {

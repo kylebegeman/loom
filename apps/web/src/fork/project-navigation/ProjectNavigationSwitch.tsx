@@ -1,4 +1,4 @@
-import { FolderIcon, MessagesSquareIcon } from "lucide-react";
+import { FolderClosedIcon, MessageSquareTextIcon } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 import { cn } from "~/lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -50,7 +50,7 @@ export function ProjectNavigationSwitch({
         )}
       />
       {VIEWS.map((option) => {
-        const Icon = option === "threads" ? MessagesSquareIcon : FolderIcon;
+        const Icon = option === "threads" ? MessageSquareTextIcon : FolderClosedIcon;
         const label = option === "threads" ? "Threads" : "Projects";
         return (
           <Tooltip key={option}>
@@ -72,7 +72,7 @@ export function ProjectNavigationSwitch({
                     view === option ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
                   )}
                 >
-                  <Icon aria-hidden="true" className="size-4 shrink-0" />
+                  <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2.5} />
                 </button>
               }
             />
