@@ -29,7 +29,10 @@ const checkout = createProjectCheckoutAtoms(connectionAtomRuntime);
 type ReadAtom = <A>(atom: Atom.Atom<A>) => A;
 
 /** Subscribe to the same live host/grant data that is rechecked before each RPC. */
-function readTargets(get: ReadAtom): ReadonlyArray<ProjectStorageRolloutTarget> {
+function readTargets(
+  get: ReadAtom,
+  projectNames?: ReadonlyMap<string, string>,
+): ReadonlyArray<ProjectStorageRolloutTarget> {
   const computerLabels = projectStorageRolloutComputerLabels(
     new Map(
       [...get(environmentPresentations.presentationsAtom)].map(([environmentId, presentation]) => [
@@ -67,7 +70,14 @@ function readTargets(get: ReadAtom): ReadonlyArray<ProjectStorageRolloutTarget> 
       environmentId,
       projectId: project.id,
       workspaceRoot: project.workspaceRoot,
-      projectName: project.title,
+      projectName:
+        projectNames?.get(
+          projectStorageRolloutKey({
+            environmentId,
+            projectId: project.id,
+            workspaceRoot: project.workspaceRoot,
+          }),
+        ) ?? project.title,
       environmentLabel: computerLabels.get(environmentId) ?? "Computer",
       connected:
         presentation?.entry.enabled === true && presentation.connection.phase === "connected",
@@ -94,16 +104,27 @@ function readTargets(get: ReadAtom): ReadonlyArray<ProjectStorageRolloutTarget> 
   });
 }
 
-const targetsAtom = Atom.make(readTargets);
+const targetsAtom = Atom.make((get) => readTargets(get));
 
-export function useProjectStorageRollout() {
-  const targets = useAtomValue(targetsAtom);
+export function useProjectStorageRollout(projectNames: ReadonlyMap<string, string>) {
+  const sourceTargets = useAtomValue(targetsAtom);
+  const targets = useMemo(
+    () =>
+      sourceTargets.map((target) => ({
+        ...target,
+        projectName: projectNames.get(projectStorageRolloutKey(target)) ?? target.projectName,
+      })),
+    [sourceTargets, projectNames],
+  );
   const preview = useAtomQueryRunner(checkout.preview, { reportFailure: false, refresh: true });
   const adopt = useAtomCommand(checkout.adopt, { reportFailure: false });
   const setRetention = useAtomCommand(checkout.setRetention, { reportFailure: false });
   const controller = useMemo(() => {
     function currentTarget(target: ProjectStorageRolloutTarget) {
-      const current = readTargets((atom) => appAtomRegistry.get(atom));
+      const currentNames = new Map(
+        rollout.getSnapshot().rows.map((row) => [row.key, row.target.projectName]),
+      );
+      const current = readTargets((atom) => appAtomRegistry.get(atom), currentNames);
       rollout.syncTargets(current);
       const found = current.find(
         (entry) => projectStorageRolloutKey(entry) === projectStorageRolloutKey(target),

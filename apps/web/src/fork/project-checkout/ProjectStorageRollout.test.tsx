@@ -138,7 +138,7 @@ async function confirm() {
 }
 async function save(count = 2) {
   await act(async () => {
-    button(`Save ${count} ${count === 1 ? "folder choice" : "folder choices"}`).props.onClick();
+    button(`Save ${count} ${count === 1 ? "file choice" : "file choices"}`).props.onClick();
     // Await a persisted controller milestone rather than a timer.
     await new Promise<void>((resolve) => {
       if (controller.getSnapshot().phase === "results") return resolve();
@@ -177,7 +177,7 @@ describe("selected project storage rollout", () => {
   it("requires explicit review and per-folder choices before exact final confirmation", async () => {
     await mount();
     expect(preview).not.toHaveBeenCalled();
-    expect(button("Review selected").props.disabled).toBe(true);
+    expect(button("Review selected")).toBeUndefined();
     await selectAndReview();
     expect(preview).toHaveBeenCalledTimes(2);
     expect(adopt).not.toHaveBeenCalled();
@@ -190,13 +190,15 @@ describe("selected project storage rollout", () => {
     await act(() => choose(b, "release-on-settle"));
     await confirm();
     expect(
-      renderer!.root.findByProps({ "aria-label": "Storage choices to confirm" }),
+      renderer!.root.findByProps({ "aria-label": "Working-file choices to confirm" }),
     ).toBeDefined();
     expect(JSON.stringify(renderer!.toJSON())).toContain("/work/atlas");
     expect(JSON.stringify(renderer!.toJSON())).toContain("/ssd/atlas");
-    expect(JSON.stringify(renderer!.toJSON())).toContain("Saving may immediately release");
+    expect(JSON.stringify(renderer!.toJSON())).toContain(
+      "can remove an eligible working copy immediately",
+    );
     expect(adopt).not.toHaveBeenCalled();
-    const staleSave = button("Save 2 folder choices").props.onClick;
+    const staleSave = button("Save 2 file choices").props.onClick;
     await act(() => button("Back to review").props.onClick());
     await act(() => staleSave());
     expect(adopt).not.toHaveBeenCalled();
@@ -257,7 +259,7 @@ describe("selected project storage rollout", () => {
     await selectAndReview([a]);
     await act(() => choose(a, "keep"));
     await confirm();
-    const staleSave = button("Save 1 folder choice").props.onClick;
+    const staleSave = button("Save 1 file choice").props.onClick;
     await act(() => controller.syncTargets([{ ...a, canAdopt: false, canSetRetention: false }]));
     expect(renderer!.root.findAllByType("dialog")).toHaveLength(0);
     await act(() => staleSave());
@@ -266,7 +268,7 @@ describe("selected project storage rollout", () => {
       await controller.review();
     });
     expect(renderer!.root.findAllByType("select")).toHaveLength(0);
-    expect(JSON.stringify(renderer!.toJSON())).toContain("Read-only review");
+    expect(JSON.stringify(renderer!.toJSON())).toContain("Settings access is required");
     expect(button("Confirm choices").props.disabled).toBe(true);
   });
 
@@ -281,7 +283,9 @@ describe("selected project storage rollout", () => {
     );
     await act(() => choose(a, "keep"));
     await confirm();
-    expect(JSON.stringify(renderer!.toJSON())).toContain("Keep will restore this working folder");
+    expect(JSON.stringify(renderer!.toJSON())).toContain(
+      "This restores the working files on this computer",
+    );
     await save(1);
     expect(adopt).not.toHaveBeenCalled();
     expect(setRetention).toHaveBeenCalledOnce();

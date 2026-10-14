@@ -45,7 +45,8 @@ vi.mock("~/state/environments", () => ({
   }),
 }));
 vi.mock("~/state/session", () => ({ useEnvironmentScope: () => state.readable }));
-vi.mock("@t3tools/client-runtime/fork", () => ({
+vi.mock("@t3tools/client-runtime/fork", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/fork")>()),
   supportsLoomFeature: () => state.supported,
 }));
 vi.mock("~/components/settings/settingsLayout", () => ({
@@ -134,11 +135,11 @@ async function mount(id = projectId) {
   });
 }
 async function openReview() {
-  await act(() => button("Review storage").props.onClick());
+  await act(() => button("Review working files").props.onClick());
 }
 function changeRetention(value: ProjectCheckoutPreview["retention"]) {
   renderer!.root
-    .findByProps({ "aria-label": "Project folder retention" })
+    .findByProps({ "aria-label": "Working files preference" })
     .parent!.props.onValueChange(value);
 }
 
@@ -190,7 +191,7 @@ describe("reviewed project checkout storage", () => {
     expect(registry.refresh).toHaveBeenCalledWith(queryFor());
     expect(state.adopt).not.toHaveBeenCalled();
     expect(state.setRetention).not.toHaveBeenCalled();
-    const oldConfirm = button("Manage this folder").props.onClick;
+    const oldConfirm = button("Allow Loom to manage files").props.onClick;
     await act(() => button("Cancel").props.onClick());
     await act(() => oldConfirm());
     expect(renderer!.root.findAllByType("dialog")).toHaveLength(0);
@@ -204,7 +205,7 @@ describe("reviewed project checkout storage", () => {
     );
     await openReview();
     await act(() => changeRetention("release-on-settle"));
-    await act(() => button("Manage this folder").props.onClick());
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: { projectId, reviewToken: "review-on-open", retention: "release-on-settle" },
@@ -227,12 +228,12 @@ describe("reviewed project checkout storage", () => {
         localFiles: { trackedChanges: 3, untrackedFiles: 2, ignoredFiles: 0, truncated: false },
       }),
     );
-    await act(() => button("Manage this folder").props.onClick());
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt).toHaveBeenCalledOnce();
     expect(renderer!.root.findByProps({ role: "alert" }).children.join("")).toContain(
       "folder changed",
     );
-    await act(() => button("Manage this folder").props.onClick());
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt.mock.calls[1]![0].input.reviewToken).toBe("new-review");
   });
 
@@ -240,15 +241,15 @@ describe("reviewed project checkout storage", () => {
     await mount();
     refreshed = AsyncResult.waiting(AsyncResult.success(preview()));
     await openReview();
-    expect(button("Manage this folder").props.disabled).toBe(true);
-    await act(() => button("Manage this folder").props.onClick());
+    expect(button("Allow Loom to manage files").props.disabled).toBe(true);
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt).not.toHaveBeenCalled();
   });
 
   it("refuses a stale confirmation handler after switching projects", async () => {
     await mount();
     await openReview();
-    const oldConfirm = button("Manage this folder").props.onClick;
+    const oldConfirm = button("Allow Loom to manage files").props.onClick;
     await act(() =>
       renderer!.update(
         <RegistryContext.Provider value={registry}>
@@ -264,7 +265,7 @@ describe("reviewed project checkout storage", () => {
   it("refuses a token superseded by an intervening preview", async () => {
     await mount();
     await openReview();
-    const oldConfirm = button("Manage this folder").props.onClick;
+    const oldConfirm = button("Allow Loom to manage files").props.onClick;
     await act(() =>
       registry.set(queryFor(), AsyncResult.success(preview({ reviewToken: "replacement" }))),
     );
@@ -282,7 +283,7 @@ describe("reviewed project checkout storage", () => {
     await mount();
     await openReview();
     await act(() => changeRetention("keep"));
-    await act(() => button("Save storage choice").props.onClick());
+    await act(() => button("Save file preference").props.onClick());
     expect(state.adopt).not.toHaveBeenCalled();
     expect(state.setRetention).toHaveBeenCalledExactlyOnceWith({
       environmentId,
@@ -301,7 +302,7 @@ describe("reviewed project checkout storage", () => {
     await openReview();
     expect(state.setRetention).not.toHaveBeenCalled();
     await act(() => changeRetention("keep"));
-    await act(() => button("Restore and keep folder").props.onClick());
+    await act(() => button("Restore and keep files").props.onClick());
     expect(state.setRetention).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: { projectId, reviewToken: "fresh-review", retention: "keep" },
@@ -314,7 +315,7 @@ describe("reviewed project checkout storage", () => {
     refreshed = AsyncResult.success(preview({ reviewToken: "retry-review" }));
     await act(() => button("Retry review").props.onClick());
     expect(state.adopt).not.toHaveBeenCalled();
-    await act(() => button("Manage this folder").props.onClick());
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt.mock.calls[0]![0].input.reviewToken).toBe("retry-review");
   });
 
@@ -331,13 +332,13 @@ describe("reviewed project checkout storage", () => {
     );
     await mount();
     await openReview();
-    expect(button("Manage this folder").props.disabled).toBe(true);
-    await act(() => button("Manage this folder").props.onClick());
+    expect(button("Allow Loom to manage files").props.disabled).toBe(true);
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt).not.toHaveBeenCalled();
     await act(() => registry.set(queryFor(), AsyncResult.success(preview())));
     await act(() => registry.set(state.permissions!, false));
-    expect(button("Manage this folder").props.disabled).toBe(true);
-    await act(() => button("Manage this folder").props.onClick());
+    expect(button("Allow Loom to manage files").props.disabled).toBe(true);
+    await act(() => button("Allow Loom to manage files").props.onClick());
     expect(state.adopt).not.toHaveBeenCalled();
   });
 

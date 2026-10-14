@@ -179,7 +179,7 @@ function SettingsIndexSections() {
         {/* fork: project-home - Storage review is reachable without a project filter. */}
         <SettingsRow
           icon="internaldrive"
-          label="Project storage"
+          label="Files on computers"
           onPress={() => navigation.navigate("ProjectStorageInventory")}
         />
         <SettingsRow icon="folder" label="Organization" target="SettingsOrganization" />

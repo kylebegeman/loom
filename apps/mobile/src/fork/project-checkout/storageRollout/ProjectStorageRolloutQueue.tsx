@@ -33,10 +33,10 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
       <SettingsSection
         title={
           confirmation
-            ? "Confirm storage choices"
+            ? "Confirm file choices"
             : state.savedCount > 0
-              ? "Folder results"
-              : "Selected folders"
+              ? "Saved file choices"
+              : "Selected working files"
         }
         trailing={
           <Text className="px-2 text-xs tabular-nums text-foreground-muted">
@@ -58,11 +58,11 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
                   {entry.target.projectName}
                 </Text>
                 <Text className="text-xs text-foreground-muted">
-                  {entry.target.environmentLabel} ·{" "}
-                  {entry.operation === "adopt" ? "Allow Loom management" : "Update preference"}
+                  Working files on {entry.target.environmentLabel} ·{" "}
+                  {entry.operation === "adopt" ? "Enable file controls" : "Update preference"}
                 </Text>
                 <Text selectable className="text-xs leading-normal text-foreground-muted">
-                  {entry.target.workspaceRoot}
+                  Location: {entry.target.workspaceRoot}
                 </Text>
                 <Text className="text-sm font-t3-medium text-foreground">
                   {PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[entry.choice]}
@@ -103,8 +103,8 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
             {snapshot.cancelRequested
               ? "Stopping after this request. Saved choices stay saved."
               : snapshot.phase === "saving"
-                ? "Saving one folder at a time. Completed choices stay saved."
-                : "Reviewing one folder at a time. Working files stay unchanged."}
+                ? "Saving one location at a time. Completed choices stay saved."
+                : "Checking one location at a time. Working files stay unchanged."}
           </Text>
           <MaterialButton
             label={snapshot.phase === "saving" ? "Stop remaining saves" : "Stop review"}
@@ -117,8 +117,8 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
         <View className="gap-2">
           {state.errorCount > 0 ? (
             <Text accessibilityLiveRegion="polite" className="px-2 text-xs text-foreground-muted">
-              {state.errorCount} {state.errorCount === 1 ? "folder needs" : "folders need"} another
-              review. Saved choices stay saved.
+              {state.errorCount} {state.errorCount === 1 ? "location needs" : "locations need"}{" "}
+              another review. Saved choices stay saved.
             </Text>
           ) : null}
           <View className="flex-row flex-wrap items-center gap-2">
@@ -126,8 +126,8 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
               <MaterialButton
                 label={
                   state.savedCount > 0 || state.errorCount > 0
-                    ? "Review unfinished folders"
-                    : "Review selected folders"
+                    ? "Check unfinished locations"
+                    : "Check selected files"
                 }
                 onPress={() => void controller.review(state.reviewable.map((row) => row.key))}
               />
@@ -169,7 +169,7 @@ function FolderReview({
               {row.target.projectName}
             </Text>
             <Text className="text-xs text-foreground-muted">
-              {row.target.environmentLabel}
+              Working files on {row.target.environmentLabel}
               {preview ? ` · ${projectStorageRolloutStateLabel(preview)}` : ""}
             </Text>
             <Text
@@ -179,7 +179,7 @@ function FolderReview({
               accessibilityLabel={row.target.workspaceRoot}
               className="text-xs text-foreground-muted"
             >
-              {row.target.workspaceRoot}
+              Location: {row.target.workspaceRoot}
             </Text>
           </View>
           {!saved ? (
@@ -201,11 +201,11 @@ function FolderReview({
             Saved ·{" "}
             {row.result
               ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.result.retention]
-              : "Storage preference saved"}
+              : "File choice saved"}
           </Text>
         ) : row.status === "reviewing" || row.status === "saving" ? (
           <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
-            {row.status === "reviewing" ? "Reviewing folder…" : "Saving choice…"}
+            {row.status === "reviewing" ? "Checking working files…" : "Saving choice…"}
           </Text>
         ) : null}
         {preview ? (
@@ -237,7 +237,7 @@ function FolderReview({
         {!saved && row.status === "reviewed" && choices.length === 0 && !reason ? (
           <Text className="text-xs leading-normal text-foreground-muted">
             {preview?.state === "blocked" || !preview?.reviewToken
-              ? "Resolve the issues above and review this folder again."
+              ? "Resolve the issues above and check these working files again."
               : "Settings permission is required to save a choice."}
           </Text>
         ) : null}
@@ -246,17 +246,18 @@ function FolderReview({
         <ControlPillMenu
           accessible
           accessibilityRole="button"
-          accessibilityLabel={`Storage choice for ${row.target.projectName} on ${row.target.environmentLabel} at ${row.target.workspaceRoot}`}
-          title="Storage preference"
+          accessibilityLabel={`Storage choice for ${row.target.projectName} on ${row.target.environmentLabel} at ${row.target.workspaceRoot}. ${row.choice ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice] : "Choose what stays here"}`}
+
+          title="What stays on this computer?"
           actions={choices.map((choice) => ({
             id: choice,
             title: PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[choice],
             subtitle:
               choice === "keep"
-                ? "Keep working files available here."
+                ? "Keep this project's working files on this computer."
                 : choice === "release-on-settle"
-                  ? "Release after work settles and safety checks pass."
-                  : "Follow this computer's cleanup settings.",
+                  ? "Remove safe settled files; restore them when you resume work."
+                  : "Use this computer's default for keeping or removing files.",
             state: row.choice === choice ? ("on" as const) : ("off" as const),
             attributes: { disabled: busy },
           }))}
@@ -267,28 +268,39 @@ function FolderReview({
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Storage preference: ${row.choice ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice] : "Choose preference"}`}
+            accessibilityLabel={`Storage preference: ${row.choice ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice] : "Choose what stays here"}`}
             accessibilityState={{ disabled: busy }}
             disabled={busy}
             className="min-h-11 flex-row flex-wrap items-center justify-between gap-x-3 gap-y-1 px-4 py-2 active:opacity-70 disabled:opacity-40"
           >
-            <Text className="text-xs text-foreground-muted">Preference</Text>
+            <Text className="text-xs text-foreground-muted">After settling</Text>
             <View className="flex-row items-center gap-2">
               <Text className="text-sm text-primary-text">
                 {row.choice
                   ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice]
-                  : "Choose preference"}
+                  : "Choose what stays here"}
               </Text>
               <SymbolView name="chevron.down" size={12} tintColorClassName="accent-primary-text" />
             </View>
           </Pressable>
         </ControlPillMenu>
       ) : null}
+      {!saved && row.choice ? (
+        <Text className="px-4 pb-2 text-xs leading-normal text-foreground-muted">
+          {row.choice === "release-on-settle"
+            ? "Loom can remove these safe working files after work settles, then restore them when you resume work."
+            : row.choice === "keep"
+              ? "Keep this project's working files on this computer."
+              : "Follow this computer's default for keeping or removing settled working files."}
+        </Text>
+      ) : null}
       {!saved ? (
         <View className="flex-row justify-end px-1 pb-1">
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={row.status === "idle" ? "Review folder" : "Review folder again"}
+            accessibilityLabel={
+              row.status === "idle" ? "Check working files" : "Check working files again"
+            }
             accessibilityHint={`${row.target.projectName} on ${row.target.environmentLabel}: ${row.target.workspaceRoot}`}
             accessibilityState={{ disabled: busy || !canReviewProjectStorageTarget(row.target) }}
             disabled={busy || !canReviewProjectStorageTarget(row.target)}
@@ -302,7 +314,7 @@ function FolderReview({
                   : "text-xs font-t3-medium text-primary-text"
               }
             >
-              {row.status === "idle" ? "Review" : "Review again"}
+              {row.status === "idle" ? "Check files" : "Check again"}
             </Text>
           </Pressable>
         </View>

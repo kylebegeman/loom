@@ -63,12 +63,12 @@ export interface ProjectStorageRolloutOperations {
 }
 
 export const PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS = {
-  keep: "Keep on this computer",
-  "release-on-settle": "Release when settled",
-  inherit: "Use this computer's cleanup rules",
+  keep: "Keep files here",
+  "release-on-settle": "Free space when settled",
+  inherit: "Use computer default",
 } satisfies Record<ProjectCheckoutRetention, string>;
 export const PROJECT_STORAGE_ROLLOUT_CONFIRMATION_NOTICE =
-  "Saving may immediately release a settled eligible working copy. Loom checks release safety separately; this review does not guarantee a folder can be released. Threads and history stay available. Choosing Keep for a released checkout may restore its working copy.";
+  "Your projects and conversations stay in Loom. Free space when settled can remove an eligible working copy immediately after safety checks; resuming work restores its files. Keep files here can restore a copy already removed. This review does not guarantee the files are safe to remove.";
 
 export function projectStorageRolloutKey(target: {
   readonly environmentId: EnvironmentId;
@@ -131,11 +131,11 @@ export function projectStorageRolloutChoices(
 export function projectStorageRolloutStateLabel(preview: ProjectCheckoutPreview): string {
   switch (preview.state) {
     case "external":
-      return "Folder opened outside Loom";
+      return "Cleanup not enabled";
     case "managed":
-      return preview.ownershipSource === "adopted" ? "Managed folder" : "Managed clone";
+      return "Files here";
     case "released":
-      return "Working copy released";
+      return "Files removed from this computer";
     case "blocked":
       return "Needs attention";
   }

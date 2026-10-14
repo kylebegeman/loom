@@ -30,10 +30,10 @@ export function ProjectHomeComputers({
       >
         <MonitorIcon aria-hidden="true" className="size-4 shrink-0 text-icon-muted" />
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium">Computers and storage</span>
+          <span className="block text-sm font-medium">Working files</span>
           <span className="mt-0.5 block text-xs text-muted-foreground">
             {computerCount} {computerCount === 1 ? "computer" : "computers"}, {projects.length}{" "}
-            {projects.length === 1 ? "working folder" : "working folders"}
+            {projects.length === 1 ? "file location" : "file locations"}
           </span>
         </span>
         <ChevronRightIcon
@@ -49,8 +49,9 @@ export function ProjectHomeComputers({
           <div className="space-y-4 pt-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <p className="max-w-lg text-xs leading-relaxed text-muted-foreground">
-                Managed folders can be released to free space and restored when you start work. Your
-                threads stay available. Review storage choices for each folder.
+                This project's working files live at the locations below. You can keep them here or
+                let Loom free space after work settles. Resuming work restores removed files; your
+                conversations stay in Loom.
               </p>
               <Button size="sm" variant="outline" onClick={onPrepare}>
                 <FolderPlusIcon aria-hidden="true" />
@@ -90,13 +91,13 @@ function ComputerFolder({
           <MonitorIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-icon-muted" />
           <div className="min-w-0">
             <h3 className="text-sm font-medium">
-              {computer}
+              Working files on {computer}
               <span className="ml-2 text-xs font-normal text-muted-foreground">
                 {connected ? "Connected" : "Offline"}
               </span>
             </h3>
             <p className="mt-1 wrap-anywhere text-xs text-muted-foreground">
-              {project.workspaceRoot}
+              Location: {project.workspaceRoot}
             </p>
           </div>
         </div>
@@ -105,10 +106,10 @@ function ComputerFolder({
           size="xs"
           aria-expanded={showStorage}
           aria-controls={storageId}
-          aria-label={`Storage and retention on ${computer}`}
+          aria-label={`Manage working files on ${computer}`}
           onClick={() => setShowStorage((current) => !current)}
         >
-          Storage and retention
+          Manage working files
           <ChevronRightIcon
             aria-hidden="true"
             className={cn(
@@ -120,7 +121,7 @@ function ComputerFolder({
       </div>
       {!connected ? (
         <p className="text-xs text-muted-foreground">
-          This is a saved folder location.{" "}
+          This is a saved location for this project's working files.{" "}
           <Button variant="link" size="xs" render={<Link to="/settings/connections" />}>
             Reconnect this computer
           </Button>{" "}

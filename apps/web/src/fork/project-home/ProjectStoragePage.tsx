@@ -4,14 +4,15 @@ import { useAtomValue } from "@effect/atom-react";
 import { AuthOrchestrationReadScope } from "@t3tools/contracts";
 import { ChevronDownIcon, FolderIcon, MonitorIcon, SlidersHorizontalIcon } from "lucide-react";
 import { WorkspacePageHeader } from "~/components/WorkspacePageHeader";
-import { SettingsPageContainer, SettingsSection } from "~/components/settings/settingsLayout";
+import { SettingsPageContainer } from "~/components/settings/settingsLayout";
+import { SettingsGroup } from "~/components/settings/SettingsGroup";
 import { SidebarInset } from "~/components/ui/sidebar";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { Input } from "~/components/ui/input";
 import { Checkbox } from "~/components/ui/checkbox";
 import { useProjects, useAllEnvironmentProjectSnapshotsReady } from "~/state/entities";
-import { useEnvironments } from "~/state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentsWithScope } from "~/state/session";
 import { environmentServerConfigsAtom } from "~/state/server";
 import { ProjectCheckoutSettings } from "~/fork/project-checkout/ProjectCheckoutSettings";
@@ -23,10 +24,8 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { useProjectStorageRollout } from "~/fork/project-checkout/useProjectStorageRollout";
 import { ProjectStorageRollout } from "~/fork/project-checkout/ProjectStorageRollout";
-import {
-  deriveLogicalProjectKeyFromSettings,
-  selectProjectGroupingSettings,
-} from "~/logicalProject";
+import { selectProjectGroupingSettings } from "~/logicalProject";
+import { buildSidebarProjectSnapshots } from "~/sidebarProjectGrouping";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useEscapeToGoBack } from "~/hooks/useNavigateBack";
 import { BrowseProjectsButton } from "./BrowseProjectsButton";
@@ -41,6 +40,7 @@ export function ProjectStoragePage() {
   const configs = useAtomValue(environmentServerConfigsAtom);
   const permitted = useEnvironmentsWithScope(environments, AuthOrchestrationReadScope);
   const settings = useClientSettings(selectProjectGroupingSettings);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const [query, setQuery] = useState("");
   const [singleReview, setSingleReview] = useState<string | null>(null);
   const labels = useMemo(() => {
@@ -52,9 +52,47 @@ export function ProjectStoragePage() {
     }
     return projectStorageRolloutComputerLabels(names);
   }, [environments, projects]);
+  const projectGroups = useMemo(
+    () =>
+      buildSidebarProjectSnapshots({
+        projects,
+        settings,
+        groupScratchProjects: true,
+        primaryEnvironmentId,
+        resolveEnvironmentLabel: (id) => labels.get(id) ?? null,
+      }),
+    [projects, settings, primaryEnvironmentId, labels],
+  );
+  const unfilteredInventory = useMemo(
+    () =>
+      buildProjectStorageInventory({
+        projects,
+        groups: projectGroups,
+        query: "",
+        environmentLabels: labels,
+      }),
+    [projects, projectGroups, labels],
+  );
+  const projectNamesByTarget = useMemo(
+    () =>
+      new Map(
+        unfilteredInventory.flatMap((group) =>
+          group.locations.map((location) => [location.key, location.projectName] as const),
+        ),
+      ),
+    [unfilteredInventory],
+  );
   const groups = useMemo(
-    () => buildProjectStorageInventory({ projects, query, environmentLabels: labels }),
-    [projects, query, labels],
+    () =>
+      query.trim()
+        ? buildProjectStorageInventory({
+            projects,
+            groups: projectGroups,
+            query,
+            environmentLabels: labels,
+          })
+        : unfilteredInventory,
+    [projects, projectGroups, query, labels, unfilteredInventory],
   );
   const computerById = useMemo(
     () => new Map(environments.map((environment) => [environment.environmentId, environment])),
@@ -68,7 +106,14 @@ export function ProjectStoragePage() {
           environmentId: project.environmentId,
           projectId: project.id,
           workspaceRoot: project.workspaceRoot,
-          projectName: project.title,
+          projectName:
+            projectNamesByTarget.get(
+              projectStorageRolloutKey({
+                environmentId: project.environmentId,
+                projectId: project.id,
+                workspaceRoot: project.workspaceRoot,
+              }),
+            ) ?? project.title,
           environmentLabel: labels.get(project.environmentId) ?? "Saved computer",
           connected: computer?.entry.enabled === true && computer.connection.phase === "connected",
           supported: supportsLoomFeature(
@@ -78,7 +123,7 @@ export function ProjectStoragePage() {
           canRead: permitted.has(project.environmentId),
         };
       }),
-    [projects, computerById, labels, configs, permitted],
+    [projects, computerById, labels, configs, permitted, projectNamesByTarget],
   );
   const { controller, snapshot } = useProjectStorageRollout(inventoryTargets);
   const queueRows = new Map(snapshot.rows.map((row) => [row.key, row]));
@@ -91,14 +136,16 @@ export function ProjectStoragePage() {
         <span aria-hidden="true" className="text-icon-muted">
           /
         </span>
-        <span className="text-sm font-medium">Project storage</span>
+        <span className="text-sm font-medium">Files on computers</span>
       </WorkspacePageHeader>
       <main className="flex min-h-0 flex-1 flex-col">
         <SettingsPageContainer className="max-w-3xl gap-6">
           <div className="space-y-1 px-3 sm:px-4">
-            <h1 className="text-lg font-semibold tracking-tight">Project storage</h1>
-            <p className="text-xs text-muted-foreground">
-              Review known folders and choose what stays on each computer.
+            <h1 className="text-lg font-semibold tracking-tight">Files on computers</h1>
+            <p className="max-w-xl text-xs leading-relaxed text-muted-foreground">
+              Projects organize your conversations in Loom. Working files are the code and other
+              files at the locations below. Automatic removal frees safe copies after work is
+              settled; Loom restores managed copies when you resume work.
             </p>
           </div>
           <ProjectStorageRollout controller={controller} snapshot={snapshot} />
@@ -107,8 +154,8 @@ export function ProjectStoragePage() {
               nativeInput
               type="search"
               size="sm"
-              aria-label="Search known project folders"
-              placeholder="Search project, computer or folder"
+              aria-label="Search projects and their working files"
+              placeholder="Search project, computer or location"
               value={query}
               onChange={(event) => setQuery(event.currentTarget.value)}
             />
@@ -116,66 +163,62 @@ export function ProjectStoragePage() {
           {groups.length === 0 ? (
             <p role="status" className="text-sm text-muted-foreground">
               {!ready
-                ? "Loading known project folders..."
+                ? "Loading project file locations..."
                 : query.trim()
-                  ? "No project folders match this search."
-                  : "Add a project to review its working folder here."}
+                  ? "No project file locations match this search."
+                  : "Add a project to review where its working files live."}
             </p>
           ) : (
-            groups.map((group) => {
-              const computer = computerById.get(group.environmentId);
-              const connected =
-                computer?.entry.enabled === true && computer.connection.phase === "connected";
-              const supported = supportsLoomFeature(
-                configs.get(group.environmentId)?.environment.capabilities,
-                PROJECT_CHECKOUT_FEATURE,
-              );
-              const readable = permitted.has(group.environmentId);
-              const reason = !connected
-                ? "Reconnect this computer to review its current files."
-                : !supported
-                  ? "Update Loom on this computer to review project storage."
-                  : !readable
-                    ? "This connection cannot review project folders on this computer."
-                    : null;
-              return (
-                <SettingsSection
-                  key={group.environmentId}
-                  id={`project-storage-${group.environmentId}`}
-                  title={group.label}
-                  icon={<MonitorIcon aria-hidden="true" className="size-3.5 text-icon-muted" />}
-                  headerAction={
+            groups.map((group) => (
+              <section key={group.projectKey} className="space-y-2.5">
+                <div className="flex items-start justify-between gap-3 px-3 sm:px-4">
+                  <h2 className="flex min-h-7 min-w-0 items-center gap-2 text-sm font-medium text-foreground">
+                    <FolderIcon aria-hidden="true" className="size-3.5 shrink-0 text-icon-muted" />
+                    <span className="wrap-anywhere">{group.label}</span>
+                  </h2>
+                  <div className="flex min-h-7 shrink-0 items-center gap-2">
                     <span className="text-xs text-muted-foreground">
-                      {connected ? "Connected" : "Offline"}, {group.projects.length}{" "}
-                      {group.projects.length === 1 ? "folder" : "folders"}
+                      {group.locations.length}{" "}
+                      {group.locations.length === 1 ? "location" : "locations"}
                     </span>
-                  }
-                >
-                  {reason ? (
-                    <p className="px-3 py-2 text-xs text-muted-foreground sm:px-4">
-                      {reason}
-                      {!connected ? (
-                        <Button
-                          variant="link"
-                          size="xs"
-                          render={<Link to="/settings/connections" />}
-                        >
-                          Connections
-                        </Button>
-                      ) : null}
-                    </p>
-                  ) : null}
+                    <Button
+                      variant="link"
+                      size="xs"
+                      render={
+                        <Link
+                          to="/projects/$projectKey"
+                          params={{ projectKey: group.projectKey }}
+                        />
+                      }
+                      aria-label={`Open ${group.label} project`}
+                    >
+                      Open project
+                    </Button>
+                  </div>
+                </div>
+                <SettingsGroup>
                   <ul
                     className="divide-y divide-border/50"
-                    aria-label={`Folders on ${group.label}`}
+                    aria-label={`Working files for ${group.label}`}
                   >
-                    {group.projects.map(({ project, key }) => {
-                      const queueKey = projectStorageRolloutKey({
-                        environmentId: project.environmentId,
-                        projectId: project.id,
-                        workspaceRoot: project.workspaceRoot,
-                      });
-                      const row = queueRows.get(queueKey);
+                    {group.locations.map(({ project, key, computerLabel, recordLabel }) => {
+                      const computer = computerById.get(project.environmentId);
+                      const connected =
+                        computer?.entry.enabled === true &&
+                        computer.connection.phase === "connected";
+                      const supported = supportsLoomFeature(
+                        configs.get(project.environmentId)?.environment.capabilities,
+                        PROJECT_CHECKOUT_FEATURE,
+                      );
+                      const readable = permitted.has(project.environmentId);
+                      const reason = !connected
+                        ? "Reconnect this computer to review its current files."
+                        : !supported
+                          ? "Update Loom on this computer to review its working files."
+                          : !readable
+                            ? "This connection cannot review files on this computer."
+                            : null;
+                      const row = queueRows.get(key);
                       const writable = row?.target.canAdopt || row?.target.canSetRetention;
                       return (
                         <li
@@ -183,61 +226,73 @@ export function ProjectStoragePage() {
                           className="space-y-3 px-3 py-2.5 sm:px-4 [content-visibility:auto] [contain-intrinsic-size:auto_64px]"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 flex-1 items-center gap-2.5">
-                              <div className="shrink-0">
+                            <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                              <div className="shrink-0 pt-0.5">
                                 <Checkbox
-                                  aria-label={`Select ${project.title} on ${group.label} at ${project.workspaceRoot}`}
+                                  aria-label={`Select working files for ${group.label} on ${computerLabel} at ${project.workspaceRoot}${recordLabel ? `, saved project ${recordLabel}` : ""}`}
                                   checked={row?.selected ?? false}
                                   disabled={
                                     busy || reason !== null || row?.status === "saved" || !row
                                   }
                                   onCheckedChange={(checked) =>
-                                    controller.setSelected(queueKey, checked)
+                                    controller.setSelected(key, checked)
                                   }
                                 />
                               </div>
-                              <FolderIcon
+                              <MonitorIcon
                                 aria-hidden="true"
-                                className="size-4 shrink-0 text-icon-muted"
+                                className="mt-0.5 size-4 shrink-0 text-icon-muted"
                               />
                               <div className="min-w-0 flex-1">
-                                <Link
-                                  to="/projects/$projectKey"
-                                  className="block truncate rounded-sm text-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                                  search={{
-                                    computer: project.environmentId,
-                                    checkoutId: project.id,
-                                  }}
-                                  params={{
-                                    projectKey: deriveLogicalProjectKeyFromSettings(
-                                      project,
-                                      settings,
-                                      { groupScratchProjects: true },
-                                    ),
-                                  }}
-                                >
-                                  {project.title}
-                                </Link>
-                                <Tooltip>
-                                  <TooltipTrigger
-                                    render={
-                                      <span
-                                        tabIndex={0}
-                                        className="block truncate rounded-sm text-xs text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                                      />
-                                    }
-                                  >
-                                    {project.workspaceRoot}
-                                  </TooltipTrigger>
-                                  <TooltipPopup>
-                                    <span className="wrap-anywhere">{project.workspaceRoot}</span>
-                                  </TooltipPopup>
-                                </Tooltip>
+                                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                                  <p className="text-sm text-foreground/80">
+                                    Working files on {computerLabel}
+                                  </p>
+                                  <span className="text-xs text-muted-foreground">
+                                    {connected ? "Connected" : "Offline"}
+                                  </span>
+                                </div>
+                                <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5 text-xs text-muted-foreground">
+                                  <span className="shrink-0">Location</span>
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <span
+                                          tabIndex={0}
+                                          className="min-w-0 truncate rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                        />
+                                      }
+                                    >
+                                      {project.workspaceRoot}
+                                    </TooltipTrigger>
+                                    <TooltipPopup>
+                                      <span className="wrap-anywhere">{project.workspaceRoot}</span>
+                                    </TooltipPopup>
+                                  </Tooltip>
+                                </div>
+                                {recordLabel ? (
+                                  <p className="mt-0.5 text-xs text-muted-foreground wrap-anywhere">
+                                    Saved project: {recordLabel}
+                                  </p>
+                                ) : null}
                                 {row?.status === "saved" ? (
                                   <p className="mt-1 text-xs text-muted-foreground">
                                     Saved in this review
                                   </p>
-                                ) : reason !== null ? null : !writable ? (
+                                ) : reason !== null ? (
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {reason}
+                                    {!connected ? (
+                                      <Button
+                                        variant="link"
+                                        size="xs"
+                                        render={<Link to="/settings/connections" />}
+                                      >
+                                        Connections
+                                      </Button>
+                                    ) : null}
+                                  </p>
+                                ) : !writable ? (
                                   <p className="mt-1 text-xs text-muted-foreground">
                                     Read-only connection
                                   </p>
@@ -252,7 +307,7 @@ export function ProjectStoragePage() {
                               onClick={() =>
                                 setSingleReview((current) => (current === key ? null : key))
                               }
-                              aria-label={`Individual storage settings for ${project.title} on ${group.label}`}
+                              aria-label={`Working file settings for ${group.label} on ${computerLabel} at ${project.workspaceRoot}${recordLabel ? `, saved project ${recordLabel}` : ""}`}
                             >
                               {singleReview === key ? (
                                 <ChevronDownIcon aria-hidden="true" className="size-3.5" />
@@ -263,16 +318,16 @@ export function ProjectStoragePage() {
                           </div>
                           {singleReview === key && reason === null && !busy ? (
                             <ProjectCheckoutSettings
-                              projects={[{ ...project, environmentLabel: group.label }]}
+                              projects={[{ ...project, environmentLabel: computerLabel }]}
                             />
                           ) : null}
                         </li>
                       );
                     })}
                   </ul>
-                </SettingsSection>
-              );
-            })
+                </SettingsGroup>
+              </section>
+            ))
           )}
         </SettingsPageContainer>
       </main>

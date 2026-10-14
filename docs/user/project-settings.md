@@ -58,7 +58,7 @@ Choose the connected computer and checkout before starting a new task. That choi
 does not move existing work, and an offline or read-only computer requires reconnection
 or another explicit choice.
 
-Expand **Computers and storage** in Project home to review each working folder.
+Expand **Working files** in Project home to review its locations on each computer.
 To add a working copy elsewhere, choose **Prepare on another computer** there.
 Review the source computer's actual Git origin, choose the destination computer, and
 review its destination folder before cloning. A fork is prepared from its own origin,
@@ -202,18 +202,18 @@ Folders opened manually and older clones stay on disk until you explicitly revie
 Loom manage them. Enabling cleanup does not adopt existing folders.
 
 To manage an existing folder, review its working copy in Project home, or select the project
-and open **Settings → Projects → Project storage** on web or desktop,
+and open **Settings → Projects → Working files** on web or desktop,
 or **Settings → Projects & threads → Overview** on mobile. Review the folder
-on each computer, choose **Keep on this computer** or **Release when settled**, then confirm.
+on each computer, choose **Keep files here** or **Free space when settled**, then confirm.
 Loom registers the existing folder without moving its files or changing its project history.
 Only primary Git repositories with their own Git directory and an origin remote can be adopted;
 unsafe or unavailable folders remain external. Local changes can stay in an adopted folder.
 
-**Keep on this computer** overrides automatic primary-folder cleanup. Choosing it for a released
+**Keep files here** overrides automatic primary-folder cleanup. Choosing it for a released
 checkout restores that folder immediately; setup runs when an agent next uses the project.
-**Release when settled** permits release after every conversation settles, even if the computer's
-default release setting is off. For a managed folder, **Use this computer's cleanup rules**
-(**Use computer's default** on mobile) returns to its settlement and inactivity defaults.
+**Free space when settled** permits release after every conversation settles, even if the computer's
+default release setting is off. For working files Loom manages, **Use computer default** follows that computer's settlement
+and inactivity defaults.
 These choices govern the primary folder; worktree cleanup follows its separate settings.
 
 Saving a release preference can release an already settled, eligible checkout during the next
@@ -225,16 +225,20 @@ outside the working folder and its disposable lane. Update Loom on a computer be
 its existing project folders; older server versions cannot reopen folders released with the
 new storage metadata.
 
-Use **Review project storage** from Projects, or **Settings → Projects → Project storage**
-on web and desktop and **Settings → Projects & threads → Project storage** on iPhone, to
-review the registered folders across your
-computers. This inventory uses projects already known to Loom; it does not scan your computer
-for repositories. Select the folders you want to review, then choose **Review selected folders** to
-check their ownership, local-file summary and current storage choice together. Choose Keep,
-Release, or the computer's defaults separately for each reviewed folder, then review the exact
-computers, folders and choices before saving. External folders require an explicit Keep or
-Release choice before Loom adopts them. Offline folders keep their remembered location until
-their computer reconnects. Opening the inventory or a review does not adopt, release, or restore files.
+A project groups your conversations and work in Loom. Its working files are the code and other
+files stored at a particular location on a computer. The same project can have working files on
+more than one computer; each location has its own keep/remove choice. These choices affect those
+working files, while the project and its conversations stay in Loom.
+
+Use **Manage working files** from Projects, or **Settings → Projects → Files on computers**
+on web and desktop and **Settings → Projects & threads → Files on computers** on iPhone, to
+review the working-file locations already registered in Loom. Each project lists its locations
+on your computers. Select the locations you want to change and check their current files.
+Choose **Keep files here**, **Free space when settled**, or **Use computer default** for each
+reviewed location, then confirm the exact computers, locations and choices before saving.
+Locations outside Loom file management require an explicit Keep or Free space choice first.
+Offline computers keep their saved locations until they reconnect. Opening this screen or
+checking files does not enable cleanup, remove files or restore a removed copy.
 
 Saving a release choice can soon release an already settled, eligible folder. Saving Keep for a
 released folder restores its working files. Cleanup still checks publication and active work

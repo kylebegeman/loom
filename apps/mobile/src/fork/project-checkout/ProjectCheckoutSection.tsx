@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { createProjectCheckoutAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  createProjectCheckoutAtoms,
+  PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS,
+  projectStorageRolloutStateLabel,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AuthOrchestrationReadScope, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
 import type { ProjectCheckoutPreview } from "@t3tools/contracts/fork";
@@ -27,12 +32,6 @@ type Props = {
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
   readonly computerLabel: string;
-};
-
-const retentionLabels: Record<Retention, string> = {
-  keep: "Keep on this computer",
-  "release-on-settle": "Release when settled",
-  inherit: "Use computer's default",
 };
 
 /** A review belongs to one checkout, even when the settings filter changes hosts. */
@@ -199,7 +198,9 @@ function ProjectCheckoutReview({
       setPreview(result.value);
       setChoice(result.value.retention);
       setConfirming(false);
-      setNotice(managed ? "Checkout storage preference saved." : "Loom now manages this checkout.");
+      setNotice(
+        managed ? "Working file preference saved." : "Loom can now manage these working files.",
+      );
     } catch (cause) {
       if (!stillCurrent(request)) return;
       // Failed or stale reviews must be refreshed before another mutation.
@@ -208,7 +209,7 @@ function ProjectCheckoutReview({
       setError(
         cause instanceof Error
           ? cause.message
-          : "The storage preference could not be saved. Review the folder and try again.",
+          : "The file preference could not be saved. Review the files and try again.",
       );
     } finally {
       busy.current = false;
@@ -218,38 +219,44 @@ function ProjectCheckoutReview({
 
   return (
     <SettingsSection
-      title={`Project storage · ${computerLabel}`}
-      footer="Release checks protect local files and active work. Returning to a released project restores its working files. Worktrees have separate cleanup settings."
+      title={`Working files on ${computerLabel}`}
+      footer="Loom keeps unpublished changes and local-only files here. If working files were removed, it restores them when work resumes. Additional worktrees have separate cleanup rules."
     >
       <View className="gap-3 px-4 py-3">
         <Text className="text-xs leading-normal text-foreground-muted">
           {!connected
-            ? "Reconnect this computer to review and manage project storage."
+            ? "Reconnect this computer to review its project files."
             : !configReady
               ? "Loading this computer's capabilities…"
               : !supported
-                ? "Update Loom on this computer to review and manage project storage."
+                ? "Update Loom on this computer to review its project files."
                 : !canRead
-                  ? "Project read permission is required to review this folder."
+                  ? "Project read permission is required to review these files."
                   : !allowed
-                    ? "Settings permission is required to manage project storage."
+                    ? "Settings permission is required to manage these files."
                     : preview?.state === "released"
-                      ? "This checkout has been released. Your project and conversations remain in Loom."
+                      ? "These working files are no longer on this computer. Your project and conversations remain in Loom."
                       : managed
-                        ? "Loom manages this checkout. Choose when its working files should stay on this computer."
-                        : "Review this existing folder before letting Loom manage its working files."}
+                        ? "Choose whether these working files stay on this computer. Your project and conversations stay in Loom."
+                        : "These are the files you work on. Review their existing location before allowing Loom to manage them. Your project and conversations stay in Loom."}
         </Text>
-        <Text
-          selectable
-          numberOfLines={1}
-          ellipsizeMode="middle"
-          accessibilityLabel={preview?.workspaceRoot ?? workspaceRoot}
-          className="text-xs text-foreground-muted"
-        >
-          {preview?.workspaceRoot ?? workspaceRoot}
-        </Text>
+        <View className="gap-1">
+          <Text className="text-xs font-t3-medium text-foreground">Location</Text>
+          <Text
+            selectable
+            numberOfLines={1}
+            ellipsizeMode="middle"
+            accessibilityLabel={preview?.workspaceRoot ?? workspaceRoot}
+            className="text-xs text-foreground-muted"
+          >
+            {preview?.workspaceRoot ?? workspaceRoot}
+          </Text>
+        </View>
         {preview ? (
           <>
+            <Text className="text-xs leading-normal text-foreground-muted">
+              {projectStorageRolloutStateLabel(preview)}
+            </Text>
             {preview.branch ? (
               <Text className="text-xs leading-normal text-foreground-muted">
                 Branch: {preview.branch}
@@ -257,7 +264,7 @@ function ProjectCheckoutReview({
             ) : null}
             <Text className="text-xs leading-normal text-foreground-muted">
               {preview.state === "released"
-                ? "Working files are currently released."
+                ? "Working files will be restored when you resume work."
                 : `${preview.localFiles.trackedChanges} changed, ${preview.localFiles.untrackedFiles} new and ${preview.localFiles.ignoredFiles} ignored files${preview.localFiles.truncated ? " (partial count)" : ""}.`}
             </Text>
             {[...new Set(preview.blockers)].map((blocker) => (
@@ -275,26 +282,26 @@ function ProjectCheckoutReview({
         {confirming ? (
           <View className="gap-2">
             <Text className="text-sm font-t3-medium text-foreground">
-              {managed ? "Confirm storage preference" : "Let Loom manage this folder?"}
+              {managed ? "Confirm file preference" : "Allow Loom to manage these files?"}
             </Text>
             <Text selectable className="text-xs leading-normal text-foreground-muted">
-              {computerLabel} · {preview?.workspaceRoot ?? workspaceRoot}
+              Location on {computerLabel}: {preview?.workspaceRoot ?? workspaceRoot}
             </Text>
             <Text className="text-sm font-t3-medium text-foreground">
-              {retentionLabels[retention]}
+              {PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}
             </Text>
             <Text className="text-xs leading-normal text-foreground-muted">
               {retention === "release-on-settle"
-                ? "An already settled checkout can be released as soon as it passes safety checks. Unpublished changes and local-only files keep it on disk."
+                ? "If work is already settled, Loom may remove this safe, published working copy as soon as safety checks pass. Unpublished changes and local-only files keep it here. Resume work to restore it."
                 : retention === "keep"
                   ? preview?.state === "released"
-                    ? "Loom will restore this project's main folder now and keep it on this computer. Project setup runs when you next start agent work."
-                    : "This checkout stays on this computer until you change its preference."
-                  : "This checkout follows this computer's release settings, including already settled eligible work."}
+                    ? "Loom will restore these working files now and keep them here. Project setup runs when you next start agent work."
+                    : "These working files stay here until you change this preference."
+                  : "These files follow this computer's default. Saving may free space for work that is already settled and passes safety checks."}
             </Text>
             <Text className="text-xs leading-normal text-foreground-muted">
-              Your project name and conversations stay in Loom. The folder keeps its current path.
-              Keep permanent application data and configuration outside disposable project storage.
+              Your project and conversations stay in Loom. This location remains linked to the
+              project. Keep permanent application data outside disposable working copies.
             </Text>
             <View className="flex-row flex-wrap gap-2">
               <MaterialButton
@@ -302,8 +309,8 @@ function ProjectCheckoutReview({
                   pending === "save"
                     ? "Saving…"
                     : managed
-                      ? "Confirm preference"
-                      : "Confirm management"
+                      ? "Save file preference"
+                      : "Allow Loom to manage files"
                 }
                 tone="primary"
                 disabled={!canChange || pending !== null}
@@ -323,17 +330,17 @@ function ProjectCheckoutReview({
             <ControlPillMenu
               accessible
               accessibilityRole="button"
-              accessibilityLabel={`Storage preference for ${workspaceRoot} on ${computerLabel}`}
-              title="Storage preference"
+              accessibilityLabel={`Working files preference for ${workspaceRoot} on ${computerLabel}. ${PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}`}
+              title="Working files preference"
               actions={retentionChoices.map((choice) => ({
                 id: choice,
-                title: retentionLabels[choice],
+                title: PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[choice],
                 subtitle:
                   choice === "keep"
                     ? "Keep working files available here."
                     : choice === "release-on-settle"
-                      ? "Release after work settles and safety checks pass."
-                      : "Follow this computer's cleanup settings.",
+                      ? "Remove a safe, published working copy after work settles."
+                      : "Follow this computer's default for working files.",
                 state: retention === choice ? ("on" as const) : ("off" as const),
                 attributes: { disabled: pending !== null },
               }))}
@@ -349,14 +356,16 @@ function ProjectCheckoutReview({
             >
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Storage preference: ${retentionLabels[retention]}`}
+                accessibilityLabel={`Working files preference: ${PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}`}
                 accessibilityState={{ disabled: pending !== null }}
                 disabled={pending !== null}
                 className="min-h-11 flex-row flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 active:opacity-70 disabled:opacity-40"
               >
-                <Text className="text-xs text-foreground-muted">Preference</Text>
+                <Text className="text-xs text-foreground-muted">Working files</Text>
                 <View className="flex-row items-center gap-2">
-                  <Text className="text-sm text-primary-text">{retentionLabels[retention]}</Text>
+                  <Text className="text-sm text-primary-text">
+                    {PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}
+                  </Text>
                   <SymbolView
                     name="chevron.down"
                     size={12}
@@ -366,7 +375,7 @@ function ProjectCheckoutReview({
               </Pressable>
             </ControlPillMenu>
             <MaterialButton
-              label={managed ? "Review preference change" : "Review management"}
+              label={managed ? "Review file preference" : "Review file management"}
               tone="primary"
               disabled={!changed || pending !== null}
               onPress={() => setConfirming(true)}
@@ -390,10 +399,10 @@ function ProjectCheckoutReview({
                 pending === "review"
                   ? "Reviewing…"
                   : preview
-                    ? "Review folder again"
+                    ? "Review files again"
                     : error
-                      ? "Retry folder review"
-                      : "Review folder"
+                      ? "Retry file review"
+                      : "Review working files"
               }
               disabled={!ready || pending !== null}
               onPress={() => {

@@ -136,7 +136,7 @@ export function ProjectLibraryHeader({
         ) : null}
       </div>
       <SidebarHeaderIconButton
-        label="Review project storage"
+        label="Manage working files"
         onClick={() => void navigate({ to: "/projects/storage" })}
       >
         <HardDriveIcon />

@@ -32,11 +32,11 @@ export function ProjectSettingsLanding() {
           control={<BrowseProjectsButton />}
         />
         <SettingsRow
-          title="Project storage"
-          description="Review known folders and choose what stays on each computer."
+          title="Files on computers"
+          description="Choose whether each project's working files stay on a computer after you settle work."
           control={
             <Button size="sm" variant="outline" render={<Link to="/projects/storage" />}>
-              Review folders
+              Manage working files
             </Button>
           }
         />

@@ -54,14 +54,16 @@ export function ProjectStorageRollout({
     );
   const reviewable = selected.some((row) => canReviewProjectStorageTarget(row.target));
 
+  if (queue.length === 0) return null;
+
   return (
-    <section aria-label="Selected folder review">
-      <SettingsSection title={saved.length > 0 ? "Folder results" : "Review folders"}>
+    <section aria-label="Selected working files">
+      <SettingsSection title={saved.length > 0 ? "Saved file choices" : "Selected working files"}>
         <SettingsRow
           title={
             busy ? (
               snapshot.phase === "reviewing" ? (
-                "Reviewing folders"
+                "Checking working files"
               ) : (
                 "Saving choices"
               )
@@ -75,8 +77,8 @@ export function ProjectStorageRollout({
             busy
               ? snapshot.cancelRequested
                 ? "Stopping after the current request finishes."
-                : "Each folder is handled separately."
-              : "Select folders below. Review leaves files and storage choices unchanged."
+                : "Each location is handled separately."
+              : "Check these locations, then choose whether their working files stay here."
           }
           control={
             <div className="flex flex-wrap items-center gap-1.5">
@@ -87,7 +89,7 @@ export function ProjectStorageRollout({
                   disabled={snapshot.cancelRequested}
                   onClick={() => controller.cancel()}
                 >
-                  {snapshot.cancelRequested ? "Stopping" : "Stop after current folder"}
+                  {snapshot.cancelRequested ? "Stopping" : "Stop after current location"}
                 </Button>
               ) : (
                 <>
@@ -124,14 +126,13 @@ export function ProjectStorageRollout({
         />
         {queue.some((row) => row.status !== "idle") ? (
           <>
-            <ul aria-label="Folder review queue" className="divide-y divide-border/50">
+            <ul aria-label="Working-file review queue" className="divide-y divide-border/50">
               {queue.map((row) => (
                 <StorageReviewRow key={row.key} row={row} busy={busy} controller={controller} />
               ))}
             </ul>
             <p className="px-3 py-2.5 text-xs text-muted-foreground sm:px-4">
-              Cleanup checks release safety again. These reviews cover primary folders, not
-              worktrees.
+              Loom checks safety before removing files. Your project and conversations stay in Loom.
             </p>
           </>
         ) : null}
@@ -144,13 +145,13 @@ export function ProjectStorageRollout({
       >
         <DialogPopup>
           <DialogHeader>
-            <DialogTitle>Save reviewed storage choices?</DialogTitle>
+            <DialogTitle>Save working-file choices?</DialogTitle>
             <DialogDescription>
-              Only these folders will change. Each choice is saved separately.
+              These choices apply only to the working files at the locations below.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <ul className="space-y-4" aria-label="Storage choices to confirm">
+            <ul className="space-y-4" aria-label="Working-file choices to confirm">
               {selected.map((row) => (
                 <li key={row.key} className="space-y-1">
                   <p className="text-sm font-medium">
@@ -160,14 +161,14 @@ export function ProjectStorageRollout({
                     {row.target.workspaceRoot}
                   </p>
                   <p className="text-sm">
-                    {row.choice ? retentionLabels[row.choice] : "Choose a policy"}
+                    {row.choice ? retentionLabels[row.choice] : "Choose what stays here"}
                     {row.preview?.ownershipSource === null
-                      ? ". Allow Loom to manage this folder."
+                      ? ". Allow Loom to manage working files at this location."
                       : ""}
                   </p>
                   {row.preview?.state === "released" && row.choice === "keep" ? (
                     <p className="text-xs text-muted-foreground">
-                      Keep will restore this working folder.
+                      This restores the working files on this computer.
                     </p>
                   ) : null}
                 </li>
@@ -175,8 +176,9 @@ export function ProjectStorageRollout({
             </ul>
             <p className="text-sm font-medium">{PROJECT_STORAGE_ROLLOUT_CONFIRMATION_NOTICE}</p>
             <p className="text-xs text-muted-foreground">
-              Keep permanent application data outside working folders and their disposable lanes.
-              Stopping leaves completed choices saved; the current request may still finish.
+              Keep permanent application data outside working-file locations managed for automatic
+              removal. Stopping leaves completed choices saved; the current request may still
+              finish.
             </p>
           </DialogPanel>
           <DialogFooter>
@@ -189,7 +191,7 @@ export function ProjectStorageRollout({
                 if (snapshot.confirmation) void controller.save(snapshot.confirmation);
               }}
             >
-              Save {selected.length} {selected.length === 1 ? "folder choice" : "folder choices"}
+              Save {selected.length} {selected.length === 1 ? "file choice" : "file choices"}
             </Button>
           </DialogFooter>
         </DialogPopup>
@@ -227,12 +229,12 @@ function StorageReviewRow({
   const choiceDescription =
     row.choice === "keep"
       ? preview?.state === "released"
-        ? "Restore this folder and keep its working files here."
+        ? "Restore these working files and keep them on this computer."
         : "Keep working files here until you change this choice."
       : row.choice === "release-on-settle"
-        ? "Release working files after all work settles and safety checks pass."
+        ? "Loom can remove this computer's safe working copy after work settles, then restore it when you resume work."
         : row.choice === "inherit"
-          ? "Follow this computer's configured cleanup policy."
+          ? "Follow this computer's default for keeping or removing settled working files."
           : null;
   return (
     <li>
@@ -257,7 +259,7 @@ function StorageReviewRow({
                 />
               }
             >
-              {row.target.workspaceRoot}
+              Location: {row.target.workspaceRoot}
             </TooltipTrigger>
             <TooltipPopup>
               <span className="wrap-anywhere">{row.target.workspaceRoot}</span>
@@ -266,7 +268,7 @@ function StorageReviewRow({
         }
         status={
           <span role="status">
-            {row.target.environmentLabel} · {status}
+            Working files on {row.target.environmentLabel} · {status}
           </span>
         }
         control={
@@ -286,7 +288,7 @@ function StorageReviewRow({
                     size="sm"
                     aria-label={`Storage choice for ${row.target.projectName} on ${row.target.environmentLabel} at ${row.target.workspaceRoot}`}
                   >
-                    <SelectValue placeholder="Choose storage policy" />
+                    <SelectValue placeholder="Choose what stays here" />
                   </SelectTrigger>
                   <SelectPopup>
                     {choices.map((choice) => (
@@ -345,7 +347,7 @@ function StorageReviewRow({
               ) : null}
               {choices.length === 0 && preview.state !== "blocked" && reviewed ? (
                 <p className="text-xs text-muted-foreground">
-                  Read-only review. Settings access is required to change this folder.
+                  Settings access is required to change how these working files are kept.
                 </p>
               ) : null}
               <details className="text-xs text-muted-foreground">
@@ -358,12 +360,12 @@ function StorageReviewRow({
                     {projectStorageRolloutStateLabel(preview)}
                     {preview.ownershipSource !== null
                       ? ` · ${retentionLabels[preview.retention]}`
-                      : ". Saving allows Loom to manage this folder."}
+                      : ". Saving allows Loom to manage working files at this location."}
                   </p>
                   {preview.blockers.length > 0 ? (
                     <ul
                       className="list-disc space-y-1 pl-4"
-                      aria-label="Current protections and blockers"
+                      aria-label="What keeps these files safe"
                     >
                       {preview.blockers.map((blocker) => (
                         <li key={blocker}>{blocker}</li>

@@ -22,7 +22,8 @@ vi.mock("@effect/atom-react", () => ({
   useAtomValue: (atom: "adopt" | "retention") =>
     atom === "adopt" ? harness.canAdopt : harness.canSetRetention,
 }));
-vi.mock("@t3tools/client-runtime/fork", () => ({
+vi.mock("@t3tools/client-runtime/fork", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@t3tools/client-runtime/fork")>()),
   supportsLoomFeature: () => harness.supported,
   createProjectCheckoutAtoms: () => ({
     preview: "preview",
@@ -184,8 +185,8 @@ async function click(label: string) {
   await act(async () => button(label).click());
 }
 async function confirmAdoption() {
-  await click("Review folder");
-  await click("Review management");
+  await click("Review working files");
+  await click("Review file management");
 }
 
 beforeEach(() => {
@@ -228,16 +229,16 @@ describe("reviewed native project storage management", () => {
     harness.connected = false;
     render();
     expect(container.textContent).toContain("Reconnect this computer");
-    await click("Review folder");
+    await click("Review working files");
     expect(harness.preview).not.toHaveBeenCalled();
     harness.connected = true;
     render();
     await confirmAdoption();
     harness.connected = false;
-    await click("Confirm management");
+    await click("Allow Loom to manage files");
     expect(harness.adopt).not.toHaveBeenCalled();
     render();
-    expect(container.textContent).not.toContain("Confirm management");
+    expect(container.textContent).not.toContain("Allow Loom to manage files");
   });
 
   it("invalidates an in-flight review when its computer disconnects", async () => {
@@ -249,12 +250,12 @@ describe("reviewed native project storage management", () => {
         }),
     );
     render();
-    await click("Review folder");
+    await click("Review working files");
     harness.connected = false;
     render();
     await act(async () => complete(AsyncResult.success(preview())));
     expect(container.textContent).toContain("Reconnect this computer");
-    expect(container.textContent).not.toContain("Review management");
+    expect(container.textContent).not.toContain("Review file management");
     expect(harness.adopt).not.toHaveBeenCalled();
   });
 
@@ -265,36 +266,38 @@ describe("reviewed native project storage management", () => {
     await confirmAdoption();
     expect(harness.preview).toHaveBeenCalledWith({ environmentId: mac, input: { projectId } });
     expect(harness.adopt).not.toHaveBeenCalled();
-    await click("Confirm management");
+    await click("Allow Loom to manage files");
     expect(harness.adopt).toHaveBeenCalledWith({
       environmentId: mac,
       input: { projectId, reviewToken: "review-token", retention: "keep" },
     });
-    expect(container.textContent).toContain("Loom now manages this checkout.");
-    expect(button("Review preference change").disabled).toBe(true);
+    expect(container.textContent).toContain("Loom can now manage these working files.");
+    expect(button("Review file preference").disabled).toBe(true);
   });
 
   it("reviews immediate release consequences and lets the user go back or cancel without adopting", async () => {
     render();
-    await click("Review folder");
-    await click("Release when settled");
-    await click("Review management");
-    expect(container.textContent).toContain("An already settled checkout can be released");
+    await click("Review working files");
+    await click("Free space when settled");
+    await click("Review file management");
+    expect(container.textContent).toContain(
+      "If work is already settled, Loom may remove this safe, published working copy",
+    );
     await click("Back to review");
-    expect(button("Release when settled").getAttribute("aria-checked")).toBe("true");
+    expect(button("Free space when settled").getAttribute("aria-checked")).toBe("true");
     await click("Cancel review");
     expect(harness.adopt).not.toHaveBeenCalled();
-    expect(container.textContent).not.toContain("Confirm management");
+    expect(container.textContent).not.toContain("Allow Loom to manage files");
     await confirmAdoption();
-    expect(button("Confirm management")).toBeDefined();
+    expect(button("Allow Loom to manage files")).toBeDefined();
   });
 
   it("sends the reviewed release policy only after confirmation", async () => {
     render();
-    await click("Review folder");
-    await click("Release when settled");
-    await click("Review management");
-    await click("Confirm management");
+    await click("Review working files");
+    await click("Free space when settled");
+    await click("Review file management");
+    await click("Allow Loom to manage files");
     expect(harness.adopt).toHaveBeenCalledWith({
       environmentId: mac,
       input: { projectId, reviewToken: "review-token", retention: "release-on-settle" },
@@ -303,21 +306,23 @@ describe("reviewed native project storage management", () => {
 
   it("offers the computer default only for managed folders and saves the explicit menu choice", async () => {
     render();
-    await click("Review folder");
-    expect(container.textContent).not.toContain("Use computer's default");
+    await click("Review working files");
+    expect(container.textContent).not.toContain("Use computer default");
     await click("Cancel review");
     harness.preview.mockResolvedValueOnce(
       AsyncResult.success(
         preview({ state: "managed", ownershipSource: "clone", retention: "keep" }),
       ),
     );
-    await click("Review folder");
-    expect(button("Review preference change").disabled).toBe(true);
-    await click("Use computer's default");
-    await click("Review preference change");
-    expect(container.textContent).toContain("including already settled eligible work");
+    await click("Review working files");
+    expect(button("Review file preference").disabled).toBe(true);
+    await click("Use computer default");
+    await click("Review file preference");
+    expect(container.textContent).toContain(
+      "Saving may free space for work that is already settled",
+    );
     expect(harness.setRetention).not.toHaveBeenCalled();
-    await click("Confirm preference");
+    await click("Save file preference");
     expect(harness.setRetention).toHaveBeenCalledWith({
       environmentId: mac,
       input: { projectId, reviewToken: "review-token", retention: "inherit" },
@@ -329,11 +334,11 @@ describe("reviewed native project storage management", () => {
     render();
     await confirmAdoption();
     harness.canAdopt = false;
-    await click("Confirm management");
+    await click("Allow Loom to manage files");
     expect(harness.adopt).not.toHaveBeenCalled();
     render();
     expect(container.textContent).toContain("Settings permission is required");
-    expect(container.textContent).not.toContain("Confirm management");
+    expect(container.textContent).not.toContain("Allow Loom to manage files");
   });
 
   it("requires a fresh review after a stale-review failure", async () => {
@@ -342,15 +347,15 @@ describe("reviewed native project storage management", () => {
     );
     render();
     await confirmAdoption();
-    await click("Confirm management");
+    await click("Allow Loom to manage files");
     expect(container.textContent).toContain("The folder changed. Review again.");
-    expect(container.textContent).not.toContain("Confirm management");
+    expect(container.textContent).not.toContain("Allow Loom to manage files");
     harness.preview.mockResolvedValueOnce(
       AsyncResult.success(preview({ reviewToken: "fresh-token" })),
     );
-    await click("Retry folder review");
-    await click("Review management");
-    await click("Confirm management");
+    await click("Retry file review");
+    await click("Review file management");
+    await click("Allow Loom to manage files");
     expect(harness.adopt).toHaveBeenLastCalledWith({
       environmentId: mac,
       input: { projectId, reviewToken: "fresh-token", retention: "keep" },
@@ -366,7 +371,7 @@ describe("reviewed native project storage management", () => {
         }),
     );
     render();
-    await click("Review folder");
+    await click("Review working files");
     render({
       environmentId: EnvironmentId.make("pi"),
       projectId: ProjectId.make("other"),
@@ -374,7 +379,7 @@ describe("reviewed native project storage management", () => {
     });
     await act(async () => complete(AsyncResult.success(preview())));
     expect(container.textContent).toContain("/ssd/other");
-    expect(container.textContent).not.toContain("Review management");
+    expect(container.textContent).not.toContain("Review file management");
     expect(harness.adopt).not.toHaveBeenCalled();
   });
 
@@ -395,13 +400,13 @@ describe("reviewed native project storage management", () => {
       ),
     );
     render();
-    await click("Review folder");
+    await click("Review working files");
     expect(container.textContent).toContain("Your project and conversations remain in Loom.");
     expect(container.textContent).toContain("Unpublished work keeps this checkout on disk.");
-    await click("Keep on this computer");
-    await click("Review preference change");
-    expect(container.textContent).toContain("restore this project's main folder now");
-    await click("Confirm preference");
+    await click("Keep files here");
+    await click("Review file preference");
+    expect(container.textContent).toContain("restore these working files now");
+    await click("Save file preference");
     expect(harness.setRetention).toHaveBeenCalledWith({
       environmentId: mac,
       input: { projectId, reviewToken: "review-token", retention: "keep" },
@@ -420,24 +425,24 @@ describe("reviewed native project storage management", () => {
       ),
     );
     render();
-    await click("Review folder");
+    await click("Review working files");
     expect(container.textContent).toContain("This folder contains another project.");
-    expect(container.textContent).not.toContain("Review management");
-    await click("Review folder again");
-    expect(container.textContent).toContain("Review management");
+    expect(container.textContent).not.toContain("Review file management");
+    await click("Review files again");
+    expect(container.textContent).toContain("Review file management");
   });
 
   it("guides old hosts to update and blocks folder requests without read access", async () => {
     harness.supported = false;
     render();
     expect(container.textContent).toContain("Update Loom on this computer");
-    await click("Review folder");
+    await click("Review working files");
     expect(harness.preview).not.toHaveBeenCalled();
     harness.supported = true;
     harness.canRead = false;
     render();
     expect(container.textContent).toContain("Project read permission is required");
-    await click("Review folder");
+    await click("Review working files");
     expect(harness.preview).not.toHaveBeenCalled();
   });
 });

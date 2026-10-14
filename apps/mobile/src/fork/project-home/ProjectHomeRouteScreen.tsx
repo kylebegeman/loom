@@ -661,13 +661,13 @@ function ProjectHomeContent(props: {
       <View className="px-4 pt-5 pb-4">
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Computers and storage"
+          accessibilityLabel="Working files"
           accessibilityState={{ expanded: detailsExpanded }}
           onPress={() => setDetailsExpanded((expanded) => !expanded)}
           className="min-h-[44px] flex-row items-center justify-between gap-3 py-2 active:opacity-70"
         >
           <View className="min-w-0 flex-1 gap-0.5">
-            <Text className="text-sm font-t3-medium text-foreground">Computers and storage</Text>
+            <Text className="text-sm font-t3-medium text-foreground">Working files</Text>
             <Text className="text-2xs text-foreground-muted">
               {scope?.projects.length ?? 0} working{" "}
               {(scope?.projects.length ?? 0) === 1 ? "copy" : "copies"}
@@ -682,9 +682,9 @@ function ProjectHomeContent(props: {
         {detailsExpanded ? (
           <View className="gap-5 pt-3">
             <Text className="text-xs leading-normal text-foreground-muted">
-              Your project and threads remain available when working files are released. Starting
-              work restores its selected checkout when needed. Reviewing storage leaves released
-              files released.
+              Your project and conversations stay in Loom. These are its working-file locations.
+              Loom can free space by removing safe, settled copies, then restore their files when
+              you resume work. Checking a location does not restore files.
             </Text>
             <View className="flex-row flex-wrap gap-2">
               <MaterialButton
@@ -693,7 +693,7 @@ function ProjectHomeContent(props: {
                 onPress={prepareComputer}
               />
               <MaterialButton
-                label="Review storage"
+                label="Manage working files"
                 onPress={() => navigation.navigate("ProjectStorageInventory")}
               />
               <MaterialButton
