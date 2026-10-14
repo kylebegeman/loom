@@ -40,12 +40,12 @@ export function ProjectNavigationSwitch({
     <div
       role="tablist"
       aria-label="Project navigation"
-      className="relative isolate mb-2 inline-grid w-max self-start grid-cols-2 rounded-full bg-sidebar-row-hover p-1"
+      className="relative isolate mt-2 mb-3 inline-grid w-max self-start grid-cols-2 rounded-full bg-sidebar-row-hover p-0.5"
     >
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none absolute inset-y-1 left-1 w-[calc(50%-0.25rem)] rounded-full bg-sidebar shadow-xs transition-transform duration-200 ease-out motion-reduce:transition-none",
+          "pointer-events-none absolute inset-y-0.5 left-0.5 w-[calc(50%-0.125rem)] rounded-full bg-sidebar shadow-xs transition-transform duration-200 ease-out motion-reduce:transition-none",
           view === "projects" && "translate-x-full",
         )}
       />
@@ -68,7 +68,7 @@ export function ProjectNavigationSwitch({
                   onKeyDown={handleKeyDown}
                   onClick={() => onViewChange(option)}
                   className={cn(
-                    "relative flex h-9 w-9 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    "relative flex size-7 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                     view === option ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
                   )}
                 >

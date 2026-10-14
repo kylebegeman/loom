@@ -20,6 +20,8 @@ export function SegmentedControl<Value extends number | string>(
   props: SegmentedControlProps<Value>,
 ) {
   const compact = props.size === "compact";
+  // Paired icon navigation keeps a compact track inside two full native touch targets.
+  const compactIcons = props.iconOnly && compact && props.options.length === 2;
   const [width, setWidth] = useState(0);
   const index = Math.max(
     0,
@@ -39,7 +41,9 @@ export function SegmentedControl<Value extends number | string>(
     transform: [
       {
         translateX:
-          ((position.value * width) / props.options.length) * (I18nManager.isRTL ? -1 : 1),
+          position.value *
+          (compactIcons ? 28 : width / props.options.length) *
+          (I18nManager.isRTL ? -1 : 1),
       },
     ],
   }));
@@ -51,18 +55,36 @@ export function SegmentedControl<Value extends number | string>(
       accessible={false}
       onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
       className={cn(
-        "flex-row overflow-hidden",
-        "rounded-full border-continuous bg-card",
+        "flex-row",
+        compactIcons
+          ? "h-[44px] w-[88px]"
+          : "overflow-hidden rounded-full border-continuous bg-card",
         props.iconOnly && "self-start",
         props.className,
       )}
     >
+      {compactIcons ? (
+        <View
+          pointerEvents="none"
+          accessible={false}
+          className="absolute h-[32px] w-[60px] rounded-full border-continuous bg-card"
+          style={{ top: 6, start: 14 }}
+        />
+      ) : null}
       <Animated.View
         pointerEvents="none"
-        className="absolute inset-y-0 rounded-full bg-secondary"
-        style={[{ width: `${100 / props.options.length}%`, start: 0 }, indicatorStyle]}
+        className={cn(
+          "absolute rounded-full bg-secondary",
+          compactIcons ? "top-[8px] h-[28px]" : "inset-y-0",
+        )}
+        style={[
+          compactIcons
+            ? { width: 28, start: 16 }
+            : { width: `${100 / props.options.length}%`, start: 0 },
+          indicatorStyle,
+        ]}
       />
-      {props.options.map((option) => {
+      {props.options.map((option, optionIndex) => {
         const active = option.value === props.selected;
         return (
           <Pressable
@@ -73,13 +95,28 @@ export function SegmentedControl<Value extends number | string>(
             onPress={() => props.onSelect(option.value)}
             className={cn(
               "items-center justify-center rounded-full",
-              props.iconOnly ? "h-[48px] w-[48px]" : cn("flex-1", compact ? "h-9" : "h-11"),
+              compactIcons
+                ? "h-[44px] w-[44px]"
+                : props.iconOnly
+                  ? "h-[48px] w-[48px]"
+                  : cn("flex-1", compact ? "h-9" : "h-11"),
             )}
           >
             {props.iconOnly && option.icon ? (
               <SymbolView
                 name={option.icon}
-                size={20}
+                size={compactIcons ? 16 : 20}
+                style={
+                  compactIcons
+                    ? {
+                        transform: [
+                          {
+                            translateX: (optionIndex === 0 ? 8 : -8) * (I18nManager.isRTL ? -1 : 1),
+                          },
+                        ],
+                      }
+                    : undefined
+                }
                 tintColorClassName={
                   active ? "accent-secondary-foreground" : "accent-foreground-muted"
                 }

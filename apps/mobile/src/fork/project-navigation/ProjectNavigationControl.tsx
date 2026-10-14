@@ -28,9 +28,11 @@ export function ProjectNavigationControl(props: {
 }) {
   const navigation = useNavigation();
   return (
-    <View className="flex-row items-center justify-between gap-3 px-4 pt-2 pb-3">
+    <View className="mt-2 mb-3 flex-row items-center justify-between gap-3 px-4">
       <SegmentedControl
         iconOnly
+        size="compact"
+        className="-ms-[14px]"
         options={OPTIONS}
         selected={props.view}
         onSelect={props.onChange}
