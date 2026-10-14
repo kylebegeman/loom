@@ -1,6 +1,7 @@
 import { FolderIcon, MessagesSquareIcon } from "lucide-react";
 import { useRef, type KeyboardEvent } from "react";
 import { cn } from "~/lib/utils";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import type { ProjectNavigationView } from "./preference";
 
 const VIEWS = ["threads", "projects"] as const;
@@ -39,7 +40,7 @@ export function ProjectNavigationSwitch({
     <div
       role="tablist"
       aria-label="Project navigation"
-      className="relative isolate mb-2 grid grid-cols-2 rounded-full bg-sidebar-row-hover p-1"
+      className="relative isolate mb-2 inline-grid w-max self-start grid-cols-2 rounded-full bg-sidebar-row-hover p-1"
     >
       <span
         aria-hidden="true"
@@ -50,26 +51,33 @@ export function ProjectNavigationSwitch({
       />
       {VIEWS.map((option) => {
         const Icon = option === "threads" ? MessagesSquareIcon : FolderIcon;
+        const label = option === "threads" ? "Threads" : "Projects";
         return (
-          <button
-            key={option}
-            ref={option === "threads" ? threadTab : projectTab}
-            id={`loom-navigation-${option}-tab`}
-            type="button"
-            role="tab"
-            aria-selected={view === option}
-            aria-controls="loom-project-navigation-panel"
-            tabIndex={view === option ? 0 : -1}
-            onKeyDown={handleKeyDown}
-            onClick={() => onViewChange(option)}
-            className={cn(
-              "relative flex h-8 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-full text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              view === option ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
-            )}
-          >
-            <Icon aria-hidden="true" className="size-3.5 shrink-0" />
-            {option === "threads" ? "Threads" : "Projects"}
-          </button>
+          <Tooltip key={option}>
+            <TooltipTrigger
+              render={
+                <button
+                  ref={option === "threads" ? threadTab : projectTab}
+                  id={`loom-navigation-${option}-tab`}
+                  type="button"
+                  role="tab"
+                  aria-label={label}
+                  aria-selected={view === option}
+                  aria-controls="loom-project-navigation-panel"
+                  tabIndex={view === option ? 0 : -1}
+                  onKeyDown={handleKeyDown}
+                  onClick={() => onViewChange(option)}
+                  className={cn(
+                    "relative flex h-8 w-9 cursor-pointer items-center justify-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    view === option ? "text-sidebar-foreground" : "text-sidebar-muted-foreground",
+                  )}
+                >
+                  <Icon aria-hidden="true" className="size-4 shrink-0" />
+                </button>
+              }
+            />
+            <TooltipPopup>{label}</TooltipPopup>
+          </Tooltip>
         );
       })}
     </div>

@@ -194,3 +194,5 @@ apps/mobile/src/features/home/home-list-filter-menu.ts	project-navigation	1
 apps/mobile/src/features/home/home-list-filter-menu.test.ts	project-navigation	1
 apps/mobile/src/features/threads/sidebar-native-header-items.ts	project-navigation	1
 apps/mobile/src/lib/storage.test.ts	project-navigation	1
+apps/mobile/src/components/SegmentedControl.tsx	project-navigation	1
+apps/mobile/src/components/SegmentedControl.types.ts	project-navigation	1

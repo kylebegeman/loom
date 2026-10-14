@@ -1,3 +1,4 @@
+// fork: project-navigation - Icon-only navigation reuses finite sliding selection and reduced motion.
 import { useEffect, useState } from "react";
 import { I18nManager, Platform, Pressable, View } from "react-native";
 import Animated, {
@@ -8,6 +9,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { AppText as Text } from "./AppText";
+import { SymbolView } from "./AppSymbol";
 import { cn } from "../lib/cn";
 import { MaterialSegmentedControl } from "./MaterialSegmentedControl";
 import type { SegmentedControlProps } from "./SegmentedControl.types";
@@ -41,7 +43,7 @@ export function SegmentedControl<Value extends number | string>(
       },
     ],
   }));
-  if (Platform.OS === "android") {
+  if (Platform.OS === "android" && !props.iconOnly) {
     return <MaterialSegmentedControl {...props} />;
   }
   return (
@@ -51,6 +53,7 @@ export function SegmentedControl<Value extends number | string>(
       className={cn(
         "flex-row overflow-hidden",
         "rounded-full border-continuous bg-card",
+        props.iconOnly && "self-start",
         props.className,
       )}
     >
@@ -69,18 +72,29 @@ export function SegmentedControl<Value extends number | string>(
             accessibilityState={{ selected: active }}
             onPress={() => props.onSelect(option.value)}
             className={cn(
-              "flex-1 items-center justify-center rounded-full",
-              compact ? "h-9" : "h-11",
+              "items-center justify-center rounded-full",
+              props.iconOnly ? "h-[44px] w-[48px]" : cn("flex-1", compact ? "h-9" : "h-11"),
             )}
           >
-            <Text
-              className={cn(
-                compact ? "text-xs" : "text-sm",
-                active ? "font-t3-medium text-secondary-foreground" : "text-foreground-muted",
-              )}
-            >
-              {option.label}
-            </Text>
+            {props.iconOnly && option.icon ? (
+              <SymbolView
+                name={option.icon}
+                size={20}
+                tintColorClassName={
+                  active ? "accent-secondary-foreground" : "accent-foreground-muted"
+                }
+                type="monochrome"
+              />
+            ) : (
+              <Text
+                className={cn(
+                  compact ? "text-xs" : "text-sm",
+                  active ? "font-t3-medium text-secondary-foreground" : "text-foreground-muted",
+                )}
+              >
+                {option.label}
+              </Text>
+            )}
           </Pressable>
         );
       })}
