@@ -5093,7 +5093,7 @@ export default function Sidebar() {
       void router.navigate({
         to: "/projects/$projectKey",
         params: { projectKey: project.projectKey },
-        search: {},
+        search: { computer: project.environmentId, checkoutId: project.id },
       });
     },
     [isMobile, router, setOpenMobile],

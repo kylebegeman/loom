@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import type { ScopedProjectRef } from "@t3tools/contracts";
+import { resolveProjectHomeGroup } from "./groupResolution";
 import { useClientSettings } from "~/hooks/useSettings";
 import { selectProjectGroupingSettings } from "~/logicalProject";
 import {
@@ -8,7 +10,10 @@ import {
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useAllEnvironmentProjectSnapshotsReady, useProjects } from "~/state/entities";
 
-export function useProjectHomeGroup(projectKey: string) {
+export function useProjectHomeGroup(
+  projectKey: string,
+  projectRef: ScopedProjectRef | null = null,
+) {
   const projects = useProjects();
   const settings = useClientSettings(selectProjectGroupingSettings);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -27,7 +32,17 @@ export function useProjectHomeGroup(projectKey: string) {
       resolveEnvironmentLabel: (id) => labels.get(id) ?? null,
     });
   }, [projectKey, projects, settings, primaryEnvironmentId, environments]);
-  const group = groups.find((candidate) => candidate.projectKey === projectKey) ?? null;
-  const settingsProjectKey = group ? getSidebarProjectSettingsKey(group, settings, projects) : null;
-  return { group, snapshotsReady, settingsProjectKey, environments, primaryEnvironmentId };
+  const resolved = resolveProjectHomeGroup({ groups, projectKey, projectRef });
+  const { group } = resolved;
+  const settingsProjectKey = group
+    ? getSidebarProjectSettingsKey(group, settings, projects, resolved.projectRef ?? undefined)
+    : null;
+  return {
+    group,
+    resolvedProjectRef: resolved.projectRef,
+    snapshotsReady,
+    settingsProjectKey,
+    environments,
+    primaryEnvironmentId,
+  };
 }

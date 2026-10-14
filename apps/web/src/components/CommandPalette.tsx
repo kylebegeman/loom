@@ -2373,7 +2373,10 @@ function OpenCommandPaletteDialog(props: {
                 computer: contextualProjectRef.environmentId,
                 checkoutId: contextualProjectRef.projectId,
               }
-            : {},
+            : {
+                computer: contextualProjectGroup.environmentId,
+                checkoutId: contextualProjectGroup.id,
+              },
         });
       },
     });

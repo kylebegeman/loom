@@ -60,7 +60,7 @@ export function ProjectHomePage({
 }) {
   useEscapeToGoBack();
   const navigate = useNavigate();
-  const home = useProjectHomeGroup(projectKey);
+  const home = useProjectHomeGroup(projectKey, chosenProjectRef);
   const [, setNavigatorView] = useProjectNavigationView();
   const goToProjects = useCallback(() => {
     setNavigatorView("projects");
@@ -89,7 +89,7 @@ export function ProjectHomePage({
             key={home.group.projectKey}
             {...home}
             group={home.group}
-            chosenProjectRef={chosenProjectRef}
+            chosenProjectRef={home.resolvedProjectRef ?? chosenProjectRef}
           />
         ) : (
           <WorkspacePageContainer>

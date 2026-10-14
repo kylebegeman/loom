@@ -11,15 +11,22 @@ export function useProjectHomePaletteContext() {
     select: (params) => (typeof params.projectKey === "string" ? params.projectKey : null),
   });
   const search = useLocation({ select: (location) => location.search });
-  const { group, settingsProjectKey } = useProjectHomeGroup(projectKey ?? "");
+  const chosen = useMemo(
+    () => projectHomeDestinationFromSearch(validateProjectHomeSearch(search)),
+    [search],
+  );
+  const { group, settingsProjectKey, resolvedProjectRef } = useProjectHomeGroup(
+    projectKey ?? "",
+    chosen,
+  );
   return useMemo(() => {
-    const chosen = projectHomeDestinationFromSearch(validateProjectHomeSearch(search));
     return group
       ? {
           group,
           settingsProjectKey,
-          projectRef: chosen ?? scopeProjectRef(group.environmentId, group.id),
+          projectRef:
+            resolvedProjectRef ?? chosen ?? scopeProjectRef(group.environmentId, group.id),
         }
       : null;
-  }, [group, settingsProjectKey, search]);
+  }, [group, settingsProjectKey, resolvedProjectRef, chosen]);
 }
