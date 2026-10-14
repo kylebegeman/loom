@@ -9,6 +9,7 @@ const names = new Map([
 ]);
 const entry = {
   threadCount: 70,
+  openCount: 17,
   attentionCount: 0,
   failedCount: 0,
   workingCount: 0,
@@ -25,7 +26,8 @@ describe("Project library summaries", () => {
       names,
       new Set([mac, pi]),
     );
-    expect(result.metadata).toBe("70 threads on 2 computers");
+    expect(result.metadata).toBe("17 open · 2 computers");
+    expect(result.computerSummary).toBe("2 computers");
     expect(result.status).toEqual({ kind: "ready", label: "17 ready" });
     expect(result.accessibilitySummary).toContain("17 ready to continue");
     expect(result.accessibilitySummary).toContain("53 settled");
@@ -47,6 +49,7 @@ describe("Project library summaries", () => {
       new Set(),
     );
     expect(result.status).toEqual({ kind: "offline", label: "Offline" });
+    expect(result.metadata).toBe("Offline · 70 saved threads");
     expect(result.accessibilitySummary).toContain("Dorothy (offline)");
     expect(result.accessibilitySummary).toContain("Last known activity:");
     expect(result.accessibilitySummary).toContain("70 last known on offline computers");
@@ -65,20 +68,27 @@ describe("Project library summaries", () => {
   });
   it("handles empty projects and missing computer labels", () => {
     const result = createProjectLibraryPresentation(
-      { ...entry, threadCount: 0, readyCount: 0, settledCount: 0, environmentIds: [mac] },
+      {
+        ...entry,
+        threadCount: 0,
+        openCount: 0,
+        readyCount: 0,
+        settledCount: 0,
+        environmentIds: [mac],
+      },
       new Map(),
       new Set([mac]),
     );
     expect(result.status).toBeNull();
-    expect(result.metadata).toBe("No threads yet on Computer");
+    expect(result.metadata).toBe("No threads yet");
   });
   it("marks settled history quietly and names a single computer", () => {
     const result = createProjectLibraryPresentation(
-      { ...entry, readyCount: 0, settledCount: 70, environmentIds: [mac] },
+      { ...entry, openCount: 0, readyCount: 0, settledCount: 70, environmentIds: [mac] },
       names,
       new Set([mac]),
     );
     expect(result.status).toEqual({ kind: "settled", label: "Settled" });
-    expect(result.metadata).toBe("70 threads on Dorothy");
+    expect(result.metadata).toBe("70 threads in history");
   });
 });

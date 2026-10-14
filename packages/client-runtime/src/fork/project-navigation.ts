@@ -42,6 +42,7 @@ export interface ProjectNavigationEntry<
   readonly group: TGroup;
   readonly threadCount: number;
   readonly activeCount: number;
+  readonly openCount: number;
   readonly settledCount: number;
   readonly snoozedCount: number;
   readonly attentionCount: number;
@@ -143,6 +144,7 @@ export function buildProjectNavigationEntries<
 
     const counts = {
       activeCount: 0,
+      openCount: 0,
       settledCount: 0,
       snoozedCount: 0,
       attentionCount: 0,
@@ -153,7 +155,10 @@ export function buildProjectNavigationEntries<
     };
     for (const row of state.threads) {
       if (row.activity === "settled") counts.settledCount++;
-      else counts.activeCount++;
+      else {
+        counts.activeCount++;
+        if (row.activity !== "snoozed") counts.openCount++;
+      }
       if (!row.connected) {
         counts.offlineCount++;
         continue;

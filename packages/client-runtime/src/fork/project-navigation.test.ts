@@ -101,6 +101,26 @@ describe("durable project navigation", () => {
     expect(result.previewThreads[0]?.id).toBe("live");
   });
 
+  it("counts open inventory separately from snoozed work across offline computers", () => {
+    const result = buildProjectNavigationEntries({
+      groups: [group],
+      threads: [
+        thread("open"),
+        thread("cached-open", { environmentId: pi, activity: "working" }),
+        thread("later", { activity: "snoozed" }),
+        thread("cached-later", { environmentId: pi, activity: "snoozed" }),
+        thread("done", { environmentId: pi, activity: "settled" }),
+      ],
+      getThreadActivity: (value) => value.activity,
+      connectedEnvironmentIds: new Set([mac]),
+    })[0]!;
+    expect(result.openCount).toBe(2);
+    expect(result.activeCount).toBe(4);
+    expect(result.workingCount).toBe(0);
+    expect(result.snoozedCount).toBe(1);
+    expect(result.threadCount).toBe(5);
+  });
+
   it("counts offline settled history as history", () => {
     const result = buildProjectNavigationEntries({
       groups: [group],

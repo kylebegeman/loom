@@ -22,3 +22,5 @@ export * from "./project-navigation.ts";
 export * from "./project-home.ts";
 export * from "./project-preparation.ts";
 export * from "./project-library-presentation.ts";
+export * from "./project-home-presentation.ts";
+export * from "./project-computer-choices.ts";

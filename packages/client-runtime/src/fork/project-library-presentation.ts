@@ -11,6 +11,7 @@ export const PROJECT_LIBRARY_PREVIEW_LIMIT = 3;
 type LibraryEntry = Pick<
   ProjectNavigationEntry<ProjectNavigationGroup, ProjectNavigationThread>,
   | "threadCount"
+  | "openCount"
   | "attentionCount"
   | "failedCount"
   | "workingCount"
@@ -44,7 +45,16 @@ export function createProjectLibraryPresentation(
     entry.threadCount === 0
       ? "No threads yet"
       : `${entry.threadCount} ${entry.threadCount === 1 ? "thread" : "threads"}`;
-  const metadata = `${threadSummary}${computerSummary ? ` on ${computerSummary}` : ""}`;
+  const context = allOffline
+    ? `Offline · ${entry.threadCount === 0 ? "No threads yet" : `${entry.threadCount} saved ${entry.threadCount === 1 ? "thread" : "threads"}`}`
+    : entry.openCount > 0
+      ? `${entry.openCount} open${environmentIds.length > 1 ? "" : ` ${entry.openCount === 1 ? "thread" : "threads"}`}`
+      : entry.snoozedCount > 0
+        ? `${entry.snoozedCount} snoozed`
+        : entry.settledCount > 0
+          ? `${entry.settledCount}${environmentIds.length > 1 ? "" : ` ${entry.settledCount === 1 ? "thread" : "threads"}`} in history`
+          : threadSummary;
+  const metadata = `${context}${environmentIds.length > 1 && !allOffline ? ` · ${computerSummary}` : ""}`;
   const activity = [
     entry.attentionCount > 0
       ? `${entry.attentionCount} ${entry.attentionCount === 1 ? "needs" : "need"} attention`
