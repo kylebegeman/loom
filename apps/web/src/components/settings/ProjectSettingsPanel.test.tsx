@@ -58,6 +58,8 @@ const state = vi.hoisted(() => ({
   navigate: vi.fn(),
 }));
 
+vi.mock("~/fork/project-home/BrowseProjectsButton", () => ({ BrowseProjectsButton: () => null }));
+
 vi.mock("~/connection/runtime", () => ({ connectionAtomRuntime: undefined }));
 vi.mock("@t3tools/client-runtime/state/session", () => ({
   createEnvironmentSessionAtoms: () => ({

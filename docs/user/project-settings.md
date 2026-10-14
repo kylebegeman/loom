@@ -141,8 +141,8 @@ access. Source Control contains automatic pull, the default pull request merge m
 generation. The same rows edit environment defaults or project overrides depending on the
 project crumb.
 
-The Project category, shown while a project is selected, holds the project's name, icon, actions,
-checkouts and removal. Actions belong to a project: editing them creates the project's own list
+The Projects category is always available. Browse projects or review their storage there,
+or choose a project in the scope picker to manage its name, icon, actions, checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
 `t3.json` actions can be imported there.
 
@@ -202,7 +202,7 @@ Folders opened manually and older clones stay on disk until you explicitly revie
 Loom manage them. Enabling cleanup does not adopt existing folders.
 
 To manage an existing folder, review its working copy in Project home, or select the project
-and open **Settings → Project → Project storage** on web or desktop,
+and open **Settings → Projects → Project storage** on web or desktop,
 or **Settings → Projects & threads → Overview** on mobile. Review the folder
 on each computer, choose **Keep on this computer** or **Release when settled**, then confirm.
 Loom registers the existing folder without moving its files or changing its project history.
@@ -225,7 +225,9 @@ outside the working folder and its disposable lane. Update Loom on a computer be
 its existing project folders; older server versions cannot reopen folders released with the
 new storage metadata.
 
-Use **Review project storage** from Projects to review the registered folders across your
+Use **Review project storage** from Projects, or **Settings → Projects → Project storage**
+on web and desktop and **Settings → Projects & threads → Project storage** on iPhone, to
+review the registered folders across your
 computers. This inventory uses projects already known to Loom; it does not scan your computer
 for repositories. Select the folders you want to review, then choose **Review selected folders** to
 check their ownership, local-file summary and current storage choice together. Choose Keep,

@@ -15,7 +15,7 @@ import { AsyncResult } from "effect/reactivity";
 import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
-import { InfoIcon, Trash2Icon } from "lucide-react";
+import { Trash2Icon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -29,7 +29,7 @@ import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environmen
 import { useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { ProjectFavicon } from "../ProjectFavicon";
-import { Alert, AlertDescription } from "../ui/alert";
+import { BrowseProjectsButton } from "../../fork/project-home/BrowseProjectsButton"; // fork: project-home
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -313,20 +313,20 @@ function ProjectDetail({
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
   const savingFaviconRef = useRef(false);
-  const setProjectIcon = useCallback(
-    async (input: { faviconPath: string | null; projectIcon: ProjectIconOverride | null }) => {
-      if (savingFaviconRef.current) return;
-      savingFaviconRef.current = true;
-      setIsSavingFavicon(true);
-      try {
-        await updateAllMembers(input, "Failed to update project icon");
-      } finally {
-        savingFaviconRef.current = false;
-        setIsSavingFavicon(false);
-      }
-    },
-    [updateAllMembers],
-  );
+  const setProjectIcon = async (input: {
+    faviconPath: string | null;
+    projectIcon: ProjectIconOverride | null;
+  }) => {
+    if (savingFaviconRef.current) return;
+    savingFaviconRef.current = true;
+    setIsSavingFavicon(true);
+    try {
+      await updateAllMembers(input, "Failed to update project icon");
+    } finally {
+      savingFaviconRef.current = false;
+      setIsSavingFavicon(false);
+    }
+  };
 
   const hasMultipleCheckouts = group.memberProjects.length > 1;
 
@@ -449,13 +449,11 @@ function ProjectDetail({
   return (
     <>
       <SettingsPageContainer className="gap-6">
-        <Alert variant="info">
-          <InfoIcon aria-hidden />
-          <AlertDescription>
-            Can't find a setting? Keep this project picked above and hop to any other settings page.
-          </AlertDescription>
-        </Alert>
-        <SettingsSection id="project-overview" title="Project" hideTitle>
+        <SettingsSection
+          id="project-overview"
+          title="Project"
+          headerAction={<BrowseProjectsButton size="xs" />}
+        >
           {!canEditGroup ? (
             <p className="px-3 py-2 text-sm text-muted-foreground sm:px-4">
               {group.memberProjects.length > 1

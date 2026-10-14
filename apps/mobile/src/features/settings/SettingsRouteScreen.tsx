@@ -134,6 +134,7 @@ function LocalSettingsRouteScreen() {
 }
 
 function SettingsIndexSections() {
+  const navigation = useNavigation();
   const { selectedTargets, projectGroups, selectedProjectKey } = useSettingsEnvironmentFilter();
   const noServerTargets = selectedTargets.length === 0;
   const selectedProject = projectGroups.find((group) => group.key === selectedProjectKey);
@@ -175,6 +176,12 @@ function SettingsIndexSections() {
             target="SettingsProjectOverview"
           />
         ) : null}
+        {/* fork: project-home - Storage review is reachable without a project filter. */}
+        <SettingsRow
+          icon="internaldrive"
+          label="Project storage"
+          onPress={() => navigation.navigate("ProjectStorageInventory")}
+        />
         <SettingsRow icon="folder" label="Organization" target="SettingsOrganization" />
         <SettingsRow icon="text.bubble" label="Thread behavior" target="SettingsThreads" />
         <SettingsRow icon="arrow.turn.left.up" label="Follow-ups" target="SettingsFollowUp" />

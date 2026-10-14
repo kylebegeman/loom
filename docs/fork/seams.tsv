@@ -221,3 +221,8 @@ apps/mobile/src/features/threads/NewTaskDraftScreen.tsx	project-home	1
 apps/mobile/src/features/threads/new-task-flow-provider.tsx	project-home	1
 apps/mobile/src/features/threads/new-task-project-selection.ts	project-home	1
 apps/mobile/src/features/threads/new-task-project-selection.test.ts	project-home	1
+apps/web/src/components/settings/ProjectsSettings.tsx	project-home	1
+apps/web/src/components/settings/SettingsSidebarNav.tsx	project-home	1
+apps/web/src/components/settings/settingsSearch.ts	project-home	1
+apps/mobile/src/features/settings/SettingsRouteScreen.tsx	project-home	1
+apps/web/src/components/settings/ProjectSettingsPanel.tsx	project-home	1

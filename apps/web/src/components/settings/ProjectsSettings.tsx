@@ -2,7 +2,7 @@ import { EnvironmentId } from "@t3tools/contracts";
 
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { SettingsScopeNotice } from "./SettingsScopeNotice";
+import { ProjectSettingsLanding } from "../../fork/project-home/ProjectSettingsLanding"; // fork: project-home
 import { SettingsPageContainer } from "./settingsLayout";
 
 /** Project identity and checkout management for the selected project. */
@@ -27,9 +27,7 @@ export function ProjectsSettings() {
           <p className="text-sm text-muted-foreground">{scope.message}</p>
         </SettingsPageContainer>
       ) : (
-        <SettingsScopeNotice target="project">
-          Choose a project to manage its name, icon, checkouts and actions.
-        </SettingsScopeNotice>
+        <ProjectSettingsLanding />
       )}
     </div>
   );

@@ -43,7 +43,6 @@ import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";
 import { scrollToSettingsTarget } from "./settingsLayout";
 import {
   searchSettings,
-  isSettingsOverviewVisible,
   SETTINGS_SECTION_LABELS,
   type SettingsPath,
   type SettingsSearchItem,
@@ -116,21 +115,18 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
-  const navItems = SETTINGS_NAV_ITEMS.filter(
-    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),
-  );
+  // fork: project-home - Projects includes navigation and storage at every scope.
+  const navItems = SETTINGS_NAV_ITEMS;
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [activeResultIndex, setActiveResultIndex] = useState(0);
+  const [requestedResultIndex, setActiveResultIndex] = useState(0);
   const searchableItems = useAvailableSettingsSearchItems(scopeSearch);
   const results = useMemo(() => searchSettings(query, searchableItems), [query, searchableItems]);
   const isSearching = query.trim().length > 0;
   const hasResults = results.length > 0;
 
-  useEffect(() => {
-    setActiveResultIndex((index) => Math.min(index, Math.max(results.length - 1, 0)));
-  }, [results.length]);
+  const activeResultIndex = Math.min(requestedResultIndex, Math.max(results.length - 1, 0));
 
   useEffect(() => {
     const result = results[activeResultIndex];
@@ -233,12 +229,12 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
       if (results.length === 0) return;
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setActiveResultIndex((index) => (index + 1) % results.length);
+        setActiveResultIndex((activeResultIndex + 1) % results.length);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setActiveResultIndex((index) => (index - 1 + results.length) % results.length);
+        setActiveResultIndex((activeResultIndex - 1 + results.length) % results.length);
         return;
       }
       if (event.key === "Enter") {
