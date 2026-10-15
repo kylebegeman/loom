@@ -3372,7 +3372,7 @@ export async function collectCompatibility(config, env) {
   add(
     "version",
     ["4.0.4", "4.0.0.alpha"].includes(version) ? "ok" : "warning",
-    `Omarchy ${version}. Parser fixtures cover pinned upstream 4.0.0.alpha; Workstation 4.0.4 was previously verified. Other versions require native acceptance.`,
+    `Omarchy ${version}. Parser fixtures cover pinned upstream 4.0.0.alpha; 4.0.4 was previously verified on the workstation. Other versions require native acceptance.`,
   );
   const lua = await read(NodePath.join(p.config, "hypr/bindings.lua")),
     legacy = await read(NodePath.join(p.config, "hypr/bindings.conf"));
