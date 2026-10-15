@@ -38,6 +38,7 @@ import * as GitManager from "./git/GitManager.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import { threadWorkspaceIdle } from "./orchestration-v2/queuedTurnStart.ts";
 import { forkParked } from "./serverActivation.ts";
 import * as Settings from "./serverSettings.ts";
@@ -53,6 +54,7 @@ import {
   assertScratchUnmounted,
 } from "./workspace/ScratchCheckout.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import {
   readManagedProjectCheckout,
   assertManagedProjectOwned,
@@ -71,6 +73,9 @@ const decodeCleanupSession = Schema.decodeUnknownEffect(
 );
 
 const DAY_MS = 86_400_000;
+// After a settle, the project's settle script needs time to open its
+// terminal, which then protects the worktree.
+const SETTLE_SCRIPT_GRACE_MS = 60_000;
 
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 const REPORT_ENTRY_LIMIT = 200;
@@ -84,6 +89,7 @@ function cleanupFailureReason(error: { readonly message: string }) {
 
 const worktreeCleanupEnabled = (rules: WorktreeCleanupRules) =>
   rules.worktreeAfterDays !== null ||
+  rules.worktreeSettledAfterDays !== null ||
   rules.worktreeOnMerge ||
   rules.worktreeOnDelete ||
   rules.worktreeOnSettle ||
@@ -231,6 +237,7 @@ const make = Effect.gen(function* () {
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
@@ -309,9 +316,27 @@ const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => null),
     );
 
+  // Active threads only: archived threads are not candidates and do not count
+  // as sharing a worktree. The recheck's getThreadWorktreePaths reads the same set.
+  // The snapshot takes seconds on large databases, so it runs on the reader
+  // worker instead of the event loop.
   const readThreads = Effect.fn("StorageCleanup.readThreads")(function* () {
-    const active = yield* projections.getShellSnapshot();
-    const archived = yield* projections.getShellSnapshot({ location: "archive" });
+    const { threads } = yield* projections
+      .getShellSnapshot({ location: "active" })
+      .pipe(NodeSqliteClient.readOnly);
+    const projects = yield* projectStore.listShells();
+    return { projects, threads };
+  });
+  // fork: mini-native-retention. Project and Scratch retention still count
+  // archived threads: an archived thread settles its project and keeps its
+  // Scratch folder eligible for archiving.
+  const readAllThreads = Effect.fn("StorageCleanup.readAllThreads")(function* () {
+    const active = yield* projections
+      .getShellSnapshot({ location: "active" })
+      .pipe(NodeSqliteClient.readOnly);
+    const archived = yield* projections
+      .getShellSnapshot({ location: "archive" })
+      .pipe(NodeSqliteClient.readOnly);
     const projects = yield* projectStore.listShells();
     return { projects, threads: [...active.threads, ...archived.threads] };
   });
@@ -559,6 +584,17 @@ const make = Effect.gen(function* () {
           : settings;
         const changes = yield* localChangesReason(worktreePath, fileRules);
         if (changes !== null) return keep(changes);
+        // The project's settle script starts in the worktree right after a
+        // settle. Settling stamps updatedAt now, even when automatic
+        // settlement backdates settledAt to the thread's last activity.
+        // Settle cleanup is requested only after that script finished.
+        if (
+          !deleted &&
+          !settled &&
+          thread.settledAt !== null &&
+          now - DateTime.toEpochMillis(thread.updatedAt) < SETTLE_SCRIPT_GRACE_MS
+        )
+          return keep("settled moments ago");
         const head = yield* git.resolveCommit({ cwd: worktreePath, revision: "HEAD" });
         const old =
           !deleted &&
@@ -592,12 +628,23 @@ const make = Effect.gen(function* () {
           });
           if (published.exitCode !== 0) return keep("branch has unpublished commits");
         }
-        let eligible = deleted || old || settled;
+        const settledFor =
+          deleted || thread.settledAt === null
+            ? null
+            : now - DateTime.toEpochMillis(thread.settledAt);
+        const settledDays = settledFor === null ? null : Math.floor(settledFor / DAY_MS);
+        const settledElapsed =
+          settledFor !== null &&
+          settings.worktreeSettledAfterDays !== null &&
+          settledFor >= settings.worktreeSettledAfterDays * DAY_MS;
+        let eligible = deleted || old || settled || settledElapsed;
         let removalReason = deleted
           ? "thread was deleted"
           : settled
             ? "all threads settled; branch is published"
-            : `inactive for ${Math.floor((now - storageCleanupActivityAt(thread)) / DAY_MS)} days`;
+            : old
+              ? `inactive for ${Math.floor((now - storageCleanupActivityAt(thread)) / DAY_MS)} days`
+              : `settled for ${settledDays} days`;
         if (!eligible && (settings.worktreeUnchanged || settings.worktreeOnMerge)) {
           const repositoryCwd = path.resolve(project.workspaceRoot);
           const remote = yield* git.resolvePrimaryRemoteName(repositoryCwd);
@@ -645,23 +692,26 @@ const make = Effect.gen(function* () {
           return keep(
             !deleted && settings.worktreeAfterDays !== null
               ? `inactive for ${Math.floor((now - storageCleanupActivityAt(thread)) / DAY_MS)} of ${settings.worktreeAfterDays} days`
-              : settings.worktreeOnMerge
-                ? "not merged"
-                : "has commits beyond the default branch",
+              : settings.worktreeSettledAfterDays !== null
+                ? settledFor === null
+                  ? "not settled"
+                  : `settled for ${settledDays} of ${settings.worktreeSettledAfterDays} days`
+                : settings.worktreeOnMerge
+                  ? "not merged"
+                  : "has commits beyond the default branch",
           );
         // Threads, queued deletion work and provider sessions as they are now, so a
         // queued turn, resumed session or new thread sharing this path cancels
-        // the removal.
+        // the removal. Read only this path and this thread: a full snapshot per
+        // worktree takes seconds on large databases.
         const blockedSinceCheck = Effect.fnUntraced(function* () {
-          const latestSnapshot = yield* readThreads();
-          if (yield* containsProjectRoot(worktreePath, [project, ...latestSnapshot.projects]))
+          const latestProjects = yield* projectStore.listShells();
+          if (yield* containsProjectRoot(worktreePath, [project, ...latestProjects]))
             return "contains a project checkout";
-          const latest = latestSnapshot.threads.filter(
-            (entry) =>
-              entry.worktreePath !== null && path.resolve(entry.worktreePath) === worktreePath,
+          const latest = (yield* projections.getThreadWorktreePaths()).filter(
+            (entry) => path.resolve(entry.worktreePath) === worktreePath,
           );
           if (hasTerminal(worktreePath)) return "open terminal";
-          if (latest.some((holder) => holder.pinnedAt != null)) return "thread is pinned";
           if (deleted) {
             if (
               latest.length > 0 ||
@@ -676,25 +726,34 @@ const make = Effect.gen(function* () {
               WHERE thread_id = ${thread.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1
             `;
             if (pendingCleanup.length > 0) return "thread deletion is still pending";
-          } else if (
-            latest.length !== holders.length ||
-            latest.some((holder) => {
-              const previous = holders.find((candidate) => candidate.id === holder.id);
-              return (
-                previous === undefined ||
-                !storageCleanupThreadIdle(holder, now) ||
-                holder.branch !== previous.branch ||
-                holder.projectId !== previous.projectId ||
-                (settled && holder.settledOverride !== "settled") ||
-                storageCleanupActivityAt(holder) !== storageCleanupActivityAt(previous)
-              );
-            })
-          )
-            return "thread activity or shared worktree changed since check";
-          for (const holder of latest) {
-            const effects = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
+          } else {
+            const latestShells: OrchestrationV2ThreadShell[] = [];
+            for (const holder of latest) {
+              const shell = yield* projections.getThreadShell(holder.threadId);
+              if (shell !== null) latestShells.push(shell);
+            }
+            if (latestShells.some((holder) => holder.pinnedAt != null)) return "thread is pinned";
+            if (
+              latestShells.length !== holders.length ||
+              latestShells.some((holder) => {
+                const previous = holders.find((candidate) => candidate.id === holder.id);
+                return (
+                  previous === undefined ||
+                  !storageCleanupThreadIdle(holder, now) ||
+                  holder.branch !== previous.branch ||
+                  holder.projectId !== previous.projectId ||
+                  (settled && holder.settledOverride !== "settled") ||
+                  storageCleanupActivityAt(holder) !== storageCleanupActivityAt(previous) ||
+                  !Equal.equals(holder.settledAt, previous.settledAt)
+                );
+              })
+            )
+              return "thread activity or shared worktree changed since check";
+            for (const holder of latestShells) {
+              const effects = yield* sql`SELECT 1 FROM orchestration_v2_effect_outbox
               WHERE thread_id = ${holder.id} AND status NOT IN ('succeeded', 'cancelled') LIMIT 1`;
-            if (effects.length > 0) return "thread effects are still pending";
+              if (effects.length > 0) return "thread effects are still pending";
+            }
           }
           // Sessions can outlive their run and can be shared across app threads.
           const sessionRows = yield* sql<{ payload_json: string }>`
@@ -704,13 +763,16 @@ const make = Effect.gen(function* () {
           const sessions = yield* Effect.forEach(sessionRows, (row) =>
             decodeCleanupSession(row.payload_json),
           );
-          if (
-            sessions.some((session) => {
-              const cwd = path.resolve(session.cwd);
-              return cwd === worktreePath || inside(worktreePath, cwd);
-            })
-          )
-            return "provider session is still open";
+          // A stored session can stay ready after its runtime was released,
+          // for example once every thread detached; only a live one holds it.
+          for (const session of sessions) {
+            const cwd = path.resolve(session.cwd);
+            if (
+              (cwd === worktreePath || inside(worktreePath, cwd)) &&
+              (yield* providerSessions.isLive(session.id))
+            )
+              return "provider session is still open";
+          }
           return null;
         });
         // Most cancelled removals are caught here, before the worktree is walked.
@@ -781,7 +843,7 @@ const make = Effect.gen(function* () {
     now: number,
     entries: StorageCleanupReportEntry[],
   ) {
-    const snapshot = yield* readThreads();
+    const snapshot = yield* readAllThreads();
     let foundExplicitSettlementPolicy = false;
     for (const project of snapshot.projects) {
       const cwd = path.resolve(project.workspaceRoot);
@@ -817,7 +879,7 @@ const make = Effect.gen(function* () {
             worktreeKeepWhen: "any-local-files" as const,
           };
           const blocked = Effect.fnUntraced(function* () {
-            const latest = yield* readThreads();
+            const latest = yield* readAllThreads();
             const currentProject = latest.projects.find((candidate) => candidate.id === project.id);
             if (currentProject === undefined || path.resolve(currentProject.workspaceRoot) !== cwd)
               return "project identity changed since check";
@@ -1041,7 +1103,7 @@ const make = Effect.gen(function* () {
       path.resolve(config.baseDir, "scratch"),
       path.resolve(config.managedProjectsRoot ?? config.baseDir, "scratch"),
     ]);
-    const snapshot = yield* readThreads();
+    const snapshot = yield* readAllThreads();
     const groups = Map.groupBy(
       snapshot.threads.filter((thread) => thread.worktreePath !== null),
       (thread) => path.resolve(thread.worktreePath!),
@@ -1077,7 +1139,7 @@ const make = Effect.gen(function* () {
             threadId: thread.id,
           };
           const blocked = Effect.fnUntraced(function* () {
-            const current = yield* readThreads();
+            const current = yield* readAllThreads();
             const latest = current.threads.filter(
               (holder) => holder.worktreePath !== null && path.resolve(holder.worktreePath) === cwd,
             );
@@ -1326,6 +1388,8 @@ const make = Effect.gen(function* () {
     yield* SubscriptionRef.set(reportRef, latestReport);
     return latestReport;
   });
+  // At most one automatic sweep waits at a time, and requests made while one
+  // runs collapse into a single follow-up. Each manual run gets its own sweep.
   const worker = yield* makeStorageCleanupWorker(sweep);
 
   const start = Effect.fn("StorageCleanup.start")(function* () {
@@ -1380,13 +1444,16 @@ const make = Effect.gen(function* () {
       }),
     );
     yield* forkParked(
+      // A deleted thread's worktree waits for its sessions to end. Moving
+      // between live statuses, such as running to ready, cannot free one.
       Stream.runForEach(events, (event) =>
         (event.type === "thread.deleted" ||
           event.type === "thread.archived" ||
           event.type === "thread.unpinned" ||
           // Worktree settlement requests cleanup after its settle hook finishes.
           (event.type === "thread.settled" && event.payload.worktreePath === null) ||
-          (event.type === "provider-session.updated" && event.payload.status === "stopped")) &&
+          (event.type === "provider-session.updated" &&
+            (event.payload.status === "stopped" || event.payload.status === "error"))) &&
         (settlementCleanupEnabled() ||
           lastSettings.storageCleanup.projectAfterDays !== null ||
           anyWorktreePolicy(lastSettings, worktreeCleanupEnabled))

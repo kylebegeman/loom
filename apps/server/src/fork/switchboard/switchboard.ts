@@ -353,7 +353,7 @@ export const SwitchboardLive = Layer.effectDiscard(
     const crypto = yield* Crypto.Crypto;
     // Codex deep-merges provider tables across config layers. A fresh process key
     // prevents inherited env_key/static auth from mixing with command-backed auth.
-    const providerId = `loom_switchboard_${(yield* crypto.randomUUIDv4.pipe(Effect.orDie)).replaceAll("-", "")}`;
+    const providerId = `loom_switchboard_${(yield* crypto.randomUUIDv4().pipe(Effect.orDie)).replaceAll("-", "")}`;
     setSwitchboardEnvironment(environment, platform, providerId);
     const settings = yield* ServerSettingsService;
     const changes = yield* settings.subscribeChanges;
