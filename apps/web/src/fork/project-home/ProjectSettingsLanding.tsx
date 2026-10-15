@@ -13,7 +13,6 @@ import {
   SettingsSection,
 } from "~/components/settings/settingsLayout";
 import { useSettingsScope } from "~/components/settings/SettingsScopeContext";
-import { BrowseProjectsButton } from "./BrowseProjectsButton";
 
 /** Project work stays in the library; settings provide configuration and storage entry points. */
 export function ProjectSettingsLanding() {
@@ -26,11 +25,6 @@ export function ProjectSettingsLanding() {
   return (
     <SettingsPageContainer>
       <SettingsSection id="project-overview" title="Projects" hideTitle>
-        <SettingsRow
-          title="Projects"
-          description="Manage projects, shared context and conversations across your devices."
-          control={<BrowseProjectsButton />}
-        />
         <SettingsRow
           title="Files on computers"
           description="Choose whether each project's working files stay on a computer after you settle work."

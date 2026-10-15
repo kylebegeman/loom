@@ -1,7 +1,6 @@
 "use client";
 
 import { openLibraryAction } from "~/fork/project-library/actions";
-import { useLibraryProjects } from "~/fork/project-library/state";
 
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -398,12 +397,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     [setOpen],
   );
   const openNewThreadIn = useCallback(() => {
-    if (openLibraryAction("new-conversation")) {
-      setOpen(false);
-      return;
-    }
     dispatch({ _tag: "OpenNewThreadIn" });
-  }, [setOpen]);
+  }, []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
@@ -617,7 +612,6 @@ function OpenCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
 }) {
   const navigate = useNavigate();
-  const library = useLibraryProjects();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState(openIntent?.kind === "search" ? openIntent.query : "");
@@ -1891,26 +1885,60 @@ function OpenCommandPaletteDialog(props: {
   {
     actionItems.push({
       kind: "action",
-      value: "action:library-new-conversation",
-      title: "New project conversation",
-      searchTerms: ["new thread", "chat", "project", "conversation"],
-      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-      shortcutCommand: "chat.new",
-      run: async () => {
-        setOpen(false);
-        openLibraryAction("new-conversation");
-      },
-    });
-    actionItems.push({
-      kind: "action",
       value: "action:library-projects",
-      title: "Browse projects",
+      title: "Projects",
       searchTerms: ["library", "projects", "switch"],
       icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
       run: async () => {
         setOpen(false);
-        await navigate({ to: "/library" });
+        await navigate({ to: "/projects" });
       },
+    });
+  }
+
+  if (projects.length > 0) {
+    const activeProjectTitle =
+      projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
+      (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
+
+    if (activeProjectTitle) {
+      actionItems.push({
+        kind: "action",
+        value: "action:new-thread",
+        searchTerms: ["new thread", "chat", "create", "draft"],
+        title: (
+          <>
+            New thread in <span className="font-semibold">{activeProjectTitle}</span>
+          </>
+        ),
+        icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+        shortcutCommand: "chat.newLocal",
+        run: async () => {
+          // fork: project-home starts on its exact displayed checkout.
+          if (projectHomeContext) {
+            await handleNewThread(projectHomeContext.projectRef, {
+              environmentSelection: "manual",
+            });
+            return;
+          }
+          await startNewThreadFromContext({
+            activeDraftThread,
+            activeThread: activeThread ?? undefined,
+            defaultProjectRef,
+            handleNewThread,
+          });
+        },
+      });
+    }
+
+    actionItems.push({
+      kind: "submenu",
+      value: "action:new-thread-in",
+      searchTerms: ["new thread", "project", "pick", "choose", "select"],
+      title: "New thread in...",
+      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+      addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
   }
 

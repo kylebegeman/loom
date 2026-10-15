@@ -16,7 +16,6 @@ import {
   createLucideIcon,
   CalendarClockIcon,
   GitBranchIcon,
-  FolderIcon,
   HardDriveIcon,
   PanelsTopLeftIcon,
   KeyboardIcon,
@@ -116,7 +115,7 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
-  // fork: project-home - Projects includes navigation and storage at every scope.
+  // Project settings stay separate from the project management entry point.
   const navItems = SETTINGS_NAV_ITEMS;
   const { isMobile, setOpenMobile, open, setOpen } = useSidebar();
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -249,16 +248,6 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   return (
     <>
       <SidebarContent className="overflow-x-hidden">
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton onClick={() => void navigate({ to: "/library" })}>
-                <FolderIcon />
-                <span>Projects</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
         <SidebarGroup>
           <div className="flex flex-col gap-2">
             <div className="flex h-8 items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-sidebar-muted-foreground hover:bg-sidebar-row-hover hover:text-sidebar-foreground">

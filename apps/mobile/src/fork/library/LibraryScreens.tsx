@@ -13,8 +13,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { EmptyState } from "../../components/EmptyState";
+import { AppText as Text } from "../../components/AppText";
 import { ListChoiceRow } from "../../components/ListChoiceRow";
 import { MaterialButton } from "../../components/MaterialButton";
 import { ScreenHeader } from "../../components/ScreenHeader";
@@ -25,7 +24,6 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { uuidv4 } from "../../lib/uuid";
-import { appAtomRegistry } from "../../state/atom-registry";
 import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyboardCommands";
 import {
   library,
@@ -106,139 +104,10 @@ export function LibraryNotice(props: {
 }
 
 export function LibraryRouteScreen() {
-  const authority = useLibraryAuthority();
   const navigation = useNavigation();
-  const [query, setQuery] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
-  const projects = useEnvironmentQuery(
-    authority.environmentId
-      ? library.projects({ environmentId: authority.environmentId, input: { includeArchived } })
-      : null,
-  );
-  const projectsState = libraryListState(projects);
-  const projectsReady = projectsState === "ready" || projectsState === "empty";
-  const canCreate = useAtomValue(library.createProject.permissionAtom(authority.environmentId));
-  useFocusEffect(
-    useCallback(() => {
-      if (!authority.environmentId || !authority.connected || !authority.canRead) return;
-      appAtomRegistry.refresh(
-        library.projects({ environmentId: authority.environmentId, input: { includeArchived } }),
-      );
-    }, [authority.environmentId, authority.connected, authority.canRead, includeArchived]),
-  );
-  if (!authority.loaded)
-    return (
-      <LibraryPage title="Projects">
-        <Text className="text-foreground-muted">Loading your library connection…</Text>
-      </LibraryPage>
-    );
-  if (!authority.environmentId)
-    return (
-      <LibraryPage title="Projects">
-        <Text className="text-sm text-foreground-muted">
-          Keep your work, conversations and context together across devices.
-        </Text>
-        <MaterialButton
-          label="New project"
-          tone="primary"
-          onPress={() => navigation.navigate("LibraryCreate")}
-        />
-        <MaterialButton
-          label="Connect your Library"
-          onPress={() => navigation.navigate("LibrarySettings")}
-        />
-      </LibraryPage>
-    );
-  const list =
-    projects.data?.filter((project) =>
-      `${project.title} ${project.brief}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
-    ) ?? [];
   return (
-    <LibraryPage
-      title="Projects"
-      actions={[
-        {
-          icon: "gearshape",
-          accessibilityLabel: "Library settings",
-          onPress: () => navigation.navigate("LibrarySettings"),
-        },
-        {
-          icon: "text.bubble",
-          accessibilityLabel: "Computer conversations",
-          onPress: () => navigation.navigate("Home"),
-        },
-      ]}
-    >
-      <View className="gap-3">
-        <Text className="text-sm text-foreground-muted">
-          Projects keep their brief, components, and conversation history. Choose a computer when
-          you start work.
-        </Text>
-        <MaterialButton
-          label="New project"
-          tone="primary"
-          disabled={!authority.ready || !canCreate || !projectsReady}
-          onPress={() => navigation.navigate("LibraryCreate")}
-        />
-      </View>
-      <TextInput
-        accessibilityLabel="Search library projects"
-        placeholder="Search projects"
-        value={query}
-        onChangeText={setQuery}
-        autoCorrect={false}
-        className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
-      />
-      <MaterialButton
-        label={includeArchived ? "Hide archived projects" : "Show archived projects"}
-        tone="text"
-        onPress={() => setIncludeArchived((current) => !current)}
-      />
-      {!authority.connected ? (
-        <LibraryNotice
-          detail={`Your saved library is available below. Reconnect ${authority.label} to save changes.`}
-        />
-      ) : !authority.supported ? (
-        <LibraryNotice detail="Update the library server to use this library." />
-      ) : null}
-      {projects.error ? <LibraryNotice error={projects.error} onRetry={projects.refresh} /> : null}
-      {projectsState === "loading" ? (
-        <Text className="text-foreground-muted">
-          {!authority.connected
-            ? "No library projects are cached on this device. Reconnect the selected library to load them."
-            : projects.data === null
-              ? "Loading saved projects…"
-              : "Refreshing saved projects…"}
-        </Text>
-      ) : null}
-      {list.map((project) => (
-        <Pressable
-          key={project.id}
-          accessibilityRole="button"
-          accessibilityLabel={`Open ${project.title}${project.archived ? ", archived" : ""}`}
-          onPress={() => navigation.navigate("LibraryProject", { projectId: project.id })}
-          className="gap-2 rounded-2xl bg-card p-4 active:opacity-70"
-        >
-          <Text className="text-lg font-t3-semibold text-foreground">{project.title}</Text>
-          <Text className="text-sm text-foreground-muted" numberOfLines={3}>
-            {project.brief || "Add a brief to keep shared context with this project."}
-          </Text>
-          <Text className="text-xs text-foreground-muted">
-            {libraryRepositories(project).length} components{project.archived ? " · Archived" : ""}
-          </Text>
-        </Pressable>
-      ))}
-      {projectsReady && list.length === 0 ? (
-        <EmptyState
-          variant="plain"
-          title={query ? "No matching projects" : "No projects yet"}
-          detail={
-            query
-              ? "Try another name or brief."
-              : "Create a project first. It does not need a computer or working files."
-          }
-        />
-      ) : null}
+    <LibraryPage title="Projects" back={navigation.canGoBack()}>
+      <View />
     </LibraryPage>
   );
 }

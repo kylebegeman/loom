@@ -1,14 +1,17 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
-// Settings, Usage, Computers, and Pull Requests use Back in the sidebar utility row.
+// Settings, Projects, Usage, Computers, and Pull Requests use Back in the sidebar utility row.
 // fork: project-home overview pages also return to the previous conversation.
 // Other main app locations are remembered as that destination.
 export function isSidebarUtilityPage(pathname: string) {
   return (
     pathname === "/settings" ||
     pathname.startsWith("/settings/") ||
+    pathname === "/projects" ||
     pathname.startsWith("/projects/") ||
+    pathname === "/library" ||
+    pathname.startsWith("/library/") ||
     pathname === "/usage" ||
     pathname === "/computers" ||
     pathname === "/pull-requests"

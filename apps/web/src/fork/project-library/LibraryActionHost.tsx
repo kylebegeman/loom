@@ -1,12 +1,8 @@
 import { libraryRouteParams } from "./selection";
 import { useEffect, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
-import { primaryServerKeybindingsAtom } from "~/state/server";
-import { resolveShortcutCommand } from "~/keybindings";
-import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { useLibraryProject, useLibraryProjects, useSelectedLibraryProject } from "./state";
-import { openLibraryAction, onLibraryAction, type LibraryAction } from "./actions";
+import { onLibraryAction, type LibraryAction } from "./actions";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
@@ -37,7 +33,6 @@ export function LibraryActionHost() {
       (thread) =>
         thread.threadId === params.threadId && thread.environmentId === params.environmentId,
     );
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const [action, setAction] = useState<LibraryAction | null>(null);
   useEffect(
     () =>
@@ -47,27 +42,6 @@ export function LibraryActionHost() {
       }),
     [unrelatedLiveThread, selectProject],
   );
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.repeat ||
-        isCommandPaletteOpen() ||
-        (event.target instanceof HTMLElement && event.target.closest("[data-keybinding-capture]"))
-      )
-        return;
-      const command = resolveShortcutCommand(event, keybindings);
-      if (
-        (command === "chat.new" || command === "chat.newLocal") &&
-        openLibraryAction("new-conversation")
-      ) {
-        event.preventDefault();
-        event.stopPropagation();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [keybindings]);
   if (!action) return null;
   const saved = (project: { id: string }) => {
     setAction(null);

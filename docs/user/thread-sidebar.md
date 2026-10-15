@@ -5,22 +5,13 @@ need a separate branch and working directory.
 
 ## Find work by project
 
-Loom opens **Projects** when you enter the app. Use the project switcher to choose a
-project or return to all projects. Connect your Library once when saving your first
-project or through **Settings → Connections**. Its overview brings together the shared
-brief, resources, conversations and working copies. Conversations show their original
-computer, and saved history remains readable when that computer is offline. New
-conversations explicitly choose a computer and project scope, then reuse or prepare
-files there. See [Library projects and working copies](project-settings.md#library-projects-and-working-copies).
+The app opens with your threads. Use the existing project filter above the thread list
+to narrow it to one project, or choose **All projects** to see every thread. Filtering
+does not move conversations or change the computer they run on.
 
-**Computer conversations** keeps earlier computer history accessible from the same
-navigation. On mobile, switch between conversations and computer folders there. **Projects**
-always returns to shared project management. Creating a project opens its own form,
-without selecting an execution computer.
-
-Projects remain discoverable when working files are released or computers go offline.
-Offline entries show last-known information. Browsing a project does not restore files
-or start an agent.
+**Projects** in the sidebar utility row opens project management separately. Use
+**Settings → Projects** for project settings. Returning from management restores the
+conversation you left.
 
 ## Start a thread
 

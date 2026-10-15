@@ -8,7 +8,7 @@
  * A scheme-only URL, as sent by iOS dictation keyboards returning to the app,
  * only wakes the app and must not reset navigation.
  */
-export const APP_LINKING_CONFIG = { initialRouteName: "Library" } as const;
+export const APP_LINKING_CONFIG = { initialRouteName: "Home" } as const;
 
 export function shouldHandleAppLink(url: string): boolean {
   return (

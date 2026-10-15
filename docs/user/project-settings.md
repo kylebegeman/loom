@@ -48,9 +48,8 @@ and other phone-only settings ignore the filter.
 
 ## Library projects and working copies
 
-Loom opens **Projects** when you enter the app. **New project** starts with a name and
-brief; repositories and references are optional. Connect your shared Library once before
-saving your first project. You can also manage that connection in **Settings → Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
+Shared projects keep their brief, components and saved conversation history independently
+of their execution computers. Configure the Library connection in **Settings → Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
 sign-in page. On desktop, you can check a Library address and sign in before saving its
 computer connection. Desktop sign-in opens your browser and returns to Loom after verification.
 Existing computer pairing and T3 Connect remain available. Changing your
@@ -80,9 +79,8 @@ must reconnect before you can save changes. It never silently switches to anothe
 
 ## Computer folders and earlier work
 
-**Computer conversations** keeps earlier work on connected computers accessible from the
-same navigation. On mobile, its **Folders** view groups that history by computer folder.
-These folders remain separate from the shared projects you manage in **Projects**.
+The thread list keeps existing work on connected computers accessible. Its project filter
+narrows that list without opening a separate project catalog.
 
 Open computer folder details to browse its threads. Expand a project for a short
 thread preview, or open its home for **Open**, **Snoozed**, **History**, and **All** views.

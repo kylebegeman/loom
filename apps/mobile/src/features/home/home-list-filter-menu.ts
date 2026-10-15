@@ -52,7 +52,7 @@ export function buildHomeListFilterMenu(props: {
         type: "action",
         title: "All environments",
         subtitle: projectsView
-          ? "Show folders from every computer"
+          ? "Show projects from every environment"
           : "Show threads from every environment",
         state: props.selectedEnvironmentId === null ? "on" : "off",
         onPress: () => props.onEnvironmentChange(null),
@@ -72,12 +72,12 @@ export function buildHomeListFilterMenu(props: {
   if (!projectsView && props.projects.length > 0) {
     items.push({
       type: "submenu",
-      title: "Folder",
+      title: "Project",
       items: [
         {
           type: "action",
-          title: "All folders",
-          subtitle: "Show conversations from every folder",
+          title: "All projects",
+          subtitle: "Show threads from every project",
           state: props.selectedProjectKey === null ? "on" : "off",
           onPress: () => props.onProjectChange(null),
         },
@@ -92,8 +92,8 @@ export function buildHomeListFilterMenu(props: {
   }
 
   return {
-    title: projectsView ? "Computer folder options" : "Conversation list options",
-    accessibilityLabel: projectsView ? "Filter computer folders" : "Filter conversations",
+    title: projectsView ? "Project list options" : "Thread list options",
+    accessibilityLabel: projectsView ? "Filter projects" : "Filter threads",
     items,
   };
 }

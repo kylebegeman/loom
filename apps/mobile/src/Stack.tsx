@@ -720,9 +720,9 @@ function NotFoundScreen() {
       </Text>
       <Pressable
         style={returnHomeButtonStyle}
-        onPress={() => navigation.dispatch(StackActions.replace("Library"))}
+        onPress={() => navigation.dispatch(StackActions.replace("Home"))}
       >
-        <Text className="text-base font-t3-bold text-primary-foreground">Return to library</Text>
+        <Text className="text-base font-t3-bold text-primary-foreground">Return to threads</Text>
       </Pressable>
     </ScrollView>
   );
@@ -1130,8 +1130,8 @@ function ScreenRenderFallback(props: RenderFailureProps & { readonly routeName: 
     : props.routeName === "Home" || props.routeName === "Library"
       ? { label: "Open settings", onPress: () => navigation.navigate("SettingsSheet") }
       : {
-          label: "Return to library",
-          onPress: () => navigation.dispatch(StackActions.replace("Library")),
+          label: "Return to threads",
+          onPress: () => navigation.dispatch(StackActions.replace("Home")),
         };
 
   return <RenderFailureView {...props} exit={exit} />;

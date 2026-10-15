@@ -50,7 +50,7 @@ const appLinking = {
     "t3code-dev://",
     "t3code-preview://",
   ],
-  // Keep the project library beneath directly opened conversations and connections.
+  // Keep thread navigation beneath directly opened conversations and connections.
   config: APP_LINKING_CONFIG,
   filter: shouldHandleAppLink,
 };

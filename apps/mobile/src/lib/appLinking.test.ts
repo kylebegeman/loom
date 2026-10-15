@@ -19,17 +19,18 @@ describe("cold app links", () => {
     ["connections/new", "ConnectionsNew"],
     ["threads/computer/thread", "Thread"],
     ["library/projects/durable", "LibraryProject"],
-  ])("keeps Library beneath %s", (path, destination) => {
+  ])("keeps Threads home beneath %s", (path, destination) => {
     const state = getStateFromPath(path, {
       ...APP_LINKING_CONFIG,
       screens: {
+        Home: "",
         Library: "library",
         ConnectionsNew: "connections/new",
         Thread: "threads/:environmentId/:threadId",
         LibraryProject: "library/projects/:projectId",
       },
     });
-    expect(state?.routes.map((route) => route.name)).toEqual(["Library", destination]);
+    expect(state?.routes.map((route) => route.name)).toEqual(["Home", destination]);
     expect(state?.index).toBe(1);
   });
 });
