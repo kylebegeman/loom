@@ -195,6 +195,14 @@ export const ScadRenderInput = Schema.Struct({
 export const DisplayUnits = Schema.Literals(["mm", "in"]);
 export type DisplayUnits = typeof DisplayUnits.Type;
 
+/**
+ * Decimal places for shown and copied values. "auto" keeps each value's natural form;
+ * a number shows exactly that many decimals.
+ */
+export const DISPLAY_PRECISIONS = ["auto", 0, 1, 2, 3] as const;
+export const DisplayPrecision = Schema.Literals(DISPLAY_PRECISIONS);
+export type DisplayPrecision = typeof DisplayPrecision.Type;
+
 /** How finished agent turns offer models to clients. */
 export const AgentModelsMode = Schema.Literals(["offer", "open", "off"]);
 export type AgentModelsMode = typeof AgentModelsMode.Type;
@@ -210,6 +218,8 @@ export const ModelPreviewSettings = Schema.Struct({
   buildPlate: BuildPlateSetting, // default H2D, custom 350 x 320 x 325, 10 mm grid
   /** Display only. Saved lengths and tool inputs and outputs stay in millimetres. */
   displayUnits: DisplayUnits.pipe(Schema.withDecodingDefault(Effect.succeed("mm" as const))),
+  /** Display only, like displayUnits. Absent means "auto". */
+  displayPrecision: Schema.optionalKey(DisplayPrecision),
   scaleReference: ScaleReference.pipe(Schema.withDecodingDefault(Effect.succeed("none" as const))),
   /** Downward face tilt from vertical, in degrees. */
   overhangAngleDegrees: Schema.Int.check(

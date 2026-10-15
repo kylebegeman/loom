@@ -1,5 +1,14 @@
 import styles from "./workspace.module.css";
-import { useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import { RotateCcwIcon } from "lucide-react";
 import type { ScadParameter } from "@t3tools/contracts/fork";
 import { Input } from "~/components/ui/input";
@@ -14,6 +23,7 @@ import {
   SelectPopup,
   SelectItem,
 } from "~/components/ui/select";
+import { copyValue } from "./copyValue";
 import {
   displayParameterValue,
   parameterLabel,
@@ -29,6 +39,34 @@ import {
   typedScrub,
   type ScrubRange,
 } from "./scrub";
+import { clampSteps, parameterRange, scrubSteps, scrubValue as stepValue } from "./nameScrub";
+
+/** Holds an automatic render while a drag is under way. */
+export type HoldRender = (held: boolean) => void;
+
+/**
+ * Reports a drag's start and end to `onHold` once each, and ends it if the control unmounts
+ * mid-drag, so a filtered or collapsed row cannot leave renders held.
+ */
+function useHold(onHold: HoldRender | undefined) {
+  const latest = useRef(onHold),
+    active = useRef(false);
+  useLayoutEffect(() => {
+    latest.current = onHold;
+  });
+  useEffect(
+    () => () => {
+      if (active.current) latest.current?.(false);
+      active.current = false;
+    },
+    [],
+  );
+  return useCallback((held: boolean) => {
+    if (active.current === held) return;
+    active.current = held;
+    latest.current?.(held);
+  }, []);
+}
 
 /** Tooltip with an optional keyboard shortcut, for icon buttons and compact labels. */
 export function Tip({
@@ -85,6 +123,32 @@ export function SectionHead({
       <div className="flex-1" />
       {children}
     </div>
+  );
+}
+
+/** A shown value that copies itself, without digit grouping, when clicked. */
+export function CopyValue({
+  text,
+  label,
+  children,
+}: {
+  text: string;
+  label?: string;
+  children?: ReactNode;
+}) {
+  const shown = useRef<HTMLSpanElement>(null);
+  return (
+    <button
+      type="button"
+      className={styles["model-copy-value"]}
+      aria-label={label ?? `Copy ${text}`}
+      onClick={(event) => {
+        event.stopPropagation();
+        void copyValue(text, shown.current);
+      }}
+    >
+      <span ref={shown}>{children ?? text}</span>
+    </button>
   );
 }
 
@@ -247,6 +311,7 @@ export function Scrub({
   unit,
   disabled,
   onChange,
+  onHold,
 }: {
   value: number;
   range: ScrubRange;
@@ -255,7 +320,10 @@ export function Scrub({
   unit?: string;
   disabled?: boolean;
   onChange: (value: number) => void;
+  /** Told when a drag starts and ends, so a render waits for the release. */
+  onHold?: HoldRender;
 }) {
+  const hold = useHold(onHold);
   const ref = useRef<HTMLDivElement>(null),
     input = useRef<HTMLInputElement>(null),
     drag = useRef<{ x: number; start: number; moved: boolean; width: number } | null>(null),
@@ -311,6 +379,7 @@ export function Scrub({
           moved: false,
           width: event.currentTarget.clientWidth,
         };
+        hold(true);
       }}
       onPointerMove={(event) => {
         const current = drag.current;
@@ -328,11 +397,13 @@ export function Scrub({
         const current = drag.current;
         drag.current = null;
         setDragging(false);
+        hold(false);
         if (current && !current.moved) setEditing(true);
       }}
       onPointerCancel={() => {
         drag.current = null;
         setDragging(false);
+        hold(false);
       }}
       onKeyDown={(event) => {
         if (editing || disabled) return;
@@ -378,28 +449,18 @@ export function Scrub({
   );
 }
 
-/** Scrub range for a numeric customizer parameter. Unbounded fields step by the default's precision. */
-export function parameterRange(parameter: ScadParameter): ScrubRange {
-  if (parameter.range)
-    return {
-      min: parameter.range.min,
-      max: parameter.range.max,
-      step: parameter.range.step ?? 1,
-    };
-  const sample = vectorParameterValue(parameter.defaultValue) ?? [Number(parameter.defaultValue)];
-  return { min: null, max: null, step: sample.every(Number.isInteger) ? 1 : 0.1 };
-}
-
 const AXES = ["X", "Y", "Z"];
 
 function ParameterControl({
   parameter,
   value,
   onChange,
+  onHold,
 }: {
   parameter: ScadParameter;
   value: string;
   onChange: (value: string) => void;
+  onHold: HoldRender | undefined;
 }) {
   const label = parameterLabel(parameter.name);
   if (parameter.options?.length) {
@@ -450,6 +511,7 @@ function ParameterControl({
         value={number}
         range={parameterRange(parameter)}
         onChange={(next) => onChange(String(next))}
+        {...(onHold ? { onHold } : {})}
       />
     );
   const vector = parameter.kind === "vector" ? vectorParameterValue(value) : null;
@@ -471,6 +533,7 @@ function ParameterControl({
                 updated[index] = next;
                 onChange(JSON.stringify(updated));
               }}
+              {...(onHold ? { onHold } : {})}
             />
           );
         })}
@@ -490,24 +553,145 @@ function ParameterControl({
   );
 }
 
+export const SCRUB_NAME_HINT = "Drag sideways to change; Shift is faster, Alt finer.";
+
+/**
+ * Drag sideways to move a value along its step grid, as a parameter's name does. The automatic
+ * render is held for the drag, and `takeChanged` tells a following click whether the drag
+ * changed the value, so a plain press can do something else.
+ */
+export function useNameScrub({
+  value,
+  range,
+  onChange,
+  onHold,
+}: {
+  value: number;
+  range: ScrubRange;
+  onChange: (value: number) => void;
+  onHold: HoldRender | undefined;
+}) {
+  const hold = useHold(onHold),
+    drag = useRef<{ id: number; x: number; steps: number; start: number } | null>(null),
+    latest = useRef(value),
+    changed = useRef(false),
+    [dragging, setDragging] = useState(false);
+  useLayoutEffect(() => {
+    latest.current = value;
+  });
+  const end = () => {
+    if (!drag.current) return;
+    drag.current = null;
+    setDragging(false);
+    hold(false);
+  };
+  return {
+    dragging,
+    takeChanged: () => {
+      const was = changed.current;
+      changed.current = false;
+      return was;
+    },
+    handlers: {
+      onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { id: event.pointerId, x: event.clientX, steps: 0, start: value };
+        changed.current = false;
+        setDragging(true);
+        hold(true);
+      },
+      onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+        const current = drag.current;
+        if (!current || current.id !== event.pointerId) return;
+        current.steps = clampSteps(
+          current.steps +
+            scrubSteps(event.clientX - current.x, { fast: event.shiftKey, fine: event.altKey }),
+          current.start,
+          range,
+        );
+        current.x = event.clientX;
+        const next = stepValue(current.start, current.steps, range);
+        if (next === latest.current) return;
+        changed.current = true;
+        onChange(next);
+      },
+      onPointerUp: end,
+      onPointerCancel: end,
+      onLostPointerCapture: end,
+    },
+  };
+}
+
+/**
+ * A number parameter's name as a scrub handle: dragging it sideways steps the value, 4 px a
+ * step, ten times faster with Shift and slower with Alt. The value field stays the keyboard
+ * route, so the handle itself is not focusable.
+ */
+function ScrubName({
+  label,
+  value,
+  range,
+  onChange,
+  onHold,
+}: {
+  label: string;
+  value: number;
+  range: ScrubRange;
+  onChange: (value: number) => void;
+  onHold: HoldRender | undefined;
+}) {
+  const scrub = useNameScrub({ value, range, onChange, onHold });
+  return (
+    <span
+      className={styles["model-param-label"]}
+      data-scrub=""
+      data-dragging={scrub.dragging || undefined}
+      {...scrub.handlers}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Focuses a parameter row's control. A changed row starts with its reset button, which must not
+ * take the focus: Enter or Space there would throw the value away.
+ */
+export function focusParameterControl(row: Element | null | undefined) {
+  row
+    ?.querySelector("[data-parameter-control]")
+    ?.querySelector<HTMLElement>('[role="slider"], [role="switch"], input, button')
+    ?.focus();
+}
+
 /** One customizer row: change marker that resets, label, control and optional description. */
 export function ParameterRow({
   parameter,
   value,
   baseline,
   onChange,
+  onHold,
 }: {
   parameter: ScadParameter;
   value: string;
   baseline: string;
   onChange: (value: string) => void;
+  /** Told while a scrub is under way, so an automatic render waits for the release. */
+  onHold?: HoldRender;
 }) {
   const label = parameterLabel(parameter.name);
   const changed = value !== baseline;
   const vector = parameter.kind === "vector" ? vectorParameterValue(value) : null;
+  const number = Number(value);
+  const scrubbable =
+    parameter.kind === "number" && !parameter.options?.length && Number.isFinite(number);
+  const renamed = label.toLowerCase() !== parameter.name.replace(/_/g, " ").toLowerCase();
   return (
     <div
       className={styles["model-param"]}
+      data-parameter={parameter.name}
       data-changed={changed || undefined}
       data-wide={(vector && vector.length > 2) || undefined}
     >
@@ -525,15 +709,25 @@ export function ParameterRow({
       ) : (
         <span />
       )}
-      {label.toLowerCase() === parameter.name.replace(/_/g, " ").toLowerCase() ? (
-        <span className={styles["model-param-label"]}>{label}</span>
-      ) : (
+      {scrubbable ? (
+        <Tip label={renamed ? `${parameter.name}. ${SCRUB_NAME_HINT}` : SCRUB_NAME_HINT}>
+          <ScrubName
+            label={label}
+            value={number}
+            range={parameterRange(parameter)}
+            onChange={(next) => onChange(String(next))}
+            onHold={onHold}
+          />
+        </Tip>
+      ) : renamed ? (
         <Tip label={parameter.name}>
           <span className={styles["model-param-label"]}>{label}</span>
         </Tip>
+      ) : (
+        <span className={styles["model-param-label"]}>{label}</span>
       )}
-      <div className={styles["model-param-control"]}>
-        <ParameterControl parameter={parameter} value={value} onChange={onChange} />
+      <div className={styles["model-param-control"]} data-parameter-control="">
+        <ParameterControl parameter={parameter} value={value} onChange={onChange} onHold={onHold} />
       </div>
       {parameter.description && (
         <p className={styles["model-param-description"]}>{parameter.description}</p>

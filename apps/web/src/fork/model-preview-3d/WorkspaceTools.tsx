@@ -37,6 +37,7 @@ import { Popover, PopoverTrigger, PopoverPopup, PopoverTitle } from "~/component
 import { Tooltip, TooltipTrigger, TooltipPopup } from "~/components/ui/tooltip";
 import type { NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
+import { UNDO_KEYS } from "./viewer/keyboard";
 import { Scrub, Segmented } from "./controls";
 import type { ExportAction } from "./captureExport";
 import { useDisplayUnits } from "./units";
@@ -152,6 +153,8 @@ export function DisplayTools({
   overhangLegend,
   overhangs,
   onOverhangs,
+  extents,
+  onExtents,
   wireframe,
   grid,
   axes,
@@ -177,6 +180,9 @@ export function DisplayTools({
   };
   overhangs: boolean;
   onOverhangs: (value: boolean) => void;
+  /** Overall dimensions; panels without them leave both unset. */
+  extents?: boolean;
+  onExtents?: (value: boolean) => void;
   wireframe: boolean;
   grid: boolean;
   axes: boolean;
@@ -240,6 +246,12 @@ export function DisplayTools({
               Overhangs
               <MenuShortcut>V</MenuShortcut>
             </MenuCheckboxItem>
+            {extents !== undefined && (
+              <MenuCheckboxItem checked={extents} onCheckedChange={onExtents}>
+                Overall dimensions
+                <MenuShortcut>K</MenuShortcut>
+              </MenuCheckboxItem>
+            )}
           </MenuGroup>
         </MenuPopup>
       </Menu>
@@ -264,8 +276,13 @@ const HELP = [
   ["Inspector", "I"],
   ["Perspective, orthographic", "P"],
   ["Overhangs", "V"],
+  ["Overall dimensions", "K"],
   ["Previous version", "D"],
+  ["Point menu", "Right click, Ctrl+click, touch and hold"],
+  ["Point menu at view center", "Menu key, Shift+F10"],
   ["Free pick while measuring", "Hold Alt"],
+  ["Undo", UNDO_KEYS.undo],
+  ["Redo", UNDO_KEYS.mac ? UNDO_KEYS.redo : `${UNDO_KEYS.redo}, Ctrl+Y`],
 ] as const;
 export function NavigationTools({
   mode,
@@ -345,7 +362,8 @@ export function NavigationTools({
           </dl>
           <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
             Shortcuts work while the 3D workspace is focused. Pan mode makes a plain drag move the
-            model.
+            model. Hole and face centers snap too; pass a hole&apos;s rim to reach the center of a
+            through hole. Hold Alt while picking for a free point.
           </p>
         </PopoverPopup>
       </Popover>

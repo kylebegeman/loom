@@ -29,8 +29,10 @@ import {
   MoreHorizontalIcon,
   RefreshCwIcon,
   PanelRightIcon,
+  Redo2Icon,
   Settings2Icon,
   TriangleAlertIcon,
+  Undo2Icon,
   XIcon,
 } from "lucide-react";
 import {
@@ -82,7 +84,7 @@ import { fitPlate, resolvePlate } from "./buildPlate";
 import { OverhangLegend } from "./OverhangLegend";
 import { useOverhangAngleSetting } from "./overhangSettings";
 import { BedPicker, useScaleReference } from "./BedPicker";
-import { Segmented } from "./controls";
+import { CopyValue, Segmented } from "./controls";
 import { GHOST_TRIANGLE_LIMIT } from "./viewer/ghost";
 import { previousGeometry, type PreviewGeometry } from "./previousModel";
 import {
@@ -103,7 +105,7 @@ import { toastManager } from "~/components/ui/toast";
 import { changedParameters } from "./params";
 import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
 import { attachModelImage, captureToComposer, captureBase64 } from "./capture";
-import { type ModelViewer, type NavigationMode } from "./viewer/createViewer";
+import { type ContextPick, type ModelViewer, type NavigationMode } from "./viewer/createViewer";
 import type { View } from "./viewer/views";
 import { loadModel, disposeModel, meshStats } from "./viewer/load";
 import { Group, type Object3D } from "three";
@@ -118,7 +120,19 @@ import { useSlicing } from "./useSlicing";
 import { LayerSlider } from "./LayerSlider";
 import AssemblyPanel from "./AssemblyPanel";
 import { onModelAction } from "./actions";
-import { nudgeFor } from "./viewer/keyboard";
+import { isTextEntry, nudgeFor, opensPointMenu, UNDO_KEYS, undoShortcut } from "./viewer/keyboard";
+import { copyValue } from "./copyValue";
+import { PointMenu, type PointLink } from "./PointMenu";
+import { LinkedFaces } from "./LinkedFaces";
+import { parameterRange } from "./nameScrub";
+import {
+  linkableParameters,
+  linkKey,
+  modelLinkRender,
+  useParameterLinks,
+} from "./useParameterLinks";
+import { regionAt, regionsPositions } from "./viewer/linking";
+import { coordinateText, pointActions, sectionAxisThrough, type PointAction } from "./pointActions";
 import { announcement, type AnnounceInput } from "./announce";
 import { buildPlateLabel } from "./buildPlate";
 import {
@@ -139,6 +153,9 @@ const idleEditor = Atom.make(AsyncResult.initial<typeof ModelEditorEvent.Type, n
 const ViewerCanvas = lazy(() => import("./viewer/ViewerCanvas"));
 const failureMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 const AXIS_INDEX = { x: 0, y: 1, z: 2 } as const;
+/** Most measurements and pins one model keeps (the model workspace schema limits). */
+const MEASUREMENT_LIMIT = 100,
+  PIN_LIMIT = 30;
 
 function ModelFile({
   threadRef,
@@ -183,6 +200,7 @@ function ModelFile({
     latestSettings.current = displaySettings;
   }, [displaySettings]);
   const units = unitsControl.units;
+  const precision = unitsControl.precision ?? "auto";
   const file = useMemo(() => ({ threadId: threadRef.threadId, path }), [threadRef.threadId, path]);
   const format = modelFormatOf(path) ?? "stl";
   const sourceFormat = isSourceFormat(format);
@@ -223,6 +241,10 @@ function ModelFile({
       axes: false,
       projection: "perspective" as ModelProjection,
     });
+  // Overall dimensions are a session view aid: off by default and never saved with a view.
+  const [extents, setExtents] = useState(false);
+  /** The open point menu and the view state it was opened in. */
+  const [pointMenu, setPointMenu] = useState<{ pick: ContextPick; key: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [viewing, setViewing] = useState<{
     checkpointId: CheckpointId;
@@ -259,6 +281,23 @@ function ModelFile({
   const canRender = useAtomValue(models.render.permissionAtom(threadRef.environmentId));
   const [variantActivity, setVariantActivity] = useState<OperationProgress | null>(null);
   const [session, setSession] = useState<ScadSession | null>(null);
+  // Parameter links: which faces each number parameter moves, for the part on screen.
+  const linkRender = useMemo(
+    () =>
+      modelLinkRender(
+        { environmentId: threadRef.environmentId, threadId: threadRef.threadId },
+        path,
+      ),
+    [threadRef.environmentId, threadRef.threadId, path],
+  );
+  const links = useParameterLinks(linkRender);
+  const [linkFocus, setLinkFocus] = useState<string | null>(null);
+  /** A request to show one parameter in Customize; a new object repeats it. */
+  const [focusParameter, setFocusParameter] = useState<{ name: string } | null>(null);
+  const linkSource = session?.data.sourceRevision ?? null,
+    cancelLinks = links.cancel;
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A source edit or another file ends an analysis of the old part.
+  useEffect(() => cancelLinks, [linkSource, path, cancelLinks]);
   const [geometryRevision, setGeometryRevision] = useState("");
   const [previous, setPrevious] = useState<PreviewGeometry | null>(null);
   const [previousShown, setPreviousShown] = useState(false);
@@ -277,7 +316,9 @@ function ModelFile({
     setPreviousShown(shown);
   };
   const togglePrevious = () => showPrevious(!previousShown);
-  const editing = useModelEditing(threadRef, path, viewer, geometryRevision, session);
+  const editing = useModelEditing(threadRef, path, viewer, geometryRevision, session, {
+    undo: true,
+  });
   const slicing = useSlicing({
     threadRef,
     path,
@@ -351,6 +392,7 @@ function ModelFile({
   const onNavigate = useCallback(() => {
     setActiveView(null);
     setActiveViewId(null);
+    setPointMenu(null);
   }, []);
   const setView = (view: View) => {
     viewer.current?.setView(view);
@@ -1247,6 +1289,95 @@ function ModelFile({
   const captureBusy = capturing || editing.operation !== null;
   const editDisabled =
     viewing !== null || layersShown || !editing.canEdit || !stats || busy || captureBusy;
+  const canPick = !viewing && !!stats && !layersShown && !busy && !captureBusy;
+  // A model, pose or pick-ability change closes the point menu: its point no longer holds.
+  const pointMenuKey = `${geometryRevision}|${editing.orientation?.quaternion.join(",") ?? ""}|${canPick}`;
+  if (pointMenu && pointMenu.key !== pointMenuKey) setPointMenu(null);
+  const pointMenuEntries = pointMenu
+    ? pointActions(
+        { point: pointMenu.pick.point, face: pointMenu.pick.face },
+        {
+          canPick,
+          canEdit: !editDisabled,
+          canLayFlat: supportsOrientation,
+          measurements: editing.data.measurements.length,
+          pins: editing.data.annotations.length,
+          markupLimit: MEASUREMENT_LIMIT,
+          pinLimit: PIN_LIMIT,
+        },
+      )
+    : [];
+  const onContextPick = useCallback(
+    (pick: ContextPick) => {
+      if (canPick) setPointMenu({ pick, key: pointMenuKey });
+    },
+    [canPick, pointMenuKey],
+  );
+  const closePointMenu = useCallback(() => setPointMenu(null), []);
+  // An analysis belongs to the values on screen: the rendered values and the mesh they made.
+  const linkValues = session?.applied,
+    currentLinkKey =
+      session && session.appliedRevision !== null && linkValues
+        ? linkKey(session.data.sourceRevision, linkValues)
+        : null,
+    linking = (currentLinkKey && !viewing && links.linkings.get(currentLinkKey)) || null,
+    linkReady =
+      currentLinkKey !== null &&
+      !viewing &&
+      !busy &&
+      shownMesh?.revision === session?.appliedRevision;
+  const linkedFaces = useMemo(() => {
+    const focused = linking?.parameters.find((result) => result.name === linkFocus);
+    return linking && focused?.status === "linked" && focused.rates.size
+      ? regionsPositions(linking.base, new Set(focused.rates.keys()))
+      : null;
+  }, [linking, linkFocus]);
+  // Loading a model clears the highlight, so it is drawn again for each new model.
+  // oxlint-disable-next-line react/exhaustive-effect-dependencies -- New stats mean the viewer loaded a model and cleared the highlight.
+  useEffect(() => viewer.current?.setLinked(linkedFaces), [linkedFaces, shownStats]);
+  const pointLinks = useMemo<PointLink[]>(() => {
+    if (!pointMenu || !linking || !session) return [];
+    const { point, face } = pointMenu.pick,
+      region = regionAt(
+        linking.base,
+        [point[0], point[1], point[2]],
+        face ? [face[0], face[1], face[2]] : undefined,
+      );
+    if (region === undefined) return [];
+    return linking.parameters.flatMap((result) => {
+      const parameter = session.data.parameters.find((item) => item.name === result.name),
+        value = Number(session.values[result.name]);
+      return result.status === "linked" &&
+        result.rates.has(region) &&
+        parameter &&
+        Number.isFinite(value)
+        ? [{ name: result.name, value, range: parameterRange(parameter) }]
+        : [];
+    });
+  }, [pointMenu, linking, session]);
+  const runPointAction = (action: PointAction, pick: ContextPick) => {
+    setPointMenu(null);
+    if (action === "measure") {
+      if (editing.measureMode !== "distance") editing.setMeasureMode("distance");
+      editing.measureFrom(pick.point);
+      openTab("markup");
+    } else if (action === "pin") {
+      editing.pinAt(pick.point);
+      openTab("markup");
+    } else if (action === "center") viewer.current?.centerAt(pick.world);
+    else if (action === "section") {
+      const axis = sectionAxisThrough(pick.worldFace, editing.section.axis);
+      editing.editSection({
+        ...editing.section,
+        enabled: true,
+        axis,
+        offset: pick.world[AXIS_INDEX[axis]]!,
+      });
+    } else if (action === "layFlat") {
+      openTab("part");
+      void editing.faceOrientationAt(pick.point);
+    } else void copyValue(coordinateText(pick.point, units, precision));
+  };
   const viewThumbnail = useCallback(
     async (view: ModelSavedView) => {
       const current = viewer.current;
@@ -1304,15 +1435,15 @@ function ModelFile({
     return Math.round(min + max) / 2;
   };
   const changeSection = (next: ModelSection) =>
-    editing.setSection(
+    editing.editSection(
       next.axis === editing.section.axis ? next : { ...next, offset: centred(next.axis) },
     );
   const toggleSection = () => {
     if (viewing) return;
     const section = editing.section;
-    if (section.enabled) editing.setSection({ ...section, enabled: false });
+    if (section.enabled) editing.editSection({ ...section, enabled: false });
     else if (stats)
-      editing.setSection({ ...section, enabled: true, offset: centred(section.axis) });
+      editing.editSection({ ...section, enabled: true, offset: centred(section.axis) });
   };
   const startTool = (tool: PickTool, measureMode?: "distance" | "hole") => {
     if (editDisabled) return;
@@ -1501,6 +1632,13 @@ function ModelFile({
     useRightPanelStore.getState().openSurface(threadRef, forkPanelSurface("model-preview-3d"));
   const announcePrevious = useRef<AnnounceInput | null>(null);
   const [announced, setAnnounced] = useState<{ id: number; text: string } | null>(null);
+  const undoStatus = editing.undo.status;
+  /** Steps the panel history. The toast shows the step, and screen readers hear it. */
+  const stepUndo = (direction: "undo" | "redo") => {
+    const outcome = editing.undo[direction]();
+    if (outcome)
+      toastManager.add({ type: outcome.applied ? "info" : "warning", title: outcome.message });
+  };
   const announceHint =
     editing.picking === "measure"
       ? editing.measureMode === "hole"
@@ -1530,7 +1668,7 @@ function ModelFile({
       view: activeView,
       projection: display.projection,
       success,
-      formatSize: (size) => formatLengths(size, units),
+      formatSize: (size) => formatLengths(size, units, { precision }),
     };
     const text = announcement(announcePrevious.current, next);
     announcePrevious.current = next;
@@ -1550,6 +1688,7 @@ function ModelFile({
     display.projection,
     success,
     units,
+    precision,
   ]);
   if (format === "step" && !supportsPython)
     return (
@@ -1617,17 +1756,16 @@ function ModelFile({
           const typing =
             event.target instanceof HTMLElement &&
             event.target.closest("input, textarea, select, [contenteditable=true]");
+          // Text fields keep their own undo; elsewhere these step the panel's history.
+          const undoKey = undoShortcut(event);
           if (
+            undoKey &&
             visible &&
-            session &&
             !viewing &&
-            !typing &&
-            !event.defaultPrevented &&
-            (event.metaKey || event.ctrlKey) &&
-            event.key.toLowerCase() === "z"
+            !isTextEntry(event.target) &&
+            !event.defaultPrevented
           ) {
-            const index = session.historyCursor + (event.shiftKey ? 1 : -1);
-            if (index >= 0 && index < session.historyLabels.length) session.moveHistory(index);
+            stepUndo(undoKey);
             event.preventDefault();
             event.stopPropagation();
             return;
@@ -1664,7 +1802,10 @@ function ModelFile({
             if (editing.picking) editing.stopPicking();
             else editing.cancel();
           } else if (key === "escape" && selectedFindingId) setSelection(null);
-          else if (key === "l" && supportsOrientation && !editDisabled) startTool("lay-flat");
+          else if (opensPointMenu(event) && viewer.current?.owns(event.target)) {
+            if (canPick && !viewer.current.contextAtCenter())
+              toastManager.add({ type: "info", title: "No part at the view center." });
+          } else if (key === "l" && supportsOrientation && !editDisabled) startTool("lay-flat");
           else if (key === "m" && !editDisabled) startTool("measure");
           else if (key === "n" && !editDisabled) startTool("annotate");
           else if (key === "s" && !editDisabled) toggleSection();
@@ -1687,6 +1828,7 @@ function ModelFile({
           else if (key === "g") setDisplay((value) => ({ ...value, grid: !value.grid }));
           else if (key === "a") setDisplay((value) => ({ ...value, axes: !value.axes }));
           else if (key === "v") setDisplay((value) => ({ ...value, overhangs: !value.overhangs }));
+          else if (key === "k") setExtents((value) => !value);
           else if (key === "d" && previous) togglePrevious();
           else if ((key === "+" || key === "=") && stats) viewer.current?.zoom(1 / 1.2);
           else if (key === "-" && stats) viewer.current?.zoom(1.2);
@@ -1719,6 +1861,26 @@ function ModelFile({
             </small>
           </div>
           <div className={styles["model-document-actions"]}>
+            <ModelTool
+              label={undoStatus.undo ? `Undo ${undoStatus.undo}` : "Nothing to undo"}
+              kbd={UNDO_KEYS.undo}
+              side="bottom"
+              disabled={!undoStatus.undo || !!viewing}
+              onClick={() => stepUndo("undo")}
+            >
+              <Undo2Icon />
+            </ModelTool>
+            <ModelTool
+              label={undoStatus.redo ? `Redo ${undoStatus.redo}` : "Nothing to redo"}
+              kbd={UNDO_KEYS.redo}
+              side="bottom"
+              disabled={!undoStatus.redo || !!viewing}
+              // Narrow panels keep the file name readable: Redo appears once it can act.
+              data-redo-idle={!undoStatus.redo}
+              onClick={() => stepUndo("redo")}
+            >
+              <Redo2Icon />
+            </ModelTool>
             {supportsHistory && (
               <HistoryControls
                 open={historyOpen}
@@ -1815,11 +1977,14 @@ function ModelFile({
                     previousShown={previousShown}
                     navigationMode={navigationMode}
                     display={display}
+                    extents={extents}
                     reference={referenceControl.reference}
                     overhangAngleDegrees={
                       adjustableOverhangs ? angleControl.angle : OVERHANG_ANGLE.default
                     }
                     onNavigate={onNavigate}
+                    {...(pointMenu ? { onCamera: closePointMenu } : {})}
+                    onContextPick={onContextPick}
                     section={supportsCaps ? editing.section : { ...editing.section, caps: false }}
                     measurements={viewing ? [] : editing.measurements}
                     annotations={viewing ? [] : editing.annotations}
@@ -1832,6 +1997,20 @@ function ModelFile({
                   />
                 )}
               </Suspense>
+              <PointMenu
+                pick={pointMenu?.pick ?? null}
+                entries={pointMenuEntries}
+                onAction={runPointAction}
+                onClose={closePointMenu}
+                returnFocus={() => viewer.current?.focus()}
+                links={pointLinks}
+                onLinkFocus={(name) => {
+                  openTab("customize");
+                  setFocusParameter({ name });
+                }}
+                onLinkChange={(name, value) => session?.edit(name, String(value))}
+                onLinkHold={(held) => session?.hold(held)}
+              />
             </div>
             {!shownMesh && !displayedError && viewing?.status !== "absent" && (
               <div className={styles["model-loading"]}>
@@ -1900,6 +2079,9 @@ function ModelFile({
                 {editing.picking === "measure" && snapStatus === "building" && (
                   <span>Preparing snapping...</span>
                 )}
+                {editing.picking === "measure" &&
+                  editing.measureMode === "distance" &&
+                  snapStatus === "ready" && <span>Corner, edge and center snapping ready</span>}
                 {editing.picking === "measure" && snapStatus === "off" && (
                   <span>Snapping is off for models over 1M triangles.</span>
                 )}
@@ -1947,6 +2129,8 @@ function ModelFile({
               onGrid={(grid) => setDisplay((value) => ({ ...value, grid }))}
               onAxes={(axes) => setDisplay((value) => ({ ...value, axes }))}
               onOverhangs={(overhangs) => setDisplay((value) => ({ ...value, overhangs }))}
+              extents={extents}
+              onExtents={setExtents}
               overhangLegend={
                 display.overhangs && stats ? (
                   <OverhangLegend
@@ -2146,7 +2330,31 @@ function ModelFile({
                     onPending={onPending}
                     onRefreshing={setRefreshing}
                     onError={onLiveError}
-                  />
+                    focusParameter={focusParameter}
+                  >
+                    {session && (
+                      <LinkedFaces
+                        parameters={linkableParameters(session.data.parameters, session.applied)}
+                        values={session.applied}
+                        linking={linking}
+                        job={links.job}
+                        error={links.errorFor(currentLinkKey)}
+                        ready={linkReady}
+                        focus={linkFocus}
+                        onFocus={setLinkFocus}
+                        onAnalyze={(names) => {
+                          if (currentLinkKey)
+                            void links.run({
+                              key: currentLinkKey,
+                              parameters: session.data.parameters,
+                              values: session.applied,
+                              names,
+                            });
+                        }}
+                        onCancel={links.cancel}
+                      />
+                    )}
+                  </ScadFile>
                 </fieldset>
               )}
               {sourceFormat && !pythonUnavailable && (
@@ -2370,9 +2578,14 @@ function ModelFile({
         )}
         <div className={styles["model-status-bar"]}>
           <span>
-            {shownStats
-              ? formatLengths(shownStats.size, units)
-              : `Dimensions in ${unitName(units)}`}
+            {shownStats ? (
+              <CopyValue
+                text={formatLengths(shownStats.size, units, { precision })}
+                label={`Copy dimensions ${formatLengths(shownStats.size, units, { precision })}`}
+              />
+            ) : (
+              `Dimensions in ${unitName(units)}`
+            )}
           </span>
           {shownStats && (
             <span className={styles["model-triangle-count"]}>
@@ -2382,8 +2595,12 @@ function ModelFile({
           {viewing && <span>{viewingLabel(viewing.turn, history.latestTurn)}</span>}
           {comparison && (
             <span>
-              Compare Δ {formatLengths(comparison.size, units)},{" "}
-              {comparison.triangles > 0 ? "+" : ""}
+              Compare Δ{" "}
+              <CopyValue
+                text={formatLengths(comparison.size, units, { precision })}
+                label={`Copy size change ${formatLengths(comparison.size, units, { precision })}`}
+              />
+              , {comparison.triangles > 0 ? "+" : ""}
               {comparison.triangles.toLocaleString()} triangles
             </span>
           )}

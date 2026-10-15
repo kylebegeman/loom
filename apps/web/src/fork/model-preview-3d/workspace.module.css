@@ -121,6 +121,11 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Overall dimensions are read-only reference labels: quieter than measurements. */
+.model-mark-extent {
+  box-shadow: none;
+  color: var(--muted-foreground);
+}
 .model-mark-pin > span {
   position: absolute;
   top: -27px;
@@ -1352,6 +1357,16 @@ fieldset.model-inspector-tab-panel {
   color: var(--foreground);
   font-weight: 550;
 }
+/* A number parameter's name scrubs its value. */
+.model-param-label[data-scrub] {
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.model-param-label[data-scrub]:hover,
+.model-param-label[data-scrub][data-dragging] {
+  color: var(--foreground);
+}
 .model-param-control {
   display: flex;
   justify-content: flex-end;
@@ -1654,6 +1669,12 @@ fieldset.model-inspector-tab-panel {
   line-height: 1.42;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+.model-variant-size {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .model-selection-bar {
   position: absolute;
@@ -2143,6 +2164,26 @@ button.model-bed-fit-row:focus-visible {
   box-shadow: var(--model-shadow);
   font-size: 12px;
 }
+.model-copy-value {
+  margin: 0 -2px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 4px;
+  color: inherit;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  white-space: inherit;
+  cursor: copy;
+}
+.model-copy-value:hover {
+  background: var(--accent);
+}
+.model-copy-value:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
 .model-dim-delta {
   color: var(--muted-foreground);
   font-size: 11px;
@@ -2173,10 +2214,42 @@ button.model-bed-fit-row:focus-visible {
 .model-snap-marker[data-kind="edge"] {
   rotate: 45deg;
 }
+/* Hole center: a ring with a cross through it. */
+.model-snap-marker[data-kind="center"] {
+  border: 2px solid #3984ff;
+  border-radius: 50%;
+  background: var(--model-surface);
+}
+.model-snap-marker[data-kind="center"]::before,
+.model-snap-marker[data-kind="center"]::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  background: #3984ff;
+  content: "";
+}
+.model-snap-marker[data-kind="center"]::before {
+  width: 16px;
+  height: 1px;
+}
+.model-snap-marker[data-kind="center"]::after {
+  width: 1px;
+  height: 16px;
+}
+/* Face center: an open diamond, unlike the filled one on an edge. */
+.model-snap-marker[data-kind="faceCenter"] {
+  border: 2px solid #3984ff;
+  background: var(--model-surface);
+  rotate: 45deg;
+}
 .model-snap-path {
   fill: none;
   stroke: #3984ff;
   stroke-width: 2px;
+}
+.model-snap-path[data-kind="center"] {
+  stroke-dasharray: 6 4;
 }
 .model-snap-label {
   position: absolute;
@@ -2291,4 +2364,95 @@ button.model-bed-fit-row:focus-visible {
 .model-check-finding:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
+}
+@container (max-width: 399px) {
+  .model-document-actions [data-redo-idle="true"] {
+    display: none;
+  }
+}
+
+/* Linked faces: which faces each parameter moves */
+.model-links {
+  border-top: 1px solid var(--model-line);
+  padding-bottom: 16px;
+}
+.model-links-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 var(--model-gutter);
+}
+.model-links-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.model-link-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.model-link-chip {
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: var(--model-fill);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.model-link-chip[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+  color: color-mix(in oklab, var(--primary) 60%, var(--foreground));
+}
+.model-link-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.model-link-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.model-link-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: left;
+}
+.model-link-row small {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  text-align: right;
+}
+.model-link-row:hover:not(:disabled) {
+  background: var(--model-fill);
+}
+.model-link-row[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--primary) 14%, transparent);
+}
+.model-link-row:disabled {
+  cursor: default;
+}
+.model-link-chip:focus-visible,
+.model-link-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.model-link-note {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.model-link-error {
+  color: var(--destructive-foreground);
+  font-size: 12px;
 }

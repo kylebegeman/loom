@@ -5,7 +5,7 @@ import type { EnclosureRequirementsPatch } from "@t3tools/contracts/fork";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Chip } from "./controls";
-import { formatLength, useDisplayUnits } from "./units";
+import { formatLength, useDisplayPrecision, useDisplayUnits } from "./units";
 import type { AssemblyInspectorProps } from "./AssemblyInspector";
 import styles from "./AssemblyInspector.module.css";
 const GAPS = [
@@ -22,6 +22,7 @@ export function EnclosureFitSection(props: AssemblyInspectorProps) {
     report = props.report?.enclosure,
     disabled = props.readOnly || props.busy,
     units = useDisplayUnits(),
+    precision = useDisplayPrecision(),
     id = useId();
   const [selected, setSelected] = useState(""),
     [replacement, setReplacement] = useState("");
@@ -259,13 +260,15 @@ export function EnclosureFitSection(props: AssemblyInspectorProps) {
               </span>
               <span>{f.detail}</span>
               {f.measuredMm !== null && (
-                <span>{formatLength(f.measuredMm, units, { digits: 2, trim: true })}</span>
+                <span>
+                  {formatLength(f.measuredMm, units, { digits: 2, trim: true, precision })}
+                </span>
               )}
               {f.hole?.offsetMm && (
                 <span>
                   Standoff offset:{" "}
                   {f.hole.offsetMm
-                    .map((v) => formatLength(v, units, { digits: 2, trim: true }))
+                    .map((v) => formatLength(v, units, { digits: 2, trim: true, precision }))
                     .join(", ")}
                 </span>
               )}
@@ -273,7 +276,7 @@ export function EnclosureFitSection(props: AssemblyInspectorProps) {
                 <span>
                   {Math.round(f.connector.openFraction * 100)}% open
                   {f.connector.setbackMm !== null
-                    ? `; wall setback ${formatLength(f.connector.setbackMm, units, { digits: 2, trim: true })}`
+                    ? `; wall setback ${formatLength(f.connector.setbackMm, units, { digits: 2, trim: true, precision })}`
                     : ""}
                 </span>
               )}

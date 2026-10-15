@@ -20,12 +20,15 @@ import {
   Box3,
   Plane,
   Raycaster,
+  BufferAttribute,
   BufferGeometry,
   Line,
   Points,
   LineLoop,
   Triangle,
   LineBasicMaterial,
+  LineDashedMaterial,
+  LineSegments,
   CanvasTexture,
   Sprite,
   SpriteMaterial,
@@ -36,6 +39,7 @@ import {
   Group,
   Mesh,
   InstancedMesh,
+  Matrix3,
   Matrix4,
   MOUSE,
   TOUCH,
@@ -47,6 +51,7 @@ import {
   Vector2,
   Vector3,
   WebGLRenderer,
+  type Intersection,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
@@ -60,8 +65,10 @@ import { createGhost, GHOST_TRIANGLE_LIMIT } from "./ghost";
 import { buildTopologies } from "./snapTopology";
 import {
   circleAt,
+  sameRim,
   snapNear,
   snapNearPoint,
+  snapToRimCenter,
   topologyPoint,
   SNAP_TRIANGLE_LIMIT,
   type CircleFit,
@@ -73,6 +80,7 @@ import { createBed } from "./bed";
 import { normalizeQuaternion } from "@t3tools/contracts/fork";
 import { createOrientationIndex, type FaceRegion } from "./orientation";
 import { frameFor } from "./printCheck";
+import { extentDimensions, extentOffset } from "./extents";
 import {
   createSectionCaps,
   closedMesh as closedMeshGeometry,
@@ -90,6 +98,27 @@ export type SnapStatus = "idle" | "building" | "ready" | "off" | "failed";
 export type NavigationMode = "orbit" | "pan";
 /** An annotation with its number in the request list; the overlay falls back to list order. */
 export type OverlayAnnotation = ModelAnnotation & { number?: number };
+/** A point picked for the model's context menu. */
+export type ContextPick = {
+  /** Snapped like a measurement pick, in model space. */
+  point: ModelPoint;
+  world: ModelPoint;
+  /** Outward face normal in model space; null on a section cap. */
+  face: ModelPoint | null;
+  worldFace: ModelPoint | null;
+  /** CSS pixels from the canvas's top-left corner. */
+  x: number;
+  y: number;
+  /** The canvas's client rectangle when the pick happened. */
+  stage: { left: number; top: number; width: number; height: number };
+};
+/** A held touch opens the context menu; this much movement cancels the hold. */
+const LONG_PRESS_MS = 500,
+  LONG_PRESS_SLOP_PX = 8,
+  CLICK_SLOP_PX = 5;
+/** How far a feature snap reaches on screen, and how many passed hole rims stay reachable. */
+const SNAP_RADIUS_PX = 10,
+  WOKEN_RIMS = 4;
 type ViewerMark = {
   kind: "label" | "pin";
   text: string;
@@ -97,8 +126,17 @@ type ViewerMark = {
   element: HTMLElement;
   lengthMm: number | null;
   prefix: string;
+  /** An overall dimension's world-space ends and its drawn lines, hidden together when seen end-on. */
+  extent?: { a: Vector3; b: Vector3; lines: Group; collapsed: boolean };
 };
 const MARK_BLUE = 0x3984ff;
+/** Overall dimensions are read-only reference lines, so they stay neutral, never the accent. */
+const EXTENT_INK = { light: 0x4a515c, dark: 0x9aa1ab };
+/**
+ * An overall dimension shorter than this on screen is seen end-on, as in an orthographic standard
+ * view, so its line and label are left out rather than stacked on the other two.
+ */
+const MIN_EXTENT_PX = 4;
 
 /** Visibility is inherited by drawing, but Three's raycaster still hits hidden descendants. */
 export function shownIn(object: Object3D, root: Object3D | null = null) {
@@ -187,6 +225,35 @@ export function createViewer(host: HTMLElement) {
     faceHighlight = null;
     requestRender();
   };
+  // Faces an analyzed parameter moves, filled like the lay-flat face. Never picked or captured.
+  const linkedMark = new Mesh(
+    new BufferGeometry(),
+    new MeshBasicMaterial({
+      color: MARK_BLUE,
+      transparent: true,
+      opacity: 0.3,
+      side: DoubleSide,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+    }),
+  );
+  linkedMark.name = "model-linked-faces";
+  linkedMark.visible = false;
+  linkedMark.raycast = () => undefined;
+  linkedMark.renderOrder = 2;
+  orientationRoot.add(linkedMark);
+  let linkedPositions: Float32Array | null = null;
+  /** Model-space triangle soup, or null to clear. */
+  const setLinked = (positions: Float32Array | null) => {
+    if (positions === linkedPositions) return;
+    linkedPositions = positions;
+    linkedMark.geometry.dispose();
+    linkedMark.geometry = new BufferGeometry();
+    if (positions) linkedMark.geometry.setAttribute("position", new BufferAttribute(positions, 3));
+    linkedMark.visible = !!positions?.length;
+    requestRender();
+  };
   const prepareOrientation = () => {
     if (!model) return null;
     orientationIndex ??= createOrientationIndex(model, orientationRoot);
@@ -201,6 +268,8 @@ export function createViewer(host: HTMLElement) {
     snapBuild: Promise<void> | null = null,
     snapAbort: AbortController | null = null;
   let topologies = new Map<Mesh, Topology>();
+  /** Hole rims the cursor recently passed, whose centers stay reachable over the empty hole. */
+  let woken: CircleFit[] = [];
   let snapChanged: ((status: SnapStatus) => void) | null = null;
   let hoverFrame: number | null = null,
     hoverEvent: PointerEvent | null = null;
@@ -214,6 +283,7 @@ export function createViewer(host: HTMLElement) {
     snapAbort = null;
     snapBuild = null;
     topologies.clear();
+    woken = [];
     if (hoverFrame !== null) cancelAnimationFrame(hoverFrame);
     hoverFrame = null;
     hoverEvent = null;
@@ -300,14 +370,34 @@ export function createViewer(host: HTMLElement) {
     comparison?.setClipping(section.enabled ? [plane] : []);
     if (faceHighlight && faceHighlight.material instanceof MeshBasicMaterial)
       faceHighlight.material.clippingPlanes = section.enabled ? [plane] : [];
+    linkedMark.material.clippingPlanes = section.enabled ? [plane] : [];
     sectionGeometry = null;
     hideWall();
     updateCaps();
   };
   const raycaster = new Raycaster();
+  const faceNormal = (hit: Intersection): ModelPoint | null => {
+    if (!hit.face) return null;
+    const matrix = hit.object.matrixWorld.clone();
+    if (hit.object instanceof InstancedMesh && hit.instanceId !== undefined) {
+      const instance = new Matrix4();
+      hit.object.getMatrixAt(hit.instanceId, instance);
+      matrix.multiply(instance);
+    }
+    return hit.face.normal
+      .clone()
+      .applyNormalMatrix(new Matrix3().getNormalMatrix(matrix))
+      .normalize()
+      .toArray();
+  };
   const pick = (
     event: Pick<PointerEvent, "clientX" | "clientY">,
-  ): { point: [number, number, number]; mesh: Mesh | null; faceIndex: number } | null => {
+  ): {
+    point: [number, number, number];
+    mesh: Mesh | null;
+    faceIndex: number;
+    normal: ModelPoint | null;
+  } | null => {
     if (!model) return null;
     const rect = renderer.domElement.getBoundingClientRect();
     const viewCamera = activeCamera();
@@ -331,7 +421,7 @@ export function createViewer(host: HTMLElement) {
       );
     const capped = capPoint(hit?.distance ?? Infinity);
     if (capped && pickMode !== "lay-flat")
-      return { point: capped.toArray(), mesh: null, faceIndex: -1 };
+      return { point: capped.toArray(), mesh: null, faceIndex: -1, normal: null };
     if (!hit) return null;
     const mesh = hit.object instanceof Mesh ? hit.object : null;
     const triangles = mesh
@@ -341,12 +431,72 @@ export function createViewer(host: HTMLElement) {
       point: hit.point.toArray(),
       mesh,
       faceIndex: (hit.faceIndex ?? -1) + (hit.instanceId ?? 0) * triangles,
+      normal: faceNormal(hit),
     };
   };
   let onObjectPick: ((object: Object3D | null) => void) | null = null;
   let picked: ModelPoint[] = [];
   let down: { x: number; y: number } | null = null;
+  // Context picks: a still right click, Control+click, or a held touch. A right drag still pans.
+  let onContext: ((pick: ContextPick) => void) | null = null,
+    menuDown: { x: number; y: number } | null = null,
+    press: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null,
+    // After a held touch opens the menu, the finger still drifts a few pixels before it lifts.
+    // Navigation waits for the lift, so that drift cannot turn the camera and close the menu.
+    heldControls: boolean | null = null;
+  const cancelPress = () => {
+    if (press) clearTimeout(press.timer);
+    press = null;
+    if (heldControls !== null) controls.enabled = heldControls;
+    heldControls = null;
+  };
+  /** Reports a context pick at a client position; false when it misses the part. */
+  const contextAt = (clientX: number, clientY: number, free: boolean) => {
+    if (!model || !onContext) return false;
+    const hit = pick({ clientX, clientY });
+    if (!hit) return false;
+    const world = free || snapState !== "ready" || !hit.mesh ? hit.point : snappedHit(hit).point;
+    const rect = renderer.domElement.getBoundingClientRect();
+    onContext({
+      point: worldToModel(new Vector3(...world)),
+      world,
+      face:
+        hit.normal &&
+        new Vector3(...hit.normal)
+          .applyQuaternion(orientationRoot.quaternion.clone().invert())
+          .toArray(),
+      worldFace: hit.normal,
+      x: clientX - rect.left,
+      y: clientY - rect.top,
+      stage: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+    });
+    return true;
+  };
   const pointerDown = (event: PointerEvent) => {
+    cancelPress();
+    menuDown = null;
+    if (event.button === 2 || (event.button === 0 && event.ctrlKey)) {
+      menuDown = { x: event.clientX, y: event.clientY };
+      return;
+    }
+    if (event.pointerType === "touch" && event.isPrimary && onContext) {
+      const { clientX, clientY } = event;
+      press = {
+        id: event.pointerId,
+        x: clientX,
+        y: clientY,
+        timer: setTimeout(() => {
+          press = null;
+          // The finger lifts later; that release must not also pick.
+          if (contextAt(clientX, clientY, false)) {
+            down = null;
+            picked = [];
+            heldControls = controls.enabled;
+            controls.enabled = false;
+          }
+        }, LONG_PRESS_MS),
+      };
+    }
     if ((!pickMode && !onObjectPick) || event.button !== 0) return;
     renderer.domElement.focus();
     down = { x: event.clientX, y: event.clientY };
@@ -370,19 +520,45 @@ export function createViewer(host: HTMLElement) {
       projected.z <= 1
     );
   };
+  const pickRay = () => ({
+    origin: raycaster.ray.origin.toArray(),
+    direction: raycaster.ray.direction.toArray(),
+  });
   const snappedHit = (hit: NonNullable<ReturnType<typeof pick>>): Snap => {
     const topology = hit.mesh && topologies.get(hit.mesh);
-    return topology
-      ? snapNear(
-          topology,
-          hit.faceIndex,
-          hit.point,
-          { origin: raycaster.ray.origin.toArray(), direction: raycaster.ray.direction.toArray() },
-          toScreen,
-          10,
-          keepSnap,
-        )
-      : { kind: "face", point: hit.point, edge: null };
+    if (!topology) return { kind: "face", point: hit.point, edge: null };
+    const snap = snapNear(
+      topology,
+      hit.faceIndex,
+      hit.point,
+      pickRay(),
+      toScreen,
+      SNAP_RADIUS_PX,
+      keepSnap,
+      woken,
+    );
+    if (snap.rims)
+      woken = [
+        ...snap.rims,
+        ...woken.filter((fit) => !snap.rims!.some((rim) => sameRim(rim, fit))),
+      ].slice(0, WOKEN_RIMS);
+    return snap;
+  };
+  /**
+   * Over empty space, such as the middle of a through hole, only the center of a rim the cursor
+   * just passed can be picked. Call right after a pick that missed, which leaves its ray set.
+   */
+  const rimCenterAt = (event: Pick<PointerEvent, "clientX" | "clientY">) => {
+    if (snapState !== "ready" || !woken.length) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    return snapToRimCenter(
+      woken,
+      pickRay(),
+      toScreen,
+      [event.clientX - rect.left, event.clientY - rect.top],
+      SNAP_RADIUS_PX,
+      keepSnap,
+    );
   };
   let circleCache: { topology: Topology; edge: [number, number]; fit: CircleFit | null } | null =
     null;
@@ -405,10 +581,10 @@ export function createViewer(host: HTMLElement) {
   const updateHover = (event: PointerEvent) => {
     if (pickMode !== "measure" || snapState !== "ready" || event.altKey) return snapOverlay.hide();
     const hit = pick(event);
-    if (!hit) return snapOverlay.hide();
-    const snap = snappedHit(hit),
-      [x, y] = toScreen(snap.point);
-    if (measureMode === "hole") {
+    const snap = hit ? snappedHit(hit) : measureMode === "distance" ? rimCenterAt(event) : null;
+    if (!snap) return snapOverlay.hide();
+    const [x, y] = toScreen(snap.point);
+    if (measureMode === "hole" && hit) {
       const circle = circleHit(hit, snap);
       if (!circle) return snapOverlay.hide();
       snapOverlay.show(
@@ -418,8 +594,17 @@ export function createViewer(host: HTMLElement) {
         [...circle.loop, circle.loop[0]!].flatMap(toScreen),
         `Ø${lengthFormat(circle.diameter)}`,
       );
-    } else {
-      const topology = hit.mesh && topologies.get(hit.mesh);
+    } else if (snap.kind === "center" && snap.circle)
+      snapOverlay.show(
+        snap.kind,
+        x,
+        y,
+        [...snap.circle.loop, snap.circle.loop[0]!].flatMap(toScreen),
+        `Hole center, ⌀ ${lengthFormat(snap.circle.diameter)}`,
+      );
+    else if (snap.kind === "faceCenter") snapOverlay.show(snap.kind, x, y, null, "Face center");
+    else {
+      const topology = hit?.mesh && topologies.get(hit.mesh);
       snapOverlay.show(
         snap.kind,
         x,
@@ -510,6 +695,12 @@ export function createViewer(host: HTMLElement) {
     requestRender();
   };
   const pointerMove = (event: PointerEvent) => {
+    if (
+      press &&
+      press.id === event.pointerId &&
+      Math.hypot(event.clientX - press.x, event.clientY - press.y) >= LONG_PRESS_SLOP_PX
+    )
+      cancelPress();
     if (!pickMode || pickMode === "lay-flat") {
       hoverEvent = event;
       if (hoverFrame === null)
@@ -544,6 +735,14 @@ export function createViewer(host: HTMLElement) {
       picked.push(worldToModel(new Vector3(...point)));
   };
   const pointerUp = (event: PointerEvent) => {
+    cancelPress();
+    if (menuDown) {
+      const still =
+        Math.hypot(event.clientX - menuDown.x, event.clientY - menuDown.y) < CLICK_SLOP_PX;
+      menuDown = null;
+      if (still) contextAt(event.clientX, event.clientY, event.altKey);
+      return;
+    }
     if (!down) return;
     if (!pickMode) {
       if (Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5)
@@ -560,8 +759,10 @@ export function createViewer(host: HTMLElement) {
         if (hit?.mesh) onPick?.([worldToModel(new Vector3(...hit.point))]);
       }
     } else if (Math.hypot(event.clientX - down.x, event.clientY - down.y) < 5) {
-      const hit = pick(event);
-      if (hit) {
+      const hit = pick(event),
+        centered = !hit && measureMode === "distance" && !event.altKey ? rimCenterAt(event) : null;
+      if (centered) onPick?.([worldToModel(new Vector3(...centered.point))], "center");
+      else if (hit) {
         const snap =
           event.altKey || snapState !== "ready"
             ? { kind: "face" as const, point: hit.point, edge: null }
@@ -599,10 +800,15 @@ export function createViewer(host: HTMLElement) {
   renderer.domElement.addEventListener("pointerup", pointerUp);
   renderer.domElement.addEventListener("pointerleave", pointerLeave);
   const pointerCancel = () => {
+    cancelPress();
+    menuDown = null;
     down = null;
     picked = [];
   };
   renderer.domElement.addEventListener("pointercancel", pointerCancel);
+  // The part's own menu replaces the browser's.
+  const nativeMenu = (event: Event) => event.preventDefault();
+  renderer.domElement.addEventListener("contextmenu", nativeMenu);
   const clearOverlay = () => {
     overlay.traverse((object) => {
       if (object instanceof Mesh || object instanceof Line) {
@@ -616,13 +822,14 @@ export function createViewer(host: HTMLElement) {
       }
     });
     overlay.clear();
-    marksLayer?.replaceChildren();
+    for (const mark of marks) mark.element.remove();
     marks = [];
   };
   // Labels and pins are DOM elements projected after each frame, so text stays crisp at any
   // zoom. Lines and dots stay in the scene; capture() paints the marks into the image.
   let marksLayer: HTMLDivElement | null = null,
     marks: ViewerMark[] = [],
+    extentMarks: ViewerMark[] = [],
     dotTexture: CanvasTexture | null = null;
   let lengthFormat = (mm: number) => `${mm.toFixed(2)} mm`;
   const projected = new Vector3();
@@ -630,19 +837,43 @@ export function createViewer(host: HTMLElement) {
     const width = host.clientWidth,
       height = host.clientHeight;
     const viewCamera = activeCamera();
-    for (const mark of marks) {
+    for (const mark of [...marks, ...extentMarks]) {
       projected.copy(mark.position).applyMatrix4(orientationRoot.matrixWorld).project(viewCamera);
-      mark.element.hidden = projected.z < -1 || projected.z > 1;
+      mark.element.hidden = projected.z < -1 || projected.z > 1 || mark.extent?.collapsed === true;
       const x = ((projected.x + 1) / 2) * width,
         y = ((1 - projected.y) / 2) * height;
       mark.element.style.transform = `translate(${x}px, ${y}px)${mark.kind === "label" ? " translate(-50%, -50%)" : ""}`;
+    }
+  };
+  const extentEnd = new Vector3();
+  /** Hides each overall dimension that projects shorter than MIN_EXTENT_PX in a view of this size. */
+  const fitExtents = (width: number, height: number) => {
+    const viewCamera = activeCamera();
+    // Runs before the frame renders, so bring the camera's matrices up to date first.
+    viewCamera.updateMatrixWorld();
+    for (const mark of extentMarks) {
+      if (!mark.extent) continue;
+      const { a, b, lines } = mark.extent;
+      projected.copy(a).project(viewCamera);
+      extentEnd.copy(b).project(viewCamera);
+      const length = Math.hypot(
+        ((extentEnd.x - projected.x) / 2) * width,
+        ((extentEnd.y - projected.y) / 2) * height,
+      );
+      mark.extent.collapsed = length < MIN_EXTENT_PX;
+      lines.visible = !mark.extent.collapsed;
     }
   };
   const addMark = (
     kind: ViewerMark["kind"],
     text: string,
     position: Vector3,
-    options?: { status?: string; lengthMm?: number; prefix?: string },
+    options?: {
+      status?: string;
+      lengthMm?: number;
+      prefix?: string;
+      extent?: NonNullable<ViewerMark["extent"]>;
+    },
   ) => {
     if (!marksLayer) {
       marksLayer = document.createElement("div");
@@ -651,6 +882,7 @@ export function createViewer(host: HTMLElement) {
     }
     const element = document.createElement("div");
     element.className = styles[kind === "label" ? "model-mark-label" : "model-mark-pin"]!;
+    if (options?.extent) element.className += ` ${styles["model-mark-extent"]!}`;
     if (kind === "pin") {
       const body = document.createElement("span");
       body.dataset.status = options?.status;
@@ -658,13 +890,14 @@ export function createViewer(host: HTMLElement) {
       element.append(body);
     } else element.textContent = text;
     marksLayer.append(element);
-    marks.push({
+    (options?.extent ? extentMarks : marks).push({
       kind,
       text,
       position,
       element,
       lengthMm: options?.lengthMm ?? null,
       prefix: options?.prefix ?? "",
+      ...(options?.extent ? { extent: options.extent } : {}),
     });
   };
   const dot = (point: ModelPoint) => {
@@ -774,9 +1007,9 @@ export function createViewer(host: HTMLElement) {
   ) => {
     const scale = 1.25;
     const viewCamera = activeCamera();
-    for (const mark of marks) {
+    for (const mark of [...marks, ...extentMarks]) {
       projected.copy(mark.position).applyMatrix4(orientationRoot.matrixWorld).project(viewCamera);
-      if (projected.z < -1 || projected.z > 1) continue;
+      if (projected.z < -1 || projected.z > 1 || mark.extent?.collapsed) continue;
       const px = x + ((projected.x + 1) / 2) * width,
         py = y + ((1 - projected.y) / 2) * height;
       const surface = mark.kind === "pin" ? mark.element.firstElementChild! : mark.element;
@@ -965,6 +1198,7 @@ export function createViewer(host: HTMLElement) {
     if (disposed || !visible) return;
     snapOverlay.hide();
     scaleMarkers();
+    fitExtents(host.clientWidth, host.clientHeight);
     renderer.render(scene, activeCamera());
     placeMarks();
     placeFindings();
@@ -992,11 +1226,89 @@ export function createViewer(host: HTMLElement) {
   };
   const stopObserving = observeResize(host, resize);
   resize();
+  // Overall dimensions are derived from the posed bounds on every change, never saved.
+  const extents = new Group();
+  extents.name = "model-extents";
+  scene.add(extents);
+  let extentsShown = false;
+  const drawExtents = () => {
+    extents.traverse((object) => {
+      if (object instanceof Line) {
+        object.geometry.dispose();
+        (object.material as LineBasicMaterial).dispose();
+      }
+    });
+    extents.clear();
+    for (const mark of extentMarks) mark.element.remove();
+    extentMarks = [];
+    if (extentsShown && model && !box.isEmpty()) {
+      const bounds = { min: box.min.toArray(), max: box.max.toArray() },
+        offset = extentOffset(bounds),
+        color = dark ? EXTENT_INK.dark : EXTENT_INK.light;
+      for (const extent of extentDimensions(bounds)) {
+        const a = new Vector3(...extent.a),
+          b = new Vector3(...extent.b);
+        const lines = new Group();
+        extents.add(lines);
+        const add = (line: Line) => {
+          line.renderOrder = 9;
+          lines.add(line);
+        };
+        for (const [corner, end] of [
+          [extent.from[0], a],
+          [extent.from[1], b],
+        ] as const) {
+          const witness = new Line(
+            new BufferGeometry().setFromPoints([new Vector3(...corner), end]),
+            new LineDashedMaterial({
+              color,
+              dashSize: offset / 6,
+              gapSize: offset / 6,
+              depthTest: false,
+            }),
+          );
+          witness.computeLineDistances();
+          add(witness);
+        }
+        // Ticks cross each end of the dimension line along its witness lines.
+        const tick = new Vector3(...extent.from[0])
+          .sub(a)
+          .normalize()
+          .multiplyScalar(offset * 0.3);
+        add(
+          new LineSegments(
+            new BufferGeometry().setFromPoints([
+              a.clone().add(tick),
+              a.clone().sub(tick),
+              b.clone().add(tick),
+              b.clone().sub(tick),
+            ]),
+            new LineBasicMaterial({ color, depthTest: false }),
+          ),
+        );
+        add(
+          new Line(
+            new BufferGeometry().setFromPoints([a, b]),
+            new LineBasicMaterial({ color, depthTest: false }),
+          ),
+        );
+        const prefix = `${extent.axis} `;
+        addMark(
+          "label",
+          prefix + lengthFormat(extent.lengthMm),
+          new Vector3(...worldToModel(a.clone().lerp(b, 0.5))),
+          { lengthMm: extent.lengthMm, prefix, extent: { a, b, lines, collapsed: false } },
+        );
+      }
+    }
+    requestRender();
+  };
   const theme = () => {
     dark = document.documentElement.classList.contains("dark");
     scene.background = new Color(dark ? 0x151920 : 0xf1f3f5);
     bed?.setTheme(dark);
     shading.setTheme(dark);
+    drawExtents();
     previous?.setTheme(dark);
     comparison?.setTheme(dark);
     updateCaps();
@@ -1171,6 +1483,7 @@ export function createViewer(host: HTMLElement) {
       applyOrientationRoot();
       const stats = orientedStats(true)!;
       box = stats.box;
+      drawExtents();
       overhangPositions = null;
       shading.setBedZ(box.min.z);
       caps.syncTransforms();
@@ -1503,9 +1816,33 @@ export function createViewer(host: HTMLElement) {
       requestRender();
     },
     setOverlays: drawOverlay,
+    onContextPick(callback: ((pick: ContextPick) => void) | null) {
+      onContext = callback;
+      if (!callback) cancelPress();
+    },
+    /** Opens the context menu for the part at the middle of the canvas; false on a miss. */
+    contextAtCenter() {
+      const rect = renderer.domElement.getBoundingClientRect();
+      return contextAt(rect.left + rect.width / 2, rect.top + rect.height / 2, false);
+    },
+    /** Moves the orbit center to a world point, keeping the view direction and distance. */
+    centerAt(world: ModelPoint) {
+      const shift = new Vector3(...world).sub(controls.target);
+      camera.position.add(shift);
+      controls.target.add(shift);
+      controls.update();
+      navigationStarted();
+      requestRender();
+    },
+    /** Overall X, Y and Z dimensions of the posed part, shown in the view and in captures. */
+    setExtents(value: boolean) {
+      if (value === extentsShown) return;
+      extentsShown = value;
+      drawExtents();
+    },
     setLengthFormat(format: (mm: number) => string) {
       lengthFormat = format;
-      for (const mark of marks)
+      for (const mark of [...marks, ...extentMarks])
         if (mark.lengthMm !== null) {
           mark.text = mark.prefix + format(mark.lengthMm);
           mark.element.textContent = mark.text;
@@ -1593,6 +1930,7 @@ export function createViewer(host: HTMLElement) {
       applyOrientationRoot();
       const stats = orientedStats(true)!;
       box = stats.box;
+      drawExtents();
       modelTriangles = stats.triangles;
       overhangPositions = null;
       shading.setBedZ(box.min.z);
@@ -1634,6 +1972,7 @@ export function createViewer(host: HTMLElement) {
       resetSnapping();
       circleCache = null;
       clearFaceHighlight();
+      setLinked(null);
       orientationIndex = null;
       sectionGeometry = null;
       model = next;
@@ -1644,6 +1983,7 @@ export function createViewer(host: HTMLElement) {
       applyOrientationRoot();
       modelTriangles = stats.triangles;
       box = orientedStats()!.box;
+      drawExtents();
       placeLayers();
       overhangPositions = null;
       unsupportedMaterials = false;
@@ -1733,9 +2073,11 @@ export function createViewer(host: HTMLElement) {
       output.height = four ? 1200 : Math.max(1, Math.round(1200 / aspect));
       const context = output.getContext("2d");
       if (!context) throw new Error("Image capture is unavailable.");
-      const controlsEnabled = controls.enabled;
+      const controlsEnabled = controls.enabled,
+        linkedShown = linkedMark.visible;
       controls.enabled = false;
       restoring = true;
+      linkedMark.visible = false;
       try {
         if (four) projection = "orthographic";
         renderer.setPixelRatio(1);
@@ -1754,6 +2096,7 @@ export function createViewer(host: HTMLElement) {
         for (const [index, view] of (four ? STANDARD_VIEWS : [null]).entries()) {
           if (view) setView(view);
           scaleMarkers();
+          fitExtents(four ? 800 : 1200, four ? 600 : output.height);
           renderer.render(scene, activeCamera());
           const x = four ? (index % 2) * 800 : 0,
             y = four ? Math.floor(index / 2) * 600 : 0;
@@ -1775,6 +2118,7 @@ export function createViewer(host: HTMLElement) {
           ),
         );
       } finally {
+        linkedMark.visible = linkedShown;
         projection = originalProjection;
         controls.enabled = controlsEnabled;
         camera.position.copy(position);
@@ -1800,8 +2144,12 @@ export function createViewer(host: HTMLElement) {
         requestRender();
       }
     },
+    setLinked,
     dispose() {
       disposed = true;
+      setLinked(null);
+      linkedMark.geometry.dispose();
+      linkedMark.material.dispose();
       resetSnapping();
       snapChanged = null;
       snapOverlay.dispose();
@@ -1810,6 +2158,8 @@ export function createViewer(host: HTMLElement) {
       themeObserver.disconnect();
       controls.removeEventListener("change", controlsChanged);
       clearOverlay();
+      extentsShown = false;
+      drawExtents();
       marksLayer?.remove();
       dotTexture?.dispose();
       onCamera = null;
@@ -1823,6 +2173,9 @@ export function createViewer(host: HTMLElement) {
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("pointerleave", pointerLeave);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
+      renderer.domElement.removeEventListener("contextmenu", nativeMenu);
+      cancelPress();
+      onContext = null;
       renderer.domElement.removeEventListener("mousedown", preventAutoscroll);
       controls.dispose();
       caps.dispose();

@@ -309,7 +309,7 @@ export const ModelPreview3dToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_model_preview_3d_save_settings", {
     description:
-      "Update 3D preview settings, including build volume, OpenSCAD path, scale reference and display units. displayUnits only changes what the user sees; every tool reads and writes millimetres.",
+      "Update 3D preview settings, including build volume, OpenSCAD path, scale reference, display units and display precision. displayUnits and displayPrecision only change what the user sees; every tool reads and writes millimetres.",
     parameters: Schema.Struct({ settings: W.ModelPreviewSettings }),
     success: W.ModelPreviewSettings,
     failure: Schema.Union([ModelPreviewError, OrchestratorMcpFailure]),

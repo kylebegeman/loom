@@ -1,5 +1,5 @@
 import styles from "./workspace.module.css";
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import type { ScopedThreadRef } from "@t3tools/contracts";
@@ -7,9 +7,10 @@ import { modelFormatOf, type ScadParameters, type ScadRenderResult } from "@t3to
 import { models, modelUrl, runModelCommand } from "./state";
 import { useParameterHistory } from "./useParameterHistory";
 import { parameterValues } from "./params";
-import type { ParameterState } from "./parameterHistory";
+import { nearestEntry, type ParameterState } from "./parameterHistory";
 import { Parameters } from "./Parameters";
 import { OperationStatus } from "./OperationStatus";
+import type { HoldRender } from "./controls";
 import { useParameterPreview } from "./useParameterPreview";
 const failureMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -24,11 +25,19 @@ export type ScadSession = {
   historyCursor: number;
   historyLabels: readonly string[];
   moveHistory: (index: number) => void;
+  /** The overrides and set the customizer holds now. */
+  parameters: ParameterState;
+  /** Returns to an earlier state for panel-wide undo, keeping the customizer's own history. */
+  restoreParameters: (value: ParameterState) => void;
   chooseSet: (name: string | null) => void;
   setAutomatic: (enabled: boolean) => void;
   apply: () => void;
   saveSet: (name: string, values: Readonly<Record<string, string>>) => Promise<void>;
   promote: (values: Readonly<Record<string, string>>, name: string) => void;
+  /** Changes one value as its customizer row does, merging repeated edits into one history step. */
+  edit: (name: string, value: string) => void;
+  /** Holds the automatic render while a scrub elsewhere is under way. */
+  hold: HoldRender;
 };
 export function ScadFile({
   threadRef,
@@ -41,7 +50,13 @@ export function ScadFile({
   onPending,
   onRefreshing,
   onError,
+  focusParameter = null,
+  children,
 }: {
+  /** Shows and focuses one parameter's control; a new object repeats the request. */
+  focusParameter?: { name: string } | null;
+  /** Shown after the parameters, inside their scrolling list. */
+  children?: ReactNode;
   onSession: (session: ScadSession) => void;
   onRefreshing: (refreshing: boolean) => void;
   threadRef: ScopedThreadRef;
@@ -75,6 +90,8 @@ export function ScadFile({
     [],
   );
   const [automatic, setAutomatic] = useState(true);
+  // A scrub under way holds the automatic render until it is released.
+  const [held, setHeld] = useState(false);
   const initial = useMemo<ParameterState>(
     () => ({ overrides: { ...data?.lastUsed }, setName: data?.lastUsedSet ?? null }),
     [data],
@@ -87,8 +104,24 @@ export function ScadFile({
   const { overrides, setName } = history.current;
   const ready = data !== null && loadedRevision === revision;
   const current = history.current;
-  const preview = useParameterPreview(current, ready, automatic, data?.sourceRevision ?? null);
+  const preview = useParameterPreview(
+    current,
+    ready,
+    automatic,
+    data?.sourceRevision ?? null,
+    held,
+  );
   const record = history.record;
+  const historyState = history.history,
+    move = history.move;
+  const restoreParameters = useCallback(
+    (value: ParameterState) => {
+      const index = nearestEntry(historyState, value);
+      if (index >= 0) move(index);
+      else record(value, "Restored values");
+    },
+    [historyState, move, record],
+  );
   const promote = useCallback(
     (values: Readonly<Record<string, string>>, name: string) =>
       record({ overrides: values, setName: null }, `Use ${name}`),
@@ -131,12 +164,21 @@ export function ScadFile({
             historyCursor: history.history.cursor,
             historyLabels: history.history.entries.map((entry) => entry.label),
             moveHistory: history.move,
+            parameters: current,
+            restoreParameters,
             chooseSet: (name: string | null) =>
               record({ setName: name, overrides: {} }, name ? `Set: ${name}` : "Source defaults"),
             setAutomatic,
             apply: preview.apply,
             promote,
             saveSet,
+            edit: (name: string, value: string) =>
+              record(
+                { setName, overrides: { ...overrides, [name]: value } },
+                `${name}: ${value}`,
+                name,
+              ),
+            hold: setHeld,
           }
         : null,
     [
@@ -152,6 +194,8 @@ export function ScadFile({
       history.history,
       history.move,
       record,
+      current,
+      restoreParameters,
     ],
   );
   useEffect(() => {
@@ -233,6 +277,7 @@ export function ScadFile({
           pending={pending || refreshing}
           hasUnapplied={preview.hasUnapplied}
           onAutomatic={setAutomatic}
+          onHold={setHeld}
           onApply={preview.apply}
           values={{ ...(setName ? data.setValues[setName] : {}), ...overrides }}
           setName={setName}
@@ -253,7 +298,10 @@ export function ScadFile({
             history.record({ setName: null, overrides: {} }, "Source defaults");
           }}
           onSave={save}
-        />
+          focus={focusParameter}
+        >
+          {children}
+        </Parameters>
       ) : (
         <div className={styles["model-empty"]}>
           <p>Loading parameters...</p>

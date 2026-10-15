@@ -11,12 +11,12 @@ import type {
 } from "@t3tools/contracts/fork";
 import { useEffect, useRef, useId } from "react";
 import { singleZoneStrips, type ModelFormat } from "@t3tools/contracts/fork";
-import { formatLength, useDisplayUnits } from "../units";
+import { formatLength, useDisplayPrecision, useDisplayUnits } from "../units";
 import type { Plate } from "../buildPlate";
 import { createViewer, type ModelViewer, type NavigationMode } from "./createViewer";
 import { disposeModel, loadModel, type meshStats } from "./load";
 import type { CircleFit } from "./snap";
-import type { SnapStatus } from "./createViewer";
+import type { ContextPick, SnapStatus } from "./createViewer";
 import type { LayerData } from "./layers";
 import type { Object3D } from "three";
 import type { SectionCapState } from "./sectionCaps";
@@ -64,7 +64,13 @@ export default function ViewerCanvas({
   compareModel = null,
   layers = null,
   layer = 0,
+  extents = false,
+  onContextPick,
 }: {
+  /** A still right click, Control+click or held touch on the part. */
+  onContextPick?: (pick: ContextPick) => void;
+  /** Overall X, Y and Z dimensions of the posed part. Session only. */
+  extents?: boolean;
   compareModel?: Object3D | null;
   layers?: LayerData | null;
   layer?: number;
@@ -113,6 +119,7 @@ export default function ViewerCanvas({
   onNavigate?: () => void;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const descriptionId = useId();
   const host = useRef<HTMLDivElement>(null),
     loaded = useRef(false),
@@ -127,6 +134,7 @@ export default function ViewerCanvas({
     camera,
     reference,
     units,
+    precision,
     overhangAngleDegrees,
     keepPrevious,
     previousShown,
@@ -144,6 +152,7 @@ export default function ViewerCanvas({
       camera,
       reference,
       units,
+      precision,
       overhangAngleDegrees,
       keepPrevious,
       previousShown,
@@ -160,6 +169,7 @@ export default function ViewerCanvas({
     camera,
     reference,
     units,
+    precision,
     overhangAngleDegrees,
     keepPrevious,
     previousShown,
@@ -219,8 +229,8 @@ export default function ViewerCanvas({
     viewerRef.current?.setReference(reference);
   }, [reference, viewerRef]);
   useEffect(() => {
-    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units, { digits: 2 }));
-  }, [units, viewerRef]);
+    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units, { digits: 2, precision }));
+  }, [units, precision, viewerRef]);
   useEffect(() => {
     viewerRef.current?.setVisible(visible);
   }, [visible, viewerRef]);
@@ -271,7 +281,10 @@ export default function ViewerCanvas({
         viewerRef.current.setOverhangAngle(options.current.overhangAngleDegrees);
         viewerRef.current.setReference(options.current.reference);
         viewerRef.current.setLengthFormat((mm) =>
-          formatLength(mm, options.current.units, { digits: 2 }),
+          formatLength(mm, options.current.units, {
+            digits: 2,
+            precision: options.current.precision,
+          }),
         );
         if (options.current.section) viewerRef.current.setSection(options.current.section);
         if (options.current.camera) viewerRef.current.restore(options.current.camera);
@@ -343,6 +356,13 @@ export default function ViewerCanvas({
   useEffect(() => {
     if (section) viewerRef.current?.setSection(section);
   }, [viewerRef, section]);
+  useEffect(() => {
+    viewerRef.current?.setExtents(extents);
+  }, [viewerRef, extents]);
+  useEffect(() => {
+    viewerRef.current?.onContextPick(onContextPick ?? null);
+    return () => viewerRef.current?.onContextPick(null);
+  }, [viewerRef, onContextPick]);
   useEffect(() => {
     viewerRef.current?.setOverlays(measurements, annotations, pendingPoint);
   }, [viewerRef, measurements, annotations, pendingPoint]);

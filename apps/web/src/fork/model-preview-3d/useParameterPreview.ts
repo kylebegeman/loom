@@ -8,12 +8,21 @@ function sameState(left: ParameterState, right: ParameterState) {
     keys.every((key) => left.overrides[key] === right.overrides[key])
   );
 }
-/** Pausing auto preview retains the applied values until an explicit Apply. */
+/** Quiet after a parameter change before the preview renders on its own. */
+export const AUTO_RENDER_MS = 400;
+
+/**
+ * Renders the current values once they have been quiet for AUTO_RENDER_MS. A newer change
+ * restarts the wait, and nothing renders while `held` (a scrub is under way). Pausing auto
+ * preview retains the applied values until an explicit Apply. A new applied state replaces the
+ * render in flight, which the server then stops.
+ */
 export function useParameterPreview(
   current: ParameterState,
   ready: boolean,
   automatic: boolean,
   source: string | null = null,
+  held = false,
 ) {
   const [baseline, setBaseline] = useState(source);
   const [applied, setApplied] = useState<ParameterState | null>(null);
@@ -23,10 +32,10 @@ export function useParameterPreview(
   }
   if (ready && applied === null) setApplied(current);
   useEffect(() => {
-    if (!ready || applied === null || !automatic || sameState(current, applied)) return;
-    const timeout = setTimeout(() => setApplied(current), 300);
+    if (!ready || applied === null || !automatic || held || sameState(current, applied)) return;
+    const timeout = setTimeout(() => setApplied(current), AUTO_RENDER_MS);
     return () => clearTimeout(timeout);
-  }, [current, ready, automatic, applied]);
+  }, [current, ready, automatic, held, applied]);
   const apply = useCallback(() => setApplied(current), [current]);
   return {
     applied: applied ?? current,

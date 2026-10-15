@@ -1,6 +1,9 @@
 import {
   BoxGeometry,
   CylinderGeometry,
+  ExtrudeGeometry,
+  Path,
+  Shape,
   BufferGeometry,
   Float32BufferAttribute,
   Group,
@@ -453,6 +456,125 @@ it("picks visible orthographic faces behind the eye when zoomed inside the model
   viewer.dispose();
 });
 
+it("holds navigation from a touch hold's menu until the finger lifts", () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial()), false);
+  viewer.restore({
+    ...viewer.snapshot(),
+    projection: "perspective",
+    position: [0, 0, 50],
+    target: [0, 0, 0],
+  });
+  const context = vi.fn();
+  viewer.onContextPick(context);
+  const controls = doubles.controls as { enabled?: boolean };
+  controls.enabled = true;
+  const touch = {
+    button: 0,
+    clientX: 300,
+    clientY: 200,
+    pointerId: 2,
+    pointerType: "touch",
+    isPrimary: true,
+  } as PointerEvent;
+  pointerHandlers.pointerdown!(touch);
+  vi.advanceTimersByTime(500);
+  expect(context).toHaveBeenCalledTimes(1);
+  // A drift under the slop after the menu opens must not turn the camera and close it.
+  expect(controls.enabled).toBe(false);
+  pointerHandlers.pointermove!({ ...touch, clientX: 304 } as PointerEvent);
+  expect(controls.enabled).toBe(false);
+  pointerHandlers.pointerup!(touch);
+  expect(controls.enabled).toBe(true);
+  // A cancelled touch gives navigation back too.
+  pointerHandlers.pointerdown!(touch);
+  vi.advanceTimersByTime(500);
+  expect(controls.enabled).toBe(false);
+  pointerHandlers.pointercancel!(touch);
+  expect(controls.enabled).toBe(true);
+  // A hold that misses the part opens nothing and leaves navigation alone.
+  const miss = vi.spyOn(Raycaster.prototype, "intersectObject").mockReturnValue([]);
+  pointerHandlers.pointerdown!(touch);
+  vi.advanceTimersByTime(500);
+  miss.mockRestore();
+  expect(controls.enabled).toBe(true);
+  viewer.dispose();
+  vi.useRealTimers();
+});
+
+it("opens the point menu on a still right click, Ctrl+click, a touch hold or the view center", () => {
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(20, 20, 20), new MeshStandardMaterial()), false);
+  viewer.restore({
+    ...viewer.snapshot(),
+    projection: "perspective",
+    position: [0, 0, 50],
+    target: [0, 0, 0],
+  });
+  const context = vi.fn();
+  viewer.onContextPick(context);
+  const at = (extra: Partial<PointerEvent> = {}) =>
+    ({ button: 2, clientX: 300, clientY: 200, pointerId: 1, ...extra }) as PointerEvent;
+  // A right drag still pans.
+  pointerHandlers.pointerdown!(at());
+  pointerHandlers.pointerup!(at({ clientX: 310 }));
+  expect(context).not.toHaveBeenCalled();
+  pointerHandlers.pointerdown!(at({ clientX: 302 }));
+  pointerHandlers.pointerup!(at());
+  expect(context).toHaveBeenCalledTimes(1);
+  const pick = context.mock.calls[0]![0];
+  expect(pick.point[2]).toBeCloseTo(10, 5);
+  expect(pick.worldFace.map(Math.round)).toEqual([0, 0, 1]);
+  expect(pick.face.map(Math.round)).toEqual([0, 0, 1]);
+  expect(pick).toMatchObject({
+    x: 300,
+    y: 200,
+    stage: { left: 0, top: 0, width: 600, height: 400 },
+  });
+  pointerHandlers.pointerdown!(at({ button: 0, ctrlKey: true }));
+  pointerHandlers.pointerup!(at({ button: 0, ctrlKey: true }));
+  expect(context).toHaveBeenCalledTimes(2);
+  // A miss opens nothing.
+  const miss = vi.spyOn(Raycaster.prototype, "intersectObject").mockReturnValue([]);
+  pointerHandlers.pointerdown!(at());
+  pointerHandlers.pointerup!(at());
+  miss.mockRestore();
+  expect(context).toHaveBeenCalledTimes(2);
+  // A touch held still opens it once, and its release does not also pick.
+  const measured = vi.fn();
+  viewer.setPickMode("measure", measured);
+  const touch = at({ button: 0, pointerType: "touch", isPrimary: true, pointerId: 2 });
+  pointerHandlers.pointerdown!(touch);
+  vi.advanceTimersByTime(499);
+  expect(context).toHaveBeenCalledTimes(2);
+  vi.advanceTimersByTime(1);
+  expect(context).toHaveBeenCalledTimes(3);
+  pointerHandlers.pointerup!(touch);
+  expect(measured).not.toHaveBeenCalled();
+  // Moving the finger 8 px cancels the hold.
+  pointerHandlers.pointerdown!(touch);
+  pointerHandlers.pointermove!({ ...touch, clientX: 308 } as PointerEvent);
+  vi.advanceTimersByTime(600);
+  expect(context).toHaveBeenCalledTimes(3);
+  viewer.setPickMode(null, null);
+  expect(viewer.contextAtCenter()).toBe(true);
+  expect(context).toHaveBeenCalledTimes(4);
+  expect(context.mock.calls[3]![0]).toMatchObject({ x: 300, y: 200 });
+  const native = { preventDefault: vi.fn() };
+  pointerHandlers.contextmenu!(native as unknown as PointerEvent);
+  expect(native.preventDefault).toHaveBeenCalled();
+  viewer.centerAt([5, 0, 4]);
+  expect(viewer.snapshot()).toMatchObject({ target: [5, 0, 4], position: [5, 0, 54] });
+  viewer.dispose();
+  expect(gpu.domElement.removeEventListener).toHaveBeenCalledWith(
+    "contextmenu",
+    expect.any(Function),
+  );
+  vi.useRealTimers();
+});
+
 it("keeps references hidden without a model and moves them with reloaded geometry", () => {
   const viewer = createViewer(host());
   viewer.setReference("coin-euro");
@@ -640,6 +762,93 @@ it("updates existing measurement labels and captures without rebuilding millimet
   expect(circleLabel).toBeDefined();
   viewer.setLengthFormat((mm) => `${mm.toFixed(2)} mm`);
   expect(circleLabel.textContent).toBe("Ø25.40 mm");
+  viewer.dispose();
+  vi.restoreAllMocks();
+});
+
+it("draws overall dimensions from posed bounds, keeps them through markup redraws and captures them", async () => {
+  const context = {
+    arc: vi.fn(),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    drawImage: vi.fn(),
+    fillText: vi.fn(),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    scale: vi.fn(),
+    measureText: () => ({ width: 40 }),
+    beginPath: vi.fn(),
+    roundRect: vi.fn(),
+  };
+  const elements: { textContent: string; remove: ReturnType<typeof vi.fn> }[] = [];
+  vi.stubGlobal("document", {
+    documentElement: { classList: { contains: () => true } },
+    createElement: (tag: string) => {
+      if (tag === "canvas")
+        return {
+          getContext: () => context,
+          toBlob: (callback: BlobCallback) => callback(new Blob(["png"])),
+        };
+      const element = { textContent: "", style: {}, append: vi.fn(), remove: vi.fn() };
+      elements.push(element);
+      return element;
+    },
+  });
+  vi.stubGlobal("getComputedStyle", () => ({ fontFamily: "sans-serif" }));
+  Object.assign(gpu, {
+    getSize: (size: import("three").Vector2) => size.set(600, 400),
+    getPixelRatio: () => 1,
+  });
+  const shown = () =>
+    elements
+      .filter((element) => element.textContent && !element.remove.mock.calls.length)
+      .map((element) => element.textContent);
+  const viewer = createViewer(host());
+  viewer.setModel(new Mesh(new BoxGeometry(30, 20, 10), new MeshStandardMaterial()), false);
+  expect(shown()).toEqual([]);
+  viewer.setExtents(true);
+  expect(shown()).toEqual(["X 30.00 mm", "Y 20.00 mm", "Z 10.00 mm"]);
+  const scene = () => gpu.render.mock.calls.at(-1)![0] as import("three").Scene;
+  flushFrame();
+  const lines = scene().getObjectByName("model-extents")!.children;
+  // Per axis: two dashed witness lines, the end ticks and the dimension line.
+  expect(lines.map((axis) => axis.children.length)).toEqual([4, 4, 4]);
+  // Seen end-on in an orthographic standard view, an axis's line and label are left out.
+  const label = (text: string) =>
+    elements.find((element) => element.textContent === text) as { hidden?: boolean };
+  expect(lines.map((axis) => axis.visible)).toEqual([true, true, true]);
+  // The real controls aim the camera at their target on update; the double has to as well.
+  const controls = doubles.controls as { target: Vector3; update: () => void };
+  const perspective = gpu.render.mock.calls.at(-1)![1] as import("three").PerspectiveCamera,
+    update = controls.update;
+  controls.update = () => {
+    perspective.lookAt(controls.target);
+    update();
+  };
+  viewer.setProjection("orthographic");
+  viewer.setView("front");
+  flushFrame();
+  expect(lines.map((axis) => axis.visible)).toEqual([true, false, true]);
+  expect(label("Y 20.00 mm").hidden).toBe(true);
+  expect(label("X 30.00 mm").hidden).toBe(false);
+  viewer.setView("iso");
+  flushFrame();
+  expect(lines.map((axis) => axis.visible)).toEqual([true, true, true]);
+  expect(label("Y 20.00 mm").hidden).toBe(false);
+  // Lay the part on its side: the lines follow the posed bounds.
+  viewer.setOrientation([0, 0, Math.SQRT1_2, Math.SQRT1_2]);
+  expect(shown()).toEqual(["X 20.00 mm", "Y 30.00 mm", "Z 10.00 mm"]);
+  // Markup redraws do not clear derived lines, and the length format still reaches them.
+  viewer.setOverlays([], [], null);
+  viewer.setLengthFormat((mm) => `${(mm / 25.4).toFixed(2)} in`);
+  expect(shown()).toEqual(["X 0.79 in", "Y 1.18 in", "Z 0.39 in"]);
+  await viewer.capture(false);
+  expect(context.fillText).toHaveBeenCalledWith("Y 1.18 in", 0, 0.5);
+  viewer.setExtents(false);
+  expect(shown()).toEqual([]);
+  flushFrame();
+  expect(scene().getObjectByName("model-extents")!.children).toHaveLength(0);
   viewer.dispose();
   vi.restoreAllMocks();
 });
@@ -1024,6 +1233,68 @@ it("coalesces hover, snaps release positions and cancels pending hover when Alt 
   expect(pick).toHaveBeenLastCalledWith([[9.7, 9.7, 10]], "free");
   viewer.dispose();
   hits.mockRestore();
+});
+it("wakes a passed hole rim so the empty middle of a through hole picks its center", async () => {
+  const outline = new Shape();
+  outline.moveTo(-20, -20);
+  outline.lineTo(20, -20);
+  outline.lineTo(20, 20);
+  outline.lineTo(-20, 20);
+  outline.closePath();
+  outline.holes.push(new Path().absarc(0, 0, 4, 0, Math.PI * 2, false));
+  const viewer = createViewer(host()),
+    mesh = new Mesh(
+      new ExtrudeGeometry(outline, { depth: 5, bevelEnabled: false, curveSegments: 32 }),
+      new MeshStandardMaterial(),
+    );
+  viewer.setModel(mesh, false);
+  viewer.restore({ ...viewer.snapshot(), position: [0, 0, 200], target: [0, 0, 0] });
+  await viewer.snapPoint([0, 0, 5]);
+  const camera = viewer.activeCamera();
+  camera.updateMatrixWorld();
+  const screen = (x: number, y: number, z: number) => {
+    const p = new Vector3(x, y, z).project(camera);
+    return { clientX: ((p.x + 1) * 600) / 2, clientY: ((1 - p.y) * 400) / 2 };
+  };
+  const pick = vi.fn();
+  viewer.setPickMode("measure", pick);
+  const at = (x: number, y: number) =>
+    ({ button: 0, pointerId: 1, altKey: false, ...screen(x, y, 5) }) as PointerEvent;
+  // Before the rim is passed, the empty hole offers nothing.
+  pointerHandlers.pointermove!(at(0, 0));
+  flushFrame();
+  expect(doubles.snapShow).not.toHaveBeenCalled();
+  // Passing the rim on the plate snaps to its nearer rim corner and wakes the rim.
+  pointerHandlers.pointermove!(at(4.3, 0));
+  flushFrame();
+  expect(doubles.snapShow.mock.lastCall![0]).toBe("vertex");
+  pointerHandlers.pointermove!(at(0.2, 0.1));
+  flushFrame();
+  expect(doubles.snapShow).toHaveBeenLastCalledWith(
+    "center",
+    expect.any(Number),
+    expect.any(Number),
+    expect.any(Array),
+    "Hole center, ⌀ 8.00 mm",
+  );
+  pointerHandlers.pointerdown!(at(0.2, 0.1));
+  pointerHandlers.pointerup!(at(0.2, 0.1));
+  // The top rim's center is nearer the camera than the bottom one's and wins the tie.
+  const [point] = pick.mock.lastCall![0] as [[number, number, number]];
+  expect(pick.mock.lastCall![1]).toBe("center");
+  point.forEach((value, axis) => expect(value).toBeCloseTo([0, 0, 5][axis]!, 4));
+  // Alt keeps the free pick, which over empty space picks nothing.
+  pick.mockClear();
+  pointerHandlers.pointerdown!({ ...at(0.2, 0.1), altKey: true } as PointerEvent);
+  pointerHandlers.pointerup!({ ...at(0.2, 0.1), altKey: true } as PointerEvent);
+  expect(pick).not.toHaveBeenCalled();
+  // A new model forgets the woken rims.
+  viewer.setModel(new Mesh(mesh.geometry.clone(), new MeshStandardMaterial()), false);
+  await viewer.snapPoint([0, 0, 5]);
+  pointerHandlers.pointerdown!(at(0.2, 0.1));
+  pointerHandlers.pointerup!(at(0.2, 0.1));
+  expect(pick).not.toHaveBeenCalled();
+  viewer.dispose();
 });
 it("finds circles from model-space points regardless of camera and ignores retained ghosts", async () => {
   const viewer = createViewer(host());

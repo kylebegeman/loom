@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { DisplayUnits, ModelPreviewSettings } from "@t3tools/contracts/fork";
+import type { DisplayPrecision, DisplayUnits, ModelPreviewSettings } from "@t3tools/contracts/fork";
 import { toastManager } from "~/components/ui/toast";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { models, runModelCommand } from "./state";
@@ -21,17 +21,30 @@ export const toMm = (value: number, units: DisplayUnits) =>
 export const unitSuffix = (units: DisplayUnits) => units;
 export const unitName = (units: DisplayUnits) => (units === "in" ? "inches" : "millimetres");
 export type LengthOptions = {
-  /** Millimetre precision; inches get one more decimal. */
+  /** Millimetre precision for "auto"; inches get one more decimal. */
   digits?: number;
+  /** Drops trailing zeros for "auto". A chosen precision always shows its decimals. */
   trim?: boolean;
   unit?: boolean;
+  /** The chosen decimals; absent or "auto" keeps each call site's natural form. */
+  precision?: DisplayPrecision | undefined;
 };
+
+/** Fixed decimals for a chosen precision, without "-0". */
+function fixed(value: number, places: number) {
+  const text = value.toFixed(places);
+  return Number(text) === 0 ? text.replace(/^-/, "") : text;
+}
 
 /** A display length. Stored and tool values stay in millimetres. */
 export function formatLength(mm: number, units: DisplayUnits, options: LengthOptions = {}) {
-  let value = fromMm(mm, units).toFixed((options.digits ?? 1) + (units === "in" ? 1 : 0));
-  if (Number(value) === 0) value = value.replace(/^-/, "");
-  if (options.trim) value = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const { precision } = options;
+  const chosen = typeof precision === "number";
+  let value = fixed(
+    fromMm(mm, units),
+    chosen ? precision : (options.digits ?? 1) + (units === "in" ? 1 : 0),
+  );
+  if (options.trim && !chosen) value = value.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
   return value + (options.unit === false ? "" : ` ${units}`);
 }
 
@@ -47,10 +60,28 @@ export function formatLengths(
   return lengths.join(" × ") + (lengths.length && options.unit !== false ? ` ${units}` : "");
 }
 
+/** A signed change. The sign follows the shown value, so a change that rounds to zero has none. */
+export function formatDelta(mm: number, units: DisplayUnits, options: LengthOptions = {}) {
+  const magnitude = formatLength(Math.abs(mm), units, { ...options, unit: false });
+  const sign = Number(magnitude) === 0 ? "" : mm > 0 ? "+" : "−";
+  return sign + magnitude + (options.unit === false ? "" : ` ${units}`);
+}
+
+/** A surface area from square millimetres; "auto" shows one decimal, or two in inches. */
+export function formatArea(mm2: number, units: DisplayUnits, precision?: DisplayPrecision) {
+  const value = units === "in" ? mm2 / MM_PER_INCH ** 2 : mm2;
+  return `${fixed(value, typeof precision === "number" ? precision : units === "in" ? 2 : 1)} ${units}²`;
+}
+
+export const precisionLabel = (precision: DisplayPrecision) =>
+  precision === "auto" ? "Automatic" : `${precision} decimal${precision === 1 ? "" : "s"}`;
+
 export type DisplayUnitsControl = {
   readonly units: DisplayUnits;
   readonly setUnits: (units: DisplayUnits) => void;
   readonly canSave: boolean;
+  /** Read from settings and changed in Loom settings. Absent means "auto". */
+  readonly precision?: DisplayPrecision | undefined;
 };
 const DisplayUnitsContext = createContext<DisplayUnitsControl>({
   units: "mm",
@@ -60,6 +91,8 @@ const DisplayUnitsContext = createContext<DisplayUnitsControl>({
 export const DisplayUnitsProvider = DisplayUnitsContext.Provider;
 export const useDisplayUnits = () => useContext(DisplayUnitsContext).units;
 export const useDisplayUnitsControl = () => useContext(DisplayUnitsContext);
+export const useDisplayPrecision = (): DisplayPrecision =>
+  useContext(DisplayUnitsContext).precision ?? "auto";
 
 /** Saves the environment's display preference optimistically and reverts its own failed choice. */
 export function useDisplayUnitsSetting(
@@ -107,5 +140,9 @@ export function useDisplayUnitsSetting(
     },
     [canSave, environmentId],
   );
-  return useMemo(() => ({ units, setUnits, canSave }), [units, setUnits, canSave]);
+  const precision = settings.displayPrecision ?? "auto";
+  return useMemo(
+    () => ({ units, setUnits, canSave, precision }),
+    [units, setUnits, canSave, precision],
+  );
 }

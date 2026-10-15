@@ -3,6 +3,8 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   ModelPreviewSettings,
   activeBed,
+  DISPLAY_PRECISIONS,
+  type DisplayPrecision,
   type DisplayUnits,
   type AgentModelsMode,
   type ScaleReference,
@@ -37,7 +39,7 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { OperationStatus } from "./OperationStatus";
 import { BUILD_PLATE_PATTERNS, bedGroups, buildPlateLabel, buildPlateNote } from "./buildPlate";
 import { models, runModelCommand } from "./state";
-import { DisplayUnitsProvider, formatLengths } from "./units";
+import { DisplayUnitsProvider, formatLengths, precisionLabel } from "./units";
 import { ManageBeds } from "./ManageBeds";
 import { PrintersSection } from "./PrintersSection";
 import { usePrinterLibrary } from "./printers";
@@ -75,6 +77,7 @@ function SettingsForm({
   const canSave = useAtomValue(models.updateSettings.permissionAtom(environmentId));
   const status = useAtomValue(models.status({ environmentId, input: {} }));
   const info = detection ?? Option.getOrNull(AsyncResult.value(status));
+  const precision: DisplayPrecision = settings.displayPrecision ?? "auto";
   const set = <K extends keyof ModelPreviewSettings>(key: K, value: ModelPreviewSettings[K]) =>
     setSettings((current) => ({ ...current, [key]: value }));
   const act = async (task: () => Promise<unknown>, success: string) => {
@@ -115,6 +118,7 @@ function SettingsForm({
         units: settings.displayUnits,
         setUnits: (units) => set("displayUnits", units),
         canSave,
+        precision: settings.displayPrecision,
       }}
     >
       <fieldset disabled={!canSave || busy !== null} className="flex min-w-0 flex-col gap-3">
@@ -317,6 +321,30 @@ function SettingsForm({
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 <SelectItem value="mm">Millimetres</SelectItem>
                 <SelectItem value="in">Inches</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          title="Precision"
+          description="Decimal places for lengths, changes and areas, shown and copied. Automatic keeps each value's usual form."
+          control={
+            <Select<DisplayPrecision>
+              disabled={!canSave}
+              value={precision}
+              onValueChange={(next: DisplayPrecision | null) => {
+                if (next !== null) set("displayPrecision", next);
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Precision">
+                <SelectValue>{precisionLabel(precision)}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {DISPLAY_PRECISIONS.map((choice) => (
+                  <SelectItem key={choice} value={choice}>
+                    {precisionLabel(choice)}
+                  </SelectItem>
+                ))}
               </SelectPopup>
             </Select>
           }

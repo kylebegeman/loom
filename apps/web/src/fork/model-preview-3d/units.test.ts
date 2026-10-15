@@ -2,7 +2,11 @@ import { act, createElement, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId } from "@t3tools/contracts";
-import { DEFAULT_MODEL_PREVIEW_SETTINGS, type ModelPreviewSettings } from "@t3tools/contracts/fork";
+import {
+  DEFAULT_MODEL_PREVIEW_SETTINGS,
+  DISPLAY_PRECISIONS,
+  type ModelPreviewSettings,
+} from "@t3tools/contracts/fork";
 
 const mocks = vi.hoisted(() => ({
   canSave: true,
@@ -19,10 +23,14 @@ vi.mock("./state", () => ({
 }));
 
 import {
+  formatArea,
+  formatDelta,
   formatLength,
   formatLengths,
   fromMm,
+  precisionLabel,
   toMm,
+  useDisplayPrecision,
   useDisplayUnits,
   useDisplayUnitsControl,
   useDisplayUnitsSetting,
@@ -61,6 +69,50 @@ it("joins dimensions with one unit suffix and skips surface height", () => {
   expect(formatLengths([279.4, 215.9, null], "in", { trim: true })).toBe("11 × 8.5 in");
   expect(formatLengths([350, 320, null], "mm", { trim: true, unit: false })).toBe("350 × 320");
   expect(formatLengths([], "mm")).toBe("");
+});
+
+it("keeps auto output and shows exactly the chosen decimals otherwise", () => {
+  expect(formatLength(12.34, "mm", { precision: "auto" })).toBe("12.3 mm");
+  expect(formatLength(12.7, "in", { precision: "auto" })).toBe("0.50 in");
+  expect(formatLength(12.3456, "mm", { precision: 1 })).toBe("12.3 mm");
+  expect(formatLength(12, "mm", { precision: 2 })).toBe("12.00 mm");
+  expect(formatLength(25.4, "in", { precision: 0 })).toBe("1 in");
+  expect(formatLength(12.7, "in", { precision: 3 })).toBe("0.500 in");
+  expect(formatLength(-0.0004, "mm", { precision: 2 })).toBe("0.00 mm");
+  // A chosen precision overrides each site's own digits and trimming.
+  expect(formatLength(12.34, "mm", { digits: 0, precision: 3 })).toBe("12.340 mm");
+  expect(formatLength(279.4, "in", { trim: true, precision: 2 })).toBe("11.00 in");
+  expect(formatLengths([25.4, 50.8, null], "in", { trim: true, precision: 1 })).toBe(
+    "1.0 × 2.0 in",
+  );
+});
+
+it("signs a change by its shown value, with a true minus", () => {
+  expect(formatDelta(2, "mm")).toBe("+2.0 mm");
+  expect(formatDelta(-1.5, "mm")).toBe("\u22121.5 mm");
+  expect(formatDelta(-25.4, "in")).toBe("\u22121.00 in");
+  expect(formatDelta(-0.004, "mm")).toBe("0.0 mm");
+  expect(formatDelta(0.3, "mm", { precision: 0 })).toBe("0 mm");
+  expect(formatDelta(0.3, "mm", { precision: 2 })).toBe("+0.30 mm");
+  expect(formatDelta(-12.7, "in", { precision: 1, unit: false })).toBe("\u22120.5");
+});
+
+it("formats areas in square display units at the chosen precision", () => {
+  expect(formatArea(1234.56, "mm")).toBe("1234.6 mm²");
+  expect(formatArea(645.16, "in")).toBe("1.00 in²");
+  expect(formatArea(1234.56, "mm", 0)).toBe("1235 mm²");
+  expect(formatArea(645.16, "in", 3)).toBe("1.000 in²");
+  expect(formatArea(-0.01, "mm", 1)).toBe("0.0 mm²");
+});
+
+it("labels precision choices", () => {
+  expect(DISPLAY_PRECISIONS.map(precisionLabel)).toEqual([
+    "Automatic",
+    "0 decimals",
+    "1 decimal",
+    "2 decimals",
+    "3 decimals",
+  ]);
 });
 
 let renderer: ReactTestRenderer | undefined;
@@ -103,6 +155,38 @@ it("defaults context to millimetres and follows the provider's pending value", a
   );
   expect(units).toBe("in");
   expect(canSave).toBe(true);
+});
+
+it("reads precision from the panel's settings and defaults to auto", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let precision: unknown;
+  function ReadPrecision() {
+    const current = useDisplayPrecision();
+    useLayoutEffect(() => {
+      precision = current;
+    });
+    return null;
+  }
+  function Panel({ settings }: { settings: ModelPreviewSettings }) {
+    const control = useDisplayUnitsSetting(EnvironmentId.make("units"), settings);
+    return createElement(DisplayUnitsProvider, { value: control }, createElement(ReadPrecision));
+  }
+  await act(async () => {
+    renderer = create(createElement(ReadPrecision));
+  });
+  expect(precision).toBe("auto");
+  await act(async () =>
+    renderer!.update(createElement(Panel, { settings: DEFAULT_MODEL_PREVIEW_SETTINGS })),
+  );
+  expect(precision).toBe("auto");
+  await act(async () =>
+    renderer!.update(
+      createElement(Panel, {
+        settings: { ...DEFAULT_MODEL_PREVIEW_SETTINGS, displayPrecision: 2 },
+      }),
+    ),
+  );
+  expect(precision).toBe(2);
 });
 
 it("shows a pending unit immediately and rolls back a failed save", async () => {

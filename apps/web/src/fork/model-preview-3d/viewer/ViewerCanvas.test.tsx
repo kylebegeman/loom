@@ -48,6 +48,8 @@ function makeViewer() {
     setBed: vi.fn(),
     onNavigate: vi.fn(),
     setSection: vi.fn(),
+    setExtents: vi.fn(),
+    onContextPick: vi.fn(),
     setOverlays: vi.fn(),
     setPickMode: vi.fn(),
     setMeasureMode: vi.fn(),

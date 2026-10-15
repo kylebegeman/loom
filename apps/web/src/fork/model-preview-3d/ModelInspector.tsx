@@ -29,6 +29,7 @@ import {
   type ZoneRect,
   activeBed,
   selectBed,
+  type DisplayPrecision,
   type DisplayUnits,
   type ModelPreviewSettings,
   type ScadRenderResult,
@@ -60,8 +61,14 @@ import {
 import { useBuildPlate } from "./BedPicker";
 import { OrientationSection, type OrientationControls } from "./OrientationSection";
 import { BedFitList } from "./BedFitList";
-import { formatLength, formatLengths, useDisplayUnits } from "./units";
-import { Chip, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
+import {
+  formatDelta,
+  formatLength,
+  formatLengths,
+  useDisplayPrecision,
+  useDisplayUnits,
+} from "./units";
+import { Chip, CopyValue, EmptyNote, SectionHead, Tip, useSlidingThumb } from "./controls";
 
 export type InspectorTab = "customize" | "variants" | "markup" | "views" | "part";
 const TABS: readonly { id: InspectorTab; label: string; icon: LucideIcon; scad: boolean }[] = [
@@ -365,11 +372,21 @@ function PrinterMenu({
 
 export const DIMENSION_DELTA_MM = 0.05;
 
-/** A signed size change, excluding float noise smaller than the displayed precision. */
-export function dimensionDelta(current: number, previous: number, units: DisplayUnits = "mm") {
+/**
+ * A signed size change, excluding float noise smaller than the displayed precision. A chosen
+ * precision hides changes that round to zero at that many decimals.
+ */
+export function dimensionDelta(
+  current: number,
+  previous: number,
+  units: DisplayUnits = "mm",
+  precision: DisplayPrecision = "auto",
+) {
   const delta = current - previous;
-  if (!Number.isFinite(delta) || Math.abs(delta) + 1e-9 < DIMENSION_DELTA_MM) return null;
-  return (delta > 0 ? "+" : "−") + formatLength(Math.round(Math.abs(delta) * 1e9) / 1e9, units);
+  if (!Number.isFinite(delta)) return null;
+  if (precision === "auto" && Math.abs(delta) + 1e-9 < DIMENSION_DELTA_MM) return null;
+  const text = formatDelta(Math.round(delta * 1e9) / 1e9, units, { precision });
+  return text.startsWith("+") || text.startsWith("−") ? text : null;
 }
 
 /** Part tab: dimensions, build plate fit, mesh facts and the OpenSCAD render log. */
@@ -405,6 +422,7 @@ export function PartSection({
   path: string;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const library = usePrinterLibrary(environmentId);
   const canExport = useAtomValue(models.exportStep.permissionAtom(environmentId));
   const { copyToClipboard, isCopied } = useCopyToClipboard();
@@ -420,7 +438,8 @@ export function PartSection({
   const plate = resolvePlate(settings.buildPlate, library);
   const result = fitPlate(stats.size, plate);
   const { fit, withinMm } = result;
-  const zone = describeZoneFit(result, plate.zones, (mm) => formatLength(mm, units));
+  const length = (mm: number) => formatLength(mm, units, { precision });
+  const zone = describeZoneFit(result, plate.zones, length);
   const over = stats.size.map((value, axis) => {
     const limit = withinMm[axis];
     return limit === null || limit === undefined ? 0 : value - limit;
@@ -432,7 +451,7 @@ export function PartSection({
       ? printCheck.report.summary.watertight
       : render?.summary?.manifold;
   const deltas = previousSize
-    ? stats.size.map((value, axis) => dimensionDelta(value, previousSize[axis]!, units))
+    ? stats.size.map((value, axis) => dimensionDelta(value, previousSize[axis]!, units, precision))
     : [];
   return (
     <div className={styles["model-inspector-scroll"]}>
@@ -444,15 +463,17 @@ export function PartSection({
               <span>{"XYZ"[axis]}</span>
             </span>
             <strong>
-              {formatLength(value, units, { unit: false })}
-              <small>{units}</small>
+              <CopyValue text={length(value)} label={`Copy ${AXES[axis]} ${length(value)}`}>
+                {formatLength(value, units, { unit: false, precision })}
+                <small>{units}</small>
+              </CopyValue>
             </strong>
             {deltas[axis] && previousSize && (
-              <small
-                className={styles["model-dim-delta"]}
-                aria-label={`${"XYZ"[axis]} changed by ${value > previousSize[axis]! ? "plus" : "minus"} ${deltas[axis]!.slice(1)}`}
-              >
-                {deltas[axis]}
+              <small className={styles["model-dim-delta"]}>
+                <CopyValue
+                  text={deltas[axis]!}
+                  label={`Copy ${"XYZ"[axis]} change, ${value > previousSize[axis]! ? "plus" : "minus"} ${deltas[axis]!.slice(1)}`}
+                />
               </small>
             )}
           </div>
@@ -482,13 +503,13 @@ export function PartSection({
         />
         <p className={styles["model-fit-advice"]}>
           {fits ? (
-            `${formatLength(Math.min(...over.map((value, axis) => (withinMm[axis] === null ? Infinity : -value))), units, { digits: 0 })} of clearance on the tightest axis.`
+            `${formatLength(Math.min(...over.map((value, axis) => (withinMm[axis] === null ? Infinity : -value))), units, { digits: 0, precision })} of clearance on the tightest axis.`
           ) : rotated ? (
             "It fits if you rotate it 90° on the plate."
           ) : (
             <>
-              <strong>{describeFit(fit, (mm) => formatLength(mm, units))}.</strong> Split the part
-              or choose a larger bed. You can still preview and capture it.
+              <strong>{describeFit(fit, length)}.</strong> Split the part or choose a larger bed.
+              You can still preview and capture it.
             </>
           )}
           {zone ? ` ${zone.long}` : ""}

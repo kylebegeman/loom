@@ -18,7 +18,7 @@ import { disposeModel, loadModel, meshStats } from "./viewer/load";
 import { models, modelUrl, runModelCommand } from "./state";
 import type { Plate } from "./buildPlate";
 import type { AssemblyWorkspaceControl } from "./AssemblyWorkspace";
-import { formatLength, useDisplayUnits } from "./units";
+import { formatLength, useDisplayPrecision, useDisplayUnits } from "./units";
 import type { SectionCapState } from "./viewer/sectionCaps";
 const failure = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 export type AssemblyPartStats = Readonly<
@@ -63,6 +63,7 @@ export function AssemblyCanvas(props: {
 }) {
   const { viewerRef } = props;
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const canTerminal = useAtomValue(
     models.renderModel.permissionAtom(props.threadRef.environmentId),
   );
@@ -143,8 +144,8 @@ export function AssemblyCanvas(props: {
   ]);
   const editing = props.workspace.editing;
   useEffect(() => {
-    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units));
-  }, [viewerRef, units]);
+    viewerRef.current?.setLengthFormat((mm) => formatLength(mm, units, { precision }));
+  }, [viewerRef, units, precision]);
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer) return;

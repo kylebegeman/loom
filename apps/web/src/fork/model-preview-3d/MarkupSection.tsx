@@ -2,7 +2,7 @@ import { bedDelta } from "./viewer/orientation";
 import styles from "./workspace.module.css";
 import { PrintCheckSection, type PrintCheckView } from "./PrintCheckSection";
 import type { PrintFinding } from "@t3tools/contracts/fork";
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 import {
   CameraIcon,
   CheckIcon,
@@ -32,11 +32,15 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { Menu, MenuTrigger, MenuPopup, MenuItem, MenuSeparator } from "~/components/ui/menu";
-import { Chip, EmptyNote, RenameInput, SectionHead, TitleInput, Tip } from "./controls";
+import { Chip, CopyValue, EmptyNote, RenameInput, SectionHead, TitleInput, Tip } from "./controls";
 
-import { formatLength, useDisplayUnits } from "./units";
+import { formatLength, useDisplayPrecision, useDisplayUnits } from "./units";
 
-type Mutation = (operation: ModelWorkspaceOperation) => Promise<unknown>;
+/** Saves an edit; edits sharing a `group` undo as one step. */
+type Mutation = (
+  operation: ModelWorkspaceOperation,
+  options?: { group?: string },
+) => Promise<unknown>;
 export type AnnotationStatus = "draft" | "requested" | "changed" | "accepted";
 
 /** Where a change request stands relative to the geometry on screen. */
@@ -451,6 +455,7 @@ function MeasurementRow({
   onCopy: (text: string) => void;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const distanceDigits = 2;
   const circle = measurement.kind === "circle" ? measurement.circle : undefined;
   const delta = bedDelta(measurement.start, measurement.end, orientation);
@@ -502,18 +507,28 @@ function MeasurementRow({
           {stale
             ? "From an earlier version of the file"
             : circle
-              ? `Centre ${circle.center.map((value, axis) => `${"XYZ"[axis]} ${formatLength(value, units)}`).join(", ")}${circle.sides !== null && circle.sides <= 22 ? `; ${circle.sides} sides, ${formatLength(circle.diameter * Math.cos(Math.PI / circle.sides), units, { digits: 2 })} across flats` : ""}`
-              : delta
-                  .map(
-                    (value, axis) =>
-                      `Δ${"XYZ"[axis]} ${formatLength(Math.abs(value), units, { unit: false })}`,
-                  )
-                  .join("   ")}
+              ? `Centre ${circle.center.map((value, axis) => `${"XYZ"[axis]} ${formatLength(value, units, { precision })}`).join(", ")}${circle.sides !== null && circle.sides <= 22 ? `; ${circle.sides} sides, ${formatLength(circle.diameter * Math.cos(Math.PI / circle.sides), units, { digits: 2, precision })} across flats` : ""}`
+              : delta.map((value, axis) => (
+                  <Fragment key={"XYZ"[axis]}>
+                    {axis > 0 && " "}Δ{"XYZ"[axis]}{" "}
+                    <CopyValue
+                      text={formatLength(Math.abs(value), units, { precision })}
+                      label={`Copy Δ${"XYZ"[axis]} ${formatLength(Math.abs(value), units, { precision })}`}
+                    >
+                      {formatLength(Math.abs(value), units, { unit: false, precision })}
+                    </CopyValue>
+                  </Fragment>
+                ))}
         </div>
       </div>
       <span className={styles["model-measure-value"]}>
-        {circle ? "Ø" : ""}
-        {formatLength(distance, units, { digits: distanceDigits })}
+        <CopyValue
+          text={formatLength(distance, units, { digits: distanceDigits, precision })}
+          label={`Copy ${measurement.name}, ${circle ? "diameter " : ""}${formatLength(distance, units, { digits: distanceDigits, precision })}`}
+        >
+          {circle ? "Ø" : ""}
+          {formatLength(distance, units, { digits: distanceDigits, precision })}
+        </CopyValue>
       </span>
       <RowMenu label={`${measurement.name} actions`}>
         <MenuItem onClick={() => onRename(true)}>
@@ -522,7 +537,9 @@ function MeasurementRow({
         </MenuItem>
         <MenuItem
           onClick={() =>
-            onCopy(formatLength(distance, units, { digits: distanceDigits, unit: false }))
+            onCopy(
+              formatLength(distance, units, { digits: distanceDigits, unit: false, precision }),
+            )
           }
         >
           <CopyIcon />
@@ -735,8 +752,13 @@ export function MarkupSection({
                 variant="ghost-muted"
                 size="xs"
                 onClick={() => {
+                  // One undo step brings the whole cleared list back.
+                  const group = `clear-${stale.map((measurement) => measurement.id).join(",")}`;
                   for (const measurement of stale)
-                    void mutate({ kind: "remove", collection: "measurements", id: measurement.id });
+                    void mutate(
+                      { kind: "remove", collection: "measurements", id: measurement.id },
+                      { group },
+                    );
                 }}
               >
                 Clear

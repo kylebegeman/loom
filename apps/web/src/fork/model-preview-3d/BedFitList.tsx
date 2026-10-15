@@ -9,7 +9,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { useBuildPlate } from "./BedPicker";
 import { describeFit, describeZoneFit } from "./buildPlate";
-import { formatLength, formatLengths, useDisplayUnits } from "./units";
+import { formatLength, formatLengths, useDisplayPrecision, useDisplayUnits } from "./units";
 import { Chip, SectionHead, Tip } from "./controls";
 import styles from "./workspace.module.css";
 
@@ -30,6 +30,8 @@ export function BedFitList({
   size: readonly [number, number, number];
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
+  const length = (mm: number) => formatLength(mm, units, { precision });
   const { plate, canSave, save } = useBuildPlate(environmentId, settings);
   const rows = useMemo(
     () => listBeds(plate).map((bed) => ({ bed, result: fitBed(size, bed) })),
@@ -61,9 +63,7 @@ export function BedFitList({
               .filter(({ bed }) => bed.kind === group.kind)
               .map(({ bed, result }) => {
                 const { fit } = result;
-                const zone = describeZoneFit(result, bed.zones ?? [], (mm) =>
-                  formatLength(mm, units),
-                );
+                const zone = describeZoneFit(result, bed.zones ?? [], length);
                 const active = bed.id === activeId;
                 const content = (
                   <>
@@ -77,11 +77,11 @@ export function BedFitList({
                       {active && <Chip>Active</Chip>}
                       {fit.status === "too-big" ? (
                         <span className={styles["model-bed-fit-over"]}>
-                          {describeFit(fit, (mm) => formatLength(mm, units))}
+                          {describeFit(fit, length)}
                         </span>
                       ) : (
                         <Chip {...(fit.status === "fits" ? { tone: "success" as const } : {})}>
-                          {zone?.short ?? describeFit(fit, (mm) => formatLength(mm, units))}
+                          {zone?.short ?? describeFit(fit, length)}
                         </Chip>
                       )}
                     </span>

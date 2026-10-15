@@ -3,9 +3,12 @@ import { expect, it } from "vite-plus/test";
 import {
   buildTopology,
   circleAt,
+  faceCenter,
   fitCircle,
+  SNAP_PRIORITY,
   snapNear,
   snapNearPoint,
+  snapToRimCenter,
   topologyPoint,
   type Point,
 } from "./snap";
@@ -109,7 +112,11 @@ it("uses screen-space priority, section filtering and a depth occlusion guard", 
   expect(snap.kind).toBe("vertex");
   expect(snap.point).toEqual([10, 10, 10]);
   expect(snapNear(topology, 0, hit, ray, screen, 10, () => false).kind).toBe("face");
-  expect(snapNear(topology, 0, [10, 0, 0], ray, screen, 1, () => true).kind).toBe("face");
+  expect(snapNear(topology, 0, [10, 5, 5], ray, screen, 1, () => true).kind).toBe("face");
+  expect(snapNear(topology, 0, [10, 0.05, 0], ray, screen, 1, () => true)).toMatchObject({
+    kind: "faceCenter",
+    point: [expect.closeTo(10, 9), expect.closeTo(0, 9), expect.closeTo(0, 9)],
+  });
   const behind = buildTopology(
     new Float32Array([10, 9, 9, 10, 11, 9, 10, 9, 11, -10, 9.6, 9.6, -10, 9.6, 11, -10, 11, 9.6]),
     null,
@@ -127,4 +134,90 @@ it("snaps agent points without a camera and leaves distant points unchanged", ()
     point: [10, 0, 10],
   });
   expect(snapNearPoint(topology, [100, 100, 100], 1).kind).toBe("face");
+});
+it("ranks feature snaps corner, hole center, midpoint, face center, edge", () => {
+  expect(SNAP_PRIORITY).toEqual(["vertex", "center", "midpoint", "faceCenter", "edge"]);
+  // Looking down on a 20 mm cube at 2 px/mm: the top face center is 2 px away and the edge
+  // midpoints 18 px, so the face center wins.
+  const cube = buildTopology(input(new BoxGeometry(20, 20, 20)), null),
+    down = { origin: [1, 1, 50] as Point, direction: [0, 0, -1] as Point },
+    top = (p: Point): [number, number] => [p[0] * 2, -p[1] * 2],
+    face = [...cube.region].findIndex(
+      (region) => Math.abs((faceCenter(cube, region)?.[2] ?? 0) - 10) < 1e-6,
+    );
+  expect(snapNear(cube, face, [1, 1, 10], down, top, 14, () => true)).toMatchObject({
+    kind: "faceCenter",
+    point: [expect.closeTo(0, 9), expect.closeTo(0, 9), expect.closeTo(10, 9)],
+  });
+  // At 1 px/mm the edge midpoints come within reach and outrank it.
+  expect(
+    snapNear(
+      cube,
+      face,
+      [1, 1, 10],
+      down,
+      (p) => [p[0], -p[1]],
+      12,
+      () => true,
+    ).kind,
+  ).toBe("midpoint");
+});
+it("gives flat faces a center and curved walls none", () => {
+  const cube = buildTopology(input(new BoxGeometry(20, 10, 4)), null),
+    centers = [...new Set(cube.region)].map((r) => faceCenter(cube, r));
+  expect(centers).toHaveLength(6);
+  expect(centers).toContainEqual([
+    expect.closeTo(0, 9),
+    expect.closeTo(0, 9),
+    expect.closeTo(2, 9),
+  ]);
+  expect(centers).toContainEqual([
+    expect.closeTo(-10, 9),
+    expect.closeTo(0, 9),
+    expect.closeTo(0, 9),
+  ]);
+  const tube = ring(32);
+  // The annulus top is flat; the hole wall is curved.
+  expect(faceCenter(tube, tube.region[0]!)![2]).toBeCloseTo(0, 9);
+  expect(faceCenter(tube, tube.region[64]!)).toBeNull();
+});
+it("snaps to a hole center near it and wakes rims for through holes", () => {
+  const plate = ring(32),
+    down = (x: number, y: number) => ({
+      origin: [x, y, 50] as Point,
+      direction: [0, 0, -1] as Point,
+    });
+  // At 3 px/mm the whole 3.4 mm hole is in reach of a pick on the plate, but its rim vertices
+  // are nearer still and outrank the center.
+  const small = (p: Point): [number, number] => [p[0] * 3, -p[1] * 3];
+  expect(snapNear(plate, 0, [2.2, 0.3, 0], down(2.2, 0.3), small, 14, () => true).kind).toBe(
+    "vertex",
+  );
+  // At 10 px/mm a pick just outside the rim reaches only the rim, and wakes it.
+  const near = (p: Point): [number, number] => [p[0] * 10, -p[1] * 10],
+    passed = snapNear(plate, 0, [2.1, 0.3, 0], down(2.1, 0.3), near, 6, () => true);
+  expect(passed.kind).not.toBe("center");
+  // The rim at the top and the one at the bottom of the hole, each once.
+  expect(passed.rims?.map((fit) => fit.center[2]).sort()).toEqual([
+    expect.closeTo(-4, 6),
+    expect.closeTo(0, 6),
+  ]);
+  // Over the empty middle of the hole, the nearer woken rim's center is picked.
+  const centered = snapToRimCenter(
+    passed.rims!,
+    down(0.2, 0.1),
+    near,
+    near([0.2, 0.1, 0]),
+    6,
+    () => true,
+  );
+  expect(centered).toMatchObject({ kind: "center" });
+  centered!.point.forEach((value) => expect(value).toBeCloseTo(0, 6));
+  expect(centered!.circle!.diameter).toBeCloseTo(3.4, 6);
+  expect(
+    snapToRimCenter(passed.rims!, down(1, 1), near, near([1, 1, 0]), 6, () => true),
+  ).toBeNull();
+  expect(
+    snapToRimCenter(passed.rims!, down(0.2, 0.1), near, near([0.2, 0.1, 0]), 6, () => false),
+  ).toBeNull();
 });

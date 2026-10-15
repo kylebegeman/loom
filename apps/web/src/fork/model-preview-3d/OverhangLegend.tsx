@@ -4,7 +4,7 @@ import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "~/components/ui/tooltip";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "~/components/ui/popover";
 import { Chip, Scrub } from "./controls";
-import { MM_PER_INCH, useDisplayUnits } from "./units";
+import { formatArea, useDisplayPrecision, useDisplayUnits } from "./units";
 import type { ModelViewer } from "./viewer/createViewer";
 import type { useOverhangAngleSetting } from "./overhangSettings";
 
@@ -25,6 +25,7 @@ export function OverhangLegend({
   onHide: () => void;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const angle = adjustable ? angleControl.angle : OVERHANG_ANGLE.default;
   const [result, setResult] = useState<{
     revision: string;
@@ -56,12 +57,9 @@ export function OverhangLegend({
     };
   }, [angle, sourceRevision, viewerRef]);
   const current = result?.revision === sourceRevision && result.angle === angle ? result : null;
-  const area = current
-    ? current.stats.overhangAreaMm2 / (units === "in" ? MM_PER_INCH ** 2 : 1)
-    : null;
   const tooltip = [
     current
-      ? `${area!.toFixed(units === "in" ? 2 : 1)} ${units}² of the surface (${current.stats.overhangPercent.toFixed(1)}%)`
+      ? `${formatArea(current.stats.overhangAreaMm2, units, precision)} of the surface (${current.stats.overhangPercent.toFixed(1)}%)`
       : "Calculating overhang area...",
     wireframe ? "Overhangs show on solid faces." : "",
     current?.unsupported ? "Some parts use materials that can't be shaded." : "",

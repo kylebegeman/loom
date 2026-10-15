@@ -7,23 +7,31 @@ import {
   normalizeQuaternion,
   type ModelSavedView,
   type ModelOrientation,
+  type ModelMeasurement,
 } from "@t3tools/contracts/fork";
 import { Vector3 } from "three";
 import type { ModelViewer } from "./viewer/createViewer";
 import { attachModelImage } from "./capture";
 import { captureNamedViews } from "./viewer/captureSheet";
 import { useModelEditing } from "./useModelEditing";
+import { clearUndoHistories } from "./useUndoHistory";
 const mutate = vi.hoisted(() => vi.fn());
 const fixture = vi.hoisted(() => ({
   views: [] as ModelSavedView[],
   orientation: null as ModelOrientation | null,
+  measurements: [] as ModelMeasurement[],
   canEdit: true,
 }));
 const composer = vi.hoisted(() => vi.fn());
 vi.mock("~/composerDraftStore", () => ({ useComposerDraftStore: { getState: composer } }));
 vi.mock("./useModelWorkspace", () => ({
   useModelWorkspace: () => ({
-    data: { ...EMPTY_MODEL_WORKSPACE, views: fixture.views, orientation: fixture.orientation },
+    data: {
+      ...EMPTY_MODEL_WORKSPACE,
+      views: fixture.views,
+      orientation: fixture.orientation,
+      measurements: fixture.measurements,
+    },
     canEdit: fixture.canEdit,
     mutate,
     ready: true,
@@ -118,7 +126,9 @@ beforeEach(() => {
   vi.mocked(captureNamedViews).mockReset();
   fixture.views = [];
   fixture.orientation = null;
+  fixture.measurements = [];
   fixture.canEdit = true;
+  clearUndoHistories();
   viewer.current = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 });
@@ -533,4 +543,221 @@ it("persists wall chords as normal measurements and retains pending state on sav
     kind: "measurement",
     item: expect.objectContaining({ name: "Wall 1", kind: "distance" }),
   });
+});
+
+function UndoHarness() {
+  const result = useModelEditing(
+    { environmentId: EnvironmentId.make("test"), threadId: ThreadId.make("test") },
+    "part.stl",
+    viewer,
+    "revision",
+    null,
+    { undo: true },
+  );
+  useLayoutEffect(() => {
+    editing = result;
+  });
+  return null;
+}
+async function rerender() {
+  await act(async () => {
+    if (renderer) renderer.update(<UndoHarness />);
+    else renderer = create(<UndoHarness />);
+  });
+}
+it("undoes and redoes a saved measurement and a moved point, and leaves edits made elsewhere", async () => {
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await rerender();
+  expect(editing.undo.status.undo).toBeUndefined();
+  await act(async () => editing.choose("measure"));
+  await act(async () => {
+    await editing.onPick([[0, 0, 0]]);
+  });
+  let saved!: ModelMeasurement;
+  await act(async () => {
+    const result = await editing.onPick([[3, 4, 0]]);
+    saved = (result as { measurement: ModelMeasurement }).measurement;
+  });
+  // The workspace stream catches up with the save.
+  fixture.measurements = [saved];
+  await rerender();
+  expect(editing.undo.status.undo).toBe("added a measurement");
+  // Undo clears a half-made measurement and removes the saved one.
+  await act(async () => {
+    await editing.onPick([[1, 1, 1]]);
+  });
+  expect(editing.pendingPoint).toEqual([1, 1, 1]);
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: added a measurement"));
+  expect(editing.pendingPoint).toBeNull();
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({
+    kind: "remove",
+    collection: "measurements",
+    id: saved.id,
+  });
+  fixture.measurements = [];
+  await rerender();
+  expect(editing.undo.status).toEqual({ undo: undefined, redo: "added a measurement" });
+  await act(async () => expect(editing.undo.redo()?.message).toBe("Redid: added a measurement"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({ kind: "measurement", item: saved });
+  fixture.measurements = [saved];
+  await rerender();
+  // Moving a point and undoing restores the measurement as it was.
+  const moved = { ...saved, end: [6, 8, 0] as ModelMeasurement["end"] };
+  await act(async () => {
+    await editing.mutate({ kind: "measurement", item: moved });
+  });
+  fixture.measurements = [moved];
+  await rerender();
+  expect(editing.undo.status).toEqual({ undo: "moved a point", redo: undefined });
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: moved a point"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({ kind: "measurement", item: saved });
+  fixture.measurements = [saved];
+  await rerender();
+  await act(async () => expect(editing.undo.redo()?.message).toBe("Redid: moved a point"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({ kind: "measurement", item: moved });
+  // Renamed elsewhere since: the step is dropped rather than overwriting that change.
+  fixture.measurements = [{ ...moved, name: "Agent" }];
+  await rerender();
+  const calls = mutate.mock.calls.length;
+  await act(async () =>
+    expect(editing.undo.undo()).toEqual({
+      message: "Could not undo moved a point: it changed somewhere else.",
+      applied: false,
+    }),
+  );
+  expect(mutate.mock.calls.length).toBe(calls);
+  expect(editing.undo.status).toEqual({ undo: "added a measurement", redo: undefined });
+});
+it("undoes several list steps in a row before the workspace stream catches up", async () => {
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await rerender();
+  await act(async () => editing.choose("measure"));
+  await act(async () => {
+    await editing.onPick([[0, 0, 0]]);
+  });
+  let saved!: ModelMeasurement;
+  await act(async () => {
+    const result = await editing.onPick([[3, 4, 0]]);
+    saved = (result as { measurement: ModelMeasurement }).measurement;
+  });
+  fixture.measurements = [saved];
+  await rerender();
+  const renamed = { ...saved, name: "Bore" };
+  await act(async () => {
+    await editing.mutate({ kind: "measurement", item: renamed });
+  });
+  fixture.measurements = [renamed];
+  await rerender();
+  // Held Cmd+Z: the second undo arrives while the stream still shows the rename.
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: renamed a measurement"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({ kind: "measurement", item: saved });
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: added a measurement"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({
+    kind: "remove",
+    collection: "measurements",
+    id: saved.id,
+  });
+  // Redo twice, still ahead of the stream.
+  await act(async () => expect(editing.undo.redo()?.message).toBe("Redid: added a measurement"));
+  await act(async () => expect(editing.undo.redo()?.message).toBe("Redid: renamed a measurement"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({ kind: "measurement", item: renamed });
+  // Once the stream confirms, a change made elsewhere is a conflict again.
+  fixture.measurements = [{ ...renamed, name: "Agent" }];
+  await rerender();
+  await act(async () =>
+    expect(editing.undo.undo()?.message).toBe(
+      "Could not undo renamed a measurement: it changed somewhere else.",
+    ),
+  );
+});
+it("forgets an undo save that failed, so the next undo sees the stored item", async () => {
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await rerender();
+  await act(async () => editing.choose("measure"));
+  await act(async () => {
+    await editing.onPick([[0, 0, 0]]);
+  });
+  let saved!: ModelMeasurement;
+  await act(async () => {
+    const result = await editing.onPick([[3, 4, 0]]);
+    saved = (result as { measurement: ModelMeasurement }).measurement;
+  });
+  fixture.measurements = [saved];
+  await rerender();
+  const renamed = { ...saved, name: "Bore" };
+  await act(async () => {
+    await editing.mutate({ kind: "measurement", item: renamed });
+  });
+  fixture.measurements = [renamed];
+  await rerender();
+  mutate.mockResolvedValueOnce(undefined);
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: renamed a measurement"));
+  // The rename is still stored, so undoing the add now meets a changed item.
+  await act(async () =>
+    expect(editing.undo.undo()?.message).toBe(
+      "Could not undo added a measurement: it changed somewhere else.",
+    ),
+  );
+});
+it("keeps quick adds of different items as separate steps and a grouped clear as one", async () => {
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await rerender();
+  const hole = (id: string): ModelMeasurement => ({
+    id,
+    kind: "distance",
+    name: id,
+    sourceRevision: "revision",
+    start: [0, 0, 0],
+    end: [1, 0, 0],
+    visible: true,
+  });
+  // Two hole picks well inside the merge window.
+  await act(async () => {
+    await editing.mutate({ kind: "measurement", item: hole("a") });
+    await editing.mutate({ kind: "measurement", item: hole("b") });
+  });
+  fixture.measurements = [hole("a"), hole("b")];
+  await rerender();
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: added a measurement"));
+  expect(mutate.mock.calls.at(-1)?.[0]).toEqual({
+    kind: "remove",
+    collection: "measurements",
+    id: "b",
+  });
+  expect(editing.undo.status.undo).toBe("added a measurement");
+  await act(async () => expect(editing.undo.redo()?.message).toBe("Redid: added a measurement"));
+  fixture.measurements = [hole("a"), hole("b")];
+  await rerender();
+  // A bulk clear sends one removal per item and undoes in one step.
+  await act(async () => {
+    await Promise.all([
+      editing.mutate({ kind: "remove", collection: "measurements", id: "a" }, { group: "clear" }),
+      editing.mutate({ kind: "remove", collection: "measurements", id: "b" }, { group: "clear" }),
+    ]);
+  });
+  fixture.measurements = [];
+  await rerender();
+  expect(editing.undo.status.undo).toBe("cleared measurements");
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: cleared measurements"));
+  expect(mutate.mock.calls.slice(-2).map(([operation]) => operation.item?.id)).toEqual(["a", "b"]);
+});
+it("merges a section drag into one step and undoes it without saving", async () => {
+  await rerender();
+  const start = editing.section;
+  await act(async () => editing.editSection({ ...start, enabled: true }));
+  await act(async () => editing.editSection({ ...start, enabled: true, offset: 2 }));
+  await act(async () => editing.editSection({ ...start, enabled: true, offset: 4 }));
+  expect(editing.undo.status.undo).toBe("moved the section");
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: moved the section"));
+  expect(editing.section).toEqual({ ...start, enabled: true });
+  await act(async () => expect(editing.undo.undo()?.message).toBe("Undid: turned the section on"));
+  expect(editing.section).toEqual(start);
+  expect(mutate).not.toHaveBeenCalled();
+});
+it("keeps no panel history without the undo option", async () => {
+  mutate.mockResolvedValue(EMPTY_MODEL_WORKSPACE);
+  await update();
+  await act(async () => editing.editSection({ ...editing.section, enabled: true }));
+  expect(editing.undo.status.undo).toBeUndefined();
+  expect(editing.undo.undo()).toBeNull();
 });

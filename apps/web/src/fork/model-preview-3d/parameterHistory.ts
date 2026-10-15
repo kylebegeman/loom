@@ -35,3 +35,19 @@ export function moveHistory(history: ParameterHistory, cursor: number): Paramete
     cursor: index,
   };
 }
+/**
+ * The entry nearest the cursor that holds `value`, or -1. Panel-wide undo steps back to a
+ * parameter state by moving here, so the customizer's own history keeps its redo entries.
+ */
+export function nearestEntry(history: ParameterHistory, value: ParameterState): number {
+  const key = JSON.stringify(value);
+  let best = -1;
+  history.entries.forEach((entry, index) => {
+    if (
+      JSON.stringify(entry.value) === key &&
+      (best < 0 || Math.abs(index - history.cursor) < Math.abs(best - history.cursor))
+    )
+      best = index;
+  });
+  return best;
+}

@@ -112,15 +112,29 @@ export const ModelVariant = Schema.Struct({
   renderedRevision: Schema.NullOr(Schema.String),
   origin: Schema.Literals(["user", "agent"]),
 });
+/** Most items each workspace collection keeps; clients and the server name these limits. */
+export const MODEL_WORKSPACE_LIMITS = {
+  views: 30,
+  measurements: 100,
+  annotations: 30,
+  presets: 20,
+  variants: 24,
+} as const;
 export const ModelWorkspace = Schema.Struct({
   orientation: Schema.NullOr(ModelOrientation).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
-  views: Schema.Array(ModelSavedView).check(Schema.isMaxLength(30)),
-  measurements: Schema.Array(ModelMeasurement).check(Schema.isMaxLength(100)),
-  annotations: Schema.Array(ModelAnnotation).check(Schema.isMaxLength(30)),
-  presets: Schema.Array(ModelCapturePreset).check(Schema.isMaxLength(20)),
-  variants: Schema.Array(ModelVariant).check(Schema.isMaxLength(24)),
+  views: Schema.Array(ModelSavedView).check(Schema.isMaxLength(MODEL_WORKSPACE_LIMITS.views)),
+  measurements: Schema.Array(ModelMeasurement).check(
+    Schema.isMaxLength(MODEL_WORKSPACE_LIMITS.measurements),
+  ),
+  annotations: Schema.Array(ModelAnnotation).check(
+    Schema.isMaxLength(MODEL_WORKSPACE_LIMITS.annotations),
+  ),
+  presets: Schema.Array(ModelCapturePreset).check(
+    Schema.isMaxLength(MODEL_WORKSPACE_LIMITS.presets),
+  ),
+  variants: Schema.Array(ModelVariant).check(Schema.isMaxLength(MODEL_WORKSPACE_LIMITS.variants)),
 });
 export const ModelWorkspaceOperation = Schema.Union([
   Schema.Struct({

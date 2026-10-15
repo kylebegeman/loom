@@ -61,7 +61,33 @@ it("rejects unbounded workspace data and nonfinite spatial coordinates", () => {
       kind: "view",
       item: { id: "overflow", name: "overflow", sourceRevision: "v1", camera },
     }),
-  ).toThrow();
+  ).toThrow("Keep up to 30 saved views. Delete some before adding more.");
+  // A full collection still accepts edits to the items it keeps.
+  expect(
+    applyWorkspaceOperation(state, {
+      kind: "view",
+      item: { id: "0", name: "Renamed", sourceRevision: "v1", camera },
+    }).views[0]!.name,
+  ).toBe("Renamed");
+  let variants = EMPTY_MODEL_WORKSPACE;
+  const variant = (id: string) => ({
+    kind: "variant" as const,
+    item: {
+      id,
+      name: id,
+      values: {},
+      sourceRevision: "v1",
+      thumbnail: null,
+      dimensions: null,
+      triangles: null,
+      renderedRevision: null,
+      origin: "agent" as const,
+    },
+  });
+  for (let i = 0; i < 24; i++) variants = applyWorkspaceOperation(variants, variant(String(i)));
+  expect(() => applyWorkspaceOperation(variants, variant("overflow"))).toThrow(
+    "Keep up to 24 variants. Delete some before adding more.",
+  );
 });
 
 it("sets, replaces and resets orientation while preserving independent workspace entities", () => {

@@ -36,4 +36,11 @@ describe("dimensionDelta", () => {
     expect(dimensionDelta(2.05, 2)).toBe("+0.1 mm");
     expect(dimensionDelta(Number.NaN, 10)).toBeNull();
   });
+  it("follows a chosen precision and hides changes that round to zero", () => {
+    expect(dimensionDelta(12, 10, "mm", 2)).toBe("+2.00 mm");
+    expect(dimensionDelta(10.02, 10, "mm", 2)).toBe("+0.02 mm");
+    expect(dimensionDelta(10.3, 10, "mm", 0)).toBeNull();
+    expect(dimensionDelta(25.4, 50.8, "in", 0)).toBe("−1 in");
+    expect(dimensionDelta(10.0000000001, 10, "mm", 3)).toBeNull();
+  });
 });

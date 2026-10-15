@@ -37,6 +37,7 @@ import { modelUrl } from "../model-preview-3d/state";
 import { pcb } from "./state";
 import { asyncValue, asyncError } from "./usePcbPreview";
 import { createViewer, type ModelViewer } from "../model-preview-3d/viewer/createViewer";
+import type { SnapKind } from "../model-preview-3d/viewer/snap";
 import { loadModel, disposeModel } from "../model-preview-3d/viewer/load";
 import type { View } from "../model-preview-3d/viewer/views";
 import { VIEW_LABELS } from "../model-preview-3d/WorkspaceTools";
@@ -68,6 +69,13 @@ const applyDisplay = (created: ModelViewer, parts: BoardParts, next: Board3dDisp
   created.invalidate();
 };
 
+type RecordedSnap = NonNullable<Pcb3dMeasurement["snaps"]>[0];
+/**
+ * The saved PCB workspace keeps the snap kinds it had before hole and face centers existed.
+ * Those centers are derived points, not mesh features, so they are recorded as free points.
+ */
+const recordedSnap = (kind: SnapKind | "free"): RecordedSnap =>
+  kind === "center" || kind === "faceCenter" ? "free" : kind;
 export type Pcb3dHandle = Pick<ModelViewer, "fit" | "zoom" | "setView" | "snapshot" | "restore"> & {
   refresh: () => void;
   capture: () => Promise<Blob>;
@@ -327,10 +335,10 @@ export function Board3D({
           start: pending.point,
           end: point,
           lengthMm: new Vector3(...pending.point).distanceTo(new Vector3(...point)),
-          snaps: [pending.snap, kind],
+          snaps: [pending.snap, recordedSnap(kind)],
         });
         setPending(null);
-      } else setPending({ point, snap: kind });
+      } else setPending({ point, snap: recordedSnap(kind) });
     });
     return () => created.setPickMode(null, null);
   }, [ready, tool, pending, geometry, readOnly, append]);
@@ -474,7 +482,7 @@ export function Board3D({
           start: start.point,
           end: end.point,
           lengthMm: new Vector3(...start.point).distanceTo(new Vector3(...end.point)),
-          snaps: [start.kind, end.kind],
+          snaps: [recordedSnap(start.kind), recordedSnap(end.kind)],
         });
       },
       fit: () => get().fit(),

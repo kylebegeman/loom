@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { createHistory, moveHistory, recordHistory } from "./parameterHistory";
+import { createHistory, moveHistory, nearestEntry, recordHistory } from "./parameterHistory";
 it("groups continuous edits, supports undo/redo and drops the redo branch on a new edit", () => {
   const base = { overrides: { width: "10" }, setName: null };
   let history = createHistory(base);
@@ -28,4 +28,14 @@ it("bounds memory while retaining independent fields and named-set changes", () 
   expect(history.cursor).toBe(79);
   history = recordHistory(history, { overrides: {}, setName: "Wide" }, "Wide", null, 100001);
   expect(history.entries[history.cursor]!.value.setName).toBe("Wide");
+});
+it("finds the entry nearest the cursor that holds a value", () => {
+  const value = (width: string) => ({ overrides: { width }, setName: null });
+  let history = createHistory(value("10"));
+  history = recordHistory(history, value("11"), "11", null, 1000);
+  history = recordHistory(history, value("10"), "10", null, 2000);
+  history = recordHistory(history, value("12"), "12", null, 3000);
+  expect(nearestEntry(history, value("10"))).toBe(2);
+  expect(nearestEntry(moveHistory(history, 0), value("10"))).toBe(0);
+  expect(nearestEntry(history, value("99"))).toBe(-1);
 });

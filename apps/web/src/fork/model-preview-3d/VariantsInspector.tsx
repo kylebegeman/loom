@@ -1,5 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { activeBed, type ModelPreviewSettings, type SliceResult } from "@t3tools/contracts/fork";
+import {
+  activeBed,
+  MODEL_WORKSPACE_LIMITS,
+  type ModelPreviewSettings,
+  type SliceResult,
+} from "@t3tools/contracts/fork";
 import { usePrinterLibrary } from "./printers";
 import { startSliceRequest } from "./useSlicing";
 import { formatEstimate } from "./slicing";
@@ -74,8 +79,14 @@ import type { ScadSession } from "./ScadCustomizer";
 import type { meshStats } from "./viewer/load";
 import type { ModelViewer } from "./viewer/createViewer";
 import { models, modelUrl, runModelCommand } from "./state";
-import { formatLength, formatLengths, useDisplayUnits } from "./units";
-import { generateVariants, sweepValues } from "./variants";
+import {
+  formatDelta,
+  formatLength,
+  formatLengths,
+  useDisplayPrecision,
+  useDisplayUnits,
+} from "./units";
+import { MAX_VARIANTS, expandVariants, sweepValues, type VariantAxis } from "./variants";
 import { thumbnail } from "./viewer/captureSheet";
 import { OperationStatus, type OperationProgress } from "./OperationStatus";
 import {
@@ -90,6 +101,7 @@ import {
 import { bedFit, type Plate } from "./buildPlate";
 import {
   Chip,
+  CopyValue,
   EmptyNote,
   ParameterRow,
   RenameInput,
@@ -192,7 +204,7 @@ function ComparePane({
   );
 }
 
-const VARIANT_LIMIT = 24;
+const VARIANT_LIMIT = MODEL_WORKSPACE_LIMITS.variants;
 const SAVE_DELAY_MS = 500;
 const same = (a: Readonly<Record<string, string>>, b: Readonly<Record<string, string>>) =>
   Object.keys({ ...a, ...b }).every((key) => a[key] === b[key]);
@@ -238,6 +250,7 @@ function VariantDetail({
   onDelete: () => void;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const parameters = session.data.parameters;
   const saved = useMemo(
     () => rebaseParameterValues(parameters, variant.values),
@@ -343,7 +356,7 @@ function VariantDetail({
             ? `${differ} parameter${differ === 1 ? "" : "s"} differ from source defaults`
             : "Same as source defaults"}
           {variant.dimensions && !dirty
-            ? `, ${formatLengths(variant.dimensions, units, { digits: 0 })}`
+            ? `, ${formatLengths(variant.dimensions, units, { digits: 0, precision })}`
             : ""}
           {dirty || fit === "fits"
             ? ""
@@ -424,12 +437,17 @@ function SweepDialog({
   onOpenChange,
   session,
   adding,
+  room,
+  saveError,
   onGenerate,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   session: ScadSession;
   adding: boolean;
+  /** Variants the workspace can still keep. */
+  room: number;
+  saveError: string | null;
   onGenerate: (candidates: SaveCandidate[]) => Promise<boolean>;
 }) {
   const eligible = session.data.parameters.filter((parameter) => parameter.kind !== "vector");
@@ -437,71 +455,59 @@ function SweepDialog({
     [firstValues, setFirstValues] = useState(""),
     [second, setSecond] = useState(""),
     [secondValues, setSecondValues] = useState(""),
-    [error, setError] = useState<string | null>(null);
-  const firstAxis = eligible.some((p) => p.name === first) ? first : (eligible[0]?.name ?? "");
-  const secondAxis = second !== firstAxis && eligible.some((p) => p.name === second) ? second : "";
+    [tried, setTried] = useState(false);
+  const firstAxis = eligible.find((p) => p.name === first) ?? eligible[0];
+  const secondAxis =
+    second !== firstAxis?.name ? eligible.find((p) => p.name === second) : undefined;
   const items = eligible.map((parameter) => ({
     value: parameter.name,
     label: parameterLabel(parameter.name),
   }));
-  const preview = (() => {
-    const axes = [
-      { parameter: eligible.find((p) => p.name === firstAxis), input: firstValues },
-      { parameter: eligible.find((p) => p.name === secondAxis), input: secondValues },
-    ].flatMap(({ parameter, input }) => (parameter ? [{ parameter, input }] : []));
-    try {
-      const candidates = generateVariants(
-        session.values,
-        axes.map(({ parameter, input }) => ({
-          name: parameter.name,
-          values: sweepValues(parameter, input),
-        })),
-      );
-      return { axes, candidates, error: null };
-    } catch (cause) {
-      return {
-        axes,
-        candidates: [],
-        error: cause instanceof Error ? cause.message : String(cause),
-      };
+  // Each typed list is read on every keystroke; errors show once the user has tried to submit.
+  const plan = (() => {
+    const axes: VariantAxis[] = [];
+    for (const [parameter, input] of [
+      [firstAxis, firstValues],
+      [secondAxis, secondValues],
+    ] as const) {
+      if (!parameter) continue;
+      const values = sweepValues(parameter, input);
+      if ("error" in values) return { error: `${parameter.name}: ${values.error}` };
+      axes.push({ name: parameter.name, values });
     }
+    const candidates = expandVariants(session.data.parameters, session.values, axes);
+    if ("error" in candidates || candidates.length <= room) return candidates;
+    return {
+      error: `Keep up to ${VARIANT_LIMIT} variants. ${room ? `${room} more fit; list fewer values or delete some first.` : "Delete some before adding more."}`,
+    };
   })();
+  const error = "error" in plan ? plan.error : (saveError ?? null);
+  const count = "error" in plan ? 0 : plan.length;
   return (
     <Dialog open={open} onOpenChange={(next) => !adding && onOpenChange(next)}>
       <DialogPopup>
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (preview.error) {
-              setError(preview.error);
-              return;
-            }
-            void onGenerate(
-              preview.candidates.map((candidate) => ({
-                values: candidate.values,
-                name: preview.axes
-                  .map(
-                    ({ parameter }) =>
-                      `${parameterLabel(parameter.name)} ${displayParameterValue(parameter, candidate.values[parameter.name]!)}`,
-                  )
-                  .join(", "),
-              })),
-            ).then((ok) => ok && onOpenChange(false));
+            setTried(true);
+            if ("error" in plan || adding) return;
+            void onGenerate(plan).then((ok) => ok && onOpenChange(false));
           }}
         >
           <DialogHeader>
             <DialogTitle>Parameter sweep</DialogTitle>
             <DialogDescription>
               Make a variant for every combination of the values you list, starting from the current
-              values. Up to 12 per sweep.
+              values. List up to six values for one parameter, or two parameters for a grid of up to{" "}
+              {MAX_VARIANTS}.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
             <div className={styles["model-sweep-grid"]}>
               <span>Parameter</span>
-              <span>Values, comma separated</span>
+              <span>Values</span>
               <Select
-                value={firstAxis}
+                value={firstAxis?.name ?? ""}
                 items={items}
                 onValueChange={(next) => next !== null && setFirst(next)}
               >
@@ -519,12 +525,13 @@ function SweepDialog({
               <Input
                 size="sm"
                 aria-label="Sweep values"
-                placeholder="e.g. 80, 90, 110"
+                aria-invalid={tried && !!error}
+                placeholder="e.g. 30, 40, 50"
                 value={firstValues}
                 onChange={(event) => setFirstValues(event.target.value)}
               />
               <Select
-                value={secondAxis}
+                value={secondAxis?.name ?? ""}
                 items={[{ value: "", label: "No second parameter" }, ...items]}
                 onValueChange={(next) => setSecond(next ?? "")}
               >
@@ -534,7 +541,7 @@ function SweepDialog({
                 <SelectPopup>
                   <SelectItem value="">No second parameter</SelectItem>
                   {items
-                    .filter((item) => item.value !== firstAxis)
+                    .filter((item) => item.value !== firstAxis?.name)
                     .map((item) => (
                       <SelectItem key={item.value} value={item.value}>
                         {item.label}
@@ -552,11 +559,10 @@ function SweepDialog({
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              {firstValues.trim() && !preview.error
-                ? `Makes ${preview.candidates.length} variant${preview.candidates.length === 1 ? "" : "s"}.`
-                : "Switches take true or false. Text values do not need quotes."}
+              Separate numbers with commas, spaces or semicolons. Switches take true or false, and
+              text values do not need quotes.
             </p>
-            {error && (
+            {tried && error && (
               <p role="alert" className="text-sm text-destructive-foreground">
                 {error}
               </p>
@@ -567,10 +573,8 @@ function SweepDialog({
             <Button variant="outline" disabled={adding} onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={adding || !firstAxis || !firstValues.trim()}>
-              {preview.candidates.length && !preview.error
-                ? `Make ${preview.candidates.length} variant${preview.candidates.length === 1 ? "" : "s"}`
-                : "Make variants"}
+            <Button type="submit" disabled={adding || !firstAxis}>
+              {count ? `Make ${count} variant${count === 1 ? "" : "s"}` : "Make variants"}
             </Button>
           </DialogFooter>
         </form>
@@ -604,6 +608,7 @@ export function VariantsInspector({
   plate: Plate;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const [error, setError] = useState<string | null>(null);
   const library = usePrinterLibrary(threadRef.environmentId);
   const bedId = activeBed(settings.buildPlate, { library }).id;
@@ -708,6 +713,8 @@ export function VariantsInspector({
   const [detailId, setDetailId] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [sweepOpen, setSweepOpen] = useState(false);
+  // The latest sweep's variants until each is kept or the set is discarded.
+  const [generatedIds, setGenerated] = useState<readonly string[]>([]);
   const parameters = session?.data.parameters;
   const selection = selected.filter((id) => data.variants.some((variant) => variant.id === id));
   const chosen = useMemo(
@@ -778,7 +785,7 @@ export function VariantsInspector({
   useEffect(() => stop, [stop]);
   // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Source replacement cancels the external render process and its thumbnail work.
   useEffect(() => stop, [session?.data.sourceRevision, stop]);
-  /** Saves candidates and resolves with their ids, or null when nothing was saved. */
+  /** Saves candidates and resolves with the saved variants, or null when nothing was saved. */
   const add = async (candidates: readonly SaveCandidate[]) => {
     if (!session || adding) return null;
     setAdding(true);
@@ -788,28 +795,24 @@ export function VariantsInspector({
         throw new Error(
           `Keep up to ${VARIANT_LIMIT} variants. Delete some before adding ${candidates.length === 1 ? "another" : "more"}.`,
         );
-      const ids: string[] = [];
+      const added: ModelVariant[] = [];
       for (const candidate of candidates) {
-        const id = randomUUID();
-        const saved = await mutate({
-          kind: "variant",
-          item: {
-            id,
-            name:
-              candidate.name.slice(0, 100) || `Variant ${data.variants.length + ids.length + 1}`,
-            values: candidate.values,
-            sourceRevision: session.data.sourceRevision,
-            thumbnail: null,
-            dimensions: null,
-            triangles: null,
-            renderedRevision: null,
-            origin: "user",
-          },
-        });
-        if (!saved) break;
-        ids.push(id);
+        const item: ModelVariant = {
+          id: randomUUID(),
+          name:
+            candidate.name.slice(0, 100) || `Variant ${data.variants.length + added.length + 1}`,
+          values: candidate.values,
+          sourceRevision: session.data.sourceRevision,
+          thumbnail: null,
+          dimensions: null,
+          triangles: null,
+          renderedRevision: null,
+          origin: "user",
+        };
+        if (!(await mutate({ kind: "variant", item }))) break;
+        added.push(item);
       }
-      return ids.length ? ids : null;
+      return added.length ? added : null;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       return null;
@@ -817,15 +820,21 @@ export function VariantsInspector({
       setAdding(false);
     }
   };
-  /** Renders the given variants one at a time and stores a thumbnail for each. */
-  const render = async (ids: readonly string[], override?: ModelVariant) => {
+  /**
+   * Renders the given variants one at a time and stores a thumbnail for each. Variants saved
+   * moments ago may not have reached this render's workspace data yet, so callers pass them.
+   */
+  const render = async (ids: readonly string[], known: readonly ModelVariant[] = []) => {
     if (!session || running || !ids.length) return;
     const token = ++generation.current;
     setError(null);
     setMessage(null);
     setRunning("Preparing variant batch");
     const candidates = ids.flatMap((id) => {
-      const variant = override?.id === id ? override : data.variants.find((item) => item.id === id);
+      const variant =
+        known.find((item) => item.id === id) ??
+        latestVariants.current.find((item) => item.id === id) ??
+        data.variants.find((item) => item.id === id);
       return variant ? [variant] : [];
     });
     setQueue(candidates.map((variant) => variant.id));
@@ -937,7 +946,8 @@ export function VariantsInspector({
         }
       }
     } catch (cause) {
-      if (token === generation.current) setError(String(cause));
+      if (token === generation.current)
+        setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       if (token === generation.current) {
         setRunning(null);
@@ -956,9 +966,13 @@ export function VariantsInspector({
     );
   const defaults = parameterValues(session.data.parameters, {});
   const addAndRender = (candidates: readonly SaveCandidate[]) =>
-    add(candidates).then((ids) => {
-      if (ids) void render(ids);
-      return !!ids;
+    add(candidates).then((added) => {
+      if (added)
+        void render(
+          added.map((item) => item.id),
+          added,
+        );
+      return !!added;
     });
   const use = (name: string, values: Readonly<Record<string, string>>) => {
     session.promote(rebaseParameterValues(session.data.parameters, values), name);
@@ -967,6 +981,33 @@ export function VariantsInspector({
   const remove = (ids: readonly string[]) => {
     for (const id of ids) void mutate({ kind: "remove", collection: "variants", id });
     setSelected((current) => current.filter((id) => !ids.includes(id)));
+    setGenerated((current) => current.filter((id) => !ids.includes(id)));
+  };
+  const sweep = (candidates: readonly SaveCandidate[]) =>
+    add(candidates).then((added) => {
+      if (added) {
+        const ids = added.map((item) => item.id);
+        setGenerated(ids);
+        void render(ids, added);
+      }
+      return !!added;
+    });
+  const generated = generatedIds.flatMap((id) => {
+    const variant = data.variants.find((item) => item.id === id);
+    return variant ? [variant] : [];
+  });
+  /** Promotes a generated variant to the working values; the card stays as a saved variant. */
+  const keep = (variant: ModelVariant, values: Readonly<Record<string, string>>) => {
+    use(variant.name, values);
+    setGenerated((current) => current.filter((id) => id !== variant.id));
+    setMessage(`Kept ${variant.name}.`);
+  };
+  /** Deletes every generated variant not yet kept, stopping their renders first. */
+  const discardGenerated = () => {
+    if (queue.some((id) => generatedIds.includes(id))) stop();
+    remove(generatedIds);
+    setGenerated([]);
+    setMessage(null);
   };
   const openSaveSet = (candidate: SaveCandidate) => {
     setSaveError(null);
@@ -984,7 +1025,9 @@ export function VariantsInspector({
         onOpenChange={setSweepOpen}
         session={session}
         adding={adding}
-        onGenerate={addAndRender}
+        room={VARIANT_LIMIT - data.variants.length}
+        saveError={error}
+        onGenerate={sweep}
       />
       <Dialog
         open={!!saveCandidate}
@@ -1092,13 +1135,33 @@ export function VariantsInspector({
                     const a = compareDimensions[comparisonKey(chosen[0]!)];
                     const b = compareDimensions[comparisonKey(chosen[1]!)];
                     const delta = a && b ? b[index]! - a[index]! : 0;
+                    // A change that rounds to zero at the shown precision has no sign and is not shown.
+                    const change = formatDelta(delta, units, { precision });
+                    const changed = change.startsWith("+") || change.startsWith("\u2212");
                     return (
                       <Fragment key={label}>
                         <dt>{label}</dt>
                         <dd>
-                          {a && b
-                            ? `${formatLength(a[index]!, units, { unit: false })} → ${formatLength(b[index]!, units, { unit: false })} ${units}${delta ? ` (${delta > 0 ? "+" : ""}${formatLength(delta, units, { unit: false })})` : ""}`
-                            : "Measuring"}
+                          {a && b ? (
+                            <>
+                              {formatLength(a[index]!, units, { unit: false, precision })} →{" "}
+                              {formatLength(b[index]!, units, { unit: false, precision })} {units}
+                              {changed ? (
+                                <>
+                                  {" ("}
+                                  <CopyValue
+                                    text={change}
+                                    label={`Copy ${label.toLowerCase()} change, ${change}`}
+                                  >
+                                    {formatDelta(delta, units, { unit: false, precision })}
+                                  </CopyValue>
+                                  )
+                                </>
+                              ) : null}
+                            </>
+                          ) : (
+                            "Measuring"
+                          )}
                         </dd>
                       </Fragment>
                     );
@@ -1141,14 +1204,14 @@ export function VariantsInspector({
           onCancelEstimate={cancelSlicing}
           onEstimate={(variant) => void estimateVariants([variant])}
           onBack={() => setDetailId(null)}
-          onRender={(variant) => void render([variant.id], variant)}
+          onRender={(variant) => void render([variant.id], [variant])}
           onUse={(values) => use(detail.name, values)}
           onSaveSet={openSaveSet}
           onDuplicate={(candidate) =>
-            void add([candidate]).then((ids) => {
-              if (ids) {
-                setDetailId(ids[0]!);
-                void render(ids);
+            void add([candidate]).then((added) => {
+              if (added) {
+                setDetailId(added[0]!.id);
+                void render([added[0]!.id], added);
               }
             })
           }
@@ -1215,7 +1278,7 @@ export function VariantsInspector({
               <MenuItem onClick={() => setSweepOpen(true)}>
                 <LayersIcon />
                 Parameter sweep
-                <MenuShortcut>Up to 12</MenuShortcut>
+                <MenuShortcut>Up to {MAX_VARIANTS}</MenuShortcut>
               </MenuItem>
             </MenuPopup>
           </Menu>
@@ -1264,14 +1327,25 @@ export function VariantsInspector({
               size="xs"
               onClick={() => {
                 stop();
-                setMessage("Rendering stopped.");
+                setMessage("Rendering stopped. Finished variants keep their thumbnails.");
               }}
             >
-              Cancel
+              Stop
             </Button>
           </div>
         )}
         {adding && <OperationStatus label="Saving variants" />}
+        {generated.length > 0 && (
+          <div className={styles["model-batch"]}>
+            <span className="flex-1">
+              Sweep of {generated.length} variant{generated.length === 1 ? "" : "s"}. Keep one to
+              use its values.
+            </span>
+            <Button variant="ghost-muted" size="xs" onClick={discardGenerated}>
+              Discard all
+            </Button>
+          </div>
+        )}
         {message && !running && (
           <p role="status" className={styles["model-help"]}>
             {message}
@@ -1291,6 +1365,7 @@ export function VariantsInspector({
               const fit = variant.dimensions ? bedFit(variant.dimensions, plate.volume) : "fits";
               const stale =
                 !!variant.thumbnail && variant.renderedRevision !== session.data.sourceRevision;
+              const isGenerated = generatedIds.includes(variant.id);
               const toggle = () =>
                 setSelected((current) =>
                   isSelected ? current.filter((id) => id !== variant.id) : [...current, variant.id],
@@ -1425,6 +1500,27 @@ export function VariantsInspector({
                       {describeValues(session.data.parameters, values, defaults) ||
                         "Source defaults"}
                     </div>
+                    {variant.dimensions && (
+                      <div className={styles["model-variant-size"]}>
+                        {formatLengths(variant.dimensions, units, { precision, trim: true })}
+                      </div>
+                    )}
+                    {isGenerated && (
+                      <Button
+                        className="mt-2"
+                        variant="outline"
+                        size="xs"
+                        aria-label={`Keep ${variant.name}`}
+                        disabled={!variant.thumbnail || queue.includes(variant.id)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          keep(variant, values);
+                        }}
+                      >
+                        <CheckIcon />
+                        Keep
+                      </Button>
+                    )}
                   </div>
                 </div>
               );

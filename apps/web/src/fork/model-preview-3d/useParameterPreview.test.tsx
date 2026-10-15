@@ -1,7 +1,7 @@
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { useParameterPreview } from "./useParameterPreview";
+import { AUTO_RENDER_MS, useParameterPreview } from "./useParameterPreview";
 type State = Parameters<typeof useParameterPreview>[0];
 let renderer: ReactTestRenderer | null;
 let preview: ReturnType<typeof useParameterPreview>;
@@ -9,20 +9,22 @@ function Harness({
   current,
   ready = true,
   automatic,
+  held = false,
 }: {
   current: State;
   ready?: boolean;
   automatic: boolean;
+  held?: boolean;
 }) {
-  const result = useParameterPreview(current, ready, automatic);
+  const result = useParameterPreview(current, ready, automatic, null, held);
   useLayoutEffect(() => {
     preview = result;
   });
   return null;
 }
-async function update(current: State, automatic: boolean, ready = true) {
+async function update(current: State, automatic: boolean, ready = true, held = false) {
   await act(async () => {
-    const node = <Harness current={current} ready={ready} automatic={automatic} />;
+    const node = <Harness current={current} ready={ready} automatic={automatic} held={held} />;
     if (renderer) renderer.update(node);
     else renderer = create(node);
   });
@@ -69,7 +71,7 @@ it("coalesces rapid edits, cancels a pending automatic update on pause, and resu
   await act(async () => vi.advanceTimersByTime(1000));
   expect(preview.applied).toEqual(initial);
   await update(final, true);
-  await act(async () => vi.advanceTimersByTime(300));
+  await act(async () => vi.advanceTimersByTime(AUTO_RENDER_MS));
   expect(preview.applied).toEqual(final);
 });
 it("cancels unpublished edits when the file panel closes", async () => {
@@ -78,4 +80,18 @@ it("cancels unpublished edits when the file panel closes", async () => {
   await act(async () => renderer!.unmount());
   renderer = null;
   expect(vi.getTimerCount()).toBe(0);
+});
+it("renders a pending change after a hold that changed nothing is released", async () => {
+  const initial = { overrides: { width: "40" }, setName: null };
+  await update(initial, true);
+  const typed = { overrides: { width: "45" }, setName: null };
+  await update(typed, true);
+  await act(async () => vi.advanceTimersByTime(200));
+  // A press on a scrub handle without a drag holds, then releases, the render.
+  await update(typed, true, true, true);
+  await act(async () => vi.advanceTimersByTime(1000));
+  expect(preview.applied).toEqual(initial);
+  await update(typed, true, true, false);
+  await act(async () => vi.advanceTimersByTime(AUTO_RENDER_MS));
+  expect(preview.applied).toEqual(typed);
 });

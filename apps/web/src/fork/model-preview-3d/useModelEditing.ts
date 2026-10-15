@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { useCallback, useMemo, useState, useEffect, useLayoutEffect, useRef } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import type {
   ModelAnnotation,
@@ -7,6 +7,7 @@ import type {
   ModelQuaternion,
   ModelPoint,
   ModelSection,
+  ModelWorkspaceOperation,
 } from "@t3tools/contracts/fork";
 import { normalizeQuaternion } from "@t3tools/contracts/fork";
 import type { Vector3 } from "three";
@@ -22,6 +23,48 @@ import { attachModelImage } from "./capture";
 import { captureFileName, copyImage, saveImage, type ExportAction } from "./captureExport";
 import { useModelWorkspace } from "./useModelWorkspace";
 import { captureNamedViews, thumbnail } from "./viewer/captureSheet";
+import { same } from "./undoHistory";
+import { listPatch, samePin, withPending, type UndoSlice } from "./undoSlice";
+import { useUndoHistory } from "./useUndoHistory";
+
+/** An undo or redo save the workspace stream has not shown yet; a null item is a removal. */
+type PendingSave<T> = { item: T | null; saved: boolean };
+
+/** Remembers an undo save until the stream shows it, and forgets it at once if it fails. */
+function trackSave<T>(
+  pending: Map<string, PendingSave<T>>,
+  id: string,
+  item: T | null,
+  save: Promise<unknown>,
+) {
+  const entry: PendingSave<T> = { item, saved: false };
+  pending.set(id, entry);
+  void save.then((saved) => {
+    if (pending.get(id) !== entry) return;
+    if (saved) entry.saved = true;
+    else pending.delete(id);
+  });
+}
+
+/**
+ * Drops saves the stream now shows. A save confirmed earlier is dropped on the stream's next
+ * update even when the item differs, since that update already carries any later change.
+ */
+function forgetShown<T extends { id: string }>(
+  pending: Map<string, PendingSave<T>>,
+  live: readonly T[],
+  equal: (a: T | undefined, b: T | undefined) => boolean,
+) {
+  for (const [id, entry] of pending)
+    if (
+      entry.saved ||
+      equal(
+        live.find((item) => item.id === id),
+        entry.item ?? undefined,
+      )
+    )
+      pending.delete(id);
+}
 
 export function useModelEditing(
   threadRef: ScopedThreadRef,
@@ -29,6 +72,8 @@ export function useModelEditing(
   viewer: React.RefObject<ModelViewer | null>,
   sourceRevision: string,
   session: ScadSession | null,
+  /** `undo` keeps a panel-wide undo history for this file; the assembly view leaves it off. */
+  options: { undo?: boolean } = {},
 ) {
   const workspace = useModelWorkspace(threadRef, path);
   const [section, setSection] = useState<ModelSection>({
@@ -64,6 +109,34 @@ export function useModelEditing(
     (!overrideActive || storedKey === JSON.stringify(orientationOverride.value))
   )
     setOrientationOverride(null);
+  // Undo is kept per file revision: the source for CAD files, whose renders change with
+  // parameters, and the mesh itself otherwise.
+  const contentRevision = session?.data.sourceRevision ?? sourceRevision;
+  const undoScope =
+    options.undo && contentRevision
+      ? `${threadRef.environmentId}:${threadRef.threadId}:${path}@${contentRevision}`
+      : "";
+  const parameters = session?.parameters ?? null;
+  const undoSlice = useMemo<UndoSlice>(
+    () => ({
+      measurements: workspace.data.measurements,
+      annotations: workspace.data.annotations,
+      section,
+      orientation,
+      parameters,
+    }),
+    [workspace.data.measurements, workspace.data.annotations, section, orientation, parameters],
+  );
+  const applyUndo = useRef<(fields: Partial<UndoSlice>, from: Partial<UndoSlice>) => boolean>(
+    () => false,
+  );
+  const history = useUndoHistory({
+    scope: undoScope,
+    slice: undoSlice,
+    ready: workspace.ready,
+    apply: (fields, from) => applyUndo.current(fields, from),
+  });
+  const { recordOperation, recordValue } = history;
   const [operation, setOperation] = useState<string | null>(null);
   const operationActive = useRef(false);
   const perform = useCallback(async <T>(label: string, task: () => Promise<T>) => {
@@ -124,18 +197,60 @@ export function useModelEditing(
     },
     [cancel],
   );
+  /** The context menu's measure: the distance tool with this point as its first pick. */
+  const measureFrom = useCallback(
+    (point: ModelPoint) => {
+      choose("measure");
+      setPendingPoint(point);
+    },
+    [choose],
+  );
+  /** The context menu's pin: a one-point region awaiting its request, like a tool pick. */
+  const pinAt = useCallback(
+    (point: ModelPoint) => {
+      cancel();
+      setPendingCamera(viewer.current?.snapshot() ?? null);
+      setPendingRegion([point]);
+    },
+    [cancel, viewer],
+  );
   const setMeasureMode = useCallback((mode: "distance" | "hole") => {
     updateMeasureMode(mode);
     setPendingPoint(null);
     setError(null);
   }, []);
-  const mutate = workspace.mutate;
+  const saveQuietly = workspace.mutate;
+  /**
+   * Saves a workspace edit and, once saved, records it for undo. Edits sharing a `group` undo as
+   * one step.
+   */
+  const mutate = useCallback(
+    async (operation: ModelWorkspaceOperation, options: { group?: string } = {}) => {
+      const saved = await saveQuietly(operation);
+      if (saved) recordOperation(operation, options.group);
+      return saved;
+    },
+    [saveQuietly, recordOperation],
+  );
+  /** Changes the section plane and records it; rapid slider changes merge into one step. */
+  const editSection = useCallback(
+    (next: ModelSection) => {
+      recordValue("section", section, next);
+      setSection(next);
+    },
+    [recordValue, section],
+  );
+  const shownOrientation = useRef(orientation);
+  useLayoutEffect(() => {
+    shownOrientation.current = orientation;
+  });
   /** Apply immediately, then let the persisted workspace stream become authoritative. */
   const saveOrientation = useCallback(
-    async (item: ModelOrientation | null) =>
+    async (item: ModelOrientation | null, record = true) =>
       (await perform("Saving orientation", async () => {
         if (!workspace.canEdit || !workspace.ready || !viewer.current) return false;
         const value = item && { ...item, quaternion: normalizeQuaternion(item.quaternion) };
+        const shown = shownOrientation.current;
         const before = JSON.stringify(latestStoredOrientation.current);
         setOrientationOverride({ value, before });
         viewer.current.setOrientation(value?.quaternion ?? null);
@@ -146,6 +261,7 @@ export function useModelEditing(
             viewer.current?.setOrientation(latestStoredOrientation.current?.quaternion ?? null);
             return false;
           }
+          if (record) recordValue("orientation", shown, value);
           return true;
         } catch (cause) {
           setOrientationOverride(null);
@@ -153,7 +269,7 @@ export function useModelEditing(
           throw cause;
         }
       })) ?? false,
-    [perform, workspace.canEdit, workspace.ready, viewer, mutate],
+    [perform, workspace.canEdit, workspace.ready, viewer, mutate, recordValue],
   );
   const faceOrientationAt = useCallback(
     async (point: ModelPoint): Promise<FaceOrientation | null> => {
@@ -356,7 +472,7 @@ export function useModelEditing(
         ...annotation,
         referenceImage: await thumbnail(await markedCapture(annotation)),
       };
-      const saved = await workspace.mutate({ kind: "annotation", item });
+      const saved = await mutate({ kind: "annotation", item });
       if (!saved) return null;
       cancel();
       return item;
@@ -372,7 +488,7 @@ export function useModelEditing(
       const context = `Model change request: ${annotation.name}\nFile: ${path}\nRendered geometry revision: ${annotation.sourceRevision}\nRegion (mm): ${JSON.stringify(annotation.points)}\nApplied parameters: ${JSON.stringify(annotation.parameters)}\n\n${annotation.request}\n\nUse the attached marked view and preserve unrelated geometry. Explain the change so I can review the result in Loom.`;
       const previous = store.getComposerDraft(threadRef)?.prompt ?? "";
       store.setPrompt(threadRef, previous ? `${previous}\n\n${context}` : context);
-      await workspace.mutate({ kind: "annotation", item: { ...annotation, status: "review" } });
+      await mutate({ kind: "annotation", item: { ...annotation, status: "review" } });
       return true;
     });
   };
@@ -438,8 +554,92 @@ export function useModelEditing(
     setPicking(null);
     setPendingPoint(null);
   };
+  const restorePin = async (item: ModelAnnotation) => {
+    const saved = await saveQuietly({ kind: "annotation", item });
+    if (saved || !item.referenceImage) return saved;
+    // Deleting a pin deletes its reference image, so a pin brought back keeps its request only.
+    return saveQuietly({ kind: "annotation", item: { ...item, referenceImage: null } });
+  };
+  // Undo saves are not awaited, so a quick second undo would otherwise compare against a stream
+  // that has not caught up and read the first undo's own write as an edit made elsewhere.
+  const pendingUndo = useRef({
+    measurements: new Map<string, PendingSave<ModelMeasurement>>(),
+    annotations: new Map<string, PendingSave<ModelAnnotation>>(),
+  });
+  useEffect(() => {
+    forgetShown(pendingUndo.current.measurements, workspace.data.measurements, same);
+    forgetShown(pendingUndo.current.annotations, workspace.data.annotations, samePin);
+  }, [workspace.data.measurements, workspace.data.annotations]);
+  /** Restores undone fields where nothing else has changed them since. */
+  useLayoutEffect(() => {
+    applyUndo.current = (fields, from) => {
+      // A half-made measurement would mix points from two states.
+      setPendingPoint(null);
+      let applied = false;
+      const pending = pendingUndo.current;
+      if (fields.measurements && from.measurements) {
+        const patch = listPatch(
+          withPending(workspace.data.measurements, pending.measurements),
+          from.measurements,
+          fields.measurements,
+        );
+        for (const item of patch.upserts)
+          trackSave(
+            pending.measurements,
+            item.id,
+            item,
+            saveQuietly({ kind: "measurement", item }),
+          );
+        for (const id of patch.removes)
+          trackSave(
+            pending.measurements,
+            id,
+            null,
+            saveQuietly({ kind: "remove", collection: "measurements", id }),
+          );
+        applied ||= patch.upserts.length + patch.removes.length + patch.settled > 0;
+      }
+      if (fields.annotations && from.annotations) {
+        const patch = listPatch(
+          withPending(workspace.data.annotations, pending.annotations),
+          from.annotations,
+          fields.annotations,
+          samePin,
+        );
+        for (const item of patch.upserts)
+          trackSave(pending.annotations, item.id, item, restorePin(item));
+        for (const id of patch.removes)
+          trackSave(
+            pending.annotations,
+            id,
+            null,
+            saveQuietly({ kind: "remove", collection: "annotations", id }),
+          );
+        applied ||= patch.upserts.length + patch.removes.length + patch.settled > 0;
+      }
+      if (fields.section) {
+        setSection(fields.section);
+        applied = true;
+      }
+      if (
+        fields.orientation !== undefined &&
+        same(shownOrientation.current, from.orientation ?? null)
+      ) {
+        void saveOrientation(fields.orientation, false);
+        applied = true;
+      }
+      if (fields.parameters && session && same(session.parameters, from.parameters)) {
+        session.restoreParameters(fields.parameters);
+        applied = true;
+      }
+      return applied;
+    };
+  });
   return {
     ...workspace,
+    mutate,
+    undo: history,
+    editSection,
     operation,
     perform,
     orientation,
@@ -455,6 +655,8 @@ export function useModelEditing(
     measureMode,
     setMeasureMode,
     choose,
+    measureFrom,
+    pinAt,
     pendingPoint,
     pendingRegion,
     measurements,

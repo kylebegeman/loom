@@ -1,4 +1,4 @@
-import { InstancedMesh, Matrix4, Mesh, Vector3 } from "three";
+import { InstancedMesh, Matrix4, Mesh, Vector3, type Object3D } from "three";
 import SnapWorker from "./snapTopology.worker?worker";
 import { buildTopology, SNAP_TRIANGLE_LIMIT, type Topology } from "./snap";
 /** Copies current world-space geometry. Instance triangles follow source order per instance. */
@@ -22,6 +22,24 @@ export function meshPositions(mesh: Mesh): Float32Array {
     }
   }
   return positions;
+}
+/**
+ * A detached model's triangles as one soup in its own frame, which is the viewer's model space
+ * once the model sits under the orientation root.
+ */
+export function modelPositions(model: Object3D): Float32Array {
+  model.updateMatrixWorld(true);
+  const parts: Float32Array[] = [];
+  model.traverse((object) => {
+    if (object instanceof Mesh) parts.push(meshPositions(object));
+  });
+  const out = new Float32Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
 }
 /** One lazy worker for the whole model, always terminated on completion or cancellation. */
 export async function buildTopologies(

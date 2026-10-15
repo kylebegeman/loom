@@ -5,7 +5,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Chip, EmptyNote } from "./controls";
 import { OperationStatus } from "./OperationStatus";
-import { formatLength, formatLengths, useDisplayUnits } from "./units";
+import { formatLength, formatLengths, useDisplayPrecision, useDisplayUnits } from "./units";
 import { BedFitList } from "./BedFitList";
 import { pairIdentity } from "./assemblyEditing";
 import type { AssemblyInspectorProps } from "./AssemblyInspector";
@@ -27,11 +27,12 @@ function PairFinding({
   onFocus: () => void;
 }) {
   const units = useDisplayUnits();
+  const precision = useDisplayPrecision();
   const measured =
     pair.minDistanceMm !== null
-      ? formatLength(pair.minDistanceMm, units, { digits: 3, trim: true })
+      ? formatLength(pair.minDistanceMm, units, { digits: 3, trim: true, precision })
       : pair.atLeastMm !== null
-        ? `At least ${formatLength(pair.atLeastMm, units, { digits: 3, trim: true })}`
+        ? `At least ${formatLength(pair.atLeastMm, units, { digits: 3, trim: true, precision })}`
         : null;
   return (
     <button
@@ -61,7 +62,7 @@ function PairFinding({
         <span>
           {measured}
           {pair.requiredMm !== null
-            ? `; required ${formatLength(pair.requiredMm, units, { digits: 3, trim: true })}`
+            ? `; required ${formatLength(pair.requiredMm, units, { digits: 3, trim: true, precision })}`
             : ""}
         </span>
       )}
@@ -90,6 +91,7 @@ export function AssemblyFitSection(props: AssemblyInspectorProps) {
     [label, setLabel] = useState("");
   const parts = snapshot.assembly.parts,
     units = useDisplayUnits(),
+    precision = useDisplayPrecision(),
     disabled = props.readOnly || props.busy;
   const nameOf = (id: string) => parts.find((part) => part.id === id)?.name ?? id;
   const selectedA = a || parts[0]?.id || "",
@@ -129,7 +131,7 @@ export function AssemblyFitSection(props: AssemblyInspectorProps) {
         {size && (
           <p className={styles.note}>
             {props.stale && !props.size ? "Last checked size" : "Assembly size"}:{" "}
-            {formatLengths(size, units, { trim: true })}
+            {formatLengths(size, units, { trim: true, precision })}
           </p>
         )}
         <p className={styles.note}>
@@ -253,7 +255,7 @@ export function AssemblyFitSection(props: AssemblyInspectorProps) {
                     >
                       {STATUS_LABELS[result.status]}
                       {result.minDistanceMm !== null
-                        ? `: ${formatLength(result.minDistanceMm, units, { digits: 3, trim: true })}`
+                        ? `: ${formatLength(result.minDistanceMm, units, { digits: 3, trim: true, precision })}`
                         : ""}
                       {props.stale ? " (out of date)" : ""}
                     </button>

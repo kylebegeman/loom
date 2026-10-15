@@ -29,7 +29,7 @@ to the viewport.
 While the panel has focus, **F** fits the model, **O** and **H** choose orbit or pan,
 **1** to **4** choose standard views, **W**, **G** and **A** toggle wireframe, bed and axes,
 **P** switches perspective and orthographic projection, **V** toggles overhang shading,
-**D** shows or hides the previous version, and **I** shows or hides the inspector.
+**K** toggles overall dimensions, **D** shows or hides the previous version, and **I** shows or hides the inspector.
 Press **L** to choose a face to rest on the bed, **T** to open model history,
 and **[** or **]** to step through its turns. **Y** shows or hides sliced layers after an estimate. With the canvas itself focused, arrow keys
 orbit and **Shift + arrows** pan; they leave fields and menus to use their own arrows.
@@ -41,6 +41,11 @@ millimetres or decimal inches. The command palette's **3D model: Switch units** 
 same setting. Dimensions, measurements, section offsets and custom bed inputs follow it;
 **Copy value** on a measurement copies the number in the selected unit. The grid pattern is a
 separate choice. Customizer parameters keep the units defined by the SCAD source.
+**Precision** beside Units in settings sets the decimals for lengths, changes and areas,
+including canvas labels and captures: **Automatic** keeps each value's usual form, or choose 0
+to 3. Click a part dimension, measurement, axis delta or size change to copy it as shown, with
+its unit and without digit grouping. If the host blocks the clipboard, the value is selected so
+you can press Cmd or Ctrl+C.
 
 Stored lengths and agent tool values stay in millimetres. STL and OBJ are treated as mm, 3MF
 uses its recorded units, and glTF is converted from metres. Changing display units leaves
@@ -57,7 +62,7 @@ The panel reloads when a file changes and keeps the camera. For glTF, buffers an
 must be below the model's directory, without parent-directory references. Close a tab to
 stop watching its file. STEP previews use Python CAD on the host. Long jobs show
 their current stage and elapsed time, and variant batches show completed counts. Your last
-preview stays visible while a replacement is prepared; use Cancel to stop a variant batch.
+preview stays visible while a replacement is prepared; use Stop to end a variant batch.
 
 After a file change, **Show previous** or **D** overlays the replaced shape in translucent grey.
 **Part** shows dimension changes beside each axis. Parameter edits keep a previous version too;
@@ -82,10 +87,17 @@ such as open change requests or a part that is larger than the bed.
 
 **Customize** edits customizer inputs. Pick a saved set from the menu at the top, search by
 name, description or group, and drag a number field sideways to scrub it or click it to type
-a value. A dot marks a changed field; click the dot to reset it. Changes render as you go;
-turn off **Live** to make several edits, then choose **Apply**. A newer preview cancels the
-previous render for that file. **Restore source defaults** returns to the values in the
-SCAD file. Remembered values are isolated to each workspace; source edits discard overrides
+a value. For finer control, drag a number parameter's name sideways: it moves one step every
+4 px, ten times faster with **Shift** and ten times slower with **Alt**, and stops at the
+parameter's limits. A dot marks a changed field; click the dot to reset it. With
+**Auto-render** on (the default), the preview renders once you pause for 0.4 seconds after a
+change, and never while you are still dragging; a typed value renders when you press Enter or
+leave the field, if it changed. Turn **Auto-render** off to make several edits, then choose
+**Apply**. A newer preview cancels the previous render for that file. **Restore source defaults** returns to the values in the
+SCAD file. **Linked faces**, below the parameters, finds which faces each number parameter
+moves: **Analyze parameters** renders each one a step up and down (up to eight at a time; pick
+which when there are more), then lists what each moves. Choose a row to highlight its faces.
+**Cancel analysis** stops it and keeps nothing. Remembered values are isolated to each workspace; source edits discard overrides
 for removed or incompatible parameters.
 
 **Save parameter set** opens a naming dialog before updating the JSON sidecar next to the
@@ -163,11 +175,17 @@ render glTF or GLB.
 
 ## Explore and review a design
 
-**⌘Z** and **⇧⌘Z** (Ctrl on Windows and Linux) undo and redo parameter edits; the history
-button in **Customize** lets you revisit any step. Continuous changes to one field become one
-step. History survives switching file tabs during this session; source edits establish a new
-baseline. With Live paused, undo and using a variant update the form first. Choose Apply to
-update the mesh.
+**Undo** and **Redo** at the start of the panel toolbar, or **⌘Z** and **⇧⌘Z** (Ctrl+Z,
+Ctrl+Shift+Z or Ctrl+Y on Windows and Linux), step back and forward through your edits:
+measurements, pins, the section, the part's orientation and parameter values. The buttons name
+the step, and a toast says what was undone. Undo first drops a half-made measurement. Quick
+changes to one thing, such as dragging the section or a slider, become one step, and a new edit
+clears what you could redo. Text fields keep their own undo. If the agent or another window has
+changed an item since, undo leaves it alone and says so. History is kept per file version for
+this session, up to 100 steps; editing the source starts a new history. The history button in
+**Customize** lets you revisit any parameter step. With Auto-render off, undo and using a variant
+update the form first. Choose Apply to update the mesh. A restored pin can lose its review
+image.
 
 Choose **Display > Overhangs**, press **V**, or use the command palette's overhang action to
 check where a part may need support. Downward faces beyond the angle appear orange with a
@@ -177,11 +195,33 @@ chip's tooltip shows the affected area and share of the surface. Wireframe hides
 and unlit materials cannot show it. Saved views and captures keep the mode; choose **Hide
 overhangs** or press **V** to turn it off.
 
+Choose **Display > Overall dimensions** or press **K** to draw the part's overall X, Y and Z
+sizes as dimension lines beside it, in a neutral color with your units and precision. They
+follow the current pose and lay flat, appear in captures, and are never saved as markup. They
+start off in each session.
+
+Right-click the part, Ctrl+click it, or touch and hold it to open its point menu at that spot;
+a right drag still pans. With the canvas focused, the **Menu** key or **Shift + F10** opens the
+menu for the part at the middle of the view. The point snaps like a measurement pick (hold
+**Alt** for a free point). **Measure from here** starts a distance with this point as its first
+end, **Pin a change here** opens a change request at the point, **Center the view here** makes it
+the orbit center, **Section through here** turns the section plane on through the point (turning
+it off a face it would only skim), **Lay this face flat** rests the part on that face, and **Copy
+coordinates** copies the model-space point in your units and precision. After a Linked faces
+analysis, the menu also lists the parameters that move the face under the point: drag one
+sideways to scrub it, or choose it to edit it in **Customize**. Entries that cannot
+work are left out: a full markup list drops its add action, a history or sliced view keeps only
+view actions, and a pick off a face cannot lay flat. Press **Esc** to return to the canvas; moving
+the view or changing the model closes the menu.
+
 The tool rail on the left of the viewport measures (**M**), annotates (**N**) and adds a section
 plane (**S**). Press **Esc** or **Done** to put a tool down. Measurements appear under
 **Markup** with the distance and each axis delta; hide or delete one when it is no longer
-needed. Measure snaps to corners, edge midpoints and sharp edges; hover markers show the next
-pick. Hold **Alt** while clicking to pick freely. Choose **Hole** in the Measure hint and click
+needed. Measure snaps to corners, hole centers, edge midpoints, flat face centers and sharp
+edges, in that order when several are in reach; hover markers show the next pick, and a hole
+center names its diameter. Curved surfaces offer no face center. To reach the center of a
+through hole, pass the cursor over its rim first, then move into the empty middle. Hold **Alt**
+while clicking to pick freely. Choose **Hole** in the Measure hint and click
 a rim, pin or smooth hole wall to save its diameter and centre. Polygonal holes of 22 sides or
 fewer also show the across-flats size. Copy value on a hole copies its diameter. Snapping and
 hole fitting are unavailable above 1 million triangles, while free distance picks still work.
@@ -214,9 +254,14 @@ it. A review sheet captures up to four saved views as one image for the agent, w
 measurements, and restores your working view afterward.
 
 For OpenSCAD and build123d, **Variants** stores design candidates without changing the active part. Add the current
-values, a saved parameter set, or a parameter sweep that makes every combination of up to two
-parameters (up to six values each and twelve variants per batch). Keep up to twenty-four
-variants. Open a variant to rename it, edit its values, render it or **Use these values** in
+values, a saved parameter set, or a parameter sweep. A sweep lists values for one parameter, or
+two for a grid, separated by commas, spaces or semicolons ("30, 40, 50"). Each parameter takes
+up to six different values inside its range, and a sweep makes up to six variants, named like
+"width 40 · wall 2". If the list is not valid, the dialog says why. Variants render one at a
+time; **Stop** ends the batch and keeps the finished cards. Cards show their size. Each
+variant from the latest sweep has **Keep**, which makes its values the working values in
+Customize, and **Discard all** deletes the sweep's variants you did not keep. Keep up to
+twenty-four variants. Open a variant to rename it, edit its values, render it or **Use these values** in
 Customize. Select variants to render them together, or select two and **Compare** them with
 linked cameras and dimension and parameter differences. A variant can also be saved as a
 parameter set. Variants from an older source use current defaults for removed or incompatible

@@ -1,5 +1,5 @@
 import styles from "./workspace.module.css";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronRightIcon,
   ChevronsUpDownIcon,
@@ -40,7 +40,17 @@ import {
 import type { ParameterHistory } from "./parameterHistory";
 import { OperationStatus } from "./OperationStatus";
 import { parameterLabel, parameterValues } from "./params";
-import { Chip, EmptyNote, ParameterRow, Tip } from "./controls";
+import {
+  Chip,
+  EmptyNote,
+  ParameterRow,
+  Tip,
+  focusParameterControl,
+  type HoldRender,
+} from "./controls";
+
+const AUTO_RENDER_HINT =
+  "Drag a name sideways to scrub its value; Shift is faster, Alt finer. The preview renders when you pause after a change.";
 
 const HISTORY_SHOWN = 12;
 const SEARCH_THRESHOLD = 5;
@@ -86,6 +96,7 @@ function ParameterGroup({
   open,
   onToggle,
   onChange,
+  onHold,
 }: {
   name: string | null;
   parameters: readonly ScadParameter[];
@@ -94,6 +105,7 @@ function ParameterGroup({
   open: boolean;
   onToggle: () => void;
   onChange: (name: string, value: string) => void;
+  onHold: HoldRender;
 }) {
   const changed = parameters.filter((p) => current[p.name] !== baseline[p.name]).length;
   return (
@@ -118,6 +130,7 @@ function ParameterGroup({
             value={current[parameter.name]!}
             baseline={baseline[parameter.name]!}
             onChange={(value) => onChange(parameter.name, value)}
+            onHold={onHold}
           />
         ))}
     </section>
@@ -136,11 +149,14 @@ export function Parameters({
   pending,
   hasUnapplied,
   onAutomatic,
+  onHold,
   onApply,
   onChange,
   onSet,
   onSave,
   onReset,
+  focus = null,
+  children,
 }: {
   history: ParameterHistory;
   onHistory: (cursor: number) => void;
@@ -152,14 +168,39 @@ export function Parameters({
   pending: boolean;
   hasUnapplied: boolean;
   onAutomatic: (value: boolean) => void;
+  /** Holds the automatic render while a scrub is under way. */
+  onHold: HoldRender;
   onApply: () => void;
   onChange: (name: string, value: string) => void;
   onSet: (name: string | null) => void;
   onSave: (name: string) => Promise<void>;
   onReset: () => void;
+  /** A request to show and focus one parameter's control; a new object repeats it. */
+  focus?: { name: string } | null;
+  /** Shown after the parameters, inside the scrolling list. */
+  children?: ReactNode;
 }) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const scroll = useRef<HTMLDivElement>(null);
+  // A focus request first makes its row render: no search hides it and its group is open.
+  const [seenFocus, setSeenFocus] = useState(focus);
+  if (focus !== seenFocus) {
+    setSeenFocus(focus);
+    const group = focus && data.parameters.find((item) => item.name === focus.name)?.group;
+    if (group !== null && group !== undefined) {
+      setSearch("");
+      setCollapsed((state) => ({ ...state, [group]: false }));
+    }
+  }
+  useEffect(() => {
+    if (!focus) return;
+    const row = [...(scroll.current?.querySelectorAll<HTMLElement>("[data-parameter]") ?? [])].find(
+      (element) => element.dataset.parameter === focus.name,
+    );
+    row?.scrollIntoView?.({ block: "nearest" });
+    focusParameterControl(row);
+  }, [focus]);
   const [saveOpen, setSaveOpen] = useState(false),
     [saveName, setSaveName] = useState(""),
     [saving, setSaving] = useState(false),
@@ -260,7 +301,7 @@ export function Parameters({
             </MenuItem>
           </MenuPopup>
         </Menu>
-        <Tip label="Undo" kbd="⌘Z">
+        <Tip label="Undo parameter edit">
           <Button
             variant="ghost-muted"
             size="icon-sm"
@@ -271,7 +312,7 @@ export function Parameters({
             <Undo2Icon />
           </Button>
         </Tip>
-        <Tip label="Redo" kbd="⇧⌘Z">
+        <Tip label="Redo parameter edit">
           <Button
             variant="ghost-muted"
             size="icon-sm"
@@ -334,7 +375,7 @@ export function Parameters({
           )}
         </div>
       )}
-      <div className={styles["model-inspector-scroll"]}>
+      <div ref={scroll} className={styles["model-inspector-scroll"]}>
         {data.parameters.length === 0 ? (
           <EmptyNote>Add customizer variables to the SCAD source to edit them here.</EmptyNote>
         ) : groups.size === 0 ? (
@@ -355,19 +396,21 @@ export function Parameters({
               open={!headed || !!query || !collapsed[group]}
               onToggle={() => setCollapsed((state) => ({ ...state, [group]: !state[group] }))}
               onChange={onChange}
+              onHold={onHold}
             />
           ))
         )}
+        {children}
       </div>
       <div className={styles["model-inspector-foot"]}>
         <PreviewStatus pending={pending} automatic={automatic} hasUnapplied={hasUnapplied} />
         <div className="flex-1" />
-        <Tip label="Render after every change">
+        <Tip label={AUTO_RENDER_HINT}>
           <label className={styles["model-live"]}>
-            Live
+            Auto-render
             <Switch
               size="sm"
-              aria-label="Live preview"
+              aria-label="Auto-render"
               checked={automatic}
               onCheckedChange={onAutomatic}
             />

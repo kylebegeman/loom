@@ -37,6 +37,16 @@ it("preserves display preferences and millimetre bed dimensions", () => {
   expect(settings.buildPlate.customMm).toEqual([350, 320, 325]);
 });
 
+it("keeps display precision optional and accepts auto or zero to three decimals", () => {
+  expect("displayPrecision" in decodeSettings(legacySettings)).toBe(false);
+  for (const precision of ["auto", 0, 1, 2, 3] as const)
+    expect(
+      decodeSettings({ ...legacySettings, displayPrecision: precision }).displayPrecision,
+    ).toBe(precision);
+  for (const precision of [4, -1, 1.5, "2", null])
+    expect(() => decodeSettings({ ...legacySettings, displayPrecision: precision })).toThrow();
+});
+
 it("rejects unsupported units and scale objects at the settings boundary", () => {
   expect(() => decodeSettings({ ...legacySettings, displayUnits: "cm" })).toThrow();
   expect(() => decodeSettings({ ...legacySettings, scaleReference: "ruler" })).toThrow();

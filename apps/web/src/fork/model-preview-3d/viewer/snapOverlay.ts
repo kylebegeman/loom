@@ -31,6 +31,8 @@ export function createSnapOverlay(host: HTMLElement) {
       marker!.dataset.kind = kind;
       marker!.style.transform = `translate(${x}px, ${y}px)`;
       path!.setAttribute("points", points?.join(" ") ?? "");
+      // A hole center draws its rim dashed; an edge or midpoint draws its edge solid.
+      path!.setAttribute("data-kind", kind);
       label!.hidden = !text;
       label!.textContent = text ?? "";
       label!.style.transform = `translate(${x + 12}px, ${y + 12}px)`;
