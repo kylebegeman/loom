@@ -1,18 +1,24 @@
 import {
   PROVIDER_DISPLAY_NAMES,
   ProviderDriverKind,
+  type EnvironmentId,
   type ProviderInstanceId,
 } from "@t3tools/contracts";
-import { memo, useCallback, useMemo, type ComponentType } from "react";
+import { memo, useCallback, useMemo, type ComponentType, type ReactNode } from "react";
 
 import { getDisplayModelName, type ModelEsque } from "~/components/chat/providerIconUtils";
-import { usePrimarySettings } from "~/hooks/useSettings";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
   type ProviderInstanceEntry,
 } from "~/providerInstances";
-import { switchboardModelBlock, useSwitchboardLimits } from "./switchboardLimits";
+import {
+  hasSwitchboardBlocks,
+  isSwitchboardAvailabilityUnknown,
+  switchboardModelBlock,
+  useSwitchboardStatus,
+} from "./switchboardLimits";
 
 /** Drivers whose accounts Switchboard pools. Other providers keep every instance. */
 const POOLED_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set([
@@ -60,18 +66,37 @@ interface PickerProps {
   readonly activeInstanceId: ProviderInstanceId;
   readonly modelOptionsByInstance: ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>>;
   readonly getModelDisabledReason?: ModelDisabledReason | undefined;
+  /** Rendered below the model list. */
+  readonly footer?: ReactNode | undefined;
+}
+
+/** Shown when Switchboard cannot report availability, in place of a spinner or a guess. */
+function SwitchboardUnknownNote() {
+  return (
+    <p role="status" className="border-t px-3 py-2 text-xs text-muted-foreground">
+      Switchboard availability is unknown right now. Every model stays selectable, and a turn
+      reports any limit it hits.
+    </p>
+  );
 }
 
 /**
  * Wraps a model picker so it shows the collapsed entries while Switchboard is on, and
- * disables, with the reason, models the hub cannot serve right now: everything but the
- * credit models while every Codex account is on credits, or a whole provider with no
- * allowance left. The caller's own reasons come first.
+ * disables, with the reason, models the hub confirms it cannot serve right now: a
+ * model it reports unavailable, everything but the credit models while every Codex
+ * account is on credits, or a whole provider with no allowance left. The caller's own
+ * reasons come first. When availability is unknown nothing is disabled, and the
+ * picker says so.
  */
 export function withSwitchboardEntries<P extends PickerProps>(Picker: ComponentType<P>) {
-  return memo(function SwitchboardModelPicker(props: P) {
-    const enabled = usePrimarySettings((settings) => settings.switchboardEnabled);
-    const limits = useSwitchboardLimits(enabled);
+  const ScopedPicker = memo(function EnvironmentSwitchboardModelPicker(
+    props: P & { readonly environmentId: EnvironmentId },
+  ) {
+    const enabled = useEnvironmentSettings(
+      props.environmentId,
+      (settings) => settings.switchboardEnabled,
+    );
+    const status = useSwitchboardStatus(enabled, props.environmentId);
     const { instanceEntries, activeInstanceId, modelOptionsByInstance, getModelDisabledReason } =
       props;
     const collapsed = useMemo(
@@ -87,19 +112,31 @@ export function withSwitchboardEntries<P extends PickerProps>(Picker: ComponentT
         )?.driverKind;
         if (!driverKind) return null;
         const options = modelOptionsByInstance.get(instanceId) ?? [];
-        return switchboardModelBlock(limits, driverKind, model, (slug) => {
+        return switchboardModelBlock(status, driverKind, model, (slug) => {
           const option = options.find((candidate) => candidate.slug === slug);
           return option ? getDisplayModelName(option, { preferShortName: true }) : slug;
         });
       },
-      [getModelDisabledReason, instanceEntries, modelOptionsByInstance, limits],
+      [getModelDisabledReason, instanceEntries, modelOptionsByInstance, status],
     );
     return (
       <Picker
         {...props}
         instanceEntries={collapsed}
-        {...(limits.length > 0 ? { getModelDisabledReason: switchboardReason } : {})}
+        {...(hasSwitchboardBlocks(status) ? { getModelDisabledReason: switchboardReason } : {})}
+        {...(isSwitchboardAvailabilityUnknown(status)
+          ? { footer: <SwitchboardUnknownNote /> }
+          : {})}
       />
+    );
+  });
+  return memo(function SwitchboardModelPicker(
+    props: P & { readonly environmentId?: EnvironmentId | null },
+  ) {
+    return props.environmentId == null ? (
+      <Picker {...props} />
+    ) : (
+      <ScopedPicker {...props} environmentId={props.environmentId} />
     );
   });
 }

@@ -26,6 +26,7 @@ import * as Layer from "effect/Layer";
 import { ForkRuntime, type ForkServices } from "./ForkRuntime.ts";
 import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
+import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
@@ -44,6 +45,7 @@ const ForkServicesLive = Layer.mergeAll(
     ),
   ),
   SwitchboardLive,
+  SwitchboardStatus.layer,
   WorkspaceHandoff.layer.pipe(
     Layer.provide(CommandReceiptStore.layer),
     Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),

@@ -39,11 +39,12 @@ apps/server/src/provider/CodexProvider.ts	switchboard	4
 apps/server/src/provider/ClaudeProvider.ts	switchboard	30
 apps/server/src/provider/Drivers/ClaudeDriver.ts	switchboard	12
 apps/server/src/provider/Drivers/CodexDriver.ts	switchboard	4
+apps/server/src/usage/cliproxyApi.ts	switchboard	10
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	switchboard	20
 apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	switchboard	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	2
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
-apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	3
+apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	6
 apps/web/src/components/settings/UsageProviderSettings.tsx	switchboard	2
 apps/web/src/components/files/FilePreviewPanel.tsx	file-outline	3
 apps/web/src/components/settings/settingsSearch.ts	ext-settings	3

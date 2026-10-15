@@ -3,6 +3,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { SettingsRow } from "~/components/settings/settingsLayout";
 import { Switch } from "~/components/ui/switch";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "~/hooks/useSettings";
+import { isSwitchboardAvailabilityUnknown, useSwitchboardStatus } from "./switchboardLimits";
 
 /** The Switchboard switch, shown with the usage hubs since Switchboard is one. */
 export function SwitchboardSettingsRow({
@@ -14,11 +15,15 @@ export function SwitchboardSettingsRow({
 }) {
   const enabled = useEnvironmentSettings(environmentId, (settings) => settings.switchboardEnabled);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const status = useSwitchboardStatus(enabled, environmentId);
+  const statusNote = isSwitchboardAvailabilityUnknown(status)
+    ? " Switchboard cannot report model availability right now, so every model stays selectable."
+    : "";
   return (
     <SettingsRow
       id="switchboard"
       title="Route through Switchboard"
-      description="Send Claude and Codex through the Switchboard hub on this Mac, which picks the account for each request. The model picker shows one Claude and one Codex. New sessions use the change; running ones keep their route."
+      description={`Send Claude and Codex through this environment’s Switchboard hub, which picks the account for each request. The model picker shows one Claude and one Codex. New sessions use the change; running ones keep their route.${statusNote}`}
       control={
         <Switch
           aria-label="Route through Switchboard"
