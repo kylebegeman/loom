@@ -583,10 +583,15 @@ describe("storage cleanup reports and local file policies", () => {
           let creationCalls = 0;
           const restorationLayer = Layer.mergeAll(
             WorktreeSetupTracker.layer,
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getCheckpointContext: () =>
+                Effect.die("Existing branches do not need checkpoint recovery"),
+            }),
             Layer.mock(ProjectService.ProjectService)({
               getById: () => Effect.succeed(Option.some({ workspaceRoot: fixture.repo } as never)),
             }),
             Layer.mock(GitWorkflow.GitWorkflowService)({
+              hasCommit: () => Effect.succeed(true),
               pruneWorktrees: ({ cwd }) =>
                 fixture.command(cwd, ["worktree", "prune"]).pipe(Effect.asVoid),
               createWorktree: ({ cwd, refName, path }) =>
