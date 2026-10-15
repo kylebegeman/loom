@@ -281,7 +281,7 @@ The same steps run locally with `scripts/fork/loom.sh`:
 | Command                                          | What it does                                                                                                                         |
 | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
 | `scripts/fork/loom.sh status`                    | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                              |
-| `scripts/fork/loom.sh check`                     | The fork's checks on the current checkout: seams, fork lint, fork tests, web build, typechecks.                                      |
+| `scripts/fork/loom.sh check`                     | The fork's checks on the current checkout: seams, fork lint, fork tests, Omarchy pack checks, web build, typechecks.                 |
 | `scripts/fork/loom.sh integrate`                 | Merge the newest stable tag on a test branch, run the fork's checks, build, then fast-forward main, tag `loom-<tag>`, push, install. |
 | `scripts/fork/loom.sh integrate nightly`         | The same for the newest nightly tag, or pass any upstream tag.                                                                       |
 | `scripts/fork/loom.sh integrate <tag> --dry-run` | Merge, check and build, then discard it. main and the installed app are unchanged.                                                   |

@@ -20,6 +20,7 @@ const labels = {
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const safe = (value) =>
   value.replace(
+    // oxlint-disable-next-line no-control-regex -- Shown text must not carry terminal controls or bidi overrides.
     /[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g,
     (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"),
   );
@@ -56,6 +57,7 @@ export function captureEnvelope(
       !["http:", "https:"].includes(u.protocol) ||
       u.username ||
       u.password ||
+      // oxlint-disable-next-line no-control-regex -- Links with control characters are rejected.
       /[\u0000-\u001f\u007f]/.test(url)
     )
       throw Error("Use an HTTP(S) link without embedded credentials.");
@@ -286,6 +288,7 @@ export async function watchCapture(app, id, config, env, { query, pause } = {}) 
         if (
           typeof route !== "string" ||
           !route.startsWith("/app/?") ||
+          // oxlint-disable-next-line no-control-regex -- Routes with control characters are rejected.
           /[\\\u0000-\u001f#]/.test(route) ||
           new URL(route, config[app + "Url"]).origin !== new URL(config[app + "Url"]).origin
         )

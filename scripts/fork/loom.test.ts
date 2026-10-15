@@ -151,6 +151,7 @@ fork_tests() {
   printf 'apps/web/src/fork/example.test.ts\\n'
 }
 restore_lockfile() { printf 'restore-lockfile\\n' >> "$LOOM_TEST_LOG"; }
+check_omarchy_pack() { printf 'omarchy-pack\\n' >> "$LOOM_TEST_LOG"; }
 TYPECHECK_DIRS=(packages/contracts)
 ${command}
 `,
@@ -188,6 +189,7 @@ it("discovers existing fork paths, including future surfaces and Loom routes", (
     "apps/web/src/routes/settings.loom.tsx",
     "apps/web/src/routes/settings.loom.models.tsx",
     "scripts/fork",
+    "deploy/omarchy",
   ];
   const f = lintFixture([...paths, "apps/web/src/routes/settings.general.tsx", "apps/mobile/src"]);
   const result = runLint(f, "fork_lint_paths");
@@ -245,6 +247,7 @@ it("runs lint after installation and before tests, builds and typechecks", () =>
       "**/.claude/**",
       "apps/web/src/fork/example.test.ts",
     ],
+    ["omarchy-pack"],
     ["exec", "vp", "build"],
     ["run", "-s", "typecheck"],
     ["restore-lockfile"],

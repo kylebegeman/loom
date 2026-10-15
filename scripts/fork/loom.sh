@@ -155,7 +155,7 @@ fork_tests() {
 fork_lint_paths() {
   local path
   for path in apps/*/src/fork packages/*/src/fork apps/web/src/routes/settings.loom*.tsx \
-    scripts/fork; do
+    scripts/fork deploy/omarchy; do
     if [ -e "$path" ]; then printf '%s\n' "$path"; fi
   done
 }
@@ -170,6 +170,12 @@ check_fork_lint() {
     die "fork lint failed; fix the findings above (rules in oxlint-plugin-t3code/rules/)"
 }
 
+# The Omarchy pack's own Node tests and its generated packet views.
+check_omarchy_pack() {
+  say "Running the Omarchy pack's checks"
+  node deploy/omarchy/check.mjs
+}
+
 run_checks() {
   check_seams
   say "Installing dependencies"
@@ -182,6 +188,7 @@ run_checks() {
   # checkout. Shells inside Loom inherit ELECTRON_RUN_AS_NODE, which the
   # desktop artifact tests assert is absent.
   env -u ELECTRON_RUN_AS_NODE pnpm exec vp test run --exclude '**/.claude/**' "${tests[@]}"
+  check_omarchy_pack
   say "Regenerating web routes and building the web client"
   (cd apps/web && pnpm exec vp build)
   local d
