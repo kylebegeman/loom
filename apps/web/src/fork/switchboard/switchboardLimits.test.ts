@@ -1,11 +1,13 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import type { SwitchboardLimit, SwitchboardModelAvailability } from "@t3tools/contracts/fork";
+import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   hasSwitchboardBlocks,
   isSwitchboardAvailabilityUnknown,
   switchboardModelBlock,
+  switchboardStatusFromResult,
 } from "./switchboardLimits";
 
 const CODEX = ProviderDriverKind.make("codex");
@@ -96,5 +98,17 @@ describe("Switchboard availability state", () => {
     }
     expect(isSwitchboardAvailabilityUnknown({ limits: [], availability: "available" })).toBe(false);
     expect(isSwitchboardAvailabilityUnknown({ limits: [] })).toBe(false);
+  });
+
+  it("reads a query with no reading yet, or a failed one, as unknown", () => {
+    const reading = { limits: [], availability: "available" } as const;
+    for (const status of [
+      switchboardStatusFromResult(AsyncResult.initial(true)),
+      switchboardStatusFromResult(AsyncResult.fail(new Error("not connected"))),
+    ]) {
+      expect(isSwitchboardAvailabilityUnknown(status)).toBe(true);
+      expect(hasSwitchboardBlocks(status)).toBe(false);
+    }
+    expect(switchboardStatusFromResult(AsyncResult.success(reading))).toBe(reading);
   });
 });

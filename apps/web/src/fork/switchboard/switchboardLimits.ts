@@ -24,16 +24,24 @@ const switchboardLimitsQuery = createEnvironmentRpcQueryAtomFamily(connectionAto
   idleTtlMs: 5 * 60_000,
 });
 
-const NO_STATUS: SwitchboardLimits = { limits: [] };
 const DISABLED_STATUS: SwitchboardLimits = { limits: [], availability: "disabled" };
 const UNAVAILABLE_STATUS: SwitchboardLimits = { limits: [], availability: "unavailable" };
 const disabledStatusAtom = Atom.make(DISABLED_STATUS);
 
 /**
- * Model availability from the environment that owns the provider launch. While it
- * loads nothing is blocked; a failed read reports `unavailable`, which blocks
- * nothing either, since the hub still enforces every account's limits.
+ * What the picker shows for a limits query result. Until a reading arrives, and
+ * after a failed read, availability is unknown: nothing is blocked, since the hub
+ * still enforces every account's limits. A connecting environment can stay
+ * without a reading indefinitely, so loading is never shown as a spinner.
  */
+export const switchboardStatusFromResult = (
+  result: AsyncResult.AsyncResult<SwitchboardLimits, unknown>,
+): SwitchboardLimits =>
+  AsyncResult.isFailure(result)
+    ? UNAVAILABLE_STATUS
+    : Option.getOrElse(AsyncResult.value(result), () => UNAVAILABLE_STATUS);
+
+/** Model availability from the environment that owns the provider launch. */
 export function useSwitchboardStatus(
   enabled: boolean,
   environmentId: EnvironmentId | null,
@@ -41,11 +49,7 @@ export function useSwitchboardStatus(
   const statusAtom = useMemo(() => {
     if (!enabled || environmentId === null) return disabledStatusAtom;
     const query = switchboardLimitsQuery({ environmentId, input: {} });
-    return Atom.make((get) => {
-      const result = get(query);
-      if (AsyncResult.isFailure(result)) return UNAVAILABLE_STATUS;
-      return Option.getOrElse(AsyncResult.value(result), () => NO_STATUS);
-    });
+    return Atom.make((get) => switchboardStatusFromResult(get(query)));
   }, [enabled, environmentId]);
   return useAtomValue(statusAtom);
 }
