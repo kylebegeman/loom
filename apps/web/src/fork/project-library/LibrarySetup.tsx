@@ -35,7 +35,12 @@ export function LibrarySetup({
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [candidate, setCandidate] = useState<EnvironmentId | null>(authority.authorityId);
+  const eligible = authority.environments.filter((entry) =>
+    supportsLoomFeature(entry.serverConfig?.environment.capabilities, PROJECT_LIBRARY_FEATURE),
+  );
+  const onlyLibraryId = eligible.length === 1 ? eligible[0]!.environmentId : null;
+  const [chosenCandidate, setCandidate] = useState<EnvironmentId | null>(authority.authorityId);
+  const candidate = chosenCandidate ?? onlyLibraryId;
   const signInBaseUrl = useEnvironmentHttpBaseUrl(candidate);
   const environment = authority.environments.find((entry) => entry.environmentId === candidate);
   const connected =
@@ -53,25 +58,25 @@ export function LibrarySetup({
   return (
     <div className="max-w-xl space-y-4">
       <div className="space-y-1">
-        <h2 className="text-base font-semibold">Choose your Library</h2>
+        <h2 className="text-base font-semibold">Connect your Library</h2>
         <p className="text-sm text-muted-foreground">
-          Your Library stores projects and saved conversations. Choose where to keep it, then choose
-          a computer whenever you start work.
+          Your Library keeps projects and saved conversations together across devices. Connect it
+          once. You’ll choose a computer when starting work.
         </p>
       </div>
       <Select
-        items={authority.environments.map((entry) => ({
+        items={eligible.map((entry) => ({
           value: entry.environmentId,
           label: entry.label,
         }))}
         value={candidate}
         onValueChange={(value) => setCandidate(value)}
       >
-        <SelectTrigger aria-label="Library server">
-          <SelectValue placeholder="Choose a Library server" />
+        <SelectTrigger aria-label="Library connection">
+          <SelectValue placeholder="Choose your Library connection" />
         </SelectTrigger>
         <SelectPopup>
-          {authority.environments.map((entry) => (
+          {eligible.map((entry) => (
             <SelectItem key={entry.environmentId} value={entry.environmentId}>
               {entry.label}
               {entry.connection.phase === "connected" ? "" : " (offline)"}

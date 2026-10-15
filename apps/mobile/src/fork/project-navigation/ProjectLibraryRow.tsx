@@ -101,7 +101,7 @@ export function ProjectLibraryRow(props: {
         )}
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open project home for ${entry.title}`}
+          accessibilityLabel={`Open computer folder for ${entry.title}`}
           accessibilityHint={`${presentation.accessibilitySummary}${previewForcedOpen ? ". Matching thread previews are shown while searching." : ""}`}
           onPress={() =>
             navigation.navigate("ProjectHome", {

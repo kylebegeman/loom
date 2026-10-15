@@ -170,7 +170,7 @@ function SettingsIndexSections() {
       <SettingsSection title="Projects & threads">
         <SettingsRow
           icon="folder"
-          label="Project library"
+          label="Projects"
           onPress={() => navigation.navigate("Library")}
         />
         <SettingsRow

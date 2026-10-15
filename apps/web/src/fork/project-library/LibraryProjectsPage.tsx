@@ -1,28 +1,19 @@
 import { useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
-import {
-  projectLibrary,
-  useLibraryProjects,
-  useLibraryPermission,
-  useSelectedLibraryProject,
-} from "./state";
+import { useLibraryProjects, useSelectedLibraryProject } from "./state";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { ProjectEditorDialog } from "./ProjectEditorDialog";
+import { openLibraryAction } from "./actions";
+import { FolderGit2Icon, PlusIcon } from "lucide-react";
 import { LibraryErrorNotice } from "./LibraryControls";
-import { ImportProjectDialog } from "./ImportProjectDialog";
 
 export function LibraryProjectsPage() {
   const [includeArchived, setIncludeArchived] = useState(false);
   const library = useLibraryProjects(includeArchived);
   const [search, setSearch] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [, selectProject] = useSelectedLibraryProject();
-  const canCreate = useLibraryPermission(projectLibrary.createProject, library.authorityId);
-  const navigate = useNavigate();
   const projects =
     library.query.data?.filter((project) =>
       project.title.toLowerCase().includes(search.trim().toLowerCase()),
@@ -31,26 +22,21 @@ export function LibraryProjectsPage() {
     <LibraryPageFrame>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="space-y-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Keep the brief, resources and conversations together. Prepare files on a computer
-            whenever you need them.
+            Your work, with its conversations and context. One project can span several repositories
+            and computers.
           </p>
         </div>
-        {library.authorityId ? (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              disabled={!canCreate || !library.connected}
-              onClick={() => setImporting(true)}
-            >
-              Add existing folder
-            </Button>
-            <Button disabled={!canCreate || !library.connected} onClick={() => setCreating(true)}>
-              New project
-            </Button>
-          </div>
-        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => openLibraryAction("import-folder")}>
+            Add existing folder
+          </Button>
+          <Button onClick={() => openLibraryAction("create-project")}>
+            <PlusIcon />
+            New project
+          </Button>
+        </div>
       </div>
       {!library.authorityId ? (
         <LibrarySetup />
@@ -81,18 +67,21 @@ export function LibraryProjectsPage() {
               Loading projects...
             </p>
           ) : null}
-          <div className="divide-y divide-border">
+          <div className="grid gap-4 sm:grid-cols-2">
             {projects.map((project) => (
               <Link
                 key={project.id}
                 to="/library/$projectId"
                 params={{ projectId: project.id }}
                 onClick={() => selectProject(project.id)}
-                className="block rounded-md py-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className="group flex min-h-44 flex-col rounded-xl border border-border bg-card/40 p-5 outline-none hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h2 className="font-medium">
+                <div className="flex items-start gap-3">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <FolderGit2Icon className="size-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-semibold tracking-tight">
                       {project.title}
                       {project.archived ? (
                         <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -104,9 +93,18 @@ export function LibraryProjectsPage() {
                       {project.brief || "Add a brief to share context across conversations."}
                     </p>
                   </div>
-                  <span className="text-xs text-muted-foreground">
-                    {project.resources.length} resources
-                  </span>
+                </div>
+                <div className="mt-auto flex flex-wrap gap-2 pt-5 text-xs text-muted-foreground">
+                  {project.resources
+                    .filter((resource) => resource.kind !== "link")
+                    .map((resource) => (
+                      <span key={resource.id} className="rounded-md bg-muted px-2 py-1">
+                        {resource.title}
+                      </span>
+                    ))}
+                  {project.resources.every((resource) => resource.kind === "link") ? (
+                    <span>Add components as the project grows</span>
+                  ) : null}
                 </div>
               </Link>
             ))}
@@ -120,29 +118,6 @@ export function LibraryProjectsPage() {
           ) : null}
         </>
       )}
-      {creating && library.authorityId ? (
-        <ProjectEditorDialog
-          authorityId={library.authorityId}
-          onClose={() => setCreating(false)}
-          onSaved={(project) => {
-            setCreating(false);
-            library.query.refresh();
-            selectProject(project.id);
-            void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
-          }}
-        />
-      ) : null}
-      {importing ? (
-        <ImportProjectDialog
-          onClose={() => setImporting(false)}
-          onSaved={(project) => {
-            setImporting(false);
-            library.query.refresh();
-            selectProject(project.id);
-            void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
-          }}
-        />
-      ) : null}
     </LibraryPageFrame>
   );
 }

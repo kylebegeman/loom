@@ -1,4 +1,3 @@
-import { useLibraryAuthority } from "~/fork/project-library/state";
 import { ArrowLeftIcon, ChartNoAxesColumnIcon, MonitorIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
@@ -112,15 +111,14 @@ export function SidebarBrandWidthProbe({
 }
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
-  const library = useLibraryAuthority();
   return (
     <Link
-      aria-label={library.authorityId ? "Go to projects" : "Go to threads"}
+      aria-label="Go to projects"
       className={cn(
         "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
-      to={library.authorityId ? "/library" : "/"}
+      to="/library"
     >
       <SidebarBrandMark onBackdrop={onBackdrop} />
     </Link>

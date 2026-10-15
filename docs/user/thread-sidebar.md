@@ -5,19 +5,18 @@ need a separate branch and working directory.
 
 ## Find work by project
 
-With a Library configured in **Settings → Connections**, use the project switcher to
-choose a project or return to all projects. Its overview brings together the shared
+Loom opens **Projects** when you enter the app. Use the project switcher to choose a
+project or return to all projects. Connect your Library once when saving your first
+project or through **Settings → Connections**. Its overview brings together the shared
 brief, resources, conversations and working copies. Conversations show their original
 computer, and saved history remains readable when that computer is offline. New
 conversations explicitly choose a computer and project scope, then reuse or prepare
 files there. See [Library projects and working copies](project-settings.md#library-projects-and-working-copies).
 
-**Local conversations** keeps existing computer history accessible separately. Without
-a configured Library, choose **Threads** for current work and settled conversations,
-or **Projects** for the local project navigator. Its selected view is remembered on each
-client. Project home lets you choose the computer and checkout for the next task, and
-**Prepare on another computer** adds a missing copy. Review **Move work** separately to
-continue an existing conversation.
+**Computer conversations** keeps earlier computer history accessible from the same
+navigation. On mobile, switch between conversations and computer folders there. **Projects**
+always returns to shared project management. Creating a project opens its own form,
+without selecting an execution computer.
 
 Projects remain discoverable when working files are released or computers go offline.
 Offline entries show last-known information. Browsing a project does not restore files

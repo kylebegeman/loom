@@ -48,8 +48,9 @@ and other phone-only settings ignore the filter.
 
 ## Library projects and working copies
 
-To keep projects independently of a computer, choose a Library server in **Settings →
-Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
+Loom opens **Projects** when you enter the app. **New project** starts with a name and
+brief; repositories and references are optional. Connect your shared Library once before
+saving your first project. You can also manage that connection in **Settings → Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
 sign-in page. On desktop, you can check a Library address and sign in before saving its
 computer connection. Desktop sign-in opens your browser and returns to Loom after verification.
 Existing computer pairing and T3 Connect remain available. Changing your
@@ -77,11 +78,13 @@ may be missing. Open saved attachments from the Library, and use **Save pending 
 when newer work is waiting to upload. A disconnected Library keeps its selected identity and cached records, but
 must reconnect before you can save changes. It never silently switches to another server.
 
-## Local project home and another computer
+## Computer folders and earlier work
 
-Without a configured Library, local project navigation continues to work as follows.
+**Computer conversations** keeps earlier work on connected computers accessible from the
+same navigation. On mobile, its **Folders** view groups that history by computer folder.
+These folders remain separate from the shared projects you manage in **Projects**.
 
-Open a project from **Projects** to browse its threads. Expand a project for a short
+Open computer folder details to browse its threads. Expand a project for a short
 thread preview, or open its home for **Open**, **Snoozed**, **History**, and **All** views.
 Title search includes every thread, even when another view is selected. Clear search
 to return to that view. **Open in Threads** switches to the thread navigator scoped

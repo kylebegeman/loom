@@ -4,8 +4,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { buildHomeListFilterMenu } from "./home-list-filter-menu";
 
 describe("buildHomeListFilterMenu", () => {
-  // fork: project-navigation - Library computer filtering must not mutate a saved thread scope.
-  it("offers only computer filters in Projects while preserving the saved thread scope", () => {
+  // fork: project-navigation - Computer-folder filtering must not mutate a saved thread scope.
+  it("offers only computer filters in the folder list while preserving the saved thread scope", () => {
     const local = EnvironmentId.make("local");
     const onProjectChange = vi.fn();
     const onEnvironmentChange = vi.fn();
@@ -18,8 +18,8 @@ describe("buildHomeListFilterMenu", () => {
       onProjectChange,
       onEnvironmentChange,
     });
-    expect(menu.title).toBe("Project list options");
-    expect(menu.accessibilityLabel).toBe("Filter projects");
+    expect(menu.title).toBe("Computer folder options");
+    expect(menu.accessibilityLabel).toBe("Filter computer folders");
     expect(menu.items).toHaveLength(1);
     const computerMenu = menu.items[0];
     if (computerMenu?.type !== "submenu") throw new Error("Expected computer submenu");
@@ -45,13 +45,13 @@ describe("buildHomeListFilterMenu", () => {
     });
 
     const projectMenu = menu.items.find(
-      (item) => item.type === "submenu" && item.title === "Project",
+      (item) => item.type === "submenu" && item.title === "Folder",
     );
     expect(menu.items.some((item) => item.title === "Settings")).toBe(false);
     expect(projectMenu).toMatchObject({
       type: "submenu",
       items: [
-        { title: "All projects", state: "off" },
+        { title: "All folders", state: "off" },
         { title: "Codething", state: "on" },
         { title: "Website", state: "off" },
       ],

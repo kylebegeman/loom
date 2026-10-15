@@ -1,11 +1,8 @@
-import { readLibraryAuthorityId } from "./state";
-
 export type LibraryAction = "create-project" | "import-folder" | "new-conversation";
 const EVENT = "loom:library:action";
 
-/** Return false when the Library has not been configured so existing local entrypoints still work. */
+/** Every entry point opens the same flow, including first-time Library setup. */
 export function openLibraryAction(action: LibraryAction) {
-  if (!readLibraryAuthorityId()) return false;
   window.dispatchEvent(new CustomEvent(EVENT, { detail: action }));
   return true;
 }

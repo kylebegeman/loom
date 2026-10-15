@@ -16,8 +16,8 @@ const OPTIONS = [
   },
   {
     value: "projects",
-    label: "Projects",
-    accessibilityLabel: "Show projects",
+    label: "Folders",
+    accessibilityLabel: "Show computer folders",
     icon: { ios: "folder.fill", android: "folder" },
   },
 ] as const;
@@ -37,17 +37,15 @@ export function ProjectNavigationControl(props: {
         onSelect={props.onChange}
         role="tab"
       />
-      {props.view === "projects" ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Open shared project library"
-          onPress={() => navigation.navigate("Library")}
-          className="min-h-[44px] flex-row items-center gap-2 rounded-full px-2 active:opacity-70"
-        >
-          <SymbolView name="folder" size={16} tintColorClassName="accent-icon-muted" />
-          <Text className="text-xs font-t3-medium text-foreground-muted">Library</Text>
-        </Pressable>
-      ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Projects"
+        onPress={() => navigation.navigate("Library")}
+        className="min-h-[44px] flex-row items-center gap-2 rounded-full px-2 active:opacity-70"
+      >
+        <SymbolView name="folder" size={16} tintColorClassName="accent-icon-muted" />
+        <Text className="text-xs font-t3-medium text-foreground-muted">Projects</Text>
+      </Pressable>
     </View>
   );
 }

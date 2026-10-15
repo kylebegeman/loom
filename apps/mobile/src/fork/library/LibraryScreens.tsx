@@ -128,18 +128,34 @@ export function LibraryRouteScreen() {
   );
   if (!authority.loaded)
     return (
-      <LibraryPage title="Library">
+      <LibraryPage title="Projects">
         <Text className="text-foreground-muted">Loading your library connection…</Text>
       </LibraryPage>
     );
-  if (!authority.environmentId) return <LibraryAuthorityScreen />;
+  if (!authority.environmentId)
+    return (
+      <LibraryPage title="Projects">
+        <Text className="text-sm text-foreground-muted">
+          Keep your work, conversations and context together across devices.
+        </Text>
+        <MaterialButton
+          label="New project"
+          tone="primary"
+          onPress={() => navigation.navigate("LibraryCreate")}
+        />
+        <MaterialButton
+          label="Connect your Library"
+          onPress={() => navigation.navigate("LibrarySettings")}
+        />
+      </LibraryPage>
+    );
   const list =
     projects.data?.filter((project) =>
       `${project.title} ${project.brief}`.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
     ) ?? [];
   return (
     <LibraryPage
-      title="Library"
+      title="Projects"
       actions={[
         {
           icon: "gearshape",
@@ -148,7 +164,7 @@ export function LibraryRouteScreen() {
         },
         {
           icon: "text.bubble",
-          accessibilityLabel: "Host conversations",
+          accessibilityLabel: "Computer conversations",
           onPress: () => navigation.navigate("Home"),
         },
       ]}
@@ -159,7 +175,7 @@ export function LibraryRouteScreen() {
           you start work.
         </Text>
         <MaterialButton
-          label="Create project"
+          label="New project"
           tone="primary"
           disabled={!authority.ready || !canCreate || !projectsReady}
           onPress={() => navigation.navigate("LibraryCreate")}
@@ -235,7 +251,7 @@ export function LibraryAuthorityScreen() {
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
   return (
-    <LibraryPage title="Connect your library" back={!!authority.environmentId}>
+    <LibraryPage title="Connect your library" back={navigation.canGoBack()}>
       <Text className="text-sm text-foreground-muted">
         Choose where Loom keeps your shared library once. Projects can use any connected execution
         computer later.

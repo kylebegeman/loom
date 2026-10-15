@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { LibraryError, type LibraryProject, type LibraryResource } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
@@ -11,7 +11,7 @@ import { SettingsSection } from "../../features/settings/components/SettingsSect
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
+import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
 
@@ -80,7 +80,6 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
   const request = useRef(uuidv4()),
     submittedAuthority = useRef<string | null>(null),
     busy = useRef(false);
-  if (!authority.environmentId) return <LibraryAuthorityScreen />;
   const patch = (id: string, value: Partial<ResourceDraft>) =>
     setResources((current) =>
       current.map((resource) => (resource.id === id ? { ...resource, ...value } : resource)),
@@ -155,7 +154,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       refreshLibraryProject(authority.environmentId, result.value.id);
       setAwaitingResult(false);
-      navigation.navigate("LibraryProject", { projectId: result.value.id });
+      navigation.dispatch(StackActions.replace("LibraryProject", { projectId: result.value.id }));
     } catch (cause) {
       if (cause instanceof LibraryError && cause.reason !== "io") {
         setAwaitingResult(false);
@@ -169,7 +168,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
     }
   }
   return (
-    <LibraryPage title={initial ? "Edit project" : "Create project"} back>
+    <LibraryPage title={initial ? "Edit project" : "New project"} back>
       {awaitingResult && !pending ? (
         <LibraryNotice detail="The save result is not yet confirmed. Retry the same save before making further edits." />
       ) : null}
@@ -302,8 +301,13 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
           }
         />
       </View>
-      {!authority.ready ? (
-        <LibraryNotice detail="Reconnect your library server to save this project." />
+      {!authority.environmentId ? (
+        <MaterialButton
+          label="Connect your Library"
+          onPress={() => navigation.navigate("LibrarySettings")}
+        />
+      ) : !authority.ready ? (
+        <LibraryNotice detail="Reconnect your Library to save this project." />
       ) : !canSave ? (
         <LibraryNotice detail="Project settings access is required to save this project." />
       ) : null}

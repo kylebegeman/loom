@@ -18,8 +18,9 @@ export function useProjectNavigation() {
     (next: ProjectNavigationView) => savePreferences({ loomNavigationView: next }),
     [savePreferences],
   );
-  const title = view === "projects" ? "Projects" : "Threads";
-  const searchLabel = view === "projects" ? "Search projects" : "Search threads";
-  const searchPlaceholder = view === "projects" ? "Search projects and threads" : "Search threads";
+  const title = view === "projects" ? "Computer folders" : "Computer conversations";
+  const searchLabel = view === "projects" ? "Search computer folders" : "Search conversations";
+  const searchPlaceholder =
+    view === "projects" ? "Search folders and conversations" : "Search conversations";
   return { view, setView, title, searchLabel, searchPlaceholder } as const;
 }

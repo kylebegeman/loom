@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
+  StackActions,
   useFocusEffect,
   useNavigation,
   usePreventRemove,
@@ -21,7 +22,7 @@ import {
 } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ListChoiceRow } from "../../components/ListChoiceRow";
@@ -143,7 +144,14 @@ function LibraryStartContent(props: {
     [showModels, setShowModels] = useState(false);
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
-  usePreventRemove(pending !== null, () => undefined);
+  const [launchedThread, setLaunchedThread] = useState<Awaited<
+    ReturnType<typeof launchLibraryConversation>
+  > | null>(null);
+  usePreventRemove(pending !== null && launchedThread === null, () => undefined);
+  useEffect(() => {
+    if (launchedThread && pending === null)
+      navigation.dispatch(StackActions.replace("Thread", launchedThread));
+  }, [launchedThread, pending, navigation]);
   const [progress, setProgress] = useState(emptyLibraryLaunchReceipt);
   const receipt = useRef(emptyLibraryLaunchReceipt()),
     requestId = useRef(uuidv4()),
@@ -384,7 +392,7 @@ function LibraryStartContent(props: {
         },
       );
       refreshLibraryWork(authority.environmentId, launchProject.id);
-      navigation.navigate("Thread", target);
+      setLaunchedThread(target);
     } catch (cause) {
       setError(
         cause instanceof Error

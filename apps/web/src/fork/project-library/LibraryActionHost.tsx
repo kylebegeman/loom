@@ -10,6 +10,7 @@ import { openLibraryAction, onLibraryAction, type LibraryAction } from "./action
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
+import { LibrarySetup } from "./LibrarySetup";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { Button } from "~/components/ui/button";
 import {
@@ -31,7 +32,8 @@ export function LibraryActionHost() {
   const unrelatedLiveThread =
     !!params.threadId &&
     !!params.environmentId &&
-    !library.threads.data?.some(
+    library.threads.data !== null &&
+    !library.threads.data.some(
       (thread) =>
         thread.threadId === params.threadId && thread.environmentId === params.environmentId,
     );
@@ -66,7 +68,7 @@ export function LibraryActionHost() {
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings]);
-  if (!library.authorityId || !action) return null;
+  if (!action) return null;
   const saved = (project: { id: string }) => {
     setAction(null);
     selectProject(project.id);
@@ -79,6 +81,24 @@ export function LibraryActionHost() {
         onClose={() => setAction(null)}
         onSaved={saved}
       />
+    );
+  if (!library.authorityId)
+    return (
+      <LibraryDialog
+        open
+        onOpenChange={(open) => {
+          if (!open) setAction(null);
+        }}
+        title={action === "import-folder" ? "Add existing folder" : "New conversation"}
+        description="Connect your shared Library once to keep projects and conversations available across your devices."
+        actions={
+          <Button variant="outline" onClick={() => setAction(null)}>
+            Cancel
+          </Button>
+        }
+      >
+        <LibrarySetup showConnectionsLink={false} />
+      </LibraryDialog>
     );
   if (action === "import-folder")
     return <ImportProjectDialog onClose={() => setAction(null)} onSaved={saved} />;

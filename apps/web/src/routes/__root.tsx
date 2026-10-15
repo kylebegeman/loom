@@ -1,4 +1,3 @@
-import { useLibraryAuthority } from "~/fork/project-library/state";
 import { PermissionUpdateNotice } from "../components/PermissionUpdateNotice";
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -22,7 +21,6 @@ import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
 import { KeybindingsConfigWarning } from "../components/KeybindingsConfigWarning";
-import { FirstRunGate } from "../components/onboarding/FirstRunGate";
 import { ConnectOnboardingDialog } from "../components/cloud/ConnectOnboardingDialog";
 import { RelayClientInstallDialog } from "../components/cloud/RelayClientInstallDialog";
 import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";
@@ -145,20 +143,11 @@ function RootRouteNotFoundView() {
 function RootRouteView() {
   useEffect(() => installDesktopPasteAsText(window.desktopBridge, window), []);
   const pathname = useLocation({ select: (location) => location.pathname });
-  const library = useLibraryAuthority();
-  const libraryLanding = pathname.startsWith("/library") || library.authorityId !== null;
   const { authGateState } = Route.useRouteContext();
   const primaryEnvironmentAuthenticated = authGateState.status === "authenticated";
-  const returningFromWelcomeRef = useRef(pathname === "/welcome");
   const hostedPromptLinkLanding = useHostedPromptLinkLanding(
     authGateState.status === "hosted-static",
   );
-
-  useEffect(() => {
-    if (pathname === "/welcome") {
-      returningFromWelcomeRef.current = true;
-    }
-  }, [pathname]);
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -229,10 +218,6 @@ function RootRouteView() {
     </CommandPalette>
   );
 
-  // FirstRunGate holds back everything below it — including EventRouter,
-  // whose welcome payload navigates into a thread — until the first-run
-  // decision is known, so a fresh install renders nothing (not the shell,
-  // not a flash of threads) before landing on the welcome wizard.
   return (
     <ToastProvider>
       <AnchoredToastProvider>
@@ -243,41 +228,34 @@ function RootRouteView() {
         <FontAppearanceSync />
         <ProviderAuthCallbackCoordinator />
         <ChatGptWelcomeCoordinator />
-        <FirstRunGate
-          enabled={primaryEnvironmentAuthenticated && !libraryLanding}
-          hostedStatic={authGateState.status === "hosted-static" && !libraryLanding}
-        >
-          {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
-          {primaryEnvironmentAuthenticated ? <DesktopWebLinkCoordinator /> : null}
-          {isElectron ? <RunningThreadKeepAlive /> : null}
-          <RelayClientInstallDialog />
-          <ConnectOnboardingDialog />
-          <SshPasswordPromptDialog />
-          <SnapShotCoordinator />
-          <ThreadNotificationCoordinator />
-          <ReopenClosedViewShortcut />
-          <ConfirmDialogHost />
-          <CustomSnoozeDialogHost />
-          <SlowRpcRequestToastCoordinator />
-          <PermissionUpdateNotice />
-          {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
-          <ProjectCloneToastCoordinator />
-          {/* fork: ext-web-root */}
-          <ForkRoot />
-          <PullRequestGuideRunCoordinator />
-          <HostedStaticEnvironmentBootstrap />
-          {primaryEnvironmentAuthenticated ? (
-            <EventRouter skipInitialBootstrapNavigation={returningFromWelcomeRef.current} />
-          ) : null}
-          {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
-          {/* Hosted Nightly is "hosted-static", not authenticated, and needs it too. */}
-          <NightlyMobileBetaNotice />
-          {appShell}
-          {/* Above the router: a theme draft is judged by walking the app, so the
+        {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
+        {primaryEnvironmentAuthenticated ? <DesktopAppActivationCoordinator /> : null}
+        {primaryEnvironmentAuthenticated ? <DesktopWebLinkCoordinator /> : null}
+        {isElectron ? <RunningThreadKeepAlive /> : null}
+        <RelayClientInstallDialog />
+        <ConnectOnboardingDialog />
+        <SshPasswordPromptDialog />
+        <SnapShotCoordinator />
+        <ThreadNotificationCoordinator />
+        <ReopenClosedViewShortcut />
+        <ConfirmDialogHost />
+        <CustomSnoozeDialogHost />
+        <SlowRpcRequestToastCoordinator />
+        <PermissionUpdateNotice />
+        {primaryEnvironmentAuthenticated ? <LegacyThreadMigrationToast /> : null}
+        <ProjectCloneToastCoordinator />
+        {/* fork: ext-web-root */}
+        <ForkRoot />
+        <PullRequestGuideRunCoordinator />
+        <HostedStaticEnvironmentBootstrap />
+        {primaryEnvironmentAuthenticated ? <EventRouter skipInitialBootstrapNavigation /> : null}
+        {primaryEnvironmentAuthenticated ? <ProviderUpdateLaunchNotification /> : null}
+        {/* Hosted Nightly is "hosted-static", not authenticated, and needs it too. */}
+        <NightlyMobileBetaNotice />
+        {appShell}
+        {/* Above the router: a theme draft is judged by walking the app, so the
               editor has to survive navigation away from settings. */}
-          <ThemeEditorHost />
-        </FirstRunGate>
+        <ThemeEditorHost />
       </AnchoredToastProvider>
     </ToastProvider>
   );

@@ -18,12 +18,12 @@ function LocalConversations() {
   const threads = useThreadShells();
   const { environments } = useEnvironments();
   return (
-    <LibraryPageFrame title="Local conversations">
+    <LibraryPageFrame title="Computer conversations">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Local conversations</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Computer conversations</h1>
         <p className="text-sm text-muted-foreground">
-          Existing computer history remains available here. Add its folder to a Library project when
-          you want to organize future work.
+          Earlier conversations on your connected computers. Open one to pick up where you left off,
+          or return to Projects to organize new work.
         </p>
       </div>
       {projects.map((project) => (

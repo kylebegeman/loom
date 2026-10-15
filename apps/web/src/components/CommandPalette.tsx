@@ -1555,21 +1555,6 @@ function OpenCommandPaletteDialog(props: {
     [environments],
   );
 
-  const startNewProject = useCallback(
-    (environmentId: EnvironmentId, sourcesEnvironmentId: EnvironmentId | null): void => {
-      setAddProjectEnvironmentId(environmentId);
-      setAddProjectCloneFlow(null);
-      setNewProjectFlow({ environmentId, sourcesEnvironmentId });
-      setNewProjectPublishes(false);
-      setNewProjectPublishKind(null);
-      pushPaletteView({
-        addonIcon: <FolderGit2Icon className={ADDON_ICON_CLASS} />,
-        groups: [],
-      });
-    },
-    [pushPaletteView],
-  );
-
   const openSourceControlSettings = useCallback(() => {
     setOpen(false);
     void navigate({ to: "/settings/source-control" });
@@ -1605,7 +1590,8 @@ function OpenCommandPaletteDialog(props: {
           icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
           keepOpen: true,
           run: async () => {
-            startNewProject(environmentId, environmentId);
+            setOpen(false);
+            openLibraryAction("create-project");
           },
         });
       }
@@ -1690,9 +1676,9 @@ function OpenCommandPaletteDialog(props: {
       environmentLabelById,
       newProjectsRootFor,
       openSourceControlSettings,
+      setOpen,
       startAddProjectBrowse,
       startAddProjectClone,
-      startNewProject,
     ],
   );
 
@@ -1857,15 +1843,9 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
 
-  // New project starts on this device (options list it first); the name step
-  // lists the other machines when there is a choice.
   const openNewProjectFlow = () => {
-    if (openLibraryAction("create-project")) {
-      setOpen(false);
-      return;
-    }
-    const firstOption = newProjectEnvironmentOptions[0];
-    if (firstOption) startNewProject(firstOption.environmentId, null);
+    setOpen(false);
+    openLibraryAction("create-project");
   };
 
   useLayoutEffect(() => {
@@ -1908,7 +1888,7 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (library.authorityId) {
+  {
     actionItems.push({
       kind: "action",
       value: "action:library-new-conversation",
@@ -1931,52 +1911,6 @@ function OpenCommandPaletteDialog(props: {
         setOpen(false);
         await navigate({ to: "/library" });
       },
-    });
-  }
-
-  if (projects.length > 0 && !library.authorityId) {
-    const activeProjectTitle =
-      projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
-      (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
-
-    if (activeProjectTitle) {
-      actionItems.push({
-        kind: "action",
-        value: "action:new-thread",
-        searchTerms: ["new thread", "chat", "create", "draft"],
-        title: (
-          <>
-            New thread in <span className="font-semibold">{activeProjectTitle}</span>
-          </>
-        ),
-        icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.newLocal",
-        run: async () => {
-          // fork: project-home starts on its exact displayed checkout.
-          if (projectHomeContext) {
-            await handleNewThread(projectHomeContext.projectRef, {
-              environmentSelection: "manual",
-            });
-            return;
-          }
-          await startNewThreadFromContext({
-            activeDraftThread,
-            activeThread: activeThread ?? undefined,
-            defaultProjectRef,
-            handleNewThread,
-          });
-        },
-      });
-    }
-
-    actionItems.push({
-      kind: "submenu",
-      value: "action:new-thread-in",
-      searchTerms: ["new thread", "project", "pick", "choose", "select"],
-      title: "New thread in...",
-      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-      addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,
-      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],
     });
   }
 
@@ -2169,7 +2103,7 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  if (newProjectEnvironmentOptions.length > 0 || library.authorityId) {
+  {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
@@ -2206,7 +2140,7 @@ function OpenCommandPaletteDialog(props: {
       "url",
       "environment",
     ],
-    title: library.authorityId ? "Add existing folder" : "Add project",
+    title: "Add existing folder",
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {
@@ -2421,7 +2355,7 @@ function OpenCommandPaletteDialog(props: {
       kind: "action",
       value: "action:loom:project-home:open",
       searchTerms: ["project", "home", "overview", "conversations", "computers", "working folders"],
-      title: "Open project home",
+      title: "Open computer folder details",
       description: contextualProjectGroup.displayName,
       icon: <FolderIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
@@ -2459,7 +2393,7 @@ function OpenCommandPaletteDialog(props: {
         "remove",
         "t3.json",
       ],
-      title: "Project settings",
+      title: "Computer folder settings",
       description: contextualProjectGroup.displayName,
       icon: <FolderIcon className={ITEM_ICON_CLASS} />,
       run: async () => {

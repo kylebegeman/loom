@@ -11,6 +11,7 @@ import { Textarea } from "~/components/ui/textarea";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+import { LibrarySetup } from "./LibrarySetup";
 import { validateResources } from "./resources";
 
 const isLibraryError = Schema.is(LibraryError);
@@ -31,7 +32,7 @@ export function ProjectEditorDialog({
   onClose,
 }: {
   readonly project?: LibraryProject;
-  readonly authorityId: EnvironmentId;
+  readonly authorityId: EnvironmentId | null;
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
 }) {
@@ -70,6 +71,7 @@ export function ProjectEditorDialog({
       },
     ]);
   const save = async () => {
+    if (!authorityId || !allowed || busy) return;
     const validation = validateResources(resources);
     if (!title.trim() || validation) {
       setError(validation ?? "Give the project a name.");
@@ -113,13 +115,21 @@ export function ProjectEditorDialog({
         if (!open && !busy) onClose();
       }}
       title={project ? "Edit project" : "New project"}
-      description="Save the name, shared brief and resources in your Library. Choose a computer when you start work."
+      description={
+        project
+          ? "Update the context shared by this project’s conversations."
+          : "A home for your work, across repositories and computers."
+      }
       actions={
         <>
           <Button variant="outline" disabled={busy} onClick={onClose}>
-            Close
+            Cancel
           </Button>
-          <Button disabled={busy || !allowed || !title.trim()} onClick={() => void save()}>
+          <Button
+            type="submit"
+            form="library-project-editor"
+            disabled={busy || !allowed || !title.trim()}
+          >
             {busy
               ? "Saving..."
               : attempt
@@ -131,18 +141,27 @@ export function ProjectEditorDialog({
         </>
       }
     >
-      <div className="space-y-5">
-        <LibraryField label="Name">
+      <form
+        id="library-project-editor"
+        className="space-y-6"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <LibraryField label="Project name">
           <Input
             autoFocus
+            placeholder="AspectAvy"
             maxLength={160}
             value={title}
             disabled={busy || attempt !== null}
             onChange={(event) => setTitle(event.target.value)}
           />
         </LibraryField>
-        <LibraryField label="Shared brief">
+        <LibraryField label="What are you building?">
           <Textarea
+            rows={3}
             value={brief}
             maxLength={65536}
             disabled={busy || attempt !== null}
@@ -150,9 +169,19 @@ export function ProjectEditorDialog({
             placeholder="What are we making, and what matters?"
           />
         </LibraryField>
-        <div className="space-y-4">
+        <details open={project ? true : undefined} className="group space-y-4">
+          <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+            {project ? "Components and references" : "Add repositories or references"}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {resources.length ? `${resources.length} added` : "Optional"}
+            </span>
+          </summary>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            One project can include separate web, iOS, server and Android repositories. Add them now
+            or later.
+          </p>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold">Resources</h3>
+            <h3 className="text-sm font-medium">Repositories and links</h3>
             <div className="flex gap-2">
               <Button
                 size="xs"
@@ -173,7 +202,10 @@ export function ProjectEditorDialog({
             </div>
           </div>
           {resources.map((resource) => (
-            <div key={resource.id} className="space-y-3 rounded-lg border border-border p-3">
+            <fieldset key={resource.id} className="space-y-3 rounded-lg bg-muted/40 p-4">
+              <legend className="sr-only">
+                {resource.title || (resource.kind === "link" ? "Reference link" : "Repository")}
+              </legend>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs text-muted-foreground">
                   {resource.kind === "link" ? "Reference link" : "Repository"}
@@ -189,9 +221,10 @@ export function ProjectEditorDialog({
                   Remove
                 </Button>
               </div>
-              <LibraryField label="Resource name">
+              <LibraryField label={resource.kind === "link" ? "Reference name" : "Component name"}>
                 <Input
                   maxLength={160}
+                  placeholder={resource.kind === "link" ? "Design reference" : "Web, iOS, Server…"}
                   disabled={busy || attempt !== null}
                   value={resource.title}
                   onChange={(event) => change(resource.id, { title: event.target.value })}
@@ -222,24 +255,37 @@ export function ProjectEditorDialog({
                   <Input
                     disabled={busy || attempt !== null}
                     value={resource.relativePath}
-                    placeholder="app"
+                    placeholder="web"
                     onChange={(event) => change(resource.id, { relativePath: event.target.value })}
                   />
                 </LibraryField>
               ) : null}
-            </div>
+            </fieldset>
           ))}
-          <p className="text-xs text-muted-foreground">
-            Removing a resource preserves existing files and conversation history.
+          {project ? (
+            <p className="text-xs text-muted-foreground">
+              Removing a component preserves its files and conversation history.
+            </p>
+          ) : null}
+        </details>
+        {!project ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            After creating the project, start a conversation about the whole project or one
+            component. Choose where to run it then.
           </p>
-        </div>
+        ) : null}
         {attempt ? (
           <p className="text-xs text-muted-foreground">
             This project save is waiting for confirmation. Retry to recover the same change.
           </p>
         ) : null}
         <LibraryErrorNotice error={error} />
-      </div>
+      </form>
+      {!authorityId ? (
+        <section className="mt-6 rounded-lg bg-muted/40 p-4" aria-label="Connect shared Library">
+          <LibrarySetup />
+        </section>
+      ) : null}
     </LibraryDialog>
   );
 }

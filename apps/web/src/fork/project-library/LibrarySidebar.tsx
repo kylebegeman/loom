@@ -1,6 +1,6 @@
 import { libraryRouteParams, resolveLibrarySelection } from "./selection";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { FolderIcon, PlusIcon, MessageSquareIcon } from "lucide-react";
+import { Link, useNavigate, useRouterState, useLocation } from "@tanstack/react-router";
+import { FolderIcon, PlusIcon, MessageSquareIcon, HistoryIcon } from "lucide-react";
 import {
   SidebarContent,
   SidebarGroup,
@@ -8,6 +8,7 @@ import {
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarHeader,
+  useSidebar,
 } from "~/components/ui/sidebar";
 import {
   Select,
@@ -17,13 +18,15 @@ import {
   SelectItem,
 } from "~/components/ui/select";
 import { SidebarChromeHeader, SidebarChromeFooter } from "~/components/sidebar/SidebarChrome";
-import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
 import { useLibraryProjects, useLibraryProject, useSelectedLibraryProject } from "./state";
 import { openLibraryAction } from "./actions";
 
 /** Project navigation stays in one place; computers belong to conversations and working copies. */
 export function LibrarySidebar() {
+  const { setOpenMobile } = useSidebar();
+  const closeNavigation = () => setOpenMobile(false);
+  const pathname = useLocation({ select: (location) => location.pathname });
   const projects = useLibraryProjects(true);
   const [selectedId, selectProject] = useSelectedLibraryProject();
   const params = useRouterState({
@@ -40,51 +43,76 @@ export function LibrarySidebar() {
   const selectedProject = selection.project;
   const displayedProjects = selection.projects;
   const navigate = useNavigate();
-  const selected =
+  const unrelatedThread =
     params.threadId &&
     params.environmentId &&
-    !library.threads.data?.some(
+    library.threads.data !== null &&
+    !library.threads.data.some(
       (thread) =>
         thread.threadId === params.threadId && thread.environmentId === params.environmentId,
-    )
-      ? null
-      : selectedProject;
+    );
+  const selected = unrelatedThread ? null : selectedProject;
   return (
     <>
       <SidebarChromeHeader isElectron={isElectron} />
       <SidebarHeader>
-        <Select
-          value={selected?.id ?? "all"}
-          items={[
-            { value: "all", label: "All projects" },
-            ...displayedProjects.map((project) => ({
-              value: project.id,
-              label: project.title,
-            })),
-          ]}
-          onValueChange={(value) => {
-            if (!value || value === "all") {
-              selectProject(null);
-              void navigate({ to: "/library" });
-            } else {
-              selectProject(value);
-              void navigate({ to: "/library/$projectId", params: { projectId: value } });
-            }
-          }}
-        >
-          <SelectTrigger aria-label="Switch project">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectPopup>
-            <SelectItem value="all">All projects</SelectItem>
-            {displayedProjects.map((project) => (
-              <SelectItem key={project.id} value={project.id}>
-                {project.title}
-                {project.archived ? " (archived)" : ""}
-              </SelectItem>
-            ))}
-          </SelectPopup>
-        </Select>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              render={<Link to="/library" onClick={closeNavigation} />}
+              isActive={pathname === "/library" || pathname === "/library/"}
+            >
+              <FolderIcon />
+              <span>Projects</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={() => {
+                closeNavigation();
+                openLibraryAction("create-project");
+              }}
+            >
+              <PlusIcon />
+              <span>New project</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+        <div className="mt-4">
+          <Select
+            value={selected?.id ?? "all"}
+            items={[
+              { value: "all", label: "All projects" },
+              ...displayedProjects.map((project) => ({
+                value: project.id,
+                label: project.title,
+              })),
+            ]}
+            onValueChange={(value) => {
+              closeNavigation();
+              if (!value || value === "all") {
+                selectProject(null);
+                void navigate({ to: "/library" });
+              } else {
+                selectProject(value);
+                void navigate({ to: "/library/$projectId", params: { projectId: value } });
+              }
+            }}
+          >
+            <SelectTrigger aria-label="Switch project">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectPopup>
+              <SelectItem value="all">All projects</SelectItem>
+              {displayedProjects.map((project) => (
+                <SelectItem key={project.id} value={project.id}>
+                  {project.title}
+                  {project.archived ? " (archived)" : ""}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        </div>
         {projects.authorityId && !projects.connected ? (
           <p className="text-xs text-muted-foreground">Library offline</p>
         ) : null}
@@ -92,17 +120,17 @@ export function LibrarySidebar() {
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton render={<Link to="/library" />}>
-                <FolderIcon />
-                <span>All projects</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
             {selected ? (
               <>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    render={<Link to="/library/$projectId" params={{ projectId: selected.id }} />}
+                    render={
+                      <Link
+                        to="/library/$projectId"
+                        params={{ projectId: selected.id }}
+                        onClick={closeNavigation}
+                      />
+                    }
                     isActive={params.projectId === selected.id}
                   >
                     <FolderIcon />
@@ -112,7 +140,10 @@ export function LibrarySidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     disabled={selected.archived || !projects.connected}
-                    onClick={() => openLibraryAction("new-conversation")}
+                    onClick={() => {
+                      closeNavigation();
+                      openLibraryAction("new-conversation");
+                    }}
                   >
                     <PlusIcon />
                     <span>New conversation</span>
@@ -131,6 +162,7 @@ export function LibrarySidebar() {
                   <SidebarMenuButton
                     render={
                       <Link
+                        onClick={closeNavigation}
                         to="/library/conversations/$conversationId"
                         params={{ conversationId: thread.id }}
                       />
@@ -154,19 +186,20 @@ export function LibrarySidebar() {
           </SidebarGroup>
         ) : null}
         <SidebarGroup>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={!projects.authorityId || !projects.connected}
-              onClick={() => openLibraryAction("create-project")}
-            >
-              New project
-            </Button>
-            <Button size="xs" variant="ghost" render={<Link to="/local" />}>
-              Local conversations
-            </Button>
-          </div>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                render={<Link to="/local" onClick={closeNavigation} />}
+                isActive={pathname === "/local" || !!unrelatedThread}
+              >
+                <HistoryIcon />
+                <span>Computer conversations</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+          <p className="px-2 pt-1 text-xs leading-relaxed text-muted-foreground">
+            Earlier work on your connected computers.
+          </p>
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

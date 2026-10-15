@@ -1,4 +1,3 @@
-import { useLibraryAuthority } from "~/fork/project-library/state";
 import { Link } from "@tanstack/react-router";
 import { Button } from "~/components/ui/button";
 import {
@@ -18,7 +17,6 @@ import { BrowseProjectsButton } from "./BrowseProjectsButton";
 
 /** Project work stays in the library; settings provide configuration and storage entry points. */
 export function ProjectSettingsLanding() {
-  const library = useLibraryAuthority();
   const { groups, selectScope, search } = useSettingsScope();
   const choices = search.machine
     ? groups.filter((group) =>
@@ -29,12 +27,8 @@ export function ProjectSettingsLanding() {
     <SettingsPageContainer>
       <SettingsSection id="project-overview" title="Projects" hideTitle>
         <SettingsRow
-          title="Project library"
-          description={
-            library.authorityId
-              ? "Edit your shared brief and resources, and browse project conversations."
-              : "Browse projects and their threads."
-          }
+          title="Projects"
+          description="Manage projects, shared context and conversations across your devices."
           control={<BrowseProjectsButton />}
         />
         <SettingsRow
@@ -47,13 +41,13 @@ export function ProjectSettingsLanding() {
           }
         />
         <SettingsRow
-          title={library.authorityId ? "Local folder settings" : "Project settings"}
+          title="Computer folder settings"
           description={
             choices.length === 0
               ? search.machine
                 ? "No projects on this computer. Choose another computer above."
-                : "Add a project to configure its name, icon and actions."
-              : "Choose a project to configure its name, icon and actions."
+                : "Register a working folder to configure its local actions."
+              : "Choose a computer folder to configure its icon and local actions."
           }
           control={
             <Select<string>
@@ -66,14 +60,8 @@ export function ProjectSettingsLanding() {
                 if (value) selectScope({ ...search, project: value, checkout: undefined });
               }}
             >
-              <SelectTrigger
-                size="sm"
-                disabled={choices.length === 0}
-                aria-label={library.authorityId ? "Choose a local folder" : "Choose a project"}
-              >
-                <SelectValue
-                  placeholder={library.authorityId ? "Choose a local folder" : "Choose a project"}
-                />
+              <SelectTrigger size="sm" disabled={choices.length === 0} aria-label="Choose a folder">
+                <SelectValue placeholder="Choose a folder" />
               </SelectTrigger>
               <SelectPopup>
                 {choices.map((group) => (
