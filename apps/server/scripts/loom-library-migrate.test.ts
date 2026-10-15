@@ -154,11 +154,12 @@ const fixture = Effect.gen(function* () {
         const body =
           request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
         uploadedArchives.push(yield* decodeShadow(body));
-        response = verifiedReceipt;
+        response = { ...verifiedReceipt, requestId: uploadedArchives.at(-1)!.requestId };
       } else {
         expect(pathname.endsWith("/verify-import")).toBe(true);
         response = {
           ...verifiedReceipt,
+          requestId: uploadedArchives.at(-1)?.requestId ?? verifiedReceipt.requestId,
           verified: responses.readbackVerified,
           assetBytesVerified: responses.readbackVerified,
         };
@@ -170,6 +171,34 @@ const fixture = Effect.gen(function* () {
         }),
       );
     }).pipe(Effect.orDie),
+  );
+  const chunked = yield* fs.makeTempDirectoryScoped({ prefix: "loom-library-chunks-" });
+  const chunkReceipts = path.join(base, "chunk-receipts");
+  const single = { ...shadow, requestId: `${shadow.requestId}:00000` };
+  const chunkText = yield* encodeShadow(single);
+  yield* fs.writeFileString(path.join(chunked, "chunk-00000.json"), chunkText, { mode: 0o600 });
+  const chunkDigest = Hex.encode(
+    yield* crypto.digest("SHA-256", new TextEncoder().encode(chunkText)),
+  );
+  yield* fs.writeFileString(
+    path.join(chunked, "manifest.json"),
+    encodeJson({
+      version: 1,
+      sourceEnvironmentId: source,
+      requestId: shadow.requestId,
+      journalId: shadow.journalId,
+      sourceEventSequence: 1,
+      threads: 1,
+      chunks: [
+        {
+          file: "chunk-00000.json",
+          sha256: chunkDigest,
+          byteLength: new TextEncoder().encode(chunkText).byteLength,
+          threads: 1,
+          threadIds: [threadId],
+        },
+      ],
+    }),
   );
   const upload = {
     archive: archivePath,
@@ -188,6 +217,8 @@ const fixture = Effect.gen(function* () {
   return {
     fs,
     path,
+    chunked,
+    chunkReceipts,
     repository,
     workspace,
     archivePath,
@@ -221,6 +252,53 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
   );
 
 describe("verified Library migration commands", () => {
+  it.effect("checks every chunk digest before any upload and refuses modified archive bytes", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* f.fs.writeFileString(f.path.join(f.chunked, "chunk-00000.json"), "tampered");
+        expect(
+          (yield* Effect.result(
+            uploadMigration({ ...f.upload, archive: f.chunked, receipt: f.chunkReceipts }),
+          ))._tag,
+        ).toBe("Failure");
+        expect(f.requests).toEqual([]);
+      }),
+    ),
+  );
+  it.effect(
+    "imports a complete checksummed directory and activates all host bindings atomically",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          expect(
+            yield* uploadMigration({ ...f.upload, archive: f.chunked, receipt: f.chunkReceipts }),
+          ).toEqual({ verified: true, threads: 1 });
+          expect(
+            yield* activateMigration({
+              ...f.activate,
+              archive: f.chunked,
+              receipt: f.chunkReceipts,
+            }),
+          ).toEqual({ copies: 1, threads: 1 });
+        }),
+      ),
+  );
+  it.effect(
+    "retains historical bindings when old folders have disappeared without recreating files",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          yield* uploadMigration(f.upload);
+          yield* f.fs.remove(f.repository, { recursive: true });
+          expect(yield* activateMigration(f.activate)).toEqual({ copies: 1, threads: 1 });
+          expect(yield* f.fs.exists(f.repository)).toBe(false);
+          const bound = yield* WorkspaceStore.LibraryWorkspaceStore.use((store) =>
+            store.getBinding(threadId),
+          ).pipe(Effect.provide(f.workspace));
+          expect(bound?.cwd).toBe(f.repository);
+        }),
+      ),
+  );
   it.effect(
     "uploads assets before history and binds original threads to borrowed folders after readback",
     () =>

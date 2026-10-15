@@ -2626,6 +2626,11 @@ export default function Sidebar() {
         })
       : null,
   );
+  const sharedCopies = useEnvironmentQuery(
+    sharedCatalog.authorityId
+      ? projectLibrary.copies({ environmentId: sharedCatalog.authorityId, input: {} })
+      : null,
+  );
   const sharedScope = useMemo(
     () => parseLibraryProjectScope(persistedProjectScopeKey),
     [persistedProjectScopeKey],
@@ -2636,10 +2641,11 @@ export default function Sidebar() {
       const id = libraryProjectForLocalRefs(
         sharedIndex.data?.threads ?? [],
         group.memberProjectRefs,
+        sharedCopies.data ?? [],
       );
       return id && sharedCatalog.query.data?.some((project) => project.id === id) ? id : null;
     },
-    [sharedIndex.data, sharedCatalog.query.data],
+    [sharedIndex.data, sharedCopies.data, sharedCatalog.query.data],
   );
 
   const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);

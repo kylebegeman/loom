@@ -106,6 +106,19 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
     Effect.scoped,
   );
 describe("explicit Library shadow migration", () => {
+  it.effect("preserves missing borrowed folders as unavailable while retaining all history", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const exported = yield* f.migration.exportShadow({
+          requestId: "missing-copy",
+          journalId: "migration",
+          plan: { ...plan, copies: [{ ...plan.copies[0]!, copy: { ...copy, state: "missing" } }] },
+        });
+        expect(exported.copies[0]?.state).toBe("missing");
+        expect(exported.threads[0]?.projection.messages).toEqual(f.original.projection.messages);
+      }),
+    ),
+  );
   it.effect(
     "groups multiple resources under one independent project without changing source IDs or bodies",
     () =>

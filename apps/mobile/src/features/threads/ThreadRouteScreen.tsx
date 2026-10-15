@@ -1,3 +1,4 @@
+import { library, useLibraryAuthority } from "../../fork/library/libraryState";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { makeTurnCommandMetadata } from "../../lib/commandMetadata";
 import { buildProjectThreadStartTurnInput } from "../../lib/projectThreadStartTurn";
@@ -213,6 +214,29 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
       ? null
       : scopedThreadKey(selectedThread.environmentId, selectedThread.id);
   const selectedThreadDetailState = useSelectedThreadDetailState();
+  const authority = useLibraryAuthority();
+  const canUseArchive =
+    selectedThreadKey !== routeThreadKey &&
+    environmentId !== null &&
+    threadIdRaw !== null &&
+    (routeEnvironmentRuntime === null || routeConnectionState !== "connected");
+  const saved = useEnvironmentQuery(
+    canUseArchive && authority.environmentId && environmentId && threadIdRaw
+      ? library.lookupThread({
+          environmentId: authority.environmentId,
+          input: { sourceEnvironmentId: environmentId, threadId: ThreadId.make(threadIdRaw) },
+        })
+      : null,
+  );
+  useEffect(() => {
+    if (canUseArchive && saved.data)
+      navigation.dispatch(
+        StackActions.replace("LibraryHistory", {
+          projectId: saved.data.projectId,
+          archiveId: saved.data.id,
+        }),
+      );
+  }, [canUseArchive, saved.data, navigation]);
   useThreadPromptLink(params, routeThreadKey);
 
   if (environmentId === null || threadIdRaw === null) {
@@ -237,7 +261,7 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
     detailHasError: Option.isSome(selectedThreadDetailState.error),
   });
 
-  if (stillHydrating) {
+  if (stillHydrating || (canUseArchive && saved.isPending)) {
     return <OpeningThreadLoadingScreen />;
   }
 

@@ -58,6 +58,7 @@ export function NewConversationDialog({
   copiesQuery,
   initialHostId,
   initialCopyId,
+  initialResourceId,
   continuation,
   onChanged,
   onClose,
@@ -68,8 +69,9 @@ export function NewConversationDialog({
     EnvironmentQueryView<readonly LibraryWorkingCopy[]>,
     "isPending" | "isSuccess" | "error" | "refresh"
   >;
-  readonly initialHostId?: EnvironmentId;
-  readonly initialCopyId?: string;
+  readonly initialHostId?: EnvironmentId | undefined;
+  readonly initialCopyId?: string | undefined;
+  readonly initialResourceId?: string | undefined;
   readonly continuation?: LibraryThreadSummary;
   readonly onChanged: () => void;
   readonly onClose: () => void;

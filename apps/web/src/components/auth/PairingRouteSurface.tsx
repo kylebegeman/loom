@@ -87,6 +87,24 @@ export function PairingRouteSurface({
     void submitCredential(token);
   }, [submitCredential]);
 
+  useEffect(() => {
+    const followPairingLink = () => {
+      const token = peekPairingTokenFromUrl();
+      if (!token || token === autoPairTokenRef.current) return;
+      autoPairTokenRef.current = token;
+      autoSubmitAttemptedRef.current = true;
+      setCredential(token);
+      stripPairingTokenFromUrl();
+      void submitCredential(token);
+    };
+    window.addEventListener("hashchange", followPairingLink);
+    window.addEventListener("popstate", followPairingLink);
+    return () => {
+      window.removeEventListener("hashchange", followPairingLink);
+      window.removeEventListener("popstate", followPairingLink);
+    };
+  }, [submitCredential]);
+
   return (
     <StandalonePage tone="pairing">
       <StandalonePageHeader

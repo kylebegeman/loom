@@ -24,7 +24,8 @@ import * as EnvironmentAuth from "../../auth/EnvironmentAuth.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as LibraryService from "./LibraryService.ts";
 
-const LIBRARY_HISTORY_MAX_BYTES = 128 * 1024 * 1024;
+// Large established threads retain complete tool history. Clients browse bounded windows.
+const LIBRARY_HISTORY_MAX_BYTES = 512 * 1024 * 1024;
 const decodeIngest = Schema.decodeUnknownEffect(Schema.toCodecJson(LibraryIngestHistoryRequest));
 const decodeCopy = Schema.decodeUnknownEffect(LibraryRegisterCopyRequest);
 const decodeVerify = Schema.decodeUnknownEffect(Schema.Struct({ requestId: LibraryRequestId }));

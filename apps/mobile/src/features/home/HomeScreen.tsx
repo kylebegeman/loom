@@ -464,6 +464,11 @@ export function HomeScreen(props: HomeScreenProps) {
       ? library.threadIndex({ environmentId: sharedAuthority.environmentId, input: { limit: 200 } })
       : null,
   );
+  const sharedCopies = useEnvironmentQuery(
+    sharedAuthority.environmentId
+      ? library.copies({ environmentId: sharedAuthority.environmentId, input: {} })
+      : null,
+  );
   const sharedScope = useMemo(
     () => parseLibraryProjectScope(props.selectedProjectKey),
     [props.selectedProjectKey],
@@ -485,11 +490,15 @@ export function HomeScreen(props: HomeScreenProps) {
       ...projectScopes
         .filter(
           (scope) =>
-            !libraryProjectForLocalRefs(sharedIndex.data?.threads ?? [], scope.projectRefs),
+            !libraryProjectForLocalRefs(
+              sharedIndex.data?.threads ?? [],
+              scope.projectRefs,
+              sharedCopies.data ?? [],
+            ),
         )
         .map((scope) => ({ key: scope.key, label: scope.title })),
     ],
-    [projectScopes, sharedCatalog.data, sharedIndex.data],
+    [projectScopes, sharedCatalog.data, sharedIndex.data, sharedCopies.data],
   );
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = useMemo(() => {

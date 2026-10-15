@@ -49,6 +49,7 @@ export function LibrarySavedThreads({
     index.data?.threads.filter(
       (t) =>
         !t.archived &&
+        !t.deleted &&
         !local.has(`${t.environmentId}:${t.threadId}`) &&
         (!environmentId || environmentId === t.environmentId) &&
         (!projectKeys || projectKeys.has(`${t.environmentId}:${t.localProjectId}`)) &&

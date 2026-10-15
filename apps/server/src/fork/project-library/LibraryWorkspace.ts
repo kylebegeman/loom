@@ -545,7 +545,13 @@ const make = Effect.gen(function* () {
           ...receipt,
           rootLocalProjectId,
           rootCheckpointRepository,
-          copy: { ...receipt.copy, repositories, state: "ready" as const, updatedAt: yield* now },
+          copy: {
+            ...receipt.copy,
+            rootLocalProjectId,
+            repositories,
+            state: "ready" as const,
+            updatedAt: yield* now,
+          },
         };
         yield* store.put(ready);
         return ready.copy;

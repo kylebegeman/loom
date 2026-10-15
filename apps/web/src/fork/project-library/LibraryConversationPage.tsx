@@ -20,18 +20,19 @@ import { NewConversationDialog } from "./NewConversationDialog";
 export function LibraryConversationPage({ conversationId }: { readonly conversationId: string }) {
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
+  const [historyOffset, setHistoryOffset] = useState(0);
   const history = useEnvironmentQuery(
     authority.authorityId
       ? projectLibrary.history({
           environmentId: authority.authorityId,
-          input: { id: conversationId },
+          input: { id: conversationId, offset: historyOffset, limit: 100 },
         })
       : null,
   );
   const library = useLibraryProject(history.data?.summary.projectId ?? "");
   const canContinue = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
   const [continuing, setContinuing] = useState(false);
-  const [visibleMessages, setVisibleMessages] = useState(50);
+  const visibleMessages = 100;
   const archive = history.data;
   const messages = useMemo(
     () => (archive ? libraryArchiveMessages(archive.projection) : []),
@@ -130,17 +131,28 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
         />
       ) : null}
       <LibraryErrorNotice error={history.error} onRetry={history.refresh} />
-      {messages.length > visibleMessages ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setVisibleMessages((count) => count + 50)}
-          >
-            Show earlier messages
-          </Button>
+      {historyOffset > 0 || archive.window?.hasMore ? (
+        <div className="flex items-center gap-3">
+          {archive.window?.hasMore ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHistoryOffset((offset) => offset + 100)}
+            >
+              Earlier history
+            </Button>
+          ) : null}
+          {historyOffset > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setHistoryOffset((offset) => Math.max(0, offset - 100))}
+            >
+              Newer history
+            </Button>
+          ) : null}
           <p className="text-xs text-muted-foreground">
-            Showing the most recent {visibleMessages} of {messages.length} saved messages.
+            {historyOffset > 0 ? "Earlier saved history" : "Latest saved history"}
           </p>
         </div>
       ) : null}

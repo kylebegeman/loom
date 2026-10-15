@@ -78,6 +78,7 @@ export const LibraryWorkingCopy = Schema.Struct({
   projectRevision: PositiveInt,
   environmentId: EnvironmentId,
   rootPath: Schema.String,
+  rootLocalProjectId: Schema.optional(Schema.NullOr(ProjectId)),
   repositories: Schema.Array(LibraryCopyRepository),
   ownership: Schema.Literals(["borrowed", "managed"]),
   state: Schema.Literals(["preparing", "ready", "missing", "released", "failed"]),
@@ -113,6 +114,7 @@ export const LibraryThreadSummary = Schema.Struct({
   title: Schema.String,
   status: Schema.String,
   archived: Schema.Boolean,
+  deleted: Schema.optional(Schema.Boolean),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
   syncedAt: IsoDateTime,
@@ -125,6 +127,9 @@ export const LibraryThreadIndex = Schema.Struct({
 });
 export type LibraryThreadIndex = typeof LibraryThreadIndex.Type;
 export const LibraryThreadArchive = Schema.Struct({
+  window: Schema.optional(
+    Schema.Struct({ offset: NonNegativeInt, totalItems: NonNegativeInt, hasMore: Schema.Boolean }),
+  ),
   context: Schema.optional(LibraryProject),
   summary: LibraryThreadSummary,
   projection: OrchestrationV2ThreadProjection,
@@ -447,7 +452,7 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
   }),
   Rpc.make(LIBRARY_WS_METHODS.copies, {
     payload: Schema.Struct({
-      projectId: LibraryId,
+      projectId: Schema.optional(LibraryId),
       includeReleased: Schema.optional(Schema.Boolean),
     }),
     success: Schema.Array(LibraryWorkingCopy),
@@ -459,7 +464,11 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
     error,
   }),
   Rpc.make(LIBRARY_WS_METHODS.history, {
-    payload: Schema.Struct({ id: LibraryId }),
+    payload: Schema.Struct({
+      id: LibraryId,
+      offset: Schema.optional(NonNegativeInt),
+      limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(100))),
+    }),
     success: LibraryThreadArchive,
     error,
   }),

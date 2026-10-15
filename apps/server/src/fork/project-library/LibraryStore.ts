@@ -42,7 +42,7 @@ export class LibraryStore extends Context.Service<
       updatedAt: string;
     }) => Effect.Effect<void, LibraryStoreError>;
     readonly copy: (id: string) => Effect.Effect<string | null, LibraryStoreError>;
-    readonly copies: (projectId: string) => Effect.Effect<readonly string[], LibraryStoreError>;
+    readonly copies: (projectId?: string) => Effect.Effect<readonly string[], LibraryStoreError>;
     readonly putCopy: (input: {
       id: string;
       projectId: string;
@@ -52,6 +52,11 @@ export class LibraryStore extends Context.Service<
       payload: string;
       updatedAt: string;
     }) => Effect.Effect<void, LibraryStoreError>;
+    readonly historyWindow: (
+      id: string,
+      offset: number,
+      limit: number,
+    ) => Effect.Effect<{ payload: string; totalItems: number } | null, LibraryStoreError>;
     readonly history: (id: string) => Effect.Effect<string | null, LibraryStoreError>;
     readonly thread: (
       environmentId: string,
@@ -210,13 +215,31 @@ const make = Effect.gen(function* () {
         "copies",
         sql<{
           payload_json: string;
-        }>`SELECT payload_json FROM fork_library_working_copies WHERE project_id = ${projectId} ORDER BY updated_at DESC, id`,
+        }>`SELECT payload_json FROM fork_library_working_copies ${projectId ? sql`WHERE project_id = ${projectId}` : sql``} ORDER BY updated_at DESC, id`,
       ).pipe(Effect.map(payloads)),
     putCopy: (input) =>
       run(
         "put-copy",
         sql`INSERT INTO fork_library_working_copies (id, project_id, environment_id, root_path, state, payload_json, updated_at) VALUES (${input.id}, ${input.projectId}, ${input.environmentId}, ${input.rootPath}, ${input.state}, ${input.payload}, ${input.updatedAt}) ON CONFLICT(id) DO UPDATE SET state = excluded.state, payload_json = excluded.payload_json, updated_at = excluded.updated_at`,
       ).pipe(Effect.asVoid),
+    historyWindow: (id, offset, limit) =>
+      run(
+        "history-window",
+        sql<{ payload: string; totalItems: number }>`
+      WITH original AS (SELECT payload_json AS archive FROM fork_library_threads WHERE library_id=${id}),
+      fields AS (SELECT archive, CASE WHEN json_array_length(archive,'$.projection.visibleTurnItems')>0 THEN 'visibleTurnItems' ELSE 'messages' END AS field FROM original),
+      item_count AS (SELECT archive, field, json_array_length(archive,'$.projection.' || field) AS total FROM fields)
+      SELECT json_set(archive,
+        '$.projection.runs',json('[]'),'$.projection.attempts',json('[]'),'$.projection.nodes',json('[]'),
+        '$.projection.subagents',json('[]'),'$.projection.providerSessions',json('[]'),'$.projection.providerThreads',json('[]'),
+        '$.projection.providerTurns',json('[]'),'$.projection.runtimeRequests',json('[]'),'$.projection.plans',json('[]'),
+        '$.projection.turnItems',json('[]'),'$.projection.checkpointScopes',json('[]'),'$.projection.checkpoints',json('[]'),
+        '$.projection.contextHandoffs',json('[]'),'$.projection.contextTransfers',json('[]'),
+        '$.projection.visibleTurnItems',CASE WHEN field='visibleTurnItems' THEN json((SELECT json_group_array(json(value)) FROM (SELECT value FROM (SELECT key,value FROM json_each(archive,'$.projection.visibleTurnItems') ORDER BY CAST(key AS INTEGER) DESC LIMIT ${limit} OFFSET ${offset}) ORDER BY CAST(key AS INTEGER)))) ELSE json('[]') END,
+        '$.projection.messages',CASE WHEN field='messages' THEN json((SELECT json_group_array(json(value)) FROM (SELECT value FROM (SELECT key,value FROM json_each(archive,'$.projection.messages') ORDER BY CAST(key AS INTEGER) DESC LIMIT ${limit} OFFSET ${offset}) ORDER BY CAST(key AS INTEGER)))) ELSE json('[]') END
+      ) AS payload,total AS totalItems FROM item_count
+    `,
+      ).pipe(Effect.map((rows) => first(rows) ?? null)),
     history: (id) =>
       run(
         "history",

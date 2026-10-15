@@ -1,7 +1,7 @@
 import { LegendList } from "@legendapp/list/react-native";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
@@ -21,11 +21,12 @@ export function LibraryHistoryRouteScreen({
   const authority = useLibraryAuthority(),
     navigation = useNavigation(),
     { environments } = useEnvironments();
+  const [historyOffset, setHistoryOffset] = useState(0);
   const query = useEnvironmentQuery(
     authority.environmentId
       ? library.history({
           environmentId: authority.environmentId,
-          input: { id: route.params.archiveId },
+          input: { id: route.params.archiveId, offset: historyOffset, limit: 100 },
         })
       : null,
   );
@@ -90,6 +91,26 @@ export function LibraryHistoryRouteScreen({
         )}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: 16, paddingBottom: Math.max(insets.bottom, 24) + 24 }}
+        ListFooterComponent={
+          historyOffset > 0 || archive.window?.hasMore ? (
+            <View className="flex-row flex-wrap gap-2 pt-4">
+              {archive.window?.hasMore ? (
+                <MaterialButton
+                  label="Earlier history"
+                  tone="secondary"
+                  onPress={() => setHistoryOffset((offset) => offset + 100)}
+                />
+              ) : null}
+              {historyOffset > 0 ? (
+                <MaterialButton
+                  label="Newer history"
+                  tone="secondary"
+                  onPress={() => setHistoryOffset((offset) => Math.max(0, offset - 100))}
+                />
+              ) : null}
+            </View>
+          ) : null
+        }
         ListHeaderComponent={
           <View className="gap-4 pb-4">
             <Text className="text-sm text-foreground-muted">

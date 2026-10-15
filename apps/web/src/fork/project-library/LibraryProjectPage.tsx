@@ -121,28 +121,33 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
           <LibrarySection title="Conversations">
             <LibraryErrorNotice error={library.threads.error} onRetry={library.threads.refresh} />
             <div className="divide-y divide-border">
-              {library.threads.data?.map((thread) => (
-                <Link
-                  key={thread.id}
-                  to="/library/conversations/$conversationId"
-                  params={{ conversationId: thread.id }}
-                  className="block rounded-lg px-3 py-4 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <p className="text-base font-medium">{thread.title || "Untitled conversation"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {hostLabel(thread.environmentId)} ·{" "}
-                    {thread.resourceIds.length === 1
-                      ? (project.resources.find((resource) => resource.id === thread.resourceIds[0])
-                          ?.title ?? "Saved component")
-                      : "Whole project"}{" "}
-                    · {thread.status}
-                    {thread.archived ? " · Archived" : ""}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Saved to Library {new Date(thread.syncedAt).toLocaleString()}
-                  </p>
-                </Link>
-              ))}
+              {library.threads.data
+                ?.filter((thread) => !thread.deleted)
+                .map((thread) => (
+                  <Link
+                    key={thread.id}
+                    to="/library/conversations/$conversationId"
+                    params={{ conversationId: thread.id }}
+                    className="block rounded-lg px-3 py-4 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  >
+                    <p className="text-base font-medium">
+                      {thread.title || "Untitled conversation"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {hostLabel(thread.environmentId)} ·{" "}
+                      {thread.resourceIds.length === 1
+                        ? (project.resources.find(
+                            (resource) => resource.id === thread.resourceIds[0],
+                          )?.title ?? "Saved component")
+                        : "Whole project"}{" "}
+                      · {thread.status}
+                      {thread.archived ? " · Archived" : ""}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Saved to Library {new Date(thread.syncedAt).toLocaleString()}
+                    </p>
+                  </Link>
+                ))}
             </div>
             {library.threads.data?.length === 0 ? (
               <div className="rounded-xl bg-muted/40 p-6">

@@ -2,7 +2,7 @@ import { libraryRouteParams } from "./selection";
 import { useEffect, useState } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { useLibraryProject, useLibraryProjects, useSelectedLibraryProject } from "./state";
-import { onLibraryAction, type LibraryAction } from "./actions";
+import { onLibraryAction, type LibraryConversationDefaults, type LibraryAction } from "./actions";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
@@ -19,6 +19,7 @@ import {
 
 export function LibraryActionHost() {
   const [projectId, selectProject] = useSelectedLibraryProject();
+  const [defaults, setDefaults] = useState<LibraryConversationDefaults | undefined>();
   const [requestedProject, setRequestedProject] = useState<string | null>(null);
   const library = useLibraryProject(requestedProject ?? projectId ?? "");
   const catalog = useLibraryProjects();
@@ -37,7 +38,8 @@ export function LibraryActionHost() {
   const [action, setAction] = useState<LibraryAction | null>(null);
   useEffect(
     () =>
-      onLibraryAction((next, requestedProjectId) => {
+      onLibraryAction((next, requestedProjectId, contextDefaults) => {
+        setDefaults(contextDefaults);
         setRequestedProject(requestedProjectId ?? null);
         if (requestedProjectId) selectProject(requestedProjectId);
         else if (next === "new-conversation" && unrelatedLiveThread) selectProject(null);
@@ -138,6 +140,9 @@ export function LibraryActionHost() {
     <NewConversationDialog
       key={library.project.data.id}
       project={library.project.data}
+      initialHostId={defaults?.environmentId}
+      initialCopyId={defaults?.workingCopyId}
+      initialResourceId={defaults?.resourceId}
       copies={library.copies.data ?? []}
       copiesQuery={library.copies}
       onChanged={library.refresh}

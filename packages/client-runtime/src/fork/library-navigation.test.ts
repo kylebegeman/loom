@@ -6,7 +6,7 @@ import {
   libraryThreadMatchesScope,
   libraryProjectForLocalRefs,
 } from "./library-navigation.ts";
-import type { LibraryThreadSummary } from "@t3tools/contracts/fork";
+import type { LibraryThreadSummary, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 const row = (
   projectId: string,
   localProjectId: string,
@@ -61,6 +61,45 @@ describe("one project filter for durable and existing work", () => {
       libraryProjectForLocalRefs(
         [...rows, row("other", "web")],
         [{ environmentId: "host", projectId: "web" }],
+      ),
+    ).toBeNull();
+  });
+  it("maps registered folders without depending on a recent thread index", () => {
+    const copy: LibraryWorkingCopy = {
+      id: "copy",
+      projectId: "AspectAvy",
+      projectRevision: 1,
+      environmentId: EnvironmentId.make("host"),
+      rootPath: "/aspectavy",
+      rootLocalProjectId: ProjectId.make("root"),
+      repositories: [
+        {
+          resourceId: "ios",
+          path: "/aspectavy/ios",
+          localProjectId: ProjectId.make("ios"),
+          head: null,
+          branch: null,
+        },
+      ],
+      ownership: "borrowed",
+      state: "ready",
+      createdAt: "2026-10-15T12:00:00.000Z",
+      updatedAt: "2026-10-15T12:00:00.000Z",
+    };
+    expect(
+      libraryProjectForLocalRefs([], [{ environmentId: "host", projectId: "root" }], [copy]),
+    ).toBe("AspectAvy");
+    expect(
+      libraryProjectForLocalRefs([], [{ environmentId: "host", projectId: "ios" }], [copy]),
+    ).toBe("AspectAvy");
+    expect(
+      libraryProjectForLocalRefs([], [{ environmentId: "other", projectId: "ios" }], [copy]),
+    ).toBeNull();
+    expect(
+      libraryProjectForLocalRefs(
+        [],
+        [{ environmentId: "host", projectId: "ios" }],
+        [{ ...copy, registered: false }],
       ),
     ).toBeNull();
   });

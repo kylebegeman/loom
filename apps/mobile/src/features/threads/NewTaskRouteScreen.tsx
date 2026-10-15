@@ -1,3 +1,6 @@
+import { library, useLibraryAuthority } from "../../fork/library/libraryState";
+import { useThreadSelection } from "../../state/use-thread-selection";
+import { useEnvironmentQuery } from "../../state/query";
 import { AppActivityIndicator } from "../../components/AppActivityIndicator";
 import { MaterialListRow } from "../../components/MaterialListRow";
 import { ScreenHeader } from "../../components/ScreenHeader";
@@ -156,6 +159,28 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
+  const authority = useLibraryAuthority();
+  const { selectedThread } = useThreadSelection();
+  const inherit = !route.params && authority.environmentId !== null && selectedThread !== null;
+  const currentBinding = useEnvironmentQuery(
+    inherit && selectedThread
+      ? library.threadBinding({
+          environmentId: selectedThread.environmentId,
+          input: { threadId: selectedThread.id },
+        })
+      : null,
+  );
+  useEffect(() => {
+    if (!inherit || !currentBinding.data) return;
+    const binding = currentBinding.data;
+    navigation.getParent()?.dispatch(
+      StackActions.replace("LibraryStart", {
+        projectId: binding.projectId,
+        reuseEnvironmentId: binding.environmentId,
+        ...(binding.resourceIds.length === 1 ? { initialResourceId: binding.resourceIds[0] } : {}),
+      }),
+    );
+  }, [inherit, currentBinding.data, navigation]);
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { getShare, releaseShareReservation } = useIncomingShare();

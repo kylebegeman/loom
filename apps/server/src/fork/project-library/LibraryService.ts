@@ -61,7 +61,7 @@ export class LibraryService extends Context.Service<
       input: LibraryRegisterCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
     readonly copies: (input: {
-      projectId: string;
+      projectId?: string | undefined;
       includeReleased?: boolean | undefined;
     }) => Effect.Effect<readonly LibraryWorkingCopy[], LibraryError>;
     readonly threads: (input: {
@@ -75,7 +75,11 @@ export class LibraryService extends Context.Service<
       offset?: number | undefined;
       limit?: number | undefined;
     }) => Effect.Effect<LibraryThreadIndex, LibraryError>;
-    readonly history: (input: { id: string }) => Effect.Effect<LibraryThreadArchive, LibraryError>;
+    readonly history: (input: {
+      id: string;
+      offset?: number | undefined;
+      limit?: number | undefined;
+    }) => Effect.Effect<LibraryThreadArchive, LibraryError>;
     readonly ingestHistory: (
       input: LibraryIngestHistoryRequest,
     ) => Effect.Effect<LibraryIngestHistoryResult, LibraryError>;
@@ -247,7 +251,8 @@ const make = Effect.gen(function* () {
         old.rootPath !== copy.rootPath ||
         old.ownership !== copy.ownership ||
         old.createdAt !== copy.createdAt ||
-        old.projectRevision !== copy.projectRevision
+        old.projectRevision !== copy.projectRevision ||
+        (old.rootLocalProjectId != null && old.rootLocalProjectId !== copy.rootLocalProjectId)
       )
         return yield* invalid();
       if (Date.parse(copy.updatedAt) < Date.parse(old.updatedAt)) return old;
@@ -261,6 +266,7 @@ const make = Effect.gen(function* () {
     archive: LibraryThreadArchive,
     environmentId: string,
   ) {
+    if (archive.window !== undefined) return yield* invalid();
     const { summary, projection } = archive;
     if (
       summary.environmentId !== environmentId ||
@@ -689,14 +695,35 @@ const make = Effect.gen(function* () {
       );
     },
     history: (input) =>
-      store.history(input.id).pipe(
-        Effect.flatMap((row) =>
-          row === null
-            ? Effect.fail(new LibraryError({ reason: "not-found" }))
-            : decode(codecs.archive, row),
-        ),
-        Effect.mapError(io),
-      ),
+      Effect.gen(function* () {
+        if (input.offset !== undefined || input.limit !== undefined) {
+          const offset = input.offset ?? 0,
+            limit = input.limit ?? 50;
+          if (
+            !Number.isSafeInteger(offset) ||
+            offset < 0 ||
+            !Number.isSafeInteger(limit) ||
+            limit < 1 ||
+            limit > 100
+          )
+            return yield* invalid();
+          const page = yield* store.historyWindow(input.id, offset, limit);
+          if (!page) return yield* new LibraryError({ reason: "not-found" });
+          const archive = yield* decode(codecs.archive, page.payload);
+          return {
+            ...archive,
+            window: {
+              offset,
+              totalItems: page.totalItems,
+              hasMore: offset + limit < page.totalItems,
+            },
+          };
+        }
+        const row = yield* store.history(input.id);
+        return row === null
+          ? yield* new LibraryError({ reason: "not-found" })
+          : yield* decode(codecs.archive, row);
+      }).pipe(Effect.mapError(io)),
   });
 });
 export const layer = Layer.effect(LibraryService, make).pipe(Layer.provide(LibraryStore.layer));

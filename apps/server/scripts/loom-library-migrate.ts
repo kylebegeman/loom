@@ -22,6 +22,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+import { ThreadId } from "@t3tools/contracts";
 import { Command, Flag } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import * as ServerConfig from "../src/config.ts";
@@ -58,27 +59,205 @@ const writePrivate = Effect.fnUntraced(function* (output: string, text: string) 
   yield* fs.makeDirectory(path.dirname(output), { recursive: true, mode: 0o700 });
   yield* fs.writeFileString(output, text, { flag: "wx", mode: 0o600 });
 });
+const ChunkManifest = Schema.Struct({
+  version: Schema.Literal(1),
+  sourceEnvironmentId: LibraryInfo.fields.environmentId,
+  requestId: Schema.String,
+  journalId: Schema.String,
+  sourceEventSequence: Schema.Number,
+  threads: Schema.Number,
+  chunks: Schema.Array(
+    Schema.Struct({
+      file: Schema.String,
+      sha256: Schema.String,
+      byteLength: Schema.Number,
+      threads: Schema.Number,
+      threadIds: Schema.Array(ThreadId),
+    }),
+  ),
+});
+const decodeChunkManifest = Schema.decodeEffect(Schema.fromJsonString(ChunkManifest));
+const decodeChunkReceipt = Schema.decodeEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      archiveDigest: Schema.String,
+      verified: Schema.Boolean,
+      threads: Schema.Number,
+      catchUp: Schema.optional(Schema.Boolean),
+    }),
+  ),
+);
+
+/** Validate every file before uploading or activating any part of a directory export. */
+const readChunkDirectory = Effect.fnUntraced(function* (directory: string) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const crypto = yield* Crypto.Crypto;
+  const text = yield* fs.readFileString(path.join(directory, "manifest.json"));
+  const manifest = yield* decodeChunkManifest(text);
+  if (
+    !manifest.chunks.length ||
+    new Set(manifest.chunks.map((c) => c.file)).size !== manifest.chunks.length ||
+    manifest.chunks.reduce((n, c) => n + c.threads, 0) !== manifest.threads ||
+    new Set(manifest.chunks.flatMap((c) => c.threadIds)).size !== manifest.threads ||
+    manifest.chunks.some((c) => c.threadIds.length !== c.threads)
+  )
+    return yield* new LibraryError({ reason: "invalid" });
+  for (const chunk of manifest.chunks) {
+    if (!/^chunk-[0-9]{5}\.json$/.test(chunk.file) || !/^[a-f0-9]{64}$/.test(chunk.sha256))
+      return yield* new LibraryError({ reason: "invalid" });
+    if (chunk.byteLength > 512 * 1024 * 1024 || chunk.byteLength < 0)
+      return yield* new LibraryError({ reason: "invalid" });
+    const bytes = yield* fs.readFile(path.join(directory, chunk.file));
+    if (
+      bytes.byteLength !== chunk.byteLength ||
+      Hex.encode(yield* crypto.digest("SHA-256", bytes)) !== chunk.sha256
+    )
+      return yield* new LibraryError({ reason: "archive-unverified" });
+    const shadow = yield* decodeShadow(new TextDecoder().decode(bytes));
+    if (
+      shadow.sourceEnvironmentId !== manifest.sourceEnvironmentId ||
+      shadow.journalId !== manifest.journalId ||
+      shadow.requestId !== `${manifest.requestId}:${chunk.file.slice(6, 11)}` ||
+      shadow.threads.map((t) => t.summary.threadId).join("\0") !== chunk.threadIds.join("\0")
+    )
+      return yield* new LibraryError({ reason: "invalid" });
+  }
+  return {
+    manifest,
+    digest: Hex.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(text))),
+  };
+});
 export const exportMigration = Effect.fnUntraced(function* (input: {
   database: string;
   plan: string;
   output: string;
   requestId: string;
   journalId: string;
+  chunked?: boolean;
 }) {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const crypto = yield* Crypto.Crypto;
   const plan = yield* decodePlan(yield* fs.readFileString(input.plan));
-  const shadow = yield* Migration.LibraryMigration.use((service) =>
-    service.exportShadow({ requestId: input.requestId, journalId: input.journalId, plan }),
+  if (!input.chunked) {
+    const shadow = yield* Migration.LibraryMigration.use((service) =>
+      service.exportShadow({ requestId: input.requestId, journalId: input.journalId, plan }),
+    ).pipe(Effect.provide(sourceLayer(input.database)));
+    yield* writePrivate(input.output, yield* encodeShadow(shadow));
+    return {
+      projects: shadow.projects.length,
+      copies: shadow.copies.length,
+      threads: shadow.threads.length,
+      output: input.output,
+    };
+  }
+  yield* fs.makeDirectory(input.output, { recursive: false, mode: 0o700 });
+  const result = yield* Migration.LibraryMigration.use((service) =>
+    Effect.gen(function* () {
+      const inventory = yield* service.inventory;
+      const included = inventory.threads.filter(
+        (t) => !plan.excludedThreadIds.includes(t.threadId),
+      );
+      const chunks: Array<(typeof ChunkManifest.Type.chunks)[number]> = [];
+      // One full thread at a time bounds memory independently of the library's lifetime.
+      // An incomplete export has no manifest and can never be uploaded or activated.
+      for (let index = 0; index < Math.max(1, included.length); index++) {
+        const thread = included[index];
+        const suffix = String(index).padStart(5, "0");
+        const shadow = yield* service.exportShadow({
+          requestId: `${input.requestId}:${suffix}`,
+          journalId: input.journalId,
+          plan: {
+            ...plan,
+            excludedThreadIds: inventory.threads
+              .filter((t) => t.threadId !== thread?.threadId)
+              .map((t) => t.threadId),
+          },
+        });
+        const text = yield* encodeShadow(shadow);
+        const bytes = new TextEncoder().encode(text);
+        if (bytes.byteLength > 512 * 1024 * 1024)
+          return yield* new LibraryError({ reason: "storage-limit" });
+        const file = `chunk-${suffix}.json`;
+        yield* writePrivate(path.join(input.output, file), text);
+        chunks.push({
+          file,
+          sha256: Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+          byteLength: bytes.byteLength,
+          threads: shadow.threads.length,
+          threadIds: shadow.threads.map((t) => t.summary.threadId),
+        });
+      }
+      const manifest = {
+        version: 1 as const,
+        sourceEnvironmentId: plan.sourceEnvironmentId,
+        requestId: input.requestId,
+        journalId: input.journalId,
+        sourceEventSequence: inventory.eventSequence,
+        threads: included.length,
+        chunks,
+      };
+      yield* writePrivate(path.join(input.output, "manifest.json"), yield* encodeJson(manifest));
+      return {
+        projects: plan.projects.length,
+        copies: plan.copies.length,
+        threads: included.length,
+        output: input.output,
+      };
+    }),
   ).pipe(Effect.provide(sourceLayer(input.database)));
-  yield* writePrivate(input.output, yield* encodeShadow(shadow));
-  return {
-    projects: shadow.projects.length,
-    copies: shadow.copies.length,
-    threads: shadow.threads.length,
-    output: input.output,
-  };
+  return result;
 });
 export const uploadMigration = Effect.fnUntraced(function* (input: {
+  archive: string;
+  attachmentsDir: string;
+  libraryUrl: string;
+  receipt: string;
+  catchUp: boolean;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  if ((yield* fs.stat(input.archive)).type === "Directory") {
+    const { manifest, digest } = yield* readChunkDirectory(input.archive);
+    yield* fs.makeDirectory(input.receipt, { recursive: true, mode: 0o700 });
+    let threads = 0;
+    for (const chunk of manifest.chunks) {
+      const receiptFile = path.join(input.receipt, chunk.file);
+      // Receipts are immutable. Resume by verifying an existing receipt, never repeating an uncertain write blindly.
+      if (yield* fs.exists(receiptFile)) {
+        const previous = yield* decodeChunkReceipt(yield* fs.readFileString(receiptFile));
+        if (
+          !previous.verified ||
+          previous.archiveDigest !== chunk.sha256 ||
+          previous.threads !== chunk.threads
+        )
+          return yield* new LibraryError({ reason: "archive-unverified" });
+      } else
+        yield* uploadMigrationPart({
+          ...input,
+          archive: path.join(input.archive, chunk.file),
+          receipt: receiptFile,
+        });
+      threads += chunk.threads;
+    }
+    yield* writePrivate(
+      path.join(input.receipt, "manifest.json"),
+      yield* encodeJson({
+        version: 1,
+        archiveDigest: digest,
+        threads,
+        verified: true,
+        logicalRecordsVerified: true,
+        assetBytesVerified: true,
+        catchUp: input.catchUp,
+      }),
+    );
+    return { verified: true, threads };
+  }
+  return yield* uploadMigrationPart(input);
+});
+const uploadMigrationPart = Effect.fnUntraced(function* (input: {
   archive: string;
   attachmentsDir: string;
   libraryUrl: string;
@@ -213,6 +392,8 @@ export const uploadMigration = Effect.fnUntraced(function* (input: {
       authorityId: info.authorityId,
       authorityEpoch: info.authorityEpoch,
       catchUp: true,
+      verified: true,
+      archiveDigest,
       threads: shadow.threads.length,
       assets: published.size,
     };
@@ -231,6 +412,14 @@ export const uploadMigration = Effect.fnUntraced(function* (input: {
     Effect.flatMap(decodeReceipt),
     Effect.mapError(() => new LibraryError({ reason: "io" })),
   );
+  if (
+    receipt.requestId !== shadow.requestId ||
+    receipt.threads !== shadow.threads.length ||
+    !receipt.verified ||
+    !receipt.logicalRecordsVerified ||
+    !receipt.assetBytesVerified
+  )
+    return yield* new LibraryError({ reason: "archive-unverified" });
   yield* writePrivate(
     input.receipt,
     yield* encodeJson({
@@ -257,7 +446,7 @@ const ActivationReceipt = Schema.Struct({
 const encodeProject = Schema.encodeEffect(Schema.fromJsonString(LibraryProject));
 const encodeWorkingCopy = Schema.encodeEffect(Schema.fromJsonString(LibraryWorkingCopy));
 const decodeActivationReceipt = Schema.decodeEffect(Schema.fromJsonString(ActivationReceipt));
-export const activateMigration = Effect.fnUntraced(function* (input: {
+const prepareActivation = Effect.fnUntraced(function* (input: {
   archive: string;
   receipt: string;
   plan: string;
@@ -375,16 +564,13 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
           ?.path ?? copy.rootPath;
       if (local.cwd !== sourceRoot) return yield* new LibraryError({ reason: "invalid" });
       const cwd = thread.projection.thread.worktreePath ?? local.cwd;
-      if (!(yield* fs.exists(cwd))) return yield* new LibraryError({ reason: "not-found" });
+      // Historical paths may be gone. Keep their immutable identity; execution resolves availability later.
       const repositoryPaths =
         thread.projection.thread.worktreePath !== null && thread.summary.resourceIds.length === 1
           ? [cwd]
           : copy.repositories
               .filter((repo) => thread.summary.resourceIds.includes(repo.resourceId))
               .map((repo) => repo.path);
-      for (const repository of repositoryPaths)
-        if (!(yield* fs.exists(repository)))
-          return yield* new LibraryError({ reason: "not-found" });
       bindings.push({
         threadId: thread.summary.threadId,
         resolved: {
@@ -419,6 +605,39 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
       archiveDigest: null,
     });
   }
+  return { receipts, bindings };
+});
+export const activateMigration = Effect.fnUntraced(function* (input: {
+  archive: string;
+  receipt: string;
+  plan: string;
+  stateDir: string;
+  libraryUrl: string;
+}) {
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const prepared: Array<Effect.Success<ReturnType<typeof prepareActivation>>> = [];
+  if ((yield* fs.stat(input.archive)).type === "Directory") {
+    const { manifest, digest } = yield* readChunkDirectory(input.archive);
+    const receipt = yield* decodeChunkReceipt(
+      yield* fs.readFileString(path.join(input.receipt, "manifest.json")),
+    );
+    if (
+      !receipt.verified ||
+      receipt.catchUp ||
+      receipt.archiveDigest !== digest ||
+      receipt.threads !== manifest.threads
+    )
+      return yield* new LibraryError({ reason: "archive-unverified" });
+    for (const chunk of manifest.chunks)
+      prepared.push(
+        yield* prepareActivation({
+          ...input,
+          archive: path.join(input.archive, chunk.file),
+          receipt: path.join(input.receipt, chunk.file),
+        }),
+      );
+  } else prepared.push(yield* prepareActivation(input));
   const config = Layer.effect(
     ServerConfig.ServerConfig,
     ServerConfig.ServerConfig.pipe(
@@ -427,11 +646,14 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
   ).pipe(
     Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "loom-library-activate-" })),
   );
+  const receipts = prepared.flatMap((p) => p.receipts);
+  const bindings = prepared.flatMap((p) => p.bindings);
   yield* WorkspaceStore.LibraryWorkspaceStore.use((store) =>
     store.importBindings({ receipts, bindings }),
   ).pipe(Effect.provide(WorkspaceStore.layer.pipe(Layer.provide(config))));
-  return { copies: receipts.length, threads: bindings.length };
+  return { copies: new Set(receipts.map((r) => r.copy.id)).size, threads: bindings.length };
 });
+
 const activate = Command.make(
   "activate",
   {
@@ -481,6 +703,7 @@ const exportCommand = Command.make(
     output,
     requestId: Flag.String("request-id"),
     journalId: Flag.String("journal-id"),
+    chunked: Flag.Boolean("chunked").pipe(Flag.withDefault(false)),
   },
   (input) =>
     exportMigration(input).pipe(

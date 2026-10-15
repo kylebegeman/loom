@@ -128,7 +128,7 @@ const make = Effect.gen(function* () {
           project.revision !== entry.copy.projectRevision ||
           entry.copy.environmentId !== plan.sourceEnvironmentId ||
           entry.copy.ownership !== "borrowed" ||
-          entry.copy.state !== "ready" ||
+          !["ready", "missing"].includes(entry.copy.state) ||
           entry.copy.repositories.some(
             (repository) =>
               !project.resources.some(
@@ -200,6 +200,7 @@ const make = Effect.gen(function* () {
             title: row.title,
             status: latestRun?.status ?? "idle",
             archived: row.archived,
+            deleted: row.deleted,
             createdAt: DateTime.formatIso(snapshot.projection.thread.createdAt),
             updatedAt: DateTime.formatIso(snapshot.projection.updatedAt),
             syncedAt: DateTime.formatIso(yield* DateTime.now),

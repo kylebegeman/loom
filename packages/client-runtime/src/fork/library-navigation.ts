@@ -1,4 +1,8 @@
-import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
+import type {
+  LibraryProject,
+  LibraryThreadSummary,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 
 export function libraryProjectScopeKey(projectId: string, resourceId?: string) {
   return `library:${encodeURIComponent(projectId)}${resourceId ? `:component:${encodeURIComponent(resourceId)}` : ""}`;
@@ -45,17 +49,28 @@ export function libraryProjectFilterItems(projects: readonly LibraryProject[]) {
 export function libraryProjectForLocalRefs(
   threads: readonly LibraryThreadSummary[],
   refs: readonly { environmentId: string; projectId: string }[],
+  copies: readonly LibraryWorkingCopy[] = [],
 ) {
   if (!refs.length) return null;
   const projects = refs.map(
     (ref) =>
-      new Set(
-        threads
+      new Set([
+        ...copies
+          .filter(
+            (copy) =>
+              copy.registered !== false &&
+              copy.state !== "released" &&
+              copy.environmentId === ref.environmentId &&
+              (copy.rootLocalProjectId === ref.projectId ||
+                copy.repositories.some((repo) => repo.localProjectId === ref.projectId)),
+          )
+          .map((copy) => copy.projectId),
+        ...threads
           .filter(
             (t) => t.environmentId === ref.environmentId && t.localProjectId === ref.projectId,
           )
           .map((t) => t.projectId),
-      ),
+      ]),
   );
   if (projects.some((ids) => ids.size !== 1)) return null;
   const ids = new Set(projects.flatMap((ids) => [...ids]));

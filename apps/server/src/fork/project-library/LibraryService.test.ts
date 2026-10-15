@@ -1,3 +1,4 @@
+import { MessageId } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
@@ -53,6 +54,36 @@ const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchi
 const encodeArchive = Schema.encodeEffect(archiveCodec);
 
 describe("independent Library catalog and durable history", () => {
+  it.effect("reads bounded chronological history windows without trimming retained history", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* create(service);
+        const initial = yield* archiveFor(project);
+        const messages = Array.from({ length: 5 }, (_, index) => ({
+          ...initial.projection.messages[0]!,
+          id: MessageId.make(`message-${index}`),
+          text: `Message ${index}`,
+        }));
+        const archive = {
+          ...initial,
+          summary: { ...initial.summary, workingCopyId: null },
+          projection: { ...initial.projection, messages, visibleTurnItems: [], turnItems: [] },
+        };
+        yield* service.registerThread({ requestId: "window", thread: archive });
+        const newest = yield* service.history({ id: archive.summary.id, limit: 2 });
+        expect(newest.projection.messages.map((m) => m.text)).toEqual(["Message 3", "Message 4"]);
+        expect(newest.window).toEqual({ offset: 0, totalItems: 5, hasMore: true });
+        const older = yield* service.history({ id: archive.summary.id, offset: 2, limit: 2 });
+        expect(older.projection.messages.map((m) => m.text)).toEqual(["Message 1", "Message 2"]);
+        expect(
+          (yield* service.history({ id: archive.summary.id })).projection.messages,
+        ).toHaveLength(5);
+        expect(
+          (yield* Effect.result(service.history({ id: archive.summary.id, limit: 101 })))._tag,
+        ).toBe("Failure");
+      }),
+    ),
+  );
   it.effect("pages compact conversation metadata across projects and rejects unbounded reads", () =>
     run((service) =>
       Effect.gen(function* () {
