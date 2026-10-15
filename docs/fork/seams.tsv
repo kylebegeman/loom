@@ -91,10 +91,14 @@ apps/server/src/workspace/ScratchCheckout.test.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.ts	mini-native-retention	1
 apps/server/src/orchestration-v2/ProviderTurnStartService.testkit.ts	mini-native-retention	1
 apps/server/src/mcp/toolkits/environment/tools.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	mini-native-retention	1
 apps/server/src/mcp/toolkits/environment/handlers.ts	mini-native-retention	1
 apps/server/src/mcp/toolkits/environment/handlers.test.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/CheckpointRollbackService.ts	mini-native-retention	1
+apps/server/src/orchestration-v2/CheckpointRollbackService.test.ts	mini-native-retention	1
 apps/server/src/mcp/toolkits/worktree/registration.test.ts	mini-native-retention	1
 apps/web/src/components/settings/StorageSettings.tsx	mini-native-retention	1
+apps/web/src/components/settings/StorageSettings.test.tsx	project-lifecycle	1
 packages/contracts/src/settings.ts	mini-native-retention	1
 packages/contracts/src/settings.test.ts	mini-native-retention	1
 packages/shared/src/serverSettings.test.ts	mini-native-retention	1

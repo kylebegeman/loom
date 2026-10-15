@@ -26,13 +26,21 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
 vi.mock("@tanstack/react-router", () => ({ useRouter: () => state.router, useParams: () => null }));
 vi.mock("~/hooks/useSettings", () => ({ useClientSettings: () => ({}) }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
-vi.mock("~/state/entities", () => ({
-  readProjects: () => [
+vi.mock("~/state/entities", () => {
+  const projects = [
     { id: "prepared-checkout", environmentId: "pi", workspaceRoot: "/ssd/project" },
-  ],
-  readThreadShell: () => null,
-  readThreadShells: () => [],
-}));
+  ];
+  return {
+    readProjects: () => projects,
+    // The hook rechecks the project before opening a draft; it still exists here.
+    readProject: (ref: { environmentId: string; projectId: string }) =>
+      projects.find(
+        (project) => project.id === ref.projectId && project.environmentId === ref.environmentId,
+      ) ?? null,
+    readThreadShell: () => null,
+    readThreadShells: () => [],
+  };
+});
 vi.mock("~/logicalProject", () => ({
   deriveLogicalProjectKeyFromSettings: () => "shared-project",
   selectProjectGroupingSettings: () => ({}),

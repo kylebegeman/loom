@@ -76,6 +76,7 @@ it("applies routed Claude auth while preserving probe isolation", () => {
     },
     cwd: "/workspace/project",
     switchboardSettings,
+    managedMcpConfig: false,
   });
   assert.deepEqual(options.settings, { ...switchboardSettings, disableAllHooks: true });
   for (const [name, value] of Object.entries(switchboardSettings.env)) {

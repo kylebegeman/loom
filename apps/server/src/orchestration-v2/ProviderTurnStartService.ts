@@ -18,6 +18,8 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 
@@ -26,10 +28,8 @@ import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectChecko
 import { WorkspacePreparationError, restoreWorktree } from "../workspace/restoreWorktree.ts";
 import { restoreScratchCheckout, ScratchCheckoutError } from "../workspace/ScratchCheckout.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as Option from "effect/Option";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
-import * as Path from "effect/Path";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
@@ -124,6 +124,7 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    const path = yield* Path.Path;
     const providerAuth = yield* ProviderAuthService.ProviderAuthService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
@@ -476,10 +477,17 @@ export const layer: Layer.Layer<
       }
       const { worktreePath, branch } = projection.thread;
       {
+        // The service `start` wrapper holds the non-reentrant lease for the worktree,
+        // so restoration and setup inside it must not take that lease again.
+        const holdsWorkspaceLease = (cwd: string) =>
+          worktreePath !== null && path.resolve(cwd) === path.resolve(worktreePath);
         const preparation = yield* Effect.gen(function* () {
           const project = yield* projects.getById(projection.thread.projectId);
           if (Option.isSome(project)) {
-            yield* restoreManagedProjectCheckout(project.value.workspaceRoot);
+            yield* restoreManagedProjectCheckout(
+              project.value.workspaceRoot,
+              holdsWorkspaceLease(project.value.workspaceRoot),
+            );
             const marker = `${project.value.workspaceRoot}.t3-setup-pending`;
             yield* withWorkspaceLease(
               marker,
@@ -490,6 +498,7 @@ export const layer: Layer.Layer<
                   projectId: projection.thread.projectId,
                   worktreePath: project.value.workspaceRoot,
                   trigger: "setup",
+                  workspaceLeaseHeld: holdsWorkspaceLease(project.value.workspaceRoot),
                   observeCompletion: {},
                 });
                 if (setup.status === "started") {
@@ -510,6 +519,7 @@ export const layer: Layer.Layer<
               projectId: projection.thread.projectId,
               worktreePath,
               branch,
+              workspaceLeaseHeld: true,
             });
           } else {
             const project = yield* projects
@@ -526,6 +536,7 @@ export const layer: Layer.Layer<
                 projectId: projection.thread.projectId,
                 scratchRoot: project.value.workspaceRoot,
                 worktreePath,
+                workspaceLeaseHeld: true,
               });
               const marker = `${worktreePath}.t3-setup-pending`;
               if (restored || (yield* fileSystem.exists(marker))) {
@@ -534,6 +545,7 @@ export const layer: Layer.Layer<
                   projectId: projection.thread.projectId,
                   worktreePath,
                   trigger: "setup",
+                  workspaceLeaseHeld: true,
                   observeCompletion: {},
                 });
                 if (setup.status === "started") {
@@ -1308,7 +1320,7 @@ export const layer: Layer.Layer<
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
-      yield* runExecution.startRootRun({
+      return runExecution.startRootRun({
         commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
         appThread: projection.thread,
         providerSessionId,
@@ -1363,7 +1375,15 @@ export const layer: Layer.Layer<
 
     return ProviderTurnStartServiceV2.of({
       start: (input) =>
-        start(input).pipe(
+        Effect.gen(function* () {
+          // Storage cleanup removes worktrees under the same lease. Only startup
+          // holds it; the provider turn runs after it is released.
+          const { thread } = yield* projectionStore.getThreadRecords(input.threadId, []);
+          const providerTurn = yield* thread.worktreePath === null
+            ? start(input)
+            : withWorkspaceLease(path.resolve(thread.worktreePath), start(input));
+          if (providerTurn !== undefined) yield* providerTurn;
+        }).pipe(
           Effect.mapError((cause) =>
             isProviderTurnStartError(cause)
               ? cause
