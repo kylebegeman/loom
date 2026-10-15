@@ -300,10 +300,12 @@ and `land` refuses to run where that would kill it midway.
 scripts/fork/loom.sh land
 ```
 
-`land` merges an open integration pull request with a merge commit, tags `loom-<tag>` if
-the workflow has not, then builds, signs and installs `main`. With nothing open it installs
-`main` as it is, which covers the workflow's own merges and fork changes; it stops early
-when the installed build is already `main`. Never squash or rebase an integration pull
+`land` merges an open integration pull request with a merge commit and tags `loom-<tag>`
+if the workflow has not. With nothing open it tags `main` as it is with the next Loom
+version, which covers fork changes. Either way it then refreshes and runs the publisher
+(waiting for a scheduled run to finish first) and installs the published build, so a
+landed build is the same release the update button offers. It stops early when the
+installed build is already `main`. Never squash or rebase an integration pull
 request: the next merge needs upstream's history, and `land` stops if it finds the tag
 missing from `main`. To take a stable release or a specific tag, run the workflow by hand
 (Actions, Loom upstream, Run workflow, target `stable` or a tag) or
@@ -313,17 +315,17 @@ pushing. Mention `@claude` in any pull request comment to have Claude work on th
 
 The same steps run locally with `scripts/fork/loom.sh`:
 
-| Command                                          | What it does                                                                                                                         |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `scripts/fork/loom.sh status`                    | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                              |
-| `scripts/fork/loom.sh check`                     | The fork's checks on the current checkout: seams, fork lint, fork tests, Omarchy pack checks, web build, typechecks.                 |
-| `scripts/fork/loom.sh integrate`                 | Merge the newest stable tag on a test branch, run the fork's checks, build, then fast-forward main, tag `loom-<tag>`, push, install. |
-| `scripts/fork/loom.sh integrate nightly`         | The same for the newest nightly tag, or pass any upstream tag.                                                                       |
-| `scripts/fork/loom.sh integrate <tag> --dry-run` | Merge, check and build, then discard it. main and the installed app are unchanged.                                                   |
-| `scripts/fork/loom.sh integrate <tag> --pr`      | Merge and check, then push the test branch and open its pull request (what the workflow runs).                                       |
-| `scripts/fork/loom.sh land [<pr>]`               | Merge an integration pull request, tag, build and install. With none open, install what main already contains.                       |
-| `scripts/fork/loom.sh build` / `install`         | Rebuild main (stamped with its upstream version) / install the newest build.                                                         |
-| `scripts/fork/loom.sh rollback`                  | Reinstall the previous build and restore the T3 data it last ran with.                                                               |
+| Command                                          | What it does                                                                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/fork/loom.sh status`                    | The upstream release main is built from, the installed version, and the newest stable and nightly tags.                   |
+| `scripts/fork/loom.sh check`                     | The fork's checks on the current checkout: seams, fork lint, fork tests, Omarchy pack checks, web build, typechecks.      |
+| `scripts/fork/loom.sh integrate`                 | Merge the newest stable tag on a test branch, check and build it, then fast-forward main, tag, push, publish and install. |
+| `scripts/fork/loom.sh integrate nightly`         | The same for the newest nightly tag, or pass any upstream tag.                                                            |
+| `scripts/fork/loom.sh integrate <tag> --dry-run` | Merge, check and build, then discard it. main and the installed app are unchanged.                                        |
+| `scripts/fork/loom.sh integrate <tag> --pr`      | Merge and check, then push the test branch and open its pull request (what the workflow runs).                            |
+| `scripts/fork/loom.sh land [<pr>]`               | Merge an integration pull request, or tag main's fork changes, then publish and install.                                  |
+| `scripts/fork/loom.sh build` / `install`         | Build main to verify it, without keeping it / install the newest published build.                                         |
+| `scripts/fork/loom.sh rollback`                  | Reinstall the previous published build and restore the T3 data it last ran with.                                          |
 
 A merge conflict stops on the `integrate/<tag>` branch and lists the files. Resolve them,
 `git add -A && git commit --no-edit`, then `scripts/fork/loom.sh integrate --continue`
@@ -381,9 +383,10 @@ Minor or major version changes require Kyle's explicit approval.
 The app and bundled server share the Loom publication version. Build records store that
 in `version`, the candidate tag in `integration`, the actual upstream tag in `upstream`,
 and the exact source in `commit`. Older records used `upstream` for the app version and
-remain readable. `loom.sh status` reports the real merged upstream tag. Direct local
-`loom.sh build`, `integrate` and `land` builds retain their requested upstream version;
-the automatic publisher owns the independent publication sequence.
+remain readable. `loom.sh status` reports the real merged upstream tag. Only the
+publisher makes installable builds: `integrate` and `land` run it, `install` and
+`rollback` choose among its published records, and `build` keeps nothing. So the update
+button, scripted installs, TestFlight and the runtime archives always share one version.
 
 Standalone remote `t3` installers still use upstream's CLI release catalog. Loom's own
 publication version is not an upstream archive coordinate; consult its recorded upstream

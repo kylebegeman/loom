@@ -12,17 +12,21 @@
 #   scripts/fork/loom.sh signing-setup
 #
 # integrate merges an upstream tag into a test branch (integrate/<tag>), runs
-# the fork's checks and builds the app. Only when all of that passes does it
-# fast-forward main, tag the result loom-<tag>, push, and install. A merge
-# conflict stops on the test branch; resolve it, commit, and rerun with
-# --continue. --dry-run merges, checks and builds, then throws the result
-# away without touching main or the installed app. --pr is the unattended
-# path the loom-upstream workflow uses: merge and check, then push the test
-# branch and open a pull request instead of building. land finishes that pull
-# request here: merge it with a merge commit, tag, build and install. With
-# none open it brings this Mac up to main, which is how merges the workflow
-# made itself and fork changes on main get installed. check
-# runs the fork's checks on the current checkout. Every install first
+# the fork's checks and builds the app to verify it. Only when all of that
+# passes does it fast-forward main, tag the result loom-<tag>, push, publish and
+# install. A merge conflict stops on the test branch; resolve it, commit, and
+# rerun with --continue. --dry-run merges, checks and builds, then throws the
+# result away without touching main or the installed app. --pr is the
+# unattended path the loom-upstream workflow uses: merge and check, then push
+# the test branch and open a pull request instead of building. land finishes
+# that pull request here: merge it with a merge commit, tag, publish and
+# install. With none open it brings this Mac up to main, which is how merges
+# the workflow made itself and fork changes on main get released.
+#
+# Only the publisher (scripts/fork/updates.ts) makes installable builds. land and
+# integrate run it, so this Mac, the update feed, the iOS build and remote
+# computers' runtimes all get one Loom version; build only verifies a checkout.
+# check runs the fork's checks on the current checkout. Every install first
 # snapshots the T3 database so rollback can restore the build and the data it
 # ran with. signing-setup creates a local code-signing certificate once, so
 # every build is the same app to macOS and keeps its permissions and Keychain
@@ -39,6 +43,7 @@ KEEP_BUILDS=3
 STATE_DATABASES=(state.sqlite statev2.sqlite)
 SIGNING_IDENTITY="${LOOM_SIGNING_IDENTITY:-Loom Local Code Signing}"
 LOGIN_KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+PUBLISHER_PLIST="$HOME/Library/LaunchAgents/com.kylebegeman.loom-updates.plist"
 # Every upstream file the fork touches, with its marker and how many marked
 # lines it must keep (docs/fork/seams.tsv). run_checks fails when a merge drops
 # a seam, and when a marker appears that the manifest does not list.
@@ -199,15 +204,17 @@ run_checks() {
   restore_lockfile
 }
 
-# Build the macOS app for this Mac from the current checkout, stamped with
-# the requested local build version and recording upstream provenance separately.
-build_app() {
+# Build the macOS app from the current checkout to prove it builds. Installable
+# builds come only from the publisher (scripts/fork/updates.ts), so every Loom on
+# this Mac, in the update feed, on iOS and on remote computers shares one Loom
+# release version. This build carries the upstream version and stays in release/.
+verify_build() {
   local version=$1
   # Dependencies must match the checkout being built: switching branches (or a
   # dry run of a newer tag) leaves node_modules from another lockfile.
   say "Installing dependencies for this checkout"
   pnpm install --frozen-lockfile
-  say "Building Loom $version"
+  say "Building Loom $version to verify it"
   rm -rf release
   # Like upstream's release workflow, stamp every releasable package with the
   # release version first, so the app and its bundled server agree. The stamp
@@ -223,53 +230,27 @@ build_app() {
   local zip
   zip=$(ls release/*-arm64.zip 2>/dev/null | sed -n 1p)
   [ -n "$zip" ] || die "the build produced no zip in release/"
-  local record
-  record="$BUILDS_DIR/$version-$(git rev-parse --short HEAD)"
-  rm -rf "$record" && mkdir -p "$record"
-  ditto -x -k "$zip" "$record"
-  local name
-  name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$record"/*.app/Contents/Info.plist)
-  case "$name" in Loom | "Loom ("*) ;; *) die "the built app is named '$name', not Loom; check the brand seams" ;; esac
-  [ "$(ls -d "$record"/*.app | sed -n 1p)" = "$record/Loom.app" ] || mv "$record"/*.app "$record/Loom.app"
+  local unpacked app name
+  unpacked=$(mktemp -d)
+  ditto -x -k "$zip" "$unpacked"
+  app=$(ls -d "$unpacked"/*.app | sed -n 1p)
+  name=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Contents/Info.plist")
+  case "$name" in Loom | "Loom ("*) ;; *) rm -rf "$unpacked"; die "the built app is named '$name', not Loom; check the brand seams" ;; esac
   # Both apps share an id, so only the fork's feed may be embedded in Loom.
   if ! node --input-type=module -e '
     import { readFile } from "node:fs/promises";
     import { validateFeedConfig } from "./scripts/fork/updates.ts";
     validateFeedConfig(await readFile(process.argv[1], "utf8"));
-  ' "$record/Loom.app/Contents/Resources/app-update.yml"; then
-    rm -rf "$record"
+  ' "$app/Contents/Resources/app-update.yml"; then
+    rm -rf "$unpacked"
     die "the built app does not use the Loom update feed"
   fi
-  local integration upstream
-  integration=$(git tag -l 'loom-v*' --points-at HEAD --sort=-v:refname --sort=-creatordate | sed -n 1p)
-  upstream=$(upstream_at HEAD)
-  printf 'version=%s\nintegration=%s\nupstream=%s\ncommit=%s\nbuilt=%s\n' \
-    "$version" "$integration" "$upstream" "$(git rev-parse HEAD)" "$(date -u +%FT%TZ)" > "$record/build.env"
-  cp "$record/build.env" "$record/Loom.app/Contents/Resources/loom-build.env"
-  sign_app "$record/Loom.app"
-  echo "Built $name $version into $record"
+  rm -rf "$unpacked"
+  echo "Built $name $version in release/ to verify it. Only published builds install."
 }
 
 signing_identity_exists() {
   security find-identity -p codesigning "$LOGIN_KEYCHAIN" 2>/dev/null | grep -F "\"$SIGNING_IDENTITY\"" >/dev/null
-}
-
-# Local builds leave Electron's own ad hoc signature, identified as "Electron"
-# and pinned to one build's hash. Re-sign with the local identity so the
-# signature names the app's bundle id and the same certificate every build.
-# Without the identity, still re-sign ad hoc so the identifier is right.
-sign_app() {
-  local app=$1 identity=-
-  if signing_identity_exists; then
-    identity=$SIGNING_IDENTITY
-  else
-    echo "No '$SIGNING_IDENTITY' certificate: signing ad hoc. Each build will look like a new app"
-    echo "to macOS; run 'scripts/fork/loom.sh signing-setup' once to fix that."
-  fi
-  say "Signing the app"
-  codesign --force --deep --sign "$identity" "$app"
-  codesign --verify --deep --strict "$app"
-  codesign -d -r- "$app" 2>&1 | grep '^designated' | sed 's/^/  /'
 }
 
 # Create a self-signed code-signing certificate in the login keychain. It is
@@ -301,12 +282,14 @@ cmd_signing_setup() {
   echo "codesign use it; choose Always Allow."
 }
 
-# Build records, newest build first. Ordered by the recorded build time, not
-# folder dates, which change whenever a data snapshot is saved into a record.
+# Published build records, newest first. Install and rollback only see the
+# publisher's builds, so the installed app always carries a Loom release version.
+# Ordered by the recorded build time, not folder dates, which change whenever a
+# data snapshot is saved into a record.
 records() {
   local env
   for env in "$BUILDS_DIR"/*/build.env; do
-    [ -f "$env" ] || continue
+    [ -f "$env" ] && [ -f "$(dirname "$env")/updates/ready" ] || continue
     printf '%s\t%s\n' "$(grep '^built=' "$env" | cut -d= -f2-)" "$(dirname "$env")"
   done | sort -r | cut -f2-
 }
@@ -430,14 +413,52 @@ cmd_build() {
   local tag
   tag=$(git tag -l 'v[0-9]*' --merged HEAD --sort=-v:refname | sed -n 1p)
   [ -n "$tag" ] || die "this checkout has no upstream version tag"
-  build_app "${tag#v}"
+  verify_build "${tag#v}"
 }
 
 cmd_install() {
   local record
   record=$(records | sed -n 1p)
-  [ -n "$record" ] || die "no build to install; run build or integrate first"
+  [ -n "$record" ] || die "no published build to install; run land first"
   install_record "$record"
+}
+
+# The publisher's build of HEAD, when this Mac has one.
+published_record() {
+  local head record
+  head=$(git rev-parse HEAD)
+  records | while read -r record; do
+    if grep -q -x "commit=$head" "$record/build.env"; then
+      echo "$record"
+      break
+    fi
+  done
+}
+
+# Fork changes on main that no integration tag covers get a tag of their own, named
+# for the next Loom version, so the publisher releases them like any integration.
+tag_main() {
+  [ -z "$(git tag -l 'loom-v*' --points-at HEAD)" ] || return 0
+  local upstream version
+  upstream=$(upstream_at HEAD)
+  version=$(node scripts/fork/updates.ts next-version "$upstream")
+  say "Tagging main as Loom $version"
+  git tag -a "loom-v$version" -m "Loom fork changes on main
+loom-release=$version${upstream:+
+upstream=$upstream}"
+  git push -q origin "loom-v$version"
+}
+
+# Release main through the publisher the scheduled run uses, so the update feed, the
+# iOS build and remote computers' runtimes all get the same Loom version as this Mac.
+publish_main() {
+  # The scheduled run uses its own copy of the publisher; keep it the same as main's.
+  [ -f "$PUBLISHER_PLIST" ] && node scripts/fork/updates.ts enable
+  say "Publishing main"
+  if ! node scripts/fork/updates.ts publish --wait; then
+    [ -n "$(published_record)" ] || die "publishing failed; see the output above"
+    echo "The build is ready, but a later publishing step failed. The scheduled publisher retries it."
+  fi
 }
 
 cmd_rollback() {
@@ -535,13 +556,12 @@ cmd_integrate() {
     fi
     return 0
   fi
-  build_app "${tag#v}"
+  verify_build "${tag#v}"
   if [ "$dry" -eq 1 ]; then
     say "Dry run passed; discarding it"
     git switch -q main
     git branch -q -D "$branch"
     pnpm install --frozen-lockfile >/dev/null
-    rm -rf "$BUILDS_DIR/${tag#v}-"*
     echo "$tag merges, checks and builds cleanly. main and the installed app are unchanged."
     return 0
   fi
@@ -551,11 +571,20 @@ cmd_integrate() {
   git tag -a "loom-$tag" -m "Loom built from upstream $tag"
   git push -q origin main "loom-$tag"
   git branch -q -d "$branch"
+  publish_main
+  finish_release "$install"
+}
+
+# Prune old builds, then install the published build of main unless told not to.
+finish_release() {
   prune_builds
-  if [ "$install" -eq 1 ]; then
-    cmd_install
+  if [ "$1" -eq 1 ]; then
+    local record
+    record=$(published_record)
+    [ -n "$record" ] || die "this Mac has no published build of main; update from Loom's update button"
+    install_record "$record"
   else
-    echo "Built and pushed. Install it with: scripts/fork/loom.sh install"
+    echo "Published. Update from Loom's update button, or install it with: scripts/fork/loom.sh install"
   fi
 }
 
@@ -569,7 +598,7 @@ open_pr() {
     --title "chore(fork): integrate upstream $tag" \
     --body "Merges upstream T3 Code [$tag]($UPSTREAM_RELEASES/$tag) into Loom. The seams in \`docs/fork/seams.tsv\` survived, the fork's tests pass, and $(printf '%s, ' "${TYPECHECK_DIRS[@]}" | sed 's/, $//') typecheck.
 
-Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, builds and installs. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
+Land it from Terminal on your Mac (not inside Loom, which the install quits) with \`scripts/fork/loom.sh land\`: it merges with a merge commit, tags \`loom-$tag\`, publishes the next Loom release and installs it. Never squash or rebase this pull request; the fork needs upstream's history for the next merge.${added:+
 
 Upstream added these workflows. The loom-upstream workflow disables every non-fork workflow on its next run:
 $added}"
@@ -595,13 +624,11 @@ $left}"
     done
 }
 
-# The newest upstream tag main contains, stable or nightly.
-merged_upstream() { git tag -l 'v[0-9]*' --merged main --sort=-creatordate | sed -n 1p; }
-
 # Finish an integration pull request on this Mac. With an open one, merge it
 # (always a merge commit); with none, land what main already contains, which
-# covers a pull request merged on GitHub. Tags loom-<tag> if nobody has, then
-# builds and installs unless the installed build is already main.
+# covers a pull request merged on GitHub and fork changes. Tags loom-<tag> for an
+# integration, or the next Loom version for untagged fork changes, then publishes
+# main and installs the published build unless it is already installed.
 cmd_land() {
   local number="" install=1 arg
   for arg in "$@"; do
@@ -624,35 +651,28 @@ cmd_land() {
     gh pr merge "$number" --merge --delete-branch
   fi
   git fetch -q upstream --tags
-  git fetch -q origin
+  git fetch -q --tags origin
   git merge -q --ff-only origin/main
-  local tag
-  tag=$(merged_upstream)
   if [ -n "$number" ]; then
-    local head
+    local head tag
     head=$(gh pr view "$number" --json headRefName --jq .headRefName)
     tag=${head#integrate/}
     git merge-base --is-ancestor "$tag" main \
       || die "main does not contain $tag, so #$number was squashed or rebased. Revert that commit and merge the pull request with a merge commit."
-  fi
-  [ -n "$tag" ] || die "main contains no upstream tag"
-  if ! git rev-parse -q --verify "refs/tags/loom-$tag" >/dev/null; then
-    git tag -a "loom-$tag" -m "Loom built from upstream $tag"
-    git push -q origin "loom-$tag"
+    if ! git rev-parse -q --verify "refs/tags/loom-$tag" >/dev/null; then
+      git tag -a "loom-$tag" -m "Loom built from upstream $tag"
+      git push -q origin "loom-$tag"
+    fi
   fi
   local installed
   installed=$(installed_record)
   if [ -n "$installed" ] && grep -q -x "commit=$(git rev-parse HEAD)" "$installed/build.env"; then
-    echo "The installed Loom is already built from main ($tag). Nothing to land."
+    echo "The installed Loom is already main. Nothing to land."
     return 0
   fi
-  build_app "${tag#v}"
-  prune_builds
-  if [ "$install" -eq 1 ]; then
-    cmd_install
-  else
-    echo "Built. Install it with: scripts/fork/loom.sh install"
-  fi
+  tag_main
+  publish_main
+  finish_release "$install"
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
