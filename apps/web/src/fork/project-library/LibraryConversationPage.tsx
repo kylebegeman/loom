@@ -21,6 +21,7 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
   const [historyOffset, setHistoryOffset] = useState(0);
+  const [previousOffsets, setPreviousOffsets] = useState<readonly number[]>([]);
   const history = useEnvironmentQuery(
     authority.authorityId
       ? projectLibrary.history({
@@ -137,7 +138,10 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setHistoryOffset((offset) => offset + 100)}
+              onClick={() => {
+                setPreviousOffsets((offsets) => [...offsets, historyOffset]);
+                setHistoryOffset(archive.window?.nextOffset ?? historyOffset + 100);
+              }}
             >
               Earlier history
             </Button>
@@ -146,7 +150,10 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setHistoryOffset((offset) => Math.max(0, offset - 100))}
+              onClick={() => {
+                setHistoryOffset(previousOffsets.at(-1) ?? 0);
+                setPreviousOffsets((offsets) => offsets.slice(0, -1));
+              }}
             >
               Newer history
             </Button>

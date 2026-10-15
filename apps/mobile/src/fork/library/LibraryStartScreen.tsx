@@ -6,7 +6,7 @@ import {
   usePreventRemove,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { libraryContinuationContext, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -36,6 +36,8 @@ import { useEnvironments } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
+import { setComposerDraftText, flushComposerDrafts } from "../../state/use-composer-drafts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
@@ -80,7 +82,7 @@ export function LibraryStartRouteScreen({
         appAtomRegistry.refresh(
           library.history({
             environmentId: authority.environmentId,
-            input: { id: route.params.sourceArchiveId },
+            input: { id: route.params.sourceArchiveId, offset: 0, limit: 100 },
           }),
         );
     }, [
@@ -133,7 +135,7 @@ function LibraryStartContent(props: {
     configs = useServerConfigs();
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
-  const [scope, setScope] = useState(props.initialResourceId ?? "all"),
+  const [selectedScope, setScope] = useState<string | null>(props.initialResourceId ?? null),
     [execution, setExecution] = useState<EnvironmentId | null>(props.reuseEnvironmentId ?? null),
     [mode, setMode] = useState<"reuse" | "folder" | "clone">(
       props.reuseRootPath ? "folder" : "reuse",
@@ -168,6 +170,23 @@ function LibraryStartContent(props: {
     rootPath: string;
     copy: LibraryWorkingCopy | null;
   } | null>(null);
+  const source = useEnvironmentQuery(
+    authority.environmentId && props.sourceArchiveId
+      ? library.history({
+          environmentId: authority.environmentId,
+          input: { id: props.sourceArchiveId, offset: 0, limit: 100 },
+        })
+      : null,
+  );
+  const sourceScope = source.data?.summary.resourceIds;
+  const scope =
+    selectedScope ??
+    (sourceScope?.length === 1 &&
+    props.project.resources.some(
+      (resource) => resource.id === sourceScope[0] && resource.kind !== "link",
+    )
+      ? sourceScope[0]!
+      : "all");
   const launchProject = progress.intent?.project ?? props.project;
   const repositories = libraryRepositories(launchProject),
     resourceIds =
@@ -181,14 +200,8 @@ function LibraryStartContent(props: {
         })
       : null,
   );
-  const source = useEnvironmentQuery(
-    authority.environmentId && props.sourceArchiveId
-      ? library.history({
-          environmentId: authority.environmentId,
-          input: { id: props.sourceArchiveId },
-        })
-      : null,
-  );
+  const [carryInput, setCarryContext] = useState<string | null>(null);
+  const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
   const eligible = libraryEligibleCopies(launchProject, execution, resourceIds, copies.data ?? []);
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
@@ -398,6 +411,10 @@ function LibraryStartContent(props: {
           },
         },
       );
+      if (props.sourceArchiveId && carryContext.trim()) {
+        setComposerDraftText(scopedThreadKey(target), carryContext);
+        await flushComposerDrafts();
+      }
       refreshLibraryWork(authority.environmentId, launchProject.id);
       setLaunchedThread(target);
     } catch (cause) {
@@ -461,6 +478,20 @@ function LibraryStartContent(props: {
         maxLength={160}
         className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-base text-foreground"
       />
+      {props.sourceArchiveId ? (
+        <SettingsSection title="Context to carry forward">
+          <TextInput
+            accessibilityLabel="Context to carry forward"
+            value={carryContext}
+            onChangeText={(text) => {
+              setCarryContext(text);
+            }}
+            multiline
+            editable={!locked}
+            className="min-h-32 rounded-xl border border-input-border bg-input p-3 text-base text-foreground"
+          />
+        </SettingsSection>
+      ) : null}
       <SettingsSection title="Conversation context">
         <ListChoiceRow
           label="Whole project"
@@ -491,36 +522,38 @@ function LibraryStartContent(props: {
         ))}
       </SettingsSection>
       <SettingsSection title="Computer for this conversation">
-        {environments.map((env, index) => {
-          const connected = env.entry.enabled && env.connection.phase === "connected",
-            supported = supportsLoomFeature(
-              env.serverConfig?.environment.capabilities,
-              "project-library",
+        {environments
+          .filter((env) => env.serverConfig?.environment.capabilities.supportsExecution !== false)
+          .map((env, index) => {
+            const connected = env.entry.enabled && env.connection.phase === "connected",
+              supported = supportsLoomFeature(
+                env.serverConfig?.environment.capabilities,
+                "project-library",
+              );
+            return (
+              <ListChoiceRow
+                key={env.environmentId}
+                label={env.label}
+                selected={execution === env.environmentId}
+                separated={index > 0}
+                disabled={locked || !connected || !supported || !operable.has(env.environmentId)}
+                description={
+                  !connected
+                    ? "Offline"
+                    : !supported
+                      ? "Update Loom to run library conversations"
+                      : !operable.has(env.environmentId)
+                        ? "Conversation access required"
+                        : "Connected"
+                }
+                onPress={() => {
+                  setExecution(env.environmentId);
+                  setCopyId(null);
+                  setModelKey(null);
+                }}
+              />
             );
-          return (
-            <ListChoiceRow
-              key={env.environmentId}
-              label={env.label}
-              selected={execution === env.environmentId}
-              separated={index > 0}
-              disabled={locked || !connected || !supported || !operable.has(env.environmentId)}
-              description={
-                !connected
-                  ? "Offline"
-                  : !supported
-                    ? "Update Loom to run library conversations"
-                    : !operable.has(env.environmentId)
-                      ? "Conversation access required"
-                      : "Connected"
-              }
-              onPress={() => {
-                setExecution(env.environmentId);
-                setCopyId(null);
-                setModelKey(null);
-              }}
-            />
-          );
-        })}
+          })}
       </SettingsSection>
       {execution ? (
         <>

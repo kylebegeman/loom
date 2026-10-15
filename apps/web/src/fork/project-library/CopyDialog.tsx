@@ -265,10 +265,14 @@ export function CopyDialog({
         <LibraryField label="Computer">
           <Select
             value={hostId}
-            items={authority.environments.map((entry) => ({
-              value: entry.environmentId,
-              label: entry.label,
-            }))}
+            items={authority.environments
+              .filter(
+                (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+              )
+              .map((entry) => ({
+                value: entry.environmentId,
+                label: entry.label,
+              }))}
             onValueChange={(value) => setHostId(value)}
             disabled={busy || attempt !== null}
           >
@@ -276,12 +280,17 @@ export function CopyDialog({
               <SelectValue placeholder="Choose a computer" />
             </SelectTrigger>
             <SelectPopup>
-              {authority.environments.map((entry) => (
-                <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                  {entry.label}
-                  {entry.connection.phase !== "connected" ? " (offline)" : ""}
-                </SelectItem>
-              ))}
+              {authority.environments
+                .filter(
+                  (entry) =>
+                    entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+                )
+                .map((entry) => (
+                  <SelectItem key={entry.environmentId} value={entry.environmentId}>
+                    {entry.label}
+                    {entry.connection.phase !== "connected" ? " (offline)" : ""}
+                  </SelectItem>
+                ))}
             </SelectPopup>
           </Select>
         </LibraryField>

@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
+import * as Config from "effect/Config";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -204,6 +205,12 @@ export const make = Effect.gen(function* () {
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;
 
+  const libraryAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
+    Config.withDefault(false),
+  );
+  const supportsExecution = yield* Config.Boolean("LOOM_EXECUTION_ENABLED").pipe(
+    Config.withDefault(!libraryAuthority),
+  );
   const descriptor: ExecutionEnvironmentDescriptor = {
     environmentId,
     label,
@@ -215,6 +222,8 @@ export const make = Effect.gen(function* () {
     serverVersion: packageJson.version,
     orchestrationProtocolVersion: ORCHESTRATION_PROTOCOL_VERSION,
     capabilities: {
+      supportsExecution,
+      libraryAuthority,
       loomFeatures: LOOM_SERVER_FEATURES, // fork: ext-core
       repositoryIdentity: true,
       connectionProbe: true,

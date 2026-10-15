@@ -128,7 +128,12 @@ export const LibraryThreadIndex = Schema.Struct({
 export type LibraryThreadIndex = typeof LibraryThreadIndex.Type;
 export const LibraryThreadArchive = Schema.Struct({
   window: Schema.optional(
-    Schema.Struct({ offset: NonNegativeInt, totalItems: NonNegativeInt, hasMore: Schema.Boolean }),
+    Schema.Struct({
+      offset: NonNegativeInt,
+      totalItems: NonNegativeInt,
+      hasMore: Schema.Boolean,
+      nextOffset: Schema.optional(NonNegativeInt),
+    }),
   ),
   context: Schema.optional(LibraryProject),
   summary: LibraryThreadSummary,
@@ -145,6 +150,7 @@ export const LibraryInfo = Schema.Struct({
 export type LibraryInfo = typeof LibraryInfo.Type;
 export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryError", {
   reason: Schema.Literals([
+    "not-authority",
     "context-copy-required",
     "storage-limit",
     "archive-too-large",
@@ -164,6 +170,8 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
 }) {
   override get message() {
     switch (this.reason) {
+      case "not-authority":
+        return "Use your Library connection to manage shared projects and saved history. This computer only runs your work.";
       case "context-copy-required":
         return "Create a fresh discussion working copy to start this conversation. This folder has no checkpointable project root.";
       case "storage-limit":

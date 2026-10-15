@@ -316,6 +316,10 @@ export function LibraryAuthorityScreen() {
                       input: {},
                     });
                     if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+                    if (result.value.isAuthority !== true)
+                      throw new Error(
+                        "Choose your Library server. This computer runs work and does not own the shared catalog.",
+                      );
                     await authority.select(environment.environmentId);
                     navigation.navigate("Library");
                   } catch (cause) {

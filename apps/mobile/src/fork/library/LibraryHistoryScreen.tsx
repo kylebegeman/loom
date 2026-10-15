@@ -22,6 +22,7 @@ export function LibraryHistoryRouteScreen({
     navigation = useNavigation(),
     { environments } = useEnvironments();
   const [historyOffset, setHistoryOffset] = useState(0);
+  const [previousOffsets, setPreviousOffsets] = useState<readonly number[]>([]);
   const query = useEnvironmentQuery(
     authority.environmentId
       ? library.history({
@@ -98,14 +99,20 @@ export function LibraryHistoryRouteScreen({
                 <MaterialButton
                   label="Earlier history"
                   tone="secondary"
-                  onPress={() => setHistoryOffset((offset) => offset + 100)}
+                  onPress={() => {
+                    setPreviousOffsets((offsets) => [...offsets, historyOffset]);
+                    setHistoryOffset(archive.window?.nextOffset ?? historyOffset + 100);
+                  }}
                 />
               ) : null}
               {historyOffset > 0 ? (
                 <MaterialButton
                   label="Newer history"
                   tone="secondary"
-                  onPress={() => setHistoryOffset((offset) => Math.max(0, offset - 100))}
+                  onPress={() => {
+                    setHistoryOffset(previousOffsets.at(-1) ?? 0);
+                    setPreviousOffsets((offsets) => offsets.slice(0, -1));
+                  }}
                 />
               ) : null}
             </View>

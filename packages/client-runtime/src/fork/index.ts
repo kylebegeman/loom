@@ -34,3 +34,5 @@ export {
   libraryProjectFilterItems,
   libraryProjectForLocalRefs,
 } from "./library-navigation.ts";
+
+export * from "./library-continuation.ts";

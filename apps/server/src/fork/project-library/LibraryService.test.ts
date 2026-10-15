@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, LibraryThreadArchive } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Schema from "effect/Schema";
@@ -35,6 +36,9 @@ const noAssets = Layer.succeed(Assets.LibraryAssetService, {
 const serviceLayer = LibraryService.layer.pipe(
   Layer.provide(noAssets),
   Layer.provide(
+    ConfigProvider.layer(ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } })),
+  ),
+  Layer.provide(
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("authority")),
     }),
@@ -54,6 +58,89 @@ const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchi
 const encodeArchive = Schema.encodeEffect(archiveCodec);
 
 describe("independent Library catalog and durable history", () => {
+  it.effect("execution hosts cannot create a competing shared catalog", () =>
+    Effect.gen(function* () {
+      yield* runForkMigrationSet(ProjectLibraryMigrations);
+      const service = yield* LibraryService.LibraryService.pipe(
+        Effect.provide(
+          LibraryService.layer.pipe(
+            Layer.provide(noAssets),
+            Layer.provide(
+              Layer.succeed(ServerEnvironmentIdentity, {
+                getEnvironmentId: Effect.succeed(source),
+              }),
+            ),
+            Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} }))),
+          ),
+        ),
+      );
+      expect((yield* service.info).isAuthority).toBe(false);
+      const result = yield* Effect.result(create(service));
+      expect(result._tag).toBe("Failure");
+      if (result._tag === "Failure") expect(result.failure.reason).toBe("not-authority");
+      expect(yield* service.projects({})).toEqual([]);
+    }).pipe(
+      Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
+      Effect.scoped,
+    ),
+  );
+  it.effect(
+    "bounds history page bytes while retaining and deduplicating complete compressed archives",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = yield* create(service);
+          const original = yield* archiveFor(project);
+          const archive = {
+            ...original,
+            summary: { ...original.summary, workingCopyId: null },
+            projection: {
+              ...original.projection,
+              messages: Array.from({ length: 4 }, (_, index) => ({
+                ...original.projection.messages[0]!,
+                id: MessageId.make(`large-${index}`),
+                text: "x".repeat(900000),
+              })),
+              visibleTurnItems: [],
+              turnItems: [],
+            },
+          };
+          yield* service.registerThread({ requestId: "large-history", thread: archive });
+          const newest = yield* service.history({ id: archive.summary.id, limit: 100 });
+          expect(newest.projection.messages).toHaveLength(2);
+          expect(newest.window?.nextOffset).toBe(2);
+          const older = yield* service.history({
+            id: archive.summary.id,
+            offset: newest.window!.nextOffset,
+            limit: 100,
+          });
+          expect(older.projection.messages.map((m) => m.id)).toEqual(["large-0", "large-1"]);
+          expect(older.window?.hasMore).toBe(false);
+          const sql = yield* SqlClient.SqlClient;
+          const rows = yield* sql<{
+            payload_json: string;
+          }>`SELECT payload_json FROM fork_library_threads UNION ALL SELECT payload_json FROM fork_library_thread_versions`;
+          expect(rows.every((row) => row.payload_json.startsWith("loom:gzip:"))).toBe(true);
+          expect(new Set(rows.map((row) => row.payload_json)).size).toBe(1);
+          const stats = (yield* sql<{
+            count: number;
+            bytes: number;
+          }>`SELECT COUNT(*) AS count,SUM(length(bytes)) AS bytes FROM fork_library_history_blobs`)[0]!;
+          expect(stats.count).toBe(1);
+          expect(stats.bytes).toBeLessThan(50000);
+          expect(
+            (yield* service.history({ id: archive.summary.id })).projection.messages[0]!.text,
+          ).toHaveLength(900000);
+          yield* sql`UPDATE fork_library_history_blobs SET bytes=${new Uint8Array([1, 2, 3])}`;
+          expect((yield* Effect.result(service.history({ id: archive.summary.id })))._tag).toBe(
+            "Failure",
+          );
+          expect(
+            (yield* service.history({ id: archive.summary.id, limit: 100 })).projection.messages,
+          ).toHaveLength(2);
+        }),
+      ),
+  );
   it.effect("reads bounded chronological history windows without trimming retained history", () =>
     run((service) =>
       Effect.gen(function* () {
@@ -72,7 +159,7 @@ describe("independent Library catalog and durable history", () => {
         yield* service.registerThread({ requestId: "window", thread: archive });
         const newest = yield* service.history({ id: archive.summary.id, limit: 2 });
         expect(newest.projection.messages.map((m) => m.text)).toEqual(["Message 3", "Message 4"]);
-        expect(newest.window).toEqual({ offset: 0, totalItems: 5, hasMore: true });
+        expect(newest.window).toEqual({ offset: 0, totalItems: 5, hasMore: true, nextOffset: 2 });
         const older = yield* service.history({ id: archive.summary.id, offset: 2, limit: 2 });
         expect(older.projection.messages.map((m) => m.text)).toEqual(["Message 1", "Message 2"]);
         expect(

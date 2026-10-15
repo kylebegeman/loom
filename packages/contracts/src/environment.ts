@@ -96,6 +96,9 @@ export const ServerSelfUpdateCapability = Schema.Literals([
 export type ServerSelfUpdateCapability = typeof ServerSelfUpdateCapability.Type;
 
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
+  /** An authority-only Library stores shared context without running agents or owning copies. */
+  supportsExecution: Schema.optionalKey(Schema.Boolean),
+  libraryAuthority: Schema.optionalKey(Schema.Boolean),
   // fork: ext-core: Loom features this server implements. Absent on upstream servers.
   loomFeatures: Schema.optionalKey(Schema.Array(Schema.String)), // fork: ext-core
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),

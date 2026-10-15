@@ -18,6 +18,7 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Stream from "effect/Stream";
 import * as Context from "effect/Context";
+import * as Config from "effect/Config";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -133,6 +134,12 @@ const make = Effect.gen(function* () {
   const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
   const recoveryPublisher = yield* Effect.serviceOption(
     LibraryRecoveryPublisher.LibraryRecoveryPublisher,
+  );
+  const authorityOnly = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
+    Config.withDefault(false),
+  );
+  const supportsExecution = yield* Config.Boolean("LOOM_EXECUTION_ENABLED").pipe(
+    Config.withDefault(!authorityOnly),
   );
   const locks = yield* KeyedLock.make<string>();
   const environmentId = yield* identity.getEnvironmentId;
@@ -296,6 +303,7 @@ const make = Effect.gen(function* () {
   const prepareCopy = Effect.fn("LibraryWorkspace.prepareCopy")(function* (
     input: LibraryPrepareCopyRequest,
   ) {
+    if (!supportsExecution) return yield* new LibraryError({ reason: "blocked" });
     if (
       !validLibraryResources(input.project.resources, {
         allowLocalRemotes: input.strategy === "reuse",
@@ -354,12 +362,30 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "request-conflict" });
     if (existing?.copy.state === "ready" || existing?.copy.state === "released")
       return existing.copy;
+    const compatible = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+      selected.every((resource) => {
+        const original = receipt.project.resources.find(
+          (entry) => entry.id === resource.id && entry.kind !== "link",
+        );
+        return (
+          original !== undefined &&
+          receipt.copy.repositories.some((entry) => entry.resourceId === resource.id) &&
+          path.resolve(rootPath, original.relativePath) ===
+            path.resolve(rootPath, resource.relativePath) &&
+          (original.remoteUrl === null
+            ? resource.remoteUrl === null
+            : resource.remoteUrl !== null &&
+              normalizeGitRemoteUrl(original.remoteUrl) ===
+                normalizeGitRemoteUrl(resource.remoteUrl))
+        );
+      });
     const reusable = receipts.find(
       (receipt) =>
         receipt.copy.rootPath === rootPath &&
         receipt.copy.ownership === "borrowed" &&
         receipt.copy.registered !== false &&
         receipt.copy.projectId === input.project.id &&
+        compatible(receipt) &&
         (receipt.copy.state === "ready" || receipt.copy.state === "missing"),
     );
     if (existing === undefined && reusable !== undefined && input.strategy === "reuse") {
@@ -429,7 +455,8 @@ const make = Effect.gen(function* () {
         receipt.copy.rootPath === rootPath &&
         receipt.copy.ownership === "borrowed" &&
         receipt.copy.registered === false &&
-        receipt.copy.projectId === input.project.id,
+        receipt.copy.projectId === input.project.id &&
+        compatible(receipt),
     );
     if (existing === undefined && retired !== undefined && input.strategy === "reuse") {
       yield* resolveBinding(
@@ -463,7 +490,8 @@ const make = Effect.gen(function* () {
         receipt.copy.rootPath === rootPath &&
         receipt.copy.state !== "released" &&
         receipt.copy.registered !== false &&
-        receipt.requestId !== input.requestId,
+        receipt.requestId !== input.requestId &&
+        !(input.strategy === "reuse" && receipt.copy.projectId === input.project.id),
     );
     if (conflicting !== undefined) return yield* new LibraryError({ reason: "blocked" });
     let receipt: LibraryWorkspaceStore.WorkspaceReceipt;

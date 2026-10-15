@@ -12,6 +12,7 @@ import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as LibraryStore from "./LibraryStore.ts";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { LibraryAsset } from "./assets/LibraryAssetService.ts";
@@ -101,6 +102,7 @@ const encodeRotation = Schema.encodeEffect(Schema.fromJsonString(Rotation));
 const isLibraryError = Schema.is(LibraryError);
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const store = yield* LibraryStore.LibraryStore;
   const assets = yield* Assets.LibraryAssetService;
   const recovery = yield* Recovery.LibraryRecoveryStore;
   const crypto = yield* Crypto.Crypto;
@@ -174,9 +176,12 @@ const make = Effect.gen(function* () {
       }));
       const references = new Map<string, { sourceEnvironmentId: string; attachmentId: string }>();
       for (const row of yield* sql<{
-        payload_json: string;
-      }>`SELECT payload_json FROM fork_library_thread_versions`) {
-        const archive = yield* decodeArchive(row.payload_json);
+        library_id: string;
+        source_sequence: number;
+      }>`SELECT library_id,source_sequence FROM fork_library_thread_versions`) {
+        const payload = yield* store.threadVersion(row.library_id, row.source_sequence);
+        if (!payload) return yield* new LibraryError({ reason: "not-found" });
+        const archive = yield* decodeArchive(payload);
         for (const attachment of libraryAttachments(archive))
           references.set(`${archive.summary.environmentId}\0${attachment.id}`, {
             sourceEnvironmentId: archive.summary.environmentId,
@@ -287,4 +292,4 @@ const make = Effect.gen(function* () {
   );
   return LibraryMaintenance.of({ manifest, verifyAssets, rotateAuthorityEpoch });
 });
-export const layer = Layer.effect(LibraryMaintenance, make);
+export const layer = Layer.effect(LibraryMaintenance, make).pipe(Layer.provide(LibraryStore.layer));

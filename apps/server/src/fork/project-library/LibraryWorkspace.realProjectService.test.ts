@@ -193,4 +193,53 @@ it.layer(layer)("Library workspace with real project services", (it) => {
         expect(yield* fs.exists(path.join(discussion.rootPath, ".git"))).toBe(true);
       }),
   );
+  it.effect("registers added components without rewriting old working-copy or thread scope", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem,
+        path = yield* Path.Path;
+      const rootPath = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "library-evolution-" }),
+      );
+      for (const name of ["web", "server"]) {
+        const cwd = path.join(rootPath, name);
+        yield* fs.makeDirectory(cwd);
+        yield* git(cwd, ["init", "--initial-branch=main"]);
+      }
+      const workspace = yield* Workspace.LibraryWorkspace,
+        store = yield* Store.LibraryWorkspaceStore;
+      const initial = { ...project, resources: project.resources.slice(0, 1) };
+      const old = yield* workspace.prepareCopy({
+        requestId: "old-resource-set",
+        project: initial,
+        rootPath,
+        strategy: "reuse",
+      });
+      const evolved = { ...project, revision: 2 };
+      const next = yield* workspace.prepareCopy({
+        requestId: "new-resource-set",
+        project: evolved,
+        rootPath,
+        strategy: "reuse",
+      });
+      expect(next.id).not.toBe(old.id);
+      expect(next.repositories.map((repo) => repo.resourceId).toSorted()).toEqual([
+        "server",
+        "web",
+      ]);
+      expect((yield* store.get(old.id)).copy.projectRevision).toBe(1);
+      expect((yield* store.get(old.id)).copy.repositories).toHaveLength(1);
+      const resolved = yield* workspace.resolveBinding({
+        binding: {
+          projectId: initial.id,
+          projectRevision: 1,
+          workingCopyId: old.id,
+          environmentId: old.environmentId,
+          resourceIds: ["web"],
+        },
+        project: initial,
+      });
+      expect(resolved.cwd).toBe(path.join(rootPath, "web"));
+      expect(yield* fs.exists(path.join(rootPath, "server", ".git"))).toBe(true);
+    }),
+  );
 });

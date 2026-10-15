@@ -57,7 +57,12 @@ export function useLibraryAuthority() {
     connected,
     canRead,
     supported,
-    ready: connected && canRead && supported && info.data?.environmentId === environmentId,
+    ready:
+      connected &&
+      canRead &&
+      supported &&
+      info.data?.environmentId === environmentId &&
+      info.data?.isAuthority === true,
     label:
       environments.find((environment) => environment.environmentId === environmentId)?.label ??
       "Library server",

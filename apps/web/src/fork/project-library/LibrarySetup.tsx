@@ -35,8 +35,10 @@ export function LibrarySetup({
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
   const [saveError, setSaveError] = useState<string | null>(null);
-  const eligible = authority.environments.filter((entry) =>
-    supportsLoomFeature(entry.serverConfig?.environment.capabilities, PROJECT_LIBRARY_FEATURE),
+  const eligible = authority.environments.filter(
+    (entry) =>
+      supportsLoomFeature(entry.serverConfig?.environment.capabilities, PROJECT_LIBRARY_FEATURE) &&
+      entry.serverConfig?.environment.capabilities.libraryAuthority !== false,
   );
   const onlyLibraryId = eligible.length === 1 ? eligible[0]!.environmentId : null;
   const [chosenCandidate, setCandidate] = useState<EnvironmentId | null>(authority.authorityId);
@@ -93,7 +95,11 @@ export function LibrarySetup({
               : !canRead
                 ? "This connection cannot read the Library."
                 : (query.error ??
-                  (!query.isSuccess ? "Checking the Library..." : "Library ready."))}
+                  (!query.isSuccess
+                    ? "Checking the Library..."
+                    : query.data?.isAuthority !== true
+                      ? "This computer runs work. Connect your shared Library server instead."
+                      : "Library ready."))}
         </p>
       ) : null}
       {authority.authorityId && candidate !== authority.authorityId ? (
@@ -110,7 +116,13 @@ export function LibrarySetup({
       <LibraryErrorNotice error={saveError} />
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={!candidate || !connected || !query.isSuccess || query.isPending}
+          disabled={
+            !candidate ||
+            !connected ||
+            !query.isSuccess ||
+            query.isPending ||
+            query.data?.isAuthority !== true
+          }
           onClick={() => {
             if (candidate) {
               authority.setAuthorityId(candidate);

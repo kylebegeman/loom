@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { libraryContinuationContext } from "@t3tools/client-runtime/fork";
+import { useEnvironmentQuery } from "~/state/query";
 import { useNavigate } from "@tanstack/react-router";
 import { EnvironmentId, ModelSelection, RuntimeMode, ThreadId } from "@t3tools/contracts";
 import {
@@ -88,12 +90,22 @@ export function NewConversationDialog({
   const [resourceId, setResourceId] = useState<string | null>(
     attempt?.binding.resourceIds.length === 1
       ? attempt.binding.resourceIds[0]!
-      : (initialResourceId ?? null),
+      : (initialResourceId ??
+          (continuation?.resourceIds.length === 1 ? continuation.resourceIds[0]! : null)),
   );
   const [title, setTitle] = useState(
     attempt?.title ?? (continuation ? `Continue: ${continuation.title}` : ""),
   );
-  const [context, setContext] = useState(attempt?.context ?? "");
+  const [contextInput, setContext] = useState<string | null>(attempt?.context ?? null);
+  const source = useEnvironmentQuery(
+    authority.authorityId && continuation
+      ? projectLibrary.history({
+          environmentId: authority.authorityId,
+          input: { id: continuation.id, offset: 0, limit: 100 },
+        })
+      : null,
+  );
+  const context = contextInput ?? (source.data ? libraryContinuationContext(source.data) : "");
   const [preparedCopy, setPreparedCopy] = useState<LibraryWorkingCopy | null>(null);
   const [copyId, setCopyId] = useState<string | null>(
     attempt?.binding.workingCopyId ?? initialCopyId ?? null,
@@ -317,6 +329,7 @@ export function NewConversationDialog({
               !allowed ||
               !canRegister ||
               !modelSelection ||
+              (continuation !== undefined && (!source.isSuccess || source.isPending)) ||
               !authority.connected ||
               host?.connection.phase !== "connected"
             }
@@ -371,21 +384,30 @@ export function NewConversationDialog({
               setHostId(value);
               setCopyId(null);
             }}
-            items={authority.environments.map((entry) => ({
-              value: entry.environmentId,
-              label: entry.label,
-            }))}
+            items={authority.environments
+              .filter(
+                (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+              )
+              .map((entry) => ({
+                value: entry.environmentId,
+                label: entry.label,
+              }))}
           >
             <SelectTrigger>
               <SelectValue placeholder="Choose a computer" />
             </SelectTrigger>
             <SelectPopup>
-              {authority.environments.map((entry) => (
-                <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                  {entry.label}
-                  {entry.connection.phase !== "connected" ? " (offline)" : ""}
-                </SelectItem>
-              ))}
+              {authority.environments
+                .filter(
+                  (entry) =>
+                    entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+                )
+                .map((entry) => (
+                  <SelectItem key={entry.environmentId} value={entry.environmentId}>
+                    {entry.label}
+                    {entry.connection.phase !== "connected" ? " (offline)" : ""}
+                  </SelectItem>
+                ))}
             </SelectPopup>
           </Select>
         </LibraryField>
@@ -455,12 +477,20 @@ export function NewConversationDialog({
             <p className="mt-2 whitespace-pre-wrap">{project.brief}</p>
           </details>
         ) : null}
+        {continuation && !source.data ? (
+          <LibraryErrorNotice
+            error={source.error ?? "Loading recent saved context..."}
+            onRetry={source.refresh}
+          />
+        ) : null}
         {continuation ? (
           <LibraryField label="Context to carry forward">
             <Textarea
               disabled={busy || attempt !== null}
               value={context}
-              onChange={(event) => setContext(event.target.value)}
+              onChange={(event) => {
+                setContext(event.target.value);
+              }}
               placeholder="Summarize the decisions and next step to carry into the new conversation."
             />
           </LibraryField>

@@ -192,6 +192,7 @@ const make = Effect.gen(function* () {
   ) =>
     transact(
       Effect.gen(function* () {
+        if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
         const requestBody = yield* encoded;
         yield* validateAuthority(
           yield* decodeFence(decodeUnknownJson(requestBody)).pipe(Effect.mapError(() => invalid())),
@@ -715,7 +716,8 @@ const make = Effect.gen(function* () {
             window: {
               offset,
               totalItems: page.totalItems,
-              hasMore: offset + limit < page.totalItems,
+              hasMore: offset + (page.itemCount ?? limit) < page.totalItems,
+              nextOffset: offset + (page.itemCount ?? limit),
             },
           };
         }

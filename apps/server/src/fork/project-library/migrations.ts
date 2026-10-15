@@ -29,5 +29,15 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE fork_library_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, aggregate_id TEXT NOT NULL, event_type TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL)`;
       }),
     ],
+    [
+      2,
+      "CompressedArchivesAndIndexedHistory",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_library_history_blobs (digest TEXT PRIMARY KEY, bytes BLOB NOT NULL)`;
+        yield* sql`CREATE TABLE fork_library_history_headers (library_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, field TEXT NOT NULL, total_items INTEGER NOT NULL)`;
+        yield* sql`CREATE TABLE fork_library_history_items (library_id TEXT NOT NULL, position INTEGER NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(library_id, position))`;
+      }),
+    ],
   ],
 };
