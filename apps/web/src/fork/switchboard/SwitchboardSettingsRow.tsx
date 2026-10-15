@@ -16,9 +16,12 @@ export function SwitchboardSettingsRow({
   const enabled = useEnvironmentSettings(environmentId, (settings) => settings.switchboardEnabled);
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const status = useSwitchboardStatus(enabled, environmentId);
-  const statusNote = isSwitchboardAvailabilityUnknown(status)
-    ? " Switchboard cannot report model availability right now, so every model stays selectable."
-    : "";
+  const statusNote =
+    status.availability === "unconfigured"
+      ? " This server has no Switchboard controller configured, so model availability is unknown and every model stays selectable. Set LOOM_SWITCHBOARD_CONTROLLER_URL on the server to show it."
+      : isSwitchboardAvailabilityUnknown(status)
+        ? " Switchboard cannot report model availability right now, so every model stays selectable."
+        : "";
   return (
     <SettingsRow
       id="switchboard"

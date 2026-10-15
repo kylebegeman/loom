@@ -56,17 +56,26 @@ describe("switchboardModelBlock", () => {
     const model = (
       id: string,
       state: SwitchboardModelAvailability["state"],
+      reason = "Five-hour allowance is exhausted",
     ): SwitchboardModelAvailability => ({
       driver: "codex",
       id,
       state,
-      reason: "fixture",
+      reason,
       resetAt: null,
     });
     const models = [model("gpt-6-sol", "unavailable"), model("gpt-6-terra", "unknown")];
     expect(switchboardModelBlock({ limits: [], models }, CODEX, "gpt-6-sol", nameOf)).toBe(
-      "Switchboard has no Codex account that can serve gpt-6-sol until an account resets.",
+      "Switchboard cannot serve gpt-6-sol right now. Five-hour allowance is exhausted.",
     );
+    expect(
+      switchboardModelBlock(
+        { limits: [], models: [model("gpt-6-sol", "unavailable", "  ")] },
+        CODEX,
+        "gpt-6-sol",
+        nameOf,
+      ),
+    ).toBe("Switchboard has no Codex account that can serve gpt-6-sol until an account resets.");
     expect(switchboardModelBlock({ limits: [], models }, CODEX, "gpt-6-terra", nameOf)).toBeNull();
     expect(switchboardModelBlock({ limits: [], models }, CODEX, "gpt-6-vela", nameOf)).toBeNull();
     expect(
@@ -80,7 +89,7 @@ describe("switchboardModelBlock", () => {
 
 describe("Switchboard availability state", () => {
   it("blocks nothing and reports unknown when the controller could not answer", () => {
-    for (const availability of ["unavailable", "stale"] as const) {
+    for (const availability of ["unavailable", "stale", "unconfigured"] as const) {
       const status = { limits: [], availability };
       expect(isSwitchboardAvailabilityUnknown(status)).toBe(true);
       expect(hasSwitchboardBlocks(status)).toBe(false);

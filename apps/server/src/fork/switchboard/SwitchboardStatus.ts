@@ -18,6 +18,7 @@ export class SwitchboardStatus extends Context.Service<
 >()("t3/fork/switchboard/SwitchboardStatus") {}
 
 const UNAVAILABLE: SwitchboardLimits = { limits: [], availability: "unavailable" };
+const UNCONFIGURED: SwitchboardLimits = { limits: [], availability: "unconfigured" };
 const DISABLED: SwitchboardLimits = { limits: [], availability: "disabled" };
 const decodeAvailability = Schema.decodeUnknownEffect(SwitchboardAvailability);
 
@@ -36,8 +37,12 @@ const make = Effect.gen(function* () {
   const readLimits = Effect.gen(function* () {
     const current = yield* settings.getSettings;
     if (!current.switchboardEnabled) return DISABLED;
-    const controller = yield* Effect.try(() => resolveSwitchboardController(environment));
-    if (controller === null) return UNAVAILABLE;
+    // A remote hub with no controller setting, or an invalid one, is a setup gap
+    // the picker can name, not an outage.
+    const controller = yield* Effect.try(() => resolveSwitchboardController(environment)).pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    if (controller === null) return UNCONFIGURED;
     const response = yield* http.get(`${controller}/api/v1/availability`);
     if (response.status !== 200) return UNAVAILABLE;
     const snapshot = yield* response.json.pipe(Effect.flatMap(decodeAvailability));

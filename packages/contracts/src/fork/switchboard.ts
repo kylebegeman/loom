@@ -44,12 +44,14 @@ export const SwitchboardLimits = Schema.Struct({
   /** Per-model states when the controller reported them. Absent from older servers. */
   models: Schema.optionalKey(Schema.Array(SwitchboardModelAvailability)),
   /**
-   * Whether the limits reflect a current controller reading. `unavailable` and
-   * `stale` mean availability is unknown, so nothing is blocked; they never imply
-   * allowance is left.
+   * Whether the limits reflect a current controller reading. `unavailable`,
+   * `stale` and `unconfigured` mean availability is unknown, so nothing is
+   * blocked; they never imply allowance is left. `unconfigured` means the server
+   * has no usable controller setting for its hub, rather than a controller that
+   * did not answer.
    */
   availability: Schema.optionalKey(
-    Schema.Literals(["available", "unavailable", "stale", "disabled"]),
+    Schema.Literals(["available", "unavailable", "stale", "unconfigured", "disabled"]),
   ),
 });
 export type SwitchboardLimits = typeof SwitchboardLimits.Type;

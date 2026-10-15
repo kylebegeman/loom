@@ -83,7 +83,7 @@ describe("Switchboard availability", () => {
   it.effect("does not guess a controller for a remote hub", () => {
     const f = fixture({ environment: { LOOM_SWITCHBOARD_URL: "https://hub.example.test" } });
     return Effect.gen(function* () {
-      expect(yield* f.readLimits).toEqual({ limits: [], availability: "unavailable" });
+      expect(yield* f.readLimits).toEqual({ limits: [], availability: "unconfigured" });
       expect(f.requests).toEqual([]);
     }).pipe(Effect.provide(f.layer));
   });
@@ -122,7 +122,7 @@ describe("Switchboard availability", () => {
   it.effect("fails open on an invalid controller setting", () => {
     const f = fixture({ environment: { LOOM_SWITCHBOARD_CONTROLLER_URL: "not a url" } });
     return Effect.gen(function* () {
-      expect(yield* f.readLimits).toEqual({ limits: [], availability: "unavailable" });
+      expect(yield* f.readLimits).toEqual({ limits: [], availability: "unconfigured" });
       expect(f.requests).toEqual([]);
     }).pipe(Effect.provide(f.layer));
   });

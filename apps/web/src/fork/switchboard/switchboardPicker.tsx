@@ -8,6 +8,7 @@ import { memo, useCallback, useMemo, type ComponentType, type ReactNode } from "
 
 import { getDisplayModelName, type ModelEsque } from "~/components/chat/providerIconUtils";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import {
   isProviderInstancePickerReady,
   isProviderInstancePickerVisible,
@@ -71,11 +72,13 @@ interface PickerProps {
 }
 
 /** Shown when Switchboard cannot report availability, in place of a spinner or a guess. */
-function SwitchboardUnknownNote() {
+function SwitchboardUnknownNote({ unconfigured }: { readonly unconfigured: boolean }) {
   return (
     <p role="status" className="border-t px-3 py-2 text-xs text-muted-foreground">
-      Switchboard availability is unknown right now. Every model stays selectable, and a turn
-      reports any limit it hits.
+      {unconfigured
+        ? "Switchboard availability is unknown because this server has no Switchboard controller configured."
+        : "Switchboard availability is unknown right now."}{" "}
+      Every model stays selectable, and a turn reports any limit it hits.
     </p>
   );
 }
@@ -125,18 +128,25 @@ export function withSwitchboardEntries<P extends PickerProps>(Picker: ComponentT
         instanceEntries={collapsed}
         {...(hasSwitchboardBlocks(status) ? { getModelDisabledReason: switchboardReason } : {})}
         {...(isSwitchboardAvailabilityUnknown(status)
-          ? { footer: <SwitchboardUnknownNote /> }
+          ? {
+              footer: (
+                <SwitchboardUnknownNote unconfigured={status.availability === "unconfigured"} />
+              ),
+            }
           : {})}
       />
     );
   });
+  // A caller that has not resolved an environment follows the primary one.
   return memo(function SwitchboardModelPicker(
     props: P & { readonly environmentId?: EnvironmentId | null },
   ) {
-    return props.environmentId == null ? (
+    const primaryEnvironmentId = usePrimaryEnvironmentId();
+    const environmentId = props.environmentId ?? primaryEnvironmentId;
+    return environmentId === null ? (
       <Picker {...props} />
     ) : (
-      <ScopedPicker {...props} environmentId={props.environmentId} />
+      <ScopedPicker {...props} environmentId={environmentId} />
     );
   });
 }

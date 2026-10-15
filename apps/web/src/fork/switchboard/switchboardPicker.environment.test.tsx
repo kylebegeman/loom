@@ -17,7 +17,9 @@ import { withSwitchboardEntries } from "./switchboardPicker";
 const state = vi.hoisted(() => ({
   enabled: new Map<string, boolean>(),
   status: new Map<string, SwitchboardLimits>(),
+  primary: null as string | null,
 }));
+vi.mock("~/state/environments", () => ({ usePrimaryEnvironmentId: () => state.primary }));
 vi.mock("~/hooks/useSettings", () => ({
   usePrimarySettings: () => true,
   useEnvironmentSettings: (
@@ -84,6 +86,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.enabled.clear();
   state.status.clear();
+  state.primary = null;
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -130,6 +133,19 @@ describe("Switchboard destination environment", () => {
     expect(buttons()).toHaveLength(2);
   });
 
+  it("follows the primary environment while the caller has none", () => {
+    const primary = EnvironmentId.make("primary-laptop");
+    state.primary = primary;
+    state.enabled.set(primary, true);
+    state.status.set(primary, {
+      limits: [{ driver: "codex", servedModels: [], until: null }],
+      availability: "available",
+    });
+    act(() => root.render(<Picker {...props} environmentId={null} />));
+    expect(buttons().map((button) => button.textContent)).toEqual(["codex_personal"]);
+    expect(buttons()[0]?.disabled).toBe(true);
+  });
+
   it("keeps every model selectable and says so when availability is unknown", () => {
     const destination = EnvironmentId.make("workstation");
     state.enabled.set(destination, true);
@@ -138,6 +154,17 @@ describe("Switchboard destination environment", () => {
     expect(buttons()[0]?.disabled).toBe(false);
     expect(container.querySelector('[role="status"]')?.textContent).toContain(
       "Switchboard availability is unknown right now.",
+    );
+
+    state.status.set(destination, { limits: [], availability: "unconfigured" });
+    act(() =>
+      root.render(
+        <Picker {...props} modelOptionsByInstance={new Map()} environmentId={destination} />,
+      ),
+    );
+    expect(buttons()[0]?.disabled).toBe(false);
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "no Switchboard controller configured",
     );
 
     state.status.set(destination, { limits: [], models: [], availability: "available" });
