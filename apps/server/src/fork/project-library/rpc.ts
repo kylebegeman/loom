@@ -46,6 +46,12 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.copies, library.copies(input)),
       [L.threads]: (input: Parameters<typeof library.threads>[0]) =>
         auth.effect(L.threads, library.threads(input)),
+      [L.lookupThread]: (input: Parameters<typeof library.lookupThread>[0]) =>
+        auth.effect(L.lookupThread, library.lookupThread(input)),
+      [L.threadIndex]: (input: Parameters<typeof library.threadIndex>[0]) =>
+        auth.effect(L.threadIndex, library.threadIndex(input)),
+      [L.threadBinding]: (input: Parameters<typeof workspace.threadBinding>[0]) =>
+        auth.effect(L.threadBinding, workspace.threadBinding(input)),
       [L.history]: (input: Parameters<typeof library.history>[0]) =>
         auth.effect(L.history, library.history(input)),
       [L.ingestHistory]: (input: Parameters<typeof library.ingestHistory>[0]) =>

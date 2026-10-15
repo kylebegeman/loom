@@ -33,6 +33,35 @@ export const ProjectLibraryToolkit = Toolkit.make(
     success: Schema.Array(Library.LibraryThreadSummary),
     failure,
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_lookup_thread", {
+    description:
+      "Resolve an original computer/conversation deep link to its saved Library metadata without downloading history.",
+    parameters: Schema.Struct({
+      sourceEnvironmentId: Library.LibraryThreadBinding.fields.environmentId,
+      threadId: ThreadId,
+    }),
+    success: Schema.NullOr(Library.LibraryThreadSummary),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_thread_index", {
+    description:
+      "Read a bounded page of centrally saved conversations across projects without opening full history.",
+    parameters: Schema.Struct({
+      offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+      limit: Schema.optional(
+        Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(200)),
+      ),
+    }),
+    success: Library.LibraryThreadIndex,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_thread_binding", {
+    description:
+      "Read the immutable project, scope and working-copy binding of an existing conversation on this computer.",
+    parameters: Schema.Struct({ threadId: ThreadId }),
+    success: Schema.NullOr(Library.LibraryThreadBinding),
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_history", {
     description:
       "Read centrally uploaded full conversation history without contacting the original computer.",
@@ -137,6 +166,17 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_conversations: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threads(input))),
+      ),
+      loom_library_lookup_thread: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.lookupThread(input))),
+      ),
+      loom_library_thread_index: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threadIndex(input))),
+      ),
+      loom_library_thread_binding: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.threadBinding(input)),
+        ),
       ),
       loom_library_history: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.history(input))),

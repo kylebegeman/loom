@@ -19,7 +19,8 @@ import {
 
 export function LibraryActionHost() {
   const [projectId, selectProject] = useSelectedLibraryProject();
-  const library = useLibraryProject(projectId ?? "");
+  const [requestedProject, setRequestedProject] = useState<string | null>(null);
+  const library = useLibraryProject(requestedProject ?? projectId ?? "");
   const catalog = useLibraryProjects();
   const navigate = useNavigate();
   const params = useRouterState({
@@ -36,8 +37,10 @@ export function LibraryActionHost() {
   const [action, setAction] = useState<LibraryAction | null>(null);
   useEffect(
     () =>
-      onLibraryAction((next) => {
-        if (next === "new-conversation" && unrelatedLiveThread) selectProject(null);
+      onLibraryAction((next, requestedProjectId) => {
+        setRequestedProject(requestedProjectId ?? null);
+        if (requestedProjectId) selectProject(requestedProjectId);
+        else if (next === "new-conversation" && unrelatedLiveThread) selectProject(null);
         setAction(next);
       }),
     [unrelatedLiveThread, selectProject],
@@ -133,6 +136,7 @@ export function LibraryActionHost() {
     );
   return (
     <NewConversationDialog
+      key={library.project.data.id}
       project={library.project.data}
       copies={library.copies.data ?? []}
       copiesQuery={library.copies}

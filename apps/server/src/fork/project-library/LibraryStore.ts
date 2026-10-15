@@ -62,6 +62,14 @@ export class LibraryStore extends Context.Service<
       limit: number,
       offset: number,
     ) => Effect.Effect<readonly string[], LibraryStoreError>;
+    readonly threadSummary: (
+      environmentId: string,
+      threadId: string,
+    ) => Effect.Effect<string | null, LibraryStoreError>;
+    readonly threadIndex: (
+      limit: number,
+      offset: number,
+    ) => Effect.Effect<readonly string[], LibraryStoreError>;
     readonly putThread: (input: {
       id: string;
       environmentId: string;
@@ -229,6 +237,20 @@ const make = Effect.gen(function* () {
         sql<{
           payload_json: string;
         }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE project_id = ${projectId} ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
+      ).pipe(Effect.map(payloads)),
+    threadSummary: (environmentId, threadId) =>
+      run(
+        "thread-summary",
+        sql<{
+          payload_json: string;
+        }>`SELECT summary_json AS payload_json FROM fork_library_threads WHERE source_environment_id = ${environmentId} AND source_thread_id = ${threadId}`,
+      ).pipe(Effect.map((rows) => first(rows)?.payload_json ?? null)),
+    threadIndex: (limit, offset) =>
+      run(
+        "thread-index",
+        sql<{
+          payload_json: string;
+        }>`SELECT summary_json AS payload_json FROM fork_library_threads ORDER BY updated_at DESC, source_environment_id, source_thread_id LIMIT ${limit} OFFSET ${offset}`,
       ).pipe(Effect.map(payloads)),
     putThread: (input) =>
       run(

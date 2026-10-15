@@ -1,4 +1,17 @@
-import { openLibraryAction } from "~/fork/project-library/actions";
+import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
+import {
+  libraryProjectScopeKey,
+  parseLibraryProjectScope,
+  libraryProjectFilterItems,
+  libraryProjectForLocalRefs,
+} from "@t3tools/client-runtime/fork";
+import {
+  projectLibrary,
+  useLibraryProjects,
+  useLibraryProject,
+} from "~/fork/project-library/state";
+import { LibrarySavedThreads } from "~/fork/project-library/LibrarySavedThreads";
+import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewConversation";
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
@@ -2604,27 +2617,57 @@ export default function Sidebar() {
   // project preferences, so routes that unmount the sidebar (Settings) and
   // app restarts keep it.
   const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
+  const sharedCatalog = useLibraryProjects(true);
+  const sharedIndex = useEnvironmentQuery(
+    sharedCatalog.authorityId
+      ? projectLibrary.threadIndex({
+          environmentId: sharedCatalog.authorityId,
+          input: { limit: 200 },
+        })
+      : null,
+  );
+  const sharedScope = useMemo(
+    () => parseLibraryProjectScope(persistedProjectScopeKey),
+    [persistedProjectScopeKey],
+  );
+  const sharedProject = useLibraryProject(sharedScope?.projectId ?? "");
+  const sharedGroupProjectId = useCallback(
+    (group: SidebarProjectSnapshot) => {
+      const id = libraryProjectForLocalRefs(
+        sharedIndex.data?.threads ?? [],
+        group.memberProjectRefs,
+      );
+      return id && sharedCatalog.query.data?.some((project) => project.id === id) ? id : null;
+    },
+    [sharedIndex.data, sharedCatalog.query.data],
+  );
+
   const setProjectScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   const projectScopeKey = useMemo(
     () =>
-      resolveSidebarProjectScopeKey({
-        groups: projectGroups,
-        key: persistedProjectScopeKey,
-        settings: projectGroupingSettings,
-      }),
-    [persistedProjectScopeKey, projectGroups, projectGroupingSettings],
+      sharedScope
+        ? persistedProjectScopeKey
+        : resolveSidebarProjectScopeKey({
+            groups: projectGroups,
+            key: persistedProjectScopeKey,
+            settings: projectGroupingSettings,
+          }),
+    [persistedProjectScopeKey, projectGroups, projectGroupingSettings, sharedScope],
   );
   // {value, label} items let Base UI drive the combobox selection contract
   // while the popup search filters the same collection.
   const projectScopeItems = useMemo(
     () => [
       { value: "all", label: "All projects" },
-      ...projectGroups.map((project) => ({
-        value: project.projectKey,
-        label: project.displayName,
-      })),
+      ...libraryProjectFilterItems(sharedCatalog.query.data ?? []),
+      ...projectGroups
+        .filter((group) => !sharedGroupProjectId(group))
+        .map((project) => ({
+          value: project.projectKey,
+          label: project.displayName,
+        })),
     ],
-    [projectGroups],
+    [projectGroups, sharedCatalog.query.data, sharedIndex.data, sharedGroupProjectId],
   );
   // Same-named projects on two machines are only told apart by where they
   // live, so rows on another machine carry its icon once the catalog spans
@@ -2686,20 +2729,38 @@ export default function Sidebar() {
   );
   const scopedProjectKeys = useMemo(
     () =>
-      scopedProjectGroup === null
-        ? null
-        : new Set(
-            scopedProjectGroup.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+      sharedScope
+        ? new Set(
+            (sharedProject.threads.data ?? [])
+              .filter(
+                (thread) =>
+                  !sharedScope.resourceId ||
+                  (thread.resourceIds.length === 1 &&
+                    thread.resourceIds[0] === sharedScope.resourceId),
+              )
+              .map((thread) => `${thread.environmentId}:${thread.localProjectId}`),
+          )
+        : scopedProjectGroup === null
+          ? null
+          : new Set(
+              scopedProjectGroup.memberProjectRefs.map(
+                (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+              ),
             ),
-          ),
-    [scopedProjectGroup],
+    [scopedProjectGroup, sharedScope, sharedProject.threads.data],
   );
   // Configs identify scratch projects, so both they and live project snapshots
   // must arrive before a persisted scope can be considered missing.
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   useEffect(() => {
+    if (parseLibraryProjectScope(persistedProjectScopeKey)) return;
+    const legacy = projectGroups.find((group) => group.projectKey === persistedProjectScopeKey);
+    const mapped = legacy ? sharedGroupProjectId(legacy) : null;
+    if (mapped) {
+      setProjectScopeKey(libraryProjectScopeKey(mapped));
+      return;
+    }
     const nextKey = resolveSidebarProjectScopeKey({
       groups: projectGroups,
       key: persistedProjectScopeKey,
@@ -2712,6 +2773,7 @@ export default function Sidebar() {
   }, [
     allProjectConfigsReady,
     allProjectSnapshotsReady,
+    sharedGroupProjectId,
     persistedProjectScopeKey,
     projectGroups,
     projectGroupingSettings,
@@ -3185,8 +3247,11 @@ export default function Sidebar() {
   // Settled threads are live shells, so opening one is plain navigation:
   // history stays readable without un-settling, and sending a message or
   // starting a session un-settles server-side.
+  const lookupSavedThread = useAtomQueryRunner(projectLibrary.lookupThread, {
+    reportFailure: false,
+  });
   const navigateToThread = useCallback(
-    (threadRef: ScopedThreadRef) => {
+    async (threadRef: ScopedThreadRef) => {
       if (useThreadSelectionStore.getState().selectedThreadKeys.size > 0) {
         clearSelection();
       }
@@ -3194,12 +3259,35 @@ export default function Sidebar() {
       if (isMobile) {
         setOpenMobile(false);
       }
+      const source = sharedCatalog.environments.find(
+        (entry) => entry.environmentId === threadRef.environmentId,
+      );
+      if (sharedCatalog.authorityId && source?.connection.phase !== "connected") {
+        const saved = await lookupSavedThread({
+          environmentId: sharedCatalog.authorityId,
+          input: { sourceEnvironmentId: threadRef.environmentId, threadId: threadRef.threadId },
+        });
+        if (saved._tag === "Success" && saved.value)
+          return router.navigate({
+            to: "/library/conversations/$conversationId",
+            params: { conversationId: saved.value.id },
+          });
+      }
       return router.navigate({
         to: "/$environmentId/$threadId",
         params: buildThreadRouteParams(threadRef),
       });
     },
-    [clearSelection, isMobile, router, setOpenMobile, setSelectionAnchor],
+    [
+      clearSelection,
+      isMobile,
+      router,
+      setOpenMobile,
+      setSelectionAnchor,
+      sharedCatalog.environments,
+      sharedCatalog.authorityId,
+      lookupSavedThread,
+    ],
   );
 
   const queuePendingFileDrop = useSidebarPendingFileDropStore((s) => s.queuePendingFileDrop);
@@ -4701,9 +4789,14 @@ export default function Sidebar() {
             // already-scoped project again is the way back to all projects.
             if (threadProjectGroup) {
               setProjectScopeKey(
-                projectScopeKey === threadProjectGroup.projectKey
+                projectScopeKey ===
+                  (sharedGroupProjectId(threadProjectGroup)
+                    ? libraryProjectScopeKey(sharedGroupProjectId(threadProjectGroup)!)
+                    : threadProjectGroup.projectKey)
                   ? null
-                  : threadProjectGroup.projectKey,
+                  : sharedGroupProjectId(threadProjectGroup)
+                    ? libraryProjectScopeKey(sharedGroupProjectId(threadProjectGroup)!)
+                    : threadProjectGroup.projectKey,
               );
             }
             return;
@@ -4961,11 +5054,11 @@ export default function Sidebar() {
   // falling back to the top project) — same resolution the command palette
   // uses. The command palette already offers a "New thread in..." submenu
   // for multi-project setups.
+  const tryLibraryConversation = useLibraryNewConversation();
   const handleNewThreadClick = useCallback(
-    (event?: ReactMouseEvent) => {
-      if (/^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
+    async (event?: ReactMouseEvent) => {
+      if (await tryLibraryConversation(routeThreadRef ?? undefined)) {
         if (isMobile) setOpenMobile(false);
-        openLibraryAction("new-conversation");
         return;
       }
       // One project: nothing to pick, create immediately. Shift+click creates
@@ -4984,7 +5077,14 @@ export default function Sidebar() {
       if (isMobile) setOpenMobile(false);
       openCommandPalette({ open: "new-thread-in" });
     },
-    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],
+    [
+      isMobile,
+      newThreadContext,
+      projectGroups.length,
+      setOpenMobile,
+      tryLibraryConversation,
+      routeThreadRef,
+    ],
   );
 
   // The button mirrors chat.new: in multi-project setups both route through
@@ -5044,7 +5144,9 @@ export default function Sidebar() {
                         label={
                           scopedProjectGroup
                             ? `Filter threads by project: ${scopedProjectGroup.displayName}`
-                            : "Filter threads by project"
+                            : sharedScope
+                              ? `Filter threads by project: ${selectedProjectScopeItem.label}`
+                              : "Filter threads by project"
                         }
                       />
                     }
@@ -5600,6 +5702,11 @@ export default function Sidebar() {
               )}
             </div>
           ) : null}
+          <LibrarySavedThreads
+            localThreads={threads}
+            projectKeys={scopedProjectKeys}
+            search={threadSearchQuery}
+          />
         </SidebarGroup>
       </SidebarContent>
       <SidebarChromeFooter />

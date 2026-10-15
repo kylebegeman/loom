@@ -119,6 +119,11 @@ export const LibraryThreadSummary = Schema.Struct({
   sequence: NonNegativeInt,
 });
 export type LibraryThreadSummary = typeof LibraryThreadSummary.Type;
+export const LibraryThreadIndex = Schema.Struct({
+  threads: Schema.Array(LibraryThreadSummary),
+  nextOffset: Schema.NullOr(NonNegativeInt),
+});
+export type LibraryThreadIndex = typeof LibraryThreadIndex.Type;
 export const LibraryThreadArchive = Schema.Struct({
   context: Schema.optional(LibraryProject),
   summary: LibraryThreadSummary,
@@ -343,6 +348,9 @@ export const LIBRARY_WS_METHODS = {
   registerCopy: "loom.library.register-copy",
   copies: "loom.library.copies",
   threads: "loom.library.threads",
+  threadIndex: "loom.library.thread-index",
+  threadBinding: "loom.library.thread-binding",
+  lookupThread: "loom.library.lookup-thread",
   history: "loom.library.history",
   ingestHistory: "loom.library.ingest-history",
   importShadow: "loom.library.import-shadow",
@@ -389,6 +397,24 @@ export const ProjectLibraryRpcGroup = RpcGroup.make(
     error,
   }),
   Rpc.make(LIBRARY_WS_METHODS.info, { payload: Schema.Struct({}), success: LibraryInfo, error }),
+  Rpc.make(LIBRARY_WS_METHODS.lookupThread, {
+    payload: Schema.Struct({ sourceEnvironmentId: EnvironmentId, threadId: ThreadId }),
+    success: Schema.NullOr(LibraryThreadSummary),
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.threadIndex, {
+    payload: Schema.Struct({
+      offset: Schema.optional(NonNegativeInt),
+      limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(200))),
+    }),
+    success: LibraryThreadIndex,
+    error,
+  }),
+  Rpc.make(LIBRARY_WS_METHODS.threadBinding, {
+    payload: Schema.Struct({ threadId: ThreadId }),
+    success: Schema.NullOr(LibraryThreadBinding),
+    error,
+  }),
   Rpc.make(LIBRARY_WS_METHODS.projects, {
     payload: Schema.Struct({ includeArchived: Schema.optional(Schema.Boolean) }),
     success: Schema.Array(LibraryProject),

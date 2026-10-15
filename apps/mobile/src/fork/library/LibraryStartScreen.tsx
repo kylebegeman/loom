@@ -52,6 +52,7 @@ export function LibraryStartRouteScreen({
   route,
 }: StaticScreenProps<{
   readonly projectId: string;
+  readonly initialResourceId?: string;
   readonly sourceArchiveId?: string;
   readonly reuseEnvironmentId?: EnvironmentId;
   readonly reuseRootPath?: string;
@@ -92,7 +93,7 @@ export function LibraryStartRouteScreen({
   );
   return project.data ? (
     <LibraryStartContent
-      key={`${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}`}
+      key={`${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}:${route.params.initialResourceId ?? ""}`}
       project={project.data}
       projectReady={project.isSuccess && !project.isPending && project.error === null}
       projectNotice={
@@ -100,6 +101,7 @@ export function LibraryStartRouteScreen({
       }
       projectError={project.error}
       onRefreshProject={project.refresh}
+      initialResourceId={route.params.initialResourceId}
       sourceArchiveId={route.params.sourceArchiveId}
       reuseEnvironmentId={route.params.reuseEnvironmentId}
       reuseRootPath={route.params.reuseRootPath}
@@ -120,6 +122,7 @@ function LibraryStartContent(props: {
   projectNotice: string | null;
   projectError: string | null;
   onRefreshProject: () => void;
+  initialResourceId?: string | undefined;
   sourceArchiveId?: string;
   reuseEnvironmentId?: EnvironmentId;
   reuseRootPath?: string;
@@ -130,7 +133,7 @@ function LibraryStartContent(props: {
     configs = useServerConfigs();
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
-  const [scope, setScope] = useState("all"),
+  const [scope, setScope] = useState(props.initialResourceId ?? "all"),
     [execution, setExecution] = useState<EnvironmentId | null>(props.reuseEnvironmentId ?? null),
     [mode, setMode] = useState<"reuse" | "folder" | "clone">(
       props.reuseRootPath ? "folder" : "reuse",

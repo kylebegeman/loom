@@ -1,3 +1,8 @@
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { useEnvironments } from "../../state/environments";
+import { libraryProjectFilterItems, parseLibraryProjectScope } from "@t3tools/client-runtime/fork";
+import { library, useLibraryAuthority } from "../../fork/library/libraryState";
+import { useEnvironmentQuery } from "../../state/query";
 // fork: project-navigation - Adaptive empty-detail headers reflect the selected navigation mode.
 import { useProjectNavigation } from "../../fork/project-navigation/useProjectNavigation";
 import { use } from "react";
@@ -66,7 +71,29 @@ export function HomeRouteScreen() {
     else if (workspace) workspace.dispatch({ type: "query", query, tab: "threads" });
     else setLocalSearchQuery(query);
   };
-  const handleSelectThread = useHomeThreadSelection();
+  const selectLiveThread = useHomeThreadSelection();
+  const { environments: executionConnections } = useEnvironments();
+  const lookupSavedThread = useAtomQueryRunner(library.lookupThread, { reportFailure: false });
+  const handleSelectThread = async (thread: EnvironmentThreadShell) => {
+    if (
+      libraryAuthority.environmentId &&
+      executionConnections.find((entry) => entry.environmentId === thread.environmentId)?.connection
+        .phase !== "connected"
+    ) {
+      const saved = await lookupSavedThread({
+        environmentId: libraryAuthority.environmentId,
+        input: { sourceEnvironmentId: thread.environmentId, threadId: thread.id },
+      });
+      if (saved._tag === "Success" && saved.value) {
+        navigation.navigate("LibraryHistory", {
+          projectId: saved.value.projectId,
+          archiveId: saved.value.id,
+        });
+        return;
+      }
+    }
+    selectLiveThread(thread);
+  };
   const handleNewThreadOnBranch = useCallback(
     (thread: EnvironmentThreadShell) => {
       navigation.navigate("NewTaskSheet", {
@@ -130,10 +157,21 @@ export function HomeRouteScreen() {
   } = useHomeListOptions(availableEnvironmentIds);
   const selectedEnvironmentId = listOptions.selectedEnvironmentId;
   const projectScopeKey = listOptions.selectedProjectKey;
-  const resolvedProjectKey = resolveScratchProjectScopeKey(projectScopeKey, projects, {
-    sidebarProjectGroupingMode: listOptions.projectGroupingMode,
-    sidebarProjectGroupingOverrides: {},
-  });
+  const libraryAuthority = useLibraryAuthority();
+  const libraryCatalog = useEnvironmentQuery(
+    libraryAuthority.environmentId
+      ? library.projects({
+          environmentId: libraryAuthority.environmentId,
+          input: { includeArchived: true },
+        })
+      : null,
+  );
+  const resolvedProjectKey = parseLibraryProjectScope(projectScopeKey)
+    ? projectScopeKey
+    : resolveScratchProjectScopeKey(projectScopeKey, projects, {
+        sidebarProjectGroupingMode: listOptions.projectGroupingMode,
+        sidebarProjectGroupingOverrides: {},
+      });
   useEffect(() => {
     if (resolvedProjectKey !== projectScopeKey) {
       setSelectedProjectKey(resolvedProjectKey);
@@ -145,18 +183,32 @@ export function HomeRouteScreen() {
         projects,
         environmentId: selectedEnvironmentId,
         projectGroupingMode: listOptions.projectGroupingMode,
-      }).map((scope) => ({
-        key: scope.key,
-        label: scope.title,
-      })),
-    [listOptions.projectGroupingMode, projects, selectedEnvironmentId],
+      })
+        .map((scope) => ({ key: scope.key, label: scope.title }))
+        .concat(
+          libraryProjectFilterItems(libraryCatalog.data ?? []).map((item) => ({
+            key: item.value,
+            label: item.label,
+          })),
+        ),
+    [listOptions.projectGroupingMode, projects, selectedEnvironmentId, libraryCatalog.data],
   );
   // A saved project stays selected while its environment is offline or filtered out.
-  const selectedProjectKey = projectFilterOptions.some(
-    (project) => project.key === resolvedProjectKey,
-  )
-    ? resolvedProjectKey
-    : null;
+  const selectedProjectKey =
+    parseLibraryProjectScope(resolvedProjectKey) ||
+    projectFilterOptions.some((project) => project.key === resolvedProjectKey)
+      ? resolvedProjectKey
+      : null;
+
+  const startConversation = () => {
+    const scope = parseLibraryProjectScope(selectedProjectKey);
+    if (scope)
+      navigation.navigate("LibraryStart", {
+        projectId: scope.projectId,
+        ...(scope.resourceId ? { initialResourceId: scope.resourceId } : {}),
+      });
+    else navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+  };
 
   // In split layouts the persistent sidebar IS the thread list — Home becomes
   // an empty detail pane so selecting a thread never transitions layouts.
@@ -199,9 +251,7 @@ export function HomeRouteScreen() {
               : undefined
           }
           onStartNewTask={
-            Platform.OS === "android" && panes.primarySidebarVisible
-              ? undefined
-              : () => navigation.navigate("NewTaskSheet", { screen: "NewTask" })
+            Platform.OS === "android" && panes.primarySidebarVisible ? undefined : startConversation
           }
         />
       </>
@@ -211,7 +261,7 @@ export function HomeRouteScreen() {
   return (
     <AndroidHomeFabLayout
       disabled={workspace !== null && Platform.OS !== "android"}
-      onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+      onStartNewTask={startConversation}
     >
       <>
         {/* Restore the header after leaving split view; screen options are
@@ -257,7 +307,7 @@ export function HomeRouteScreen() {
             })
           }
           onSearchQueryChange={setSearchQuery}
-          onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+          onStartNewTask={startConversation}
         />
 
         <HomeScreen
@@ -305,7 +355,7 @@ export function HomeRouteScreen() {
               },
             });
           }}
-          onStartNewTask={() => navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+          onStartNewTask={startConversation}
           pendingTasks={pendingTasks}
           projectGroupingMode={listOptions.projectGroupingMode}
           projects={projects}

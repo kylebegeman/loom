@@ -9,7 +9,11 @@ import * as Schema from "effect/Schema";
 const decodeIntegrity = Schema.decodeUnknownSync(
   Schema.Array(Schema.Struct({ integrity_check: Schema.String })),
 );
-export async function sqliteSnapshot(source: string, destination: string): Promise<void> {
+export async function sqliteSnapshot(
+  source: string,
+  destination: string,
+  options: Pick<NodeSqlite.BackupOptions, "rate" | "progress"> = {},
+): Promise<void> {
   const sourcePath = await NodeFSP.realpath(source);
   const destinationPath = NodePath.resolve(destination);
   if (sourcePath === destinationPath)
@@ -19,7 +23,15 @@ export async function sqliteSnapshot(source: string, destination: string): Promi
   await reserved.close();
   const database = new NodeSqlite.DatabaseSync(sourcePath, { readOnly: true });
   try {
-    await NodeSqlite.backup(database, destinationPath);
+    // Other connections restart an unpinned online backup on every commit.
+    // Keep one WAL read snapshot while copying, then release it before verification.
+    database.exec("BEGIN");
+    database.prepare("SELECT name FROM sqlite_schema LIMIT 1").get();
+    try {
+      await NodeSqlite.backup(database, destinationPath, options);
+    } finally {
+      database.exec("ROLLBACK");
+    }
     const snapshot = new NodeSqlite.DatabaseSync(destinationPath, { readOnly: true });
     try {
       if (

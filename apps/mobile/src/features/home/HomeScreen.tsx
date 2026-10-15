@@ -1,3 +1,11 @@
+import {
+  parseLibraryProjectScope,
+  libraryProjectFilterItems,
+  libraryProjectForLocalRefs,
+} from "@t3tools/client-runtime/fork";
+import { library, useLibraryAuthority } from "../../fork/library/libraryState";
+import { useEnvironmentQuery } from "../../state/query";
+import { LibrarySavedThreads } from "../../fork/library/LibrarySavedThreads";
 import { useEnvironmentsWithScope } from "../../state/session";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useProjectNavigationScroll } from "../../fork/project-navigation/useProjectNavigationScroll";
@@ -441,6 +449,48 @@ export function HomeScreen(props: HomeScreenProps) {
       }),
     [props.projectGroupingMode, props.projects, props.selectedEnvironmentId],
   );
+
+  const sharedAuthority = useLibraryAuthority();
+  const sharedCatalog = useEnvironmentQuery(
+    sharedAuthority.environmentId
+      ? library.projects({
+          environmentId: sharedAuthority.environmentId,
+          input: { includeArchived: true },
+        })
+      : null,
+  );
+  const sharedIndex = useEnvironmentQuery(
+    sharedAuthority.environmentId
+      ? library.threadIndex({ environmentId: sharedAuthority.environmentId, input: { limit: 200 } })
+      : null,
+  );
+  const sharedScope = useMemo(
+    () => parseLibraryProjectScope(props.selectedProjectKey),
+    [props.selectedProjectKey],
+  );
+  const sharedThreads = useEnvironmentQuery(
+    sharedAuthority.environmentId && sharedScope
+      ? library.threads({
+          environmentId: sharedAuthority.environmentId,
+          input: { projectId: sharedScope.projectId },
+        })
+      : null,
+  );
+  const filterItems = useMemo(
+    () => [
+      ...libraryProjectFilterItems(sharedCatalog.data ?? []).map((item) => ({
+        key: item.value,
+        label: item.label,
+      })),
+      ...projectScopes
+        .filter(
+          (scope) =>
+            !libraryProjectForLocalRefs(sharedIndex.data?.threads ?? [], scope.projectRefs),
+        )
+        .map((scope) => ({ key: scope.key, label: scope.title })),
+    ],
+    [projectScopes, sharedCatalog.data, sharedIndex.data],
+  );
   const hasSearchQuery = props.searchQuery.trim().length > 0;
   const projectByKey = useMemo(() => {
     const map = new Map<string, EnvironmentProject>();
@@ -472,14 +522,25 @@ export function HomeScreen(props: HomeScreenProps) {
   );
   const v2ScopedProjectKeys = useMemo(
     () =>
-      v2ScopedProjectGroup === null
-        ? null
-        : new Set(
-            v2ScopedProjectGroup.projectRefs.map((projectRef) =>
-              scopedProjectKey(projectRef.environmentId, projectRef.projectId),
+      sharedScope
+        ? new Set(
+            (sharedThreads.data ?? [])
+              .filter(
+                (thread) =>
+                  !sharedScope.resourceId ||
+                  (thread.resourceIds.length === 1 &&
+                    thread.resourceIds[0] === sharedScope.resourceId),
+              )
+              .map((thread) => scopedProjectKey(thread.environmentId, thread.localProjectId)),
+          )
+        : v2ScopedProjectGroup === null
+          ? null
+          : new Set(
+              v2ScopedProjectGroup.projectRefs.map((projectRef) =>
+                scopedProjectKey(projectRef.environmentId, projectRef.projectId),
+              ),
             ),
-          ),
-    [v2ScopedProjectGroup],
+    [v2ScopedProjectGroup, sharedScope, sharedThreads.data],
   );
   // Thread List v2 (beta): one flat list in creation order, no grouping.
   // Settled threads collapse into a recency tail below the card block.
@@ -671,9 +732,18 @@ export function HomeScreen(props: HomeScreenProps) {
     // "hidden from lists" meaning.
     return buildThreadListV2Items({
       pendingOrder,
-      threads: props.threads.filter((thread) => thread.archivedAt === null),
+      threads: props.threads.filter(
+        (thread) =>
+          thread.archivedAt === null &&
+          (v2ScopedProjectKeys === null ||
+            v2ScopedProjectKeys.has(scopedProjectKey(thread.environmentId, thread.projectId))),
+      ),
       environmentId: props.selectedEnvironmentId,
-      projectRefs: v2ScopedProjectGroup === null ? null : v2ScopedProjectGroup.projectRefs,
+      projectRefs: sharedScope
+        ? null
+        : v2ScopedProjectGroup === null
+          ? null
+          : v2ScopedProjectGroup.projectRefs,
       searchQuery: props.searchQuery,
       matchedThreadKeys,
       settlementEnvironmentIds,
@@ -706,6 +776,8 @@ export function HomeScreen(props: HomeScreenProps) {
     props.threads,
     matchedThreadKeys,
     v2ScopedProjectGroup,
+    v2ScopedProjectKeys,
+    sharedScope,
   ]);
   // Re-partition the moment the earliest snooze expires (clamped to the
   // signed-32-bit setTimeout range; far-future wakes re-arm at the clamp).
@@ -1078,7 +1150,7 @@ export function HomeScreen(props: HomeScreenProps) {
       {Platform.OS === "ios" && workspace ? (
         <ThreadListFilters
           environments={props.environments}
-          projects={projectScopes.map((scope) => ({ key: scope.key, label: scope.title }))}
+          projects={filterItems}
           selectedEnvironmentId={props.selectedEnvironmentId}
           selectedProjectKey={props.selectedProjectKey}
           projectView={navigationView === "projects"}
@@ -1197,14 +1269,22 @@ export function HomeScreen(props: HomeScreenProps) {
               extraData={v2ExtraData}
               ListHeaderComponent={v2ListHeader}
               ListFooterComponent={
-                navigationView === "threads" &&
-                settledShelfExpanded &&
-                threadListV2Layout.hiddenSettledCount > 0 ? (
-                  <ThreadListV2ShowMoreRow
-                    hiddenCount={threadListV2Layout.hiddenSettledCount}
-                    onPress={showMoreSettled}
+                <>
+                  {navigationView === "threads" &&
+                  settledShelfExpanded &&
+                  threadListV2Layout.hiddenSettledCount > 0 ? (
+                    <ThreadListV2ShowMoreRow
+                      hiddenCount={threadListV2Layout.hiddenSettledCount}
+                      onPress={showMoreSettled}
+                    />
+                  ) : null}
+                  <LibrarySavedThreads
+                    localThreads={props.threads}
+                    projectKeys={v2ScopedProjectKeys}
+                    environmentId={props.selectedEnvironmentId}
+                    search={props.searchQuery}
                   />
-                ) : null
+                </>
               }
               ListEmptyComponent={v2ListEmpty}
               style={{ flex: 1 }}

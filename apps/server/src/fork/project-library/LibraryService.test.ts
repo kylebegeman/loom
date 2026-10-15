@@ -53,6 +53,52 @@ const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchi
 const encodeArchive = Schema.encodeEffect(archiveCodec);
 
 describe("independent Library catalog and durable history", () => {
+  it.effect("pages compact conversation metadata across projects and rejects unbounded reads", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const firstProject = yield* create(service, "index-project-1");
+        const secondProject = yield* create(service, "index-project-2");
+        const firstArchive = yield* archiveFor(firstProject);
+        const first = {
+          ...firstArchive,
+          summary: { ...firstArchive.summary, workingCopyId: null },
+        };
+        const next = yield* archiveFor(secondProject);
+        const other = EnvironmentId.make("another-source");
+        const second = {
+          ...next,
+          summary: {
+            ...next.summary,
+            id: `${other}:${next.summary.threadId}`,
+            environmentId: other,
+            workingCopyId: null,
+          },
+        };
+        yield* service.registerThread({ requestId: "index-thread-1", thread: first });
+        yield* service.registerThread({ requestId: "index-thread-2", thread: second });
+        const a = yield* service.threadIndex({ limit: 1 });
+        const b = yield* service.threadIndex({ limit: 1, offset: a.nextOffset! });
+        expect((yield* service.lookupThread({ sourceEnvironmentId: source, threadId }))?.id).toBe(
+          first.summary.id,
+        );
+        expect(
+          yield* service.lookupThread({
+            sourceEnvironmentId: EnvironmentId.make("unknown"),
+            threadId,
+          }),
+        ).toBeNull();
+        expect(a.threads).toHaveLength(1);
+        expect(a.nextOffset).toBe(1);
+        expect(b.threads).toHaveLength(1);
+        expect(b.nextOffset).toBeNull();
+        expect(new Set([...a.threads, ...b.threads].map((t) => t.projectId)).size).toBe(2);
+        expect("projection" in a.threads[0]!).toBe(false);
+        expect((yield* Effect.result(service.threadIndex({ limit: 201 })))._tag).toBe("Failure");
+        expect((yield* Effect.result(service.threadIndex({ offset: -1 })))._tag).toBe("Failure");
+      }),
+    ),
+  );
+
   it.effect(
     "publishes compact committed revisions to every reader across all metadata mutation paths",
     () =>

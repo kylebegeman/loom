@@ -3,6 +3,7 @@ import {
   LibraryProject,
   LibraryWorkingCopy,
   LibraryThreadSummary,
+  LibraryThreadIndex,
   LibraryThreadArchive,
   LIBRARY_WS_METHODS as L,
 } from "@t3tools/contracts/fork";
@@ -78,6 +79,21 @@ export function createProjectLibraryAtoms<R, E>(
       tag: L.threads,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
       persistence: persistQuery(Schema.Array(LibraryThreadSummary)),
+    }),
+    lookupThread: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:lookup-thread",
+      tag: L.lookupThread,
+      persistence: persistQuery(Schema.NullOr(LibraryThreadSummary)),
+    }),
+    threadIndex: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:thread-index",
+      tag: L.threadIndex,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+      persistence: persistQuery(LibraryThreadIndex),
+    }),
+    threadBinding: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:thread-binding",
+      tag: L.threadBinding,
     }),
     history: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:history",

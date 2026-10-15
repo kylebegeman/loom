@@ -27,3 +27,10 @@ export * from "./project-computer-choices.ts";
 export * from "./project-storage-rollout.ts";
 
 export * from "./project-library.ts";
+export {
+  libraryProjectScopeKey,
+  parseLibraryProjectScope,
+  libraryThreadMatchesScope,
+  libraryProjectFilterItems,
+  libraryProjectForLocalRefs,
+} from "./library-navigation.ts";

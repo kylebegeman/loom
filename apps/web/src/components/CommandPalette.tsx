@@ -1,4 +1,5 @@
-"use client";
+import { useLibraryNewConversation } from "~/fork/project-library/useLibraryNewConversation";
+("use client");
 
 import { openLibraryAction } from "~/fork/project-library/actions";
 
@@ -396,14 +397,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     },
     [setOpen],
   );
-  const openNewThreadIn = useCallback(() => {
-    if (/^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
+  const tryLibraryConversation = useLibraryNewConversation();
+  const openNewThreadIn = async () => {
+    if (await tryLibraryConversation()) {
       setOpen(false);
-      openLibraryAction("new-conversation");
       return;
     }
     dispatch({ _tag: "OpenNewThreadIn" });
-  }, [setOpen]);
+  };
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
@@ -624,6 +625,7 @@ function OpenCommandPaletteDialog(props: {
     openIntent?.kind === "search" ? openIntent : null,
   );
   const deferredQuery = useDeferredValue(query);
+  const tryLibraryConversation = useLibraryNewConversation();
   const isActionsOnly = deferredQuery.startsWith(">");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const resultListRef = useRef<LegendListRef | null>(null);
@@ -1919,6 +1921,7 @@ function OpenCommandPaletteDialog(props: {
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
         shortcutCommand: "chat.newLocal",
         run: async () => {
+          if (await tryLibraryConversation()) return;
           // fork: project-home starts on its exact displayed checkout.
           if (projectHomeContext) {
             await handleNewThread(projectHomeContext.projectRef, {

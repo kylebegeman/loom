@@ -62,6 +62,9 @@ export class LibraryWorkspace extends Context.Service<
     readonly unregister: (
       input: LibraryReleaseCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    readonly threadBinding: (input: {
+      threadId: ThreadId;
+    }) => Effect.Effect<LibraryThreadBinding | null, LibraryError>;
     readonly resolveBinding: (
       input: LibraryResolveBindingRequest,
     ) => Effect.Effect<LibraryResolvedBinding, LibraryError>;
@@ -1014,6 +1017,8 @@ const make = Effect.gen(function* () {
   });
 
   return LibraryWorkspace.of({
+    threadBinding: (input) =>
+      store.getBinding(input.threadId).pipe(Effect.map((resolved) => resolved?.binding ?? null)),
     inspectFolder: (input) => mapIo(inspectFolder(input)),
     preparation: (input) =>
       store.receipts.pipe(

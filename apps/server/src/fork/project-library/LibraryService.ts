@@ -3,6 +3,7 @@ import {
   LibraryWorkingCopy,
   LibraryThreadArchive,
   LibraryThreadSummary,
+  LibraryThreadIndex,
   LibraryCreateProjectRequest,
   LibraryUpdateProjectRequest,
   LibraryArchiveProjectRequest,
@@ -15,6 +16,7 @@ import {
   LibraryError,
   LibraryRequestId,
 } from "@t3tools/contracts/fork";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
@@ -65,6 +67,14 @@ export class LibraryService extends Context.Service<
     readonly threads: (input: {
       projectId: string;
     }) => Effect.Effect<readonly LibraryThreadSummary[], LibraryError>;
+    readonly lookupThread: (input: {
+      sourceEnvironmentId: EnvironmentId;
+      threadId: ThreadId;
+    }) => Effect.Effect<LibraryThreadSummary | null, LibraryError>;
+    readonly threadIndex: (input: {
+      offset?: number | undefined;
+      limit?: number | undefined;
+    }) => Effect.Effect<LibraryThreadIndex, LibraryError>;
     readonly history: (input: { id: string }) => Effect.Effect<LibraryThreadArchive, LibraryError>;
     readonly ingestHistory: (
       input: LibraryIngestHistoryRequest,
@@ -651,6 +661,33 @@ const make = Effect.gen(function* () {
         Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
         Effect.mapError(io),
       ),
+    lookupThread: (input) =>
+      store.threadSummary(input.sourceEnvironmentId, input.threadId).pipe(
+        Effect.flatMap((row) =>
+          row === null ? Effect.succeed(null) : decode(codecs.summary, row),
+        ),
+        Effect.mapError(io),
+      ),
+    threadIndex: (input) => {
+      const offset = input.offset ?? 0;
+      const limit = input.limit ?? 100;
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 200
+      )
+        return Effect.fail(new LibraryError({ reason: "invalid" }));
+      return store.threadIndex(limit + 1, offset).pipe(
+        Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
+        Effect.map((rows) => ({
+          threads: rows.slice(0, limit),
+          nextOffset: rows.length > limit ? offset + limit : null,
+        })),
+        Effect.mapError(io),
+      );
+    },
     history: (input) =>
       store.history(input.id).pipe(
         Effect.flatMap((row) =>
