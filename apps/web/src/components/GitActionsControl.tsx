@@ -1143,6 +1143,7 @@ export default function GitActionsControl({
   const SourceControlIcon = sourceControlPresentation.Icon;
   // Default to true while loading so we don't flash init controls.
   const isRepo = gitStatus?.isRepo ?? true;
+  const isProjectCheckpointParent = !isRepo && gitStatus?.checkpointCapable === true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
   const gitStatusForActions = gitStatus;
   // Matches the diff panel's Changes view. Older servers only report uncommitted totals.
@@ -1706,7 +1707,12 @@ export default function GitActionsControl({
   return (
     <>
       {presentation === "menu" ? (
-        !isRepo ? (
+        isProjectCheckpointParent ? (
+          <MenuItem density="touch" disabled={!onOpenChanges} onClick={onOpenChanges}>
+            <FileDiffIcon className="size-4" aria-hidden />
+            <MenuItemLabel>Turn changes</MenuItemLabel>
+          </MenuItem>
+        ) : !isRepo ? (
           <MenuItem
             density={presentation === "menu" ? "touch" : "default"}
 
@@ -1751,7 +1757,7 @@ export default function GitActionsControl({
             </MenuSub>
           </>
         )
-      ) : !isRepo ? (
+      ) : isProjectCheckpointParent ? null : !isRepo ? (
         <ThreadDetailsControl
           size="xs"
           variant={isPanel ? "ghost" : "outline"}
@@ -1906,7 +1912,7 @@ export default function GitActionsControl({
         </ActionGroup>
       )}
 
-      {isPanel && isRepo ? (
+      {isPanel && (isRepo || isProjectCheckpointParent) ? (
         <ThreadDetailsControl
           type="button"
           variant="ghost"
@@ -1916,13 +1922,19 @@ export default function GitActionsControl({
           onClick={onOpenChanges}
         >
           <FileDiffIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
-          <span className={cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS)}>Changes</span>
-          <span className="flex items-center gap-1 font-mono text-2xs tabular-nums">
-            <span className="text-success">+{formatDiffCount(changesTotals?.insertions ?? 0)}</span>
-            <span className="text-destructive">
-              -{formatDiffCount(changesTotals?.deletions ?? 0)}
-            </span>
+          <span className={cn("flex-1 text-left", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
+            {isProjectCheckpointParent ? "Turn changes" : "Changes"}
           </span>
+          {isRepo ? (
+            <span className="flex items-center gap-1 font-mono text-2xs tabular-nums">
+              <span className="text-success">
+                +{formatDiffCount(changesTotals?.insertions ?? 0)}
+              </span>
+              <span className="text-destructive">
+                -{formatDiffCount(changesTotals?.deletions ?? 0)}
+              </span>
+            </span>
+          ) : null}
         </ThreadDetailsControl>
       ) : null}
 

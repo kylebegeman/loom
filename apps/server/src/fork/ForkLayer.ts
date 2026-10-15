@@ -1,3 +1,17 @@
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
+import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPublisher.ts";
+import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryStore.ts";
+import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
+import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
+import * as LibraryReplication from "./project-library/LibraryReplication.ts";
+import { LibraryHttpRoutes } from "./project-library/http.ts";
+import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts";
+import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
+import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
+import * as LibraryService from "./project-library/LibraryService.ts";
+import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
+import * as LibraryWorkspaceStore from "./project-library/LibraryWorkspaceStore.ts";
+import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
 import * as ProjectCheckoutManagement from "../project/ProjectCheckoutManagement.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
@@ -27,9 +41,49 @@ import { ForkRuntime, type ForkServices } from "./ForkRuntime.ts";
 import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
 
+const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
+  Layer.provide(NodeHttpClient.layerNodeHttp),
+);
+const layerLibraryAssets = LibraryAssetService.layer.pipe(Layer.provide(FetchHttpClient.layer));
+
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
+  LibraryReplication.layer.pipe(
+    Layer.provide(
+      LibraryPublisher.layer.pipe(
+        Layer.provide(FetchHttpClient.layer),
+        Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+        Layer.provide(layerLibraryAssets),
+      ),
+    ),
+    Layer.provide(
+      LibraryHistorySource.layer.pipe(
+        Layer.provide(LibraryWorkspaceStore.layer),
+        Layer.provide(ProjectionStore.layer),
+      ),
+    ),
+    Layer.provide(LibraryWorkspaceStore.layer),
+  ),
+  layerLibraryAssets,
+  layerLibraryRecovery,
+  LibraryHistorySource.layer.pipe(
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(ProjectionStore.layer),
+  ),
+  LibraryWorkspace.layer.pipe(
+    Layer.provide(
+      LibraryRecoveryPublisher.layer.pipe(
+        Layer.provide(NodeHttpClient.layerNodeHttp),
+        Layer.provide(layerLibraryRecovery),
+      ),
+    ),
+    Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(RuntimeLayer.layerProjectService),
+    Layer.provide(ProjectionStore.layer),
+    Layer.provide(ProcessRunner.layer),
+  ),
   ProjectCheckoutManagement.layer.pipe(
     Layer.provide(ProcessRunner.layer),
     Layer.provide(StorageCleanup.layer),
@@ -82,6 +136,9 @@ export const ForkLayer = Layer.effect(ForkRuntime, Effect.context<ForkServices>(
 /** Fork HTTP routes, all under /api/loom/. One line per packet. Keep `Layer.empty` first. */
 export const ForkRoutesLayer = Layer.mergeAll(
   Layer.empty,
+  LibraryAssetHttpRoutes,
+  LibraryRecoveryHttpRoutes,
+  LibraryHttpRoutes,
   ModelPreviewHttpRoutes,
   PcbPreviewHttpRoutes,
 );

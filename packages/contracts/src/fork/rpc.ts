@@ -1,3 +1,4 @@
+import { ProjectLibraryRpcGroup, LIBRARY_WS_METHODS } from "./project-library.ts";
 import { ProjectCheckoutRpcGroup } from "./project-checkout.ts";
 import { ComputerNamingRpcGroup } from "./computer-naming.ts";
 import { GitHubHostSetupRpcGroup, GITHUB_HOST_SETUP_WS_METHODS } from "./github-host-setup.ts";
@@ -40,6 +41,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 
 /** Every fork RPC. Packets merge their own group here, one line each. */
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
+  ProjectLibraryRpcGroup,
   ProjectCheckoutRpcGroup,
   ComputerNamingRpcGroup,
   MiniOffloadRpcGroup,
@@ -64,6 +66,7 @@ export const LoomWsRpcGroup = WsRpcGroup.merge(ForkRpcGroup);
  * method missing here would be typed as unary.
  */
 export type ForkSubscriptionRpcTag =
+  | typeof LIBRARY_WS_METHODS.subscribeRefreshes
   | typeof GITHUB_HOST_SETUP_WS_METHODS.watch
   | typeof PCB_PREVIEW_WS_METHODS.workspaceUpdates
   | typeof PCB_PREVIEW_WS_METHODS.panelEvents

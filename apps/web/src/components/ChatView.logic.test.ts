@@ -1708,6 +1708,19 @@ describe("resolveBackgroundDraftWorkspaceOptions", () => {
 });
 
 describe("proactive completed diff guard", () => {
+  it("opens whole-project checkpoint changes when the parent has no Git repository", () => {
+    expect(
+      resolveProactiveTurnDiffAction({
+        checkpoint: {
+          status: "ready",
+          files: [{ path: "app/main.ts", kind: "modified", additions: 50, deletions: 0 }],
+        },
+        isGitRepo: false,
+        checkpointCapable: true,
+        activeSurfaceKind: null,
+      }),
+    ).toBe("open");
+  });
   it.each([
     { files: 0, additions: 0, deletions: 0, action: "ignore" },
     { files: 1, additions: 1, deletions: 0, action: "ignore" },

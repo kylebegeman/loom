@@ -46,7 +46,40 @@ Settings that are environment-wide stay read-only while a project is selected. W
 targets disagree, a control shows **Mixed** until you choose one value. Appearance, keyboard,
 and other phone-only settings ignore the filter.
 
-## Project home and another computer
+## Library projects and working copies
+
+To keep projects independently of a computer, choose a Library server in **Settings →
+Connections**. If that server supports Loom account sign-in, **Sign in to Loom** opens its
+sign-in page. On desktop, you can check a Library address and sign in before saving its
+computer connection. Desktop sign-in opens your browser and returns to Loom after verification.
+Existing computer pairing and T3 Connect remain available. Changing your
+Library selection does not move records from the previous Library.
+
+**New project** saves a name, shared brief and resources without choosing a computer or
+cloning files. Add repositories or reference links as needed. **Add existing folder** lets
+you inspect a folder, then add it to an existing project or create a new project. Imported
+folders are borrowed: removing their registration preserves your files.
+
+Open a project to see its resources, conversations and known working copies. Starting a
+conversation requires an explicit computer and either the whole project or one repository.
+Use a suitable existing copy on that computer, or prepare files first. **Clone project**
+prepares the project repositories together under one parent folder. Editing the shared brief
+applies to new conversations; existing conversations keep the context they started with.
+
+A conversation stays on its original computer. **Continue elsewhere** creates a linked
+conversation with a fresh agent session and the context you choose to carry forward.
+Removing a managed working copy preserves the Library project and saved conversations;
+active work or local changes can prevent removal. A project can have zero working copies.
+
+Saved projects and conversation history remain readable when a computer is offline.
+Conversation history shows when it was last saved to the Library; work that has not uploaded
+may be missing. Open saved attachments from the Library, and use **Save pending history**
+when newer work is waiting to upload. A disconnected Library keeps its selected identity and cached records, but
+must reconnect before you can save changes. It never silently switches to another server.
+
+## Local project home and another computer
+
+Without a configured Library, local project navigation continues to work as follows.
 
 Open a project from **Projects** to browse its threads. Expand a project for a short
 thread preview, or open its home for **Open**, **Snoozed**, **History**, and **All** views.

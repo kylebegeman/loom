@@ -1,3 +1,4 @@
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 // fork: mini-native-retention
 import { modelSelectionsEqual } from "@t3tools/shared/model";
 import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
@@ -129,6 +130,9 @@ export const layer: Layer.Layer<
     const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
     const runtimePolicy = yield* RuntimePolicy.RuntimePolicyV2;
+    const libraryWorkspaces = yield* Effect.serviceOption(
+      LibraryWorkspaceStore.LibraryWorkspaceStore,
+    );
 
     // These callbacks outlive startup while a run drains background work. Build
     // them outside start's scope so they cannot retain its full thread history.
@@ -1031,10 +1035,46 @@ export const layer: Layer.Layer<
       const routableSubagents = projection.subagents.filter((subagent) =>
         RunExecutionService.canRouteRelatedSubagent(subagent.status),
       );
-      const userText = projectComposerContextForProvider({
+      let userText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
       });
+      if (
+        Option.isSome(libraryWorkspaces) &&
+        (projection.providerTurns.length === 0 || providerThread.nativeThreadRef === null)
+      ) {
+        const resolved = yield* libraryWorkspaces.value
+          .getBinding(projection.thread.id)
+          .pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })));
+        if (resolved !== null) {
+          const receipt = yield* libraryWorkspaces.value
+            .get(resolved.binding.workingCopyId)
+            .pipe(Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })));
+          const pinnedProject =
+            (yield* libraryWorkspaces.value
+              .getBoundProject(projection.thread.id)
+              .pipe(
+                Effect.mapError((cause) => new ProviderTurnStartError({ runId: run.id, cause })),
+              )) ?? receipt.project;
+          const selected = pinnedProject.resources.filter(
+            (resource) =>
+              resource.kind !== "link" &&
+              (resolved.binding.resourceIds.length === 0 ||
+                resolved.binding.resourceIds.includes(resource.id)),
+          );
+          const context = [
+            `Project: ${pinnedProject.title}`,
+            `Project context revision: ${resolved.binding.projectRevision}`,
+            pinnedProject.brief,
+            selected.length > 0
+              ? `Components in scope:\n${selected.map((resource) => `${resource.title}: ${resource.relativePath}`).join("\n")}`
+              : "Whole-project discussion",
+          ]
+            .filter((line) => line.length > 0)
+            .join("\n\n");
+          userText = `${context}\n\nUser message:\n${userText}`;
+        }
+      }
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
       const noteContinuation = isRestartNoteContinuation(

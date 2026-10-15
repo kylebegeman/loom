@@ -1,4 +1,5 @@
 import {
+  AuthLibraryPublishScope,
   WsRpcGroup,
   AuthOrchestrationReadScope,
   AuthOrchestrationOperateScope,
@@ -9,6 +10,8 @@ import {
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
 import {
+  type ForkRpcMethod,
+  LIBRARY_WS_METHODS as LIB,
   ForkRpcGroup,
   COMPUTER_NAMING_WS_METHODS as N,
   GITHUB_HOST_SETUP_WS_METHODS as GH,
@@ -301,4 +304,58 @@ it.effect.each([C.adopt, C.setRetention])(
       expect(yield* auth([AuthSettingsWriteScope]).effect(method, update)).toBe("saved");
       expect(changed).toBe(true);
     }),
+);
+
+it.effect("a host publishing credential grants no ordinary RPC operations", () =>
+  Effect.gen(function* () {
+    const auth = makeForkRpcAuth({
+      sessionId: AuthSessionId.make("publisher-test"),
+      subject: "loom-host:fixture-source",
+      method: "bearer-access-token",
+      scopes: [AuthLibraryPublishScope],
+    });
+    for (const tag of forkTags) {
+      let invoked = false;
+      const denied = yield* auth
+        .effect(
+          tag as ForkRpcMethod,
+          Effect.sync(() => {
+            invoked = true;
+          }),
+        )
+        .pipe(Effect.flip);
+      expect(denied._tag).toBe("EnvironmentAuthorizationError");
+      expect(invoked).toBe(false);
+    }
+  }),
+);
+
+it.effect("Library refresh subscriptions require read access before observing changes", () =>
+  Effect.gen(function* () {
+    const auth = (scopes: readonly AuthEnvironmentScope[]) =>
+      makeForkRpcAuth({
+        sessionId: AuthSessionId.make("library-refresh-test"),
+        subject: "test",
+        method: "bearer-access-token",
+        scopes,
+      });
+    let subscribed = false;
+    const stream = Stream.fromEffect(
+      Effect.sync(() => {
+        subscribed = true;
+        return 1;
+      }),
+    );
+    const denied = yield* Stream.runCollect(auth([]).stream(LIB.subscribeRefreshes, stream)).pipe(
+      Effect.flip,
+    );
+    expect(denied.requiredScope).toBe(AuthOrchestrationReadScope);
+    expect(subscribed).toBe(false);
+    expect(
+      yield* Stream.runCollect(
+        auth([AuthOrchestrationReadScope]).stream(LIB.subscribeRefreshes, stream),
+      ),
+    ).toEqual([1]);
+    expect(subscribed).toBe(true);
+  }),
 );

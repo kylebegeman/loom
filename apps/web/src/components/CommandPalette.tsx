@@ -1,5 +1,8 @@
 "use client";
 
+import { openLibraryAction } from "~/fork/project-library/actions";
+import { useLibraryProjects } from "~/fork/project-library/state";
+
 import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 
@@ -382,14 +385,25 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     [],
   );
   const openAddProject = useCallback(
-    (environmentId?: EnvironmentId) =>
+    (environmentId?: EnvironmentId) => {
+      if (openLibraryAction("import-folder")) {
+        setOpen(false);
+        return;
+      }
       dispatch({
         _tag: "OpenAddProject",
         ...(environmentId !== undefined ? { environmentId } : {}),
-      }),
-    [],
+      });
+    },
+    [setOpen],
   );
-  const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
+  const openNewThreadIn = useCallback(() => {
+    if (openLibraryAction("new-conversation")) {
+      setOpen(false);
+      return;
+    }
+    dispatch({ _tag: "OpenNewThreadIn" });
+  }, [setOpen]);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
@@ -603,6 +617,7 @@ function OpenCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
 }) {
   const navigate = useNavigate();
+  const library = useLibraryProjects();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { clearOpenIntent, openIntent, openOverlayMode, setOpen } = props;
   const [query, setQuery] = useState(openIntent?.kind === "search" ? openIntent.query : "");
@@ -1762,6 +1777,10 @@ function OpenCommandPaletteDialog(props: {
 
   const openAddProjectFlow = useCallback(
     (requestedEnvironmentId?: EnvironmentId) => {
+      if (openLibraryAction("import-folder")) {
+        setOpen(false);
+        return;
+      }
       const target = resolveAddProjectOpenTarget(
         addProjectEnvironmentOptions.map((option) => option.environmentId),
         requestedEnvironmentId,
@@ -1841,6 +1860,10 @@ function OpenCommandPaletteDialog(props: {
   // New project starts on this device (options list it first); the name step
   // lists the other machines when there is a choice.
   const openNewProjectFlow = () => {
+    if (openLibraryAction("create-project")) {
+      setOpen(false);
+      return;
+    }
     const firstOption = newProjectEnvironmentOptions[0];
     if (firstOption) startNewProject(firstOption.environmentId, null);
   };
@@ -1885,7 +1908,33 @@ function OpenCommandPaletteDialog(props: {
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
 
-  if (projects.length > 0) {
+  if (library.authorityId) {
+    actionItems.push({
+      kind: "action",
+      value: "action:library-new-conversation",
+      title: "New project conversation",
+      searchTerms: ["new thread", "chat", "project", "conversation"],
+      icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.new",
+      run: async () => {
+        setOpen(false);
+        openLibraryAction("new-conversation");
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:library-projects",
+      title: "Browse projects",
+      searchTerms: ["library", "projects", "switch"],
+      icon: <FolderGit2Icon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        setOpen(false);
+        await navigate({ to: "/library" });
+      },
+    });
+  }
+
+  if (projects.length > 0 && !library.authorityId) {
     const activeProjectTitle =
       projectPickerEntries.find((entry) => entry.isPreferred)?.group.displayName ??
       (currentProjectId ? (projectTitleById.get(currentProjectId) ?? null) : null);
@@ -2120,7 +2169,7 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  if (newProjectEnvironmentOptions.length > 0) {
+  if (newProjectEnvironmentOptions.length > 0 || library.authorityId) {
     actionItems.push({
       kind: "action",
       value: "action:new-project",
@@ -2157,7 +2206,7 @@ function OpenCommandPaletteDialog(props: {
       "url",
       "environment",
     ],
-    title: "Add project",
+    title: library.authorityId ? "Add existing folder" : "Add project",
     icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
     keepOpen: true,
     run: async () => {

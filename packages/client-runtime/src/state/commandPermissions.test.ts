@@ -97,7 +97,10 @@ describe("command permissions", () => {
           expect((yield* policy.authorize(registry, env).pipe(Effect.flip))._tag).toBe(
             "EnvironmentAuthorizationError",
           );
-          registry.set(sessions(env), AsyncResult.success(grant(true)));
+          registry.set(
+            sessions(env),
+            AsyncResult.success({ ...grant(true), scopes: [scope], permissions: [scope] }),
+          );
           yield* policy.authorize(registry, env);
           expect(registry.get(policy.permissionAtom(env))).toBe(true);
         }

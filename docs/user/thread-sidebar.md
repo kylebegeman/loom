@@ -3,32 +3,29 @@
 Use a new thread for a separate task. Choose **New worktree** when its code changes
 need a separate branch and working directory.
 
-## Find work by thread or project
+## Find work by project
 
-Choose **Threads** to see current work and settled conversations, or **Projects**
-to browse your project library. Open a project to see its Project home: conversations
-needing attention, running work, work ready to continue, snoozed conversations, and
-settled history. Search that project's conversation titles and load more rows as needed.
-Expand a library row for a quick preview. Thread search also searches conversation contents.
+With a Library configured in **Settings → Connections**, use the project switcher to
+choose a project or return to all projects. Its overview brings together the shared
+brief, resources, conversations and working copies. Conversations show their original
+computer, and saved history remains readable when that computer is offline. New
+conversations explicitly choose a computer and project scope, then reuse or prepare
+files there. See [Library projects and working copies](project-settings.md#library-projects-and-working-copies).
 
-Project home lets you choose the computer and checkout for the next task. Changing
-that choice leaves existing conversations where they are. An unavailable choice stays
-selected until you reconnect it or choose another computer; Loom does not silently
-start work elsewhere. Use **Prepare on another computer** when the repository is missing
-there, then review **Move work** separately to continue an existing conversation.
+**Local conversations** keeps existing computer history accessible separately. Without
+a configured Library, choose **Threads** for current work and settled conversations,
+or **Projects** for the local project navigator. Its selected view is remembered on each
+client. Project home lets you choose the computer and checkout for the next task, and
+**Prepare on another computer** adds a missing copy. Review **Move work** separately to
+continue an existing conversation.
 
-Projects stay in the library when their working copies release or their computers go
-offline. Offline entries show last-known information rather than live activity.
-Browsing Project home does not restore files or start an agent. Review each computer's
-working folder and storage preference there, or start a task when you are ready to work.
-
-The selected view is remembered on each client. The same repository can appear as one
-project across computers, following your project-grouping settings; storage preferences
-and permissions still belong to the individual computer.
+Projects remain discoverable when working files are released or computers go offline.
+Offline entries show last-known information. Browsing a project does not restore files
+or start an agent.
 
 ## Start a thread
 
-On web and desktop, a new thread keeps the current project and carries your model
+For local projects on web and desktop, a new thread keeps the current project and carries your model
 and mode selections, unless the destination project has its own model default.
 Its branch and workspace mode come from your configured defaults. To continue in
 an existing worktree, use **New thread in this worktree** from the branch toolbar.

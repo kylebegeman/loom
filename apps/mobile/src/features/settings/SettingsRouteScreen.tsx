@@ -168,6 +168,16 @@ function SettingsIndexSections() {
       </SettingsSection>
 
       <SettingsSection title="Projects & threads">
+        <SettingsRow
+          icon="folder"
+          label="Project library"
+          onPress={() => navigation.navigate("Library")}
+        />
+        <SettingsRow
+          icon="server.rack"
+          label="Library connection"
+          onPress={() => navigation.navigate("LibrarySettings")}
+        />
         {selectedProjectKey !== null ? (
           <SettingsRow
             icon="folder"

@@ -1,7 +1,10 @@
+import type { LibraryProject } from "@t3tools/contracts/fork";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 // fork: mini-native-retention
 import { expect, it, vi } from "vite-plus/test";
 import { it as effectIt } from "@effect/vitest";
 import {
+  EnvironmentId,
   GitCommandError,
   CheckpointScopeId,
   CheckpointId,
@@ -126,6 +129,7 @@ it.each(["projection", "checkout", "setup"] as const)(
       Layer.provide(
         Layer.mergeAll(
           ProviderTurnStartTestkit.layer,
+
           Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
             runForThread: () =>
               Effect.succeed(
@@ -152,7 +156,11 @@ it.each(["projection", "checkout", "setup"] as const)(
             writeFileString: () => Effect.void,
             remove: () => Effect.void,
           }),
-          Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees, createWorktree }),
+          Layer.mock(GitWorkflow.GitWorkflowService)({
+            hasCommit: () => Effect.succeed(true),
+            pruneWorktrees,
+            createWorktree,
+          }),
           Layer.mock(ProjectService.ProjectService)({
             getById: () =>
               Effect.succeed(
@@ -212,6 +220,7 @@ it.each(["projection", "checkout", "setup"] as const)(
 );
 
 function makeLocalCommandHarness(input: {
+  readonly libraryProject?: LibraryProject;
   readonly text: string;
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
@@ -607,6 +616,28 @@ function makeLocalCommandHarness(input: {
     Layer.provide(
       Layer.mergeAll(
         ProviderTurnStartTestkit.layer,
+        input.libraryProject
+          ? Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
+              getBinding: () =>
+                Effect.succeed({
+                  cwd: "/tmp/native-account-command",
+                  localProjectId: ProjectId.make("library-local-project"),
+                  repositoryPaths: ["/tmp/native-account-command/ios"],
+                  binding: {
+                    projectId: input.libraryProject!.id,
+                    projectRevision: input.libraryProject!.revision,
+                    workingCopyId: "library-copy",
+                    environmentId: EnvironmentId.make("library-host"),
+                    resourceIds: ["ios"],
+                  },
+                }),
+              get: () =>
+                Effect.succeed({
+                  project: { ...input.libraryProject!, brief: "Later edited context" },
+                } as never),
+              getBoundProject: () => Effect.succeed(input.libraryProject!),
+            })
+          : Layer.empty,
         Layer.mock(ContextHandoffService.ContextHandoffServiceV2)({
           prepareProviderHandoff: () => Effect.die("history read must fail first"),
         }),
@@ -1166,3 +1197,43 @@ for (const primary of [false, true]) {
       ),
   );
 }
+
+effectIt.effect(
+  "sends pinned project context to the provider while preserving the user's stored message",
+  () =>
+    Effect.gen(function* () {
+      const project: LibraryProject = {
+        id: "aspectavy",
+        title: "AspectAvy",
+        brief: "Coordinate the app and server contract.",
+        revision: 2,
+        resources: [
+          {
+            id: "ios",
+            title: "iOS",
+            remoteUrl: "https://github.com/example/aspectavy-ios",
+            relativePath: "ios",
+            defaultBranch: "main",
+          },
+        ],
+        archived: false,
+        createdAt: "2026-10-15T00:00:00.000Z",
+        updatedAt: "2026-10-15T00:00:00.000Z",
+      };
+      const text = "Implement the next step";
+      const harness = makeLocalCommandHarness({
+        text,
+        libraryProject: project,
+        failReadsAfterRunning: true,
+      });
+      yield* harness.start;
+      const message = harness.startRootRun.mock.calls[0]?.[0].message;
+      expect(message?.text).toContain("Project: AspectAvy");
+      expect(message?.text).toContain("Project context revision: 2");
+      expect(message?.text).toContain(project.brief);
+      expect(message?.text).toContain("iOS: ios");
+      expect(message?.text).toContain(`User message:\n${text}`);
+      expect(message?.text).not.toContain("Later edited context");
+      expect(harness.projection().messages.find((entry) => entry.role === "user")?.text).toBe(text);
+    }),
+);

@@ -226,6 +226,8 @@ const VcsStatusChangeRequest = Schema.Struct({
 
 const VcsStatusLocalShape = {
   isRepo: Schema.Boolean,
+  /** Project parents may support checkpoints through their registered repositories. */
+  checkpointCapable: Schema.optional(Schema.Boolean),
   sourceControlProvider: Schema.optional(SourceControlProviderInfo),
   hasPrimaryRemote: Schema.Boolean,
   isDefaultRef: Schema.Boolean,

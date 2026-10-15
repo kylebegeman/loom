@@ -283,6 +283,30 @@ describe("applyGitStatusStreamEvent", () => {
     });
   });
 
+  it("preserves nongit checkpoint capability through remote status updates", () => {
+    for (const checkpointCapable of [true, false]) {
+      const current: VcsStatusResult = {
+        isRepo: false,
+        checkpointCapable,
+        hasPrimaryRemote: false,
+        isDefaultRef: false,
+        refName: null,
+        hasWorkingTreeChanges: false,
+        workingTree: { files: [], insertions: 0, deletions: 0 },
+        hasUpstream: false,
+        aheadCount: 0,
+        behindCount: 0,
+        pr: null,
+      };
+      expect(
+        applyGitStatusStreamEvent(current, {
+          _tag: "remoteUpdated",
+          remote: { hasUpstream: false, aheadCount: 0, behindCount: 0, pr: null },
+        }),
+      ).toEqual(current);
+    }
+  });
+
   it("preserves local-only fields when applying a remote update", () => {
     const current: VcsStatusResult = {
       isRepo: true,

@@ -1,4 +1,11 @@
 import {
+  cachedQuery,
+  queryCacheRemovals,
+  LIBRARY_CACHE_ENTRY_MAX_BYTES,
+  LIBRARY_CACHE_MAX_AGE_MS,
+} from "./queryCache";
+import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
+import {
   ConnectionCatalogDocument,
   type ConnectionCatalogDocument as ConnectionCatalogDocumentType,
   EMPTY_CONNECTION_CATALOG_DOCUMENT,
@@ -28,6 +35,7 @@ import {
   gitHubRoutingPermissionFor,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -40,12 +48,13 @@ import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
 const DATABASE_NAME = "t3code:connection-runtime";
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
 const THREAD_STORE_NAME = "thread";
 const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
+const QUERY_STORE_NAME = "query";
 const CATALOG_KEY = "document";
 const StoredShellSnapshot = StoredOrchestrationShellSnapshot;
 const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
@@ -122,6 +131,9 @@ const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* (
     try {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
       request.addEventListener("upgradeneeded", () => {
+        if (!request.result.objectStoreNames.contains(QUERY_STORE_NAME)) {
+          request.result.createObjectStore(QUERY_STORE_NAME);
+        }
         if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
           request.result.createObjectStore(CATALOG_STORE_NAME);
         }
@@ -893,6 +905,11 @@ export const layer = Layer.effectContext(
         Effect.all(
           [
             Effect.promise(() => projectFaviconCache.clearEnvironment(environmentId)),
+            removeDatabaseValuesInRange(
+              database,
+              QUERY_STORE_NAME,
+              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+            ),
             removeDatabaseValue(database, SHELL_STORE_NAME, environmentId),
             removeDatabaseValuesInRange(
               database,
@@ -910,7 +927,60 @@ export const layer = Layer.effectContext(
         ).pipe(Effect.mapError((cause) => persistenceError("clear-environment", cause))),
     });
 
+    const saveBoundedQuery = (key: string, payload: string) =>
+      withDatabase(database, (opened) =>
+        Effect.flatMap(Clock.currentTimeMillis, (now) =>
+          Effect.callback<void, ConnectionTransientError>((resume) => {
+            try {
+              const transaction = opened.transaction(QUERY_STORE_NAME, "readwrite");
+              const store = transaction.objectStore(QUERY_STORE_NAME);
+              const bytes = new TextEncoder().encode(payload).length;
+              if (bytes > LIBRARY_CACHE_ENTRY_MAX_BYTES) store.delete(key);
+              else store.put({ payload, bytes, savedAt: now }, key);
+              const entries: { key: IDBValidKey; value: unknown }[] = [];
+              const cursor = store.openCursor();
+              cursor.addEventListener("success", () => {
+                const current = cursor.result;
+                if (current) {
+                  entries.push({ key: current.key, value: current.value });
+                  current.continue();
+                } else for (const remove of queryCacheRemovals(entries, now)) store.delete(remove);
+              });
+              transaction.addEventListener("complete", () => resume(Effect.void));
+              transaction.addEventListener("abort", () =>
+                resume(Effect.fail(catalogError("save query", transaction.error))),
+              );
+              transaction.addEventListener("error", () =>
+                resume(Effect.fail(catalogError("save query", transaction.error))),
+              );
+            } catch (cause) {
+              resume(Effect.fail(catalogError("save query", cause)));
+            }
+          }),
+        ),
+      );
+    const queryStore: NonNullable<typeof EnvironmentQueryStore.Service> = {
+      load: (environmentId, key) =>
+        readDatabaseValue(database, QUERY_STORE_NAME, `${environmentId}:${key}`).pipe(
+          Effect.flatMap((value) =>
+            Clock.currentTimeMillis.pipe(
+              Effect.map((now) => {
+                const row = cachedQuery(value);
+                return row !== null && now - row.savedAt <= LIBRARY_CACHE_MAX_AGE_MS
+                  ? Option.some(row.payload)
+                  : Option.none();
+              }),
+            ),
+          ),
+          Effect.catch(() => Effect.succeedNone),
+        ),
+      save: (environmentId, key, payload) =>
+        saveBoundedQuery(`${environmentId}:${key}`, payload).pipe(
+          Effect.catch(() => Effect.logWarning("Offline Library cache could not be saved")),
+        ),
+    };
     return Context.make(Persistence.ConnectionTargetStore, targetStore).pipe(
+      Context.add(EnvironmentQueryStore, queryStore),
       Context.add(GitHubRoutingPermissions, githubRoutingPermissions),
       Context.add(Persistence.ConnectionRegistrationStore, registrationStore),
       Context.add(ProfileStore.ConnectionProfileStore, profileStore),

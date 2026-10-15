@@ -1,4 +1,5 @@
 /* oxlint-disable react/no-array-index-key -- Captured table rows and columns have stable positions and may contain identical values. */
+import { loadLibraryAttachment } from "../../fork/library/rpc/libraryAssets";
 import { NativeHeaderToolbar, NativeStackScreenOptions } from "../../native/StackHeader";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { MenuAction } from "@react-native-menu/menu";
@@ -34,6 +35,8 @@ export type AttachmentFileRouteParams = {
   readonly environmentId?: string;
   readonly threadId?: string;
   readonly attachmentId: string;
+  /** The environmentId is the library authority; bytes belong to this source computer. */
+  readonly librarySourceEnvironmentId?: string;
   readonly name: string;
   readonly mimeType: string;
   readonly sizeBytes: string;
@@ -183,6 +186,22 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     : undefined;
   const localAttachment =
     draftAttachment && isFileBackedComposerAttachment(draftAttachment) ? draftAttachment : null;
+  const sourceEnvironmentId = params.librarySourceEnvironmentId;
+  const loadCaptured = useMemo(
+    () =>
+      environmentId && sourceEnvironmentId
+        ? (signal: AbortSignal) =>
+            loadLibraryAttachment({
+              authorityEnvironmentId: environmentId,
+              sourceEnvironmentId: EnvironmentId.make(sourceEnvironmentId),
+              attachmentId: params.attachmentId,
+              name: params.name,
+              mimeType: params.mimeType,
+              signal,
+            })
+        : undefined,
+    [environmentId, sourceEnvironmentId, params.attachmentId, params.name, params.mimeType],
+  );
   const document = useAttachmentDocument({
     name: params.name,
     mimeType: params.mimeType,
@@ -190,6 +209,7 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     attachmentId: params.attachmentId,
     environmentId,
     attachment: localAttachment,
+    ...(loadCaptured ? { loadCaptured } : {}),
   });
   const [nativeOpen, setNativeOpen] = useState(false);
   // A format we cannot render goes straight to the system viewer; this screen is only the
@@ -216,9 +236,19 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     const kind = nativeKind ?? "document";
     const base = { kind, name: params.name, mimeType: params.mimeType };
     if (localAttachment) return { ...base, attachment: localAttachment };
+    if (loadCaptured) return uri ? { ...base, uri } : null;
     if (environmentId) return { ...base, environmentId, resource };
     return uri ? { ...base, uri } : null;
-  }, [environmentId, localAttachment, nativeKind, params.mimeType, params.name, resource, uri]);
+  }, [
+    environmentId,
+    loadCaptured,
+    localAttachment,
+    nativeKind,
+    params.mimeType,
+    params.name,
+    resource,
+    uri,
+  ]);
   const handleNativeOpenError = useCallback((error: unknown) => {
     pendingNativeError.current = nativeViewerErrorMessage(error);
   }, []);

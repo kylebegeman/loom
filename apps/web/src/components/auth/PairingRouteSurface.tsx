@@ -1,3 +1,4 @@
+import { LoomSignIn } from "~/fork/identity/LoomSignIn";
 import { Alert, AlertDescription } from "../ui/alert";
 import type { AuthSessionState } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -94,6 +95,9 @@ export function PairingRouteSurface({
         description={describeAuthGate(auth.bootstrapMethods)}
       />
 
+      <div className="mt-6">
+        <LoomSignIn />
+      </div>
       <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <div className="space-y-2">
           <label className="text-sm font-medium" htmlFor="pairing-token">

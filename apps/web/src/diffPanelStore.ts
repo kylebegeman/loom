@@ -138,3 +138,13 @@ export function selectThreadDiffPanelSelection(
   if (!ref) return DEFAULT_SELECTION;
   return byThreadKey[scopedThreadKey(ref)] ?? DEFAULT_SELECTION;
 }
+
+/** Select completed-turn history when the project parent has no single Git repository. */
+export function resolveAvailableDiffPanelSelection(
+  selection: DiffPanelSelection,
+  isGitRepo: boolean,
+  latestTurnId: RunId | undefined,
+): DiffPanelSelection {
+  if (isGitRepo || selection.kind === "turn" || latestTurnId === undefined) return selection;
+  return { kind: "turn", turnId: latestTurnId, filePath: null, revealRequestId: 0 };
+}

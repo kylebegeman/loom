@@ -1,3 +1,5 @@
+import { useLibraryAuthority } from "~/fork/project-library/state";
+import { useNavigate } from "@tanstack/react-router";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -24,7 +26,13 @@ import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
 function ChatIndexRouteView() {
   const { authGateState } = Route.useRouteContext();
+  const library = useLibraryAuthority();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (library.authorityId) void navigate({ to: "/library", replace: true });
+  }, [library.authorityId, navigate]);
   const { environments, isReady } = useEnvironments();
+  if (library.authorityId) return null;
 
   if (authGateState.status === "hosted-static") {
     if (!isReady) return null;

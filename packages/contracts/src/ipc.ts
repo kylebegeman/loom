@@ -1,3 +1,4 @@
+import type { LoomDesktopSignInRequest, LoomDesktopSignInResult } from "./fork/identity.ts";
 import * as Schema from "effect/Schema";
 
 import { SnapShotSource } from "./chatAttachment.ts";
@@ -1116,6 +1117,8 @@ export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);
 export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 export interface DesktopBridge {
+  cancelLoomSignIn?: (input: LoomDesktopSignInRequest) => Promise<void>;
+  signInToLoom?: (input: LoomDesktopSignInRequest) => Promise<LoomDesktopSignInResult>;
   getAppBranding: () => DesktopAppBranding | null;
   /** Absolute path of a dropped or picked file; absent on desktop builds predating it. */
   getPathForFile?: (file: File) => string;

@@ -21,7 +21,7 @@ import {
 import { RootStack } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { OverlayPortalHost } from "./components/OverlayPortal";
-import { shouldHandleAppLink } from "./lib/appLinking";
+import { APP_LINKING_CONFIG, shouldHandleAppLink } from "./lib/appLinking";
 import { useMobileNavigationTheme } from "./lib/useMobileNavigationTheme";
 import { useUiRuntimeMemoryWarningGc } from "./lib/useUiRuntimeMemoryWarningGc";
 import { SubscriptionUsageCoordinator } from "./widgets/SubscriptionUsageCoordinator";
@@ -50,8 +50,8 @@ const appLinking = {
     "t3code-dev://",
     "t3code-preview://",
   ],
-  // Keep the compact thread list available beneath a directly opened thread.
-  config: { initialRouteName: "Home" },
+  // Keep the project library beneath directly opened conversations and connections.
+  config: APP_LINKING_CONFIG,
   filter: shouldHandleAppLink,
 };
 

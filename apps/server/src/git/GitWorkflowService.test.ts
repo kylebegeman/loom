@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { VcsRepositoryDetectionError } from "@t3tools/contracts";
+import { LibraryError } from "@t3tools/contracts/fork";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as FileSystem from "effect/FileSystem";
@@ -151,6 +153,75 @@ describe("GitWorkflowService", () => {
       assert.equal(status.mock.calls.length, 0);
     }).pipe(Effect.provide(layerTest));
   });
+
+  it.effect(
+    "reports checkpoint capability for a registered nongit parent without enabling Git workflows",
+    () =>
+      Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService;
+        const local = yield* workflow.localStatus({ cwd: "/registered-project" });
+        const full = yield* workflow.status({ cwd: "/registered-project" });
+        expect(local).toMatchObject({
+          isRepo: false,
+          checkpointCapable: true,
+          hasPrimaryRemote: false,
+          refName: null,
+        });
+        expect(full).toMatchObject({
+          isRepo: false,
+          checkpointCapable: true,
+          hasUpstream: false,
+          pr: null,
+        });
+        expect(yield* workflow.isRepository("/registered-project")).toBe(false);
+        expect(yield* workflow.remoteStatus({ cwd: "/registered-project" })).toBeNull();
+        expect(
+          (yield* workflow.localStatus({ cwd: "/ordinary-folder" })).checkpointCapable,
+        ).toBeUndefined();
+      }).pipe(
+        Effect.provide(
+          layer({ detect: () => Effect.succeed(null) }).pipe(
+            Layer.provide(
+              Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
+                repositoriesForRoot: (cwd) =>
+                  Effect.succeed(
+                    cwd === "/registered-project"
+                      ? [{ path: "/registered-project/web", relativePath: "web" }]
+                      : null,
+                  ),
+              }),
+            ),
+          ),
+        ),
+      ),
+  );
+  it.effect("keeps empty registrations unavailable and reports receipt failures explicitly", () =>
+    Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      expect(
+        (yield* workflow.localStatus({ cwd: "/empty-registration" })).checkpointCapable,
+      ).toBeUndefined();
+      const failure = yield* workflow.status({ cwd: "/broken-registration" }).pipe(Effect.flip);
+      expect(failure).toMatchObject({
+        _tag: "GitManagerError",
+        operation: "GitWorkflowService.checkpointCapability",
+        cwd: "/broken-registration",
+      });
+    }).pipe(
+      Effect.provide(
+        layer({ detect: () => Effect.succeed(null) }).pipe(
+          Layer.provide(
+            Layer.mock(LibraryWorkspaceStore.LibraryWorkspaceStore)({
+              repositoriesForRoot: (cwd) =>
+                cwd === "/broken-registration"
+                  ? Effect.fail(new LibraryError({ reason: "io" }))
+                  : Effect.succeed([]),
+            }),
+          ),
+        ),
+      ),
+    ),
+  );
 
   it.effect("returns an empty ref list when no VCS repository is detected", () =>
     Effect.gen(function* () {

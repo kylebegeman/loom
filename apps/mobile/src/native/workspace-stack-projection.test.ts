@@ -39,6 +39,19 @@ function history(
   };
 }
 
+describe("durable library navigation", () => {
+  it("keeps the library primary while project and conversation routes occupy the detail column", () => {
+    const library = { key: "library", name: "Library" };
+    const project = { key: "project", name: "LibraryProject", params: { projectId: "durable" } };
+    const conversation = { key: "conversation", name: "Thread" };
+    expect(projectWorkspaceStack(history([library, project, conversation]), () => false)).toEqual({
+      primary: library,
+      detail: [project, conversation],
+      overlays: [],
+    });
+  });
+});
+
 describe("workspace router projection", () => {
   it("keeps workspace flows beside Home and restores them after a modal closes", () => {
     const draft = { key: "draft", name: "NewTaskSheet" };

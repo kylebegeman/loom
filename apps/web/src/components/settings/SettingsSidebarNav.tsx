@@ -1,3 +1,4 @@
+import { useLibraryAuthority } from "~/fork/project-library/state";
 import {
   lazy,
   Suspense,
@@ -112,6 +113,7 @@ function SettingsSectionIcon({ to }: { to: SettingsPath }) {
 
 export function SettingsSidebarNav({ pathname }: { pathname: string }) {
   const navigate = useNavigate();
+  const library = useLibraryAuthority();
   const currentHash = useLocation({ select: (location) => location.hash });
   const currentSearch = useLocation({ select: (location) => location.search });
   const scopeSearch = useMemo(() => validateSettingsScopeSearch(currentSearch), [currentSearch]);
@@ -351,7 +353,11 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                         onClick={() => handleSectionClick(item.to)}
                       >
                         <Icon />
-                        <span className="truncate">{item.label}</span>
+                        <span className="truncate">
+                          {library.authorityId && item.to === "/settings/projects"
+                            ? "Local folder settings"
+                            : item.label}
+                        </span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );

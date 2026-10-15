@@ -183,6 +183,7 @@ export function shouldOpenProactiveTurnDiff(input: {
 export function resolveProactiveTurnDiffAction(input: {
   checkpoint: Pick<TurnDiffSummary, "status" | "files"> | undefined;
   isGitRepo: boolean | undefined;
+  checkpointCapable?: boolean | undefined;
   activeSurfaceKind: RightPanelSurface["kind"] | null;
 }): "defer" | "ignore" | "open" {
   // An open diff already shows the work; reopening it would reset the chosen scope.
@@ -190,9 +191,10 @@ export function resolveProactiveTurnDiffAction(input: {
     return "ignore";
   }
   if (input.checkpoint === undefined || input.checkpoint.status === "missing") return "defer";
-  if (input.isGitRepo === undefined) return "defer";
+  const checkpointCapable = input.checkpointCapable ?? input.isGitRepo;
+  if (checkpointCapable === undefined) return "defer";
   if (
-    !input.isGitRepo ||
+    !checkpointCapable ||
     input.checkpoint.status !== "ready" ||
     input.checkpoint.files.length === 0
   ) {

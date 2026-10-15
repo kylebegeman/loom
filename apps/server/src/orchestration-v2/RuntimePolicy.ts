@@ -14,6 +14,7 @@ import * as Schema from "effect/Schema";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProjectStore from "./ProjectStore.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 
 /**
  * ERRORS
@@ -92,6 +93,7 @@ export const layerFromProjectStore: Layer.Layer<
   RuntimePolicyV2,
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
+    const workspaceStore = yield* Effect.serviceOption(LibraryWorkspaceStore.LibraryWorkspaceStore);
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     return RuntimePolicyV2.of({
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
@@ -128,7 +130,24 @@ export const layerFromProjectStore: Layer.Layer<
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
-          cwd,
+          cwd: Option.isNone(workspaceStore)
+            ? cwd
+            : yield* workspaceStore.value
+                .validateThreadCwd({
+                  threadId: input.thread.id,
+                  localProjectId: input.thread.projectId,
+                  cwd,
+                })
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new RuntimePolicyResolveError({
+                        projectId: input.thread.projectId,
+                        providerInstanceId: input.modelSelection.instanceId,
+                        cause,
+                      }),
+                  ),
+                ),
         });
       }),
     });

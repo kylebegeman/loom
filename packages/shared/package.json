@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./sha256": {
+      "types": "./src/sha256.ts",
+      "import": "./src/sha256.ts"
+    },
     "./brand": {
       "types": "./src/brand.ts",
       "import": "./src/brand.ts"

@@ -14,6 +14,9 @@ const state = vi.hoisted(() => ({
   session: null as Pick<AuthSessionState, "authenticated" | "scopes"> | null,
   sessionError: null as string | null,
   sessionAtom: {},
+  gitStatusAtom: {},
+  gitStatus: { isRepo: true, checkpointCapable: true },
+  gitStatusPending: false,
   effects: [] as Array<() => void>,
   checkpoints: [] as ReadonlyArray<ThreadCheckpointSummary>,
 }));
@@ -43,9 +46,17 @@ vi.mock("../../state/use-selected-thread-worktree", () => ({
 }));
 vi.mock("../../state/query", () => ({
   useEnvironmentQuery: (atom: unknown) => ({
-    data: atom === state.sessionAtom ? state.session : null,
+    data:
+      atom === state.sessionAtom
+        ? state.session
+        : atom === state.gitStatusAtom
+          ? state.gitStatus
+          : null,
     error: atom === state.sessionAtom ? state.sessionError : null,
-    isPending: atom === state.sessionAtom && state.session === null,
+    isPending:
+      atom === state.sessionAtom
+        ? state.session === null
+        : atom === state.gitStatusAtom && state.gitStatusPending,
     refresh: vi.fn(),
   }),
 }));
@@ -54,6 +65,9 @@ vi.mock("../../state/queries", () => ({
 }));
 vi.mock("../../state/review", () => ({
   reviewEnvironment: { diffPreview: vi.fn() },
+}));
+vi.mock("../../state/vcs", () => ({
+  vcsEnvironment: { status: () => state.gitStatusAtom },
 }));
 vi.mock("./reviewState", () => ({
   setReviewAsyncError: vi.fn(),
@@ -65,12 +79,15 @@ vi.mock("./reviewState", () => ({
 
 import { setReviewSelectedSectionId, type ReviewCacheForThread } from "./reviewState";
 import { useReviewSections } from "./useReviewSections";
+import { reviewEnvironment } from "../../state/review";
 
 beforeEach(() => {
   vi.clearAllMocks();
   state.effects = [];
   state.session = { authenticated: true, scopes: [AuthFilesystemReadScope] };
   state.sessionError = null;
+  state.gitStatus = { isRepo: true, checkpointCapable: true };
+  state.gitStatusPending = false;
   state.checkpoints = [
     {
       runId: RunId.make("turn-1"),
@@ -207,4 +224,13 @@ it("keeps a cached checkpoint available when the filesystem access check fails",
   const checkpoint = renderSections(makeInput());
   expect(checkpoint.selectedSection?.diff).toBe(checkpointDiff);
   expect(checkpoint.error).toBeNull();
+});
+
+it("shows checkpoint changes for a multi-repository parent without asking Git to diff the parent folder", () => {
+  state.gitStatus = { isRepo: false, checkpointCapable: true };
+  const result = renderSections(makeInput());
+  expect(reviewEnvironment.diffPreview).not.toHaveBeenCalled();
+  expect(result.reviewSections.map((section) => section.id)).toEqual(["turn:1"]);
+  expect(result.selectedSection?.diff).toBe(checkpointDiff);
+  expect(result.error).toBeNull();
 });

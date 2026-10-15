@@ -6,8 +6,10 @@
  * expo-sharing uses a private lifecycle URL only to wake the app. The
  * persisted share inbox in App.tsx owns navigation once the payload is durable.
  * A scheme-only URL, as sent by iOS dictation keyboards returning to the app,
- * only wakes the app and must not reset navigation to Home.
+ * only wakes the app and must not reset navigation.
  */
+export const APP_LINKING_CONFIG = { initialRouteName: "Library" } as const;
+
 export function shouldHandleAppLink(url: string): boolean {
   return (
     !url.includes("expo-development-client") &&

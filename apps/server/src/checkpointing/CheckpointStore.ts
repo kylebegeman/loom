@@ -13,10 +13,19 @@
  *
  * @module CheckpointStore
  */
-import { VcsUnsupportedOperationError, type CheckpointRef } from "@t3tools/contracts";
+import {
+  VcsRepositoryDetectionError,
+  VcsUnsupportedOperationError,
+  CheckpointRef,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import { parseTurnDiffFilesFromNumstat } from "./Diffs.ts";
+import { threadIdFromCheckpointRef } from "./Utils.ts";
 
 import type { CheckpointStoreError } from "./Errors.ts";
 import type { VcsCheckpointOps } from "../vcs/VcsDriver.ts";
@@ -138,54 +147,214 @@ export const make = Effect.gen(function* () {
     return handle.driver.checkpoints satisfies VcsCheckpointOps;
   });
 
-  const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = (cwd) =>
-    vcsRegistry
-      .detect({ cwd, requestedKind: "git" })
-      .pipe(Effect.map((repository) => repository !== null));
+  const workspaceStore = yield* Effect.serviceOption(LibraryWorkspaceStore.LibraryWorkspaceStore);
+  const targets = Effect.fnUntraced(function* (cwd: string, checkpointRef?: CheckpointRef) {
+    const repositories = Option.isSome(workspaceStore)
+      ? yield* workspaceStore.value
+          .repositoriesForRoot(
+            cwd,
+            checkpointRef === undefined ? undefined : threadIdFromCheckpointRef(checkpointRef),
+          )
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new VcsRepositoryDetectionError({
+                  operation: "CheckpointStore.workspace",
+                  cwd,
+                  detail: "The project working-copy receipt is unavailable.",
+                  cause,
+                }),
+            ),
+          )
+      : null;
+    return repositories ?? [{ path: cwd, relativePath: "" }];
+  });
+  const prefixPath = (prefix: string, file: string) => (prefix === "" ? file : `${prefix}/${file}`);
+  const prefixNumstat = (numstat: string, prefix: string) => {
+    if (prefix === "") return numstat;
+    const records = numstat.split("\0");
+    for (let index = 0; index < records.length; index++) {
+      const record = records[index]!;
+      const counts = /^(\d+|-)\t(\d+|-)\t/.exec(record);
+      if (!counts) continue;
+      const file = record.slice(counts[0].length);
+      if (file !== "") records[index] = `${counts[0]}${prefixPath(prefix, file)}`;
+      else {
+        records[index + 1] = prefixPath(prefix, records[index + 1] ?? "");
+        records[index + 2] = prefixPath(prefix, records[index + 2] ?? "");
+        index += 2;
+      }
+    }
+    return records.join("\0");
+  };
+  const isGitRepository: CheckpointStore["Service"]["isGitRepository"] = Effect.fn(
+    "CheckpointStore.isGitRepository",
+  )(function* (cwd) {
+    const repositories = yield* targets(cwd);
+    if (repositories.length === 0) return false;
+    for (const repository of repositories) {
+      if ((yield* vcsRegistry.detect({ cwd: repository.path, requestedKind: "git" })) === null)
+        return false;
+    }
+    return true;
+  });
 
   const captureCheckpoint: CheckpointStore["Service"]["captureCheckpoint"] = Effect.fn(
-    "captureCheckpoint",
+    "CheckpointStore.captureCheckpoint",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.captureCheckpoint", input.cwd);
-    return yield* checkpoints.captureCheckpoint(input);
+    for (const repository of yield* targets(input.cwd, input.checkpointRef)) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.captureCheckpoint",
+        repository.path,
+      );
+      yield* checkpoints.captureCheckpoint({ ...input, cwd: repository.path });
+    }
   });
 
   const hasCheckpointRef: CheckpointStore["Service"]["hasCheckpointRef"] = Effect.fn(
-    "hasCheckpointRef",
+    "CheckpointStore.hasCheckpointRef",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.hasCheckpointRef", input.cwd);
-    return yield* checkpoints.hasCheckpointRef(input);
+    const repositories = yield* targets(input.cwd, input.checkpointRef);
+    if (repositories.length === 0) return false;
+    for (const repository of repositories) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.hasCheckpointRef",
+        repository.path,
+      );
+      if (!(yield* checkpoints.hasCheckpointRef({ ...input, cwd: repository.path }))) return false;
+    }
+    return true;
   });
 
   const restoreCheckpoint: CheckpointStore["Service"]["restoreCheckpoint"] = Effect.fn(
-    "restoreCheckpoint",
+    "CheckpointStore.restoreCheckpoint",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.restoreCheckpoint", input.cwd);
-    return yield* checkpoints.restoreCheckpoint(input);
+    const repositories = yield* targets(input.cwd, input.checkpointRef);
+    if (repositories.length === 0) return false;
+    const resolved: Array<{ readonly cwd: string; readonly checkpoints: VcsCheckpointOps }> = [];
+    for (const repository of repositories) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.restoreCheckpoint",
+        repository.path,
+      );
+      if (
+        input.fallbackToHead !== true &&
+        !(yield* checkpoints.hasCheckpointRef({
+          cwd: repository.path,
+          checkpointRef: input.checkpointRef,
+        }))
+      )
+        return false;
+      resolved.push({ cwd: repository.path, checkpoints });
+    }
+    if (resolved.length === 1)
+      return yield* resolved[0]!.checkpoints.restoreCheckpoint({ ...input, cwd: resolved[0]!.cwd });
+    // Keep all repositories recoverable if a later restore fails after earlier ones changed.
+    const safetyRef = CheckpointRef.make(`refs/t3/project-library/restore/${yield* randomUuidV4}`);
+    for (const repository of resolved)
+      yield* repository.checkpoints.captureCheckpoint({
+        cwd: repository.cwd,
+        checkpointRef: safetyRef,
+      });
+    const restored = yield* Effect.result(
+      Effect.gen(function* () {
+        for (const repository of resolved) {
+          if (!(yield* repository.checkpoints.restoreCheckpoint({ ...input, cwd: repository.cwd })))
+            return false;
+        }
+        return true;
+      }),
+    );
+    if (restored._tag === "Failure" || !restored.success) {
+      const rollback = yield* Effect.forEach(resolved, (repository) =>
+        Effect.result(
+          repository.checkpoints.restoreCheckpoint({
+            cwd: repository.cwd,
+            checkpointRef: safetyRef,
+          }),
+        ),
+      );
+      if (rollback.some((result) => result._tag === "Failure" || !result.success))
+        return yield* new VcsRepositoryDetectionError({
+          operation: "CheckpointStore.restoreCheckpoint",
+          cwd: input.cwd,
+          detail:
+            "Project restore failed. Recovery checkpoints were retained for the repositories.",
+          cause: { restored, rollback },
+        });
+    }
+    for (const repository of resolved)
+      yield* repository.checkpoints.deleteCheckpointRefs({
+        cwd: repository.cwd,
+        checkpointRefs: [safetyRef],
+      });
+    return restored._tag === "Failure" ? yield* Effect.fail(restored.failure) : restored.success;
   });
 
   const diffCheckpoints: CheckpointStore["Service"]["diffCheckpoints"] = Effect.fn(
-    "diffCheckpoints",
+    "CheckpointStore.diffCheckpoints",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.diffCheckpoints", input.cwd);
-    return yield* checkpoints.diffCheckpoints(input);
+    const diffs: string[] = [];
+    for (const repository of yield* targets(input.cwd, input.toCheckpointRef)) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.diffCheckpoints",
+        repository.path,
+      );
+      const filePaths = input.filePaths?.flatMap((file) => {
+        if (repository.relativePath === "") return [file];
+        const prefix = `${repository.relativePath}/`;
+        return file.startsWith(prefix) ? [file.slice(prefix.length)] : [];
+      });
+      const diff = yield* checkpoints.diffCheckpoints({
+        ...input,
+        cwd: repository.path,
+        pathPrefix: repository.relativePath,
+        ...(filePaths === undefined ? {} : { filePaths }),
+      });
+      diffs.push(input.format === "numstat" ? prefixNumstat(diff, repository.relativePath) : diff);
+    }
+    return diffs.join("");
   });
 
   const listAuthoredPaths: CheckpointStore["Service"]["listAuthoredPaths"] = Effect.fn(
-    "listAuthoredPaths",
+    "CheckpointStore.listAuthoredPaths",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints("CheckpointStore.listAuthoredPaths", input.cwd);
-    return yield* checkpoints.listAuthoredPaths(input);
+    const repositories = yield* targets(input.cwd, input.toCheckpointRef);
+    const authored = new Set<string>();
+    for (const repository of repositories) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.listAuthoredPaths",
+        repository.path,
+      );
+      const paths = yield* checkpoints.listAuthoredPaths({ ...input, cwd: repository.path });
+      if (paths === null) {
+        if (repositories.length === 1) return null;
+        const changed = yield* checkpoints.diffCheckpoints({
+          ...input,
+          cwd: repository.path,
+          ignoreWhitespace: false,
+          format: "numstat",
+        });
+        for (const file of parseTurnDiffFilesFromNumstat(changed)) {
+          authored.add(prefixPath(repository.relativePath, file.path));
+          if (file.previousPath !== undefined)
+            authored.add(prefixPath(repository.relativePath, file.previousPath));
+        }
+      } else for (const file of paths) authored.add(prefixPath(repository.relativePath, file));
+    }
+    return authored;
   });
 
   const deleteCheckpointRefs: CheckpointStore["Service"]["deleteCheckpointRefs"] = Effect.fn(
-    "deleteCheckpointRefs",
+    "CheckpointStore.deleteCheckpointRefs",
   )(function* (input) {
-    const checkpoints = yield* resolveCheckpoints(
-      "CheckpointStore.deleteCheckpointRefs",
-      input.cwd,
-    );
-    return yield* checkpoints.deleteCheckpointRefs(input);
+    for (const repository of yield* targets(input.cwd)) {
+      const checkpoints = yield* resolveCheckpoints(
+        "CheckpointStore.deleteCheckpointRefs",
+        repository.path,
+      );
+      yield* checkpoints.deleteCheckpointRefs({ ...input, cwd: repository.path });
+    }
   });
 
   return CheckpointStore.of({

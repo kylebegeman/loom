@@ -1,3 +1,4 @@
+import { useLibraryAuthority } from "~/fork/project-library/state";
 import { Link } from "@tanstack/react-router";
 import { Button } from "~/components/ui/button";
 import {
@@ -17,6 +18,7 @@ import { BrowseProjectsButton } from "./BrowseProjectsButton";
 
 /** Project work stays in the library; settings provide configuration and storage entry points. */
 export function ProjectSettingsLanding() {
+  const library = useLibraryAuthority();
   const { groups, selectScope, search } = useSettingsScope();
   const choices = search.machine
     ? groups.filter((group) =>
@@ -28,7 +30,11 @@ export function ProjectSettingsLanding() {
       <SettingsSection id="project-overview" title="Projects" hideTitle>
         <SettingsRow
           title="Project library"
-          description="Browse projects and their threads."
+          description={
+            library.authorityId
+              ? "Edit your shared brief and resources, and browse project conversations."
+              : "Browse projects and their threads."
+          }
           control={<BrowseProjectsButton />}
         />
         <SettingsRow
@@ -41,7 +47,7 @@ export function ProjectSettingsLanding() {
           }
         />
         <SettingsRow
-          title="Project settings"
+          title={library.authorityId ? "Local folder settings" : "Project settings"}
           description={
             choices.length === 0
               ? search.machine
@@ -63,9 +69,11 @@ export function ProjectSettingsLanding() {
               <SelectTrigger
                 size="sm"
                 disabled={choices.length === 0}
-                aria-label="Choose a project"
+                aria-label={library.authorityId ? "Choose a local folder" : "Choose a project"}
               >
-                <SelectValue placeholder="Choose a project" />
+                <SelectValue
+                  placeholder={library.authorityId ? "Choose a local folder" : "Choose a project"}
+                />
               </SelectTrigger>
               <SelectPopup>
                 {choices.map((group) => (

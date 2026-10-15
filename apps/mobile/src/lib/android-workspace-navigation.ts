@@ -4,14 +4,18 @@ export type AndroidWorkspaceDestination =
   | { readonly name: "Thread"; readonly params: ReactNavigation.RootParamList["Thread"] }
   | { readonly name: "PullRequest"; readonly params: ReactNavigation.RootParamList["PullRequest"] };
 
-/** Peer details share one slot above Home; nested routes retain ordinary back navigation. */
+/** Peer details share one slot above the selected library or legacy list. */
 export function androidWorkspaceNavigationState(
   state: NavigationState,
   destination?: AndroidWorkspaceDestination,
   reviewers?: ReactNavigation.RootParamList["PullRequestReviewers"],
 ) {
-  const home = state.routes.find((route) => route.name === "Home") ?? { name: "Home" };
-  if (!destination) return { ...state, index: 0, routes: [home] };
+  const primary = state.routes.findLast(
+    (route) => route.name === "Library" || route.name === "Home",
+  ) ?? {
+    name: "Library",
+  };
+  if (!destination) return { ...state, index: 0, routes: [primary] };
   const identity =
     destination.name === "Thread"
       ? ["environmentId", "threadId"]
@@ -26,7 +30,7 @@ export function androidWorkspaceNavigationState(
     ...state,
     index: reviewers ? 2 : 1,
     routes: [
-      home,
+      primary,
       { ...existing, ...destination },
       ...(reviewers ? [{ name: "PullRequestReviewers", params: reviewers }] : []),
     ],

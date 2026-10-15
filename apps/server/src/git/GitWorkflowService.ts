@@ -2,6 +2,8 @@ import { restoreManagedProjectCheckout } from "../workspace/ManagedProjectChecko
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
 
 import {
   GitManagerError,
@@ -128,9 +130,10 @@ export class GitWorkflowService extends Context.Service<
   }
 >()("t3/git/GitWorkflowService") {}
 
-function nonRepositoryLocalStatus(): VcsStatusLocalResult {
+function nonRepositoryLocalStatus(checkpointCapable = false): VcsStatusLocalResult {
   return {
     isRepo: false,
+    ...(checkpointCapable ? { checkpointCapable: true } : {}),
     hasPrimaryRemote: false,
     isDefaultRef: false,
     refName: null,
@@ -143,9 +146,9 @@ function nonRepositoryLocalStatus(): VcsStatusLocalResult {
   };
 }
 
-function nonRepositoryStatus(): VcsStatusResult {
+function nonRepositoryStatus(checkpointCapable = false): VcsStatusResult {
   return {
-    ...nonRepositoryLocalStatus(),
+    ...nonRepositoryLocalStatus(checkpointCapable),
     hasUpstream: false,
     aheadCount: 0,
     behindCount: 0,
@@ -169,6 +172,22 @@ export const make = Effect.gen(function* () {
   const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
   const git = yield* GitVcsDriver.GitVcsDriver;
   const gitManager = yield* GitManager.GitManager;
+  const workspaceStore = yield* Effect.serviceOption(LibraryWorkspaceStore.LibraryWorkspaceStore);
+  const checkpointCapability = Effect.fnUntraced(function* (cwd: string) {
+    if (Option.isNone(workspaceStore)) return false;
+    const repositories = yield* workspaceStore.value.repositoriesForRoot(cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation: "GitWorkflowService.checkpointCapability",
+            cwd,
+            detail: "The project working-copy checkpoint scope is unavailable.",
+            cause,
+          }),
+      ),
+    );
+    return repositories !== null && repositories.length > 0;
+  });
   const restorationServices =
     yield* Effect.context<Effect.Services<ReturnType<typeof restoreManagedProjectCheckout>>>();
 
@@ -372,7 +391,9 @@ export const make = Effect.gen(function* () {
     status: (input) =>
       detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(
         Effect.flatMap((isGitRepository) =>
-          isGitRepository ? gitManager.status(input) : Effect.succeed(nonRepositoryStatus()),
+          isGitRepository
+            ? gitManager.status(input)
+            : checkpointCapability(input.cwd).pipe(Effect.map(nonRepositoryStatus)),
         ),
       ),
     localStatus: (input) =>
@@ -380,7 +401,7 @@ export const make = Effect.gen(function* () {
         Effect.flatMap((isGitRepository) =>
           isGitRepository
             ? gitManager.localStatus(input)
-            : Effect.succeed(nonRepositoryLocalStatus()),
+            : checkpointCapability(input.cwd).pipe(Effect.map(nonRepositoryLocalStatus)),
         ),
       ),
     remoteStatus: (input, options) =>

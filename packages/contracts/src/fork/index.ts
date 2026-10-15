@@ -48,3 +48,7 @@ export * from "./mini-offload.ts";
 export * from "./computer-naming.ts";
 
 export * from "./project-checkout.ts";
+
+export * from "./project-library.ts";
+
+export * from "./identity.ts";

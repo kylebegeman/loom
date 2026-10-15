@@ -1,3 +1,4 @@
+import { makeProjectLibraryRpcHandlers } from "./project-library/rpc.ts";
 import { makeProjectCheckoutRpcHandlers } from "./project-checkout/rpc.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
 import * as ComputerNaming from "./computer-naming/ComputerNaming.ts";
@@ -40,6 +41,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
             Effect.succeed({ features: LOOM_SERVER_FEATURES, serverVersion: packageJson.version }),
           ),
         [FORK_WS_METHODS.limits]: () => auth.effect(FORK_WS_METHODS.limits, readSwitchboardLimits),
+        ...(yield* withForkRuntime(makeProjectLibraryRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeProjectCheckoutRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),
         ...(yield* withForkRuntime(makePcbPreviewRpcHandlers(auth))),

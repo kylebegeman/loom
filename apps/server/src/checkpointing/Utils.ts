@@ -1,5 +1,6 @@
 import * as Base64Url from "effect/encoding/Base64Url";
-import { CheckpointRef, ProjectId, type ThreadId } from "@t3tools/contracts";
+import * as Result from "effect/Result";
+import { CheckpointRef, ThreadId } from "@t3tools/contracts";
 
 const CHECKPOINT_REFS_PREFIX = "refs/t3/checkpoints";
 
@@ -9,20 +10,11 @@ export function checkpointRefForThreadTurn(threadId: ThreadId, turnCount: number
   );
 }
 
-function resolveThreadWorkspaceCwd(input: {
-  readonly thread: {
-    readonly projectId: ProjectId;
-    readonly worktreePath: string | null;
-  };
-  readonly projects: ReadonlyArray<{
-    readonly id: ProjectId;
-    readonly workspaceRoot: string;
-  }>;
-}): string | undefined {
-  const worktreeCwd = input.thread.worktreePath ?? undefined;
-  if (worktreeCwd) {
-    return worktreeCwd;
-  }
-
-  return input.projects.find((project) => project.id === input.thread.projectId)?.workspaceRoot;
+export function threadIdFromCheckpointRef(checkpointRef: CheckpointRef): ThreadId | undefined {
+  const encoded = /^refs\/t3\/checkpoints\/([^/]+)\/turn\/\d+$/.exec(checkpointRef)?.[1];
+  if (encoded === undefined) return undefined;
+  const decoded = Base64Url.decodeString(encoded);
+  return Result.isSuccess(decoded) && decoded.success !== ""
+    ? ThreadId.make(decoded.success)
+    : undefined;
 }

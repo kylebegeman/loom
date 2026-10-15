@@ -88,16 +88,16 @@ export function useThreadHeaderOptions(props: {
     ],
   );
   // Deep links / cold starts land with Thread as the ONLY route, where the
-  // native back button does not render. Provide an explicit Home escape for
+  // native back button does not render. Provide an explicit Library escape for
   // that case; when history exists the native back button is used instead.
   const canGoBack = navigation.canGoBack();
   const compactHomeHeaderItems = useMemo<NativeHeaderItems>(
     () => [
       withNativeGlassHeaderItem({
-        accessibilityLabel: "Go to threads list",
+        accessibilityLabel: "Go to project library",
         icon: { name: "list.bullet", type: "sfSymbol" as const },
         identifier: "thread-left-home",
-        onPress: () => navigation.dispatch(StackActions.replace("Home")),
+        onPress: () => navigation.dispatch(StackActions.replace("Library")),
         type: "button" as const,
       }),
     ],

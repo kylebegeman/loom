@@ -1,0 +1,180 @@
+import { OrchestratorMcpFailure, ThreadId } from "@t3tools/contracts";
+import * as Library from "@t3tools/contracts/fork";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import { Tool, Toolkit } from "effect/ai";
+import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
+import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
+import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
+import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import * as Catalog from "./LibraryService.ts";
+import * as Workspace from "./LibraryWorkspace.ts";
+import * as Replication from "./LibraryReplication.ts";
+
+const failure = Schema.Union([Library.LibraryError, OrchestratorMcpFailure]);
+const dependencies = [McpInvocationContext, ThreadManagementService];
+export const ProjectLibraryToolkit = Toolkit.make(
+  Tool.make("loom_library_projects", {
+    description: "List durable projects in this Library, independent of working computers.",
+    parameters: Schema.Struct({ includeArchived: Schema.optional(Schema.Boolean) }),
+    success: Schema.Array(Library.LibraryProject),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_project", {
+    description: "Read a project's shared brief and repository components.",
+    parameters: Schema.Struct({ projectId: Library.LibraryId }),
+    success: Library.LibraryProject,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_conversations", {
+    description:
+      "Read a project's centrally saved conversation index with source computer and saved watermark.",
+    parameters: Schema.Struct({ projectId: Library.LibraryId }),
+    success: Schema.Array(Library.LibraryThreadSummary),
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_history", {
+    description:
+      "Read centrally uploaded full conversation history without contacting the original computer.",
+    parameters: Schema.Struct({ id: Library.LibraryId }),
+    success: Library.LibraryThreadArchive,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_project_create", {
+    description: "Create a durable project and shared brief. No computer or folder is selected.",
+    parameters: Library.LibraryCreateProjectRequest,
+    success: Library.LibraryProject,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_project_update", {
+    description:
+      "Save a new project context revision with optimistic conflict checks. Existing conversations keep their pinned context.",
+    parameters: Library.LibraryUpdateProjectRequest,
+    success: Library.LibraryProject,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_project_archive", {
+    description: "Archive or reopen a durable project. Preserves files and conversation history.",
+    parameters: Library.LibraryArchiveProjectRequest,
+    success: Library.LibraryProject,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_prepare", {
+    description:
+      "Reuse an existing folder or clone all selected project repositories beneath one parent on this computer. Prefer reuse. Retry with the same requestId after a failure.",
+    parameters: Library.LibraryPrepareCopyRequest,
+    success: Library.LibraryWorkingCopy,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_copy_status", {
+    description:
+      "Review working-copy ownership, active bindings and cleanup blockers. A current reviewToken is needed to release.",
+    parameters: Schema.Struct({ workingCopyId: Library.LibraryId }),
+    success: Library.LibraryCopyStatus,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_binding_resolve", {
+    description:
+      "Verify a proposed immutable conversation computer, working copy, component scope and context. Does not run an agent.",
+    parameters: Library.LibraryResolveBindingRequest,
+    success: Library.LibraryResolvedBinding,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_thread_bind", {
+    description:
+      "Bind a newly created empty conversation to its reviewed computer, copy and project context. Existing bindings are immutable. Use a linked new conversation for another computer.",
+    parameters: Schema.Struct({
+      threadId: ThreadId,
+      binding: Library.LibraryThreadBinding,
+      project: Schema.optional(Library.LibraryProject),
+    }),
+    success: Library.LibraryResolvedBinding,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_history_flush", {
+    description:
+      "Upload committed bound conversation snapshots and referenced assets from this computer. Never retries an ambiguous provider dispatch.",
+    success: Library.LibraryReplicationStatus,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+);
+export const projectLibraryHandlers = McpToolAccess.toLayer(
+  ProjectLibraryToolkit,
+  Effect.gen(function* () {
+    const runtime = yield* ForkRuntime;
+    const onHost = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      withForkRuntime(effect).pipe(Effect.provideService(ForkRuntime, runtime));
+    return {
+      loom_library_projects: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Catalog.LibraryService, (service) =>
+            service.projects(
+              input.includeArchived === undefined ? {} : { includeArchived: input.includeArchived },
+            ),
+          ),
+        ),
+      ),
+      loom_library_project: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.project(input))),
+      ),
+      loom_library_conversations: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threads(input))),
+      ),
+      loom_library_history: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.history(input))),
+      ),
+      loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.createProject(input))),
+      ),
+      loom_library_project_update: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.updateProject(input))),
+      ),
+      loom_library_project_archive: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.archiveProject(input))),
+      ),
+      loom_library_copy_prepare: McpToolAccess.writesEnvironment((input) =>
+        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.prepareCopy(input))),
+      ),
+      loom_library_copy_status: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.status(input))),
+      ),
+      loom_library_binding_resolve: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.resolveBinding(input)),
+        ),
+      ),
+      loom_library_thread_bind: McpToolAccess.writesThreads(
+        (input) => [input.threadId],
+        (input) =>
+          onHost(
+            Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.bindThread(input)),
+          ),
+      ),
+      loom_library_history_flush: McpToolAccess.writesEnvironment(() =>
+        onHost(
+          Effect.flatMap(Replication.LibraryReplication, (service) =>
+            service.drain.pipe(Effect.andThen(service.status)),
+          ),
+        ),
+      ),
+    };
+  }),
+);

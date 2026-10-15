@@ -25,3 +25,5 @@ export * from "./project-library-presentation.ts";
 export * from "./project-home-presentation.ts";
 export * from "./project-computer-choices.ts";
 export * from "./project-storage-rollout.ts";
+
+export * from "./project-library.ts";

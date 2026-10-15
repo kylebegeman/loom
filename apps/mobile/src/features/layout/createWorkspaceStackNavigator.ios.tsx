@@ -295,7 +295,7 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
     const presentation = props.descriptors[route.key]?.options.presentation;
     return presentation !== undefined && presentation !== "card";
   });
-  // Linking normally restores Home via initialRouteName. A detail-only history
+  // Linking normally restores Library via initialRouteName. A detail-only history
   // must stay a single stack: placeholder descriptors cannot own an interactive
   // sidebar because React Navigation rejects their actions and setOptions.
   const primaryRoute = projection.primary;
@@ -313,7 +313,19 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
     options: { headerShown: false },
     render: () => (
       <WorkspaceNativeTabs
-        onNewTask={() => props.navigation.navigate("NewTaskSheet", { screen: "NewTask" })}
+        onNewTask={() => {
+          if (primaryRoute.name === "Library") {
+            const params = visibleRoute.params;
+            if (
+              visibleRoute.name.startsWith("Library") &&
+              params &&
+              "projectId" in params &&
+              typeof params.projectId === "string"
+            )
+              props.navigation.navigate("LibraryStart", { projectId: params.projectId });
+            else props.navigation.navigate("Library");
+          } else props.navigation.navigate("NewTaskSheet", { screen: "NewTask" });
+        }}
         hidden={
           projection.detail.length > 0 &&
           !primaryVisible &&

@@ -9,7 +9,11 @@ import { Alert } from "react-native";
 
 import type { FileBackedComposerAttachment } from "./composerImages";
 import { loadLocalAttachmentPreview } from "./localAttachmentPreview";
-import { downloadAndShareAttachment, shareLocalAttachment } from "./attachmentDownload";
+import {
+  downloadAndShareAttachment,
+  shareLocalAttachment,
+  type AttachmentPreviewFile,
+} from "./attachmentDownload";
 import { useRefreshAssetUrl } from "../state/assets";
 import { attachmentDocumentPresentation } from "./attachmentDocumentPresentation";
 
@@ -30,6 +34,7 @@ export function useAttachmentDocument(input: {
   readonly attachmentId: string;
   readonly environmentId: EnvironmentId | null;
   readonly attachment: FileBackedComposerAttachment | null;
+  readonly loadCaptured?: (signal: AbortSignal) => Promise<AttachmentPreviewFile | null>;
 }) {
   const kind = filePreviewKind(input);
   const delimiter = filePreviewDelimiter(input);
@@ -45,7 +50,7 @@ export function useAttachmentDocument(input: {
     }),
     [input.attachmentId, input.name, input.mimeType],
   );
-  const environmentId = input.attachment ? null : input.environmentId;
+  const environmentId = input.attachment || input.loadCaptured ? null : input.environmentId;
   const refresh = useRefreshAssetUrl(environmentId, resource);
   const [localUri, setLocalUri] = useState<string | null>(null);
   const [remoteUri, setRemoteUri] = useState<string | null>(null);
@@ -70,15 +75,29 @@ export function useAttachmentDocument(input: {
   const [sharing, setSharing] = useState(false);
   const uri = input.attachment ? localUri : remoteUri;
   const attachment = input.attachment;
+  const loadCaptured = input.loadCaptured;
   useEffect(() => {
     if (attachment) return;
     let cancelled = false;
+    const controller = new AbortController();
+    let release: (() => void) | undefined;
     // Await a fresh signed URL: cached links can expire while the client is suspended.
     // oxlint-disable-next-line react/set-state-in-effect -- A new preview request clears its previous URL and error.
     setRemoteUri(null);
     setError(null);
     textReadUrl.current = null;
-    void refresh()
+    const loading = loadCaptured
+      ? loadCaptured(controller.signal).then((file) => {
+          if (!file) return null;
+          if (cancelled) {
+            file.dispose();
+            return null;
+          }
+          release = file.dispose;
+          return file.uri;
+        })
+      : refresh();
+    void loading
       .then((url) => {
         if (cancelled) return;
         if (!url) throw new Error("Reconnect to this environment and try again.");
@@ -91,9 +110,11 @@ export function useAttachmentDocument(input: {
       });
     return () => {
       cancelled = true;
+      controller.abort();
+      release?.();
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Retry must reauthorize the remote file.
-  }, [attachment, refresh, revision]);
+  }, [attachment, refresh, revision, loadCaptured]);
   useEffect(() => {
     if (!attachment) return;
     // A new attachment must not keep the previous file behind it: `share()` would otherwise

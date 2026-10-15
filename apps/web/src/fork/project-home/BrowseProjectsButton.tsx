@@ -1,3 +1,5 @@
+import { useNavigate } from "@tanstack/react-router";
+import { useLibraryAuthority } from "~/fork/project-library/state";
 import { useNavigateToMainApp } from "~/components/sidebar/mainAppLocation";
 import { Button } from "~/components/ui/button";
 import { useSidebar } from "~/components/ui/sidebar";
@@ -13,6 +15,8 @@ export function BrowseProjectsButton({
   readonly variant?: "outline" | "link";
   readonly label?: string;
 }) {
+  const navigate = useNavigate();
+  const library = useLibraryAuthority();
   const navigateToMainApp = useNavigateToMainApp();
   const [, setView] = useProjectNavigationView();
   const { isMobile, setOpenMobile, setOpen } = useSidebar();
@@ -21,6 +25,10 @@ export function BrowseProjectsButton({
       size={size}
       variant={variant}
       onClick={() => {
+        if (library.authorityId) {
+          void navigate({ to: "/library" });
+          return;
+        }
         setView("projects");
         void navigateToMainApp().then(() => {
           if (isMobile) setOpenMobile(true);

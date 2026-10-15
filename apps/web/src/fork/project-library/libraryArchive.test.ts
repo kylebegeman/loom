@@ -1,0 +1,131 @@
+import {
+  ChatAttachmentId,
+  MessageId,
+  ThreadId,
+  TurnItemId,
+  type OrchestrationV2ProjectedTurnItem,
+  type OrchestrationV2TurnItem,
+} from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
+import { describe, expect, it } from "vite-plus/test";
+import { makeThreadProjectionFixture } from "~/test-fixtures";
+import { libraryArchiveMessages, shouldRefreshLibraryArchive } from "./libraryArchive";
+
+const now = DateTime.makeUnsafe("2026-10-15T12:00:00Z");
+const parentId = ThreadId.make("parent");
+const childId = ThreadId.make("child");
+const attachment = {
+  id: ChatAttachmentId.make("inherited-attachment"),
+  type: "file" as const,
+  name: "brief.txt",
+  mimeType: "text/plain",
+  sizeBytes: 10,
+};
+function item(
+  id: string,
+  threadId = childId,
+): Extract<OrchestrationV2TurnItem, { type: "assistant_message" }> {
+  return {
+    id: TurnItemId.make(id),
+    threadId,
+    runId: null,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal: 1,
+    status: "completed",
+    title: null,
+    startedAt: now,
+    completedAt: now,
+    updatedAt: now,
+    type: "assistant_message",
+    messageId: MessageId.make(id),
+    text: id,
+    attachments: [attachment],
+    streaming: false,
+  };
+}
+function visible(
+  value: OrchestrationV2TurnItem,
+  position: number,
+  visibility: OrchestrationV2ProjectedTurnItem["visibility"] = "local",
+): OrchestrationV2ProjectedTurnItem {
+  return {
+    position,
+    visibility,
+    sourceThreadId: value.threadId,
+    sourceItemId: value.id,
+    item: value,
+  };
+}
+function message(id: string) {
+  return {
+    id: MessageId.make(id),
+    threadId: childId,
+    runId: null,
+    nodeId: null,
+    role: "assistant" as const,
+    text: id,
+    attachments: [attachment],
+    streaming: false,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: "agent" as const,
+    creationSource: "provider" as const,
+  };
+}
+
+describe("saved Library conversation messages", () => {
+  it("preserves inherited history and attachments before the child conversation", () => {
+    const inherited = item("parent-message", parentId);
+    const own = item("child-message");
+    const result = libraryArchiveMessages({
+      ...makeThreadProjectionFixture(),
+      messages: [message("child-message")],
+      turnItems: [own],
+      visibleTurnItems: [visible(inherited, 0, "inherited"), visible(own, 1)],
+    });
+    expect(result.map((value) => value.id)).toEqual(["parent-message", "child-message"]);
+    expect(result[0]?.attachments).toEqual([attachment]);
+  });
+
+  it("uses the visible history and captured detail without reviving hidden messages", () => {
+    const own = { ...item("visible"), text: "Full captured message" };
+    const result = libraryArchiveMessages({
+      ...makeThreadProjectionFixture(),
+      messages: [message("hidden"), message("visible")],
+      turnItems: [own],
+      visibleTurnItems: [visible({ ...own, text: "Summary" }, 0)],
+    });
+    expect(result.map((value) => value.text)).toEqual(["Full captured message"]);
+  });
+
+  it("reads message-only legacy archives when visible turn items are unavailable", () => {
+    const result = libraryArchiveMessages({
+      ...makeThreadProjectionFixture(),
+      messages: [message("legacy")],
+    });
+    expect(result[0]).toMatchObject({
+      id: "legacy",
+      text: "legacy",
+      attachments: [attachment],
+      createdAt: DateTime.formatIso(now),
+    });
+  });
+});
+
+describe("saved conversation freshness", () => {
+  it("reloads only when the displayed conversation has newer saved history", () => {
+    const archive = { id: "displayed", sequence: 10 };
+    expect(shouldRefreshLibraryArchive(archive, { id: "displayed", sequence: 11 })).toBe(true);
+    expect(shouldRefreshLibraryArchive(archive, { id: "other", sequence: 11 })).toBe(false);
+    expect(shouldRefreshLibraryArchive(archive, { id: "displayed", sequence: 10 })).toBe(false);
+    expect(shouldRefreshLibraryArchive(archive, { id: "displayed", sequence: 9 })).toBe(false);
+  });
+  it("keeps the initial history request independent of the summary catalog", () => {
+    expect(shouldRefreshLibraryArchive(null, { id: "displayed", sequence: 1 })).toBe(false);
+    expect(shouldRefreshLibraryArchive({ id: "displayed", sequence: 1 }, undefined)).toBe(false);
+  });
+});

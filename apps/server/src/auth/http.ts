@@ -1,6 +1,7 @@
 import {
   authScopeRequiredResponse,
   AuthAccessReadScope,
+  AuthAccessTokenType,
   AuthAccessWriteScope,
   AuthStandardClientScopes,
   AuthGrantScope,
@@ -24,6 +25,7 @@ import { causeErrorTag } from "@t3tools/shared/observability";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { identity } from "effect/Function";
 import * as Layer from "effect/Layer";
@@ -34,6 +36,7 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
 import * as SessionStore from "./SessionStore.ts";
+import * as PocketId from "./PocketId.ts";
 import { traceAuthenticatedRelayRequest, traceRelayRequest } from "../cloud/traceRelayRequest.ts";
 import { deriveAuthClientMetadata } from "./utils.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
@@ -265,6 +268,7 @@ export const layer = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const sessions = yield* SessionStore.SessionStore;
+    const pocketId = yield* Effect.serviceOption(PocketId.PocketId);
 
     return handlers
       .handle(
@@ -381,6 +385,36 @@ export const layer = HttpApiBuilder.group(
                 )
               : undefined;
             yield* appendCredentialResponseHeaders;
+            if (args.payload.subject_token_type === AuthAccessTokenType) {
+              if (Option.isNone(pocketId))
+                return yield* failEnvironmentAuthInvalid("invalid_credential");
+              return yield* pocketId.value
+                .exchangeAccessToken({
+                  token: args.payload.subject_token,
+                  ...(requestedScopes === undefined ? {} : { requestedScopes }),
+                  client: deriveAuthClientMetadata({
+                    request,
+                    presented: {
+                      ...(args.payload.client_label ? { label: args.payload.client_label } : {}),
+                      ...(args.payload.client_device_type
+                        ? { deviceType: args.payload.client_device_type }
+                        : {}),
+                      ...(args.payload.client_os ? { os: args.payload.client_os } : {}),
+                    },
+                  }),
+                  ...(proofKeyThumbprint === undefined ? {} : { proofKeyThumbprint }),
+                })
+                .pipe(
+                  Effect.catchTags({
+                    PocketIdError: (error) =>
+                      error.reason === "scope"
+                        ? failEnvironmentInvalidRequest("invalid_scope")
+                        : error.reason === "session"
+                          ? failEnvironmentInternal("access_token_issuance_failed")
+                          : failEnvironmentAuthInvalid("invalid_credential"),
+                  }),
+                );
+            }
             return yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
               args.payload.subject_token,
               requestedScopes,

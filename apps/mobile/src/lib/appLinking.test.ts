@@ -1,6 +1,38 @@
+import * as NodeModule from "node:module";
+import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-import { shouldHandleAppLink } from "./appLinking";
+import { APP_LINKING_CONFIG, shouldHandleAppLink } from "./appLinking";
+
+const requireNavigation = NodeModule.createRequire(
+  NodeModule.createRequire(import.meta.url).resolve("@react-navigation/native/package.json"),
+);
+const { getStateFromPath } = requireNavigation(
+  NodePath.join(
+    NodePath.dirname(requireNavigation.resolve("@react-navigation/core/package.json")),
+    "lib/module/getStateFromPath.js",
+  ),
+) as { getStateFromPath: typeof import("@react-navigation/native").getStateFromPath };
+
+describe("cold app links", () => {
+  it.each([
+    ["connections/new", "ConnectionsNew"],
+    ["threads/computer/thread", "Thread"],
+    ["library/projects/durable", "LibraryProject"],
+  ])("keeps Library beneath %s", (path, destination) => {
+    const state = getStateFromPath(path, {
+      ...APP_LINKING_CONFIG,
+      screens: {
+        Library: "library",
+        ConnectionsNew: "connections/new",
+        Thread: "threads/:environmentId/:threadId",
+        LibraryProject: "library/projects/:projectId",
+      },
+    });
+    expect(state?.routes.map((route) => route.name)).toEqual(["Library", destination]);
+    expect(state?.index).toBe(1);
+  });
+});
 
 describe("shouldHandleAppLink", () => {
   // fork: mobile-identity

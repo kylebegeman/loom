@@ -116,12 +116,22 @@ function Header(props: { readonly gitStatus: VcsStatusResult | null; readonly ti
 
 function renderedGitMenuItems(): Array<{
   description?: unknown;
+  disabled?: boolean;
   label?: unknown;
   onPress?: () => void;
 }> {
   const items = harness.renderedRightItems.at(-1) ?? [];
   const git = items.find((item) => item.identifier === "thread-right-git") as
-    | { menu: { items: Array<{ description?: unknown; label?: unknown; onPress?: () => void }> } }
+    | {
+        menu: {
+          items: Array<{
+            description?: unknown;
+            disabled?: boolean;
+            label?: unknown;
+            onPress?: () => void;
+          }>;
+        };
+      }
     | undefined;
   return git?.menu.items ?? [];
 }
@@ -147,6 +157,20 @@ afterEach(() => {
 });
 
 describe("ThreadHeader", () => {
+  it("opens checkpoint review for a multi-repository parent while keeping Git actions unavailable", () => {
+    render(<Header gitStatus={status([], { isRepo: false, checkpointCapable: true })} />);
+    const review = renderedGitMenuItems().find((item) => item.label === "Review changes");
+    expect(review?.disabled).toBe(false);
+    expect(renderedGitMenuItems().find((item) => item.label === "Git unavailable")?.disabled).toBe(
+      true,
+    );
+    act(() => review?.onPress?.());
+    expect(harness.navigatedRoutes).toEqual(["ThreadReview"]);
+    render(<Header gitStatus={status([], { isRepo: false, checkpointCapable: false })} />);
+    expect(renderedGitMenuItems().find((item) => item.label === "Review changes")?.disabled).toBe(
+      true,
+    );
+  });
   it("re-applies native header items when Git status changes", () => {
     render(<Header gitStatus={status([])} />);
     expect(renderedGitStatusDescription()).toBe("Clean");

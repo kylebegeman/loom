@@ -13,6 +13,7 @@ import { useCheckpointDiff } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { reviewEnvironment } from "../../state/review";
+import { vcsEnvironment } from "../../state/vcs";
 import { useSelectedThreadProjection } from "../../state/use-thread-detail";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import {
@@ -51,8 +52,15 @@ export function useReviewSections(input: {
   const { canReadFiles } = fileAccess;
   const selectedThread = useSelectedThreadProjection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const diffPreview = useEnvironmentQuery(
+  const gitStatus = useEnvironmentQuery(
     canReadFiles && enabled && environmentId !== undefined && selectedThreadCwd !== null
+      ? vcsEnvironment.status({ environmentId, input: { cwd: selectedThreadCwd } })
+      : null,
+  );
+  const canReadGit = canReadFiles && gitStatus.data?.isRepo === true;
+  const gitAccessPending = fileAccess.isPending || (canReadFiles && gitStatus.isPending);
+  const diffPreview = useEnvironmentQuery(
+    canReadGit && enabled && environmentId !== undefined && selectedThreadCwd !== null
       ? reviewEnvironment.diffPreview({
           environmentId,
           input: { cwd: selectedThreadCwd },
@@ -88,24 +96,24 @@ export function useReviewSections(input: {
     const sections = buildReviewSectionItems({
       checkpoints: readyCheckpoints,
       gitSections:
-        canReadFiles || fileAccess.isPending
+        canReadGit || gitAccessPending
           ? (diffPreview.data?.sources ?? reviewCache.gitSections)
           : [],
       turnDiffById: reviewCache.turnDiffById,
       loadingTurnIds,
-      loadingGitSections: fileAccess.isPending || diffPreview.isPending,
+      loadingGitSections: gitAccessPending || diffPreview.isPending,
     });
     // Keep the selected section while its grant loads, without displaying cached host files.
-    return fileAccess.isPending
+    return gitAccessPending
       ? sections.map((section) =>
           section.kind === "turn" ? section : { ...section, diff: null, isLoading: true },
         )
       : sections;
   }, [
-    canReadFiles,
+    canReadGit,
     diffPreview.data?.sources,
     diffPreview.isPending,
-    fileAccess.isPending,
+    gitAccessPending,
     loadingTurnIds,
     readyCheckpoints,
     reviewCache.gitSections,
@@ -205,7 +213,7 @@ export function useReviewSections(input: {
 
   return {
     error:
-      diffPreview.error ??
+      (canReadGit ? diffPreview.error : null) ??
       activeTurnDiff.error ??
       reviewCache.asyncState.error ??
       (selectedSection === null && !fileAccess.isPending && !canReadFiles
@@ -213,7 +221,7 @@ export function useReviewSections(input: {
         : null),
     isSelectedSectionPending:
       selectedSection?.kind === "turn" ? activeTurnDiff.isPending : diffPreview.isPending,
-    loadingGitDiffs: fileAccess.isPending || diffPreview.isPending,
+    loadingGitDiffs: gitAccessPending || diffPreview.isPending,
     diffPreviewRevision: diffPreview.data
       ? DateTime.formatIso(diffPreview.data.generatedAt)
       : undefined,

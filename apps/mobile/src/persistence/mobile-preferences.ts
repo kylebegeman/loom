@@ -75,6 +75,7 @@ export interface Preferences {
   // fork: project-navigation - Shared compact/sidebar navigation mode on this device.
   readonly loomNavigationView?: "threads" | "projects";
   readonly loomProjectPreparations?: ProjectPreparationReceipts;
+  readonly "loom.library.authorityEnvironmentId"?: string | null;
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
   /**
@@ -160,6 +161,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     collapsedProjectGroups?: readonly string[];
     loomNavigationView?: "threads" | "projects";
     loomProjectPreparations?: ProjectPreparationReceipts;
+    "loom.library.authorityEnvironmentId"?: string | null;
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
     microphones?: ReadonlyArray<MicrophoneEntry>;
@@ -289,6 +291,15 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.loomNavigationView === "threads" || parsed.loomNavigationView === "projects") {
     preferences.loomNavigationView = parsed.loomNavigationView;
+  }
+  const libraryAuthority = parsed["loom.library.authorityEnvironmentId"];
+  if (
+    libraryAuthority === null ||
+    (typeof libraryAuthority === "string" &&
+      libraryAuthority.trim().length > 0 &&
+      libraryAuthority.length <= 200)
+  ) {
+    preferences["loom.library.authorityEnvironmentId"] = libraryAuthority;
   }
   const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
   if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;

@@ -1,0 +1,149 @@
+import { libraryRouteParams } from "./selection";
+import { useEffect, useState } from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useAtomValue } from "@effect/atom-react";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { resolveShortcutCommand } from "~/keybindings";
+import { isCommandPaletteOpen } from "~/commandPaletteBus";
+import { useLibraryProject, useLibraryProjects, useSelectedLibraryProject } from "./state";
+import { openLibraryAction, onLibraryAction, type LibraryAction } from "./actions";
+import { ProjectEditorDialog } from "./ProjectEditorDialog";
+import { ImportProjectDialog } from "./ImportProjectDialog";
+import { NewConversationDialog } from "./NewConversationDialog";
+import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
+import { Button } from "~/components/ui/button";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "~/components/ui/select";
+
+export function LibraryActionHost() {
+  const [projectId, selectProject] = useSelectedLibraryProject();
+  const library = useLibraryProject(projectId ?? "");
+  const catalog = useLibraryProjects();
+  const navigate = useNavigate();
+  const params = useRouterState({
+    select: (state) => libraryRouteParams(state.matches.at(-1)?.params),
+  });
+  const unrelatedLiveThread =
+    !!params.threadId &&
+    !!params.environmentId &&
+    !library.threads.data?.some(
+      (thread) =>
+        thread.threadId === params.threadId && thread.environmentId === params.environmentId,
+    );
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const [action, setAction] = useState<LibraryAction | null>(null);
+  useEffect(
+    () =>
+      onLibraryAction((next) => {
+        if (next === "new-conversation" && unrelatedLiveThread) selectProject(null);
+        setAction(next);
+      }),
+    [unrelatedLiveThread, selectProject],
+  );
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.repeat ||
+        isCommandPaletteOpen() ||
+        (event.target instanceof HTMLElement && event.target.closest("[data-keybinding-capture]"))
+      )
+        return;
+      const command = resolveShortcutCommand(event, keybindings);
+      if (
+        (command === "chat.new" || command === "chat.newLocal") &&
+        openLibraryAction("new-conversation")
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [keybindings]);
+  if (!library.authorityId || !action) return null;
+  const saved = (project: { id: string }) => {
+    setAction(null);
+    selectProject(project.id);
+    void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
+  };
+  if (action === "create-project")
+    return (
+      <ProjectEditorDialog
+        authorityId={library.authorityId}
+        onClose={() => setAction(null)}
+        onSaved={saved}
+      />
+    );
+  if (action === "import-folder")
+    return <ImportProjectDialog onClose={() => setAction(null)} onSaved={saved} />;
+  if (!library.project.data || library.project.data.archived)
+    return (
+      <LibraryDialog
+        open
+        onOpenChange={(open) => {
+          if (!open) setAction(null);
+        }}
+        title="Choose a project"
+        description="Start a conversation in an existing Library project, or create a new project first."
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setAction(null)}>
+              Close
+            </Button>
+            <Button onClick={() => setAction("create-project")}>New project</Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <LibraryField label="Project">
+            <Select
+              value={projectId}
+              items={(catalog.query.data ?? []).map((project) => ({
+                value: project.id,
+                label: project.title,
+              }))}
+              onValueChange={(value) => selectProject(value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a project" />
+              </SelectTrigger>
+              <SelectPopup>
+                {catalog.query.data?.map((project) => (
+                  <SelectItem key={project.id} value={project.id}>
+                    {project.title}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </LibraryField>
+          <LibraryErrorNotice
+            error={catalog.query.error ?? library.project.error}
+            onRetry={() => {
+              catalog.query.refresh();
+              library.refresh();
+            }}
+          />
+          {catalog.query.isPending ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Loading projects...
+            </p>
+          ) : null}
+        </div>
+      </LibraryDialog>
+    );
+  return (
+    <NewConversationDialog
+      project={library.project.data}
+      copies={library.copies.data ?? []}
+      copiesQuery={library.copies}
+      onChanged={library.refresh}
+      onClose={() => setAction(null)}
+    />
+  );
+}

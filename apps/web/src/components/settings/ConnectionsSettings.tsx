@@ -1,3 +1,4 @@
+import { LibrarySetup } from "~/fork/project-library/LibrarySetup";
 import { SessionPermissions } from "./SessionPermissions";
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@t3tools/shared/authScopeOptions";
 import {
@@ -4029,6 +4030,7 @@ export function ConnectionsSettings() {
 
   return (
     <SettingsPageContainer>
+      <LibrarySetup showConnectionsLink={false} />
       {/* fork: fleet-connections */}
       <ComputerConnectionsHome
         primaryEnvironment={primaryEnvironment}

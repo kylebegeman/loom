@@ -149,11 +149,11 @@ const setupWith = (options: { readonly devUrl?: URL } = {}) =>
         }),
       streamDomainEvents: Stream.fromPubSub(events),
     });
+    const projectRows = [
+      { id: projectId, title: "App", workspaceRoot: checkout } as OrchestrationProjectShell,
+    ];
     const projects = partial<ProjectStore.ProjectStoreV2["Service"]>({
-      listShells: () =>
-        Effect.succeed([
-          { id: projectId, title: "App", workspaceRoot: checkout } as OrchestrationProjectShell,
-        ]),
+      listShells: () => Effect.succeed([...projectRows]),
     });
     const deviceSessions: Array<DeviceSession> = [];
     const closed: Array<{ threadId: string; deviceId?: string; shutdown?: boolean }> = [];
@@ -215,6 +215,7 @@ const setupWith = (options: { readonly devUrl?: URL } = {}) =>
       checkout,
       worktree,
       threads,
+      projectRows,
       sent,
       events,
       service,
@@ -350,6 +351,115 @@ describe("ProjectLifecycleService", () => {
       } as OrchestrationV2DomainEvent);
       yield* Fiber.join(removed);
       expect(NodeFS.readdirSync(`${t.home}/Developer/lanes`)).toEqual([".loom"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("keeps a parent lane while a nested registered checkout still exists", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("root"));
+      const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
+      const nested = `${parent.laneDir}/space/tmp/feature`;
+      NodeFS.mkdirSync(nested);
+      NodeFS.writeFileSync(`${nested}/keep.txt`, "nested conversation work");
+      t.threads.push(thread("nested", { worktreePath: nested }));
+      yield* t.service.ensureForThread(ThreadId.make("nested"));
+      t.threads.splice(0, 1);
+
+      const kept = yield* t.service.tick();
+      expect(laneOf(kept, t.checkout)).toBeDefined();
+      expect((yield* t.store.listLanes()).some((lane) => lane.id === parent.id)).toBe(true);
+      expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("nested conversation work");
+
+      // A released checkout's saved path must not keep an empty parent lane forever.
+      NodeFS.rmSync(nested, { recursive: true });
+      const removed = yield* t.service.tick();
+      expect(laneOf(removed, t.checkout)).toBeUndefined();
+      expect(NodeFS.existsSync(parent.laneDir)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("clears auxiliary tmp files without deleting a nested registered checkout", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("root"));
+      const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
+      yield* t.store.updateLane(parent.id, { capBytes: 1_000_000, device: null });
+      const service = yield* t.create;
+      const tmp = `${parent.laneDir}/space/tmp`;
+      const nested = `${tmp}/feature`;
+      NodeFS.mkdirSync(nested);
+      NodeFS.writeFileSync(`${nested}/keep.txt`, "active thread files");
+      NodeFS.writeFileSync(`${tmp}/scratch`, Buffer.alloc(950_000, 1));
+      t.threads.push(
+        thread("nested", { worktreePath: nested, activeRunId: RunId.make("nested-run") }),
+      );
+
+      yield* service.tick();
+      expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("active thread files");
+      expect(NodeFS.existsSync(`${tmp}/scratch`)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("freeing all scopes keeps registered project checkouts and removes auxiliary files", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("root"));
+      const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
+      const nested = `${parent.laneDir}/space/build/project`;
+      NodeFS.mkdirSync(nested);
+      NodeFS.writeFileSync(`${nested}/keep.txt`, "project work");
+      NodeFS.writeFileSync(`${parent.laneDir}/space/build/cache`, "disposable cache");
+      NodeFS.writeFileSync(`${parent.laneDir}/space/tmp/cache`, "disposable scratch");
+      t.projectRows.push({
+        ...t.projectRows[0]!,
+        id: ProjectId.make("nested-project"),
+        workspaceRoot: nested,
+      });
+
+      const blocked = yield* t.service.free(parent.id, "all").pipe(Effect.flip);
+      expect(blocked.reason).toBe("busy");
+      expect(blocked.message).toContain("working files");
+      expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("project work");
+      expect(NodeFS.existsSync(`${parent.laneDir}/space/build/cache`)).toBe(false);
+      expect(NodeFS.existsSync(`${parent.laneDir}/space/tmp/cache`)).toBe(false);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("protects registered checkout paths through a symlink outside the lane", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("root"));
+      const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
+      const nested = `${parent.laneDir}/space/tmp/feature`;
+      NodeFS.mkdirSync(nested);
+      NodeFS.writeFileSync(`${nested}/keep.txt`, "aliased thread files");
+      const alias = `${t.home}/feature-alias`;
+      NodeFS.symlinkSync(nested, alias, "dir");
+      t.threads.push(thread("nested", { worktreePath: alias }));
+      t.threads.splice(0, 1);
+
+      const status = yield* t.service.tick();
+      expect(laneOf(status, t.checkout)).toBeDefined();
+      expect(NodeFS.readFileSync(`${alias}/keep.txt`, "utf8")).toBe("aliased thread files");
+      expect(NodeFS.existsSync(parent.laneDir)).toBe(true);
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("refuses to discard a lane containing a registered checkout", () =>
+    Effect.gen(function* () {
+      const t = yield* setup;
+      t.threads.push(thread("root"));
+      const parent = yield* t.service.ensureForThread(ThreadId.make("root"));
+      const nested = `${parent.laneDir}/space/data/feature`;
+      NodeFS.mkdirSync(nested);
+      NodeFS.writeFileSync(`${nested}/keep.txt`, "archived conversation files");
+      t.threads.push(thread("nested", { worktreePath: nested, archivedAt: DateTime.nowUnsafe() }));
+
+      const failure = yield* t.service.discard(parent.id).pipe(Effect.flip);
+      expect(failure.reason).toBe("busy");
+      expect(failure.message).toContain("working files");
+      expect(NodeFS.readFileSync(`${nested}/keep.txt`, "utf8")).toBe("archived conversation files");
     }).pipe(Effect.scoped),
   );
 

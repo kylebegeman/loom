@@ -291,6 +291,33 @@ describe("downloadAndShareAttachment", () => {
 });
 
 describe("attachment preview files", () => {
+  it("leases custom authenticated bytes through the preview cache without a native unauthenticated download", async () => {
+    const download = vi.fn(async () => undefined);
+    const file = await downloadAttachmentForPreview({
+      ...input,
+      signal: new AbortController().signal,
+      download,
+    });
+    expect(download).toHaveBeenCalledWith(
+      expect.objectContaining({ uri: expect.stringMatching(/report\.pdf$/) }),
+    );
+    expect(mocks.download).not.toHaveBeenCalled();
+    file?.dispose();
+    expect(mocks.deleted).toHaveBeenCalledTimes(1);
+  });
+  it("cleans partial cached bytes when the authenticated loader fails", async () => {
+    await expect(
+      downloadAttachmentForPreview({
+        ...input,
+        signal: new AbortController().signal,
+        download: async () => {
+          throw new Error("connection lost");
+        },
+      }),
+    ).rejects.toThrow("connection lost");
+    expect(mocks.deleted).toHaveBeenCalledTimes(1);
+    expect(mocks.download).not.toHaveBeenCalled();
+  });
   it("does not start a native request after cancellation during setup", async () => {
     const controller = new AbortController();
     const loading = downloadAttachmentForPreview({ ...input, signal: controller.signal });

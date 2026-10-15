@@ -1,3 +1,4 @@
+import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "./project-checkout.ts";
 import { AuthSettingsWriteScope } from "../auth.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "./computer-naming.ts";
@@ -15,6 +16,19 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 
 /** Fork writes use the same grant as their environment's server handlers. */
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
+  [LIB.flushHistory]: AuthOrchestrationOperateScope,
+  [LIB.registerThread]: AuthOrchestrationOperateScope,
+  [LIB.inspectFolder]: AuthTerminalOperateScope,
+  [LIB.createProject]: AuthSettingsWriteScope,
+  [LIB.updateProject]: AuthSettingsWriteScope,
+  [LIB.archiveProject]: AuthSettingsWriteScope,
+  [LIB.registerCopy]: AuthOrchestrationOperateScope,
+  [LIB.prepareCopy]: AuthTerminalOperateScope,
+  [LIB.unregisterCopy]: AuthOrchestrationOperateScope,
+  [LIB.releaseCopy]: AuthOrchestrationOperateScope,
+  [LIB.bindThread]: AuthOrchestrationOperateScope,
+  [LIB.ingestHistory]: AuthOrchestrationOperateScope,
+  [LIB.importShadow]: AuthEnvironmentMaintainScope,
   [C.adopt]: AuthSettingsWriteScope,
   [C.setRetention]: AuthSettingsWriteScope,
   [N.rename]: AuthSettingsWriteScope,

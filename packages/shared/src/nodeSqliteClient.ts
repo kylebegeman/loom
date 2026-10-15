@@ -283,6 +283,9 @@ const make = Effect.fn("makeWithDatabase")(function* (
     // read-only transactions behind other processes' writers. Read-only
     // connections cannot write, so they keep the deferred BEGIN.
     beginTransaction: options.readonly === true ? "BEGIN" : "BEGIN IMMEDIATE",
+    // SQLite leaves deferred constraint and busy COMMIT failures open until an explicit rollback.
+    onCommitFailure: (conn) =>
+      conn.executeUnprepared("ROLLBACK", [], undefined).pipe(Effect.asVoid),
     spanAttributes: [
       ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
       [ATTR_DB_SYSTEM_NAME, "sqlite"],

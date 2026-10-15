@@ -8,6 +8,10 @@ import type { SQLiteDatabase } from "expo-sqlite";
 
 const DATABASE_NAME = "t3code-client.db";
 const DATABASE_SCHEMA_VERSION = 1;
+const LIBRARY_CACHE_ENTRY_MAX_BYTES = 8 * 1024 * 1024;
+const LIBRARY_CACHE_MAX_BYTES = 64 * 1024 * 1024;
+const LIBRARY_CACHE_MAX_ENTRIES = 200;
+const LIBRARY_CACHE_RETENTION_MS = 7 * 24 * 60 * 60_000;
 const LEGACY_CACHE_DIRECTORIES = [
   "connection-shell-snapshots",
   "shell-snapshots",
@@ -24,6 +28,7 @@ export const ClientCacheKind = Schema.Literals([
   "project-favicon",
   "workspace-handoff",
   "pull-request",
+  "project-library",
 ]);
 export type ClientCacheKind = typeof ClientCacheKind.Type;
 
@@ -297,11 +302,14 @@ const makeAvailable = Effect.gen(function* () {
             `SELECT payload
                      FROM client_cache
                      WHERE environment_id = ? AND kind = ? AND cache_key = ?
-                       AND (kind != 'pull-request' OR updated_at >= ?)`,
+                       AND (kind != 'pull-request' OR updated_at >= ?)
+                       AND (kind != 'project-library' OR (updated_at >= ? AND LENGTH(CAST(payload AS BLOB)) <= ?))`,
             environmentId,
             kind,
             cacheKey,
             Date.now() - 30 * 24 * 60 * 60_000,
+            Date.now() - LIBRARY_CACHE_RETENTION_MS,
+            LIBRARY_CACHE_ENTRY_MAX_BYTES,
           ),
         catch: databaseError("load-cache"),
       }).pipe(Effect.map((row) => Option.fromNullishOr(row?.payload))),
@@ -327,6 +335,11 @@ const makeAvailable = Effect.gen(function* () {
               new TextEncoder().encode(payload).length > 4 * 1024 * 1024
             )
               return;
+            if (
+              kind === "project-library" &&
+              new TextEncoder().encode(payload).length > LIBRARY_CACHE_ENTRY_MAX_BYTES
+            )
+              return;
             const save = async (transaction: SQLiteDatabase) => {
               await transaction.runAsync(
                 `INSERT INTO client_cache
@@ -343,6 +356,22 @@ const makeAvailable = Effect.gen(function* () {
                 payload,
                 Date.now(),
               );
+              if (kind === "project-library") {
+                await transaction.runAsync(
+                  `DELETE FROM client_cache WHERE kind = 'project-library' AND (environment_id, cache_key) IN (
+                    SELECT environment_id, cache_key FROM (
+                      SELECT environment_id, cache_key, updated_at, LENGTH(CAST(payload AS BLOB)) AS payload_bytes,
+                        ROW_NUMBER() OVER (ORDER BY updated_at DESC, environment_id, cache_key) AS position,
+                        SUM(LENGTH(CAST(payload AS BLOB))) OVER (ORDER BY updated_at DESC, environment_id, cache_key) AS total_bytes
+                      FROM client_cache WHERE kind = 'project-library'
+                    ) WHERE position > ? OR total_bytes > ? OR updated_at < ? OR payload_bytes > ?
+                  )`,
+                  LIBRARY_CACHE_MAX_ENTRIES,
+                  LIBRARY_CACHE_MAX_BYTES,
+                  Date.now() - LIBRARY_CACHE_RETENTION_MS,
+                  LIBRARY_CACHE_ENTRY_MAX_BYTES,
+                );
+              }
               if (kind === "pull-request") {
                 await transaction.runAsync(
                   `DELETE FROM client_cache WHERE environment_id = ? AND kind = 'pull-request'

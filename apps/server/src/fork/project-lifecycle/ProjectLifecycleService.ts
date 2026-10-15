@@ -88,6 +88,8 @@ import { SPACE_FOLDERS, imageBackendAvailable, makeSpaceOps, type LanePaths } fr
 import { makeStore, type LaneRow } from "./store.ts";
 
 const WATCHDOG_INTERVAL = "30 seconds";
+const CHECKOUT_PROTECTION_MESSAGE =
+  "This lane contains registered project or thread working files. Remove those files through their project before discarding the lane.";
 /** `du` walks the whole folder, so folder lanes are measured less often. */
 const FOLDER_MEASURE_INTERVAL_MS = 5 * 60 * 1000;
 /** Status snapshots go out only when a size changes by at least this much. */
@@ -852,11 +854,75 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
           ),
         );
 
+    const containsPath = (directory: string, candidate: string) => {
+      const relative = NodePath.relative(directory, candidate);
+      return (
+        relative === "" ||
+        (relative !== ".." &&
+          !relative.startsWith(`..${NodePath.sep}`) &&
+          !NodePath.isAbsolute(relative))
+      );
+    };
+
+    /** Registered checkouts are working files, even when a caller placed them in auxiliary space. */
+    const checkoutPathsWithin = Effect.fn("ProjectLifecycle.checkoutPathsWithin")(function* (
+      directory: string,
+    ) {
+      const [snapshot, projectShells] = yield* Effect.all([
+        threads.getShellSnapshot(),
+        projects.listShells(),
+      ]).pipe(
+        Effect.mapError(() =>
+          error(
+            "command-failed",
+            "Could not verify project working files before cleaning this lane.",
+          ),
+        ),
+      );
+      const candidates = new Set([
+        ...projectShells.map((project) => project.workspaceRoot),
+        ...[...snapshot.threads, ...snapshot.archivedThreads].flatMap((thread) =>
+          thread.worktreePath === null ? [] : [thread.worktreePath],
+        ),
+      ]);
+      const resolveExistingPath = (target: string) =>
+        node("inspect registered checkout", async () => {
+          try {
+            return await NodeFSP.realpath(target);
+          } catch (cause) {
+            if (
+              cause instanceof Error &&
+              "code" in cause &&
+              (cause.code === "ENOENT" || cause.code === "ENOTDIR")
+            )
+              return null;
+            throw cause;
+          }
+        });
+      const resolvedDirectory = NodePath.resolve(directory);
+      const realDirectory = (yield* resolveExistingPath(resolvedDirectory)) ?? resolvedDirectory;
+      const checkouts: string[] = [];
+      for (const candidate of candidates) {
+        const checkout = NodePath.resolve(candidate);
+        const realCheckout = yield* resolveExistingPath(checkout);
+        // Released checkouts retain metadata; their absent paths do not prevent cache cleanup.
+        if (realCheckout === null) continue;
+        // Keep both spellings: registered aliases and /var vs /private/var must reach the same guard.
+        if (containsPath(resolvedDirectory, checkout) || containsPath(realDirectory, realCheckout))
+          checkouts.push(checkout, realCheckout);
+      }
+      return checkouts;
+    });
+
     /**
      * Releases a lane's leases, then detaches and deletes it. A lane with open files stays and
      * says why; the next attempt releases again.
      */
     const removeLane = Effect.fn("ProjectLifecycle.removeLane")(function* (lane: LaneRow) {
+      if ((yield* checkoutPathsWithin(lane.laneDir)).length > 0) {
+        liveOf(lane.id).message = CHECKOUT_PROTECTION_MESSAGE;
+        return false;
+      }
       const problems = yield* releaseLeases(lane);
       if (problems.length > 0)
         yield* Effect.logWarning("Some lane leases were not released", {
@@ -898,17 +964,52 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       );
     });
 
-    const clear = (lane: LaneRow, scope: LaneFreeScope) =>
-      node("free lane", async () => {
+    const clear = Effect.fn("ProjectLifecycle.clear")(function* (
+      lane: LaneRow,
+      scope: LaneFreeScope,
+    ) {
+      const checkouts = yield* checkoutPathsWithin(lane.laneDir);
+      let retained = false;
+      yield* node("free lane", async () => {
         const folders = scope === "all" ? SPACE_FOLDERS : [scope];
         for (const folder of folders) {
           const dir = `${lanePaths(lane).spacePath}/${folder}`;
           const entries = await NodeFSP.readdir(dir).catch(() => [] as Array<string>);
           await Promise.all(
-            entries.map((entry) => NodeFSP.rm(`${dir}/${entry}`, { recursive: true, force: true })),
+            entries.map(async (entry) => {
+              const target = NodePath.join(dir, entry);
+              let realTarget: string;
+              try {
+                realTarget = await NodeFSP.realpath(target);
+              } catch (cause) {
+                if (
+                  cause instanceof Error &&
+                  "code" in cause &&
+                  (cause.code === "ENOENT" || cause.code === "ENOTDIR")
+                )
+                  return;
+                throw cause;
+              }
+              if (
+                checkouts.some((checkout) =>
+                  [target, realTarget].some(
+                    (alias) => containsPath(alias, checkout) || containsPath(checkout, alias),
+                  ),
+                )
+              ) {
+                retained = true;
+                return;
+              }
+              await NodeFSP.rm(target, { recursive: true, force: true });
+            }),
           );
         }
       });
+      if (retained) liveOf(lane.id).message = CHECKOUT_PROTECTION_MESSAGE;
+      else if (liveOf(lane.id).message === CHECKOUT_PROTECTION_MESSAGE)
+        liveOf(lane.id).message = null;
+      return retained;
+    });
 
     /** Detach and attach again so the host gets back the space deleted files held. */
     const remount = (lane: LaneRow) =>
@@ -1079,12 +1180,16 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       yield* mutate.withPermits(1)(
         Effect.gen(function* () {
           const lane = yield* requireLane(laneId);
-          yield* clear(lane, scope);
+          const retained = yield* clear(lane, scope);
           const view = yield* loadThreads.pipe(Effect.orElseSucceed(() => null));
           const idle = view !== null && !holdersOf(lane, view).some(threadRunning);
           // Running agents may hold files open; the watchdog remounts once they are idle.
-          if (idle) yield* remount(lane).pipe(Effect.ignore);
+          if (idle && !retained) yield* remount(lane).pipe(Effect.ignore);
           yield* measure(lanes.get(laneId) ?? lane, true);
+          if (retained) {
+            yield* publish();
+            return yield* error("busy", CHECKOUT_PROTECTION_MESSAGE);
+          }
         }),
       );
       return yield* refreshedView(laneId);
@@ -1117,7 +1222,8 @@ export const makeWith = (options: ProjectLifecycleOptions) =>
       if (!removed)
         return yield* error(
           "busy",
-          "Files in this lane are open. Stop the processes using it, then try again.",
+          liveOf(laneId).message ??
+            "Files in this lane are open. Stop the processes using it, then try again.",
         );
       yield* publish();
     });

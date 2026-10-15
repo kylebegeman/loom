@@ -40,12 +40,12 @@ export function ProjectNavigationControl(props: {
       {props.view === "projects" ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Manage working files"
-          onPress={() => navigation.navigate("ProjectStorageInventory")}
+          accessibilityLabel="Open shared project library"
+          onPress={() => navigation.navigate("Library")}
           className="min-h-[44px] flex-row items-center gap-2 rounded-full px-2 active:opacity-70"
         >
-          <SymbolView name="internaldrive" size={16} tintColorClassName="accent-icon-muted" />
-          <Text className="text-xs font-t3-medium text-foreground-muted">Working files</Text>
+          <SymbolView name="folder" size={16} tintColorClassName="accent-icon-muted" />
+          <Text className="text-xs font-t3-medium text-foreground-muted">Library</Text>
         </Pressable>
       ) : null}
     </View>

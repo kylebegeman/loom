@@ -2,7 +2,11 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId, RunId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { selectThreadDiffPanelSelection, useDiffPanelStore } from "./diffPanelStore";
+import {
+  resolveAvailableDiffPanelSelection,
+  selectThreadDiffPanelSelection,
+  useDiffPanelStore,
+} from "./diffPanelStore";
 
 const THREAD_REF = scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1"));
 
@@ -121,5 +125,33 @@ describe("diffPanelStore", () => {
       filePath: "src/app.ts",
       revealRequestId: 1,
     });
+  });
+});
+
+describe("diff scope for whole-project conversations", () => {
+  const latestTurnId = RunId.make("latest-turn");
+  it("opens turn history when the parent folder cannot show a branch diff", () => {
+    expect(
+      resolveAvailableDiffPanelSelection({ kind: "branch", baseRef: null }, false, latestTurnId),
+    ).toEqual({
+      kind: "turn",
+      turnId: latestTurnId,
+      filePath: null,
+      revealRequestId: 0,
+    });
+    expect(resolveAvailableDiffPanelSelection({ kind: "unstaged" }, false, latestTurnId).kind).toBe(
+      "turn",
+    );
+  });
+  it("keeps component Git scopes and explicitly selected historical turns", () => {
+    const branch = { kind: "branch" as const, baseRef: "origin/main" };
+    const turn = {
+      kind: "turn" as const,
+      turnId: RunId.make("older-turn"),
+      filePath: "app/main.ts",
+      revealRequestId: 1,
+    };
+    expect(resolveAvailableDiffPanelSelection(branch, true, latestTurnId)).toBe(branch);
+    expect(resolveAvailableDiffPanelSelection(turn, false, latestTurnId)).toBe(turn);
   });
 });

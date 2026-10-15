@@ -22,6 +22,7 @@ export const layerWorkspacePreparation = Layer.mergeAll(
 export const layer = Layer.mergeAll(
   layerWorkspacePreparation,
   Layer.mock(GitWorkflow.GitWorkflowService)({
+    hasCommit: () => Effect.succeed(true),
     pruneWorktrees: () => Effect.void,
     createWorktree: () => Effect.succeed({} as never),
   }),

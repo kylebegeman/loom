@@ -1,3 +1,9 @@
+import type { LibraryRecoveryStore } from "./project-library/assets/LibraryRecoveryStore.ts";
+import type { LibraryReplication } from "./project-library/LibraryReplication.ts";
+import type { LibraryHistorySource } from "./project-library/LibraryHistorySource.ts";
+import type { LibraryAssetService } from "./project-library/assets/LibraryAssetService.ts";
+import type { LibraryService } from "./project-library/LibraryService.ts";
+import type { LibraryWorkspace } from "./project-library/LibraryWorkspace.ts";
 import type { ProjectCheckoutManagement } from "../project/ProjectCheckoutManagement.ts";
 import type { ComputerNaming } from "./computer-naming/ComputerNaming.ts";
 import type { GitHubSetupFlow } from "../sourceControl/GitHubSetupFlow.ts";
@@ -14,6 +20,12 @@ import * as Effect from "effect/Effect";
 
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
+  | LibraryRecoveryStore
+  | LibraryReplication
+  | LibraryHistorySource
+  | LibraryAssetService
+  | LibraryService
+  | LibraryWorkspace
   | ProjectCheckoutManagement
   | ComputerNaming
   | GitHubSetupFlow

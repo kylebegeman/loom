@@ -13,9 +13,12 @@ import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PairRouteImport } from './routes/pair'
+import { Route as LocalRouteImport } from './routes/local'
+import { Route as LibraryRouteImport } from './routes/library'
 import { Route as ConnectAgentRouteImport } from './routes/connect-agent'
 import { Route as ConnectRouteImport } from './routes/connect'
 import { Route as ChatRouteImport } from './routes/_chat'
+import { Route as LibraryIndexRouteImport } from './routes/library.index'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
@@ -34,9 +37,11 @@ import { Route as SettingsArchivedRouteImport } from './routes/settings.archived
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as ProjectsStorageRouteImport } from './routes/projects.storage'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
+import { Route as LibraryProjectIdRouteImport } from './routes/library.$projectId'
 import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatNewRouteImport } from './routes/_chat.new'
 import { Route as ChatComputersRouteImport } from './routes/_chat.computers'
+import { Route as LibraryConversationsConversationIdRouteImport } from './routes/library.conversations.$conversationId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -60,6 +65,16 @@ const PairRoute = PairRouteImport.update({
   path: '/pair',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LocalRoute = LocalRouteImport.update({
+  id: '/local',
+  path: '/local',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryRoute = LibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectAgentRoute = ConnectAgentRouteImport.update({
   id: '/connect-agent',
   path: '/connect-agent',
@@ -73,6 +88,11 @@ const ConnectRoute = ConnectRouteImport.update({
 const ChatRoute = ChatRouteImport.update({
   id: '/_chat',
   getParentRoute: () => rootRouteImport,
+} as any)
+const LibraryIndexRoute = LibraryIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => LibraryRoute,
 } as any)
 const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
@@ -165,6 +185,11 @@ const ProjectsProjectKeyRoute = ProjectsProjectKeyRouteImport.update({
   path: '/projects/$projectKey',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LibraryProjectIdRoute = LibraryProjectIdRouteImport.update({
+  id: '/$projectId',
+  path: '/$projectId',
+  getParentRoute: () => LibraryRoute,
+} as any)
 const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
   id: '/pull-requests',
   path: '/pull-requests',
@@ -180,6 +205,12 @@ const ChatComputersRoute = ChatComputersRouteImport.update({
   path: '/computers',
   getParentRoute: () => ChatRoute,
 } as any)
+const LibraryConversationsConversationIdRoute =
+  LibraryConversationsConversationIdRouteImport.update({
+    id: '/conversations/$conversationId',
+    path: '/conversations/$conversationId',
+    getParentRoute: () => LibraryRoute,
+  } as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -196,6 +227,8 @@ export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
+  '/library': typeof LibraryRouteWithChildren
+  '/local': typeof LocalRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -203,6 +236,7 @@ export interface FileRoutesByFullPath {
   '/computers': typeof ChatComputersRoute
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
+  '/library/$projectId': typeof LibraryProjectIdRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -220,12 +254,15 @@ export interface FileRoutesByFullPath {
   '/settings/snap-shot': typeof SettingsSnapShotRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
+  '/library/': typeof LibraryIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
+  '/local': typeof LocalRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -233,6 +270,7 @@ export interface FileRoutesByTo {
   '/computers': typeof ChatComputersRoute
   '/new': typeof ChatNewRoute
   '/pull-requests': typeof ChatPullRequestsRoute
+  '/library/$projectId': typeof LibraryProjectIdRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -251,14 +289,18 @@ export interface FileRoutesByTo {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/': typeof ChatIndexRoute
+  '/library': typeof LibraryIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/connect': typeof ConnectRoute
   '/connect-agent': typeof ConnectAgentRoute
+  '/library': typeof LibraryRouteWithChildren
+  '/local': typeof LocalRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
   '/usage': typeof UsageRoute
@@ -266,6 +308,7 @@ export interface FileRoutesById {
   '/_chat/computers': typeof ChatComputersRoute
   '/_chat/new': typeof ChatNewRoute
   '/_chat/pull-requests': typeof ChatPullRequestsRoute
+  '/library/$projectId': typeof LibraryProjectIdRoute
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/projects/storage': typeof ProjectsStorageRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
@@ -284,8 +327,10 @@ export interface FileRoutesById {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/_chat/': typeof ChatIndexRoute
+  '/library/': typeof LibraryIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/library/conversations/$conversationId': typeof LibraryConversationsConversationIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -293,6 +338,8 @@ export interface FileRouteTypes {
     | '/'
     | '/connect'
     | '/connect-agent'
+    | '/library'
+    | '/local'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -300,6 +347,7 @@ export interface FileRouteTypes {
     | '/computers'
     | '/new'
     | '/pull-requests'
+    | '/library/$projectId'
     | '/projects/$projectKey'
     | '/projects/storage'
     | '/settings/appearance'
@@ -317,12 +365,15 @@ export interface FileRouteTypes {
     | '/settings/snap-shot'
     | '/settings/source-control'
     | '/settings/storage'
+    | '/library/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/library/conversations/$conversationId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
     | '/connect-agent'
+    | '/local'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -330,6 +381,7 @@ export interface FileRouteTypes {
     | '/computers'
     | '/new'
     | '/pull-requests'
+    | '/library/$projectId'
     | '/projects/$projectKey'
     | '/projects/storage'
     | '/settings/appearance'
@@ -348,13 +400,17 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/settings/storage'
     | '/'
+    | '/library'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/library/conversations/$conversationId'
   id:
     | '__root__'
     | '/_chat'
     | '/connect'
     | '/connect-agent'
+    | '/library'
+    | '/local'
     | '/pair'
     | '/settings'
     | '/usage'
@@ -362,6 +418,7 @@ export interface FileRouteTypes {
     | '/_chat/computers'
     | '/_chat/new'
     | '/_chat/pull-requests'
+    | '/library/$projectId'
     | '/projects/$projectKey'
     | '/projects/storage'
     | '/settings/appearance'
@@ -380,14 +437,18 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/settings/storage'
     | '/_chat/'
+    | '/library/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/library/conversations/$conversationId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConnectRoute: typeof ConnectRoute
   ConnectAgentRoute: typeof ConnectAgentRoute
+  LibraryRoute: typeof LibraryRouteWithChildren
+  LocalRoute: typeof LocalRoute
   PairRoute: typeof PairRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   UsageRoute: typeof UsageRoute
@@ -426,6 +487,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PairRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/local': {
+      id: '/local'
+      path: '/local'
+      fullPath: '/local'
+      preLoaderRoute: typeof LocalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/library': {
+      id: '/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof LibraryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/connect-agent': {
       id: '/connect-agent'
       path: '/connect-agent'
@@ -446,6 +521,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/library/': {
+      id: '/library/'
+      path: '/'
+      fullPath: '/library/'
+      preLoaderRoute: typeof LibraryIndexRouteImport
+      parentRoute: typeof LibraryRoute
     }
     '/_chat/': {
       id: '/_chat/'
@@ -573,6 +655,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectsProjectKeyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/library/$projectId': {
+      id: '/library/$projectId'
+      path: '/$projectId'
+      fullPath: '/library/$projectId'
+      preLoaderRoute: typeof LibraryProjectIdRouteImport
+      parentRoute: typeof LibraryRoute
+    }
     '/_chat/pull-requests': {
       id: '/_chat/pull-requests'
       path: '/pull-requests'
@@ -593,6 +682,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/computers'
       preLoaderRoute: typeof ChatComputersRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/library/conversations/$conversationId': {
+      id: '/library/conversations/$conversationId'
+      path: '/conversations/$conversationId'
+      fullPath: '/library/conversations/$conversationId'
+      preLoaderRoute: typeof LibraryConversationsConversationIdRouteImport
+      parentRoute: typeof LibraryRoute
     }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
@@ -630,6 +726,22 @@ const ChatRouteChildren: ChatRouteChildren = {
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
+
+interface LibraryRouteChildren {
+  LibraryProjectIdRoute: typeof LibraryProjectIdRoute
+  LibraryIndexRoute: typeof LibraryIndexRoute
+  LibraryConversationsConversationIdRoute: typeof LibraryConversationsConversationIdRoute
+}
+
+const LibraryRouteChildren: LibraryRouteChildren = {
+  LibraryProjectIdRoute: LibraryProjectIdRoute,
+  LibraryIndexRoute: LibraryIndexRoute,
+  LibraryConversationsConversationIdRoute:
+    LibraryConversationsConversationIdRoute,
+}
+
+const LibraryRouteWithChildren =
+  LibraryRoute._addFileChildren(LibraryRouteChildren)
 
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
@@ -675,6 +787,8 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConnectRoute: ConnectRoute,
   ConnectAgentRoute: ConnectAgentRoute,
+  LibraryRoute: LibraryRouteWithChildren,
+  LocalRoute: LocalRoute,
   PairRoute: PairRoute,
   SettingsRoute: SettingsRouteWithChildren,
   UsageRoute: UsageRoute,

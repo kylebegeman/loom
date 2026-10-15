@@ -2,6 +2,9 @@ import * as NodeSqlite from "node:sqlite";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
+import { SqlError } from "effect/sql/SqlError";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -9,9 +12,39 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqliteClient from "./nodeSqliteClient.ts";
 
+const isSqlError = Schema.is(SqlError);
 const layer = it.layer(SqliteClient.layer({ filename: ":memory:" }));
 
 layer("NodeSqliteClient", (it) => {
+  it.effect("rolls back a failed deferred constraint commit before reusing the connection", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`PRAGMA foreign_keys = ON`;
+      yield* sql`CREATE TABLE commit_parents (id INTEGER PRIMARY KEY)`;
+      yield* sql`CREATE TABLE commit_children (parent_id INTEGER REFERENCES commit_parents(id) DEFERRABLE INITIALLY DEFERRED)`;
+      const failed = yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* sql`INSERT INTO commit_parents VALUES (1)`;
+            yield* sql`INSERT INTO commit_children VALUES (2)`;
+          }),
+        )
+        .pipe(Effect.exit);
+      assert(failed._tag === "Failure");
+      const failure = Cause.squash(failed.cause);
+      assert(isSqlError(failure));
+      assert.equal(failure.reason._tag, "ConstraintError");
+      assert.deepEqual(yield* sql`SELECT * FROM commit_parents`, []);
+      assert.deepEqual(yield* sql`SELECT * FROM commit_children`, []);
+      yield* sql.withTransaction(
+        Effect.gen(function* () {
+          yield* sql`INSERT INTO commit_parents VALUES (1)`;
+          yield* sql`INSERT INTO commit_children VALUES (1)`;
+        }),
+      );
+      assert.deepEqual(yield* sql`SELECT parent_id FROM commit_children`.values, [[1]]);
+    }),
+  );
   it.effect("retries preparing a query after the missing schema becomes available", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

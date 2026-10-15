@@ -157,7 +157,7 @@ export function ConnectionsNewRouteScreen({
   );
 
   const connectAndClose = useCallback(
-    async (pairingUrl: string, replaceWithHome: boolean) => {
+    async (pairingUrl: string, replaceWithLibrary: boolean) => {
       setIsSubmitting(true);
       onChangeConnectionPairingUrl(pairingUrl);
       try {
@@ -168,8 +168,8 @@ export function ConnectionsNewRouteScreen({
             : Haptics.NotificationFeedbackType.Error,
         );
         if (AsyncResult.isSuccess(result)) {
-          if (replaceWithHome || !navigation.canGoBack()) {
-            navigation.dispatch(StackActions.replace("Home"));
+          if (replaceWithLibrary || !navigation.canGoBack()) {
+            navigation.dispatch(StackActions.replace("Library"));
           } else {
             navigation.goBack();
           }

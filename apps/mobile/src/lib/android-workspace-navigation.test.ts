@@ -21,6 +21,7 @@ const router = StackRouter({});
 const options = {
   routeNames: [
     "Home",
+    "Library",
     "Thread",
     "ThreadFiles",
     "ThreadTerminal",
@@ -113,11 +114,23 @@ describe("Android workspace navigation", () => {
     expect(selected.routes[1]?.params).toEqual(thread.params);
   });
 
-  it("creates Home beneath cold-linked details and gives direct list escape", () => {
+  it("creates Library beneath cold-linked details and gives direct library escape", () => {
     const initial = router.getInitialState(options);
     const cold = apply(initial, CommonActions.reset({ index: 0, routes: [pullRequest] }));
-    expect(names(select(cold, pullRequest))).toEqual(["Home", "PullRequest"]);
-    expect(names(select(cold))).toEqual(["Home"]);
+    expect(names(select(cold, pullRequest))).toEqual(["Library", "PullRequest"]);
+    expect(names(select(cold))).toEqual(["Library"]);
+  });
+
+  it("retains Library when selecting peer details from the project hub", () => {
+    const initial = router.getInitialState(options);
+    const library = apply(
+      initial,
+      CommonActions.reset({ index: 0, routes: [{ name: "Library" }] }),
+    );
+    const detail = select(library, thread);
+    expect(names(detail)).toEqual(["Library", "Thread"]);
+    expect(detail.routes[0]?.key).toBe(library.routes[0]?.key);
+    expect(names(select(detail))).toEqual(["Library"]);
   });
 
   it("keeps a request-review flow above the chosen PR instead of an old chat", () => {

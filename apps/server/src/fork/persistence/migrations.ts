@@ -1,3 +1,5 @@
+import { LibraryAssetMigrations } from "../project-library/assets/migrations.ts";
+import { ProjectLibraryMigrations } from "../project-library/migrations.ts";
 import { ModelPreviewMigrations } from "../model-preview-3d/migrations.ts";
 import { ProjectLifecycleMigrations } from "../project-lifecycle/migrations.ts";
 import { AppleBuildToolingMigrations } from "../apple-build-tooling/migrations.ts";
@@ -19,6 +21,8 @@ export interface ForkMigrationSet {
 
 /** One entry per packet that owns tables. */
 export const FORK_MIGRATION_SETS: ReadonlyArray<ForkMigrationSet> = [
+  ProjectLibraryMigrations,
+  LibraryAssetMigrations,
   ModelPreviewMigrations,
   ProjectLifecycleMigrations,
   AppleBuildToolingMigrations,

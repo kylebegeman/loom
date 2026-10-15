@@ -113,9 +113,13 @@ export type ProjectServiceError =
 export class ProjectService extends Context.Service<
   ProjectService,
   {
-    readonly create: (input: ProjectCreateInput) => Effect.Effect<Project, ProjectServiceError>;
+    readonly create: (
+      input: ProjectCreateInput,
+      options?: { readonly workspaceLeaseHeld?: boolean },
+    ) => Effect.Effect<Project, ProjectServiceError>;
     readonly bootstrap: (
       input: ProjectBootstrapInput,
+      options?: { readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<
       { readonly project: Project; readonly created: boolean },
       ProjectServiceError
@@ -128,7 +132,7 @@ export class ProjectService extends Context.Service<
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly getByWorkspaceRoot: (
       workspaceRoot: string,
-      options?: { readonly includeDeleted?: boolean },
+      options?: { readonly includeDeleted?: boolean; readonly workspaceLeaseHeld?: boolean },
     ) => Effect.Effect<Option.Option<Project>, ProjectOperationError>;
     readonly snapshot: Effect.Effect<ProjectSnapshot, ProjectOperationError>;
     /**
@@ -200,11 +204,15 @@ export const make = Effect.gen(function* () {
     readonly projectId?: ProjectId;
     readonly workspaceRoot: string;
     readonly createIfMissing?: boolean;
+    readonly workspaceLeaseHeld?: boolean;
   }) =>
     workspacePaths
       .normalizeWorkspaceRoot(input.workspaceRoot, {
         createIfMissing: input.createIfMissing ?? false,
         restoreManagedCheckout: true,
+        ...(input.workspaceLeaseHeld === undefined
+          ? {}
+          : { workspaceLeaseHeld: input.workspaceLeaseHeld }),
       })
       .pipe(
         Effect.mapError(
@@ -320,7 +328,12 @@ export const make = Effect.gen(function* () {
   const getByWorkspaceRoot: ProjectService["Service"]["getByWorkspaceRoot"] = Effect.fn(
     "ProjectService.getByWorkspaceRoot",
   )(function* (workspaceRoot, options) {
-    const normalized = yield* normalizeWorkspaceRoot({ workspaceRoot });
+    const normalized = yield* normalizeWorkspaceRoot({
+      workspaceRoot,
+      ...(options?.workspaceLeaseHeld === undefined
+        ? {}
+        : { workspaceLeaseHeld: options.workspaceLeaseHeld }),
+    });
     const row = yield* (
       options?.includeDeleted === true
         ? projects
@@ -338,11 +351,14 @@ export const make = Effect.gen(function* () {
   });
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
-    function* (input) {
+    function* (input, options) {
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
         workspaceRoot: input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
+        ...(options?.workspaceLeaseHeld === undefined
+          ? {}
+          : { workspaceLeaseHeld: options.workspaceLeaseHeld }),
       });
       yield* commit({
         type: "project.create",
@@ -396,10 +412,10 @@ export const make = Effect.gen(function* () {
   );
 
   const bootstrap: ProjectService["Service"]["bootstrap"] = Effect.fn("ProjectService.bootstrap")(
-    function* (input) {
-      const existing = yield* getByWorkspaceRoot(input.workspaceRoot);
+    function* (input, options) {
+      const existing = yield* getByWorkspaceRoot(input.workspaceRoot, options);
       if (Option.isSome(existing)) return { project: existing.value, created: false };
-      return { project: yield* create(input), created: true };
+      return { project: yield* create(input, options), created: true };
     },
   );
 

@@ -1,3 +1,16 @@
+import {
+  LibraryRouteScreen,
+  LibraryProjectRouteScreen,
+  LibraryAuthorityScreen,
+} from "./fork/library/LibraryScreens";
+import {
+  LibraryCreateRouteScreen,
+  LibraryEditRouteScreen,
+} from "./fork/library/LibraryProjectForm";
+import { LibraryHistoryRouteScreen } from "./fork/library/LibraryHistoryScreen";
+import { LibraryIdentityRouteScreen } from "./fork/library/LibraryIdentityScreen";
+import { LibraryStartRouteScreen } from "./fork/library/LibraryStartScreen";
+import { APP_LINKING_CONFIG } from "./lib/appLinking";
 // fork: project-home - A durable project overview is a normal workspace route.
 import { ProjectHomeRouteScreen } from "./fork/project-home/ProjectHomeRouteScreen";
 import { ProjectStorageInventoryRouteScreen } from "./fork/project-home/ProjectStorageInventoryRouteScreen";
@@ -707,21 +720,66 @@ function NotFoundScreen() {
       </Text>
       <Pressable
         style={returnHomeButtonStyle}
-        onPress={() => navigation.dispatch(StackActions.replace("Home"))}
+        onPress={() => navigation.dispatch(StackActions.replace("Library"))}
       >
-        <Text className="text-base font-t3-bold text-primary-foreground">Return home</Text>
+        <Text className="text-base font-t3-bold text-primary-foreground">Return to library</Text>
       </Pressable>
     </ScrollView>
   );
 }
 
 const RootStackConfig = createWorkspaceStackNavigator({
-  initialRouteName: "Home",
+  initialRouteName: APP_LINKING_CONFIG.initialRouteName,
   layout: RootStackLayout,
   screenOptions: {
     headerShown: false,
   },
   screens: {
+    Library: createNativeStackScreen({
+      screen: LibraryRouteScreen,
+      linking: "library",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibrarySettings: createNativeStackScreen({
+      screen: LibraryAuthorityScreen,
+      linking: "library/settings",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibrarySignIn: createNativeStackScreen({
+      screen: LibraryIdentityRouteScreen,
+      linking: "library/sign-in",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryAttachment: createNativeStackScreen({
+      screen: AttachmentFileScreen,
+      linking: "library/attachments/:librarySourceEnvironmentId/:attachmentId",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryCreate: createNativeStackScreen({
+      screen: LibraryCreateRouteScreen,
+      linking: "library/new",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryProject: createNativeStackScreen({
+      screen: LibraryProjectRouteScreen,
+      linking: "library/projects/:projectId",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryEdit: createNativeStackScreen({
+      screen: LibraryEditRouteScreen,
+      linking: "library/projects/:projectId/edit",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryStart: createNativeStackScreen({
+      screen: LibraryStartRouteScreen,
+      linking: "library/projects/:projectId/new-conversation",
+      options: SOLID_HEADER_OPTIONS,
+    }),
+    LibraryHistory: createNativeStackScreen({
+      screen: LibraryHistoryRouteScreen,
+      linking: "library/projects/:projectId/history/:archiveId",
+      options: SOLID_HEADER_OPTIONS,
+    }),
     Home: createNativeStackScreen({
       screen: WorkspaceRootScreen,
       linking: "",
@@ -1069,9 +1127,12 @@ function ScreenRenderFallback(props: RenderFailureProps & { readonly routeName: 
   const navigation = useNavigation();
   const exit = navigation.canGoBack()
     ? { label: "Go back", onPress: () => navigation.goBack() }
-    : props.routeName === "Home"
+    : props.routeName === "Home" || props.routeName === "Library"
       ? { label: "Open settings", onPress: () => navigation.navigate("SettingsSheet") }
-      : { label: "Return home", onPress: () => navigation.dispatch(StackActions.replace("Home")) };
+      : {
+          label: "Return to library",
+          onPress: () => navigation.dispatch(StackActions.replace("Library")),
+        };
 
   return <RenderFailureView {...props} exit={exit} />;
 }

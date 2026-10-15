@@ -1,3 +1,4 @@
+import { LIBRARY_WS_METHODS as LIB } from "@t3tools/contracts/fork";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "@t3tools/contracts/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
@@ -26,6 +27,32 @@ import type { AuthenticatedSession } from "../auth/EnvironmentAuth.ts";
 
 /** One scope per fork RPC. Exhaustive: a fork method without a scope fails typecheck. */
 export const FORK_RPC_REQUIRED_SCOPES = {
+  [LIB.subscribeRefreshes]: AuthOrchestrationReadScope,
+  [LIB.replicationStatus]: AuthOrchestrationReadScope,
+  [LIB.preparation]: AuthOrchestrationReadScope,
+  [LIB.snapshotThread]: AuthOrchestrationReadScope,
+  [LIB.flushHistory]: AuthOrchestrationOperateScope,
+  [LIB.registerThread]: AuthOrchestrationOperateScope,
+  [LIB.info]: AuthOrchestrationReadScope,
+  [LIB.projects]: AuthOrchestrationReadScope,
+  [LIB.project]: AuthOrchestrationReadScope,
+  [LIB.copies]: AuthOrchestrationReadScope,
+  [LIB.threads]: AuthOrchestrationReadScope,
+  [LIB.history]: AuthOrchestrationReadScope,
+  [LIB.verifyImport]: AuthOrchestrationReadScope,
+  [LIB.inspectFolder]: AuthTerminalOperateScope,
+  [LIB.copyStatus]: AuthOrchestrationReadScope,
+  [LIB.resolveBinding]: AuthOrchestrationReadScope,
+  [LIB.createProject]: AuthSettingsWriteScope,
+  [LIB.updateProject]: AuthSettingsWriteScope,
+  [LIB.archiveProject]: AuthSettingsWriteScope,
+  [LIB.registerCopy]: AuthOrchestrationOperateScope,
+  [LIB.prepareCopy]: AuthTerminalOperateScope,
+  [LIB.unregisterCopy]: AuthOrchestrationOperateScope,
+  [LIB.releaseCopy]: AuthOrchestrationOperateScope,
+  [LIB.bindThread]: AuthOrchestrationOperateScope,
+  [LIB.ingestHistory]: AuthOrchestrationOperateScope,
+  [LIB.importShadow]: AuthEnvironmentMaintainScope,
   [C.preview]: AuthOrchestrationReadScope,
   [C.adopt]: AuthSettingsWriteScope,
   [C.setRetention]: AuthSettingsWriteScope,
