@@ -6,6 +6,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Stream from "effect/Stream";
 
 import { probeClaudeCapabilities } from "../../provider/ClaudeProvider.ts";
@@ -36,6 +37,12 @@ export const makeSwitchboardSnapshotSettingsSource = <Settings>(provider: Settin
   });
 
 const ROUTED_PROBE_TTL = Duration.minutes(5);
+/**
+ * A routed probe that found no capabilities or no usable key, such as a key helper
+ * still waiting on a Keychain prompt, is retried on the next status check instead
+ * of keeping Claude unselectable for the full TTL.
+ */
+const ROUTED_PROBE_RETRY_TTL = Duration.seconds(15);
 const ROUTED_PROBE_KEY = "switchboard";
 
 /**
@@ -58,10 +65,8 @@ export const makeSwitchboardClaudeProbes = (
     const routing = Effect.try(() =>
       resolveSwitchboardClaudeProbeRouting(hostEnvironment, platform),
     );
-    const cache = yield* Cache.make({
-      capacity: 1,
-      timeToLive: ROUTED_PROBE_TTL,
-      lookup: () =>
+    const cache = yield* Cache.makeWith(
+      () =>
         routing.pipe(
           Effect.flatMap((route) =>
             Effect.all(
@@ -85,7 +90,14 @@ export const makeSwitchboardClaudeProbes = (
           ),
           Effect.orElseSucceed(() => undefined),
         ),
-    });
+      {
+        capacity: 1,
+        timeToLive: (exit) =>
+          Exit.isSuccess(exit) && exit.value?.switchboardCredentialAvailable === true
+            ? ROUTED_PROBE_TTL
+            : ROUTED_PROBE_RETRY_TTL,
+      },
+    );
     const routed = settings.get.pipe(Effect.map((current) => current.switchboardEnabled));
     return {
       routed,

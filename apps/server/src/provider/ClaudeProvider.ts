@@ -185,22 +185,9 @@ function apiProviderAuthMetadata(
 function claudeAuthStatus(
   capabilities: Pick<
     ClaudeCapabilitiesProbe,
-    | "email"
-    | "subscriptionType"
-    | "tokenSource"
-    | "apiKeySource"
-    | "apiProvider"
-    | "authMode" // fork: switchboard
-    | "switchboardCredentialAvailable" // fork: switchboard
+    "email" | "subscriptionType" | "tokenSource" | "apiKeySource" | "apiProvider"
   >,
 ): "authenticated" | "unauthenticated" {
-  // fork: switchboard. Initialization reports the helper's cache, which even a
-  // failed helper fills, so routed auth rests on running the helper separately.
-  if (capabilities.authMode === "switchboard") {
-    return capabilities.switchboardCredentialAvailable === true
-      ? "authenticated"
-      : "unauthenticated";
-  } // fork: switchboard
   if (capabilities.apiProvider !== undefined && capabilities.apiProvider !== "firstParty") {
     return "authenticated";
   }
@@ -212,6 +199,12 @@ function claudeAuthStatus(
     ? "authenticated"
     : "unauthenticated";
 }
+
+// fork: switchboard. Routed guidance names the hub, never `claude auth login`.
+const SWITCHBOARD_UNVERIFIED =
+  "Could not verify Claude authentication through Switchboard. Check this environment's Switchboard endpoint and key helper.";
+const SWITCHBOARD_SIGNED_OUT =
+  "Claude could not authenticate through Switchboard. Check this environment's Switchboard key helper."; // fork: switchboard
 
 // ── SDK capability probe ────────────────────────────────────────────
 
@@ -398,6 +391,7 @@ const probeClaudeCapabilities = (
   includeUsage = true,
   switchboardSettings?: ClaudeSdkSettings, // fork: switchboard
 ) => {
+  includeUsage &&= switchboardSettings === undefined; // fork: switchboard. Never read local allowances.
   const abort = new AbortController();
   return Effect.gen(function* () {
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
@@ -431,14 +425,11 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
-        const usageResult =
-          includeUsage && !switchboardSettings // fork: switchboard
-            ? yield* Effect.tryPromise(() =>
-                q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
-                  skipBehaviors: true,
-                }),
-              ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
-            : undefined;
+        const usageResult = includeUsage
+          ? yield* Effect.tryPromise(() =>
+              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
+            ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
+          : undefined;
         const usage =
           usageResult && Result.isSuccess(usageResult)
             ? {
@@ -503,13 +494,8 @@ export const probeClaudeWorkspaceSnapshot = Effect.fn("probeClaudeWorkspaceSnaps
 ): Effect.fn.Return<ProviderWorkspaceSnapshot, never, FileSystem.FileSystem | Path.Path> {
   if (!claudeSettings.enabled) return machineSnapshot;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, environment);
-  const capabilities = yield* probeClaudeCapabilities(
-    claudeSettings,
-    environment,
-    cwd,
-    false,
-    switchboardSettings, // fork: switchboard
-  );
+  const probeArgs = [claudeSettings, environment, cwd, false, switchboardSettings] as const; // fork: switchboard
+  const capabilities = yield* probeClaudeCapabilities(...probeArgs); // fork: switchboard
   return {
     ...machineSnapshot,
     skills,
@@ -661,15 +647,19 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message:
-          probeAuthMode === "switchboard" // fork: switchboard
-            ? "Could not verify Claude authentication through Switchboard. Check this environment's Switchboard endpoint and key helper."
-            : "Could not verify Claude authentication status from initialization result.",
+        message: "Could not verify Claude authentication status from initialization result.",
+        ...(probeAuthMode === "switchboard" ? { message: SWITCHBOARD_UNVERIFIED } : {}), // fork: switchboard
       },
     });
   }
 
-  if (claudeAuthStatus(capabilities) === "unauthenticated") {
+  // fork: switchboard. Initialization reports the helper's cache, which even a
+  // failed helper fills, so routed auth rests on running the helper separately.
+  const routed = capabilities.authMode === "switchboard"; // fork: switchboard
+  const signedOut = routed // fork: switchboard
+    ? capabilities.switchboardCredentialAvailable !== true // fork: switchboard
+    : claudeAuthStatus(capabilities) === "unauthenticated"; // fork: switchboard
+  if (signedOut /* fork: switchboard */) {
     return buildServerProvider({
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
@@ -682,33 +672,26 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unauthenticated" },
-        message:
-          capabilities.authMode === "switchboard" // fork: switchboard
-            ? "Claude could not authenticate through Switchboard. Check this environment's Switchboard key helper."
-            : "Claude Code is not authenticated. Run `claude auth login` and try again.",
+        message: "Claude Code is not authenticated. Run `claude auth login` and try again.",
+        ...(routed ? { message: SWITCHBOARD_SIGNED_OUT } : {}), // fork: switchboard
       },
     });
   }
 
-  // fork: switchboard. The hub picks the account per request, so a routed probe
-  // reports neither the local login nor its allowances.
-  const routed = capabilities.authMode === "switchboard"; // fork: switchboard
-  const authMetadata = routed // fork: switchboard
-    ? { type: "switchboard", label: "Switchboard" } // fork: switchboard
-    : (claudeAuthMetadata({
-        subscriptionType: capabilities.subscriptionType,
-        authMethod: capabilities.tokenSource,
-      }) ?? apiProviderAuthMetadata(capabilities.apiProvider));
-  const usageLimits = routed // fork: switchboard
-    ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }) // fork: switchboard
-    : !capabilities.usage
-      ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
-      : scopedLimitNames
-        ? yield* recordClaudeUsageResponse(scopedLimitNames, {
-            response: capabilities.usage,
-            checkedAt,
-          })
-        : claudeUsageResponseToLimits({ response: capabilities.usage, checkedAt }).limits;
+  const authMetadata =
+    claudeAuthMetadata({
+      subscriptionType: capabilities.subscriptionType,
+      authMethod: capabilities.tokenSource,
+    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+  const usageLimits = !capabilities.usage
+    ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
+    : scopedLimitNames
+      ? yield* recordClaudeUsageResponse(scopedLimitNames, {
+          response: capabilities.usage,
+          checkedAt,
+        })
+      : claudeUsageResponseToLimits({ response: capabilities.usage, checkedAt }).limits;
+  const routedUsageLimits = makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }); // fork: switchboard
   const resetCredits =
     resolveResetCredits &&
     capabilities.subscriptionType &&
@@ -733,9 +716,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         ...(!routed && capabilities.email ? { email: capabilities.email } : {}), // fork: switchboard
         ...(!routed && capabilities.workspaceId ? { workspaceId: capabilities.workspaceId } : {}), // fork: switchboard
         ...(authMetadata ? authMetadata : {}),
+        // fork: switchboard. The hub picks the account per request, so a routed
+        // probe reports neither the local login nor its allowances.
+        ...(routed ? { type: "switchboard", label: "Switchboard" } : {}), // fork: switchboard
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
       usageLimits: resetCredits ? { ...usageLimits, resetCredits } : usageLimits,
+      ...(routed ? { usageLimits: routedUsageLimits } : {}), // fork: switchboard
     },
   });
 });

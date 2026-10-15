@@ -1,7 +1,8 @@
 import * as ClaudeSdk from "@anthropic-ai/claude-agent-sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ClaudeSettings, CodexSettings } from "@t3tools/contracts";
+import { ClaudeSettings, CodexSettings, DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -9,6 +10,7 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import type * as CodexSchema from "effect-codex-app-server/schema";
 import { vi } from "vite-plus/test";
@@ -19,6 +21,7 @@ import {
   probeClaudeCapabilities,
 } from "../../provider/ClaudeProvider.ts";
 import { checkCodexProviderStatus } from "../../provider/CodexProvider.ts";
+import { makeSwitchboardClaudeProbes } from "./providerProbes.ts";
 
 vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
 
@@ -172,6 +175,85 @@ it.layer(NodeServices.layer)("routed Claude readiness", (it) => {
           "Claude could not authenticate through Switchboard. Check this environment's Switchboard key helper.",
         );
       }).pipe(Effect.scoped),
+  );
+
+  it.effect("probes again soon after the key helper fails, and caches a verified result", () =>
+    Effect.gen(function* () {
+      const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+        () =>
+          ({
+            initializationResult: async () => ({
+              account: { tokenSource: "apiKeyHelper", apiProvider: "firstParty" },
+              commands: [],
+            }),
+          }) as unknown as ReturnType<typeof ClaudeSdk.query>,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+      // The helper fails once, as it does while a Keychain prompt is still open.
+      let helperCalls = 0;
+      const spawner = ChildProcessSpawner.make((command) => {
+        assert.ok(ChildProcess.isStandardCommand(command));
+        assert.equal(command.command, "/fixture/key-helper");
+        const ok = helperCalls++ > 0;
+        return Effect.succeed(
+          ChildProcessSpawner.makeHandle({
+            pid: ChildProcessSpawner.ProcessId(3),
+            exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(ok ? 0 : 1)),
+            isRunning: Effect.succeed(false),
+            kill: () => Effect.void,
+            unref: Effect.succeed(Effect.void),
+            stdin: Sink.drain,
+            stdout: ok ? Stream.encodeText(Stream.make("fixture-key\n")) : Stream.empty,
+            stderr: Stream.empty,
+            all: Stream.empty,
+            getInputFd: () => Sink.drain,
+            getOutputFd: () => Stream.empty,
+          }),
+        );
+      });
+      const settings = Effect.succeed({ ...DEFAULT_SERVER_SETTINGS, switchboardEnabled: true });
+      const host = ProviderHost.ProviderHost.of({
+        paths: {
+          cwd: "/workspace",
+          baseDir: "/workspace",
+          stateDir: "/workspace",
+          providerStatusCacheDir: "/workspace",
+          attachmentsDir: "/workspace",
+        },
+        settings: {
+          get: settings,
+          withSnapshot: (use) => settings.pipe(Effect.flatMap(use)),
+          changes: Stream.empty,
+          subscribe: Effect.succeed(Stream.empty),
+        },
+        shouldRunBackgroundWork: () => Effect.succeed(false),
+        resolveAttachmentPath: () => null,
+        credentials: () => Effect.die("Readiness must not read stored provider credentials"),
+      });
+      const probes = yield* makeSwitchboardClaudeProbes(
+        decodeClaudeSettings({}),
+        {},
+        "/workspace",
+      ).pipe(
+        Effect.provideService(ProviderHost.ProviderHost, host),
+        Effect.provideService(HostProcess.Environment, {
+          LOOM_SWITCHBOARD_URL: "http://gateway.example.test:8317",
+          LOOM_SWITCHBOARD_KEY_HELPER: "/fixture/key-helper",
+        }),
+        Effect.provideService(HostProcess.Platform, "linux"),
+      );
+      const credential = probes.capabilities.pipe(
+        Effect.map((capabilities) => capabilities?.switchboardCredentialAvailable),
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      );
+
+      assert.equal(yield* credential, false);
+      yield* TestClock.adjust("20 seconds");
+      assert.equal(yield* credential, true);
+      yield* TestClock.adjust("1 minute");
+      assert.equal(yield* credential, true);
+      assert.equal(helperCalls, 2);
+    }).pipe(Effect.scoped),
   );
 
   it.effect("keeps routed initialization failures unverified", () =>

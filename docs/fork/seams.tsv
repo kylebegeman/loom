@@ -36,7 +36,7 @@ apps/server/src/provider/CodexProvider.ts	codex-login-email	2
 packages/contracts/src/settings.ts	switchboard	2
 apps/server/src/provider/codexLaunchArgs.ts	switchboard	5
 apps/server/src/provider/CodexProvider.ts	switchboard	4
-apps/server/src/provider/ClaudeProvider.ts	switchboard	30
+apps/server/src/provider/ClaudeProvider.ts	switchboard	33
 apps/server/src/provider/Drivers/ClaudeDriver.ts	switchboard	12
 apps/server/src/provider/Drivers/CodexDriver.ts	switchboard	4
 apps/server/src/usage/cliproxyApi.ts	switchboard	10
