@@ -369,3 +369,54 @@ it.each(["resolved", "archived", "removed"])(
     expect(state.navigate).not.toHaveBeenCalled();
   },
 );
+
+// fork: respectful-notifications
+it.each(["synchronizing", "cached"])(
+  "keeps shown alerts while the shell is %s and still opens their thread",
+  async (status) => {
+    await render();
+    complete();
+    await render();
+    const notification = TestNotification.sent[0]!;
+    state.shells.set("one", { ...state.shells.get("one"), status });
+    await render();
+    expect(notification.close).not.toHaveBeenCalled();
+    expect(state.badge).toHaveBeenLastCalledWith(1);
+    notification.dispatchEvent(new Event("click"));
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: EnvironmentId.make("one"), threadId: "thread" },
+    });
+    complete();
+    await render();
+    expect(TestNotification.sent).toHaveLength(1);
+  },
+);
+
+// fork: respectful-notifications
+it("delivers through Web Locks once granted and skips alerts answered meanwhile", async () => {
+  const grants: (() => void)[] = [];
+  const storage = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  });
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: (_name: string, callback: () => unknown) =>
+        new Promise((resolve) => grants.push(() => resolve(callback()))),
+    },
+  });
+  await render();
+  complete();
+  state.shells.set("two", shell({ hasPendingApprovals: true }));
+  await render();
+  expect(TestNotification.sent).toHaveLength(0);
+  state.shells.set("two", shell());
+  await render();
+  await act(async () => {
+    for (const grant of grants.splice(0)) grant();
+  });
+  expect(TestNotification.sent.map((notification) => notification.tag)).toEqual(["one:thread"]);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+});

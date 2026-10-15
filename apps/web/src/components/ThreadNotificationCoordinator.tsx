@@ -12,6 +12,8 @@ import {
 import { useCallback, useEffect, useRef } from "react";
 
 // fork: respectful-notifications
+import { systemNotificationBody } from "../fork/respectful-notifications/notificationBody";
+// fork: respectful-notifications
 import { deliverDesktopNotification } from "../fork/respectful-notifications/notificationDelivery";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
@@ -145,11 +147,11 @@ function EnvironmentNotifications({
     strict: false,
   });
   const previous = useRef(new Map<ThreadId, NotificationState>());
+  const live = useRef(false); // fork: respectful-notifications
 
   useEffect(() => {
+    live.current = threads !== null; // fork: respectful-notifications
     if (threads === null) {
-      // fork: respectful-notifications
-      for (const id of previous.current.keys()) onClear(`${environmentId}:${id}`);
       previous.current.clear();
       return;
     }
@@ -257,41 +259,36 @@ function EnvironmentNotifications({
       // fork: respectful-notifications
       previous.current.set(thread.id, next.get(thread.id)!);
       // fork: respectful-notifications
+      const stale = () => {
+        // While the shell resyncs nothing is known yet, so an alert stays usable.
+        const latest = previous.current.get(thread.id);
+        return latest
+          ? latest.raw.archivedAt !== null ||
+              latest.attention !== attention ||
+              latest.completion !== completion ||
+              latest.raw.latestRunId !== rawThread.latestRunId
+          : live.current;
+      };
+      // fork: respectful-notifications
       deliverDesktopNotification(
         `${environmentId}:${thread.id}:${rawThread.latestRunId}:${attention ?? completion}`,
         () => {
-          const latest = previous.current.get(thread.id);
           if (
-            !latest ||
-            latest.raw.archivedAt !== null ||
-            latest.attention !== attention ||
-            latest.completion !== completion ||
-            latest.raw.latestRunId !== rawThread.latestRunId ||
+            stale() ||
             !hasDesktopNotifications(getClientSettings().notificationMode) ||
             (document.visibilityState === "visible" && document.hasFocus())
           )
             return false;
           try {
             const notification = new Notification(title, {
-              body: getClientSettings().notificationPreviewsEnabled
-                ? thread.title
-                : "Open Loom to review this thread.",
+              body: systemNotificationBody(thread.title, "Open Loom to review this thread."),
               tag: `${environmentId}:${thread.id}`,
               silent: true,
             });
             onNotification(environmentId, notification);
             notification.addEventListener("click", () => {
               notification.close();
-              const latest = previous.current.get(thread.id);
-              if (
-                !hasDesktopNotifications(getClientSettings().notificationMode) ||
-                !latest ||
-                latest.raw.archivedAt !== null ||
-                latest.attention !== attention ||
-                latest.completion !== completion ||
-                latest.raw.latestRunId !== rawThread.latestRunId
-              )
-                return;
+              if (!hasDesktopNotifications(getClientSettings().notificationMode) || stale()) return;
               window.focus();
               void navigate({
                 to: "/$environmentId/$threadId",
