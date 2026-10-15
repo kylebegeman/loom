@@ -157,21 +157,33 @@ Claude and one Codex (`ProviderModelPicker.tsx`), and provider status follows th
 the drivers probe again when the setting changes, a routed Claude probe runs through the
 hub and the key helper (`ClaudeDriver.ts`, `ClaudeProvider.ts`), and neither provider
 reports its native login's allowances while routed (`CodexDriver.ts`, `CodexProvider.ts`).
-Cursor, Grok, OpenCode and Antigravity are never routed, since Switchboard pools only
-Claude and Codex.
+Only Claude and Codex are routed; every other provider launches as upstream does.
+
+Routed launches read the hub's client key through a key helper. Without
+`LOOM_SWITCHBOARD_KEY_HELPER`, macOS runs `/usr/bin/security` and Linux runs
+`/usr/bin/secret-tool` against the `switchboard` service's `client-api-key` entry. Other
+platforms must set it to an absolute path of a command that prints the key, or routed
+launches fail with a configuration error naming the setting. An invalid
+`LOOM_SWITCHBOARD_URL` or helper path fails the same way rather than falling back to an
+unrouted account.
 
 Model availability comes from the Switchboard controller's cached `GET
 /api/v1/availability`, read by the `loom.switchboard.limits` RPC. The local hub implies
 the controller on `127.0.0.1:8318`; a remote hub needs `LOOM_SWITCHBOARD_CONTROLLER_URL`.
-Only a model the controller reports `unavailable` is disabled, with the reason, and a
-provider is limited as a whole only when every model listed for it is unavailable or
-credit-only. When the controller cannot answer, its evaluation is old, or no controller
-is configured, the picker fails open: every model stays selectable and the picker says
-availability is unknown. The hub still enforces each account's limits, and a turn
-reports any limit it hits. Limits views read that hub's usage from the controller's
-cached `GET /api/v1/usage` instead of polling each subscription (`usage/cliproxyApi.ts`),
-never fall back to provider polling when it is down, and ask it to collect again after a
-reset credit is redeemed. Off, launches, status, usage and the picker are upstream's.
+Only a model the controller reports `unavailable` is disabled, with the controller's
+reason. A provider is limited as a whole only when every model listed for it is
+unavailable or credit-only, and that limit also disables the provider's models the
+controller does not list. The picker fails open: when the controller cannot answer, the
+reading is stale or from a failed pass, no routed model is listed, or every listed model
+is unknown, every model stays selectable and the picker says availability is unknown. A
+routed hub with no known controller reports `unconfigured`: the picker says no controller
+is configured, and Settings names `LOOM_SWITCHBOARD_CONTROLLER_URL`. The hub still
+enforces each account's limits, and a turn reports any limit it hits. Limits views read
+that hub's usage from the controller's cached `GET /api/v1/usage` instead of polling each
+subscription (`usage/cliproxyApi.ts`), show it as unavailable rather than polling
+providers when the controller is down or not configured, and ask it to collect again
+after a reset credit is redeemed. Off, launches, status, usage and the picker are
+upstream's.
 
 The LoomOS integration pack for Omarchy workstations lives outside the app in
 `deploy/omarchy`, with its implementation packets in `deploy/omarchy/packets` and
