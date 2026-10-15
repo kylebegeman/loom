@@ -9,7 +9,13 @@ export const PROJECT_CHECKOUT_FEATURE = "project-checkout-management";
 export const ProjectCheckoutRetention = Schema.Literals(["inherit", "keep", "release-on-settle"]);
 export type ProjectCheckoutRetention = typeof ProjectCheckoutRetention.Type;
 const ReviewToken = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/));
+export const PROJECT_CHECKOUT_ACTIONS_FEATURE = "project-checkout-actions";
 export const ProjectCheckoutRequest = Schema.Struct({ projectId: ProjectId });
+export const ProjectCheckoutActionRequest = Schema.Struct({
+  projectId: ProjectId,
+  reviewToken: ReviewToken,
+});
+export type ProjectCheckoutActionRequest = typeof ProjectCheckoutActionRequest.Type;
 export const ProjectCheckoutAdoptRequest = Schema.Struct({
   projectId: ProjectId,
   reviewToken: ReviewToken,
@@ -41,6 +47,12 @@ export const ProjectCheckoutPreview = Schema.Struct({
   reviewToken: Schema.NullOr(ReviewToken),
 });
 export type ProjectCheckoutPreview = typeof ProjectCheckoutPreview.Type;
+export const ProjectCheckoutReleaseResult = Schema.Struct({
+  preview: ProjectCheckoutPreview,
+  outcome: Schema.Literals(["removed", "kept", "failed"]),
+  reason: Schema.String,
+});
+export type ProjectCheckoutReleaseResult = typeof ProjectCheckoutReleaseResult.Type;
 export class ProjectCheckoutManagementError extends Schema.TaggedError<ProjectCheckoutManagementError>()(
   "ProjectCheckoutManagementError",
   {
@@ -65,12 +77,24 @@ export class ProjectCheckoutManagementError extends Schema.TaggedError<ProjectCh
   }
 }
 export const PROJECT_CHECKOUT_WS_METHODS = {
+  release: "loom.project-checkout.release",
+  restore: "loom.project-checkout.restore",
   preview: "loom.project-checkout.preview",
   adopt: "loom.project-checkout.adopt",
   setRetention: "loom.project-checkout.set-retention",
 } as const;
 const error = Schema.Union([ProjectCheckoutManagementError, EnvironmentAuthorizationError]);
 export const ProjectCheckoutRpcGroup = RpcGroup.make(
+  Rpc.make(PROJECT_CHECKOUT_WS_METHODS.release, {
+    payload: ProjectCheckoutActionRequest,
+    success: ProjectCheckoutReleaseResult,
+    error,
+  }),
+  Rpc.make(PROJECT_CHECKOUT_WS_METHODS.restore, {
+    payload: ProjectCheckoutActionRequest,
+    success: ProjectCheckoutPreview,
+    error,
+  }),
   Rpc.make(PROJECT_CHECKOUT_WS_METHODS.preview, {
     payload: ProjectCheckoutRequest,
     success: ProjectCheckoutPreview,

@@ -40,7 +40,7 @@ const runtime = Atom.runtime(
   } as unknown as EnvironmentRegistry["Service"]),
 );
 
-it.effect.each(["adopt", "setRetention"] as const)(
+it.effect.each(["adopt", "setRetention", "release", "restore"] as const)(
   "checkout %s requires settings write on the selected computer",
   (method) =>
     Effect.scoped(

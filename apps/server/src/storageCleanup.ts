@@ -4,6 +4,7 @@ import {
   OrchestrationV2AppThreadJson,
   OrchestrationV2ProviderSessionJson,
 } from "@t3tools/contracts";
+import { ProjectCheckoutManagementError } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type {
@@ -162,6 +163,13 @@ export function storageCleanupPullRequestMerged(
 export class StorageCleanup extends Context.Service<
   StorageCleanup,
   {
+    readonly releaseProject: (
+      projectId: ProjectId,
+      validate: Effect.Effect<void, ProjectCheckoutManagementError>,
+    ) => Effect.Effect<
+      StorageCleanupReportEntry,
+      ServerSettingsError | ProjectCheckoutManagementError
+    >;
     readonly requestSweep: Effect.Effect<void>;
     readonly runNow: Effect.Effect<StorageCleanupReport, ServerSettingsError>;
     readonly latestReport: Effect.Effect<StorageCleanupReport | null>;
@@ -780,10 +788,15 @@ const make = Effect.gen(function* () {
     settings: ServerSettings["storageCleanup"],
     now: number,
     entries: StorageCleanupReportEntry[],
+    manual?: {
+      readonly projectId: ProjectId;
+      readonly validate: Effect.Effect<void, ProjectCheckoutManagementError>;
+    },
   ) {
     const snapshot = yield* readThreads();
     let foundExplicitSettlementPolicy = false;
     for (const project of snapshot.projects) {
+      if (manual && project.id !== manual.projectId) continue;
       const cwd = path.resolve(project.workspaceRoot);
       const entry: StorageCleanupReportEntry = {
         kind: "project",
@@ -799,15 +812,24 @@ const make = Effect.gen(function* () {
       yield* withWorkspaceLease(
         cwd,
         Effect.gen(function* () {
+          if (manual) yield* manual.validate;
           const receipt = yield* readManagedProjectCheckout(cwd);
-          if (receipt === null) return; // User-opened roots require explicit reviewed adoption.
+          if (receipt === null) {
+            if (manual) return keep("review and adopt this checkout before removing it");
+            return; // User-opened roots require explicit reviewed adoption.
+          }
           if (receipt.projectId !== null && receipt.projectId !== project.id)
             return keep("managed checkout belongs to another project");
           if (receipt.retention === "release-on-settle") foundExplicitSettlementPolicy = true;
-          if (!(yield* fs.exists(cwd))) return;
+          if (!(yield* fs.exists(cwd))) {
+            if (manual) return keep("this working copy has already been removed");
+            return;
+          }
           const projectPolicy = resolveManagedProjectRetention(receipt.retention, settings);
-          if (receipt.retention === "keep") return keep("project folder is kept on this computer");
-          if (projectPolicy.projectAfterDays === null && !projectPolicy.projectOnSettle) return;
+          if (!manual && receipt.retention === "keep")
+            return keep("project folder is kept on this computer");
+          if (!manual && projectPolicy.projectAfterDays === null && !projectPolicy.projectOnSettle)
+            return;
           if (receipt.workspaceRoot !== cwd) return keep("project path is not canonical");
           if (receipt.removalPath !== null && (yield* fs.exists(receipt.removalPath)))
             return keep(`recovery files are retained in ${receipt.removalPath}`);
@@ -883,6 +905,7 @@ const make = Effect.gen(function* () {
               ...currentHolders.map(storageCleanupActivityAt),
             );
             if (
+              !manual &&
               !(projectPolicy.projectOnSettle && allSettled) &&
               !(
                 projectPolicy.projectAfterDays !== null &&
@@ -1011,6 +1034,7 @@ const make = Effect.gen(function* () {
             return keep("commit changed since check");
           const finalChanges = yield* localChangesReason(cwd, fileRules);
           if (finalChanges !== null) return keep(finalChanges);
+          if (manual) yield* manual.validate;
           yield* releaseManagedProjectCheckout(receipt, project.id, recovery.archive);
           entries.push({
             ...entry,
@@ -1022,13 +1046,15 @@ const make = Effect.gen(function* () {
         }),
       ).pipe(
         Effect.catch((error) =>
-          Effect.sync(() =>
-            entries.push({ ...entry, outcome: "failed", reason: cleanupFailureReason(error) }),
-          ),
+          Schema.is(ProjectCheckoutManagementError)(error)
+            ? Effect.fail(error)
+            : Effect.sync(() =>
+                entries.push({ ...entry, outcome: "failed", reason: cleanupFailureReason(error) }),
+              ),
         ),
       );
     }
-    hasExplicitProjectSettlementPolicy = foundExplicitSettlementPolicy;
+    if (!manual) hasExplicitProjectSettlementPolicy = foundExplicitSettlementPolicy;
   });
 
   const cleanScratch = Effect.fn("StorageCleanup.cleanScratch")(function* (
@@ -1401,6 +1427,35 @@ const make = Effect.gen(function* () {
   });
   yield* start();
   return StorageCleanup.of({
+    releaseProject: (projectId, validate) =>
+      Effect.gen(function* () {
+        const settings = yield* settingsService.getSettings;
+        const entries: StorageCleanupReportEntry[] = [];
+        yield* cleanProjects(settings.storageCleanup, yield* Clock.currentTimeMillis, entries, {
+          projectId,
+          validate,
+        });
+        return (
+          entries[0] ?? {
+            kind: "project" as const,
+            outcome: "kept" as const,
+            reason: "This project is no longer available on this computer.",
+            path: "",
+            threadId: null,
+            threadTitle: null,
+            bytes: null,
+            files: null,
+          }
+        );
+      }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+        Effect.mapError((cause) =>
+          Schema.is(ProjectCheckoutManagementError)(cause)
+            ? cause
+            : new ProjectCheckoutManagementError({ projectId, reason: "io", cause }),
+        ),
+      ),
     requestSweep: worker.requestSweep,
     runNow: worker.runNow,
     latestReport: SubscriptionRef.get(reportRef),

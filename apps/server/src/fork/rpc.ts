@@ -1,3 +1,4 @@
+import { makeProjectResourcesRpcHandlers } from "./project-resources/rpc.ts";
 import { makeProjectCheckoutRpcHandlers } from "./project-checkout/rpc.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
 import * as ComputerNaming from "./computer-naming/ComputerNaming.ts";
@@ -41,6 +42,7 @@ export const makeForkRpcLayer = (session: AuthenticatedSession) =>
           ),
         [FORK_WS_METHODS.limits]: () => auth.effect(FORK_WS_METHODS.limits, readSwitchboardLimits),
         ...(yield* withForkRuntime(makeProjectCheckoutRpcHandlers(auth))),
+        ...(yield* withForkRuntime(makeProjectResourcesRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeMiniOffloadRpcHandlers(auth))),
         ...(yield* withForkRuntime(makePcbPreviewRpcHandlers(auth))),
         ...(yield* withForkRuntime(makeModelPreviewRpcHandlers(auth))),

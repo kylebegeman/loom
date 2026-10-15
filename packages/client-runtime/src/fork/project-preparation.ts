@@ -25,7 +25,7 @@ export interface ProjectPreparationHost {
 export type ProjectPreparationSource =
   | {
       readonly ready: true;
-      readonly source: "handoff" | "checkout";
+      readonly source: "handoff" | "checkout" | "resource";
       readonly remoteUrl: string;
       readonly repositoryKey: string;
     }
@@ -80,18 +80,20 @@ function networkRemote(remote: string): string | null {
   return scp && !machineLocalHostname(scp[1]!) ? remote : null;
 }
 
-/** Only an actual checkout review or published handoff offer establishes the source remote. */
+/** A saved repository resource can be cloned without restoring the source checkout. */
 export function projectPreparationSource(input: {
+  readonly resource?: { readonly url: string } | null;
   readonly offer?: Pick<WorkspaceHandoffOffer, "remoteUrl" | "repositoryKey"> | null;
   readonly checkout?: Pick<ProjectCheckoutPreview, "repositoryIdentity" | "state"> | null;
 }): ProjectPreparationSource {
-  if (!input.offer && input.checkout?.state === "blocked")
+  if (!input.resource && !input.offer && input.checkout?.state === "blocked")
     return {
       ready: false,
       reason: "Resolve this checkout's storage review before preparing another copy.",
     };
   const origin = input.checkout?.repositoryIdentity;
   const remote =
+    input.resource?.url ??
     input.offer?.remoteUrl ??
     (origin?.locator.remoteName === "origin" ? origin.locator.remoteUrl : null);
   if (remote === null || remote === undefined)
@@ -107,12 +109,17 @@ export function projectPreparationSource(input: {
         "Use a network Git remote without embedded credentials or query tokens. Local-only addresses and repository paths cannot be prepared on another computer.",
     };
   const key = repositoryKey(safe);
-  if (input.offer && repositoryKey(input.offer.repositoryKey) !== key)
+  if (!input.resource && input.offer && repositoryKey(input.offer.repositoryKey) !== key)
     return {
       ready: false,
       reason: "The published offer and repository remote no longer match. Review the source again.",
     };
-  if (!input.offer && origin?.origin && repositoryKey(origin.origin.canonicalKey) !== key)
+  if (
+    !input.resource &&
+    !input.offer &&
+    origin?.origin &&
+    repositoryKey(origin.origin.canonicalKey) !== key
+  )
     return {
       ready: false,
       reason:
@@ -120,7 +127,7 @@ export function projectPreparationSource(input: {
     };
   return {
     ready: true,
-    source: input.offer ? "handoff" : "checkout",
+    source: input.resource ? "resource" : input.offer ? "handoff" : "checkout",
     remoteUrl: safe,
     repositoryKey: key,
   };

@@ -7,6 +7,8 @@ import * as Schema from "effect/Schema";
 import * as Path from "effect/Path";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
@@ -17,6 +19,14 @@ export class WorkspacePreparationError extends Schema.TaggedError<WorkspacePrepa
   "WorkspacePreparationError",
   { message: Schema.String },
 ) {}
+
+const RecoveryMarker = Schema.Struct({
+  version: Schema.Literal(1),
+  checkpointCommit: Schema.String,
+});
+const RecoveryMarkerCodec = Schema.fromJsonString(RecoveryMarker);
+const decodeRecoveryMarker = Schema.decodeEffect(RecoveryMarkerCodec);
+const encodeRecoveryMarker = Schema.encodeEffect(RecoveryMarkerCodec);
 
 /** Restores released checkouts, retaining a retry marker until setup succeeds. */
 export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* (input: {
@@ -56,6 +66,11 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
             }),
           );
         yield* restoreManagedProjectCheckout(project.value.workspaceRoot);
+        let recovery = (yield* fs.exists(marker))
+          ? yield* fs
+              .readFileString(marker)
+              .pipe(Effect.flatMap((text) => decodeRecoveryMarker(text).pipe(Effect.option)))
+          : Option.none<typeof RecoveryMarker.Type>();
         if (!exists) {
           yield* tracker.stageStatus(input.threadId, "checkout", "running");
           yield* fs.makeDirectory(path.dirname(cwd), { recursive: true });
@@ -65,12 +80,74 @@ export const restoreWorktree = Effect.fn("Workspace.restoreWorktree")(function* 
               "Workspace setup must complete before starting the agent.\n",
               { flag: "wx" },
             );
-          yield* git.pruneWorktrees({ cwd: project.value.workspaceRoot });
+          const root = project.value.workspaceRoot;
+          const branchExists = yield* git.hasCommit({
+            cwd: root,
+            refName: `refs/heads/${input.branch}`,
+          });
+          let refName = input.branch;
+          if (!branchExists) {
+            const store = yield* ProjectionStore.ProjectionStoreV2;
+            const saved = yield* store.getCheckpointContext(input.threadId);
+            const scopes = new Set(
+              saved.checkpointScopes
+                .filter((scope) => scope.kind === "root_run" && path.resolve(scope.cwd) === cwd)
+                .map((scope) => scope.id),
+            );
+            const checkpoint = saved.checkpoints
+              .filter(
+                (checkpoint) => checkpoint.status === "ready" && scopes.has(checkpoint.scopeId),
+              )
+              .toSorted((left, right) => (right.appRunOrdinal ?? 0) - (left.appRunOrdinal ?? 0))[0];
+            if (
+              checkpoint === undefined ||
+              !(yield* git.hasCommit({ cwd: root, refName: `${checkpoint.ref}^` }))
+            )
+              return yield* new WorkspacePreparationError({
+                message:
+                  "This conversation's branch is missing and no saved checkout is available. Restore its branch before retrying.",
+              });
+            const driver = yield* GitVcsDriver.GitVcsDriver;
+            const snapshot = yield* driver.resolveCommit({ cwd: root, revision: checkpoint.ref });
+            // Checkpoints capture working files; their parent records the real HEAD.
+            const head = yield* driver.resolveCommit({
+              cwd: root,
+              revision: `${snapshot.commitSha}^`,
+            });
+            refName = head.commitSha;
+            const recoveryMarker = { version: 1 as const, checkpointCommit: snapshot.commitSha };
+            recovery = Option.some(recoveryMarker);
+            // A retry must restore files before setup even if checkout creation already succeeded.
+            yield* fs.writeFileString(marker, yield* encodeRecoveryMarker(recoveryMarker));
+          }
+          yield* git.pruneWorktrees({ cwd: root });
           yield* git.createWorktree({
-            cwd: project.value.workspaceRoot,
-            refName: input.branch,
+            cwd: root,
+            refName,
+            ...(!branchExists ? { newRefName: input.branch } : {}),
             path: cwd,
           });
+        }
+        if (Option.isSome(recovery)) {
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          yield* driver.execute({
+            operation: "Workspace.restoreWorktree.restoreCheckpoint",
+            cwd,
+            args: [
+              "restore",
+              "--source",
+              recovery.value.checkpointCommit,
+              "--worktree",
+              "--staged",
+              "--",
+              ".",
+            ],
+          });
+          // Once files are restored, setup retries must keep any new work in the checkout.
+          yield* fs.writeFileString(
+            marker,
+            "Workspace setup must complete before starting the agent.\n",
+          );
         }
         yield* tracker.stageStatus(input.threadId, "checkout", "done");
         yield* tracker.stageStatus(input.threadId, "setup-script", "running");

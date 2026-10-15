@@ -1,3 +1,4 @@
+import { PROJECT_RESOURCES_WS_METHODS as R } from "@t3tools/contracts/fork";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "@t3tools/contracts/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
@@ -29,6 +30,11 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [C.preview]: AuthOrchestrationReadScope,
   [C.adopt]: AuthSettingsWriteScope,
   [C.setRetention]: AuthSettingsWriteScope,
+  [C.release]: AuthSettingsWriteScope,
+  [C.restore]: AuthSettingsWriteScope,
+  [R.get]: AuthOrchestrationReadScope,
+  [R.upsert]: AuthSettingsWriteScope,
+  [R.remove]: AuthSettingsWriteScope,
   [N.rename]: AuthSettingsWriteScope,
   [N.get]: AuthOrchestrationReadScope,
   [GH.start]: AuthTerminalOperateScope,

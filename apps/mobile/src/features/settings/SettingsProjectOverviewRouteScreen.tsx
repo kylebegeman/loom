@@ -1,37 +1,52 @@
+import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { resolveProjectSettingsScope } from "../../fork/project-navigation/projectNavigation.logic";
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
-import { AppText as Text, AppTextInput } from "../../components/AppText";
-import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { deriveProjectGroupLabel } from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useEffect, useRef, useState } from "react";
-import type { StaticScreenProps } from "@react-navigation/native";
-import { Platform, Pressable, View } from "react-native";
+import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// fork: project-checkout-management - Review storage ownership per checkout on its host.
+import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { AppText as Text, AppTextInput } from "../../components/AppText";
+import { MaterialButton } from "../../components/MaterialButton";
+import { ProjectFavicon } from "../../components/ProjectFavicon";
+import { ListChoiceRow } from "../../components/ListChoiceRow";
 import { ProjectCheckoutSection } from "../../fork/project-checkout/ProjectCheckoutSection";
+import { ProjectResourcesSection } from "../../fork/project-home/ProjectResourcesSection";
+import { ProjectWorkingCopySection } from "../../fork/project-home/ProjectWorkingCopySection";
+import { resolveProjectSettingsScope } from "../../fork/project-navigation/projectNavigation.logic";
+import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { SettingsActionRow } from "./components/SettingsActionRow";
 import {
   AndroidSettingsEnvironmentFilter,
   SettingsEnvironmentFilterHeader,
 } from "./components/SettingsEnvironmentFilterHeader";
-import { useSettingsEnvironmentFilter, type SettingsTarget } from "./settings-environment-filter";
+import { useSettingsEnvironmentFilter } from "./settings-environment-filter";
+import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { AuthOrchestrationOperateScope, AuthOrchestrationReadScope } from "@t3tools/contracts";
+import { useEnvironmentScope } from "../../state/session";
 
-// fork: project-navigation - A project library shortcut opens this existing settings flow in scope.
 export function SettingsProjectOverviewRouteScreen({
   route,
 }: StaticScreenProps<
   | { readonly initialEnvironmentId?: EnvironmentId; readonly initialProjectId?: ProjectId }
   | undefined
 >) {
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const { selectedTargets, projectGroups, selectedProjectKey, selectProject, selectAll } =
-    useSettingsEnvironmentFilter();
+  const {
+    selectedIds,
+    selectedTargets,
+    projectGroups,
+    selectedProjectKey,
+    selectProject,
+    selectAll,
+  } = useSettingsEnvironmentFilter();
+  const { environments } = useEnvironments();
   const initialEnvironmentId = route.params?.initialEnvironmentId;
   const initialProjectId = route.params?.initialProjectId;
   const appliedProjectRef = useRef<string | undefined>(undefined);
@@ -49,33 +64,95 @@ export function SettingsProjectOverviewRouteScreen({
     selectProject(settingsScope);
   }, [initialEnvironmentId, initialProjectId, projectGroups, selectAll, selectProject]);
   const group = projectGroups.find((entry) => entry.key === selectedProjectKey);
-  const selectedEnvironmentIds = new Set(selectedTargets.map((entry) => entry.environmentId));
   const members =
     group?.members
       .map((entry) => entry.project)
-      .filter((project) => selectedEnvironmentIds.has(project.environmentId)) ?? [];
+      .filter((project) => selectedIds === null || selectedIds.has(project.environmentId)) ?? [];
+  const visibleGroups = projectGroups.filter((entry) =>
+    entry.members.some(
+      (member) => selectedIds === null || selectedIds.has(member.project.environmentId),
+    ),
+  );
 
   return (
     <>
       <SettingsEnvironmentFilterHeader />
-      <SettingsScreen title="Project overview" trailing={<AndroidSettingsEnvironmentFilter />}>
+      <SettingsScreen title="Projects" trailing={<AndroidSettingsEnvironmentFilter />}>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           className="flex-1"
           contentContainerClassName="gap-6 px-5 pt-4"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 18) + 18 }}
         >
-          {members.length === 0 ? (
-            <Text className="px-2 text-base text-foreground-muted">
-              This project has no checkout on the selected connected environments. Change the filter
-              above.
-            </Text>
+          {selectedProjectKey === null ? (
+            <>
+              <View className="gap-3 px-2">
+                <Text className="text-base text-foreground-muted">
+                  Open a project you already use, or add a new project from a repository or folder.
+                </Text>
+                <MaterialButton
+                  label="Add project"
+                  tone="primary"
+                  disabled={selectedTargets.length === 0}
+                  onPress={() =>
+                    navigation.navigate("NewTaskSheet", {
+                      screen: "AddProject",
+                      ...(selectedTargets.length === 1
+                        ? { params: { environmentId: selectedTargets[0]!.environmentId } }
+                        : {}),
+                    })
+                  }
+                />
+                {selectedTargets.length === 0 ? (
+                  <MaterialButton
+                    label="Connect a computer"
+                    tone="text"
+                    onPress={() => navigation.navigate("Connections")}
+                  />
+                ) : null}
+              </View>
+              <SettingsSection title="Your projects">
+                {visibleGroups.map((entry) => (
+                  <SettingsActionRow
+                    key={entry.key}
+                    icon="folder"
+                    label={entry.label}
+                    onPress={() => selectProject(entry.key)}
+                  />
+                ))}
+                {visibleGroups.length === 0 ? (
+                  <View className="p-4">
+                    <Text className="text-sm text-foreground-muted">
+                      No projects on the selected computers. Add a project or change the filter.
+                    </Text>
+                  </View>
+                ) : null}
+              </SettingsSection>
+            </>
+          ) : members.length === 0 ? (
+            <View className="gap-3 px-2">
+              <Text className="text-base text-foreground-muted">
+                This project is unavailable on the selected computers.
+              </Text>
+              <MaterialButton
+                label="See all projects"
+                tone="text"
+                onPress={() => {
+                  selectAll();
+                  selectProject(null);
+                }}
+              />
+            </View>
           ) : (
             <ProjectOverviewContent
               key={`${selectedProjectKey}:${members.map((member) => `${member.environmentId}:${member.id}:${member.workspaceRoot}`).join(",")}`}
               members={members}
-              environments={selectedTargets}
+              environments={environments}
+              initialEnvironmentId={initialEnvironmentId}
+              initialProjectId={initialProjectId}
+              onBackToProjects={() => selectProject(null)}
             />
           )}
         </ScrollView>
@@ -86,41 +163,29 @@ export function SettingsProjectOverviewRouteScreen({
 
 function ProjectOverviewContent(props: {
   readonly members: readonly EnvironmentProject[];
-  readonly environments: readonly SettingsTarget[];
+  readonly environments: readonly EnvironmentPresentation[];
+  readonly initialEnvironmentId: EnvironmentId | undefined;
+  readonly initialProjectId: ProjectId | undefined;
+  readonly onBackToProjects: () => void;
 }) {
-  const representative = props.members[0]!;
-  const displayName = deriveProjectGroupLabel({ representative, members: props.members });
-  const [draftName, setDraftName] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const updateProject = useAtomCommand(projectEnvironment.update, {
-    label: "project name update",
-    reportFailure: true,
+  const [chosenKey, setChosenKey] = useState(() => {
+    const initial =
+      props.members.find(
+        (member) =>
+          member.environmentId === props.initialEnvironmentId &&
+          member.id === props.initialProjectId,
+      ) ?? props.members[0]!;
+    return `${initial.environmentId}:${initial.id}`;
   });
-  const nextName = (draftName ?? displayName).trim();
-  const canSave = !isSaving && nextName.length > 0 && nextName !== displayName;
-
-  const saveName = () => {
-    if (!canSave) return;
-    setIsSaving(true);
-    void (async () => {
-      try {
-        const results = await Promise.all(
-          props.members.map((member) =>
-            updateProject({
-              environmentId: member.environmentId,
-              input: { projectId: member.id, title: nextName },
-            }),
-          ),
-        );
-        if (results.every((result) => result._tag !== "Failure")) setDraftName(null);
-      } finally {
-        setIsSaving(false);
-      }
-    })();
-  };
-
+  const selected = props.members.find(
+    (member) => `${member.environmentId}:${member.id}` === chosenKey,
+  );
+  const representative = selected ?? props.members[0]!;
+  const displayName = deriveProjectGroupLabel({ representative, members: props.members });
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   return (
     <>
+      <MaterialButton label="All projects" tone="text" onPress={props.onBackToProjects} />
       <View className="flex-row items-center gap-4 px-2">
         <ProjectFavicon
           environmentId={representative.environmentId}
@@ -135,23 +200,122 @@ function ProjectOverviewContent(props: {
             {displayName}
           </Text>
           <Text className="text-sm text-foreground-muted">
-            {props.members.length === 1 ? "1 checkout" : `${props.members.length} checkouts`}
+            {new Set(props.members.map((member) => member.environmentId)).size}{" "}
+            {new Set(props.members.map((member) => member.environmentId)).size === 1
+              ? "computer"
+              : "computers"}
           </Text>
         </View>
       </View>
+      {props.members.length > 1 ? (
+        <SettingsSection title="Choose a working copy">
+          {props.members.map((member, index) => {
+            const environment = props.environments.find(
+              (entry) => entry.environmentId === member.environmentId,
+            );
+            return (
+              <ListChoiceRow
+                key={`${member.environmentId}:${member.id}`}
+                label={environment?.label ?? "Computer"}
+                description={`${environment?.connection.phase === "connected" ? "Connected" : "Offline"}\n${member.workspaceRoot}`}
+                selected={
+                  selected?.id === member.id && selected.environmentId === member.environmentId
+                }
+                separated={index > 0}
+                onPress={() => setChosenKey(`${member.environmentId}:${member.id}`)}
+              />
+            );
+          })}
+        </SettingsSection>
+      ) : null}
+      {selected ? (
+        <SelectedProjectOverview
+          key={`${selected.environmentId}:${selected.id}`}
+          project={selected}
+          environment={props.environments.find(
+            (entry) => entry.environmentId === selected.environmentId,
+          )}
+          detailsExpanded={detailsExpanded}
+          toggleDetails={() => setDetailsExpanded((expanded) => !expanded)}
+        />
+      ) : (
+        <Text className="text-sm text-foreground-muted">
+          Choose a working copy to manage this project.
+        </Text>
+      )}
+    </>
+  );
+}
 
-      <SettingsSection title="Project">
+function SelectedProjectOverview(props: {
+  readonly project: EnvironmentProject;
+  readonly environment: EnvironmentPresentation | undefined;
+  readonly detailsExpanded: boolean;
+  readonly toggleDetails: () => void;
+}) {
+  const navigation = useNavigation();
+  const { project, environment } = props;
+  const label = environment?.label ?? "Computer";
+  const connected =
+    environment?.entry.enabled === true && environment.connection.phase === "connected";
+  const [draftName, setDraftName] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const canUpdate = useEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope);
+  const canRead = useEnvironmentScope(project.environmentId, AuthOrchestrationReadScope);
+  const updateProject = useAtomCommand(projectEnvironment.update, {
+    label: "project name update",
+    reportFailure: true,
+  });
+  const nextName = (draftName ?? project.title).trim();
+  const canSave =
+    connected && canUpdate && !isSaving && nextName.length > 0 && nextName !== project.title;
+  const canPrepare =
+    connected &&
+    canRead &&
+    supportsLoomFeature(
+      environment?.serverConfig?.environment.capabilities,
+      "project-checkout-management",
+    );
+  const saveName = () => {
+    if (!canSave) return;
+    setIsSaving(true);
+    void updateProject({
+      environmentId: project.environmentId,
+      input: { projectId: project.id, title: nextName },
+    })
+      .then((result) => {
+        if (result._tag !== "Failure") setDraftName(null);
+      })
+      .finally(() => setIsSaving(false));
+  };
+  return (
+    <>
+      <View className="gap-3 px-2">
+        <Text className="text-sm text-foreground-muted">
+          Managing this project on {label}
+          {connected ? "." : ", currently offline."}
+        </Text>
+        <MaterialButton
+          label="Open project"
+          onPress={() =>
+            navigation.navigate("ProjectHome", {
+              environmentId: project.environmentId,
+              projectId: project.id,
+            })
+          }
+        />
+      </View>
+      <SettingsSection title="Project name">
         <View className="gap-3 p-4">
-          <Text className="text-sm font-t3-medium text-foreground-muted">Name</Text>
           <View className="flex-row items-center gap-3">
             <AppTextInput
               accessibilityLabel="Project name"
               className="min-h-11 min-w-0 flex-1 rounded-xl border-continuous bg-card px-3 text-base text-foreground"
-              value={draftName ?? displayName}
+              value={draftName ?? project.title}
               onChangeText={setDraftName}
               onSubmitEditing={saveName}
               returnKeyType="done"
-              editable={!isSaving}
+              editable={connected && canUpdate && !isSaving}
             />
             {canSave ? (
               <Pressable
@@ -166,51 +330,39 @@ function ProjectOverviewContent(props: {
           </View>
         </View>
       </SettingsSection>
-
-      <SettingsSection title="Checkouts">
-        {props.members.map((member, index) => {
-          const environment = props.environments.find(
-            (entry) => entry.environmentId === member.environmentId,
-          );
-          return (
-            <View
-              key={`${member.environmentId}:${member.id}`}
-              className={index === 0 ? "gap-1 p-4" : "gap-1 border-t border-border-subtle p-4"}
-            >
-              <Text
-                className={
-                  Platform.OS === "android"
-                    ? "text-base text-foreground"
-                    : "text-lg text-foreground"
-                }
-              >
-                {environment?.label ?? "Environment"}
-              </Text>
-              {environment?.displayUrl ? (
-                <Text className="text-sm leading-normal text-foreground-muted">
-                  {environment.displayUrl}
-                </Text>
-              ) : null}
-              <Text className="text-sm leading-normal text-foreground-muted" selectable>
-                {member.workspaceRoot}
-              </Text>
-            </View>
-          );
-        })}
-      </SettingsSection>
-      {/* fork: project-checkout-management - Each review stays bound to one computer's folder. */}
-      {props.members.map((member) => (
+      <ProjectWorkingCopySection
+        environmentId={project.environmentId}
+        projectId={project.id}
+        workspaceRoot={project.workspaceRoot}
+        computerLabel={label}
+        canClone={canPrepare}
+        onClone={() =>
+          navigation.navigate("ProjectPreparation", {
+            environmentId: project.environmentId,
+            projectId: project.id,
+          })
+        }
+      />
+      <ProjectResourcesSection
+        environmentId={project.environmentId}
+        projectId={project.id}
+        computerLabel={label}
+      />
+      <MaterialButton
+        label={
+          props.detailsExpanded ? "Hide advanced preferences" : "Advanced working file preferences"
+        }
+        tone="text"
+        onPress={props.toggleDetails}
+      />
+      {props.detailsExpanded ? (
         <ProjectCheckoutSection
-          key={`${member.environmentId}:${member.id}`}
-          environmentId={member.environmentId}
-          projectId={member.id}
-          workspaceRoot={member.workspaceRoot}
-          computerLabel={
-            props.environments.find((entry) => entry.environmentId === member.environmentId)
-              ?.label ?? "Computer"
-          }
+          environmentId={project.environmentId}
+          projectId={project.id}
+          workspaceRoot={project.workspaceRoot}
+          computerLabel={label}
         />
-      ))}
+      ) : null}
     </>
   );
 }

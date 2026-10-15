@@ -67,12 +67,14 @@ const EMPTY_CLONE_RESULT = Atom.make(AsyncResult.initial<readonly ProjectCloneSn
 export function ProjectPreparationDialog({
   sourceProject,
   sourceOffer,
+  resourceSource,
   initialEnvironmentId,
   onClose,
   onPrepared,
 }: {
   sourceProject: EnvironmentProject;
   sourceOffer?: WorkspaceHandoffOffer | null;
+  resourceSource?: { readonly id: string; readonly title: string; readonly url: string } | null;
   initialEnvironmentId?: EnvironmentId;
   onClose: () => void;
   onPrepared?: (projectRef: ScopedProjectRef) => void;
@@ -91,19 +93,19 @@ export function ProjectPreparationDialog({
     );
   const query = useMemo(
     () =>
-      !sourceOffer && sourceReviewable
+      !resourceSource && !sourceOffer && sourceReviewable
         ? projectCheckouts.preview({
             environmentId: sourceProject.environmentId,
             input: { projectId: sourceProject.id },
           })
         : EMPTY_PREVIEW,
-    [sourceOffer, sourceReviewable, sourceProject.environmentId, sourceProject.id],
+    [resourceSource, sourceOffer, sourceReviewable, sourceProject.environmentId, sourceProject.id],
   );
   const result = useAtomValue(query);
-  const [attempt] = useProjectPreparationAttempt(
-    `${sourceProject.environmentId}:${sourceProject.id}`,
-  );
+  const sourceKey = `${sourceProject.environmentId}:${sourceProject.id}${resourceSource ? `:resource:${resourceSource.id}` : ""}`;
+  const [attempt] = useProjectPreparationAttempt(sourceKey);
   const source = projectPreparationSource({
+    resource: resourceSource ?? null,
     offer:
       sourceOffer ??
       (attempt ? { remoteUrl: attempt.remoteUrl, repositoryKey: attempt.repositoryKey } : null),
@@ -126,10 +128,12 @@ export function ProjectPreparationDialog({
     >
       <DialogPopup>
         <DialogHeader>
-          <DialogTitle>Prepare project on another computer</DialogTitle>
+          <DialogTitle>
+            {resourceSource ? `Clone ${resourceSource.title}` : "Clone repository"}
+          </DialogTitle>
           <DialogDescription>
-            Review the repository and destination. Loom creates a working copy; moving a
-            conversation is a separate step.
+            Choose a computer to work on. Use an existing copy or clone the repository when you need
+            it.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -142,7 +146,11 @@ export function ProjectPreparationDialog({
           {source.ready ? (
             <div className="space-y-1">
               <p className="text-xs text-muted-foreground">
-                {attempt ? "Previously reviewed source origin" : "Reviewed source origin"}
+                {resourceSource
+                  ? "Repository resource"
+                  : attempt
+                    ? "Saved repository"
+                    : "Repository"}
               </p>
               <p className="wrap-anywhere text-sm">{source.remoteUrl}</p>
             </div>
@@ -184,16 +192,12 @@ export function ProjectPreparationDialog({
                 <SelectValue placeholder="Choose a computer" />
               </SelectTrigger>
               <SelectPopup>
-                {environments
-                  .filter(
-                    (environment) => environment.environmentId !== sourceProject.environmentId,
-                  )
-                  .map((environment) => (
-                    <SelectItem key={environment.environmentId} value={environment.environmentId}>
-                      {environment.label}
-                      {environment.connection.phase === "connected" ? "" : " (offline)"}
-                    </SelectItem>
-                  ))}
+                {environments.map((environment) => (
+                  <SelectItem key={environment.environmentId} value={environment.environmentId}>
+                    {environment.label}
+                    {environment.connection.phase === "connected" ? "" : " (offline)"}
+                  </SelectItem>
+                ))}
               </SelectPopup>
             </Select>
           </label>
@@ -201,6 +205,7 @@ export function ProjectPreparationDialog({
             <PreparationOnComputer
               key={host.environmentId}
               sourceProject={sourceProject}
+              sourceKey={sourceKey}
               source={source}
               environmentId={host.environmentId}
               onClose={onClose}
@@ -226,6 +231,7 @@ export function ProjectPreparationDialog({
 
 function PreparationOnComputer({
   sourceProject,
+  sourceKey,
   source,
   environmentId,
   onClose,
@@ -233,6 +239,7 @@ function PreparationOnComputer({
   onStartAnother,
 }: {
   sourceProject: EnvironmentProject;
+  sourceKey: string;
   source: Extract<ReturnType<typeof projectPreparationSource>, { ready: true }>;
   environmentId: EnvironmentId;
   onClose: () => void;
@@ -273,9 +280,7 @@ function PreparationOnComputer({
   const retry = useAtomCommand(sourceControlEnvironment.retryProjectClone, {
     reportFailure: false,
   });
-  const [attempt, saveAttempt] = useProjectPreparationAttempt(
-    `${sourceProject.environmentId}:${sourceProject.id}`,
-  );
+  const [attempt, saveAttempt] = useProjectPreparationAttempt(sourceKey);
   const [proposal] = useState(() => ({
     projectId: newProjectId(),
     createdAt: new Date().toISOString(),
@@ -353,9 +358,7 @@ function PreparationOnComputer({
     if (action === "cancel" && (!attempt || !canCancel || recovery?.state !== "running")) return;
     if (action === "retry" && (!attempt || !canRetry || !recovery?.canRetryTrackedClone)) return;
     if (action === "start" && plan.kind === "create") {
-      const current = readCurrentPreparationAttempt(
-        `${sourceProject.environmentId}:${sourceProject.id}`,
-      );
+      const current = readCurrentPreparationAttempt(sourceKey);
       if (
         current &&
         (current.projectId !== plan.input.projectId || current.environmentId !== environmentId)
@@ -474,7 +477,7 @@ function PreparationOnComputer({
                   variant="outline"
                   size="sm"
                   disabled={!connected}
-                  aria-label={`Use existing project ${project.title} at ${project.workspaceRoot}`}
+                  aria-label={`Use existing copy ${project.title} at ${project.workspaceRoot}`}
                   onClick={() => openProject(scopeProjectRef(project.environmentId, project.id))}
                 >
                   {project.title}
@@ -490,7 +493,7 @@ function PreparationOnComputer({
       <div className="flex flex-wrap gap-2">
         {!attempt && plan.kind === "create" ? (
           <Button disabled={pending || !connected || !canStart} onClick={() => void run("start")}>
-            {pending ? "Starting..." : `Prepare on ${environment?.label ?? "computer"}`}
+            {pending ? "Starting..." : `Clone on ${environment?.label ?? "computer"}`}
           </Button>
         ) : null}
         {!attempt && plan.kind === "existing" ? (
@@ -499,7 +502,7 @@ function PreparationOnComputer({
               openProject(scopeProjectRef(plan.project.environmentId, plan.project.id))
             }
           >
-            Use existing project
+            Use existing copy
           </Button>
         ) : null}
         {attempt && recovery?.state === "idle" && plan.kind === "create" ? (
@@ -545,7 +548,7 @@ function PreparationOnComputer({
           <Button
             onClick={() => openProject(scopeProjectRef(attempt.environmentId, attempt.projectId))}
           >
-            Open prepared project
+            Open project
           </Button>
         ) : null}
         {attempt && recovery?.state === "running" ? (
@@ -575,7 +578,7 @@ function PreparationOnComputer({
               onStartAnother();
             }}
           >
-            Prepare another computer
+            Choose another computer
           </Button>
         ) : null}
         {attempt ? (

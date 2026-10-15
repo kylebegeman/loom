@@ -1,3 +1,4 @@
+import { PROJECT_RESOURCES_WS_METHODS as R } from "./project-resources.ts";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "./project-checkout.ts";
 import { AuthSettingsWriteScope } from "../auth.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "./computer-naming.ts";
@@ -17,6 +18,10 @@ import { CODE_GRAPH_WS_METHODS as G } from "./code-graph.ts";
 export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [C.adopt]: AuthSettingsWriteScope,
   [C.setRetention]: AuthSettingsWriteScope,
+  [C.release]: AuthSettingsWriteScope,
+  [C.restore]: AuthSettingsWriteScope,
+  [R.upsert]: AuthSettingsWriteScope,
+  [R.remove]: AuthSettingsWriteScope,
   [N.rename]: AuthSettingsWriteScope,
   [GH.start]: AuthTerminalOperateScope,
   [GH.cancel]: AuthTerminalOperateScope,

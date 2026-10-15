@@ -1,3 +1,4 @@
+import * as ProjectResources from "../project/ProjectResources.ts";
 import * as ProjectCheckoutManagement from "../project/ProjectCheckoutManagement.ts";
 import * as StorageCleanup from "../storageCleanup.ts";
 import * as GitHubSetupFlow from "../sourceControl/GitHubSetupFlow.ts";
@@ -30,6 +31,7 @@ import { SwitchboardLive } from "./switchboard/switchboard.ts";
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
+  ProjectResources.layer.pipe(Layer.provide(ProjectStore.layer)),
   ProjectCheckoutManagement.layer.pipe(
     Layer.provide(ProcessRunner.layer),
     Layer.provide(StorageCleanup.layer),

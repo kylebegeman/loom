@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as PlatformError from "effect/PlatformError";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
@@ -21,11 +22,13 @@ import {
   resolveManagedProjectRetention,
 } from "../workspace/ManagedProjectCheckout.ts";
 import * as ProjectCheckoutManagement from "./ProjectCheckoutManagement.ts";
+import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const projectId = ProjectId.make("existing-project");
 const fixture = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
   const parent = yield* fs.makeTempDirectoryScoped().pipe(Effect.flatMap(fs.realPath));
   const cwd = `${parent}/project`;
   yield* fs.makeDirectory(cwd);
@@ -85,6 +88,39 @@ const fixture = Effect.gen(function* () {
             requestSweep: Effect.sync(() => {
               sweeps++;
             }),
+            releaseProject: (id, validate) =>
+              withWorkspaceLease(
+                cwd,
+                Effect.gen(function* () {
+                  yield* validate;
+                  const receipt = yield* readManagedProjectCheckout(cwd);
+                  if (!receipt)
+                    return yield* new ProjectCheckoutManagementError({
+                      projectId: id,
+                      reason: "not-managed",
+                    });
+                  const recovery = yield* archiveManagedProjectCheckout(receipt, id);
+                  yield* releaseManagedProjectCheckout(receipt, id, recovery.archive);
+                  return {
+                    kind: "project" as const,
+                    outcome: "removed" as const,
+                    reason: "Working copy removed",
+                    path: cwd,
+                    threadId: null,
+                    threadTitle: "Existing project",
+                    bytes: null,
+                    files: null,
+                  };
+                }),
+              ).pipe(
+                Effect.provideService(FileSystem.FileSystem, fs),
+                Effect.provideService(Path.Path, path),
+                Effect.mapError((cause) =>
+                  Schema.is(ProjectCheckoutManagementError)(cause)
+                    ? cause
+                    : new ProjectCheckoutManagementError({ projectId: id, reason: "io", cause }),
+                ),
+              ),
           }),
         ),
         Layer.provide(Layer.succeed(ServerConfig.ServerConfig, configuration)),
@@ -560,3 +596,38 @@ describe("reviewed project checkout management", () => {
     expect(resolveManagedProjectRetention("inherit", on)).toEqual(on);
   });
 });
+
+it.live("removes and restores the same project without changing its keep policy", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const review = yield* f.adopt("keep");
+      const removed = yield* f.service.release({ projectId, reviewToken: review.reviewToken! });
+      expect(removed.outcome).toBe("removed");
+      expect(removed.preview).toMatchObject({ projectId, state: "released", retention: "keep" });
+      expect(yield* f.fs.exists(f.cwd)).toBe(false);
+      const restored = yield* f.service.restore({
+        projectId,
+        reviewToken: removed.preview.reviewToken!,
+      });
+      expect(restored).toMatchObject({ projectId, state: "managed", retention: "keep" });
+      expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("initial content\n");
+      expect(f.sweepCount()).toBe(1);
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.live("rejects stale removal review and leaves changed working files in place", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const f = yield* fixture;
+      const review = yield* f.adopt();
+      yield* f.fs.writeFileString(`${f.cwd}/proof.txt`, "unsaved work\n");
+      const failed = yield* f.service
+        .release({ projectId, reviewToken: review.reviewToken! })
+        .pipe(Effect.flip);
+      expect(failed.reason).toBe("stale-review");
+      expect(yield* f.fs.readFileString(`${f.cwd}/proof.txt`)).toBe("unsaved work\n");
+    }),
+  ).pipe(Effect.provide(NodeServices.layer)),
+);

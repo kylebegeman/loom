@@ -1,32 +1,27 @@
-import { useNavigateToMainApp } from "~/components/sidebar/mainAppLocation";
-import { Button } from "~/components/ui/button";
-import { useSidebar } from "~/components/ui/sidebar";
-import { useProjectNavigationView } from "~/fork/project-navigation/preference";
+import { Link } from "@tanstack/react-router";
 
-/** Reveal the project library after leaving a utility page, including collapsed sidebars. */
+import { Button } from "~/components/ui/button";
+
+/** Return to the same project library from configuration and storage pages. */
 export function BrowseProjectsButton({
   size = "sm",
   variant = "outline",
-  label = "Browse projects",
+  label = "All projects",
 }: {
   readonly size?: "sm" | "xs";
   readonly variant?: "outline" | "link";
   readonly label?: string;
 }) {
-  const navigateToMainApp = useNavigateToMainApp();
-  const [, setView] = useProjectNavigationView();
-  const { isMobile, setOpenMobile, setOpen } = useSidebar();
   return (
     <Button
       size={size}
       variant={variant}
-      onClick={() => {
-        setView("projects");
-        void navigateToMainApp().then(() => {
-          if (isMobile) setOpenMobile(true);
-          else setOpen(true);
-        });
-      }}
+      render={
+        <Link
+          to="/settings/projects"
+          search={{ project: undefined, machine: undefined, checkout: undefined }}
+        />
+      }
     >
       {label}
     </Button>

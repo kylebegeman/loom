@@ -493,6 +493,9 @@ const cleanupFixture = Effect.gen(function* () {
     setProjectRoot: (workspaceRoot: string) => {
       projectRoots = [{ ...projectRoots[0]!, workspaceRoot }];
     },
+    setProjects: (next: typeof projectRoots) => {
+      projectRoots = next;
+    },
     setScratchRetention: (scratchAfterDays: number | null) => {
       settings = { ...settings, storageCleanup: { ...settings.storageCleanup, scratchAfterDays } };
     },
@@ -583,10 +586,15 @@ describe("storage cleanup reports and local file policies", () => {
           let creationCalls = 0;
           const restorationLayer = Layer.mergeAll(
             WorktreeSetupTracker.layer,
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getCheckpointContext: () =>
+                Effect.die("Existing branches do not need checkpoint recovery."),
+            }),
             Layer.mock(ProjectService.ProjectService)({
               getById: () => Effect.succeed(Option.some({ workspaceRoot: fixture.repo } as never)),
             }),
             Layer.mock(GitWorkflow.GitWorkflowService)({
+              hasCommit: () => Effect.succeed(true),
               pruneWorktrees: ({ cwd }) =>
                 fixture.command(cwd, ["worktree", "prune"]).pipe(Effect.asVoid),
               createWorktree: ({ cwd, refName, path }) =>
@@ -1469,9 +1477,80 @@ const primaryFixture = Effect.gen(function* () {
       originUrl: remote,
     }),
   );
-  return { ...f, cwd, mark };
+  return { ...f, cwd, mark, remote };
 });
 describe("primary project storage cleanup", () => {
+  it.live("removes exactly the requested managed checkout despite keep policy", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const f = yield* primaryFixture;
+        yield* f.mark;
+        yield* setManagedProjectRetention(f.cwd, "keep", ProjectId.make("project-1"));
+        f.setProjectPolicy(8);
+        f.setThreads([shell({ createdAt: at(0) })]);
+        const otherProjectId = ProjectId.make("other-project");
+        const otherRoot = `${f.cwd.slice(0, f.cwd.lastIndexOf("/"))}/other-project`;
+        yield* f.command(f.cwd, ["clone", "--branch", "main", f.remote, otherRoot]);
+        yield* markManagedProjectCheckout(
+          otherRoot,
+          buildRepositoryIdentity({
+            rootPath: otherRoot,
+            remoteName: "origin",
+            remoteUrl: f.remote,
+            originUrl: f.remote,
+          }),
+          { ownershipSource: "clone", retention: "inherit", projectId: otherProjectId },
+        );
+        f.setProjects([
+          {
+            id: ProjectId.make("project-1"),
+            title: "Requested project",
+            workspaceRoot: f.cwd,
+            createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
+          },
+          {
+            id: otherProjectId,
+            title: "Other project",
+            workspaceRoot: otherRoot,
+            createdAt: DateTime.formatIso(at(-30 * DAY_MS)),
+          },
+        ]);
+        const otherReceipt = yield* f.fs.readFileString(`${otherRoot}.t3-project-owned.json`);
+        const entry = yield* f.service.releaseProject(ProjectId.make("project-1"), Effect.void);
+        expect(entry.outcome, entry.reason).toBe("removed");
+        expect(yield* f.fs.exists(f.cwd)).toBe(false);
+        expect(yield* f.fs.readFileString(`${otherRoot}/tracked.txt`)).toBe("original\n");
+        expect(yield* f.fs.readFileString(`${otherRoot}.t3-project-owned.json`)).toBe(otherReceipt);
+        // Prove the second copy qualifies for automatic cleanup, so its preservation
+        // above depends on the manual request staying scoped to the requested project.
+        const automatic = yield* f.service.runNow;
+        expect(automatic.entries.find((item) => item.path === otherRoot)?.outcome).toBe("removed");
+        expect(yield* f.fs.exists(otherRoot)).toBe(false);
+        expect(yield* restoreManagedProjectCheckout(f.cwd)).toBe(true);
+        expect((yield* readManagedProjectCheckout(f.cwd))?.retention).toBe("keep");
+      }),
+    ),
+  );
+  it.live.each(["running", "untracked", "unpublished", "pending-effect"] as const)(
+    "manual removal preserves the %s safety check",
+    (protection) =>
+      runCleanupTest(
+        Effect.gen(function* () {
+          const f = yield* primaryFixture;
+          yield* f.mark;
+          f.setProjectPolicy(null);
+          if (protection === "running") f.setThreads([shell({ status: "running" })]);
+          if (protection === "pending-effect") f.setPendingEffects(true);
+          if (protection === "untracked") yield* f.fs.writeFileString(`${f.cwd}/notes.txt`, "keep");
+          if (protection === "unpublished")
+            yield* f.command(f.repo, ["commit", "--allow-empty", "-m", "local only"]);
+          const entry = yield* f.service.releaseProject(ProjectId.make("project-1"), Effect.void);
+          expect(entry.outcome, entry.reason).toBe("kept");
+          expect(yield* f.fs.exists(f.cwd)).toBe(true);
+        }),
+      ),
+  );
+
   it.live.each(["busy", "unverifiable"] as const)(
     "keeps a managed primary checkout when process inspection is %s",
     (inspection) =>

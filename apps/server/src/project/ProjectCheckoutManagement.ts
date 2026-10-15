@@ -8,6 +8,8 @@ import {
   type ProjectCheckoutPreview,
   type ProjectCheckoutAdoptRequest,
   type ProjectCheckoutRetentionRequest,
+  type ProjectCheckoutActionRequest,
+  type ProjectCheckoutReleaseResult,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -34,6 +36,14 @@ import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
 export class ProjectCheckoutManagement extends Context.Service<
   ProjectCheckoutManagement,
   {
+    readonly release: (
+      input: ProjectCheckoutActionRequest,
+      authorize?: Effect.Effect<void, ProjectCheckoutManagementError>,
+    ) => Effect.Effect<ProjectCheckoutReleaseResult, ProjectCheckoutManagementError>;
+    readonly restore: (
+      input: ProjectCheckoutActionRequest,
+      authorize?: Effect.Effect<void, ProjectCheckoutManagementError>,
+    ) => Effect.Effect<ProjectCheckoutPreview, ProjectCheckoutManagementError>;
     readonly preview: (input: {
       readonly projectId: ProjectId;
     }) => Effect.Effect<ProjectCheckoutPreview, ProjectCheckoutManagementError>;
@@ -440,8 +450,83 @@ const make = Effect.gen(function* () {
     yield* cleanup.requestSweep;
     return result;
   }, onFileSystem);
+  const reviewAction = Effect.fnUntraced(function* (
+    input: ProjectCheckoutActionRequest,
+    cwd: string,
+    authorize?: Effect.Effect<void, ProjectCheckoutManagementError>,
+  ) {
+    const row = yield* readProject(input.projectId);
+    if (path.resolve(row.workspaceRoot) !== cwd)
+      return yield* new ProjectCheckoutManagementError({
+        projectId: input.projectId,
+        reason: "stale-review",
+      });
+    const review = yield* inspect(input.projectId);
+    if (review.reviewToken === null || review.state === "blocked")
+      return yield* new ProjectCheckoutManagementError({
+        projectId: input.projectId,
+        reason: "blocked",
+      });
+    if (review.reviewToken !== input.reviewToken)
+      return yield* new ProjectCheckoutManagementError({
+        projectId: input.projectId,
+        reason: "stale-review",
+      });
+    if (review.state === "external")
+      return yield* new ProjectCheckoutManagementError({
+        projectId: input.projectId,
+        reason: "not-managed",
+      });
+    if (authorize) yield* authorize;
+    const authoritative = yield* readProject(input.projectId);
+    if (path.resolve(authoritative.workspaceRoot) !== cwd)
+      return yield* new ProjectCheckoutManagementError({
+        projectId: input.projectId,
+        reason: "stale-review",
+      });
+    return review;
+  }, onFileSystem);
+  const release = Effect.fn("ProjectCheckoutManagement.release")(function* (
+    input: ProjectCheckoutActionRequest,
+    authorize?: Effect.Effect<void, ProjectCheckoutManagementError>,
+  ) {
+    const row = yield* readProject(input.projectId);
+    const cwd = path.resolve(row.workspaceRoot);
+    // Cleanup owns the one checkout lease. Validate there, never nest the same lease.
+    const validate = reviewAction(input, cwd, authorize).pipe(
+      Effect.mapError(mapError(input.projectId)),
+      Effect.asVoid,
+    );
+    const result = yield* cleanup.releaseProject(input.projectId, validate);
+    return {
+      preview: yield* inspect(input.projectId),
+      outcome: result.outcome,
+      reason: result.reason,
+    };
+  }, onFileSystem);
+  const restore: ProjectCheckoutManagement["Service"]["restore"] = (input, authorize) =>
+    Effect.gen(function* () {
+      const row = yield* readProject(input.projectId);
+      const cwd = path.resolve(row.workspaceRoot);
+      return yield* withWorkspaceLease(
+        cwd,
+        Effect.gen(function* () {
+          const review = yield* reviewAction(input, cwd, authorize);
+          if (review.state !== "released") return review;
+          if (!(yield* restoreManagedProjectCheckout(cwd, true)))
+            return yield* new ProjectCheckoutManagementError({
+              projectId: input.projectId,
+              reason: "io",
+            });
+          return yield* inspect(input.projectId);
+        }),
+      );
+    }).pipe(onFileSystem, Effect.mapError(mapError(input.projectId)));
   return ProjectCheckoutManagement.of({
     preview,
+    release: (input, authorize) =>
+      release(input, authorize).pipe(Effect.mapError(mapError(input.projectId))),
+    restore,
     adopt: (input, authorize) =>
       mutate(input, true, authorize).pipe(Effect.mapError(mapError(input.projectId))),
     setRetention: (input, authorize) =>

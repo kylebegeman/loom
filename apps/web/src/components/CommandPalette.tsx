@@ -389,6 +389,14 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       }),
     [],
   );
+  const openNewProject = useCallback(
+    (environmentId?: EnvironmentId) =>
+      dispatch({
+        _tag: "OpenNewProject",
+        ...(environmentId !== undefined ? { environmentId } : {}),
+      }),
+    [],
+  );
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -506,6 +514,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
       onOpenCommandPalette((detail) => {
         if (detail.open === "new-thread-in") {
           openNewThreadIn();
+        } else if (detail.open === "new-project") {
+          openNewProject(detail.environmentId);
         } else if (detail.open === "add-project") {
           openAddProject(detail.environmentId);
         } else if (detail.query !== undefined) {
@@ -518,7 +528,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           setOpen(true);
         }
       }),
-    [openAddProject, openNewThreadIn, setOpen],
+    [openAddProject, openNewProject, openNewThreadIn, setOpen],
   );
 
   return (
@@ -1745,8 +1755,12 @@ function OpenCommandPaletteDialog(props: {
       startAddProjectSourceSelection,
     ),
   );
-  const newProjectEnvironmentOptions = addProjectEnvironmentOptions.filter(
-    (option) => option.isConnected && newProjectsRootFor(option.environmentId) !== null,
+  const newProjectEnvironmentOptions = useMemo(
+    () =>
+      addProjectEnvironmentOptions.filter(
+        (option) => option.isConnected && newProjectsRootFor(option.environmentId) !== null,
+      ),
+    [addProjectEnvironmentOptions, newProjectsRootFor],
   );
 
   const addProjectEnvironmentGroups = useMemo<CommandPaletteView["groups"]>(
@@ -1840,10 +1854,19 @@ function OpenCommandPaletteDialog(props: {
 
   // New project starts on this device (options list it first); the name step
   // lists the other machines when there is a choice.
-  const openNewProjectFlow = () => {
-    const firstOption = newProjectEnvironmentOptions[0];
-    if (firstOption) startNewProject(firstOption.environmentId, null);
-  };
+  const openNewProjectFlow = useCallback(
+    (requestedEnvironmentId?: EnvironmentId) => {
+      const option =
+        requestedEnvironmentId === undefined
+          ? newProjectEnvironmentOptions[0]
+          : newProjectEnvironmentOptions.find(
+              (candidate) => candidate.environmentId === requestedEnvironmentId,
+            );
+      if (option) startNewProject(option.environmentId, null);
+      else openAddProjectFlow(requestedEnvironmentId);
+    },
+    [newProjectEnvironmentOptions, openAddProjectFlow, startNewProject],
+  );
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "search") return;
@@ -1865,6 +1888,12 @@ function OpenCommandPaletteDialog(props: {
     clearOpenIntent();
     openAddProjectFlow(openIntent.environmentId);
   }, [clearOpenIntent, openAddProjectFlow, openIntent]);
+
+  useLayoutEffect(() => {
+    if (openIntent?.kind !== "new-project") return;
+    clearOpenIntent();
+    openNewProjectFlow(openIntent.environmentId);
+  }, [clearOpenIntent, openIntent, openNewProjectFlow]);
 
   useLayoutEffect(() => {
     if (openIntent?.kind !== "new-thread-in" || projectThreadItems.length === 0) {

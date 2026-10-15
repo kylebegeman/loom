@@ -10,6 +10,14 @@ export function createProjectCheckoutAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
   return {
+    release: createEnvironmentRpcCommand(runtime, {
+      label: "loom:project-checkout:release",
+      tag: C.release,
+    }),
+    restore: createEnvironmentRpcCommand(runtime, {
+      label: "loom:project-checkout:restore",
+      tag: C.restore,
+    }),
     preview: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:project-checkout:preview",
       tag: C.preview,

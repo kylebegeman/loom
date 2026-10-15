@@ -1,3 +1,4 @@
+import { ProjectResourcesToolkit, projectResourcesHandlers } from "../project-resources/mcp.ts";
 import { ProjectCheckoutToolkit, projectCheckoutHandlers } from "../project-checkout/mcp.ts";
 import { ComputerNamingToolkit, computerNamingHandlers } from "../computer-naming/mcp.ts";
 import { GitHubHostSetupToolkit, githubHostSetupHandlers } from "../github-host-setup/mcp.ts";
@@ -12,6 +13,12 @@ import { DeviceQaToolkit, deviceQaHandlers } from "../device-qa/mcp.ts";
 import { CodeGraphToolkit, codeGraphHandlers } from "../code-graph/mcp.ts";
 /** Register through McpHttpServer so every fork tool uses the shared access checks. */
 export const FORK_MCP_TOOLKITS = [
+  {
+    toolkit: ProjectResourcesToolkit,
+    handlers: projectResourcesHandlers,
+    register: (register: typeof toolkitRegistration) =>
+      register(ProjectResourcesToolkit, projectResourcesHandlers),
+  },
   {
     toolkit: ProjectCheckoutToolkit,
     handlers: projectCheckoutHandlers,

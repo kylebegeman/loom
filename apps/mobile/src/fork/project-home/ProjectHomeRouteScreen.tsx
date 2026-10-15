@@ -14,6 +14,7 @@ import {
 } from "@t3tools/client-runtime/fork";
 import {
   AuthOrchestrationOperateScope,
+  AuthOrchestrationReadScope,
   EnvironmentId,
   ProjectId,
   type ScopedProjectRef,
@@ -49,6 +50,8 @@ import { threadListEnvironmentsAtom } from "../../state/server";
 import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { ProjectCheckoutSection } from "../project-checkout/ProjectCheckoutSection";
+import { ProjectResourcesSection } from "./ProjectResourcesSection";
+import { ProjectWorkingCopySection } from "./ProjectWorkingCopySection";
 import { projectThreadActivity } from "../project-navigation/projectNavigation.logic";
 import {
   PROJECT_HOME_PAGE_SIZE,
@@ -112,7 +115,6 @@ function ProjectHomeContent(props: {
   const [visibleCounts, setVisibleCounts] = useState<Partial<Record<ProjectHomeSectionId, number>>>(
     {},
   );
-  const [reviewProjectKey, setReviewProjectKey] = useState<string | null>(null);
   const [threadView, setThreadView] = useState<ProjectConversationView | null>(null);
   const [query, setQuery] = useState("");
   const [destinationExpanded, setDestinationExpanded] = useState(false);
@@ -151,6 +153,7 @@ function ProjectHomeContent(props: {
     environments,
     AuthOrchestrationOperateScope,
   );
+  const readableEnvironmentIds = useEnvironmentsWithScope(environments, AuthOrchestrationReadScope);
   const model = useMemo(
     () =>
       buildProjectHome({
@@ -230,23 +233,40 @@ function ProjectHomeContent(props: {
   const selectThread = useHomeThreadSelection();
   const { settleThread, unsettleThread, unsnoozeThread } = useThreadListActions();
   const openSettings = () => {
-    if (!onlineProject) return;
+    if (!selectedProject) return;
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
       params: {
         screen: "SettingsProjectOverview",
         params: {
-          initialEnvironmentId: onlineProject.environmentId,
-          initialProjectId: onlineProject.id,
+          initialEnvironmentId: selectedProject.environmentId,
+          initialProjectId: selectedProject.id,
         },
       },
     });
   };
+  const canPrepare =
+    selectedProject !== undefined &&
+    connectedEnvironmentIds.has(selectedProject.environmentId) &&
+    readableEnvironmentIds.has(selectedProject.environmentId) &&
+    supportsLoomFeature(
+      configs.get(selectedProject.environmentId)?.environment.capabilities,
+      "project-checkout-management",
+    );
   const prepareComputer = () => {
-    if (!onlineProject) return;
+    if (
+      !selectedProject ||
+      !canPrepare ||
+      !readEnvironmentScope(selectedProject.environmentId, AuthOrchestrationReadScope)
+    )
+      return;
+    const current = appAtomRegistry.get(
+      environmentPresentations.presentationAtom(selectedProject.environmentId),
+    );
+    if (current?.entry.enabled !== true || current.connection.phase !== "connected") return;
     navigation.navigate("ProjectPreparation", {
-      environmentId: onlineProject.environmentId,
-      projectId: onlineProject.id,
+      environmentId: selectedProject.environmentId,
+      projectId: selectedProject.id,
     });
   };
   const startTask = () => {
@@ -297,10 +317,10 @@ function ProjectHomeContent(props: {
   const listExtraData = useMemo(
     () => ({
       chosenProjectRef,
-      reviewProjectKey,
       destinationExpanded,
       detailsExpanded,
       permittedEnvironmentIds,
+      readableEnvironmentIds,
       environments,
       configs,
       threadView,
@@ -308,10 +328,10 @@ function ProjectHomeContent(props: {
     }),
     [
       chosenProjectRef,
-      reviewProjectKey,
       destinationExpanded,
       detailsExpanded,
       permittedEnvironmentIds,
+      readableEnvironmentIds,
       environments,
       configs,
       threadView,
@@ -408,7 +428,7 @@ function ProjectHomeContent(props: {
                       selectedProject?.environmentId === project.environmentId &&
                       selectedProject.id === project.id
                     }
-                    disabled={!connected || !allowed}
+                    disabled={!connected}
                     separated={index > 0}
                     onPress={() => {
                       setChosenProjectRef({
@@ -426,7 +446,7 @@ function ProjectHomeContent(props: {
             <View className="gap-1">
               <Text className="text-xs text-foreground-muted">
                 {onlineProject
-                  ? "Choose a connected checkout with task access, or review the source to prepare another copy. Existing threads stay on their current computer."
+                  ? "Choose a connected computer with task access. Existing threads stay on their current computer."
                   : "Reconnect a computer with this project to start work or review its origin before preparing another copy."}
               </Text>
               <MaterialButton
@@ -434,19 +454,38 @@ function ProjectHomeContent(props: {
                 label={
                   availableTaskProject
                     ? "Choose another computer"
-                    : onlineProject
-                      ? "Prepare another computer"
+                    : canPrepare
+                      ? "Clone repository"
                       : "Reconnect a computer"
                 }
                 onPress={
                   availableTaskProject
                     ? () => setDestinationExpanded(true)
-                    : onlineProject
+                    : canPrepare
                       ? prepareComputer
                       : () => navigation.navigate("Connections")
                 }
               />
             </View>
+          ) : null}
+          {selectedProject ? (
+            <>
+              <ProjectWorkingCopySection
+                key={`working-copy:${scopedProjectKey(selectedProject.environmentId, selectedProject.id)}`}
+                environmentId={selectedProject.environmentId}
+                projectId={selectedProject.id}
+                workspaceRoot={selectedProject.workspaceRoot}
+                computerLabel={environmentLabel(selectedProject.environmentId)}
+                canClone={canPrepare}
+                onClone={prepareComputer}
+              />
+              <ProjectResourcesSection
+                key={`resources:${scopedProjectKey(selectedProject.environmentId, selectedProject.id)}`}
+                environmentId={selectedProject.environmentId}
+                projectId={selectedProject.id}
+                computerLabel={environmentLabel(selectedProject.environmentId)}
+              />
+            </>
           ) : null}
         </View>
       );
@@ -661,18 +700,12 @@ function ProjectHomeContent(props: {
       <View className="px-4 pt-5 pb-4">
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Working files"
+          accessibilityLabel="Advanced project settings"
           accessibilityState={{ expanded: detailsExpanded }}
           onPress={() => setDetailsExpanded((expanded) => !expanded)}
           className="min-h-[44px] flex-row items-center justify-between gap-3 py-2 active:opacity-70"
         >
-          <View className="min-w-0 flex-1 gap-0.5">
-            <Text className="text-sm font-t3-medium text-foreground">Working files</Text>
-            <Text className="text-2xs text-foreground-muted">
-              {scope?.projects.length ?? 0} working{" "}
-              {(scope?.projects.length ?? 0) === 1 ? "copy" : "copies"}
-            </Text>
-          </View>
+          <Text className="text-sm font-t3-medium text-foreground">Advanced project settings</Text>
           <SymbolView
             name={detailsExpanded ? "chevron.down" : "chevron.right"}
             size={13}
@@ -681,19 +714,9 @@ function ProjectHomeContent(props: {
         </Pressable>
         {detailsExpanded ? (
           <View className="gap-5 pt-3">
-            <Text className="text-xs leading-normal text-foreground-muted">
-              Your project and conversations stay in Loom. These are its working-file locations.
-              Loom can free space by removing safe, settled copies, then restore their files when
-              you resume work. Checking a location does not restore files.
-            </Text>
             <View className="flex-row flex-wrap gap-2">
               <MaterialButton
-                label="Prepare another computer"
-                disabled={onlineProject === undefined}
-                onPress={prepareComputer}
-              />
-              <MaterialButton
-                label="Manage working files"
+                label="Manage all working files"
                 onPress={() => navigation.navigate("ProjectStorageInventory")}
               />
               <MaterialButton
@@ -702,43 +725,15 @@ function ProjectHomeContent(props: {
                 onPress={() => navigation.navigate("Connections")}
               />
             </View>
-            {scope?.projects.map((project) => {
-              const key = scopedProjectKey(project.environmentId, project.id);
-              const connected = connectedEnvironmentIds.has(project.environmentId);
-              return (
-                <View key={key} className="gap-2">
-                  <View className="flex-row flex-wrap items-center gap-x-2 gap-y-1">
-                    <Text className="text-sm font-t3-medium text-foreground">
-                      {environmentLabel(project.environmentId)}
-                    </Text>
-                    <Text className="text-2xs text-foreground-muted">
-                      {connected ? "Connected" : "Offline"}
-                    </Text>
-                  </View>
-                  <Text selectable className="text-xs leading-normal text-foreground-muted">
-                    {project.workspaceRoot}
-                  </Text>
-                  <MaterialButton
-                    label={
-                      connected && reviewProjectKey === key
-                        ? "Hide storage review"
-                        : "Review this checkout"
-                    }
-                    tone="text"
-                    disabled={!connected}
-                    onPress={() => setReviewProjectKey((current) => (current === key ? null : key))}
-                  />
-                  {connected && reviewProjectKey === key ? (
-                    <ProjectCheckoutSection
-                      environmentId={project.environmentId}
-                      projectId={project.id}
-                      workspaceRoot={project.workspaceRoot}
-                      computerLabel={environmentLabel(project.environmentId)}
-                    />
-                  ) : null}
-                </View>
-              );
-            })}
+            {selectedProject ? (
+              <ProjectCheckoutSection
+                key={scopedProjectKey(selectedProject.environmentId, selectedProject.id)}
+                environmentId={selectedProject.environmentId}
+                projectId={selectedProject.id}
+                workspaceRoot={selectedProject.workspaceRoot}
+                computerLabel={environmentLabel(selectedProject.environmentId)}
+              />
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -756,7 +751,7 @@ function ProjectHomeContent(props: {
             accessibilityLabel: "Project settings",
             icon: "gearshape",
             onPress: openSettings,
-            disabled: onlineProject === undefined,
+            disabled: selectedProject === undefined,
           },
         ]}
       />

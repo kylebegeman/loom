@@ -9,7 +9,6 @@ import {
   CircleCheckIcon,
   CircleDashedIcon,
   FolderPlusIcon,
-  HardDriveIcon,
   MessageCircleIcon,
   SearchIcon,
   SettingsIcon,
@@ -136,10 +135,15 @@ export function ProjectLibraryHeader({
         ) : null}
       </div>
       <SidebarHeaderIconButton
-        label="Manage working files"
-        onClick={() => void navigate({ to: "/projects/storage" })}
+        label="Manage projects"
+        onClick={() =>
+          void navigate({
+            to: "/settings/projects",
+            search: { project: undefined, machine: undefined, checkout: undefined },
+          })
+        }
       >
-        <HardDriveIcon />
+        <SettingsIcon />
       </SidebarHeaderIconButton>
       <SidebarHeaderIconButton label="Add project" onClick={onAddProject}>
         <FolderPlusIcon />

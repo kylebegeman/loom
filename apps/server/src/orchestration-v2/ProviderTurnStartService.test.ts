@@ -152,7 +152,11 @@ it.each(["projection", "checkout", "setup"] as const)(
             writeFileString: () => Effect.void,
             remove: () => Effect.void,
           }),
-          Layer.mock(GitWorkflow.GitWorkflowService)({ pruneWorktrees, createWorktree }),
+          Layer.mock(GitWorkflow.GitWorkflowService)({
+            hasCommit: () => Effect.succeed(true),
+            pruneWorktrees,
+            createWorktree,
+          }),
           Layer.mock(ProjectService.ProjectService)({
             getById: () =>
               Effect.succeed(

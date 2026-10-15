@@ -7,6 +7,10 @@ export const makeProjectCheckoutRpcHandlers = (auth: ForkRpcAuth) =>
   Effect.gen(function* () {
     const service = yield* ProjectCheckoutManagement.ProjectCheckoutManagement;
     return {
+      [C.release]: (input: Parameters<typeof service.release>[0]) =>
+        auth.effect(C.release, service.release(input)),
+      [C.restore]: (input: Parameters<typeof service.restore>[0]) =>
+        auth.effect(C.restore, service.restore(input)),
       [C.preview]: (input: Parameters<typeof service.preview>[0]) =>
         auth.effect(C.preview, service.preview(input)),
       [C.adopt]: (input: Parameters<typeof service.adopt>[0]) =>

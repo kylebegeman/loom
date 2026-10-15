@@ -8,6 +8,8 @@ import {
   projectHomeComputerChoiceKey,
 } from "@t3tools/client-runtime/fork";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import type { ProjectResource } from "@t3tools/contracts/fork";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   AuthOrchestrationOperateScope,
   type ScopedProjectRef,
@@ -48,6 +50,7 @@ import { resolveProjectThreadActivity } from "~/fork/project-navigation/activity
 import { ProjectHomeComputers } from "./ProjectHomeComputers";
 import { ProjectPreparationDialog } from "./ProjectPreparationDialog";
 import { ProjectHomeThreads } from "./ProjectHomeThreads";
+import { ProjectResourcesSection } from "./ProjectResourcesSection";
 import { useProjectHomeGroup } from "./useProjectHomeGroup";
 import { useProjectHomeClock } from "./useProjectHomeClock";
 import { useProjectHomeNewThreadShortcuts } from "./useProjectHomeNewThreadShortcuts";
@@ -176,6 +179,23 @@ function ProjectHomeContent({
   const handleNewThread = useNewThreadHandler();
   const actions = useThreadActions();
   const [preparing, setPreparing] = useState(false);
+  const [selectedResource, setSelectedResource] = useState<{
+    readonly resource: ProjectResource;
+    readonly project: EnvironmentProject;
+  } | null>(null);
+  // Keep an unavailable explicit choice from targeting another computer's resources.
+  const resourceProject = chosenProjectRef
+    ? (chosen ?? null)
+    : (chosen ?? destination ?? preferredProject);
+  const prepareProject = () => {
+    setSelectedResource(null);
+    setPreparing(true);
+  };
+  const cloneResource = (resource: ProjectResource) => {
+    if (resource.kind !== "repository" || resourceProject === null) return;
+    setSelectedResource({ resource, project: resourceProject });
+    setPreparing(true);
+  };
   const preparationSource =
     group.memberProjects.find((project) => connectedEnvironmentIds.has(project.environmentId)) ??
     group;
@@ -327,6 +347,10 @@ function ProjectHomeContent({
               <SquarePenIcon aria-hidden="true" />
               {starting ? "Starting..." : "New thread"}
             </Button>
+            <Button variant="outline" onClick={prepareProject}>
+              <FolderPlusIcon aria-hidden="true" />
+              Clone repository
+            </Button>
           </div>
           {!destination ? (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -338,7 +362,7 @@ function ProjectHomeContent({
                     : "Choose a computer with permission to start work, or prepare the project on another computer."}
               </p>
               {hasConnectedPreparationSource ? (
-                <Button size="sm" variant="outline" onClick={() => setPreparing(true)}>
+                <Button size="sm" variant="outline" onClick={prepareProject}>
                   <FolderPlusIcon aria-hidden="true" />
                   Prepare on another computer
                 </Button>
@@ -356,6 +380,19 @@ function ProjectHomeContent({
           ) : null}
         </div>
       </header>
+      {resourceProject ? (
+        <ProjectResourcesSection project={resourceProject} onCloneResource={cloneResource} />
+      ) : (
+        <section aria-labelledby="project-resources-heading" className="space-y-2">
+          <h2 id="project-resources-heading" className="text-base font-semibold">
+            Resources
+          </h2>
+          <p role="status" className="text-sm text-muted-foreground">
+            The selected project is unavailable on this computer. Choose another computer to see its
+            resources.
+          </p>
+        </section>
+      )}
       <ProjectHomeThreads
         sections={projectHome.sections}
         environmentLabels={environmentLabels}
@@ -366,12 +403,17 @@ function ProjectHomeContent({
       <ProjectHomeComputers
         projects={group.memberProjects}
         connectedEnvironmentIds={connectedEnvironmentIds}
-        onPrepare={() => setPreparing(true)}
+        onPrepare={prepareProject}
       />
       {preparing ? (
         <ProjectPreparationDialog
-          sourceProject={preparationSource}
-          onClose={() => setPreparing(false)}
+          sourceProject={selectedResource?.project ?? preparationSource}
+          {...(selectedResource ? { resourceSource: selectedResource.resource } : {})}
+          {...(chosen ? { initialEnvironmentId: chosen.environmentId } : {})}
+          onClose={() => {
+            setPreparing(false);
+            setSelectedResource(null);
+          }}
         />
       ) : null}
     </WorkspacePageContainer>

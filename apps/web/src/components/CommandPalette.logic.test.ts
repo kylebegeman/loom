@@ -250,6 +250,11 @@ describe("reduceCommandPaletteUiState", () => {
       mode: "command",
       openIntent: { kind: "add-project" },
     });
+    expect(reduceCommandPaletteUiState(filesOpen, { _tag: "OpenNewProject" })).toEqual({
+      open: true,
+      mode: "command",
+      openIntent: { kind: "new-project" },
+    });
     expect(reduceCommandPaletteUiState(filesOpen, { _tag: "OpenNewThreadIn" })).toEqual({
       open: true,
       mode: "command",
@@ -267,6 +272,22 @@ describe("reduceCommandPaletteUiState", () => {
     expect(reduceCommandPaletteUiState(state, { _tag: "OpenAddProject" }).openIntent).toEqual({
       kind: "add-project",
     });
+  });
+
+  it("keeps project creation distinct from adding an existing project on a chosen computer", () => {
+    const environmentId = EnvironmentId.make("remote-computer");
+    const state = reduceCommandPaletteUiState(
+      { open: true, mode: "content", openIntent: { kind: "add-project" } },
+      { _tag: "OpenNewProject", environmentId },
+    );
+    expect(state).toEqual({
+      open: true,
+      mode: "command",
+      openIntent: { kind: "new-project", environmentId },
+    });
+    expect(
+      reduceCommandPaletteUiState(state, { _tag: "SetOpen", open: false }).openIntent,
+    ).toBeNull();
   });
 
   it("preserves the mode on close and resets it on open", () => {

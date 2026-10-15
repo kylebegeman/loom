@@ -495,3 +495,24 @@ describe("interrupted preparation recovery", () => {
     });
   });
 });
+
+it("clones a saved repository resource without a live source checkout", () => {
+  expect(
+    projectPreparationSource({
+      resource: { url: "https://github.com/example/resources.git" },
+      checkout: { state: "blocked", repositoryIdentity: null },
+    }),
+  ).toMatchObject({
+    ready: true,
+    source: "resource",
+    remoteUrl: "https://github.com/example/resources.git",
+    repositoryKey: "github.com/example/resources",
+  });
+  for (const url of [
+    "/local/repo",
+    "https://token@github.com/example/private.git",
+    "https://github.com/example/repo?token=secret",
+    "file:///tmp/repo",
+  ])
+    expect(projectPreparationSource({ resource: { url } }).ready).toBe(false);
+});

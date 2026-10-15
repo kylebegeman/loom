@@ -1,3 +1,4 @@
+import type { ProjectResources } from "../project/ProjectResources.ts";
 import type { ProjectCheckoutManagement } from "../project/ProjectCheckoutManagement.ts";
 import type { ComputerNaming } from "./computer-naming/ComputerNaming.ts";
 import type { GitHubSetupFlow } from "../sourceControl/GitHubSetupFlow.ts";
@@ -15,6 +16,7 @@ import * as Effect from "effect/Effect";
 /** Every service a packet adds to ForkLayer. Packets append `| TheirService`. */
 export type ForkServices =
   | ProjectCheckoutManagement
+  | ProjectResources
   | ComputerNaming
   | GitHubSetupFlow
   | MiniOffloadService

@@ -17,6 +17,7 @@ export * from "./workspace-handoff-destinations.ts";
 export * from "./computer-naming.ts";
 
 export * from "./project-checkout.ts";
+export * from "./project-resources.ts";
 export * from "./project-navigation.ts";
 
 export * from "./project-home.ts";
@@ -25,3 +26,5 @@ export * from "./project-library-presentation.ts";
 export * from "./project-home-presentation.ts";
 export * from "./project-computer-choices.ts";
 export * from "./project-storage-rollout.ts";
+
+export * from "./project-working-copy-actions.ts";

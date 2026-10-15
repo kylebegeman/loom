@@ -78,6 +78,8 @@ it.effect.each(mutationCases)(
           return preview;
         });
       const toolkit = yield* toolkitWith({
+        release: () => Effect.die("An unrelated mutation must not release files"),
+        restore: () => Effect.die("An unrelated mutation must not restore files"),
         preview: () => Effect.succeed(preview),
         adopt: (input, authorize) => {
           expect(input).toEqual(request);
@@ -114,6 +116,8 @@ it.effect("read-only MCP clients can inspect a checkout without mutating it", ()
   Effect.gen(function* () {
     let inspected = false;
     const toolkit = yield* toolkitWith({
+      release: () => Effect.die("A preview must not release files"),
+      restore: () => Effect.die("A preview must not restore files"),
       preview: (input) =>
         Effect.sync(() => {
           expect(input).toEqual({ projectId });
@@ -131,5 +135,65 @@ it.effect("read-only MCP clients can inspect a checkout without mutating it", ()
       );
     expect(result[0]).toMatchObject({ isFailure: false, result: preview });
     expect(inspected).toBe(true);
+  }).pipe(Effect.provide(callerLayer), Effect.scoped),
+);
+
+const actionRequest = { projectId, reviewToken: request.reviewToken };
+const releaseResult = { preview, outcome: "removed" as const, reason: "Recovery archive saved." };
+it.effect.each([
+  ["loom_project_checkout_release", "read-only"],
+  ["loom_project_checkout_release", "approval-required"],
+  ["loom_project_checkout_release", "full-access"],
+  ["loom_project_checkout_restore", "read-only"],
+  ["loom_project_checkout_restore", "approval-required"],
+  ["loom_project_checkout_restore", "full-access"],
+] as const)("%s rechecks full access through the service (%s)", ([name, access]) =>
+  Effect.gen(function* () {
+    const mutations: string[] = [];
+    const toolkit = yield* toolkitWith({
+      preview: () => Effect.succeed(preview),
+      adopt: () => Effect.die("An explicit action must not adopt a working copy"),
+      setRetention: () => Effect.die("An explicit action must not change retention"),
+      release: (input, authorize) => {
+        expect(input).toEqual(actionRequest);
+        expect(authorize).toBeDefined();
+        return (authorize ?? Effect.die("Release requires the captured caller check")).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              mutations.push("release");
+              return releaseResult;
+            }),
+          ),
+        );
+      },
+      restore: (input, authorize) => {
+        expect(input).toEqual(actionRequest);
+        expect(authorize).toBeDefined();
+        return (authorize ?? Effect.die("Restore requires the captured caller check")).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              mutations.push("restore");
+              return preview;
+            }),
+          ),
+        );
+      },
+    });
+    const invoke = toolkit
+      .handle(name, actionRequest)
+      .pipe(
+        Effect.flatMap(Stream.runCollect),
+        Effect.provideService(McpInvocationContext, invocation(access)),
+      );
+    if (access === "full-access") {
+      expect((yield* invoke)[0]).toMatchObject({
+        isFailure: false,
+        result: name === "loom_project_checkout_release" ? releaseResult : preview,
+      });
+      expect(mutations).toEqual([name === "loom_project_checkout_release" ? "release" : "restore"]);
+    } else {
+      expect(yield* invoke.pipe(Effect.flip)).toMatchObject({ code: "capability_denied" });
+      expect(mutations).toEqual([]);
+    }
   }).pipe(Effect.provide(callerLayer), Effect.scoped),
 );
