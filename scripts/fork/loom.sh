@@ -573,6 +573,26 @@ Land it from Terminal on your Mac (not inside Loom, which the install quits) wit
 
 Upstream added these workflows. The loom-upstream workflow disables every non-fork workflow on its next run:
 $added}"
+  close_superseded "$branch"
+}
+
+# Close open integration pull requests whose upstream tag this merge already contains,
+# including "needs Kyle" drafts. Their fixes are redone against newer upstream code, so
+# they only pile up; any commit the new branch lacks is listed on the closed one.
+close_superseded() {
+  local branch=$1 new number other left
+  new=$(gh pr view "$branch" --json number --jq .number)
+  gh pr list --state open --json number,headRefName \
+    --jq '.[] | select(.headRefName | startswith("integrate/")) | "\(.number) \(.headRefName)"' |
+    while read -r number other; do
+      [ "$other" = "$branch" ] && continue
+      git merge-base --is-ancestor "refs/tags/${other#integrate/}" HEAD 2>/dev/null || continue
+      git fetch -q origin "$other" || continue
+      left=$(git log --no-merges --format='- %h %s' HEAD..FETCH_HEAD)
+      gh pr close "$number" --delete-branch --comment "Superseded by #$new, which already contains upstream ${other#integrate/}.${left:+ These commits are not in #$new; reapply any that still matter:
+
+$left}"
+    done
 }
 
 # The newest upstream tag main contains, stable or nightly.
