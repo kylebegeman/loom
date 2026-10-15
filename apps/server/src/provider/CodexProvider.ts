@@ -655,6 +655,8 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   > = probeCodexAppServerProvider,
   environment?: NodeJS.ProcessEnv,
   managedAuth?: ServerProvider["auth"],
+  /** Native allowances do not describe requests routed through a Switchboard hub. */
+  probePolicy?: { readonly skipNativeUsage?: boolean }, // fork: switchboard
 ): Effect.fn.Return<
   ServerProviderDraft,
   ServerSettingsError,
@@ -663,6 +665,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const emptyModels = emptyCodexModelsFromSettings(codexSettings);
+  const routedUsage = probePolicy?.skipNativeUsage === true; // fork: switchboard
 
   if (!codexSettings.enabled) {
     return buildServerProvider({
@@ -688,7 +691,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     cwd: process.cwd(),
     customModels: codexSettings.customModels,
     environment: resolvedEnvironment,
-    ...(managedAuth ? { skipNativeUsage: true } : {}),
+    ...(managedAuth || routedUsage ? { skipNativeUsage: true } : {}), // fork: switchboard
   }).pipe(
     Effect.scoped,
     Effect.timeoutOption(Duration.millis(AUTH_PROBE_TIMEOUT_MS)),
@@ -741,7 +744,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     ? { status: "ready" as const, auth: managedAuth, message: undefined }
     : yield* withCodexLoginEmail(accountProbeStatus(snapshot), snapshot, codexSettings); // fork: codex-login-email
   const usageLimits =
-    snapshot.account.account?.type === "apiKey"
+    routedUsage || snapshot.account.account?.type === "apiKey" // fork: switchboard
       ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
       : snapshot.rateLimits === undefined || "failure" in snapshot.rateLimits
         ? makeUnavailableUsageLimits({

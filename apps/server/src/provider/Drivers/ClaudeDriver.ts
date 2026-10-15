@@ -63,9 +63,12 @@ import {
 } from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
-  makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
+import {
+  makeSwitchboardClaudeProbes, // fork: switchboard
+  makeSwitchboardSnapshotSettingsSource, // fork: switchboard
+} from "../../fork/switchboard/providerProbes.ts"; // fork: switchboard
 import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
@@ -219,16 +222,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         cwd,
         processEnv,
       );
+      const switchboard = yield* makeSwitchboardClaudeProbes(effectiveConfig, processEnv, cwd); // fork: switchboard
 
       // Start the TTL-gated refresh without delaying provider readiness. The
       // next check observes a remote manifest after the background fetch lands.
       const checkProvider = catalogService.refreshInBackground.pipe(
         Effect.andThen(
-          modelCatalog.pipe(
-            Effect.flatMap((catalog) =>
+          Effect.all([modelCatalog, switchboard.routed]).pipe(
+            // fork: switchboard. A routed check uses its own probe and guidance.
+            Effect.flatMap(([catalog, routed]) =>
               checkClaudeProviderStatus(
                 effectiveConfig,
-                () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
+                routed // fork: switchboard
+                  ? () => switchboard.capabilities // fork: switchboard
+                  : () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
                 processEnv,
                 cwd,
                 catalog,
@@ -239,6 +246,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
                     Effect.provideService(FileSystem.FileSystem, fileSystem),
                     Effect.provideService(Path.Path, path),
                   ),
+                routed ? "switchboard" : undefined, // fork: switchboard
               ),
             ),
             Effect.map(stampIdentity),
@@ -249,7 +257,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         Effect.provideService(Path.Path, path),
       );
 
-      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
+      const snapshotSettings = yield* makeSwitchboardSnapshotSettingsSource(effectiveConfig); // fork: switchboard
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<ClaudeSettings>>({
         resolveMaintenance,
         getSettings: snapshotSettings.getSettings,
@@ -357,11 +365,23 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         accentColor,
         enabled,
         snapshot,
-        invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache),
+        invalidateCaches: Cache.invalidateAll(capabilitiesProbeCache).pipe(
+          Effect.andThen(switchboard.invalidate), // fork: switchboard
+        ),
         snapshotForCwd: (cwd: string) =>
           snapshot.getSnapshot.pipe(
-            Effect.flatMap((machineSnapshot) =>
-              probeClaudeWorkspaceSnapshot(effectiveConfig, machineSnapshot, cwd, processEnv),
+            Effect.flatMap(
+              (machineSnapshot) =>
+                switchboard.withWorkspaceSettings(machineSnapshot, (switchboardSettings) =>
+                  // fork: switchboard. Routed workspaces probe through the hub.
+                  probeClaudeWorkspaceSnapshot(
+                    effectiveConfig,
+                    machineSnapshot,
+                    cwd,
+                    processEnv,
+                    switchboardSettings,
+                  ),
+                ), // fork: switchboard
             ),
             Effect.provideService(FileSystem.FileSystem, fileSystem),
             Effect.provideService(Path.Path, path),

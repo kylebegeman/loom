@@ -114,6 +114,11 @@ import {
 } from "../../provider/EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
+import {
+  switchboardCodexArgs,
+  switchboardCodexResumeOptions,
+  switchboardCodexThreadOptions,
+} from "../../fork/switchboard/switchboard.ts"; // fork: switchboard
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -1295,6 +1300,7 @@ export interface CodexAppServerClientFactoryShape {
     readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
     readonly settings: CodexSettings;
     readonly environment: NodeJS.ProcessEnv;
+    readonly switchboardArgs?: ReadonlyArray<string>; // fork: switchboard
   }) => Effect.Effect<
     CodexClient.CodexAppServerClient["Service"],
     ProviderAdapter.ProviderAdapterOpenSessionError,
@@ -1314,17 +1320,22 @@ export class CodexAppServerClientFactory extends Context.Service<
  */
 export const CODEX_THREAD_CONFIG = { "tools.update_plan.enabled": true } as const;
 
-export function codexThreadRuntimeParams(input: {
-  readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
-  readonly modelSelection?: { readonly model: string };
-  readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
-}): {
+export function codexThreadRuntimeParams(
+  input: {
+    readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
+    readonly modelSelection?: { readonly model: string };
+    readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+  },
+  switchboardRouting = switchboardCodexThreadOptions(), // fork: switchboard
+): {
   readonly cwd?: string;
   readonly model?: string;
+  readonly modelProvider?: string; // fork: switchboard
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
   return {
+    ...switchboardRouting, // fork: switchboard
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
@@ -1535,6 +1546,7 @@ export const layerAppServerClientFactory: Layer.Layer<
             command: input.settings.binaryPath || "codex",
             args: codexAppServerArgs(
               resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
+              input.switchboardArgs, // fork: switchboard
             ),
             env: environment,
             threadId: input.threadId,
@@ -1727,7 +1739,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     }),
                 ),
               );
+        // fork: switchboard. Existing app-servers keep the route they launched with.
+        const switchboardRouting = switchboardCodexThreadOptions();
+        const switchboardArgs = switchboardCodexArgs();
+        const switchboardFallbackModel = input.modelSelection.model; // fork: switchboard
         const client = yield* clientFactory.open({
+          switchboardArgs, // fork: switchboard
           instanceId: adapterOptions.instanceId,
           threadId: input.threadId,
           providerSessionId: input.providerSessionId,
@@ -2984,9 +3001,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               yield* emitSubagentProviderTurnStarted(subagent, pendingTurn);
             }
             if (task.model === null) {
+              let readMetadata: unknown; // fork: switchboard
               yield* client.raw
                 .request("thread/read", { threadId: input.nativeThreadId, includeTurns: false })
                 .pipe(
+                  Effect.tap((metadata) =>
+                    Effect.sync(() => {
+                      readMetadata = metadata;
+                    }),
+                  ), // fork: switchboard
                   Effect.flatMap(decodeCodexChildThread),
                   Effect.map((response): typeof CodexChildSelection.Type | null =>
                     response.thread.id === input.nativeThreadId && response.thread.model?.trim()
@@ -3000,12 +3023,22 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   Effect.catch(() => Effect.succeed(null)),
                   Effect.flatMap((response) =>
                     response === null
-                      ? client.raw
-                          .request("thread/resume", {
-                            threadId: input.nativeThreadId,
-                            excludeTurns: true,
-                          })
-                          .pipe(Effect.flatMap(decodeCodexChildModel))
+                      ? switchboardCodexResumeOptions({
+                          // fork: switchboard
+                          routing: switchboardRouting,
+                          threadId: input.nativeThreadId,
+                          fallbackModel: switchboardFallbackModel,
+                          readThread: Effect.succeed(readMetadata),
+                        }).pipe(
+                          Effect.flatMap((routing) =>
+                            client.raw.request("thread/resume", {
+                              threadId: input.nativeThreadId,
+                              excludeTurns: true,
+                              ...routing, // fork: switchboard
+                            }),
+                          ),
+                          Effect.flatMap(decodeCodexChildModel),
+                        )
                       : Effect.succeed(response),
                   ),
                   Effect.timeout("5 seconds"),
@@ -6506,11 +6539,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               Effect.flatMap((mcpSession) =>
                 client.request(
                   "thread/start",
-                  codexThreadRuntimeParams({
-                    mcpSession,
-                    modelSelection: threadInput.modelSelection,
-                    runtimePolicy: threadInput.runtimePolicy,
-                  }),
+                  codexThreadRuntimeParams(
+                    {
+                      mcpSession,
+                      modelSelection: threadInput.modelSelection,
+                      runtimePolicy: threadInput.runtimePolicy,
+                    },
+                    switchboardRouting,
+                  ), // fork: switchboard
                 ),
               ),
               Effect.map((response): OrchestrationV2ProviderThread =>
@@ -6535,11 +6571,23 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           resumeThread: (threadInput) =>
             Effect.gen(function* () {
               const nativeThreadId = yield* getNativeThreadId(threadInput.providerThread);
-              // excludeTurns is not in the generated request schema yet.
-              const resume = client.raw.request("thread/resume", {
+              // fork: switchboard. Leaving the hub must not restore its persisted provider.
+              const resumeRouting = yield* switchboardCodexResumeOptions({
+                routing: switchboardRouting,
                 threadId: nativeThreadId,
-                excludeTurns: true,
-                ...codexThreadRuntimeParams({
+                model: threadInput.modelSelection?.model,
+                fallbackModel: switchboardFallbackModel,
+                readThread: ensureInitialized.pipe(
+                  Effect.andThen(
+                    client.raw.request("thread/read", {
+                      threadId: nativeThreadId,
+                      includeTurns: false,
+                    }),
+                  ),
+                ),
+              });
+              const params = codexThreadRuntimeParams(
+                {
                   mcpSession: yield* readMcpSession(
                     threadInput.threadId ?? threadInput.providerThread.appThreadId,
                   ),
@@ -6549,7 +6597,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ...(threadInput.runtimePolicy === undefined
                     ? {}
                     : { runtimePolicy: threadInput.runtimePolicy }),
-                }),
+                },
+                switchboardRouting, // fork: switchboard
+              );
+              // excludeTurns is not in the generated request schema yet.
+              const resume = client.raw.request("thread/resume", {
+                threadId: nativeThreadId,
+                excludeTurns: true,
+                ...params,
+                ...resumeRouting, // fork: switchboard
+                config: { ...params.config, ...resumeRouting.config }, // fork: switchboard
               });
               const response = yield* ensureInitialized.pipe(
                 Effect.andThen(
@@ -7269,11 +7326,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 yield* client.raw.request("thread/resume", {
                   threadId,
                   excludeTurns: true,
-                  ...codexThreadRuntimeParams({
-                    mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
-                    modelSelection: input.modelSelection,
-                    runtimePolicy: input.runtimePolicy,
-                  }),
+                  ...codexThreadRuntimeParams(
+                    {
+                      mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
+                      modelSelection: input.modelSelection,
+                      runtimePolicy: input.runtimePolicy,
+                    },
+                    switchboardRouting,
+                  ), // fork: switchboard
                 });
               }
               const response = yield* ensureInitialized.pipe(
@@ -7318,15 +7378,18 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     ...(boundary.lastTurnId === undefined
                       ? {}
                       : { lastTurnId: boundary.lastTurnId }),
-                    ...codexThreadRuntimeParams({
-                      mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
-                      ...(threadInput.modelSelection === undefined
-                        ? {}
-                        : { modelSelection: threadInput.modelSelection }),
-                      ...(threadInput.runtimePolicy === undefined
-                        ? {}
-                        : { runtimePolicy: threadInput.runtimePolicy }),
-                    }),
+                    ...codexThreadRuntimeParams(
+                      {
+                        mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
+                        ...(threadInput.modelSelection === undefined
+                          ? {}
+                          : { modelSelection: threadInput.modelSelection }),
+                        ...(threadInput.runtimePolicy === undefined
+                          ? {}
+                          : { runtimePolicy: threadInput.runtimePolicy }),
+                      },
+                      switchboardRouting,
+                    ), // fork: switchboard
                   }),
                 ),
                 Effect.mapError(

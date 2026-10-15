@@ -34,7 +34,13 @@ apps/server/src/provider/Drivers/CodexHomeLayout.ts	codex-shadow-images	1
 apps/server/src/provider/Drivers/CodexHomeLayout.test.ts	codex-shadow-images	1
 apps/server/src/provider/CodexProvider.ts	codex-login-email	2
 packages/contracts/src/settings.ts	switchboard	2
-apps/server/src/provider/codexLaunchArgs.ts	switchboard	2
+apps/server/src/provider/codexLaunchArgs.ts	switchboard	5
+apps/server/src/provider/CodexProvider.ts	switchboard	4
+apps/server/src/provider/ClaudeProvider.ts	switchboard	30
+apps/server/src/provider/Drivers/ClaudeDriver.ts	switchboard	12
+apps/server/src/provider/Drivers/CodexDriver.ts	switchboard	4
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.ts	switchboard	20
+apps/server/src/orchestration-v2/Adapters/CodexAdapterV2.test.ts	switchboard	2
 apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts	switchboard	2
 apps/server/src/textGeneration/ClaudeTextGeneration.ts	switchboard	2
 apps/web/src/components/chat/ProviderModelPicker.tsx	switchboard	3

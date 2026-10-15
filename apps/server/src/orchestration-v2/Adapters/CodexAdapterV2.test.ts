@@ -3051,6 +3051,84 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
+  // fork: switchboard
+  it.effect(
+    "resumes an old Switchboard thread natively without losing saved reasoning effort",
+    () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const scenario = "codex-switchboard-native-resume";
+          const nativeThreadId = `native-${scenario}-thread`;
+          const transcript = makeCodexReplayTranscript({
+            scenario,
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId,
+                nativeTurnId: "unused",
+                prompt: "unused",
+              }).slice(0, 5),
+              {
+                type: "expect_outbound",
+                label: "thread/read",
+                frame: {
+                  id: 3,
+                  method: "thread/read",
+                  params: { threadId: nativeThreadId, includeTurns: false },
+                },
+              },
+              {
+                type: "emit_inbound",
+                label: "thread/read",
+                frame: {
+                  id: 3,
+                  result: {
+                    thread: {
+                      id: nativeThreadId,
+                      modelProvider: "loom_switchboard_previous_process",
+                      model: "gpt-5.4",
+                      reasoningEffort: "high",
+                    },
+                  },
+                },
+              },
+              {
+                type: "expect_outbound",
+                label: "thread/resume",
+                frame: {
+                  id: 4,
+                  method: "thread/resume",
+                  params: {
+                    threadId: nativeThreadId,
+                    excludeTurns: true,
+                    model: "gpt-5.4",
+                    config: {
+                      ...CodexAdapterV2.CODEX_THREAD_CONFIG,
+                      model_reasoning_effort: "high",
+                    },
+                  },
+                },
+              },
+              {
+                type: "emit_inbound",
+                label: "thread/resume",
+                frame: { id: 4, result: { thread: { id: nativeThreadId, updatedAt: 1782622450 } } },
+              },
+            ],
+          });
+          const harness = yield* makeCodexReplayHarness(transcript);
+          const resumed = yield* harness.runtime.resumeThread({
+            providerThread: harness.providerThread,
+          });
+          assert.equal(resumed.nativeThreadRef?.nativeId, nativeThreadId);
+        }).pipe(
+          Effect.provide(
+            Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+          ),
+        ),
+      ),
+  );
+  // fork: switchboard end
+
   it.effect("resumes a provider thread without requesting or decoding its history", () =>
     Effect.scoped(
       Effect.gen(function* () {

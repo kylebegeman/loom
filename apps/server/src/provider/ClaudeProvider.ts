@@ -22,6 +22,7 @@ import {
   type SDKControlGetUsageResponse,
   type SDKUserMessage,
   type SettingSource,
+  type Settings as ClaudeSdkSettings, // fork: switchboard
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
@@ -184,9 +185,22 @@ function apiProviderAuthMetadata(
 function claudeAuthStatus(
   capabilities: Pick<
     ClaudeCapabilitiesProbe,
-    "email" | "subscriptionType" | "tokenSource" | "apiKeySource" | "apiProvider"
+    | "email"
+    | "subscriptionType"
+    | "tokenSource"
+    | "apiKeySource"
+    | "apiProvider"
+    | "authMode" // fork: switchboard
+    | "switchboardCredentialAvailable" // fork: switchboard
   >,
 ): "authenticated" | "unauthenticated" {
+  // fork: switchboard. Initialization reports the helper's cache, which even a
+  // failed helper fills, so routed auth rests on running the helper separately.
+  if (capabilities.authMode === "switchboard") {
+    return capabilities.switchboardCredentialAvailable === true
+      ? "authenticated"
+      : "unauthenticated";
+  } // fork: switchboard
   if (capabilities.apiProvider !== undefined && capabilities.apiProvider !== "firstParty") {
     return "authenticated";
   }
@@ -223,6 +237,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly abortController: AbortController;
   readonly environment: NodeJS.ProcessEnv;
   readonly cwd: string | undefined;
+  readonly switchboardSettings?: ClaudeSdkSettings; // fork: switchboard
 }): ClaudeQueryOptions {
   return {
     persistSession: false,
@@ -232,7 +247,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     // The probe keeps filesystem setting sources for slash-command discovery,
     // but must not run the user's hooks: it fires every few minutes, so
     // SessionStart hooks would run on every health check.
-    settings: { disableAllHooks: true },
+    settings: { ...input.switchboardSettings, disableAllHooks: true }, // fork: switchboard
     allowedTools: [],
     // Ignore MCP definitions from every filesystem setting source above. The
     // SDK combines this empty explicit map with --strict-mcp-config.
@@ -240,6 +255,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     strictMcpConfig: true,
     env: {
       ...input.environment,
+      ...input.switchboardSettings?.env, // fork: switchboard
       // Connected claude.ai MCP servers are discovered outside filesystem
       // config; disable them independently for this health check.
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
@@ -261,6 +277,10 @@ function nonEmptyProbeString(value: string): string | undefined {
 }
 
 type ClaudeCapabilitiesProbe = {
+  // fork: switchboard. A routed probe reports no local subscription; the helper
+  // result proves its credential.
+  readonly authMode?: "switchboard"; // fork: switchboard
+  readonly switchboardCredentialAvailable?: boolean; // fork: switchboard
   readonly email: string | undefined;
   /**
    * The organization UUID from the login's `.claude.json`. The driver reads it
@@ -376,6 +396,7 @@ const probeClaudeCapabilities = (
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
   includeUsage = true,
+  switchboardSettings?: ClaudeSdkSettings, // fork: switchboard
 ) => {
   const abort = new AbortController();
   return Effect.gen(function* () {
@@ -397,6 +418,7 @@ const probeClaudeCapabilities = (
           abortController: abort,
           environment: claudeEnvironment,
           cwd,
+          ...(switchboardSettings ? { switchboardSettings } : {}), // fork: switchboard
         }),
       });
       const init = await q.initializationResult();
@@ -409,11 +431,14 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
-        const usageResult = includeUsage
-          ? yield* Effect.tryPromise(() =>
-              q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
-            ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
-          : undefined;
+        const usageResult =
+          includeUsage && !switchboardSettings // fork: switchboard
+            ? yield* Effect.tryPromise(() =>
+                q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
+                  skipBehaviors: true,
+                }),
+              ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
+            : undefined;
         const usage =
           usageResult && Result.isSuccess(usageResult)
             ? {
@@ -431,8 +456,9 @@ const probeClaudeCapabilities = (
             }
           | undefined;
         return {
-          email: account?.email,
-          subscriptionType: account?.subscriptionType,
+          ...(switchboardSettings ? { authMode: "switchboard" as const } : {}), // fork: switchboard
+          email: switchboardSettings ? undefined : account?.email, // fork: switchboard
+          subscriptionType: switchboardSettings ? undefined : account?.subscriptionType, // fork: switchboard
           tokenSource: account?.tokenSource,
           apiKeySource: account?.apiKeySource,
           apiProvider: account?.apiProvider,
@@ -473,10 +499,17 @@ export const probeClaudeWorkspaceSnapshot = Effect.fn("probeClaudeWorkspaceSnaps
   machineSnapshot: ServerProvider,
   cwd: string,
   environment?: NodeJS.ProcessEnv,
+  switchboardSettings?: ClaudeSdkSettings, // fork: switchboard
 ): Effect.fn.Return<ProviderWorkspaceSnapshot, never, FileSystem.FileSystem | Path.Path> {
   if (!claudeSettings.enabled) return machineSnapshot;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, environment);
-  const capabilities = yield* probeClaudeCapabilities(claudeSettings, environment, cwd, false);
+  const capabilities = yield* probeClaudeCapabilities(
+    claudeSettings,
+    environment,
+    cwd,
+    false,
+    switchboardSettings, // fork: switchboard
+  );
   return {
     ...machineSnapshot,
     skills,
@@ -500,6 +533,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
   /** Banked resets for a subscription login, given the CLI version for the user agent. */
   resolveResetCredits?: (version: string) => Effect.Effect<ServerProviderResetCredits | undefined>,
+  /** Names the route when initialization returns no capabilities, for its guidance. */
+  probeAuthMode?: "switchboard", // fork: switchboard
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -626,7 +661,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        message:
+          probeAuthMode === "switchboard" // fork: switchboard
+            ? "Could not verify Claude authentication through Switchboard. Check this environment's Switchboard endpoint and key helper."
+            : "Could not verify Claude authentication status from initialization result.",
       },
     });
   }
@@ -644,24 +682,33 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "error",
         auth: { status: "unauthenticated" },
-        message: "Claude Code is not authenticated. Run `claude auth login` and try again.",
+        message:
+          capabilities.authMode === "switchboard" // fork: switchboard
+            ? "Claude could not authenticate through Switchboard. Check this environment's Switchboard key helper."
+            : "Claude Code is not authenticated. Run `claude auth login` and try again.",
       },
     });
   }
 
-  const authMetadata =
-    claudeAuthMetadata({
-      subscriptionType: capabilities.subscriptionType,
-      authMethod: capabilities.tokenSource,
-    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
-  const usageLimits = !capabilities.usage
-    ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
-    : scopedLimitNames
-      ? yield* recordClaudeUsageResponse(scopedLimitNames, {
-          response: capabilities.usage,
-          checkedAt,
-        })
-      : claudeUsageResponseToLimits({ response: capabilities.usage, checkedAt }).limits;
+  // fork: switchboard. The hub picks the account per request, so a routed probe
+  // reports neither the local login nor its allowances.
+  const routed = capabilities.authMode === "switchboard"; // fork: switchboard
+  const authMetadata = routed // fork: switchboard
+    ? { type: "switchboard", label: "Switchboard" } // fork: switchboard
+    : (claudeAuthMetadata({
+        subscriptionType: capabilities.subscriptionType,
+        authMethod: capabilities.tokenSource,
+      }) ?? apiProviderAuthMetadata(capabilities.apiProvider));
+  const usageLimits = routed // fork: switchboard
+    ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }) // fork: switchboard
+    : !capabilities.usage
+      ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
+      : scopedLimitNames
+        ? yield* recordClaudeUsageResponse(scopedLimitNames, {
+            response: capabilities.usage,
+            checkedAt,
+          })
+        : claudeUsageResponseToLimits({ response: capabilities.usage, checkedAt }).limits;
   const resetCredits =
     resolveResetCredits &&
     capabilities.subscriptionType &&
@@ -683,8 +730,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       status: "ready",
       auth: {
         status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
-        ...(capabilities.workspaceId ? { workspaceId: capabilities.workspaceId } : {}),
+        ...(!routed && capabilities.email ? { email: capabilities.email } : {}), // fork: switchboard
+        ...(!routed && capabilities.workspaceId ? { workspaceId: capabilities.workspaceId } : {}), // fork: switchboard
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),

@@ -9,14 +9,20 @@ export const resolveCodexLaunchArgs = (
   environment: NodeJS.ProcessEnv = process.env,
 ) => environment[T3CODE_CODEX_LAUNCH_ARGS_ENV]?.trim() || launchArgs?.trim() || "";
 
-const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => [
+const codexLaunchArgv = (
+  launchArgs?: string,
+  switchboardArgs = switchboardCodexArgs(), // fork: switchboard
+): ReadonlyArray<string> => [
   ...tokenizeCliArgs(launchArgs),
-  ...switchboardCodexArgs(), // fork: switchboard
+  ...switchboardArgs, // fork: switchboard
 ];
 
-export const codexAppServerArgs = (launchArgs?: string) => [
+export const codexAppServerArgs = (
+  launchArgs?: string,
+  switchboardArgs?: ReadonlyArray<string>, // fork: switchboard
+) => [
   "app-server",
-  ...codexLaunchArgv(launchArgs),
+  ...codexLaunchArgv(launchArgs, switchboardArgs), // fork: switchboard
 ];
 
 export const codexExecLaunchArgs = (launchArgs?: string) => {
