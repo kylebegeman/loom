@@ -159,8 +159,9 @@ the credit models stay selectable. Off, launches and the picker are upstream's.
 The `respectful-notifications` seams come from LoomOS packet 07
 (`deploy/omarchy/packets/07-respectful-actionable-notifications.md`) and
 `apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
-setting, on by default, chooses between the thread title and a generic body in system
-notifications. Its switch renders under Thread notifications in General settings
+setting, on by default, chooses between the thread or pull request title and a generic body
+in system notifications, for thread alerts and review guide alerts
+(`PullRequestGuideRunCoordinator.tsx`, 2 marker lines) alike. Its switch renders under Thread notifications in General settings
 (`SettingsPanels.tsx`, `settingsSearch.ts`, `packages/contracts/src/settings.ts`).
 `ThreadNotificationCoordinator.tsx` (18 marker lines) withdraws a notification once its
 thread is answered, archived or removed, ignores clicks on stale ones, and delivers through

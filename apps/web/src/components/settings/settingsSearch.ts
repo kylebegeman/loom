@@ -387,7 +387,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "notification-previews",
     title: "Notification previews",
     to: "/settings/general",
-    searchTerms: ["privacy private hide thread titles system alerts desktop"],
+    searchTerms: ["privacy private hide thread pull request titles system alerts desktop"],
   },
   {
     id: "thread-notifications",

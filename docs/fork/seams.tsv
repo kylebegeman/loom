@@ -231,5 +231,6 @@ apps/web/src/components/ThreadNotificationCoordinator.test.tsx	respectful-notifi
 apps/web/src/components/ThreadNotificationCoordinator.badge.test.tsx	respectful-notifications	9
 apps/web/src/components/settings/SettingsPanels.tsx	respectful-notifications	5
 apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
+apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1

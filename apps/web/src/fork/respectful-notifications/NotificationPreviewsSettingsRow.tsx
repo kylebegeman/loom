@@ -13,7 +13,7 @@ export function NotificationPreviewsSettingsRow() {
   return (
     <SettingsRow
       {...searchableSetting("notification-previews")}
-      description="Show thread titles in system notifications. Turn off to hide titles on this device."
+      description="Show thread and pull request titles in system notifications. Turn off to hide them on this device."
       control={
         <Switch
           checked={previews}
