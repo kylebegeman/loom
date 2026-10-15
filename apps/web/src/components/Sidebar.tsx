@@ -1,3 +1,4 @@
+import { openLibraryAction } from "~/fork/project-library/actions";
 import { openWorkspaceHandoff } from "~/fork/workspace-handoff/state";
 import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { type EnvironmentId, type ScopedProjectRef } from "@t3tools/contracts";
@@ -4962,6 +4963,11 @@ export default function Sidebar() {
   // for multi-project setups.
   const handleNewThreadClick = useCallback(
     (event?: ReactMouseEvent) => {
+      if (/^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
+        if (isMobile) setOpenMobile(false);
+        openLibraryAction("new-conversation");
+        return;
+      }
       // One project: nothing to pick, create immediately. Shift+click creates
       // directly in the current project even with several projects, skipping
       // the palette picker.

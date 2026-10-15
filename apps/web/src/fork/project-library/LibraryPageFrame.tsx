@@ -18,9 +18,13 @@ export function LibraryPageFrame({
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
-        <Button size="xs" variant="link" render={<Link to="/library" />}>
-          Projects
-        </Button>
+        {title ? (
+          <Button size="xs" variant="link" render={<Link to="/projects" />}>
+            Projects
+          </Button>
+        ) : (
+          <span className="text-sm font-medium">Projects</span>
+        )}
         {title ? (
           <>
             <span aria-hidden="true" className="text-icon-muted">

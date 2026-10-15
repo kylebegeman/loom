@@ -44,7 +44,13 @@ const ImportAttempt = Schema.NullOr(
 export function ImportProjectDialog({
   onSaved,
   onClose,
+  initialHostId,
+  initialRootPath,
+  initialTitle,
 }: {
+  readonly initialHostId?: EnvironmentId | undefined;
+  readonly initialRootPath?: string | undefined;
+  readonly initialTitle?: string | undefined;
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
 }) {
@@ -53,9 +59,11 @@ export function ImportProjectDialog({
     `loom:library:import:${library.authorityId}`,
     ImportAttempt,
   );
-  const [hostId, setHostId] = useState<EnvironmentId | null>(attempt?.environmentId ?? null);
-  const [rootPath, setRootPath] = useState(attempt?.rootPath ?? "");
-  const [title, setTitle] = useState(attempt?.createInput?.title ?? "");
+  const [hostId, setHostId] = useState<EnvironmentId | null>(
+    attempt?.environmentId ?? initialHostId ?? null,
+  );
+  const [rootPath, setRootPath] = useState(attempt?.rootPath ?? initialRootPath ?? "");
+  const [title, setTitle] = useState(attempt?.createInput?.title ?? initialTitle ?? "");
   const [brief, setBrief] = useState(attempt?.createInput?.brief ?? "");
   const [projectId, setProjectId] = useState(attempt?.project?.id ?? "new");
   const [inspection, setInspection] = useState<LibraryFolderInspection | null>(null);

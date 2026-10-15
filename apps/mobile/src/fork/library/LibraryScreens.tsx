@@ -13,7 +13,7 @@ import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ListChoiceRow } from "../../components/ListChoiceRow";
 import { MaterialButton } from "../../components/MaterialButton";
 import { ScreenHeader } from "../../components/ScreenHeader";
@@ -105,9 +105,142 @@ export function LibraryNotice(props: {
 
 export function LibraryRouteScreen() {
   const navigation = useNavigation();
+  const authority = useLibraryAuthority();
+  const [search, setSearch] = useState("");
+  const [archived, setArchived] = useState(false);
+  const catalog = useEnvironmentQuery(
+    authority.environmentId
+      ? library.projects({
+          environmentId: authority.environmentId,
+          input: { includeArchived: true },
+        })
+      : null,
+  );
+  const canCreate = useAtomValue(library.createProject.permissionAtom(authority.environmentId));
+  useFocusEffect(
+    useCallback(() => {
+      if (authority.connected) catalog.refresh();
+    }, [authority.connected, catalog.refresh]),
+  );
+  const query = search.trim().toLocaleLowerCase();
+  const projects = (catalog.data ?? [])
+    .filter(
+      (p) =>
+        p.archived === archived &&
+        (!query ||
+          [p.title, p.brief, ...p.resources.map((r) => r.title)].some((text) =>
+            text.toLocaleLowerCase().includes(query),
+          )),
+    )
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return (
-    <LibraryPage title="Projects" back={navigation.canGoBack()}>
-      <View />
+    <LibraryPage
+      title="Projects"
+      back={navigation.canGoBack()}
+      actions={
+        authority.environmentId
+          ? [
+              {
+                icon: "plus",
+                accessibilityLabel: "New project",
+                disabled: !authority.ready || !canCreate,
+                onPress: () => navigation.navigate("LibraryCreate"),
+              },
+            ]
+          : undefined
+      }
+    >
+      <Text className="text-sm text-foreground-muted">
+        Keep the context, repositories and conversations for each thing you’re building together.
+      </Text>
+      {!authority.environmentId ? (
+        <View className="gap-3">
+          <Text className="text-sm text-foreground">
+            Connect your Library once. Your existing threads and folders remain available.
+          </Text>
+          <MaterialButton
+            label="Connect Library"
+            tone="primary"
+            onPress={() => navigation.navigate("LibrarySettings")}
+          />
+        </View>
+      ) : (
+        <>
+          {!authority.connected ? (
+            <LibraryNotice detail="Library offline. Saved projects remain available; reconnect to save changes." />
+          ) : null}
+          <TextInput
+            accessibilityLabel="Search projects"
+            placeholder="Search projects"
+            value={search}
+            onChangeText={setSearch}
+            autoCorrect={false}
+            className="min-h-[44px] rounded-xl bg-field px-4 text-base text-foreground"
+          />
+          <View className="flex-row gap-2">
+            <MaterialButton
+              label="Active"
+              tone={archived ? "text" : "secondary"}
+              onPress={() => setArchived(false)}
+            />
+            <MaterialButton
+              label="Archived"
+              tone={archived ? "secondary" : "text"}
+              onPress={() => setArchived(true)}
+            />
+          </View>
+          <LibraryNotice
+            error={catalog.error}
+            detail={catalog.isPending && catalog.data === null ? "Loading projects..." : null}
+            onRetry={catalog.error ? catalog.refresh : undefined}
+          />
+          <SettingsSection>
+            {projects.map((project, index) => (
+              <ListChoiceRow
+                key={project.id}
+                label={project.title}
+                selected={false}
+                description={
+                  project.resources
+                    .filter((r) => r.kind !== "link")
+                    .map((r) => r.title)
+                    .join(", ") ||
+                  project.brief ||
+                  "No repositories added yet"
+                }
+                separated={index > 0}
+                onPress={() => navigation.navigate("LibraryProject", { projectId: project.id })}
+              />
+            ))}
+          </SettingsSection>
+          {!catalog.isPending && !catalog.error && !projects.length ? (
+            <View className="gap-3 py-4">
+              <Text className="text-base font-t3-medium text-foreground">
+                {query
+                  ? "No matching projects"
+                  : archived
+                    ? "No archived projects"
+                    : "Bring your work together"}
+              </Text>
+              <Text className="text-sm text-foreground-muted">
+                {query
+                  ? "Try another name or component."
+                  : archived
+                    ? "Archived projects keep their context and conversations."
+                    : "Create a project with its brief and separate component repositories. Choose a computer when you start work."}
+              </Text>
+              {!query && !archived ? (
+                <MaterialButton
+                  label="New project"
+                  tone="primary"
+                  disabled={!authority.ready || !canCreate}
+                  onPress={() => navigation.navigate("LibraryCreate")}
+                />
+              ) : null}
+            </View>
+          ) : null}
+        </>
+      )}
     </LibraryPage>
   );
 }

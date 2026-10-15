@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import * as Context from "effect/Context";
+import * as Config from "effect/Config";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -128,6 +129,9 @@ function canonicalJson(value: unknown): unknown {
   );
 }
 const make = Effect.gen(function* () {
+  const isAuthority = yield* Config.Boolean("LOOM_LIBRARY_AUTHORITY").pipe(
+    Config.withDefault(false),
+  );
   const store = yield* LibraryStore.LibraryStore;
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Crypto.Crypto;
@@ -341,6 +345,7 @@ const make = Effect.gen(function* () {
       if (!saved) yield* store.putAuthority(yield* encode(codecs.authority, authority));
       return {
         environmentId: yield* identity.getEnvironmentId,
+        isAuthority,
         authorityId: authority.id,
         authorityEpoch: authority.epoch,
         assets: assets.mode,

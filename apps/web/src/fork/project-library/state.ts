@@ -6,7 +6,8 @@ import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import { connectionAtomRuntime } from "~/connection/runtime";
 import { getLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
-import { useEnvironments } from "~/state/environments";
+import { useEffect } from "react";
+import { usePrimaryEnvironmentId, useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 
 export const projectLibrary = createProjectLibraryAtoms(connectionAtomRuntime);
@@ -35,6 +36,22 @@ export function useLibraryAuthority() {
     environment?.serverConfig?.environment.capabilities,
     PROJECT_LIBRARY_FEATURE,
   );
+  const primaryId = usePrimaryEnvironmentId();
+  const primary = environments.find((entry) => entry.environmentId === primaryId);
+  const primarySupportsLibrary = supportsLoomFeature(
+    primary?.serverConfig?.environment.capabilities,
+    PROJECT_LIBRARY_FEATURE,
+  );
+  const primaryInfo = useEnvironmentQuery(
+    !authorityId && primaryId && primarySupportsLibrary
+      ? projectLibrary.info({ environmentId: primaryId, input: {} })
+      : null,
+  );
+  useEffect(() => {
+    // A designated authority can initialize an empty choice, never replace a saved one.
+    if (!authorityId && primaryId && primaryInfo.data?.isAuthority === true)
+      setAuthorityId(primaryId);
+  }, [authorityId, primaryId, primaryInfo.data?.isAuthority, setAuthorityId]);
   return { authorityId, setAuthorityId, environment, connected, supported, environments, isReady };
 }
 

@@ -397,8 +397,13 @@ export function CommandPalette({ children }: { children: ReactNode }) {
     [setOpen],
   );
   const openNewThreadIn = useCallback(() => {
+    if (/^\/(?:projects|library)(?:\/|$)/.test(window.location.pathname)) {
+      setOpen(false);
+      openLibraryAction("new-conversation");
+      return;
+    }
     dispatch({ _tag: "OpenNewThreadIn" });
-  }, []);
+  }, [setOpen]);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();

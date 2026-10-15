@@ -126,6 +126,7 @@ export const LibraryThreadArchive = Schema.Struct({
 });
 export type LibraryThreadArchive = typeof LibraryThreadArchive.Type;
 export const LibraryInfo = Schema.Struct({
+  isAuthority: Schema.optional(Schema.Boolean),
   environmentId: EnvironmentId,
   authorityId: LibraryId,
   authorityEpoch: PositiveInt,

@@ -9,7 +9,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { projectLibrary, useLibraryPermission } from "./state";
+import { projectLibrary, useLibraryPermission, useLibraryProjects } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { LibrarySetup } from "./LibrarySetup";
 import { validateResources } from "./resources";
@@ -45,6 +45,12 @@ export function ProjectEditorDialog({
   const [resources, setResources] = useState<readonly LibraryResource[]>(
     attempt?.resources ?? project?.resources ?? [],
   );
+  const catalog = useLibraryProjects();
+  const existing = !project
+    ? catalog.query.data?.find(
+        (entry) => entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
+      )
+    : undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
@@ -159,6 +165,19 @@ export function ProjectEditorDialog({
             onChange={(event) => setTitle(event.target.value)}
           />
         </LibraryField>
+        {existing ? (
+          <div className="space-y-2 rounded-lg bg-muted/40 p-3">
+            <p className="text-sm">A project named {existing.title} already exists.</p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || attempt !== null}
+              onClick={() => onSaved(existing)}
+            >
+              Open existing project
+            </Button>
+          </div>
+        ) : null}
         <LibraryField label="What are you building?">
           <Textarea
             rows={3}
