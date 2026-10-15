@@ -534,6 +534,12 @@ describe("Loom update publishing", () => {
     expect(env).not.toHaveProperty("VITE_WS_URL");
   });
 
+  it("gives launchd builds a UTF-8 locale so CocoaPods can install pods", () => {
+    expect(buildEnvironment("/tmp/loom-build", {}).LANG).toBe("en_US.UTF-8");
+    expect(buildEnvironment("/tmp/loom-build", { LANG: "C" }).LANG).toBe("en_US.UTF-8");
+    expect(buildEnvironment("/tmp/loom-build", { LANG: "en_GB.UTF-8" }).LANG).toBe("en_GB.UTF-8");
+  });
+
   it("hashes the final signed ZIP and writes metadata the updater can read", async () => {
     const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-update-test-"));
     try {
