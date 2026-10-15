@@ -315,6 +315,8 @@ export function buildEnvironment(
       "/usr/sbin",
       "/sbin",
     ].join(NodePath.delimiter),
+    // launchd sets no locale, and CocoaPods refuses to install pods without UTF-8.
+    LANG: /utf-?8/i.test(result.LANG ?? "") ? result.LANG : "en_US.UTF-8",
     T3CODE_RELEASE_PUBLIC_CONFIG: "1",
     T3CODE_DESKTOP_UPDATE_REPOSITORY: REPOSITORY,
     T3CODE_DESKTOP_SIGNED: "false",
