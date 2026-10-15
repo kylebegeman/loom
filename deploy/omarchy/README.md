@@ -62,7 +62,7 @@ preserved and reported instead of overwritten.
 
 ## App and AI behavior
 
-See [Using LoomOS](../../docs/user/loom-os.md) for daily commands. Office and Atlas
+See [Using LoomOS](../../docs/fork/user/loom-os.md) for daily commands. Office and Atlas
 share the retained Office Chromium profile, so email links opened from Office sign in
 the same Atlas origin used by its installed window. Cookies and offline storage remain
 isolated by each app’s web origin; Switchboard keeps its own profile. Pack updates
@@ -178,7 +178,7 @@ app service records. It exposes exact destinations, supported controls and
 explicit disconnected or unavailable states. Its refresh is bounded and opening
 it neither executes work nor restarts a service. `loom-os desk connect` explicitly
 commissions the local scoped connection in Secret Service; credentials never go
-in pack configuration or portable recipes. See [Using LoomOS](../../docs/user/loom-os.md)
+in pack configuration or portable recipes. See [Using LoomOS](../../docs/fork/user/loom-os.md)
 for input selection, review and connection commands.
 
 ## Profiles and background work
@@ -241,7 +241,7 @@ expiry and standard client scopes. `--tailscale-serve-port PORT` selects another
 HTTPS port. Private Serve mappings persist across reboot and stay separate from
 Dorothy's AI hub. Join both devices to the tailnet and grant the workstation's
 normal user Tailscale operator access during local commissioning if needed.
-Device revocation and route removal follow [Using LoomOS](../../docs/user/loom-os.md#connect-another-device).
+Device revocation and route removal follow [Using LoomOS](../../docs/fork/user/loom-os.md#connect-another-device).
 
 ## Existing LoomOS migration
 
@@ -301,7 +301,7 @@ loom-os pack rollback
 ```
 
 The native LoomOS maintenance menu exposes release inspection and reviewed rollback;
-see [Using LoomOS](../../docs/user/loom-os.md#appearance-and-integration-maintenance).
+see [Using LoomOS](../../docs/fork/user/loom-os.md#appearance-and-integration-maintenance).
 
 First commission the chosen profile with `install.sh` above; pack releases reuse
 that machine's current configuration. Releases retain immutable copies and the
@@ -368,7 +368,7 @@ Office and Atlas expose their current hosted interface identities and retain the
 own guarded update controls. Switchboard owns private hub releases and routing;
 Omarchy owns system/package updates and recovery. This utility does not create a
 cross-product server deployment authority or use upstream T3 release discovery.
-See [Using LoomOS](../../docs/user/loom-os.md#updates-and-recovery) for native and
+See [Using LoomOS](../../docs/fork/user/loom-os.md#updates-and-recovery) for native and
 CLI review/recovery flows.
 
 ## Reproducible setup
@@ -456,7 +456,7 @@ provider, model and existing app-client inspection. Waiting and reviewed wake
 stay in the portable Switchboard owner, with bounded cancellation and no task replay.
 Wake needs a commissioned target, an unexpired origin-bound declaration and the
 matching current LAN; unsupported wake, secondary hubs and local routes remain
-explicit. See [Using LoomOS](../../docs/user/loom-os.md#private-ai-status-and-recovery).
+explicit. See [Using LoomOS](../../docs/fork/user/loom-os.md#private-ai-status-and-recovery).
 
 ## Implementation packets
 
@@ -482,7 +482,7 @@ pending record supports recovery after interruption. Preset application checks l
 Hyprland bindings and refuses ambiguous ownership or conflicts. Personal text outside
 the block is preserved. Reload is an explicit native choice and requires an unlocked
 session. Larger utility dialogs use per-window Alacritty options; global terminal
-settings are untouched. See [daily controls](../../docs/user/loom-os.md#shortcuts-and-readability).
+settings are untouched. See [daily controls](../../docs/fork/user/loom-os.md#shortcuts-and-readability).
 
 Before preparing a pack release, run the focused gate:
 

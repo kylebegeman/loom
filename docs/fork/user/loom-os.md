@@ -161,7 +161,8 @@ App sounds, permissions, privacy and quiet schedules remain in the owning app.
 
 Office's bell and All alerts manage its delivery rules. Atlas's bell has explicit desktop alert
 controls for work while its client is open, with private previews by default. Loom's
-**Settings → General** controls thread notifications and title previews on this device.
+**Settings → General** controls thread notifications on this device, and whether system
+notifications show thread and pull request titles.
 A notification opens its current record or thread for review and grants no approval.
 Accepted remote push copies may remain in system history after their originating work changes.
 
@@ -271,7 +272,7 @@ Tailscale, the Switchboard credential and model catalog, shared cached limits an
 the workstation service. Failed checks include a next step. These checks never
 send AI prompts or refresh provider usage. `loom-os doctor` prints JSON and returns
 a nonzero exit code when a connection has an error. See the
-[integration pack](../../deploy/omarchy/README.md) for installation, workstation
+[integration pack](../../../deploy/omarchy/README.md) for installation, workstation
 hosting and removal.
 
 ## Connect another device

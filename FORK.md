@@ -156,6 +156,10 @@ cannot serve right now: the `loom.switchboard.limits` RPC reads the Switchboard
 controller's status on `127.0.0.1:8318`, so while every Codex account is on credits only
 the credit models stay selectable. Off, launches and the picker are upstream's.
 
+The LoomOS integration pack for Omarchy workstations lives outside the app in
+`deploy/omarchy`, with its implementation packets in `deploy/omarchy/packets` and
+[user help](docs/fork/user/loom-os.md). `scripts/fork/loom.sh check` runs its tests.
+
 The `respectful-notifications` seams come from LoomOS packet 07
 (`deploy/omarchy/packets/07-respectful-actionable-notifications.md`) and
 `apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
