@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
-  previews: false,
+  previews: true,
   inApp: false,
   toast: vi.fn(),
   shells: new Map(),
@@ -160,7 +160,7 @@ async function render() {
 beforeEach(() => {
   vi.clearAllMocks();
   state.mode = "notifications";
-  state.previews = false;
+  state.previews = true;
   state.inApp = false;
   state.environmentIds = ["one", "two"];
   state.shells.set("one", shell());
@@ -331,23 +331,18 @@ it("badges background failures with in-app notifications enabled", async () => {
   expect(state.toast).not.toHaveBeenCalled();
 });
 
-it("keeps thread titles private by default and clears existing previews when disabled", async () => {
+it("shows thread titles by default and hides them, closing shown previews, when turned off", async () => {
   await render();
   complete();
   await render();
-  expect(TestNotification.sent[0]!.options).toMatchObject({
-    body: "Open Loom to review this thread.",
-    silent: true,
-  });
-  state.previews = true;
-  await render();
-  complete("two");
-  await render();
-  expect(TestNotification.sent.at(-1)!.options.body).toBe("Test thread");
-  const preview = TestNotification.sent.at(-1)!;
+  const preview = TestNotification.sent[0]!;
+  expect(preview.options).toMatchObject({ body: "Test thread", silent: true });
   state.previews = false;
   await render();
   expect(preview.close).toHaveBeenCalled();
+  complete("two");
+  await render();
+  expect(TestNotification.sent.at(-1)!.options.body).toBe("Open Loom to review this thread.");
 });
 
 it.each(["resolved", "archived", "removed"])(

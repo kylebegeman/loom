@@ -274,13 +274,22 @@ describe("ClaudeSettings auto-compaction", () => {
 describe("ClientSettings notifications", () => {
   it("requires opt-in when existing settings omit notification preferences", () => {
     expect(decodeClientSettings({}).notificationMode).toBe("off");
-    expect(decodeClientSettings({}).notificationPreviewsEnabled).toBe(false);
-    expect(
-      decodeClientSettingsPatch({ notificationPreviewsEnabled: true }).notificationPreviewsEnabled,
-    ).toBe(true);
     expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
+  });
+
+  it("shows thread titles in system alerts until previews are turned off", () => {
+    // Settings saved before the preview switch existed keep today's titled alerts.
+    expect(decodeClientSettings({}).notificationPreviewsEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationPreviewsEnabled");
+    expect(
+      decodeClientSettingsPatch({ notificationPreviewsEnabled: false }).notificationPreviewsEnabled,
+    ).toBe(false);
+    expect(
+      encodeClientSettings(decodeClientSettings({ notificationPreviewsEnabled: false }))
+        .notificationPreviewsEnabled,
+    ).toBe(false);
   });
 
   it.each([true, false])(
