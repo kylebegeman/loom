@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
-  previews: true,
+  previews: true, // fork: respectful-notifications
   inApp: false,
   toast: vi.fn(),
   shells: new Map(),
@@ -27,6 +27,7 @@ vi.mock("../state/environments", () => ({
   useEnvironmentIds: () => state.environmentIds,
 }));
 vi.mock("../hooks/useSettings", () => ({
+  // fork: respectful-notifications
   useClientSettings: (
     select: (settings: {
       notificationMode: string;
@@ -39,6 +40,7 @@ vi.mock("../hooks/useSettings", () => ({
       inAppNotificationsEnabled: state.inApp,
       notificationPreviewsEnabled: state.previews,
     }),
+  // fork: respectful-notifications
   getClientSettings: () => ({
     notificationMode: state.mode,
     notificationPreviewsEnabled: state.previews,
@@ -160,7 +162,7 @@ async function render() {
 beforeEach(() => {
   vi.clearAllMocks();
   state.mode = "notifications";
-  state.previews = true;
+  state.previews = true; // fork: respectful-notifications
   state.inApp = false;
   state.environmentIds = ["one", "two"];
   state.shells.set("one", shell());
@@ -171,7 +173,7 @@ beforeEach(() => {
   TestNotification.sent = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("Notification", TestNotification);
-  vi.stubGlobal("navigator", {});
+  vi.stubGlobal("navigator", {}); // fork: respectful-notifications
   vi.stubGlobal("window", Object.assign(new EventTarget(), { focus: vi.fn() }));
   vi.stubGlobal(
     "document",
@@ -331,6 +333,7 @@ it("badges background failures with in-app notifications enabled", async () => {
   expect(state.toast).not.toHaveBeenCalled();
 });
 
+// fork: respectful-notifications
 it("shows thread titles by default and hides them, closing shown previews, when turned off", async () => {
   await render();
   complete();
@@ -345,6 +348,7 @@ it("shows thread titles by default and hides them, closing shown previews, when 
   expect(TestNotification.sent.at(-1)!.options.body).toBe("Open Loom to review this thread.");
 });
 
+// fork: respectful-notifications
 it.each(["resolved", "archived", "removed"])(
   "withdraws obsolete approval banners when %s and rejects stale clicks",
   async (condition) => {

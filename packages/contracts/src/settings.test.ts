@@ -279,6 +279,7 @@ describe("ClientSettings notifications", () => {
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
   });
 
+  // fork: respectful-notifications
   it("shows thread titles in system alerts until previews are turned off", () => {
     // Settings saved before the preview switch existed keep today's titled alerts.
     expect(decodeClientSettings({}).notificationPreviewsEnabled).toBe(true);

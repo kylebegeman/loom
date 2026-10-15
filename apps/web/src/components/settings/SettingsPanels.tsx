@@ -2,6 +2,8 @@ import { SettingsGroup } from "./SettingsGroup";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
+// fork: respectful-notifications
+import { NotificationPreviewsSettingsRow } from "~/fork/respectful-notifications/NotificationPreviewsSettingsRow";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -561,6 +563,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
         ? ["Thread notifications"]
         : []),
+      // fork: respectful-notifications
       ...(settings.notificationPreviewsEnabled !==
       DEFAULT_UNIFIED_SETTINGS.notificationPreviewsEnabled
         ? ["Notification previews"]
@@ -722,7 +725,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
       settings.notificationMode,
-      settings.notificationPreviewsEnabled,
+      settings.notificationPreviewsEnabled, // fork: respectful-notifications
       settings.inAppNotificationsEnabled,
       settings.wordWrap,
       followSystem,
@@ -799,6 +802,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
+      // fork: respectful-notifications
       notificationPreviewsEnabled: DEFAULT_UNIFIED_SETTINGS.notificationPreviewsEnabled,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
@@ -2494,6 +2498,8 @@ export function GeneralSettingsPanel() {
 
       <SettingsSection id="behavior" title="Behavior">
         <NotificationSettings />
+        {/* fork: respectful-notifications */}
+        <NotificationPreviewsSettingsRow />
         <SettingsRow
           {...searchableSetting("in-app-notifications")}
           description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."

@@ -98,6 +98,7 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => state.active,
 }));
 vi.mock("../hooks/useSettings", () => ({
+  // fork: respectful-notifications
   useClientSettings: (
     select: (
       settings: Pick<
@@ -111,6 +112,7 @@ vi.mock("../hooks/useSettings", () => ({
       inAppNotificationsEnabled: state.inApp,
       notificationPreviewsEnabled: true,
     }),
+  // fork: respectful-notifications
   getClientSettings: () => ({ notificationMode: state.mode, notificationPreviewsEnabled: true }),
 }));
 vi.mock("../state/environments", () => ({
@@ -164,7 +166,7 @@ beforeEach(() => {
     background: [],
   });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  // Present synchronously; notificationDelivery.test.ts covers Web Locks coordination.
+  // fork: respectful-notifications: present synchronously; the fork delivery test covers Web Locks.
   vi.stubGlobal("navigator", {});
   vi.stubGlobal("window", new EventTarget());
   vi.stubGlobal("document", {

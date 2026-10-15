@@ -1,4 +1,4 @@
-const RECEIPTS_KEY = "loom.desktop-notifications.delivered.v1";
+const RECEIPTS_KEY = "loom:respectful-notifications:delivered:v1";
 const RECEIPT_LIMIT = 255;
 
 function readReceipts(): string[] {
@@ -27,7 +27,7 @@ export function deliverDesktopNotification(identity: string, present: () => bool
     return;
   }
   void navigator.locks
-    .request("loom-desktop-notifications", () => {
+    .request("loom:respectful-notifications:delivery", () => {
       const receipts = readReceipts();
       if (receipts.includes(identity)) return;
       writeReceipts(receipts);

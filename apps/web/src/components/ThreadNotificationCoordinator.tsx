@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 
-import { deliverDesktopNotification } from "../notificationDelivery";
+// fork: respectful-notifications
+import { deliverDesktopNotification } from "../fork/respectful-notifications/notificationDelivery";
 import { getClientSettings, useClientSettings } from "../hooks/useSettings";
 import { useEnvironmentIds } from "../state/environments";
 import { environmentShell } from "../state/shell";
@@ -31,6 +32,7 @@ export function ThreadNotificationCoordinator() {
   const inAppNotificationsEnabled = useClientSettings(
     (settings) => settings.inAppNotificationsEnabled,
   );
+  // fork: respectful-notifications
   const previews = useClientSettings((settings) => settings.notificationPreviewsEnabled);
   const pending = useRef(
     new Map<string, { environmentId: EnvironmentId; notification: Notification }>(),
@@ -38,6 +40,7 @@ export function ThreadNotificationCoordinator() {
   const onNotification = useCallback((environmentId: EnvironmentId, notification: Notification) => {
     pending.current.get(notification.tag)?.notification.close();
     pending.current.set(notification.tag, { environmentId, notification });
+    // fork: respectful-notifications
     notification.addEventListener("close", () => {
       if (pending.current.get(notification.tag)?.notification !== notification) return;
       pending.current.delete(notification.tag);
@@ -46,6 +49,7 @@ export function ThreadNotificationCoordinator() {
     setNotificationBadge(pending.current.size);
   }, []);
 
+  // fork: respectful-notifications
   const onClear = useCallback((tag: string) => {
     const value = pending.current.get(tag);
     if (!value) return;
@@ -65,27 +69,30 @@ export function ThreadNotificationCoordinator() {
     if (count !== pending.current.size) setNotificationBadge(pending.current.size);
   }, [environmentIds]);
 
-  const clearPending = useCallback(() => {
+  // fork: respectful-notifications
+  useEffect(() => {
+    if (previews) return;
     for (const { notification } of pending.current.values()) notification.close();
     pending.current.clear();
     setNotificationBadge(0);
-  }, []);
+  }, [previews]);
 
   useEffect(() => {
-    if (!previews) clearPending();
-  }, [previews, clearPending]);
-
-  useEffect(() => {
-    clearPending();
+    const clear = () => {
+      for (const { notification } of pending.current.values()) notification.close();
+      pending.current.clear();
+      setNotificationBadge(0);
+    };
+    clear();
     if (!hasDesktopNotifications(mode)) return;
-    const unsubscribe = window.desktopBridge?.onNotificationBadgeClear?.(clearPending);
-    window.addEventListener("focus", clearPending);
+    const unsubscribe = window.desktopBridge?.onNotificationBadgeClear?.(clear);
+    window.addEventListener("focus", clear);
     return () => {
       unsubscribe?.();
-      window.removeEventListener("focus", clearPending);
-      clearPending();
+      window.removeEventListener("focus", clear);
+      clear();
     };
-  }, [mode, clearPending]);
+  }, [mode]);
 
   useEffect(() => {
     if (!hasNotificationSound(mode)) return;
@@ -104,7 +111,7 @@ export function ThreadNotificationCoordinator() {
       key={environmentId}
       environmentId={environmentId}
       onNotification={onNotification}
-      onClear={onClear}
+      onClear={onClear} // fork: respectful-notifications
     />
   ));
 }
@@ -118,11 +125,11 @@ interface NotificationState {
 function EnvironmentNotifications({
   environmentId,
   onNotification,
-  onClear,
+  onClear, // fork: respectful-notifications
 }: {
   environmentId: EnvironmentId;
   onNotification: (environmentId: EnvironmentId, notification: Notification) => void;
-  onClear: (tag: string) => void;
+  onClear: (tag: string) => void; // fork: respectful-notifications
 }) {
   const shell = useAtomValue(environmentShell.stateValueAtom(environmentId));
   // The shell reducer keeps the thread list and unchanged thread objects
@@ -141,6 +148,7 @@ function EnvironmentNotifications({
 
   useEffect(() => {
     if (threads === null) {
+      // fork: respectful-notifications
       for (const id of previous.current.keys()) onClear(`${environmentId}:${id}`);
       previous.current.clear();
       return;
@@ -157,6 +165,7 @@ function EnvironmentNotifications({
       const thread = presentThreadShell(environmentId, rawThread);
       let status = resolveSidebarThreadStatus(thread);
       if (status === "ready" && thread.latestRun?.status === "failed") status = "failed";
+      // fork: respectful-notifications
       const attention =
         status === "input" || status === "approval" || status === "failed" || status === "limited"
           ? `${thread.latestRun?.runId ?? ""}:${rawThread.pendingRuntimeRequest?.id ?? ""}:${status}`
@@ -170,6 +179,7 @@ function EnvironmentNotifications({
           ? completedAt
           : (prior?.completion ?? null);
       next.set(thread.id, { raw: rawThread, attention, completion });
+      // fork: respectful-notifications
       if (
         prior &&
         (thread.archivedAt !== null ||
@@ -244,7 +254,9 @@ function EnvironmentNotifications({
         Notification.permission !== "granted"
       )
         continue;
+      // fork: respectful-notifications
       previous.current.set(thread.id, next.get(thread.id)!);
+      // fork: respectful-notifications
       deliverDesktopNotification(
         `${environmentId}:${thread.id}:${rawThread.latestRunId}:${attention ?? completion}`,
         () => {
@@ -294,6 +306,7 @@ function EnvironmentNotifications({
         },
       );
     }
+    // fork: respectful-notifications
     for (const id of previous.current.keys()) if (!next.has(id)) onClear(`${environmentId}:${id}`);
     previous.current = next;
   }, [
@@ -304,7 +317,7 @@ function EnvironmentNotifications({
     mode,
     navigate,
     onNotification,
-    onClear,
+    onClear, // fork: respectful-notifications
     threads,
   ]);
 

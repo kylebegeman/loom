@@ -156,6 +156,17 @@ cannot serve right now: the `loom.switchboard.limits` RPC reads the Switchboard
 controller's status on `127.0.0.1:8318`, so while every Codex account is on credits only
 the credit models stay selectable. Off, launches and the picker are upstream's.
 
+The `respectful-notifications` seams come from LoomOS packet 07
+(`deploy/omarchy/packets/07-respectful-actionable-notifications.md`) and
+`apps/web/src/fork/respectful-notifications`. One `notificationPreviewsEnabled` client
+setting, on by default, chooses between the thread title and a generic body in system
+notifications. Its switch renders under Thread notifications in General settings
+(`SettingsPanels.tsx`, `settingsSearch.ts`, `packages/contracts/src/settings.ts`).
+`ThreadNotificationCoordinator.tsx` (15 marker lines) withdraws a notification once its
+thread is answered, archived or removed, ignores clicks on stale ones, and delivers through
+Web Locks so several windows on one origin show one notification. Its two upstream tests
+mark the mock changes and the added cases.
+
 `apps/server/scripts/migrate-dev-db.ts` (`fork: dev-db`, 2 marker lines) skips the Loom
 tables listed in `apps/server/src/fork/devDb.ts` when it copies the real database. Their
 rows name the live install's lanes, run folders and graphs, and a dev server reconciling

@@ -382,6 +382,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
+  // fork: respectful-notifications
   {
     id: "notification-previews",
     title: "Notification previews",
