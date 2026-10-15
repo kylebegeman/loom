@@ -297,20 +297,31 @@ export const switchboardClaudeQueryOptions = (): {
   sdkSettings?: ReturnType<typeof routing>["claudeSettings"];
 } => (enabled ? { sdkSettings: currentRouting().claudeSettings } : {});
 
+/** Where a Limits read finds the routed hub's usage; `controller` is null when none is configured. */
+export interface SwitchboardUsageSource {
+  readonly controller: string | null;
+}
+
 /**
- * The controller holding Switchboard's shared usage readings when `hubUrl` is the
- * hub this server routes through, else null. Gated on routing because a plain
- * CLIProxyAPI hub also listens on 8317 and must keep its own usage polling.
+ * The usage source for `hubUrl` when it is the hub this server routes through,
+ * else null. Gated on routing because a plain CLIProxyAPI hub also listens on 8317
+ * and must keep its own usage polling. The routed hub's controller owns collection,
+ * so a missing or invalid controller setting never turns into provider polling.
  */
-export const switchboardUsageController = (hubUrl: string): string | null => {
+export const switchboardUsageController = (hubUrl: string): SwitchboardUsageSource | null => {
   if (!enabled) return null;
+  let routedHub: string | null;
   try {
-    const hub = hubKey(hubUrl);
-    return hub !== null && hub === hubKey(currentRouting().url)
-      ? resolveSwitchboardController(launchEnvironment)
-      : null;
+    routedHub = hubKey(currentRouting().url);
   } catch {
     return null;
+  }
+  const hub = hubKey(hubUrl);
+  if (hub === null || hub !== routedHub) return null;
+  try {
+    return { controller: resolveSwitchboardController(launchEnvironment) };
+  } catch {
+    return { controller: null };
   }
 };
 

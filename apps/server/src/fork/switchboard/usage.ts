@@ -15,7 +15,8 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { codexPlanLabel } from "../../provider/CodexProvider.ts";
 import { claudeUsageResponseToLimits } from "../../provider/claudeUsageLimits.ts";
 import { codexRateLimitsToLimits } from "../../provider/codexUsageLimits.ts";
-import { isCurrentEvaluation } from "./limits.ts";
+import { isCurrentEvaluation, switchboardDriver } from "./limits.ts";
+import type { SwitchboardUsageSource } from "./switchboard.ts";
 
 /**
  * Switchboard's controller owns usage collection for its hub, so a Limits read of
@@ -83,10 +84,14 @@ export interface HubAuthFile {
   readonly id: string;
   readonly name?: string | undefined;
   readonly disabled?: boolean | undefined;
-  readonly id_token?: { readonly chatgpt_account_id?: string | undefined } | undefined;
+  readonly id_token?:
+    | {
+        readonly chatgpt_account_id?: string | undefined;
+        readonly chatgpt_plan_type?: string | undefined;
+      }
+    | undefined;
 }
 
-const DRIVERS = { claude: "claudeAgent", codex: "codex" } as const;
 /** Switchboard withholds credits older than this from redemption; Loom checks again by its own clock. */
 const RESET_CREDITS_MAX_AGE_MS = 10 * 60_000;
 const FUTURE_SKEW_MS = 60_000;
@@ -182,7 +187,7 @@ export function cachedUsageAccounts(
     snapshot.health.stale !== true &&
     snapshot.health.error !== "controller-pass-failed";
   return snapshot.accounts.flatMap((account): ReadonlyArray<UsageLimitSourceAccount> => {
-    const driver = DRIVERS[account.provider as keyof typeof DRIVERS];
+    const driver = switchboardDriver(account.provider);
     if (driver === undefined) return [];
     const file = files?.find((entry) => entry.name === account.id || entry.id === account.id);
     if (file?.disabled) return [];
@@ -200,7 +205,11 @@ export function cachedUsageAccounts(
     const workspaceId = file?.id_token?.chatgpt_account_id?.trim();
     const email = account.email?.trim();
     const plan =
-      driver === "codex" ? codexPlanLabel(usage?.plan) : usage ? "Claude Subscription" : undefined;
+      driver === "codex"
+        ? codexPlanLabel(usage?.plan ?? file?.id_token?.chatgpt_plan_type)
+        : usage
+          ? "Claude Subscription"
+          : undefined;
     const resetCredits =
       driver === "codex" && current ? currentResetCredits(account.resetCredits, now) : undefined;
     const usageLimits: ServerProviderUsageLimits =
@@ -235,9 +244,13 @@ const decodeDashboardSession = Schema.decodeUnknownEffect(
 );
 const REQUEST_TIMEOUT = "2 seconds";
 
-/** Reads the controller's cached usage; `authFiles` only names accounts, so its failure is tolerated. */
+/**
+ * Reads the controller's cached usage; `authFiles` only names accounts, so its
+ * failure is tolerated. Without a controller nothing is read, and the hub's
+ * accounts are not polled in its place.
+ */
 export const readSwitchboardUsage = <E>(
-  controller: string,
+  source: SwitchboardUsageSource,
   authFiles: Effect.Effect<ReadonlyArray<HubAuthFile>, E>,
 ): Effect.Effect<
   ReadonlyArray<UsageLimitSourceAccount>,
@@ -245,6 +258,13 @@ export const readSwitchboardUsage = <E>(
   HttpClient.HttpClient
 > =>
   Effect.gen(function* () {
+    const { controller } = source;
+    if (controller === null) {
+      return yield* new UsageLimitSourceError({
+        detail:
+          "This Switchboard hub has no controller configured. Set LOOM_SWITCHBOARD_CONTROLLER_URL on this server to its controller origin. Loom does not poll providers in its place.",
+      });
+    }
     const client = yield* HttpClient.HttpClient;
     const [snapshot, files] = yield* Effect.all(
       [
@@ -277,8 +297,10 @@ export const readSwitchboardUsage = <E>(
  * means a collection is already pending or cooling down, which serves as well.
  */
 export const requestSharedCollection = Effect.fn("Switchboard.requestCollection")(function* (
-  controller: string,
+  source: SwitchboardUsageSource,
 ) {
+  const { controller } = source;
+  if (controller === null) return;
   const client = yield* HttpClient.HttpClient;
   const session = yield* client.get(`${controller}/api/dashboard`).pipe(
     Effect.flatMap(HttpClientResponse.filterStatusOk),

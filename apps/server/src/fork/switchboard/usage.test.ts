@@ -245,6 +245,24 @@ describe("Switchboard cached usage through the hub source", () => {
     }),
   );
 
+  it.effect("never polls a routed hub that has no controller configured", () =>
+    Effect.gen(function* () {
+      const remote = "https://hub.example.test";
+      setSwitchboardEnvironment({ LOOM_SWITCHBOARD_URL: remote }, "linux");
+      yield* TestClock.setTime(NOW);
+      const test = fixture();
+      const api = yield* test.api;
+      const error = yield* api.readAccounts({ ...hub, url: remote }).pipe(Effect.flip);
+      expect(error.detail).toContain("LOOM_SWITCHBOARD_CONTROLLER_URL");
+      expect(test.requests).toEqual([]);
+
+      // A redemption still goes through the hub; there is no controller to ask.
+      const result = yield* api.consume({ ...hub, url: remote }, "codex-a.json", "credit-1");
+      expect(result).toEqual({ outcome: "reset" });
+      expect(test.requests.filter((request) => request.url.includes("/api/"))).toEqual([]);
+    }),
+  );
+
   it.effect("asks the controller to collect again after a redemption", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(NOW);
@@ -295,6 +313,38 @@ describe("cachedUsageAccounts", () => {
     expect(unavailable(usage([codexAccount()]), NOW + 24 * HOUR)).toEqual([
       { reason: "probeFailed", resetCredits: undefined },
     ]);
+  });
+
+  it("falls back to the hub credential's plan when the reading names none", () => {
+    const [account] = cachedUsageAccounts(
+      usage([
+        codexAccount({
+          usage: {
+            session: { usedPercent: 20, resetsAt: null },
+            weekly: { usedPercent: 60, resetsAt: null },
+            plan: null,
+          },
+        }),
+      ]),
+      NOW,
+      [
+        {
+          ...files[0]!,
+          id_token: { chatgpt_account_id: "workspace-a", chatgpt_plan_type: "plus" },
+        },
+      ],
+    );
+    expect(account?.plan).toBe("ChatGPT Plus Subscription");
+  });
+
+  it("skips providers named after inherited object keys", () => {
+    expect(
+      cachedUsageAccounts(
+        usage([codexAccount({ id: "odd.json", provider: "constructor" })]),
+        NOW,
+        files,
+      ),
+    ).toEqual([]);
   });
 
   it("keeps the original observation time of a current reading", () => {

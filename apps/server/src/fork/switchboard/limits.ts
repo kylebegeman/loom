@@ -23,11 +23,19 @@ export function isCurrentEvaluation(evaluatedAt: string, now: number): boolean {
  * `GET /api/v1/availability` from the controller's cached operations API. States
  * and providers are read as strings: Switchboard asks clients to treat values they
  * do not know conservatively, and here that means as unknown, never as blocked.
+ * `health` describes the controller's own collection, since `evaluatedAt` is
+ * always the time of the read.
  */
 export const SwitchboardAvailability = Schema.Struct({
   version: Schema.Literal(1),
   service: Schema.Literal("switchboard"),
   evaluatedAt: Schema.String,
+  health: Schema.optional(
+    Schema.Struct({
+      stale: Schema.optional(Schema.Boolean),
+      error: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
   models: Schema.Array(
     Schema.Struct({
       id: Schema.String,
@@ -40,7 +48,13 @@ export const SwitchboardAvailability = Schema.Struct({
 });
 type SwitchboardAvailability = typeof SwitchboardAvailability.Type;
 
-const DRIVERS = { claude: "claudeAgent", codex: "codex" } as const;
+const DRIVERS: Readonly<Record<string, SwitchboardModelAvailability["driver"]>> = {
+  claude: "claudeAgent",
+  codex: "codex",
+};
+/** The Loom driver for a provider Switchboard names, ignoring inherited object keys. */
+export const switchboardDriver = (provider: string) =>
+  Object.hasOwn(DRIVERS, provider) ? DRIVERS[provider] : undefined;
 const STATES: ReadonlySet<string> = new Set(["available", "restricted", "unavailable", "unknown"]);
 
 const STALE: SwitchboardLimits = { limits: [], availability: "stale" };
@@ -49,15 +63,23 @@ const STALE: SwitchboardLimits = { limits: [], availability: "stale" };
  * Turns Switchboard's per-model states into what the picker blocks. Only a
  * confirmed `unavailable` blocks its model. A provider gets a provider-wide limit
  * only when every model Switchboard lists for it is confirmed unavailable or
- * credit-only, so models missing from its catalog stay selectable otherwise.
+ * credit-only; that limit also covers models missing from its catalog. A reading
+ * the controller itself calls stale or failed, an empty catalog, or one where no
+ * state is known reports availability as unknown and blocks nothing.
  */
 export function switchboardLimits(
   snapshot: SwitchboardAvailability,
   now: number,
 ): SwitchboardLimits {
-  if (!isCurrentEvaluation(snapshot.evaluatedAt, now)) return STALE;
+  if (
+    !isCurrentEvaluation(snapshot.evaluatedAt, now) ||
+    snapshot.health?.stale === true ||
+    snapshot.health?.error === "controller-pass-failed"
+  ) {
+    return STALE;
+  }
   const models: SwitchboardModelAvailability[] = snapshot.models.flatMap((model) => {
-    const driver = DRIVERS[model.provider as keyof typeof DRIVERS];
+    const driver = switchboardDriver(model.provider);
     if (driver === undefined) return [];
     const resetAt = model.resetAt ?? null;
     return [
@@ -72,6 +94,7 @@ export function switchboardLimits(
       },
     ];
   });
+  if (models.every((model) => model.state === "unknown")) return STALE;
   const limits: SwitchboardLimit[] = [];
   for (const driver of Object.values(DRIVERS)) {
     const listed = models.filter((model) => model.driver === driver);

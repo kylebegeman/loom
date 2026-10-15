@@ -398,7 +398,7 @@ describe("Switchboard environment configuration", () => {
       "http://localhost:8317/",
       "http://127.0.0.1:8317/v1",
     ]) {
-      expect(switchboardUsageController(hub)).toBe("http://127.0.0.1:8318");
+      expect(switchboardUsageController(hub)).toEqual({ controller: "http://127.0.0.1:8318" });
     }
     expect(switchboardUsageController("http://127.0.0.1:9317")).toBeNull();
     expect(switchboardUsageController("https://hub.example.test")).toBeNull();
@@ -409,10 +409,28 @@ describe("Switchboard environment configuration", () => {
       },
       "linux",
     );
-    expect(switchboardUsageController("https://hub.example.test/v1")).toBe(
-      "https://controller.example.test",
-    );
+    expect(switchboardUsageController("https://hub.example.test/v1")).toEqual({
+      controller: "https://controller.example.test",
+    });
     expect(switchboardUsageController("http://127.0.0.1:8317")).toBeNull();
+  });
+
+  it("keeps a routed hub with no usable controller off provider polling", () => {
+    setSwitchboardEnabled(true);
+    for (const controller of [undefined, "", "not a url"]) {
+      setSwitchboardEnvironment(
+        {
+          LOOM_SWITCHBOARD_URL: "https://hub.example.test",
+          ...(controller === undefined ? {} : { LOOM_SWITCHBOARD_CONTROLLER_URL: controller }),
+        },
+        "linux",
+      );
+      expect(switchboardUsageController("https://hub.example.test")).toEqual({
+        controller: null,
+      });
+    }
+    setSwitchboardEnvironment({ LOOM_SWITCHBOARD_URL: "not a url" }, "linux");
+    expect(switchboardUsageController("https://hub.example.test")).toBeNull();
   });
 
   it.each(["secret-tool lookup service switchboard", "/opt/key\nhelper", "", "~/bin/key-helper"])(

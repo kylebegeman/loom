@@ -96,7 +96,8 @@ describe("Switchboard availability", () => {
       },
     });
     return Effect.gen(function* () {
-      expect(yield* f.readLimits).toEqual({ limits: [], models: [], availability: "available" });
+      // A reachable controller with no reading yet still cannot report availability.
+      expect(yield* f.readLimits).toEqual({ limits: [], availability: "stale" });
       expect(f.requests.map((request) => request.url)).toEqual([
         "https://controller.example.test:8443/api/v1/availability",
       ]);
@@ -104,7 +105,11 @@ describe("Switchboard availability", () => {
   });
 
   it.effect("observes routing being turned off without another request", () => {
-    const f = fixture();
+    const f = fixture({
+      response: Response.json(
+        availability([{ id: "gpt-test", provider: "codex", state: "available", reason: "ready" }]),
+      ),
+    });
     return Effect.gen(function* () {
       expect((yield* f.readLimits).availability).toBe("available");
       const settings = yield* ServerSettings.ServerSettingsService;
