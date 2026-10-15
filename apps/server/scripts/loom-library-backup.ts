@@ -273,7 +273,8 @@ const prune = Command.make(
 export const loomLibraryBackupCommand = Command.make("library-backup").pipe(
   Command.withSubcommands([snapshot, verify, restorePreview, restore, prune]),
 );
-if (import.meta.main)
+// Bundled executables can expose import.meta.main for imported scripts as well as bin.ts.
+if (import.meta.main && process.argv[1]?.replaceAll("\\", "/").endsWith("/loom-library-backup.ts"))
   Command.run(loomLibraryBackupCommand, { version: "0.0.0" }).pipe(
     Effect.provide(NodeServices.layer),
     NodeRuntime.runMain,

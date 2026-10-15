@@ -457,7 +457,8 @@ publish_main() {
   say "Publishing main"
   if ! node scripts/fork/updates.ts publish --wait; then
     [ -n "$(published_record)" ] || die "publishing failed; see the output above"
-    echo "The build is ready, but a later publishing step failed. The scheduled publisher retries it."
+    echo "The local build is ready, but publication failed. The scheduled publisher retries it."
+    return 1
   fi
 }
 

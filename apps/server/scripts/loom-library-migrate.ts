@@ -732,7 +732,8 @@ const upload = Command.make(
 export const loomLibraryMigrationCommand = Command.make("library-migrate").pipe(
   Command.withSubcommands([snapshot, inventory, exportCommand, upload, activate]),
 );
-if (import.meta.main)
+// Bundled executables can expose import.meta.main for imported scripts as well as bin.ts.
+if (import.meta.main && process.argv[1]?.replaceAll("\\", "/").endsWith("/loom-library-migrate.ts"))
   Command.run(loomLibraryMigrationCommand, { version: "0.0.0" }).pipe(
     Effect.provide(Layer.merge(NodeServices.layer, FetchHttpClient.layer)),
     NodeRuntime.runMain,
