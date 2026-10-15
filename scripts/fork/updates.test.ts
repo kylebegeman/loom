@@ -14,6 +14,7 @@ import {
   buildEnvironment,
   preparedConnectConfig,
   launchAgent,
+  nextLoomVersion,
   iosPublishConfig,
   unlockIosSigningKeychain,
   iosSourceQualification,
@@ -241,6 +242,24 @@ describe("Loom update publishing", () => {
     });
     expect(release.version).toBe("0.0.48-nightly.20261013.3044");
     expect(release.releaseTag).toBe(release.version);
+  });
+
+  it("names the version land tags so the publisher releases exactly that version", () => {
+    const publications = ["0.0.55-nightly.20261014.3054", "0.0.9", "before-loom"];
+    const version = nextLoomVersion(publications, "v0.0.46-nightly.20261015.3158");
+    expect(version).toBe("0.0.56-nightly.20261015.3158");
+    expect(nextLoomVersion(publications, "v0.0.46")).toBe("0.0.56");
+    expect(nextLoomVersion(publications)).toBe("0.0.56");
+    expect(
+      releaseForTag(`loom-v${version}`, COMMIT, {
+        annotation: `loom-release=${version}`,
+        publications: publications.map((tag) => ({ tag, commit: "a".repeat(40) })),
+      }).version,
+    ).toBe(version);
+  });
+
+  it("refuses to invent a Loom version without publication history", () => {
+    expect(() => nextLoomVersion(["before-loom"], "v0.0.46")).toThrow("No Loom publication");
   });
 
   it("reuses an immutable publication for the same source and channel", () => {

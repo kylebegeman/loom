@@ -409,6 +409,24 @@ it("still locates legacy installed records carrying the version in upstream", ()
   ).toBe(f.record);
 });
 
+it("offers only published builds to install and rollback", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-records-"));
+  roots.push(root);
+  const record = (name: string, built: string, published: boolean) => {
+    const dir = NodePath.join(root, name);
+    NodeFS.mkdirSync(NodePath.join(dir, "updates"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(dir, "build.env"), `built=${built}\n`);
+    if (published) NodeFS.writeFileSync(NodePath.join(dir, "updates/ready"), "");
+    return dir;
+  };
+  const older = record("0.0.55-nightly.20261014.3054-aaaaaaaaaa", "2026-10-14T00:00:00Z", true);
+  record("0.0.46-nightly.20261015.3158-bbbbbbbbbb", "2026-10-15T00:00:00Z", false);
+  const newer = record("0.0.56-nightly.20261015.3158-cccccccccc", "2026-10-15T01:00:00Z", true);
+  expect(
+    runMetadata(root, "BUILDS_DIR=$LOOM_TEST_BUILDS; records", { LOOM_TEST_BUILDS: root }),
+  ).toBe(`${newer}\n${older}`);
+});
+
 it("suggests the exact saved commit after rollback instead of inventing a Loom tag", () => {
   const f = fixture();
   const commit = "0123456789abcdef0123456789abcdef01234567";
