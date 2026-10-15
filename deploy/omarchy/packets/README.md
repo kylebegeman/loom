@@ -1,6 +1,6 @@
 # LoomOS implementation packets
 
-Kyle selected every proposal except original major idea #14. This records implementation authorization, not completion. Original idea numbers are stable. #14, Saved project workspaces, is excluded.
+Kyle selected every proposal except original major idea #14. This records implementation authorization, not completion. Source SHAs in packet evidence name commits on the original feature branch; the landed commits on main have different SHAs. Original idea numbers are stable. #14, Saved project workspaces, is excluded.
 
 The canonical packet data is [packets.json](packets.json). Read the [interactive review](index.html), or open individual packets below. Regenerate these views with `node deploy/omarchy/packets/render.mjs`; verify consistency with `--check`.
 
