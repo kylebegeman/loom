@@ -32,12 +32,13 @@ export function runtimeReleaseComplete(version: string, assets: readonly string[
   return runtimeReleaseAssets(version).every((asset) => existing.has(asset));
 }
 
-function gh(args: string[]): string {
+// The publisher passes its build environment, whose PATH finds Homebrew's gh under launchd.
+function gh(env: Readonly<Record<string, string | undefined>>, args: string[]): string {
   const result = NodeChildProcess.spawnSync("gh", args, {
     encoding: "utf8",
     maxBuffer: 8 * 1024 * 1024,
     timeout: 60_000,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: { ...env, GIT_TERMINAL_PROMPT: "0" },
   });
   if (result.error) throw result.error;
   if (result.status !== 0)
@@ -55,7 +56,15 @@ export async function ensureRuntimeReleaseAssets(input: {
   validateRuntimeRelease(input.version, input.sourceSha);
   const release = () =>
     JSON.parse(
-      gh(["release", "view", input.version, "--repo", REPOSITORY, "--json", "assets,isDraft"]),
+      gh(input.env, [
+        "release",
+        "view",
+        input.version,
+        "--repo",
+        REPOSITORY,
+        "--json",
+        "assets,isDraft",
+      ]),
     ) as { assets: Array<{ name: string }>; isDraft: boolean };
   const current = release();
   if (
@@ -70,7 +79,7 @@ export async function ensureRuntimeReleaseAssets(input: {
 
   const runs = () =>
     JSON.parse(
-      gh([
+      gh(input.env, [
         "run",
         "list",
         "--repo",
@@ -121,7 +130,7 @@ export async function ensureRuntimeReleaseAssets(input: {
     ];
     for (const [key, field] of Object.entries(PUBLIC_FIELDS))
       args.push("-f", `${field}=${input.env[key]?.trim() ?? ""}`);
-    gh(args);
+    gh(input.env, args);
     input.log?.(`Building checked runtime archives for ${input.version}.`);
   }
 
