@@ -1,8 +1,8 @@
 import * as NodeTest from "node:test";
 import * as NodeAssert from "node:assert/strict";
 import * as NodeZlib from "node:zlib";
-import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -166,18 +166,27 @@ NodeTest.test(
 );
 NodeTest.test(
   "default capture watcher executes the installed JavaScript entrypoint behind its shell launcher",
-  { timeout: 5000 },
+  // A loaded machine can take several seconds to start the detached Node process.
+  { timeout: 30_000 },
   async (t) => {
     const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "loom-capture-watcher-"));
     t.after(() => NodeFSP.rm(home, { recursive: true, force: true }));
+    // The detached watcher reports its exit over a socket: a file watcher can miss the event
+    // on a busy machine and wait forever. Socket paths are limited to about 100 bytes, which
+    // a long TMPDIR can exceed.
+    const socketHome = await NodeFSP.mkdtemp(
+      NodePath.join(NodeOS.tmpdir().length > 60 ? "/tmp" : NodeOS.tmpdir(), "loom-cw-"),
+    );
+    t.after(() => NodeFSP.rm(socketHome, { recursive: true, force: true }));
     const preload = NodePath.join(home, "watcher-exit.mjs"),
-      report = NodePath.join(home, "watcher-exit.json");
+      socket = NodePath.join(socketHome, "exit.sock");
     await NodeFSP.writeFile(
       preload,
-      `import fs from "node:fs";
-process.once("exit", (code) => {
-  fs.writeFileSync(${JSON.stringify(report + ".tmp")}, JSON.stringify({ code, args: process.captureWatcherArgs ?? null }));
-  fs.renameSync(${JSON.stringify(report + ".tmp")}, ${JSON.stringify(report)});
+      `import net from "node:net";
+process.once("beforeExit", (code) => {
+  net
+    .connect(${JSON.stringify(socket)})
+    .end(JSON.stringify({ code: code ?? 0, args: process.captureWatcherArgs ?? null }));
 });
 `,
     );
@@ -197,15 +206,24 @@ process.once("exit", (code) => {
     await NodeFSP.writeFile(p.bin, `#!/bin/sh\nexec node ${shellQuote(entrypoint)} "$@"\n`, {
       mode: 0o755,
     });
-    let watcher;
+    let reported;
     const completion = new Promise((resolve, reject) => {
-      watcher = NodeFS.watch(home, (_event, file) => {
-        if (file === "watcher-exit.json")
-          NodeFSP.readFile(report, "utf8").then((value) => resolve(JSON.parse(value)), reject);
+      reported = NodeNet.createServer((connection) => {
+        let text = "";
+        connection.setEncoding("utf8");
+        connection.on("data", (chunk) => (text += chunk));
+        connection.on("end", () => {
+          try {
+            resolve(JSON.parse(text));
+          } catch (error) {
+            reject(error);
+          }
+        });
       });
-      watcher.once("error", reject);
+      reported.once("error", reject);
     });
-    t.after(() => watcher.close());
+    t.after(() => reported.close());
+    await new Promise((resolve) => reported.listen(socket, resolve));
     const choices = ["Choose destination", "Office Note"],
       result = await nativeCapture(config, env, {
         initialApp: "office",
