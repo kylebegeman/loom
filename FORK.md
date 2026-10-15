@@ -284,8 +284,10 @@ that `main` lacks, it merges it on `integrate/<tag>`, runs the fork's checks and
 pull request. A pull request that passes on the first try merges by itself and `main` is
 tagged `loom-<tag>` (the repository variable `LOOM_AUTO_MERGE`). If the merge conflicts or
 a check fails, Claude (Opus 5.5, high effort) repairs it on the same branch within the
-seam rules and says what it changed on the pull request, or opens a draft marked "needs
-Kyle" when it cannot. Those pull requests wait for review.
+seam rules and says what it changed on the pull request. When it cannot, the run opens a
+draft marked "needs Kyle" with its report, so a failed day never passes silently. Those
+pull requests wait for review, and each new integration pull request closes the older ones
+whose upstream tag it already contains.
 
 Nothing installs by itself. Feed-enabled builds use the existing update button: download
 the update, then restart and install when ready. The local publisher described below builds
