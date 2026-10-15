@@ -39,6 +39,7 @@ const Discovery = Schema.Struct({
   authorization_endpoint: Schema.String,
   token_endpoint: Schema.String,
   jwks_uri: Schema.String,
+  userinfo_endpoint: Schema.optional(Schema.String),
   code_challenge_methods_supported: Schema.Array(Schema.String),
 });
 const JwkSet = Schema.Struct({ keys: Schema.Array(Schema.Record(Schema.String, Schema.Unknown)) });
@@ -58,6 +59,12 @@ const Claims = Schema.Struct({
   azp: Schema.optional(Schema.String),
 });
 const decodeClaims = Schema.decodeUnknownEffect(Claims);
+const readUserInfo = HttpClientResponse.schemaBodyJson(
+  Schema.Struct({
+    sub: Schema.String.check(Schema.isMinLength(1)),
+    groups: Schema.optional(Schema.Array(Schema.String)),
+  }),
+);
 const readDiscovery = HttpClientResponse.schemaBodyJson(Discovery);
 const readKeys = HttpClientResponse.schemaBodyJson(JwkSet);
 const readTokenResponse = HttpClientResponse.schemaBodyJson(TokenResponse);
@@ -246,7 +253,12 @@ const make = Effect.gen(function* () {
       )
         return yield* new PocketIdError({ reason: "discovery" });
       const issuerOrigin = (yield* secureUrl(expectedIssuer)).origin;
-      for (const endpoint of [value.authorization_endpoint, value.token_endpoint, value.jwks_uri]) {
+      for (const endpoint of [
+        value.authorization_endpoint,
+        value.token_endpoint,
+        value.jwks_uri,
+        ...(value.userinfo_endpoint ? [value.userinfo_endpoint] : []),
+      ]) {
         if ((yield* secureUrl(endpoint)).origin !== issuerOrigin)
           return yield* new PocketIdError({ reason: "discovery" });
       }
@@ -340,6 +352,28 @@ const make = Effect.gen(function* () {
       (claims.client_id === undefined || !acceptedClients.includes(claims.client_id))
     )
       return yield* new PocketIdError({ reason: "token" });
+    if (!allowedSubjects.includes(claims.sub))
+      return yield* new PocketIdError({ reason: "subject" });
+    if (requiredGroups.length > 0 && claims.groups === undefined) {
+      // Pocket ID 2.18 places group claims in UserInfo/ID tokens, not its RFC 9068 resource JWT.
+      // Validate the bearer first, then bind the issuer's current group response to that exact subject.
+      const endpoint = (yield* discovery).userinfo_endpoint;
+      if (!endpoint) return yield* new PocketIdError({ reason: "discovery" });
+      const response = yield* http
+        .execute(
+          HttpClientRequest.get(endpoint).pipe(HttpClientRequest.bearerToken(Redacted.make(token))),
+        )
+        .pipe(
+          Effect.timeout("15 seconds"),
+          Effect.mapError((cause) => new PocketIdError({ reason: "discovery", cause })),
+        );
+      if (response.status !== 200) return yield* new PocketIdError({ reason: "token" });
+      const info = yield* readUserInfo(response).pipe(
+        Effect.mapError((cause) => new PocketIdError({ reason: "token", cause })),
+      );
+      if (info.sub !== claims.sub) return yield* new PocketIdError({ reason: "token" });
+      return yield* grant({ ...verified.payload, groups: info.groups });
+    }
     return yield* grant(verified.payload);
   });
   const issue = Effect.fnUntraced(function* (
@@ -358,14 +392,19 @@ const make = Effect.gen(function* () {
     const now = yield* DateTime.now;
     if (identity.expiresAt.epochMilliseconds <= now.epochMilliseconds)
       return yield* new PocketIdError({ reason: "token" });
-    // The identity token authorizes enrollment; this host owns session expiry and revocation.
+    // Host revocation remains local; identity-based sessions never outlive their accepted token.
     return yield* sessions
       .issue({
         subject: identity.subject,
         method: input.method,
         scopes,
         client: input.client,
-        ttl: HOST_SESSION_TTL,
+        ttl: Duration.millis(
+          Math.min(
+            Duration.toMillis(HOST_SESSION_TTL),
+            identity.expiresAt.epochMilliseconds - now.epochMilliseconds,
+          ),
+        ),
         ...(input.proofKeyThumbprint === undefined
           ? {}
           : { proofKeyThumbprint: input.proofKeyThumbprint }),

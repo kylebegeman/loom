@@ -51,6 +51,7 @@ const fixture = Effect.gen(function* () {
   const issued: Array<NonNullable<Parameters<SessionStore.SessionStore["Service"]["issue"]>[0]>> =
     [];
   const tokenReply = { access: "", id: "" };
+  const userInfo = { sub: "owner-id", groups: ["owner"] };
   const requests: string[] = [];
   const env: NodeJS.ProcessEnv = {
     LOOM_IDENTITY_ISSUER: ISSUER,
@@ -68,11 +69,14 @@ const fixture = Effect.gen(function* () {
           authorization_endpoint: `${ISSUER}/authorize`,
           token_endpoint: `${ISSUER}/token`,
           jwks_uri: `${ISSUER}/jwks`,
+          userinfo_endpoint: `${ISSUER}/userinfo`,
           code_challenge_methods_supported: ["S256"],
         }
-      : request.url.endsWith("/jwks")
-        ? { keys: [{ ...publicKey, alg: "RS256", kid: "test-key", use: "sig" }] }
-        : { access_token: tokenReply.access, id_token: tokenReply.id, token_type: "Bearer" };
+      : request.url.endsWith("/userinfo")
+        ? userInfo
+        : request.url.endsWith("/jwks")
+          ? { keys: [{ ...publicKey, alg: "RS256", kid: "test-key", use: "sig" }] }
+          : { access_token: tokenReply.access, id_token: tokenReply.id, token_type: "Bearer" };
     return Effect.succeed(
       HttpClientResponse.fromWeb(
         request,
@@ -115,32 +119,64 @@ const fixture = Effect.gen(function* () {
     Layer.provideMerge(dependencies),
     Layer.provideMerge(NodeServices.layer),
   );
-  return { layer, dependencies, access, signed, tokenReply, issued, requests, env, seconds };
+  return {
+    layer,
+    dependencies,
+    access,
+    signed,
+    tokenReply,
+    userInfo,
+    issued,
+    requests,
+    env,
+    seconds,
+  };
 });
 
-it.effect("exchanges a valid access JWT for a 24-hour host-local grant with client metadata", () =>
-  Effect.gen(function* () {
-    const test = yield* fixture;
-    const token = yield* test.access();
-    yield* Effect.gen(function* () {
-      const identity = yield* PocketId.PocketId;
-      const exchanged = yield* identity.exchangeAccessToken({ token, client: CLIENT });
-      expect(exchanged).toMatchObject({
-        access_token: "ordinary-host-token",
-        token_type: "Bearer",
-        expires_in: 24 * 60 * 60,
-      });
-      expect(test.issued[0]).toMatchObject({
-        subject: "pocket-id:owner-id",
-        scopes: AuthStandardClientScopes,
-        client: CLIENT,
-        method: "bearer-access-token",
-      });
-      expect(test.issued[0]?.scopes).not.toContain(AuthAccessWriteScope);
-      yield* identity.verifyAccessToken(token);
-      expect(test.requests.filter((url) => url.endsWith("/jwks"))).toHaveLength(1);
-    }).pipe(Effect.provide(test.layer));
-  }),
+it.effect(
+  "verifies owner groups through userinfo when a real Pocket ID resource JWT omits them",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      test.env.LOOM_IDENTITY_REQUIRED_GROUPS = "owner";
+      const token = yield* test.access();
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        expect((yield* identity.verifyAccessToken(token)).subject).toBe("pocket-id:owner-id");
+        expect(test.requests.some((url) => url.endsWith("/userinfo"))).toBe(true);
+        test.userInfo.sub = "different-owner";
+        expect((yield* identity.verifyAccessToken(token).pipe(Effect.flip)).reason).toBe("token");
+        test.userInfo.sub = "owner-id";
+        test.userInfo.groups = [];
+        expect((yield* identity.verifyAccessToken(token).pipe(Effect.flip)).reason).toBe("subject");
+      }).pipe(Effect.provide(test.layer));
+    }),
+);
+it.effect(
+  "bounds a host-local grant to the accepted access token lifetime with client metadata",
+  () =>
+    Effect.gen(function* () {
+      const test = yield* fixture;
+      const token = yield* test.access();
+      yield* Effect.gen(function* () {
+        const identity = yield* PocketId.PocketId;
+        const exchanged = yield* identity.exchangeAccessToken({ token, client: CLIENT });
+        expect(exchanged).toMatchObject({
+          access_token: "ordinary-host-token",
+          token_type: "Bearer",
+          expires_in: 120,
+        });
+        expect(test.issued[0]).toMatchObject({
+          subject: "pocket-id:owner-id",
+          scopes: AuthStandardClientScopes,
+          client: CLIENT,
+          method: "bearer-access-token",
+        });
+        expect(test.issued[0]?.scopes).not.toContain(AuthAccessWriteScope);
+        yield* identity.verifyAccessToken(token);
+        expect(test.requests.filter((url) => url.endsWith("/jwks"))).toHaveLength(1);
+      }).pipe(Effect.provide(test.layer));
+    }),
 );
 it.effect(
   "rejects unknown subjects, wrong issuers, audiences and clients, expired tokens, and ID-token substitution",
@@ -210,7 +246,7 @@ it.effect("refuses scopes outside the host grant and preserves DPoP key binding"
         proofKeyThumbprint: "proof-key",
       });
       expect(exchanged.token_type).toBe("DPoP");
-      expect(exchanged.expires_in).toBe(24 * 60 * 60);
+      expect(exchanged.expires_in).toBe(120);
       expect(test.issued[0]?.proofKeyThumbprint).toBe("proof-key");
     }).pipe(Effect.provide(test.layer));
   }),
@@ -250,7 +286,7 @@ it.effect(
         const session = yield* identity.completeLogin(callback);
         expect(session.method).toBe("browser-session-cookie");
         expect(session.expiresAt.epochMilliseconds - (yield* DateTime.now).epochMilliseconds).toBe(
-          Duration.toMillis(Duration.hours(24)),
+          Duration.toMillis(Duration.seconds(120)),
         );
         expect((yield* Effect.result(identity.completeLogin(callback)))._tag).toBe("Failure");
         expect(test.issued).toHaveLength(1);
@@ -303,40 +339,38 @@ it.effect("rejects mismatched browser token nonces before issuing a host session
   }),
 );
 
-it.effect(
-  "host-local sessions survive identity expiry, remain revocable, and expire after 24 hours",
-  () =>
-    Effect.gen(function* () {
-      const test = yield* fixture;
-      const token = yield* test.access();
-      const sessions = SessionStore.layer.pipe(
-        Layer.provide(SqlitePersistence.layerMemory),
-        Layer.provide(ServerSecretStore.layer),
-        Layer.provide(
-          ServerConfig.layerTest(process.cwd(), { prefix: "loom-identity-session-test-" }),
-        ),
-      );
-      const layer = PocketId.layer.pipe(
-        Layer.provideMerge(sessions),
-        Layer.provideMerge(test.dependencies),
-        Layer.provideMerge(NodeServices.layer),
-      );
-      yield* Effect.gen(function* () {
-        const identity = yield* PocketId.PocketId;
-        const local = yield* SessionStore.SessionStore;
-        const first = yield* identity.exchangeAccessToken({ token, client: CLIENT });
-        const second = yield* identity.exchangeAccessToken({ token, client: CLIENT });
-        yield* TestClock.adjust(Duration.seconds(121));
-        const verified = yield* local.verify(first.access_token);
-        expect(verified.subject).toBe("pocket-id:owner-id");
-        expect(
-          (yield* Effect.result(identity.exchangeAccessToken({ token, client: CLIENT })))._tag,
-        ).toBe("Failure");
-        expect(yield* local.revoke(verified.sessionId)).toBe(true);
-        expect((yield* Effect.result(local.verify(first.access_token)))._tag).toBe("Failure");
-        yield* local.verify(second.access_token);
-        yield* TestClock.adjust(Duration.seconds(24 * 60 * 60 - 121));
-        expect((yield* Effect.result(local.verify(second.access_token)))._tag).toBe("Failure");
-      }).pipe(Effect.provide(layer));
-    }),
+it.effect("identity sessions remain locally revocable and expire with their accepted token", () =>
+  Effect.gen(function* () {
+    const test = yield* fixture;
+    const token = yield* test.access();
+    const sessions = SessionStore.layer.pipe(
+      Layer.provide(SqlitePersistence.layerMemory),
+      Layer.provide(ServerSecretStore.layer),
+      Layer.provide(
+        ServerConfig.layerTest(process.cwd(), { prefix: "loom-identity-session-test-" }),
+      ),
+    );
+    const layer = PocketId.layer.pipe(
+      Layer.provideMerge(sessions),
+      Layer.provideMerge(test.dependencies),
+      Layer.provideMerge(NodeServices.layer),
+    );
+    yield* Effect.gen(function* () {
+      const identity = yield* PocketId.PocketId;
+      const local = yield* SessionStore.SessionStore;
+      const first = yield* identity.exchangeAccessToken({ token, client: CLIENT });
+      const second = yield* identity.exchangeAccessToken({ token, client: CLIENT });
+      yield* TestClock.adjust(Duration.seconds(119));
+      const verified = yield* local.verify(first.access_token);
+      expect(verified.subject).toBe("pocket-id:owner-id");
+      expect(yield* local.revoke(verified.sessionId)).toBe(true);
+      expect((yield* Effect.result(local.verify(first.access_token)))._tag).toBe("Failure");
+      yield* local.verify(second.access_token);
+      yield* TestClock.adjust(Duration.seconds(2));
+      expect(
+        (yield* Effect.result(identity.exchangeAccessToken({ token, client: CLIENT })))._tag,
+      ).toBe("Failure");
+      expect((yield* Effect.result(local.verify(second.access_token)))._tag).toBe("Failure");
+    }).pipe(Effect.provide(layer));
+  }),
 );
