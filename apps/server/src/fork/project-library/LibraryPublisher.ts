@@ -17,6 +17,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as Option from "effect/Option";
@@ -73,7 +74,18 @@ const make = Effect.gen(function* () {
     Config.withDefault(false),
   );
   const configuredUrl = yield* Config.String("LOOM_LIBRARY_URL").pipe(Config.option);
-  const credentialFile = yield* Config.String("LOOM_LIBRARY_CREDENTIAL_FILE").pipe(Config.option);
+  const fs = yield* FileSystem.FileSystem;
+  const config = yield* ServerConfig.ServerConfig;
+  const path = yield* Path.Path;
+  const configuredCredentialFile = yield* Config.String("LOOM_LIBRARY_CREDENTIAL_FILE").pipe(
+    Config.option,
+  );
+  const defaultCredentialFile = path.join(config.secretsDir, "library-publisher.json");
+  const credentialFile = Option.isSome(configuredCredentialFile)
+    ? configuredCredentialFile
+    : (yield* fs.exists(defaultCredentialFile))
+      ? Option.some(defaultCredentialFile)
+      : Option.none();
   const unavailable = (enabled: boolean) => {
     const blocked = Effect.fail(new LibraryError({ reason: "blocked" }));
     return LibraryPublisher.of({
@@ -91,8 +103,6 @@ const make = Effect.gen(function* () {
   ) {
     return unavailable(false);
   }
-  const fs = yield* FileSystem.FileSystem;
-  const config = yield* ServerConfig.ServerConfig;
   const sql = yield* SqlClient.SqlClient;
   const crypto = yield* Crypto.Crypto;
   if (localAuthority) {

@@ -106,7 +106,11 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
   const effectiveEnv = { ...env };
   if (env.LOOM_TEST_CREDENTIAL !== undefined) {
     const mode = env.LOOM_TEST_CREDENTIAL;
-    const credentialFile = `${config.stateDir}/host-credential.json`;
+    yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
+    const useDefault = mode.endsWith("default");
+    const credentialFile = useDefault
+      ? `${config.secretsDir}/library-publisher.json`
+      : `${config.stateDir}/host-credential.json`;
     yield* fs.writeFileString(
       credentialFile,
       json({
@@ -116,11 +120,13 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
         libraryUrl: "https://library.example.test",
         sessionId: "session",
         accessToken: "fixture-token",
-        expiresAt: mode === "expired" ? "1970-01-01T00:00:00.000Z" : "2100-01-01T00:00:00.000Z",
+        expiresAt: mode.startsWith("expired")
+          ? "1970-01-01T00:00:00.000Z"
+          : "2100-01-01T00:00:00.000Z",
       }),
-      { mode: mode === "insecure" ? 0o644 : 0o600 },
+      { mode: mode.startsWith("insecure") ? 0o644 : 0o600 },
     );
-    effectiveEnv.LOOM_LIBRARY_CREDENTIAL_FILE = credentialFile;
+    if (!useDefault) effectiveEnv.LOOM_LIBRARY_CREDENTIAL_FILE = credentialFile;
   }
   const publisher = yield* Publisher.LibraryPublisher.pipe(
     Effect.provide(
@@ -210,6 +216,30 @@ describe("authenticated Library publishing", () => {
           expect(yield* Ref.get(f.requests)).toEqual([]);
         }),
       ),
+  );
+  it.effect(
+    "adopts an enrolled host credential from its own private directory without shell configuration",
+    () =>
+      run({ LOOM_TEST_CREDENTIAL: "default" }, (f) =>
+        Effect.gen(function* () {
+          expect(f.publisher.enabled).toBe(true);
+          expect((yield* f.publisher.info).authorityId).toBe("authority");
+        }),
+      ),
+  );
+  it.effect(
+    "keeps an invalid default enrollment blocked instead of silently disabling publication",
+    () =>
+      Effect.gen(function* () {
+        for (const mode of ["insecure-default", "expired-default"])
+          yield* run({ LOOM_TEST_CREDENTIAL: mode }, (f) =>
+            Effect.gen(function* () {
+              expect(f.publisher.enabled).toBe(true);
+              expect((yield* f.publisher.info.pipe(Effect.flip)).reason).toBe("blocked");
+              expect(yield* Ref.get(f.requests)).toEqual([]);
+            }),
+          );
+      }),
   );
   it.effect("stays disabled without a central URL", () =>
     run({}, (f) =>
