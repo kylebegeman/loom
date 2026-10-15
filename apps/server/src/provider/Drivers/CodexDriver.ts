@@ -64,9 +64,9 @@ import {
 } from "@t3tools/provider-core/server/maintenanceResolver";
 import {
   haveProviderSnapshotSettingsChanged,
-  makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "@t3tools/provider-core/server/snapshotSettings";
+import { makeSwitchboardSnapshotSettingsSource } from "../../fork/switchboard/providerProbes.ts"; // fork: switchboard
 import {
   codexContinuationIdentity,
   materializeCodexShadowHome,
@@ -225,10 +225,18 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
       // Kick the TTL-gated manifest refresh in the background and classify
       // with the in-memory manifest, so a slow or hung fetch never delays the
       // provider check. A refresh that lands mid-probe applies on the next one.
+      const snapshotSettings = yield* makeSwitchboardSnapshotSettingsSource(effectiveConfig); // fork: switchboard
       const checkProvider = modelCatalog.refreshInBackground.pipe(
         Effect.andThen(
           Effect.zipWith(
-            checkCodexProviderStatus(effectiveConfig, undefined, processEnv),
+            snapshotSettings.routed.pipe(
+              // fork: switchboard. Native allowances do not describe routed requests.
+              Effect.flatMap((routed) =>
+                checkCodexProviderStatus(effectiveConfig, undefined, processEnv, undefined, {
+                  skipNativeUsage: routed,
+                }),
+              ),
+            ), // fork: switchboard
             currentCatalog,
             (draft, catalog) => stampIdentity(applyCodexModelCatalog(draft, catalog)),
             { concurrent: true },
@@ -238,7 +246,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, pathService),
       );
-      const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<CodexSettings>>({
         resolveMaintenance,
         getSettings: snapshotSettings.getSettings,

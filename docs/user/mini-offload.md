@@ -19,8 +19,11 @@ it; pairing does not change its network binding.
 Choose **Start thread** on a connected computer. Select a project when it has
 several; with none, Loom uses its normal scratch workspace when available.
 Provider setup and status belong to that computer. Use **Set up agents** or
-**Check agents** if it has no ready provider. Provider accounts or a shared
-Switchboard hub remain configured through normal Loom settings.
+**Check agents** if it has no ready provider. Provider accounts stay configured
+through normal Loom settings. **Route through Switchboard** is under that
+computer's **Settings → Providers**, and its hub and controller addresses come
+from the `LOOM_SWITCHBOARD_URL` and `LOOM_SWITCHBOARD_CONTROLLER_URL` environment
+of the server running there.
 
 ## Optional command jobs
 

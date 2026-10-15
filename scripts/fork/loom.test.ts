@@ -151,6 +151,7 @@ fork_tests() {
   printf 'apps/web/src/fork/example.test.ts\\n'
 }
 restore_lockfile() { printf 'restore-lockfile\\n' >> "$LOOM_TEST_LOG"; }
+check_omarchy_pack() { printf 'omarchy-pack\\n' >> "$LOOM_TEST_LOG"; }
 TYPECHECK_DIRS=(packages/contracts)
 ${command}
 `,
@@ -188,6 +189,7 @@ it("discovers existing fork paths, including future surfaces and Loom routes", (
     "apps/web/src/routes/settings.loom.tsx",
     "apps/web/src/routes/settings.loom.models.tsx",
     "scripts/fork",
+    "deploy/omarchy",
   ];
   const f = lintFixture([...paths, "apps/web/src/routes/settings.general.tsx", "apps/mobile/src"]);
   const result = runLint(f, "fork_lint_paths");
@@ -245,6 +247,7 @@ it("runs lint after installation and before tests, builds and typechecks", () =>
       "**/.claude/**",
       "apps/web/src/fork/example.test.ts",
     ],
+    ["omarchy-pack"],
     ["exec", "vp", "build"],
     ["run", "-s", "typecheck"],
     ["restore-lockfile"],
@@ -404,6 +407,24 @@ it("still locates legacy installed records carrying the version in upstream", ()
       LOOM_TEST_BUILDS: f.builds,
     }),
   ).toBe(f.record);
+});
+
+it("offers only published builds to install and rollback", () => {
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "loom-records-"));
+  roots.push(root);
+  const record = (name: string, built: string, published: boolean) => {
+    const dir = NodePath.join(root, name);
+    NodeFS.mkdirSync(NodePath.join(dir, "updates"), { recursive: true });
+    NodeFS.writeFileSync(NodePath.join(dir, "build.env"), `built=${built}\n`);
+    if (published) NodeFS.writeFileSync(NodePath.join(dir, "updates/ready"), "");
+    return dir;
+  };
+  const older = record("0.0.55-nightly.20261014.3054-aaaaaaaaaa", "2026-10-14T00:00:00Z", true);
+  record("0.0.46-nightly.20261015.3158-bbbbbbbbbb", "2026-10-15T00:00:00Z", false);
+  const newer = record("0.0.56-nightly.20261015.3158-cccccccccc", "2026-10-15T01:00:00Z", true);
+  expect(
+    runMetadata(root, "BUILDS_DIR=$LOOM_TEST_BUILDS; records", { LOOM_TEST_BUILDS: root }),
+  ).toBe(`${newer}\n${older}`);
 });
 
 it("suggests the exact saved commit after rollback instead of inventing a Loom tag", () => {

@@ -21,6 +21,7 @@ const state = vi.hoisted(() => ({
   limited: false,
   subagent: false,
   background: [] as Array<{ taskId: string; kind: "command" | "monitor" }>,
+  delegatedChild: null as "running" | "approval" | null,
   add: vi.fn(
     (_toast: { title: string; description: string; actionProps: { onClick: () => void } }) =>
       "toast-1",
@@ -87,10 +88,33 @@ function mockThreadShell() {
   };
 }
 
+// A delegated child changes while its parent's shell object stays the same.
+let stableParent: ReturnType<typeof mockThreadShell> | null = null;
+function mockThreads() {
+  if (state.delegatedChild === null) return [mockThreadShell()];
+  stableParent ??= mockThreadShell();
+  const child = {
+    ...mockThreadShell(),
+    id: "child-1",
+    title: "Review the login form",
+    creationSource: "mcp",
+    lineage: {
+      rootThreadId: "thread-1",
+      parentThreadId: "thread-1",
+      relationshipToParent: "subagent",
+    },
+    pendingRuntimeRequest:
+      state.delegatedChild === "approval"
+        ? { id: "request-2", kind: "command", createdAt: SHELL_NOW }
+        : null,
+  };
+  return [stableParent, child];
+}
+
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: () => ({
     status: state.live ? "live" : "disconnected",
-    snapshot: Option.some({ threads: [mockThreadShell()] }),
+    snapshot: Option.some({ threads: mockThreads() }),
   }),
 }));
 vi.mock("@tanstack/react-router", () => ({
@@ -98,12 +122,22 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => state.active,
 }));
 vi.mock("../hooks/useSettings", () => ({
+  // fork: respectful-notifications
   useClientSettings: (
     select: (
-      settings: Pick<ClientSettings, "notificationMode" | "inAppNotificationsEnabled">,
+      settings: Pick<
+        ClientSettings,
+        "notificationMode" | "inAppNotificationsEnabled" | "notificationPreviewsEnabled"
+      >,
     ) => unknown,
-  ) => select({ notificationMode: state.mode, inAppNotificationsEnabled: state.inApp }),
-  getClientSettings: () => ({ notificationMode: state.mode }),
+  ) =>
+    select({
+      notificationMode: state.mode,
+      inAppNotificationsEnabled: state.inApp,
+      notificationPreviewsEnabled: true,
+    }),
+  // fork: respectful-notifications
+  getClientSettings: () => ({ notificationMode: state.mode, notificationPreviewsEnabled: true }),
 }));
 vi.mock("../state/environments", () => ({
   useEnvironmentIds: () => ["env-1"],
@@ -154,8 +188,12 @@ beforeEach(() => {
     limited: false,
     subagent: false,
     background: [],
+    delegatedChild: null,
   });
+  stableParent = null;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  // fork: respectful-notifications: present synchronously; the fork delivery test covers Web Locks.
+  vi.stubGlobal("navigator", {});
   vi.stubGlobal("window", new EventTarget());
   vi.stubGlobal("document", {
     get visibilityState() {
@@ -186,6 +224,19 @@ describe("thread notifications", () => {
     expect(state.sound).not.toHaveBeenCalled();
     expect(state.add).not.toHaveBeenCalled();
     expect(state.notification).not.toHaveBeenCalled();
+  });
+
+  it("alerts on the parent when its delegated subagent asks for approval", async () => {
+    state.mode = "notifications-and-sound";
+    state.delegatedChild = "running";
+    await render();
+    state.delegatedChild = "approval";
+    await render();
+    await render();
+    expect(state.add).toHaveBeenCalledTimes(1);
+    expect(state.add).toHaveBeenLastCalledWith(
+      expect.objectContaining({ title: "Approval needed", description: "Fix the login form" }),
+    );
   });
 
   it("alerts once with system alerts off and opens the completed thread", async () => {

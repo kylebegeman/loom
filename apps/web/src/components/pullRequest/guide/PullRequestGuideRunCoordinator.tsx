@@ -2,6 +2,8 @@ import { useNavigate } from "@tanstack/react-router";
 import { CircleAlertIcon, CircleCheckIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+// fork: respectful-notifications
+import { systemNotificationBody } from "~/fork/respectful-notifications/notificationBody";
 import { getClientSettings } from "~/hooks/useSettings";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
@@ -125,7 +127,12 @@ function GuideRunWatcher({ runKey, watch }: { runKey: string; watch: GuideRunWat
     )
       return;
     try {
-      const notification = new Notification(title, { body, tag: `guide:${runKey}`, silent: true });
+      // fork: respectful-notifications
+      const notification = new Notification(title, {
+        body: systemNotificationBody(body, "Open Loom to review this pull request."),
+        tag: `guide:${runKey}`,
+        silent: true,
+      });
       notification.addEventListener("click", () => {
         notification.close();
         window.focus();

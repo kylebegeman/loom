@@ -9,6 +9,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeProcess from "node:process";
+import * as NodeTimersPromises from "node:timers/promises";
 import * as NodeURL from "node:url";
 
 import { serializeUpdateManifest } from "../lib/update-manifest.ts";
@@ -117,6 +118,26 @@ export function ensureUpstreamProvenance(
   }
 }
 
+// Upstream owns its version train. Loom stays within its last approved major/minor
+// and advances one patch for each newly published source, keeping the nightly
+// coordinates of the upstream build it carries.
+const nextPatch = (latest: string, nightlyFrom: string) => {
+  const { core } = parsedVersion(latest);
+  const nightly = nightlyFrom.includes("-nightly.")
+    ? nightlyFrom.slice(nightlyFrom.indexOf("-nightly."))
+    : "";
+  return `${core[0]}.${core[1]}.${core[2] + 1n}${nightly}`;
+};
+
+/** The release version for fork changes on main that no integration tag covers yet. */
+export function nextLoomVersion(publications: readonly string[], upstreamTag = "") {
+  const latest = publications
+    .filter((tag) => LOOM_VERSION.test(tag))
+    .toSorted((a, b) => compareVersions(b, a))[0];
+  if (!latest) throw new Error("No Loom publication exists to continue from.");
+  return nextPatch(latest, upstreamTag);
+}
+
 export function releaseForTag(tag: string, commit: string, context: ReleaseContext = {}) {
   const requested = tag.startsWith("loom-v") ? tag.slice("loom-v".length) : "";
   if (!LOOM_VERSION.test(requested) || !SOURCE_COMMIT.test(commit)) {
@@ -147,10 +168,7 @@ export function releaseForTag(tag: string, commit: string, context: ReleaseConte
         throw new Error(`The explicit Loom release must be newer than ${latest}.`);
       version = explicit;
     } else {
-      // Upstream owns its version train. Loom stays within its last approved
-      // major/minor and advances one patch for each newly published source.
-      const { core } = parsedVersion(latest);
-      version = `${core[0]}.${core[1]}.${core[2] + 1n}${requested.includes("-nightly.") ? requested.slice(requested.indexOf("-nightly.")) : ""}`;
+      version = nextPatch(latest, requested);
     }
   }
   const upstreamTags = (context.upstreamTags ?? []).filter(
@@ -173,10 +191,9 @@ export function releaseForTag(tag: string, commit: string, context: ReleaseConte
   };
 }
 
-/** Read immutable version state from Git, including reserved and draft publications. */
-export function releaseFromRepository(sourceDir: string, tag: string) {
-  const { commit, annotation } = repositoryIntegration(sourceDir, tag);
-  const publications = run(
+/** Bare-version tags reserved or published by Loom, with the commit each one released. */
+function publicationTags(sourceDir: string) {
+  return run(
     "git",
     [
       "for-each-ref",
@@ -193,6 +210,12 @@ export function releaseFromRepository(sourceDir: string, tag: string) {
       if (!sha) throw new Error(`Loom publication tag does not identify a commit: ${name}`);
       return [{ tag: name, commit: sha }];
     });
+}
+
+/** Read immutable version state from Git, including reserved and draft publications. */
+export function releaseFromRepository(sourceDir: string, tag: string) {
+  const { commit, annotation } = repositoryIntegration(sourceDir, tag);
+  const publications = publicationTags(sourceDir);
   const upstreamTags = run(
     "git",
     ["tag", "--list", "v[0-9]*", "--merged", commit, "--sort=-creatordate"],
@@ -292,6 +315,8 @@ export function buildEnvironment(
       "/usr/sbin",
       "/sbin",
     ].join(NodePath.delimiter),
+    // launchd sets no locale, and CocoaPods refuses to install pods without UTF-8.
+    LANG: /utf-?8/i.test(result.LANG ?? "") ? result.LANG : "en_US.UTF-8",
     T3CODE_RELEASE_PUBLIC_CONFIG: "1",
     T3CODE_DESKTOP_UPDATE_REPOSITORY: REPOSITORY,
     T3CODE_DESKTOP_SIGNED: "false",
@@ -763,25 +788,40 @@ async function enable() {
   );
 }
 
-async function withLock(body: () => Promise<void>) {
+// The scheduled run skips while another publisher works; `land` waits its turn instead,
+// because it installs the build the run produces.
+async function withLock(body: () => Promise<void>, wait = false) {
   await NodeFSP.mkdir(STATE_DIR, { recursive: true });
   const lock = NodePath.join(STATE_DIR, "publisher.lock");
-  try {
-    await NodeFSP.mkdir(lock);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const pid = Number(await NodeFSP.readFile(NodePath.join(lock, "pid"), "utf8"));
-    if (!Number.isSafeInteger(pid) || pid <= 0)
-      throw new Error(`Inspect the incomplete lock at ${lock}`, { cause: error });
+  let waiting = false;
+  for (;;) {
     try {
-      NodeProcess.kill(pid, 0);
-      console.log(`A publisher is already running (PID ${pid}).`);
-      return;
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause;
+      await NodeFSP.mkdir(lock);
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const pid = Number(await NodeFSP.readFile(NodePath.join(lock, "pid"), "utf8"));
+      if (!Number.isSafeInteger(pid) || pid <= 0)
+        throw new Error(`Inspect the incomplete lock at ${lock}`, { cause: error });
+      let running = true;
+      try {
+        NodeProcess.kill(pid, 0);
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException).code !== "ESRCH") throw cause;
+        running = false;
+      }
+      if (!running) {
+        await NodeFSP.rm(lock, { recursive: true });
+        continue;
+      }
+      if (!wait) {
+        console.log(`A publisher is already running (PID ${pid}).`);
+        return;
+      }
+      if (!waiting) console.log(`Waiting for the running publisher (PID ${pid}) to finish.`);
+      waiting = true;
+      await NodeTimersPromises.setTimeout(10_000);
     }
-    await NodeFSP.rm(lock, { recursive: true });
-    await NodeFSP.mkdir(lock);
   }
   await NodeFSP.writeFile(NodePath.join(lock, "pid"), String(NodeProcess.pid));
   try {
@@ -997,7 +1037,17 @@ async function publishIos(release: Release) {
     );
 }
 
-async function main(command: string | undefined) {
+async function main(command: string | undefined, args: readonly string[] = []) {
+  if (command === "next-version") {
+    // loom.sh tags fork changes on main with this, so they join the same release train.
+    console.log(
+      nextLoomVersion(
+        publicationTags(NodeProcess.cwd()).map((item) => item.tag),
+        args[0],
+      ),
+    );
+    return;
+  }
   if (!NodeProcess.versions.node.startsWith("24."))
     throw new Error(
       "Run the Loom publisher with Node 24, matching the repository's engine requirement.",
@@ -1021,7 +1071,7 @@ async function main(command: string | undefined) {
   }
   if (command !== "prepare" && command !== "publish" && command !== "check") {
     throw new Error(
-      "Usage: node scripts/fork/updates.ts <check|prepare|publish|enable|disable|status>",
+      "Usage: node scripts/fork/updates.ts <check|prepare|publish [--wait]|next-version [upstream tag]|enable|disable|status>",
     );
   }
   await withLock(async () => {
@@ -1040,11 +1090,11 @@ async function main(command: string | undefined) {
       await publish(release, prepared);
       await publishIos(release);
     }
-  });
+  }, args.includes("--wait"));
 }
 
 if (import.meta.main) {
-  await main(NodeProcess.argv[2]).catch((error: unknown) => {
+  await main(NodeProcess.argv[2], NodeProcess.argv.slice(3)).catch((error: unknown) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
   });

@@ -1,0 +1,31 @@
+{
+  "name": "Iris Dark",
+  "appearance": "dark",
+  "canvas": "#1a1720",
+  "accent": "#c5a8dd",
+  "colors": {
+    "chrome": "#1a1720",
+    "toolbar": "#25202d",
+    "toolbarForeground": "#eee9f1",
+    "toolbarBorder": "#3a3142",
+    "text": "#eee9f1",
+    "border": "#3a3142",
+    "focus": "#c5a8dd",
+    "sidebar": "#17141d",
+    "sidebarForeground": "#eee9f1",
+    "sidebarBorder": "#3a3142",
+    "sidebarRowHover": "#33293e",
+    "sidebarRowActive": "#25202d",
+    "sidebarRowSelected": "#3b2a4a",
+    "error": "#ff8ca3",
+    "warning": "#f5c87b",
+    "codeBackground": "#25202d",
+    "codeForeground": "#eee9f1",
+    "terminalBackground": "#1a1720",
+    "terminalForeground": "#eee9f1",
+    "terminalCursor": "#eee9f1",
+    "terminalSelection": "#3b2a4a",
+    "terminalScrollbar": "#3a3142",
+    "terminalScrollbarHover": "#6c6672"
+  }
+}

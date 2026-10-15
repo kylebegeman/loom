@@ -2,6 +2,8 @@ import { SettingsGroup } from "./SettingsGroup";
 import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
+// fork: respectful-notifications
+import { NotificationPreviewsSettingsRow } from "~/fork/respectful-notifications/NotificationPreviewsSettingsRow";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -561,6 +563,11 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.notificationMode !== DEFAULT_UNIFIED_SETTINGS.notificationMode
         ? ["Thread notifications"]
         : []),
+      // fork: respectful-notifications
+      ...(settings.notificationPreviewsEnabled !==
+      DEFAULT_UNIFIED_SETTINGS.notificationPreviewsEnabled
+        ? ["Notification previews"]
+        : []),
       ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
         ? ["In-app notifications"]
         : []),
@@ -581,6 +588,10 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.sidebarAutoSettleAfterDays !==
       DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
         ? ["Auto-settle inactive threads"]
+        : []),
+      ...(settings.sidebarAutoSettleKeepPullRequests !==
+      DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests
+        ? ["Keep threads with a PR"]
         : []),
       ...(settings.sidebarAutoSettleOnMerge !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge
         ? ["Auto-settle merged threads"]
@@ -672,6 +683,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.browserRecordingShowMousePresses,
       settings.browserLinkTarget,
       settings.browserAutoShowFloatingPreview,
+      settings.pullRequestLinksOpenInApp,
       settings.appearanceContrast,
       settings.diffColorScheme,
       settings.chatWidth,
@@ -708,6 +720,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.enableProviderUpdateChecks,
       settings.continueThreadsAfterServerUpdate,
       settings.sidebarAutoSettleAfterDays,
+      settings.sidebarAutoSettleKeepPullRequests,
       settings.sidebarAutoSettleOnMerge,
       settings.autoResumeLimitedThreads,
       settings.snoozeLimitedThreads,
@@ -718,6 +731,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.showSkillsInSlashMenu,
       settings.timestampFormat,
       settings.notificationMode,
+      settings.notificationPreviewsEnabled, // fork: respectful-notifications
       settings.inAppNotificationsEnabled,
       settings.wordWrap,
       followSystem,
@@ -794,6 +808,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,
       timestampFormat: DEFAULT_UNIFIED_SETTINGS.timestampFormat,
       notificationMode: DEFAULT_UNIFIED_SETTINGS.notificationMode,
+      // fork: respectful-notifications
+      notificationPreviewsEnabled: DEFAULT_UNIFIED_SETTINGS.notificationPreviewsEnabled,
       inAppNotificationsEnabled: DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled,
       wordWrap: DEFAULT_UNIFIED_SETTINGS.wordWrap,
       persistComposerContextStrip: DEFAULT_UNIFIED_SETTINGS.persistComposerContextStrip,
@@ -815,6 +831,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
+      sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
       autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,
       snoozeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.snoozeLimitedThreads,
@@ -849,6 +866,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       browserRecordingShowMousePresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowMousePresses,
       browserLinkTarget: DEFAULT_UNIFIED_SETTINGS.browserLinkTarget,
       browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
+      pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
       // Re-granted like any other default. The confirmation dialog lists it by
       // name, so a user restoring defaults is told the agent regains access
       // rather than discovering it later.
@@ -998,7 +1016,8 @@ function BackgroundActivityAdvancedDialog({
               <div className="min-w-0 space-y-1">
                 <div className="text-sm font-medium">Provider health interval</div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  Refresh provider availability, versions, auth state, and model metadata.
+                  Refresh provider availability, versions, and auth state. Model catalog updates
+                  follow Provider update checks.
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
@@ -2202,6 +2221,9 @@ export function GeneralSettingsPanel() {
     connectedEnvironments.every(
       (target) => target.serverConfig?.environment.capabilities.threadAutoSettlement === true,
     );
+  const supportsAutoSettlementScope = connectedEnvironments.every(
+    (target) => target.serverConfig?.environment.capabilities.threadAutoSettlementScope === true,
+  );
   const supportsRestartContinuation =
     connectedEnvironments.length > 0 &&
     connectedEnvironments.every(
@@ -2482,12 +2504,32 @@ export function GeneralSettingsPanel() {
                 }
               />
             ) : null}
+            {settings.sidebarAutoSettleAfterDays !== null && supportsAutoSettlementScope ? (
+              <SettingsRow
+                serverScoped
+                settingKeys={["sidebarAutoSettleKeepPullRequests"]}
+                title="Keep threads with a PR"
+                description="Inactivity does not settle threads with a pull request. Merge and close still do."
+                control={
+                  <ScopedSwitch
+                    settingKeys={["sidebarAutoSettleKeepPullRequests"]}
+                    checked={settings.sidebarAutoSettleKeepPullRequests}
+                    onCheckedChange={(checked) =>
+                      updateSettings({ sidebarAutoSettleKeepPullRequests: checked })
+                    }
+                    aria-label="Keep threads with a PR"
+                  />
+                }
+              />
+            ) : null}
           </>
         ) : null}
       </SettingsSection>
 
       <SettingsSection id="behavior" title="Behavior">
         <NotificationSettings />
+        {/* fork: respectful-notifications */}
+        <NotificationPreviewsSettingsRow />
         <SettingsRow
           {...searchableSetting("in-app-notifications")}
           description="Show a toast when another thread finishes, fails, or needs input or approval while this app has focus."
@@ -2889,7 +2931,7 @@ export function GeneralSettingsPanel() {
           serverScoped
           settingKeys={["enableProviderUpdateChecks"]}
           {...searchableSetting("provider-update-checks")}
-          description="Check installed provider CLIs for newer available versions."
+          description="Check installed provider CLIs for newer available versions and fetch model catalog updates. When off, new models may not appear."
           resetAction={
             settings.enableProviderUpdateChecks !==
             DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks ? (

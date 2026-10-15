@@ -15,6 +15,7 @@ import type { ProjectLifecycleService } from "./project-lifecycle/ProjectLifecyc
 import type { AppleBuildService } from "./apple-build-tooling/AppleBuildService.ts";
 import type { DeviceQaService } from "./device-qa/DeviceQaService.ts";
 import type { CodeGraphService } from "./code-graph/CodeGraphService.ts";
+import type { SwitchboardStatus } from "./switchboard/SwitchboardStatus.ts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 
@@ -36,7 +37,8 @@ export type ForkServices =
   | AppleBuildService
   | DeviceQaService
   | CodeGraphService
-  | WorkspaceHandoffService;
+  | WorkspaceHandoffService
+  | SwitchboardStatus;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

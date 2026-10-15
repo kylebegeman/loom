@@ -1,0 +1,547 @@
+{
+  "format": "loom-os-packets-v1",
+  "decision": "Kyle selected every proposal except original major idea #14. This records implementation authorization, not completion. Source SHAs in packet evidence name commits on the original feature branch; the landed commits on main have different SHAs.",
+  "excluded": [
+    {
+      "id": 14,
+      "title": "Saved project workspaces",
+      "reason": "Explicitly excluded by Kyle."
+    }
+  ],
+  "executionOrder": [1, 6, 9, 12, 2, 3, 4, 5, 8, 7, 10, 11, 13, 17, 16, 15, 18],
+  "principles": [
+    "Preserve native Omarchy shell, pixel character and Iris skin.",
+    "All AI uses Switchboard; reuse upstream T3 execution and remote access.",
+    "Office and Atlas remain the same cross-platform products and own their data, permissions and offline behavior.",
+    "No saved project-workspace bundles, layout restoration or new project association system from #14.",
+    "Preserve concurrent work and never bypass the secure lock.",
+    "Publish reusable Iris changes when a new version is needed across consumers."
+  ],
+  "packets": [
+    {
+      "id": 1,
+      "title": "Discoverable Loom action menu",
+      "status": "completed",
+      "complexity": "Small",
+      "impact": "High",
+      "dependsOn": [],
+      "summary": "Find and launch existing LoomOS capabilities through the native menu and launcher without remembering commands.",
+      "scope": [
+        "Searchable native picker with action names, useful descriptions and existing shortcut hints.",
+        "Show missing configuration or installation with a next step; selection never executes an unavailable or arbitrary action.",
+        "Reach the same picker from the launcher, LoomOS menu and CLI; keep Omarchy styling and keyboard cancellation."
+      ],
+      "acceptance": [
+        "Search mail, notes/save, AI and connections and reach the correct existing action.",
+        "Opening, filtering, cancellation and missing-action guidance invoke no inference, app writes or secret reads.",
+        "Installed action entry points launch; existing app focus, menu extensions, theme and running service are preserved."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented native launcher, LoomOS menu and CLI entry points with searchable descriptions, actual shortcut hints, setup guidance and explicit retry.",
+        "95 focused integration-pack tests pass, including nine action tests. Focused lint and generated-document consistency checks pass.",
+        "Isolated Linux Gum 2.0.0 checks pass: literal initial queries, filtering/cancellation, unavailable-action guidance and exact synthetic browser dispatch. No inference, app writes or real credential reads.",
+        "Installed reviewed pack 20261011.14 on Workstation. Installed bytes match SHA256 7d1dde40b3c339067132b03ef386b31cb0050070a16d8d157f01e2af8c4fe776. Verified previous pack 20261011.11 remains available; no activation is pending.",
+        "Iris Dark, integration configuration, shell configuration and running t3code.service PID 1154 were preserved through installation.",
+        "Native launcher, actual menu selection, filtering and two-Escape cancellation passed on Workstation. The final entrance-specific check now also passes on installed pack 20261012.43: the Loom actions picker was opened with the literal Open Office query, its exact action was inspected and Enter selected it. The original Office window 0x5bb72788cdb0, PID 238763 was reused; no duplicate window or record write occurred.",
+        "Physical shortcut and laptop sleep/wake acceptance belong to later packets. Original fixture and native menu evidence is retained in the 2026-10-11 packets artifact directory; the completed Office action proof is /Users/kyle/Developer/artifacts/loom-os/2026-10-12/maintenance/packet1-native-proof.json, with native-actions-office.png."
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Exact-item search opening",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [12],
+      "summary": "Open the selected Office record or Atlas source directly in its existing app window.",
+      "scope": [
+        "Apps own stable authenticated record routes; retain the destination through login.",
+        "Finder passes the selected record identity to the app without treating excerpts or queries as URLs.",
+        "Existing app windows navigate rather than duplicate; absent/deleted/inaccessible items explain recovery."
+      ],
+      "acceptance": [
+        "Open each supported Office record type and Atlas source from native search.",
+        "Check signed-out handoff, unavailable records and existing-window reuse.",
+        "Verify route behavior in Linux and the shared web/Mac experience."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Exact-item routes and existing-window handoff are implemented in LoomOS, Office and Atlas. Apps own authorization and stable links; login preserves destinations, Office uses its ordinary resolver, and Atlas retains immutable source versions and saved output revisions. Unsent writing defers navigation with explicit open/dismiss controls.",
+        "Focused regressions cover deleted/inaccessible records, changed editorial revisions, revoked evidence, foreign/ambiguous routes, owner isolation, election/deduplication, unsupported capabilities and uncertain delivery. Packaged synthetic app acceptance covers login return, retained Desk/Mail writing and exact selected item opening across shared browser clients.",
+        "Workstation runs committed pack 20261012.23, manifest SHA256 c5c5323f17b64388bfa9191f718b7cc80fca5fbefe5aece140cd657bd9d5a6e0. All 25 members are reviewed; pack checks pass. Installation preserves connection configuration, Iris Dark, personal shortcuts and running t3code.service PID 1152. Original and recent retained packs remain available for recovery.",
+        "Actual native Chromium fixtures pass cold launch, existing-window reuse, immutable Atlas source/output selection and the nonce-specific temporary-window fallback through the current Hyprland Lua API. Native Find Office selected a live Desk result and opened it in its original signed-in window. Empty Atlas search, both picker cancellations, repeated ordinary launches and the installed compatibility report pass with original business windows preserved.",
+        "Office source 892921de26debfb4021a2eb67d44cbda401ae220 is deployed as revision 20261012-154536. Protected preparation passed 1019 UI tests, isolated database/recovery proofs, 33 browser journeys (one documented skip), image/smoke and all live release checks. Native Check for updates and Update Office delivered exact interface 550d084ce361fe5851cc with an activated worker and no waiting update.",
+        "Office device retention failure was traced to one irrecoverable snapshot backing file. A private IndexedDB copy was retained; only that server-derived record was removed after confirming drafts/outbox were empty. Retry rebuilt it and all stores read successfully. The source regression separates optional retention errors from real connection failures; the delivered native window has neither warning. No profile, credentials, other stores or writing were cleared.",
+        "Atlas checked source 0c42f8b740343cde5d5368b8da0b846721676b38 is deployed in the compact pinned runtime release-20261012-worker-fix-0c42f8b-runtime, with service/commission plans 18-worker-runtime. The legacy cached shell could not update because its worker URL returned HTML. The checked JavaScript compatibility route now waits for explicit APPLY_UPDATE, claims then unregisters without cache/record deletion. Required checks and failing-before-fix/lifecycle regressions pass; the compact runtime and verified full-history source bundle are retained.",
+        "Atlas original-key verification, fresh encrypted pre-release capture/retrieved restore and installed-release commissioning passed, preserving 36 tables and two archive documents. Service and backup timer run at login; the timer reports exit 0 and maintenance has no alerts. Original keys, retained releases, accepted backups, paused intake and Files grants are preserved. Native Update delivered exact interface 8e66519e171798615b94 into the original signed-in window. A guarded normal refresh detached the compatibility controller; registration/controller counts are zero and the retained shell cache remains.",
+        "Atlas signed-in personal workspace currently contains no saved sources or outputs. Successful immutable item opening is proven with native fixtures; personal saved-item acceptance is unavailable until suitable records exist. No personal test records or provider inference were created. Evidence and current rollout handoff: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/exact-items. Packet #3 is not started; #14 stays excluded."
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Destination-aware capture",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [12],
+      "summary": "Capture once, choose Office or Atlas and review before saving.",
+      "scope": [
+        "Preview clipboard/selected text and supplied links with a supported destination picker.",
+        "Office retains reviewed Note, Reminder and Desk flows; Atlas exposes a reviewed source capture flow.",
+        "Retain capture through login; provide loading, error, cancellation and duplicate-submission handling."
+      ],
+      "acceptance": [
+        "Use literal text, Unicode, links and supported length limits across both destinations.",
+        "Cancel without writing or fetching a supplied URL.",
+        "Verify signed-out return, server failures and supported offline behavior."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Clipboard and primary-selection preview, a native destination picker and Iris app-owned review are implemented for Office Note, Reminder, unsent Desk draft and private Atlas Research source. Supplied links stay literal and are never fetched.",
+        "Exact retained attempts preserve edits, account, idempotency key and replay deadline through sign-in/reload. Meaningful transport, queue, failure and account checks pass; packaged Office offline shell/save/reload/exact local Note/reconnect/replay proof passes.",
+        "Workstation native packaged fixtures pass all four destinations, exact opening, cold launch, original-window reuse and no-write Discard. Atlas also passes the 390px review; affected native pack checks pass 78 tests.",
+        "Office source 506035c passed protected exact-source preparation: 1,033 UI tests, 402 strict PostgreSQL/restore tests, 33 browser journeys with one documented optional skip, production image and TLS smoke. Reviewed backup op-20261012-181510-xbmnx and deploy op-20261012-181611-bqfxb passed; live revision 20261012-181611/interface feecdad173068284f0b0 verifies all 91 assets and unchanged native feed. Update Office delivered it into the original signed-in window with an activated worker and no waiting update.",
+        "Atlas source c2f99a5 passed 516 UI tests and required server/script checks. Compact runtime19 is installed after verified original-key pre-release recovery; fresh encrypted retrieved restore proof 7a500e018abef52fc0dc431aea8c42e7a99a2d3475cdb68a74f7293ae570207e commissioned its healthy service/timer. The installed Atlas Update control delivered interface f01ff7f1c7df20388da8 into its original signed-in window.",
+        "Immutable LoomOS pack 20261012.24 is installed, SHA256 a09f39d4e215c5272d4f543f278acb5bfad0f7f8f42f211630ccc8791410d0af. All 26 members match committed source 260a54bba5; pack23 remains verified for rollback. Config SHA256 9dce07b11f516fee66c28f5f1c91022bb424a74c55ef40b823ec914cac17c6ef, Iris/pixel branding and t3code.service PID1152 are preserved.",
+        "The actual installed picker displays all four destinations. Both installed app reviews can be discarded while preserving their original windows; no personal fixture records or provider inference were used. Source and owning release records are pushed or retained in verified full-history bundles. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/capture/. No new durable Atlas offline queue, Mac unified-update proof or real-provider acceptance is claimed."
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Guided connections",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [1, 12],
+      "summary": "One resumable flow explains app sessions, private network and shared AI setup.",
+      "scope": [
+        "Discover existing app and CLI authorizations without copying browser credentials.",
+        "Open required app approval pages automatically and guide private network/hub setup.",
+        "Expose connected, approval-needed, unavailable, retry and revoke/forget states."
+      ],
+      "acceptance": [
+        "Resume partial setup after cancellation or restart without repeating completed approvals.",
+        "Check expired device codes, revoked sessions, server/hub outage and unavailable Secret Service.",
+        "A person can complete ordinary setup without entering shell commands or pasting scripts."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented one native connection flow through the installed Loom connections launcher, LoomOS menu, action catalog, connection-status console and CLI. Current app CLI authorizations, Tailscale and Switchboard determine progress; reopening does not repeat completed approvals. Browser credentials remain inside the owning apps.",
+        "Guided recovery opens existing app approval/access pages and Tailscale controls. Gateway restoration and masked client-key import delegate to Switchboard. Confirmed app CLI disconnect delegates revocation to its owning client and removes only the selected app/origin search key; offline server revocation remains explicit app-owned follow-up.",
+        "143 focused integration-pack tests pass, including eight guided-connection tests for partial setup/reopening, expired approval retry, refused and unavailable access, unavailable Secret Service, stdin-only secret import, disconnect confirmation and absent-key cleanup. Focused lint, formatting and generated-view checks pass.",
+        "Installed immutable pack 20261012.27 on Workstation from committed source 66fc9adf4a. All 27 bundle members match committed source; manifest SHA256 1fa4e0f0a22cb3bba1d1868e971bedaa99033d8020d66a267a5379f6ecd19566. Installed compatibility/ownership checks pass on Omarchy 4.0.0.alpha; pack 20261012.26 is retained and verified for rollback.",
+        "Native acceptance verified installed launcher and native-menu dispatch, connected Office/Atlas CLI and private AI states, original Office/Atlas window reuse, cancellation/reopening, and the default Keep connected confirmation. Fixed a real absent-key Secret Service cleanup error and Gum screen-transition artifacts. Existing configuration SHA256 9dce07b11f516fee66c28f5f1c91022bb424a74c55ef40b823ec914cac17c6ef, Iris theme and t3code.service PID 1152 are preserved.",
+        "Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/connections/. Live acceptance reused existing personal sessions; failure/revocation/expired-approval paths use isolated tests. No personal access was revoked, no personal records were created, no paid provider inference or server restart was used, and no new app/hub release was needed."
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Capability-aware availability",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [4, 12],
+      "summary": "Show what can actually be used when parts of the ecosystem are unavailable.",
+      "scope": [
+        "Extend the existing status widget using app-owned offline and pending-change capability reports.",
+        "Distinguish cached reading, supported writing, live search, AI and owning workstation availability.",
+        "Reject stale status after suspend and offer explicit recovery without resubmitting work."
+      ],
+      "acceptance": [
+        "Verify disconnected, partially connected, revoked and reconnect states against app-owned contracts.",
+        "Inspect status with keyboard and pointer; do not rely only on color.",
+        "Polling stays bounded and never refreshes provider usage or performs inference."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented the What works now launcher, menu/action entries, native recovery utility and version 2 Loom status widget. App-owned declarations distinguish Office supported offline reading/writing from Atlas server-only behavior; current CLI, private AI and workstation checks remain separate.",
+        "Current app contracts explicitly decline device cache/outbox reporting. The UI shows conditional prior-use support and unconfirmed pending changes, never invented cached data or a zero queue. Retained declarations contain build metadata only, are origin-bound and expire after seven days; they cannot restore live search or authorization.",
+        "151 focused pack tests pass, including disconnected/partial/revoked/reconnect, retained declaration expiry/origin/tampering, clock gaps/backwards movement, strict widget validation and read-only recovery. Focused lint, formatting and generated-document checks pass.",
+        "Native Quickshell fixtures passed actual pointer and keyboard activation, simulated sleep clearing readiness before a new sample, fresh resume, disconnected/partial/revoked/reconnect states and non-invented pending counts. The real logind observer is active. Physical machine suspend was not used while background work is running.",
+        "Installed immutable pack 20261012.28 on Workstation from committed source f6cd47274d; all 28 bundle members match source. Manifest SHA256 aee580c3364882ab5af7385bffa3122a10fdf78193df27060b8f64848fa3b354. Ownership/compatibility pass on Omarchy 4.0.0.alpha, previous .27 verifies for rollback and no activation is pending.",
+        "The native widget required Omarchy supported shell restart because live file watching is disabled and plugin rescan retained old components. The unlocked-session restart activated the new widget without restarting t3code.service PID 1152 or the apps. Real pointer dispatch, installed launcher, menu navigation, owner-app window reuse and utility-to-guided-setup recovery passed. Input readiness/frame timing was corrected in the verifier after an initial misselection; fixture/scenario proof is distinguished from live personal-session checks.",
+        "Configuration SHA256 9dce07b11f516fee66c28f5f1c91022bb424a74c55ef40b823ec914cac17c6ef, Iris theme and original Office/Atlas windows are preserved. Polling is bounded, resumes discard pre-sleep results without cancelling an owning credential refresh, and recovery does not resubmit work, refresh provider usage or invoke inference. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/availability/. No app/server release, account revocation or new browser/pending-count reporting is claimed."
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Shortcut and accessibility presets",
+      "status": "verification_pending",
+      "complexity": "Small",
+      "impact": "High",
+      "dependsOn": [1],
+      "summary": "Make native actions comfortable on different keyboards and readable displays.",
+      "scope": [
+        "Offer conflict-checked shortcut presets with preview, restore and user-customization preservation.",
+        "Show actual configured bindings instead of claiming default bindings are active.",
+        "Support readable native terminal sizing and accessible focus/contrast choices through existing controls."
+      ],
+      "acceptance": [
+        "Check conflicts, invalid bindings, preset apply/restore and personal edits.",
+        "Verify complete keyboard interaction and readable layouts at common display scales.",
+        "Physical keyboard acceptance is recorded separately from command/virtual-input checks."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented native menu/action/CLI controls for Standard, Compact, per-action overrides, explicit disabling, reviewed conflict adjustment, restore and interrupted-update recovery.",
+        "112 focused pack tests pass on macOS and native ARM Linux, including 12 shortcut tests and five upstream-parser compatibility tests. Focused lint, formatting and generated-document checks pass.",
+        "Live-binding preflight refuses occupied chords, duplicate proposals, unavailable sessions and edited owned blocks. Review snapshot checks preserve concurrent personal changes; recovery refuses later edits.",
+        "Readability controls provide per-window Foot or Alacritty text/padding without changing global terminal settings, plus existing native Font/Theme actions. The sizing recovery screen remains reachable if both terminals become unavailable.",
+        "Actual Linux Gum 2.0.0 terminal interaction checks pass for cancellation, keeping current settings, conflict adjustment, reviewed apply, exact binding restore and readability selection/restore. Hyprland, renderer presence and font dispatch are synthetic; these checks are not Workstation physical/display acceptance.",
+        "The controls are installed in verified Workstation pack 20261012.43. Its actual native compatibility report resolves both Shortcuts and Readability commands and reports no interrupted shortcut update. Pack .43 -> .42 -> .43 rollback/reapplication preserves preferences, Iris appearance and the running service; earlier isolated .16/.14 checks cover personal and synthetic app/credential-state preservation.",
+        "Live baseline: shortcuts.json is absent, while native Lua callbacks provide the standard Super+Ctrl+Alt+L/O/A/N/F chords; Loom actions has no configured shortcut. readability.json is version 1 with size system. Preserve that preference-file absence and existing personal bindings during acceptance.",
+        "Remaining acceptance is physical keyboard use. Workstation native keyboard navigation, cancellation, default Keep current, reviewed temporary none preset apply/restore, native Hyprland reload and larger-dialog rendering at scale 1.25 now pass. Additional display-scale acceptance is recorded below; laptop hardware and suspend/wake acceptance remain with packet #15.",
+        "Native review found historical Restore recreated an absent shortcuts.json file. The patch records original preference bytes or absence and preserves them through restore and interruption recovery. Both focused regressions pass. Installed .50 apply/restore removes the generated preference file normally, restores the exact native bindings, and preserves all 39 recorded file/mode checks. Readability returned to its exact original system preference. The original test on .49 required guarded cleanup of only its test-generated preferences; no personal edits were overwritten.",
+        "Final installed pack 20261013.51, SHA256 a9fbcc5e59a89bd42f2e6988e260d3fec08783c55d0d4d2318e821815faddf9f, passes owner verification and ready commissioning. All 381 pack tests, scoped lint and 62 focused tests against the frozen Linux .50 runtime pass; .51 changes only launcher description/icon metadata. Actual .51 to .50 rollback/reapplication passed. Iris Dark, existing Atlas window and T3 PID 1154 are preserved. This is native virtual-input/current-scale proof, not a physical keyboard or every display certification.",
+        "Workstation native scale checks cover 1, 1.6 and 2 on its 3840x2160 display. Standard shortcut/readability windows render without clipping. Testing found current Omarchy includes Foot, not Alacritty, so larger dialogs now support Foot per-window font and padding overrides. The actual native menu saves Larger mode and launches Foot with the reviewed overrides at all three scales; original readability bytes and Foot configuration are restored. User-requested scale 1 is saved through upstream Omarchy. Pack 20261013.52 passes all 383 pack tests, scoped lint, 17 native shortcut/readability tests, owner verification, ready commissioning and zero compatibility errors/warnings. All 39 preservation checks, Iris Dark, the existing Atlas window and T3 PID 1154 are unchanged. Physical keyboard acceptance remains pending."
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Respectful actionable notifications",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [2, 12],
+      "summary": "Deliver meaningful notifications once, with a precise destination and clear attention rules.",
+      "scope": [
+        "Coordinate existing app/browser/native delivery to avoid duplicate notifications.",
+        "Provide quiet previews, originating-app identity, priority and focus-time behavior.",
+        "Use app-owned record/thread destinations and preserve authorization boundaries."
+      ],
+      "acceptance": [
+        "Verify reminder, source and agent-approval handoffs to existing windows.",
+        "Test duplicate delivery, privacy/quiet modes, inaccessible destinations and cancellation.",
+        "Preserve native Omarchy notification presentation and platform-specific settings."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "LoomOS source c52f36eaa2 adds native Notifications/focus/history controls and coordinated silent thread alerts with private title previews off by default. The existing desktop retains banner presentation, DND and history; apps retain authorization and event ownership.",
+        "175 focused Loom client/contracts tests, scoped web typecheck/lint and all integration pack checks passed. The installed native client is 0.0.45-loomos.20261012.2; integration pack 20261012.34 is verified on Workstation. Native focus-menu interaction passed and restored the original off DND.",
+        "Mounted Loom browser fixture produced a private silent approval alert, rejected a click after cancellation, and opened the exact thread from a fresh alert without changing its pending command request. It used a synthetic Notification constructor and no provider execution.",
+        "Actual native Chromium Atlas notification fixtures prove one copy across two windows, cancellation, stale-click rejection, private generic text and exact immutable source/version opening into the existing workspace. An unavailable source opens no item and shows owning-app recovery guidance. Clicks used browser Notification events rather than the OS banner widget.",
+        "Atlas ca82270 and private Iris 0.6.54 are released. Original recovery-key verification, encrypted pre-release restore proof and replacement backup timer proof/installation passed. The final service is running and its loaded timer exited 0. A fresh signed-in installed Atlas workspace opens on Workstation; prior root-class window is Switchboard.",
+        "Actual integration rollback/forward .34 -> .33 -> .34 passed with verified runtime hashes and original off DND preserved. Unrelated provider/Switchboard edits remain uncommitted and excluded.",
+        "Office cbfb5eb passed all 1,038 frontend tests, required server checks, strict isolated PostgreSQL/encrypted restore proof, 33 browser journeys (one documented optional passkey skip), exact production image and TLS/restricted-role smoke. Twenty entire-file Reminders runs pass after removing unrelated Calendar accessibility scans; cold-note filing and DOM-only editor fill races are proved and corrected. Same-day encrypted backup op-20261012-230739-euz33 and reviewed deployment op-20261012-231011-ccszi promoted revision 20261012-231011. Live verification passed all 91 immutable asset digests, interface 924e49ca52398dcecc18, unchanged migration head/count and native feed.",
+        "An actual Office server-created due reminder produced one silent private native notification across two browser windows. Clicking its browser Notification event opened the exact authorized reminder in the existing workspace and closed the read copy. Native Atlas Updates reports up to date against private feed 55a5aa24cfeae4bbeacc.",
+        "Installed Workstation Update Office delivery passed through an actual native pointer click, retaining the original signed-in window. The offered update disappeared and published Iris 0.6.54 navigation appeared; a subsequent check finished with no further update offer or error. This pass did not directly inspect the loaded DOM build/worker. Atlas already reports up to date. Final installed pack hashes match .34, DND remains off, private Office/Atlas readiness returns 200, Atlas service and backup timer are healthy, and ordinary Loom/Office/Atlas launches retain their existing windows. T3 service PID 1152 is unchanged; no provider inference or restart was used.",
+        "Final evidence and resume state: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/notifications/progress.json. Notification click fixtures dispatched browser events, not OS-banner widget clicks; Loom used a synthetic Notification constructor. After-Quit Apple push, Mac update, real-phone accessibility and live-provider inference remain separate acceptance. Packet #14 remains excluded.",
+        "Landing update 2026-10-15: notification previews now default to on, so Loom's system notifications show thread and review guide titles until previews are turned off under Settings, General, Thread notifications on each device. A device that saved the earlier off default keeps it. Shown alerts now stay open while a reconnecting client resyncs."
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Iris consistency",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "Medium",
+      "dependsOn": [9],
+      "summary": "Keep supported OS surfaces and every graphical LOOM wordmark consistent with Iris.",
+      "scope": [
+        "Generate supported palette values from canonical Iris tokens while preserving Omarchy layout, pixel art and motion.",
+        "Check contrast, terminal colors, theme switching and gradient wordmark placement.",
+        "Publish an Iris version when shared token/component changes need to be retained across products."
+      ],
+      "acceptance": [
+        "Inspect both themes across supported native surfaces and theme changes.",
+        "Verify palette provenance, gradient preservation and contrast.",
+        "Shared Iris changes are released and consumer versions checked; OS-only assets do not require an artificial Iris release."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Completed 2026-10-12. Verified source bundles, dirty-edit copies and scoped archives were saved before changes. Workstation has a mirrored 72-file appearance snapshot plus 21 protected branding/adapter files. The pre-work appearance restore and corrected installer rollback were both exercised successfully; exact pre-work pack .28 remains retained and its restore dry-run passes.",
+        "Pack 20261012.31, source d170f63649c4b96686e332416bb2479e4b426828, manifest SHA256 1e38b9c7c8a93bf54ee036a4c42ad91683b354217926b019f2b3a5ec4c202990 is installed and verified on Workstation. All 30 retained bundle members match committed source. No activation is pending. Generation pins canonical Iris 0.6.51 tokens, SHA256 2b88d3e455d0f5f7174a2952483292753c4f019bc49e2ef81dfa80fd7f42ffcd, with role maps and recorded contrast adaptations. No shared Iris source change or artificial package release was needed.",
+        "Focused pack gate passes 157 tests, including palette readability, source/artwork drift, non-color setting preservation, immutable-bundle installation and read-only rollback regressions. Targeted formatter/lint pass. Native immutable installation exposed read-only staging and adapter-copy failures; writable staging and atomic adapter/restoration writes fix them without relaxing bundle integrity.",
+        "Native Iris Dark and Light terminal palettes, Loom menu, Apps launcher, notifications, About and supported nonsecure lock previews were inspected. Both modes are selected through the regular Omarchy Theme menu/picker. Native About keeps the approved banded gradient when launched with the actual desktop PATH; a narrowed SSH test PATH had initially bypassed its installed adapter. Both approved wordmark SVG hashes are unchanged, and the screensaver retains the dark gradient in either mode.",
+        "Workstation is restored to loom-iris-dark. Wallpaper bytes, shell geometry, shell/user settings, all 21 protected boot/login/adapter files, managed Loom palette delivery, original Office/Atlas windows and T3 service PID 1152 are verified. No protected publishing, service restart, provider inference or app release was needed. Palette contrast checks cover nominal opaque surfaces, not arbitrary wallpaper blends, ANSI black-on-black or app-owned content. Evidence and rollback handoff: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/iris-consistency."
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Omarchy compatibility checks",
+      "status": "completed",
+      "complexity": "Medium",
+      "impact": "High",
+      "dependsOn": [],
+      "summary": "Catch upstream changes before an integration release breaks everyday controls.",
+      "scope": [
+        "Test supported Omarchy parsers and native actions alongside current synthetic pack tests.",
+        "Cover themes, menu entry points, app window reuse, runtime/config preservation and installer ownership.",
+        "Record supported Omarchy versions and meaningful compatibility failures in release evidence."
+      ],
+      "acceptance": [
+        "Reproduce known parser/theme-picker failure modes in focused regressions.",
+        "Check current and retained-release install/rollback, personal edits and interrupted activation.",
+        "Run actual Linux/native checks when a target is available; distinguish fixtures from physical acceptance."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented read-only native menu, Loom actions and CLI compatibility reporting for the installed parser, stock Theme/About behavior, Loom command entries, owned files/blocks and interrupted pack/shortcut changes.",
+        "Five focused compatibility regressions use unmodified upstream MenuModel/menu bytes pinned to commit 9480d1b6a98156314dbabe6bfef08f39f8b9cd07 with SHA256 provenance and license. They reproduce label-only About action loss and the obsolete themebook picker override.",
+        "The focused check.mjs gate covers pack tests and generated packet consistency; --native adds the installed target report. 112 pack tests pass on macOS and native ARM Linux without weakening preservation assertions.",
+        "Reviewed pack 20261011.16 contains 25 verified members and matches the current runtime. Actual retained .14 upgrade/rollback/return pass on macOS and native ARM Linux with unchanged connection settings and synthetic app/credential data.",
+        "Actual Gum apply/restore flows finish with a passing installed native-parser and ownership report in isolated Linux. No provider inference, real credential lookup, network access or real service restart occurs.",
+        "Fixtures cover pinned upstream 4.0.0.alpha, the version reported by Workstation in the final .43 native checks; Workstation 4.0.4 has previous native evidence. Other Omarchy versions still require native acceptance; no blanket 4.x compatibility or physical keyboard/display/suspend claim is made.",
+        "Actual installed pack 20261012.43 passes all 12 native compatibility checks with zero errors and warnings, including stock Theme/About behavior, installed menu actions, owned files/blocks and interruption state. Actual .43 -> .42 -> .43 rollback/reapplication passed with Iris and the running T3 service preserved. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/native-compatibility-final-43.json, pack-rollback-native-43-to42.json, pack-reapply-native-43.json and native-acceptance-final.json.",
+        "Actual Theme picker selection and About gradient rendering were inspected in both Iris modes during packet #8; desktop PATH, native shell geometry, personal settings, protected branding and original app windows were preserved. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/iris-consistency/IMPLEMENTATION-HANDOFF.md and final-verification.json. Packet #1 now also records exact original Office-window reuse through the installed action picker. These native results close the former deployment/connection gap; physical keyboard/display/sleep acceptance remains separate."
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Reproducible LoomOS setup",
+      "status": "completed",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [4, 6, 8, 9],
+      "summary": "Commission an existing Omarchy machine from a portable, versioned recipe.",
+      "scope": [
+        "Declare laptop/workstation profile, selected releases, app origins and supported appearance/settings.",
+        "Keep secrets and device-specific identifiers out of recipes; resume interrupted commissioning.",
+        "Guide necessary local administrator authentication and verify final health/recovery paths."
+      ],
+      "acceptance": [
+        "Commission clean laptop and workstation installations from the same reviewed recipe.",
+        "Test interruption, rerun, existing personalized machines and incompatible components.",
+        "Recover a replacement machine without relying on session artifact scripts."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Portable version 1 recipes and verified recovery kits are implemented in the repository-owned commissioner. The kit pins the integration, custom Loom desktop/server, Office/Atlas CLIs and Switchboard client, uses destination HOME/XDG paths and contains no account homes, credentials, browser profiles or application databases. One kit supports laptop/workstation; the laptop omits standalone hosting.",
+        "178 focused integration checks passed on macOS and native x64 Linux, with scoped lint and generated packet checks. Fifteen commissioning cases cover both clean profile homes, interruption/resumption, amended-recipe journal retirement, source/installed tampering, safe relative links, missing prerequisites, unsupported architecture/Omarchy, private-file exclusion, personal settings preservation, native lock/foreign-service refusal and runtime mirror cleanup. Physical laptop commissioning remains separate from these isolated fixtures.",
+        "The same final kit also commissioned fresh isolated laptop and workstation homes on Workstation using its actual Omarchy installation and real release payloads. Fresh-login bindings and inactive hosting observations were modeled; live connection probes were omitted; no real service was created and local appearance/branding/widget/hosting steps were correctly reported unfinished. Laptop installation omitted the standalone server runtime.",
+        "Workstation is commissioned and all 16 installed checks report ready. Pack 20261012.40 has manifest SHA256 3e2bfe15c0ce879920f400c6ecdb993f87264d030aa52726088aef4ca7572055. The Mac and Workstation independently built identical complete kits with recipe SHA256 98cd6f8dcaf96a13d10fec2e9c8f1f9a7c4a821b60f0923e9364fa0615994b68. The kit is retained on both machines outside the source repository.",
+        "Actual native recovery exercised .40 -> .39 rollback and .39 -> .40 reapplication through the saved kit bootstrap. The source commissioner works independently of the installed CLI. Original T3 service PID 1152, off DND, app windows, current Iris appearance, protected branding and 27 preserved file hashes remain unchanged. Existing Office/Atlas CLI and Switchboard access were reused without new authorizations or provider inference.",
+        "Native Omarchy exposes Machine setup and recovery in Maintenance and the existing searchable action catalog. Its installed terminal visibly renders all 16 ready checks and local continuation actions. Local protected publishing, initial hosting, appearance and widget actions retain existing owner workflows and secure-lock checks. No protected publication or real new service installation occurred in the live check.",
+        "Live acceptance found opaque Lua callbacks falsely conflicting with unchanged presets. A failing regression proves the issue; unchanged owned binding blocks now introduce no new conflict. Commissioning preserves an existing machine's implicit keys even without a preset file. An early interrupted candidate journal was archived explicitly without discarding installed data or services.",
+        "Recovery acceptance also caught an incomplete copied T3 executable. The final kit includes the full checked release with SDKs, client assets and resource monitor; setup and status require its isolated exact-version check. A real loopback mirror checksum/download, standard tar extraction and extracted t3 v0.0.45-loomos.20261011.5 version proof passed. The normal T3 installer remains authoritative; initial runtime mirror is temporary and the persisted custom fork origin is retained. No live service restart or replacement was used.",
+        "Setup and recovery guidance: deploy/omarchy/recipes/README.md. Evidence, independent kit and private native screenshot: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/reproducible-setup. Fresh full-disk Omarchy provisioning, physical laptop checks and first-time privileged/service-manager commissioning remain normal machine acceptance; fixtures and the live existing workstation are distinguished. Packet #14 remains excluded."
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Contextual actions and AI workbench",
+      "status": "completed",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [3, 12],
+      "summary": "Operate on deliberately selected context and review results before handing them to an app.",
+      "scope": [
+        "Support selected text, files, screenshots and app-provided context with explicit preview.",
+        "Reuse supported Loom/app actions and Switchboard routing; show owning environment and failure/retry states.",
+        "Allow reviewed copying, capture and app actions with retained provenance and original permissions."
+      ],
+      "acceptance": [
+        "Check context selection, cancellation, size/type failures and routing eligibility.",
+        "No action silently captures unrelated app data or falls back to a direct provider.",
+        "Verify complete explanation, summary and capture workflows with synthetic inference before authorized live acceptance."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented explicit selection, clipboard, UTF-8 file, saved PNG/JPEG screenshot and version 1 app-exported JSON context through the native workbench, LoomOS menu, Loom actions and CLI. Preview freezes the chosen input for retries; cancellation, error/recovery, edited results, copying and reviewed Office/Atlas capture retain source provenance. Opening reads no unrelated window or record.",
+        "Explanation and summary reuse visible T3 scratch threads and the verified Switchboard route. Native credentials use separate HTTP/MCP audiences in Secret Service, scoped to orchestration read/operate with expiry and explicit revocation. Provider plan and approval controls remain authoritative; prompts prohibit tools but the existing runtime does not enforce an answer-only sandbox. No direct-provider fallback is introduced.",
+        "All 262 integration-pack tests pass on Mac and native x64 Linux, covering context limits, malformed files/images, required image preview, changed clipboard, routing refusal, retry/cancellation, capture limits, permissions and retained provenance. The Mac pack gate, scoped lint/format and generated-view checks pass. Five failing-before-fix transport cases prove bounded session cleanup on success, denial, cancellation, initialization-body cancellation and cleanup failure. Native full-gate formatting was not claimed because the extracted source lacks the workspace formatter setup.",
+        "Authorized native text explanation and selected-image summary completed through Switchboard in separate fresh threads. The image request uploaded exactly one explicitly selected 592-byte synthetic PNG and correctly described purple/yellow panels. Both recorded zero tool calls, subagents or runtime approval requests and left zero active jobs. In-flight cancellation uses focused synthetic coverage; interrupting the completed exact run was an idempotent no-op.",
+        "Inspected native preview/result screens and actual Office summary and Atlas source reviews. The Office review contained the generated summary, original image hash and Loom thread identity; Atlas contained deliberately selected source text and its hash. Neither review saved personal fixture records, and original app windows were retained. Real namespaced T3 IDs and the installed capture-watcher subprocess defect were corrected with regressions.",
+        "Workstation runs immutable pack 20261012.43, manifest SHA256 c00943b7494a1192efc1fd6479e94b3f6de33de18a9b2b582f4f316d7e6f53c1. All 35 members verify and match installed bytes. Actual .43 to .42 rollback and .43 reapplication passed; no activation is pending. Native compatibility and connection health report zero errors and warnings.",
+        "Independently built Mac and Workstation recovery kits match recipe SHA256 2eb0d8f90d8c77d19d295336271c6b939728b5de72c44485602cb27d69272f69. Supported commissioning reports all 16 checks ready and preserves all 40 recorded file/mode checks, Iris Dark, gradient branding, credentials, personal bindings and DND off. The existing Loom, Office, Switchboard and server inventories are reused; the reviewed Atlas client is pinned. Pack rollback and recovery refresh preserve running T3 PID 319427 and earlier kits.",
+        "App-provided context has a supported explicit file contract; automatic Office/Atlas export controls remain a future app feature. Selected text is the current everyday integration. Text/results are bounded to 64 KiB, images to 4 MiB and 20 million pixels, and optional instructions to 2,000 bytes. Evidence: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/. Packet #14 remains excluded."
+      ]
+    },
+    {
+      "id": 12,
+      "title": "Shared app integration contract",
+      "status": "completed",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [],
+      "summary": "Apps describe their supported OS capabilities instead of making LoomOS guess their internals.",
+      "scope": [
+        "Extend existing app-owned registries/contracts for actions, stable links, search, capture, notifications and availability.",
+        "Keep authorization, validation and business operations inside each owning app.",
+        "Provide version negotiation, unavailable-capability behavior and reusable adapters without a second product runtime."
+      ],
+      "acceptance": [
+        "Verify compatible, older, missing and malformed capability declarations.",
+        "Typecheck and behavior-test affected producers and consumers across supported surfaces.",
+        "Integrate at least Office and Atlas through the same contract without weakening their permissions."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Office and Atlas expose protocol 1.0 through anonymous no-store build metadata and their existing authenticated operation registries. Metadata grants no account, record, scope or approval authority.",
+        "LoomOS negotiates search/capture formats, actual registry CLI words and Unicode limits; current Atlas uses workspace search. Only missing declarations retain legacy controls. Incompatible, malformed, redirected or inaccessible declarations provide recovery guidance.",
+        "Both real producers and installed loopback consumer dispatch passed interoperability proof. Compatible/additive/missing/malformed versions, unavailable capabilities, anonymous HTTP routing, permission refusal, literal arguments, Unicode bounds, result normalization and cancellation are covered.",
+        "Office make check passed (1008 web tests, Go checks, 65 scripted cases and docs); Atlas make check passed (493 web tests and Go checks). 121 pack tests passed on Mac, 83 focused consumer/action/release tests on native ARM Linux, with targeted formatting and lint.",
+        "Immutable pack 20261011.17, SHA256 69097b48b360ac3e4042048cf6508b371d206ae5f995257f4182d301646bc7c9, prepared. Actual retained .14 upgrade/rollback/return passed on Mac and native ARM Linux, preserving custom shortcuts, configuration and synthetic app/credential data.",
+        "Verification artifacts and rollout handoff: /Users/kyle/Developer/artifacts/loom-os/2026-10-11/app-integration. Shared Iris has no changes. Packet #14 remains excluded.",
+        "Packet #2 completed publication and native acceptance on Workstation. Both deployed producers negotiate through the installed shared adapter: Office office-search-v1 and Atlas atlas-workspace-search-v1, with supported exact links and existing capture declarations. Actual authorized search, exact Office identity opening, native immutable Atlas fixtures, normal update delivery and window reuse pass. Unsupported notifications/live availability and durable Atlas offline support remain explicitly unavailable; these declarations do not implement later packets."
+      ]
+    },
+    {
+      "id": 13,
+      "title": "Native workstation control desk",
+      "status": "completed",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [2, 7, 12],
+      "summary": "See and manage existing background work, failures and approvals from Omarchy.",
+      "scope": [
+        "Read tasks and approvals from the existing T3/Loom environment and relevant app services.",
+        "Expose exact-thread/job navigation and only supported controls; add explicit unavailable/reverse states.",
+        "Keep execution in the owning service and avoid introducing a replacement Core/Runner."
+      ],
+      "acceptance": [
+        "Inspect running, waiting, failed, completed and disconnected states.",
+        "Verify permission/approval behavior and exact-destination handoff.",
+        "Confirm native refresh stays bounded and opening the desk starts no job or restart."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented the native workstation control desk through the LoomOS menu, launcher, Loom actions and CLI. It reads existing Loom threads/schedules, Office health/approval metadata and bounded authorized Atlas run metadata. Refresh is explicit and limited to once every five seconds; opening starts no job, approval, inference or service restart.",
+        "Exact destinations and reviewed controls stay with their owners. Loom exposes exact-run interruption and schedule pause/resume; Atlas cancellation requires its advertised operation and current permissions. Approvals, retries and unsupported operator controls remain in their owning app with explicit reasons. Exact Loom threads use the existing web route with encoded namespaced IDs; native desktop has no supported exact-thread ingress.",
+        "Atlas added atlas.runs.list and enforced existing evidence/history/private permission fencing on cancellation. Source f2742e75c961ecda54b832fe2785dc03c13b6a92 is deployed as release-20261012-workbench-f2742e7-runtime with service-plan-23-workbench and commission-plan-23-workbench. Its reviewed client is installed on Workstation. Required Atlas checks passed 105 script tests with eight documented opt-in skips, 529 frontend tests, server checks and four actual PostgreSQL metadata-bound/permission-race tests. No schema, dependency or Iris release was needed.",
+        "Atlas original-key verification, fresh encrypted pre-release capture/retrieved restore proof f0efa664dabcb2ec1ab47baf844ce65dc4aca11e5f8f1e83048ccac8a94bf3c6 and installed commissioning passed. Private HTTPS advertises release d790ffe4532452249f7a; the service and 60-second backup timer are healthy, with first tick exit 0. Retained authorities and accepted backups remain available. The current authority guide is owned by Atlas.",
+        "All 262 pack tests pass on Mac and native x64 Linux, including running/waiting/failed/completed/disconnected states, stale exact-run checks, missing controls, owner denial and refresh limits. Final review found that T3 MCP transport sessions lack idle expiry; bounded DELETE cleanup now releases each allocated session without changing the original operation outcome. Actual native read-only proof records two initialized/two terminated sessions, zero active jobs and unchanged service PID 319427.",
+        "Final native desk shows connected Loom, Office and bounded Atlas sources and correct completed/failed rows. Selecting the Office failure shows unavailable stop/resume reasons. Exact Loom thread opening reached the owning web client and its ordinary browser pairing gate; signed-in browser thread rendering is not claimed. The acceptance browser was closed without touching personal app windows; a fresh .43 desk is left open for review. Existing Office backlog was recorded as a separate owner follow-up without retrying jobs or making approval decisions.",
+        "Workstation runs immutable pack 20261012.43, manifest SHA256 c00943b7494a1192efc1fd6479e94b3f6de33de18a9b2b582f4f316d7e6f53c1. All 35 members verify and match installed bytes. Actual .43 to .42 rollback and .43 reapplication passed; no activation is pending. Native compatibility and connection health report zero errors and warnings.",
+        "Independently built Mac and Workstation recovery kits match recipe SHA256 2eb0d8f90d8c77d19d295336271c6b939728b5de72c44485602cb27d69272f69. Supported commissioning reports all 16 checks ready and preserves all 40 recorded file/mode checks, Iris Dark, gradient branding, credentials, personal bindings and DND off. The existing Loom, Office, Switchboard and server inventories are reused; the reviewed Atlas client is pinned. Pack rollback and recovery refresh preserve running T3 PID 319427 and earlier kits.",
+        "Evidence and scoped Office follow-up: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/workbench-desk/. The desk reads bounded metadata rather than broad Atlas state or conversation/evidence history. No replacement runner or execution authority was introduced. Packet #14 remains excluded."
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Laptop/workstation continuity",
+      "status": "verification_pending",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [2, 4, 5, 16],
+      "summary": "Preserve access to work across devices while background jobs remain on their owning workstation.",
+      "scope": [
+        "Extend existing T3 remote access and app links with explicit handoff and profile-aware behavior.",
+        "Support suspend/reconnect and graceful offline availability with no duplicate running agents.",
+        "Keep laptop background/battery behavior configurable and workstation hosting explicit."
+      ],
+      "acceptance": [
+        "Verify laptop/phone handoff, workstation continuity, revoked device and reconnect.",
+        "Perform physical sleep/wake, Wi-Fi transitions and battery checks on applicable hardware.",
+        "Different clients never open competing servers against the same live database."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented Device continuity in the native launcher, Loom actions and AI/connections menu. It pins the workstation public T3 environment identity to a private HTTPS tailnet origin and checks it again before open or exact thread handoff. Config contains no credentials. Identity changes, outages, unreadable settings and revoked/absent owner access do not substitute a host or start a local server. Forget removes only the shortcut; device revocation remains in Loom Settings > Connections.",
+        "The control desk and CLI expose reviewed exact thread/Office/Atlas handoff with Cancel-first link copying and QR output. Threads must match the saved owning environment; app destinations reuse existing authorized item resolvers and same-origin validation. Destination login, pairing, grants and permissions remain with the owning products. No credentials, data or local databases move between devices, and handoff starts no agent.",
+        "Laptop mode starts no background host; explicit existing workstation hosting and pairing remain owner-controlled. Native power selection discovers only installed advertised powerprofilesctl modes, confirms the reviewed current state and normal desktop unlock, then verifies the OS result. Unsupported tools retain the ordinary OS power menu. Refresh/reconnect and existing suspend-aware availability do not replay work; app-local offline state stays in the owning profiles.",
+        "All 381 pack tests and scoped lint pass. The continuity, shortcut, desk and exact-item suites pass 62 tests on Workstation against frozen .50 code. Fixtures prove constrained private origins, reviewed host identity changes, network failures, refusal/invalid/oversized metadata, exact environment-bound links, app permission refusal, cancel-first clipboard input, unsupported power tools, changed/locked power state and no laptop pairing or automatic work replay. Restore absence and interrupted restoration have focused regressions.",
+        "Workstation runs verified pack 20261013.51 with 39 members, SHA256 a9fbcc5e59a89bd42f2e6988e260d3fec08783c55d0d4d2318e821815faddf9f, and ready commissioned recipe 501bda61ae369178e25f5c03efd1266951ec3475dc947ed9070b594d9d9603ef. Independent Mac/Linux kit verification and normal owner staging/apply passed with no changed component inventory. Native reviewed save pins Workstation to its actual existing environment; exact thread review and QR rendering, native menu opening and .51 to .50 rollback/reapplication passed. The existing Atlas window, 39 recorded file/mode checks, Iris Dark, power profile and T3 PID 1154 are preserved.",
+        "An isolated Mac receiving client inspected the real private HTTPS descriptor, pinned the same host and generated exactly the same thread URL. The owner web route loaded HTTP 200; the receiving client remained unauthenticated and the protected read returned 401/403. This proves the link grants no access; no credential or server was copied and no inference occurred. Physical phone scanning, revoked-device UI recovery, laptop/phone authenticated handoff, lid/suspend/wake, Wi-Fi transition and battery acceptance remain unverified on applicable hardware. Native virtual-input and display-scale proof are recorded with packet #6, separately from physical keyboard acceptance.",
+        "Isolated running-server pairing and recovery acceptance passes: unpaired reads return 401, one-time pairing grants protected reads, credential replay returns 401, owner revocation closes the existing WebSocket and refuses reads/new tickets, fresh pairing restores the same project/thread workspace, and the old grant remains revoked. Test grants are cleaned up. This is actual server protocol proof, not authenticated physical device handoff or recovery UI proof. T3 Browser panel snapshot attempts timed out twice, so browser UI recovery remains unverified. Workstation remains at user-requested scale 1 with pack 20261013.52; physical phone scan/handoff, laptop lid/wake, Wi-Fi, battery and keyboard checks remain pending because no hands-on hardware is available."
+      ]
+    },
+    {
+      "id": 16,
+      "title": "Coherent offline ecosystem",
+      "status": "completed",
+      "complexity": "Massive",
+      "impact": "Transformational",
+      "dependsOn": [12],
+      "summary": "Make applicable saved reading and writing reliable in the shared Office and Atlas products.",
+      "scope": [
+        "Implement app-owned saved content, supported local edits, durable pending changes and reviewed conflicts.",
+        "Align Linux and Mac behavior; LoomOS reports app capabilities instead of adding a separate sync engine.",
+        "Include storage management, account separation, failure/reconnect and explicit unsupported operations."
+      ],
+      "acceptance": [
+        "Exercise stopped-server reading/writing, restart persistence, reconnect, conflicts and duplicate retries with isolated state.",
+        "Verify supported workflows on Linux and Mac; do not equate browser cache with durable offline support.",
+        "Record app-specific limitations and check migrations through the owning product workflow."
+      ],
+      "owner": "Office and Atlas with LoomOS adapters",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Office and Atlas now own This device screens for retained reading, supported writing, pending changes, conflicts and storage. LoomOS exposes Review Office device and Review Atlas device through native availability, launcher, Loom actions, connections and CLI. Anonymous app/origin declarations expire after exactly seven days; profile counts remain unknown outside the owning app. No OS sync engine or browser database scraping was added.",
+        "Office retains its existing replica/outbox with storage accounting, persistence requests, pending markers and reading cleanup that preserves unsaved writing and queued workspace copies. Full-text revision conflicts require review and a new replay key only after a positively rejected conflict; uncertain requests retain their original identity. Sending, AI, Calendar saves, cloud files and other unsupported writes remain online.",
+        "Atlas adds opt-in complete-shell availability, owner/generation-separated IndexedDB, selected immutable reading/citations, retained private-source writing, plain briefs and unsent drafts. Reading is bounded to 256 items/32 MiB; writing and queued work to 256 items/8 MiB. Exact-key uncertain writes are held after 20 hours inside the existing 24-hour server idempotency window. AI, extraction, Files/Paperless, background jobs and publication remain online.",
+        "Isolated Mac and native Linux acceptance passed four Office and two Atlas journeys per platform, covering cold capture/writing, persistence, protected reading cleanup, revision conflicts, exact replay and committed lost replies. Both actual fixture server processes were stopped for cold saved-reading/writing and queue/reconnect checks. Atlas native-CDP reconnect used its explicit Reconnect and sync control; Mac automatic replay passed. A 390px layout check found no horizontal overflow. No fixture inference, external publication or personal synthetic writes occurred.",
+        "Office source 7a7865dd0a5e20f2dfe41eab36fa3bf437659694 passed 1,107 frontend tests, 407 strict PostgreSQL/recovery checks and 37 browser journeys, with only documented opt-in/passkey setup skips. Exact portable staging, a fresh encrypted backup, reviewed deployment and live verification passed. Production revision 20261013-045524 serves interface 6274a94e5ff6481dfb1b; all 119 asset hashes, unchanged signed native feed, verified database TLS/role and unchanged migration head/count 202610110049/131 passed. Production master was fast-forwarded only to that checked source.",
+        "Atlas source ae22775edd57d66f24b32c504c307c4905bce97d passed 577 frontend tests and complete partitioned backend/static/build/provider gates: 316 top-level web tests passed and six normal opt-in skips remain. Earlier fixture-space and global-timeout attempts are retained rather than represented as a successful full make check invocation. Authority24 serves release e74e610a7117051951c7. Normal escrow verification, fresh encrypted capture/retrieved restore and replacement 60-second timer commissioning passed; the original key, retained authorities and backups remain intact. Its complete runtime/history is within the existing 64 MiB recovery bound.",
+        "Workstation runs pack 20261013.47, SHA256 6264a026a0281d76c16a0cb90a871f95a2893c98df659de8f497c402b937ce15, with all 37 members verified. The matching commissioned kit recipe is 0fd9b0fe6d7db0b660c6cbd370dccb9be2ce56859891c3ee9cc66bde4fa402ae. All 360 pack tests and independent probes passed; actual .47 to .46 rollback and .47 reapplication passed. Five component inventories and all 40 recorded file/mode checks are preserved. Final readiness reports all 16 checks ready, compatibility zero errors/warnings, Iris Dark and active T3 PID 319427 unchanged.",
+        "Installed Office and Atlas received the exact new builds through their normal Update controls. Fresh nonce-correlated metadata and visual inspection verified signed-in This device routes, and the native What works now screen opened both owners. Eight repeated open/device actions preserved one window per app at its existing address and all nine original window addresses. Personal Atlas offline opt-in remains unchanged; selected local retention is a user-owned choice. Laptop/physical keyboard acceptance stays in its existing deferred packets.",
+        "Obsolete duplicate recovery/dependency artifacts freed about 3.33 GiB on the Mac in the measured cleanup interval. Additional unused test binaries, captured synthetic servers/databases, the owned native fixture browser/profile and exact SSH forwards were retired with ownership receipts; source, traces, accepted backup generations and current/rollback kits remain preserved. Btrfs shared extents prevent a multi-GiB physical-space claim on Workstation. Final acceptance, app release proofs and cleanup receipts are retained under /Users/kyle/Developer/artifacts/loom-os/2026-10-12/offline/. Concurrent Office Notes and Atlas performance work remains preserved and outside these app releases."
+      ]
+    },
+    {
+      "id": 17,
+      "title": "Coordinated updates and recovery",
+      "status": "completed",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [9, 10, 13],
+      "summary": "Present compatible component updates and their recovery mechanisms without surprising active work.",
+      "scope": [
+        "Describe component versions, channels, compatibility and expected restart/interruption.",
+        "Preserve existing component release ownership and custom fork origin; coordinate supported maintenance around active work.",
+        "Expose stage/apply/verify/recover states and appropriate rollback boundaries per component."
+      ],
+      "acceptance": [
+        "Check incompatible versions, offline metadata, interrupted updates, active jobs and recovery.",
+        "Never silently replace the fork with upstream or restart an active environment.",
+        "Separate pack rollback, client update and system/package recovery guarantees."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Implemented native Updates and recovery through the LoomOS Maintenance menu, searchable actions, app launcher and CLI. Compact cached status and manual refresh show actual component identities, unknown channels and recovery-kit alignment. Verified local pack/kit candidates support reviewed stage/apply/verify, exact interrupted retry, pack rollback and unapplied discard; receipts bind the candidate, baseline, displayed component plan and rollback identity.",
+        "345 focused pack tests pass on Mac and native Linux. Isolated fixtures and independent probes cover offline/incompatible metadata, tampered and stale receipts, active or unknown work, interrupted owner recovery before snapshot publication and refusal to overwrite separately advanced releases. Component-changing kits require a full authenticated local Loom work inventory, including archived threads and schedules; a bounded desk cannot prove idleness.",
+        "Workstation runs verified pack 20261012.46, SHA256 ca25fdcdae453f85b5b2aec7046a9c7c163dd9013729ae6aa78c32fd9f94e8d2, with all 37 runtime members matching. Native candidate discovery, cached details, Cancel-first staging, Keep current before apply, reviewed apply/verify and actual .46 -> unmodified historical .43 -> .46 passed. Reapplication uses the newer trusted bundle manager. A legacy installer retired-record ownership defect discovered during this cycle was corrected and independently probed.",
+        "Independent Mac and Workstation recovery kits match recipe SHA256 7882b57c32d966f480e9bef68f0564629305b96f075179e1d9cd97f5759faaa9 and preserve all five existing component inventories. Native kit staging, exact-plan review, apply and verification passed; all 16 commissioning checks report ready and all 12 native compatibility checks pass with zero errors.",
+        "All 40 recorded file/mode checks, credentials, personal configuration, Iris Dark, gradient branding, DND off and active T3 service PID 319427 are preserved. Existing Office and Atlas windows were reused through owner handoffs; the stock system maintenance menu opened without mutation. These handoffs used the .45 UI, whose frozen bytes are identical in .46; the installed .46 entry point was inspected during final kit acceptance.",
+        "Maintenance owns local integration packs and recovery kits. Hosted apps, system packages, provider accounts and server releases retain their existing owners and backup/recovery requirements; pinned server activation is separate. No real-provider inference, live component/server upgrade, forced interruption or new physical-machine acceptance was performed. Physical keyboard/readability acceptance remains open in packet #6; laptop/suspend checks are deferred and packet #14 remains excluded.",
+        "Final acceptance and exact supporting receipts: /Users/kyle/Developer/artifacts/loom-os/2026-10-12/maintenance/native-acceptance-final46.json. Independent recovery and ownership proofs are in recovery/source-receipt-20261012.46.json, review-probes.json and ownership-review-probes.json in that artifact directory. Unrelated T3/Switchboard edits remain preserved and outside this release."
+      ]
+    },
+    {
+      "id": 18,
+      "title": "Resilient private AI hub",
+      "status": "completed",
+      "complexity": "Large",
+      "impact": "High",
+      "dependsOn": [4, 5],
+      "summary": "Improve private AI availability while Switchboard remains authoritative for every route.",
+      "scope": [
+        "Explain hub readiness, account constraints and model eligibility using centralized cached status.",
+        "Add explicitly supported wake/readiness controls and evaluate secondary capacity when useful.",
+        "Explore local-model routes only through Switchboard, after hardware/task-quality measurements."
+      ],
+      "acceptance": [
+        "Verify asleep/offline/constrained/ineligible states without polling providers from each client.",
+        "Check wake support, cancellation, timeout and route ownership with synthetic fixtures.",
+        "Secondary/offline routing preserves existing subscription/client restrictions and has no direct-provider fallback."
+      ],
+      "owner": "LoomOS with existing app/hub owners",
+      "delivery": "Local preparation and focused checks first. Workstation rollout/native acceptance when reachable; secure lock and necessary local authentication remain normal user flows.",
+      "evidence": [
+        "Switchboard committed source fe0a29c5ca8ea4e21da14e2304a6efe457f6236a passes both typechecks and 588 tests across 81 files. Central cached readiness enforces client credit/model restrictions; portable waiting is bounded and cancellable, reviewed wake is origin-bound, and recovery never starts or replays inference.",
+        "Dorothy controller release 5a10e98d5884c45a37d8da7d3ebb9355aa377f65831be92d4312eee7e6d69cc0 is activated and verified over private Tailscale HTTPS. Live cached reads confirm 33 personal models, two eligible GPT models each for Office and Atlas, app Claude refusal and exact provider/model mismatch reporting. Native proxy PID 60768 and network gateway PID 23301 are unchanged; their services were not restarted.",
+        "Physical wake remains uncommissioned: Dorothy uses Wi-Fi and has no active IPv4 Ethernet interface; no sleep/wake experiment was performed on the active hub. Secondary hubs and local-model routes remain uncommissioned without hardware/task-quality evidence.",
+        "Prepared immutable pack 20261013.49 with 38 members, SHA256 c0fb729d18fa78f82831c855befc674af545dc7bd1b4ca21325656f038754625, and matching recovery recipe 9854fbfc7c2bd9eb2270bb56daae91c222ae6eb491c72e488de7c7e753087945. All pack bytes match committed OS source 2c99e20961. The full pack gate passes 368 tests; 27 focused AI/hub/health tests and scoped lint pass. The regression test proves literal prompt text after -- cannot change the model precheck. Supported verifyKit passes; only Switchboard changes, while Loom, Office, Atlas and server inventories remain identical to the retained .47 kit. Portable committed-source commands also pass real cached HTTPS reads and refuse uncommissioned wake without credentials or inference.",
+        "Workstation runs verified pack 20261013.49 and commissioned recovery recipe 9854fbfc7c2bd9eb2270bb56daae91c222ae6eb491c72e488de7c7e753087945. The exact review d79426a81caad304d0314abb4b35356c163707002c5914e9910a79b023cbd98d applied only the Switchboard client through the normal owner, including its active-work checks. The newer verified bundle manager was used because the historical .47 manifest validator does not recognize hub.mjs. No admission or ownership guard was bypassed.",
+        "Native main hub, Office restrictions, live readiness wait, Escape cancellation on an isolated loopback hub, searchable Loom action and AI/connections menu opening passed. Installed reports preserve two eligible GPT models for each app and explicit provider/model mismatch; uncommissioned wake is absent. The live status widget includes the centralized AI readiness explanation after Omarchy's supported unlocked shell refresh. No inference, provider refresh, task replay or account/model substitution was used for native checks.",
+        "All 27 focused AI/hub/health tests pass on Workstation against copied installed code. The first test harness copy used an incorrect lib path and failed module loading; the corrected share path passed without product changes. Actual .49 to .47 rollback and .49 reapplication passed, and the update owner verified the final kit. Commissioning reports ready, compatibility has zero errors and warnings, all 39 recorded file/mode checks and Iris Dark are preserved, and T3 PID 1154 is unchanged. Workstation had no app windows open after boot; all test utilities exited. Current .49 and earlier recovery kits remain retained."
+      ]
+    }
+  ]
+}

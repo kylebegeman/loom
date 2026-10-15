@@ -5,7 +5,7 @@ import {
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react"; // fork: switchboard
 import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -60,6 +60,7 @@ const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
+  footer?: ReactNode; // fork: switchboard
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
 }) {
   const composerFloatingLayerProps = useComposerMenuProps();
@@ -319,6 +320,7 @@ const UpstreamProviderModelPicker = memo(function ProviderModelPicker(props: {
             : {})}
           onInstanceModelChange={handleInstanceModelChange}
         />
+        {props.footer /* fork: switchboard */}
         {props.selectedModels === undefined ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
         ) : null}

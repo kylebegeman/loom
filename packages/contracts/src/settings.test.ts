@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import type { CommandId, ProjectId } from "./baseSchemas.ts";
+import { type CommandId, ProjectId } from "./baseSchemas.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import {
   ClientSettingsSchema,
@@ -67,6 +67,7 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettings({}).worktreeCleanup).toBeNull();
     expect(decodeServerSettings({}).storageCleanup).toEqual({
       worktreeAfterDays: null,
+      worktreeSettledAfterDays: null,
       worktreeOnMerge: false,
       worktreeOnDelete: false,
       worktreeOnSettle: false,
@@ -87,6 +88,9 @@ describe("storage cleanup settings", () => {
     expect(decodeServerSettingsPatch({ storageCleanup: { worktreeAfterDays: null } })).toEqual({
       storageCleanup: { worktreeAfterDays: null },
     });
+    expect(decodeServerSettingsPatch({ storageCleanup: { worktreeSettledAfterDays: 0 } })).toEqual({
+      storageCleanup: { worktreeSettledAfterDays: 0 },
+    });
   });
 
   it("accepts partial custom patches but requires complete stored project rules", () => {
@@ -102,6 +106,26 @@ describe("storage cleanup settings", () => {
         },
       }),
     ).toThrow();
+    expect(
+      decodeServerSettings({
+        projectSettingsOverrides: {
+          project: {
+            worktreeCleanup: {
+              mode: "custom",
+              rules: {
+                worktreeAfterDays: null,
+                worktreeOnMerge: false,
+                worktreeOnDelete: false,
+                worktreeUnchanged: false,
+              },
+            },
+          },
+        },
+      }).projectSettingsOverrides[ProjectId.make("project")]?.worktreeCleanup,
+    ).toMatchObject({
+      mode: "custom",
+      rules: { worktreeSettledAfterDays: null, worktreeKeepWhen: "uncommitted-changes" },
+    });
   });
 
   it("decodes older custom rules with the default local-file policy", () => {
@@ -130,6 +154,12 @@ describe("storage cleanup settings", () => {
   it.each([0, -1, 1.5, 3651])("rejects invalid retention %s", (days) => {
     expect(() =>
       decodeServerSettingsPatch({ storageCleanup: { browserArtifactsAfterDays: days } }),
+    ).toThrow();
+  });
+
+  it.each([-1, 1.5, 3651])("rejects invalid settled retention %s", (days) => {
+    expect(() =>
+      decodeServerSettingsPatch({ storageCleanup: { worktreeSettledAfterDays: days } }),
     ).toThrow();
   });
 });
@@ -277,6 +307,20 @@ describe("ClientSettings notifications", () => {
     expect(decodeClientSettings({}).inAppNotificationsEnabled).toBe(false);
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("inAppNotificationsEnabled");
     expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationMode");
+  });
+
+  // fork: respectful-notifications
+  it("shows thread titles in system alerts until previews are turned off", () => {
+    // Settings saved before the preview switch existed keep today's titled alerts.
+    expect(decodeClientSettings({}).notificationPreviewsEnabled).toBe(true);
+    expect(decodeClientSettingsPatch({})).not.toHaveProperty("notificationPreviewsEnabled");
+    expect(
+      decodeClientSettingsPatch({ notificationPreviewsEnabled: false }).notificationPreviewsEnabled,
+    ).toBe(false);
+    expect(
+      encodeClientSettings(decodeClientSettings({ notificationPreviewsEnabled: false }))
+        .notificationPreviewsEnabled,
+    ).toBe(false);
   });
 
   it.each([true, false])(

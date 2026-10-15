@@ -40,6 +40,7 @@ import * as Layer from "effect/Layer";
 import { ForkRuntime, type ForkServices } from "./ForkRuntime.ts";
 import { ForkMigrationsLive } from "./persistence/migrations.ts";
 import { SwitchboardLive } from "./switchboard/switchboard.ts";
+import * as SwitchboardStatus from "./switchboard/SwitchboardStatus.ts";
 
 const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
@@ -98,6 +99,7 @@ const ForkServicesLive = Layer.mergeAll(
     ),
   ),
   SwitchboardLive,
+  SwitchboardStatus.layer,
   WorkspaceHandoff.layer.pipe(
     Layer.provide(CommandReceiptStore.layer),
     Layer.provide(ProjectLifecycle.layer.pipe(Layer.provide(ProjectStore.layer))),

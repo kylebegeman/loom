@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
+  previews: true, // fork: respectful-notifications
   inApp: false,
   toast: vi.fn(),
   shells: new Map(),
@@ -26,10 +27,24 @@ vi.mock("../state/environments", () => ({
   useEnvironmentIds: () => state.environmentIds,
 }));
 vi.mock("../hooks/useSettings", () => ({
+  // fork: respectful-notifications
   useClientSettings: (
-    select: (settings: { notificationMode: string; inAppNotificationsEnabled: boolean }) => unknown,
-  ) => select({ notificationMode: state.mode, inAppNotificationsEnabled: state.inApp }),
-  getClientSettings: () => ({ notificationMode: state.mode }),
+    select: (settings: {
+      notificationMode: string;
+      inAppNotificationsEnabled: boolean;
+      notificationPreviewsEnabled: boolean;
+    }) => unknown,
+  ) =>
+    select({
+      notificationMode: state.mode,
+      inAppNotificationsEnabled: state.inApp,
+      notificationPreviewsEnabled: state.previews,
+    }),
+  // fork: respectful-notifications
+  getClientSettings: () => ({
+    notificationMode: state.mode,
+    notificationPreviewsEnabled: state.previews,
+  }),
 }));
 vi.mock("../threadNotifications", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../threadNotifications")>()),
@@ -147,6 +162,7 @@ async function render() {
 beforeEach(() => {
   vi.clearAllMocks();
   state.mode = "notifications";
+  state.previews = true; // fork: respectful-notifications
   state.inApp = false;
   state.environmentIds = ["one", "two"];
   state.shells.set("one", shell());
@@ -157,6 +173,7 @@ beforeEach(() => {
   TestNotification.sent = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("Notification", TestNotification);
+  vi.stubGlobal("navigator", {}); // fork: respectful-notifications
   vi.stubGlobal("window", Object.assign(new EventTarget(), { focus: vi.fn() }));
   vi.stubGlobal(
     "document",
@@ -314,4 +331,92 @@ it("badges background failures with in-app notifications enabled", async () => {
   expect(TestNotification.sent[0]?.title).toBe("Thread failed");
   expect(state.badge).toHaveBeenLastCalledWith(1);
   expect(state.toast).not.toHaveBeenCalled();
+});
+
+// fork: respectful-notifications
+it("shows thread titles by default and hides them, closing shown previews, when turned off", async () => {
+  await render();
+  complete();
+  await render();
+  const preview = TestNotification.sent[0]!;
+  expect(preview.options).toMatchObject({ body: "Test thread", silent: true });
+  state.previews = false;
+  await render();
+  expect(preview.close).toHaveBeenCalled();
+  complete("two");
+  await render();
+  expect(TestNotification.sent.at(-1)!.options.body).toBe("Open Loom to review this thread.");
+});
+
+// fork: respectful-notifications
+it.each(["resolved", "archived", "removed"])(
+  "withdraws obsolete approval banners when %s and rejects stale clicks",
+  async (condition) => {
+    await render();
+    state.shells.set("one", shell({ hasPendingApprovals: true }));
+    await render();
+    const notification = TestNotification.sent[0]!;
+    state.shells.set(
+      "one",
+      condition === "removed"
+        ? { status: "live", snapshot: Option.some({ threads: [] }) }
+        : shell({ archivedAt: condition === "archived" ? "2026-09-13T08:00:00Z" : null }),
+    );
+    await render();
+    expect(notification.close).toHaveBeenCalled();
+    expect(state.badge).toHaveBeenLastCalledWith(0);
+    notification.dispatchEvent(new Event("click"));
+    expect(state.navigate).not.toHaveBeenCalled();
+  },
+);
+
+// fork: respectful-notifications
+it.each(["synchronizing", "cached"])(
+  "keeps shown alerts while the shell is %s and still opens their thread",
+  async (status) => {
+    await render();
+    complete();
+    await render();
+    const notification = TestNotification.sent[0]!;
+    state.shells.set("one", { ...state.shells.get("one"), status });
+    await render();
+    expect(notification.close).not.toHaveBeenCalled();
+    expect(state.badge).toHaveBeenLastCalledWith(1);
+    notification.dispatchEvent(new Event("click"));
+    expect(state.navigate).toHaveBeenCalledWith({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: EnvironmentId.make("one"), threadId: "thread" },
+    });
+    complete();
+    await render();
+    expect(TestNotification.sent).toHaveLength(1);
+  },
+);
+
+// fork: respectful-notifications
+it("delivers through Web Locks once granted and skips alerts answered meanwhile", async () => {
+  const grants: (() => void)[] = [];
+  const storage = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  });
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: (_name: string, callback: () => unknown) =>
+        new Promise((resolve) => grants.push(() => resolve(callback()))),
+    },
+  });
+  await render();
+  complete();
+  state.shells.set("two", shell({ hasPendingApprovals: true }));
+  await render();
+  expect(TestNotification.sent).toHaveLength(0);
+  state.shells.set("two", shell());
+  await render();
+  await act(async () => {
+    for (const grant of grants.splice(0)) grant();
+  });
+  expect(TestNotification.sent.map((notification) => notification.tag)).toEqual(["one:thread"]);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
 });

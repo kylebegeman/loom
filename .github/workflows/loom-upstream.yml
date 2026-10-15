@@ -143,8 +143,8 @@ jobs:
               "chore(fork): integrate upstream <tag> (needs Kyle)" that explains what fails,
               what you tried and what you recommend.
             - If you cannot resolve the merge within these rules, run `git merge --abort`,
-              push nothing, and write the explanation to the file named by
-              $GITHUB_STEP_SUMMARY.
+              push nothing, and write the explanation to $RUNNER_TEMP/repair-report.md. The
+              Result step opens a draft pull request marked "needs Kyle" with it.
 
       # On when the repository variable LOOM_AUTO_MERGE is "true", and only for
       # pull requests that passed without Claude's repair. It tags the merge
@@ -165,16 +165,45 @@ jobs:
           git tag -a "loom-$tag" -m "Loom built from upstream $tag" "$merged"
           git push -q origin "loom-$tag"
 
+      # A repair that gives up leaves no pull request, so the failure would show only in
+      # this run. Open a draft marked "needs Kyle" so it waits with the other pull requests;
+      # the next integration that contains its tag closes it (loom.sh close_superseded).
       - name: Result
         if: always()
         env:
           CODE: ${{ steps.integrate.outputs.code }}
           BRANCH: ${{ steps.integrate.outputs.branch }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           [ "$CODE" = 0 ] && exit 0
           if [ "$DRY_RUN" != true ] && [ -n "$(gh pr list --head "$BRANCH" --state open --json number --jq '.[].number')" ]; then
-            echo "Claude repaired the integration; its pull request is open."
+            echo "Claude repaired the integration or opened a draft for review; its pull request is open."
             exit 0
+          fi
+          if [ "$DRY_RUN" != true ] && [[ "$BRANCH" == integrate/* ]]; then
+            tag=${BRANCH#integrate/}
+            git merge --abort 2>/dev/null || true
+            git reset -q
+            [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] &&
+              git commit -q --allow-empty -m "chore(fork): upstream $tag needs Kyle"
+            # shellcheck disable=SC2016 # backticks are Markdown, not a command
+            conflicts=$(sed -n 's/^CONFLICT ([^)]*): Merge conflict in \(.*\)$/- `\1`/p' "$RUNNER_TEMP/integrate.log")
+            report=$(cat "$RUNNER_TEMP/repair-report.md" 2>/dev/null || echo "Claude left no report; see the run log.")
+            body="Upstream T3 Code [$tag](https://github.com/pingdotgg/t3code/releases/tag/$tag) did not merge into Loom unattended (exit code $CODE). [Run log]($RUN_URL).
+          ${conflicts:+
+          Conflicted files:
+          $conflicts
+          }
+          Claude's report:
+
+          $report
+
+          Resolve it on your Mac with \`scripts/fork/loom.sh integrate $tag\`, or leave it: the next integration that contains this tag closes this draft."
+            if git push -q -u origin "$BRANCH" &&
+              gh pr create --draft --base main --head "$BRANCH" --title "chore(fork): integrate upstream $tag (needs Kyle)" --body "$body"; then
+              echo "::error::The upstream integration needs Kyle; a draft pull request is open."
+              exit 1
+            fi
           fi
           echo "::error::The upstream integration failed. See the Merge and check log and the run summary."
           exit 1

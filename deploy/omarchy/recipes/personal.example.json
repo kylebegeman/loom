@@ -1,0 +1,71 @@
+{
+  "format": "loom-os-recipe",
+  "version": 1,
+  "name": "personal",
+  "profile": "laptop",
+  "target": {
+    "platform": "linux",
+    "arch": "x64",
+    "omarchy": ["4.0.0.alpha", "4.0.4"]
+  },
+  "pack": {
+    "version": "REPLACE-WITH-CHECKED-PACK",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "components": {
+    "loom": {
+      "version": "REPLACE-WITH-CUSTOM-LOOM",
+      "commands": {
+        "loomExecutable": "squashfs-root/AppRun"
+      },
+      "appImage": "Loom.AppImage",
+      "appDir": "squashfs-root"
+    },
+    "office": {
+      "version": "REPLACE-WITH-OFFICE-CLI",
+      "commands": {
+        "officeCli": "office-cli"
+      }
+    },
+    "atlas": {
+      "version": "REPLACE-WITH-ATLAS-CLI",
+      "commands": {
+        "atlasCli": "atlas"
+      }
+    },
+    "switchboard": {
+      "version": "REPLACE-WITH-SWITCHBOARD-CLIENT",
+      "commands": {
+        "switchboardCli": "bin/switchboard",
+        "switchboardKeyHelper": "bin/switchboard-credential"
+      }
+    },
+    "server": {
+      "version": "REPLACE-WITH-CUSTOM-T3",
+      "commands": {
+        "serverExecutable": "t3"
+      },
+      "runtimeDirectory": "runtime"
+    }
+  },
+  "apps": {
+    "office": "https://office.begam.in",
+    "atlas": "https://YOUR-PRIVATE-ATLAS-ORIGIN"
+  },
+  "switchboard": {
+    "gateway": "https://YOUR-PRIVATE-GATEWAY-ORIGIN",
+    "status": "https://YOUR-PRIVATE-DASHBOARD-ORIGIN/status",
+    "dashboard": "https://YOUR-PRIVATE-DASHBOARD-ORIGIN"
+  },
+  "server": {
+    "releaseBaseUrl": "https://github.com/kylebegeman/loom/releases/download",
+    "port": 3774
+  },
+  "preferences": {
+    "appearance": "dark",
+    "shortcuts": "standard",
+    "textSize": "system",
+    "statusWidget": true,
+    "branding": true
+  }
+}

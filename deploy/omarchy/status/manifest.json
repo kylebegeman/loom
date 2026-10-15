@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "loom.status",
+  "name": "Loom Status",
+  "version": "0.4.0",
+  "description": "App offline support, live search, private AI and workstation availability with native recovery.",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "LoomStatus.qml" },
+  "barWidget": {
+    "displayName": "Loom Status",
+    "category": "status",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}

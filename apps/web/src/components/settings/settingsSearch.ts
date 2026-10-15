@@ -382,6 +382,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
+  // fork: respectful-notifications
+  {
+    id: "notification-previews",
+    title: "Notification previews",
+    to: "/settings/general",
+    searchTerms: ["privacy private hide thread pull request titles system alerts desktop"],
+  },
   {
     id: "thread-notifications",
     title: "Thread notifications",
@@ -773,6 +780,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Open links in",
     to: "/settings/integrations",
     searchTerms: ["links default browser in-app browser external open"],
+  },
+  {
+    id: "pull-request-links-open-in-app",
+    title: "Open pull requests in T3 Code",
+    to: "/settings/integrations",
+    searchTerms: ["pr links github browser external click default pull request view panel"],
   },
   {
     id: "browser-auto-show-floating-preview",

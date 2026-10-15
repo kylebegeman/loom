@@ -16,9 +16,12 @@ import { codexPlanLabel } from "../provider/CodexProvider.ts";
 import { codexRateLimitsToLimits } from "../provider/codexUsageLimits.ts";
 import { claudeUsageResponseToLimits } from "../provider/claudeUsageLimits.ts";
 import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
+import { switchboardUsageController } from "../fork/switchboard/switchboard.ts"; // fork: switchboard
+import { readSwitchboardUsage, requestSharedCollection } from "../fork/switchboard/usage.ts"; // fork: switchboard
 
 const AuthFile = Schema.Struct({
   id: Schema.String,
+  name: Schema.optional(Schema.String), // fork: switchboard
   auth_index: Schema.String,
   provider: Schema.String,
   email: Schema.optional(Schema.String),
@@ -308,6 +311,13 @@ export const makeCliproxyApi = Effect.gen(function* () {
   const readAccounts = Effect.fn("CliproxyApi.readAccounts")(function* (
     config: UsageLimitSourceConfig,
   ): Effect.fn.Return<ReadonlyArray<UsageLimitSourceAccount>, UsageLimitSourceError> {
+    const switchboard = switchboardUsageController(config.url); // fork: switchboard
+    if (switchboard !== null) {
+      // fork: switchboard. Its controller already holds this hub's readings.
+      return yield* readSwitchboardUsage(switchboard, authFiles(config)).pipe(
+        Effect.provideService(HttpClient.HttpClient, client),
+      );
+    } // fork: switchboard
     const accounts = yield* authFiles(config).pipe(
       Effect.mapError(
         () => new UsageLimitSourceError({ detail: "The hub could not list accounts." }),
@@ -329,7 +339,9 @@ export const makeCliproxyApi = Effect.gen(function* () {
     creditId: string,
   ): Effect.fn.Return<ProviderConsumeResetCreditResult, UsageLimitSourceError> {
     const operation = Effect.gen(function* () {
-      const account = (yield* authFiles(config)).find((account) => account.id === accountId);
+      const account = (yield* authFiles(config)).find(
+        (account) => account.id === accountId || account.name === accountId, // fork: switchboard
+      );
       if (!account || account.disabled || account.provider !== "codex") {
         return yield* new UsageLimitSourceError({
           detail: "The Codex hub account is missing or disabled.",
@@ -355,6 +367,14 @@ export const makeCliproxyApi = Effect.gen(function* () {
       const cleared = yield* management(config, "reset-quota", {
         auth_index: account.auth_index,
       }).pipe(Effect.result);
+      const switchboard = switchboardUsageController(config.url); // fork: switchboard
+      if (switchboard !== null) {
+        // fork: switchboard. Ask its controller to collect the redeemed account again.
+        yield* requestSharedCollection(switchboard).pipe(
+          Effect.provideService(HttpClient.HttpClient, client),
+          Effect.ignore,
+        );
+      } // fork: switchboard
       return {
         outcome,
         ...(cleared._tag === "Failure"

@@ -1,0 +1,31 @@
+{
+  "name": "Iris Light",
+  "appearance": "light",
+  "canvas": "#f0eff1",
+  "accent": "#50236d",
+  "colors": {
+    "chrome": "#f0eff1",
+    "toolbar": "#f7f6f7",
+    "toolbarForeground": "#27222b",
+    "toolbarBorder": "#dcd7df",
+    "text": "#27222b",
+    "border": "#dcd7df",
+    "focus": "#50236d",
+    "sidebar": "#e9e6ec",
+    "sidebarForeground": "#27222b",
+    "sidebarBorder": "#dcd7df",
+    "sidebarRowHover": "#e6e2e9",
+    "sidebarRowActive": "#f7f6f7",
+    "sidebarRowSelected": "#e5dbea",
+    "error": "#b32342",
+    "warning": "#865511",
+    "codeBackground": "#f7f6f7",
+    "codeForeground": "#27222b",
+    "terminalBackground": "#f0eff1",
+    "terminalForeground": "#27222b",
+    "terminalCursor": "#27222b",
+    "terminalSelection": "#e5dbea",
+    "terminalScrollbar": "#dcd7df",
+    "terminalScrollbarHover": "#9a929c"
+  }
+}

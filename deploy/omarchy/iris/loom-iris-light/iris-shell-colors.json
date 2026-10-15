@@ -1,0 +1,55 @@
+{
+  "bar": {
+    "background": "#e9e6ec",
+    "text": "#27222b",
+    "active": "#b32342"
+  },
+  "controls": {
+    "normal-border": "#dcd7df",
+    "hover-cursor-border": "#dcd7df",
+    "focus-border": "#68616e",
+    "focus-border-alpha": 1.0
+  },
+  "hyprland": {
+    "active-border": "#9a929c",
+    "active-border-foreground": "#9a929c"
+  },
+  "popups": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "border": "#dcd7df"
+  },
+  "tooltip": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "border": "#dcd7df"
+  },
+  "notifications": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "border": "#dcd7df"
+  },
+  "launcher": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "border": "#dcd7df"
+  },
+  "menu": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "border": "#dcd7df"
+  },
+  "polkit": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "border": "#dcd7df"
+  },
+  "lock": {
+    "background": "#f7f6f7",
+    "text": "#27222b",
+    "placeholder": "#68616e",
+    "text-error": "#b32342",
+    "border": "#9a929c",
+    "border-active": "#9a929c"
+  }
+}
