@@ -308,21 +308,25 @@ function LibraryStartContent(props: {
         },
         receipt.current,
         {
-          prepare: async (intent) =>
-            review.mode === "reuse" && review.copy
-              ? review.copy
-              : unwrap(
-                  await prepare({
-                    environmentId: execution,
-                    input: {
-                      requestId: `${requestId.current}:prepare`,
-                      project: intent.project,
-                      rootPath: review.rootPath,
-                      strategy: review.mode === "clone" ? "clone" : "reuse",
-                      ...(review.mode === "folder" ? { resourceIds: intent.resourceIds } : {}),
-                    },
-                  }),
-                ),
+          prepare: async (intent) => {
+            if (review.mode === "reuse" && review.copy?.ownership === "managed") return review.copy;
+            const copy = unwrap(
+              await prepare({
+                environmentId: execution,
+                input: {
+                  requestId: `${requestId.current}:prepare`,
+                  project: intent.project,
+                  rootPath:
+                    review.mode === "reuse" && review.copy ? review.copy.rootPath : review.rootPath,
+                  strategy: review.mode === "clone" ? "clone" : "reuse",
+                  resourceIds: intent.resourceIds,
+                },
+              }),
+            );
+            if (review.mode === "reuse" && review.copy && copy.id !== review.copy.id)
+              throw new Error("The prepared folder does not match the selected working copy.");
+            return copy;
+          },
           registerCopy: async (copy) => {
             unwrap(
               await registerCopy({

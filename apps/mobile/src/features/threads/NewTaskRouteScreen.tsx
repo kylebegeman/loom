@@ -1,3 +1,4 @@
+import { libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useEnvironmentQuery } from "../../state/query";
@@ -139,7 +140,7 @@ function NewTaskHeader(props: {
               {
                 accessibilityLabel: "Add project",
                 icon: "plus",
-                onPress: () => navigation.dispatch(StackActions.push("AddProject")),
+                onPress: () => navigation.navigate("LibraryCreate"),
               },
             ]
           : []
@@ -201,13 +202,32 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const serverConfigs = useServerConfigs();
   // Scratch projects are reached through the No project row, never as rows
   // of their own.
+  const sharedProjects = useEnvironmentQuery(
+    authority.environmentId
+      ? library.projects({
+          environmentId: authority.environmentId,
+          input: { includeArchived: false },
+        })
+      : null,
+  );
+  const sharedCopies = useEnvironmentQuery(
+    authority.environmentId
+      ? library.copies({ environmentId: authority.environmentId, input: {} })
+      : null,
+  );
+  const sharedChoices = (sharedProjects.data ?? []).filter((project) =>
+    project.title.toLocaleLowerCase().includes(searchText.trim().toLocaleLowerCase()),
+  );
   const listScopes = projectScopes.filter(
     (scope) =>
       !scope.projects.every((project) =>
         isScratchProject(project, serverConfigs.get(project.environmentId)?.scratchWorkspaceRoot),
       ),
   );
-  const visibleScopes = filterProjectScopes(listScopes, searchText);
+  const legacyScopes = listScopes.filter(
+    (scope) => !libraryProjectForLocalRefs([], scope.projectRefs, sharedCopies.data ?? []),
+  );
+  const visibleScopes = filterProjectScopes(legacyScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
     ? (projects.find(
@@ -353,6 +373,30 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
+          {sharedChoices.length > 0 ? (
+            <View className="overflow-hidden rounded-2xl bg-grouped-card">
+              {sharedChoices.map((project) => (
+                <MaterialListRow
+                  key={project.id}
+                  title={project.title}
+                  subtitle={
+                    project.brief.trim().split("\n")[0] ||
+                    `${project.resources.filter((resource) => resource.kind !== "link").length} repository components`
+                  }
+                  onPress={() =>
+                    navigation
+                      .getParent()
+                      ?.dispatch(StackActions.replace("LibraryStart", { projectId: project.id }))
+                  }
+                />
+              ))}
+            </View>
+          ) : null}
+          {sharedProjects.error ? (
+            <Text accessibilityLiveRegion="polite" className="text-sm text-danger-foreground">
+              {sharedProjects.error}
+            </Text>
+          ) : null}
           {canStartScratch && listScopes.length > 0 ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
@@ -403,7 +447,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               </View>
             )
           ) : null}
-          {listScopes.length === 0 ? (
+          {legacyScopes.length === 0 && sharedChoices.length === 0 ? (
             <View
               collapsable={false}
               className={cn(
@@ -449,7 +493,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 </>
               ) : null}
             </View>
-          ) : visibleScopes.length === 0 ? (
+          ) : visibleScopes.length === 0 && sharedChoices.length === 0 ? (
             <View className="items-center gap-2 px-6 py-8">
               <Text className="text-center text-lg font-t3-bold text-foreground">
                 No matching projects

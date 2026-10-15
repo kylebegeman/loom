@@ -314,7 +314,7 @@ function WorkspaceStackView(props: ViewProps & { readonly nativeColumns: boolean
     render: () => (
       <WorkspaceNativeTabs
         onNewTask={() => {
-          if (primaryRoute.name === "Library") {
+          if (visibleRoute.name.startsWith("Library")) {
             const params = visibleRoute.params;
             if (
               visibleRoute.name.startsWith("Library") &&

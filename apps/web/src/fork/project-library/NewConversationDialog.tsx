@@ -86,7 +86,9 @@ export function NewConversationDialog({
     attempt?.environmentId ?? initialHostId ?? null,
   );
   const [resourceId, setResourceId] = useState<string | null>(
-    attempt?.binding.resourceIds.length === 1 ? attempt.binding.resourceIds[0]! : null,
+    attempt?.binding.resourceIds.length === 1
+      ? attempt.binding.resourceIds[0]!
+      : (initialResourceId ?? null),
   );
   const [title, setTitle] = useState(
     attempt?.title ?? (continuation ? `Continue: ${continuation.title}` : ""),
@@ -140,6 +142,8 @@ export function NewConversationDialog({
   });
   const create = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
   const bind = useAtomCommand(projectLibrary.bindThread, { reportFailure: false });
+  const prepareCopy = useAtomCommand(projectLibrary.prepareCopy, { reportFailure: false });
+  const registerCopy = useAtomCommand(projectLibrary.registerCopy, { reportFailure: false });
   const register = useAtomCommand(projectLibrary.registerThread, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
@@ -185,6 +189,26 @@ export function NewConversationDialog({
         registerRequestId: randomUUID(),
       };
       saveAttempt(next);
+      if (copy.ownership === "borrowed" && !next.created) {
+        const prepared = await prepareCopy({
+          environmentId: next.environmentId,
+          input: {
+            requestId: `${next.registerRequestId}:files`,
+            project: next.project,
+            rootPath: copy.rootPath,
+            strategy: "reuse",
+            resourceIds: next.binding.resourceIds,
+          },
+        });
+        if (prepared._tag === "Failure") throw squashAtomCommandFailure(prepared);
+        if (prepared.value.id !== next.binding.workingCopyId)
+          throw new Error("The prepared folder does not match this conversation's working copy.");
+        const savedCopy = await registerCopy({
+          environmentId: authority.authorityId,
+          input: { requestId: `${next.registerRequestId}:copy`, copy: prepared.value },
+        });
+        if (savedCopy._tag === "Failure") throw squashAtomCommandFailure(savedCopy);
+      }
       const resolved = await resolve({
         environmentId: next.environmentId,
         input: { binding: next.binding, project: next.project },

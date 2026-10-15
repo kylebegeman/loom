@@ -40,6 +40,25 @@ function history(
 }
 
 describe("durable library navigation", () => {
+  it("keeps threads primary when Projects and project detail are pushed", () => {
+    const library = { key: "projects", name: "Library" };
+    const project = { key: "project", name: "LibraryProject", params: { projectId: "AspectAvy" } };
+    expect(projectWorkspaceStack(history([home, library]), () => false)).toEqual({
+      primary: home,
+      detail: [library],
+      overlays: [],
+    });
+    expect(projectWorkspaceStack(history([home, thread, library, project]), () => false)).toEqual({
+      primary: home,
+      detail: [thread, library, project],
+      overlays: [],
+    });
+    expect(projectWorkspaceStack(history([library, project]), () => false)).toEqual({
+      primary: library,
+      detail: [project],
+      overlays: [],
+    });
+  });
   it("keeps the library primary while project and conversation routes occupy the detail column", () => {
     const library = { key: "library", name: "Library" };
     const project = { key: "project", name: "LibraryProject", params: { projectId: "durable" } };

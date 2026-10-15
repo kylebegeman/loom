@@ -14,8 +14,8 @@ export function projectWorkspaceStack(
   const firstOverlay = state.routes.findIndex(isOverlay);
   const workspaceRoutes = state.routes.slice(0, firstOverlay < 0 ? undefined : firstOverlay);
   const primary =
-    workspaceRoutes.find((route) => route.name === "Library") ??
-    workspaceRoutes.find((route) => route.name === "Home");
+    workspaceRoutes.find((route) => route.name === "Home") ??
+    workspaceRoutes.find((route) => route.name === "Library");
   const detail = workspaceRoutes.filter((route) => route.key !== primary?.key);
   const overlays = firstOverlay < 0 ? [] : state.routes.slice(firstOverlay);
   return { primary, detail, overlays };

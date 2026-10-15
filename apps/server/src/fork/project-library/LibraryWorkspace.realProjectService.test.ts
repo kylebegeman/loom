@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId } from "@t3tools/contracts";
+import { CommandId, ProjectId, EnvironmentId } from "@t3tools/contracts";
 import { type LibraryProject } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -80,6 +80,76 @@ const git = Effect.fnUntraced(function* (cwd: string, args: ReadonlyArray<string
 });
 
 it.layer(layer)("Library workspace with real project services", (it) => {
+  it.effect(
+    "materializes migrated component records when an existing borrowed copy is reused",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem,
+          path = yield* Path.Path;
+        const rootPath = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "library-migrated-copy-" }),
+        );
+        const repository = path.join(rootPath, "web");
+        yield* fs.makeDirectory(repository);
+        yield* git(repository, ["init", "--initial-branch=main"]);
+        const workspace = yield* Workspace.LibraryWorkspace,
+          store = yield* Store.LibraryWorkspaceStore,
+          projects = yield* ProjectService.ProjectService;
+        const root = yield* projects.bootstrap({
+          commandId: CommandId.make("migration-root"),
+          projectId: ProjectId.make("legacy-root"),
+          title: "Existing parent",
+          workspaceRoot: rootPath,
+        });
+        const migratedId = ProjectId.make("legacy-migrated-component");
+        const seed = {
+          id: "migrated-copy",
+          projectId: project.id,
+          projectRevision: 1,
+          environmentId: EnvironmentId.make("real-project-service-host"),
+          rootPath,
+          rootLocalProjectId: root.project.id,
+          repositories: [
+            {
+              resourceId: "web",
+              path: repository,
+              localProjectId: migratedId,
+              head: null,
+              branch: "main",
+            },
+          ],
+          ownership: "borrowed" as const,
+          state: "ready" as const,
+          createdAt: project.createdAt,
+          updatedAt: project.updatedAt,
+        };
+        yield* store.put({
+          requestId: "imported-migration",
+          fingerprint: "migration-proof",
+          project: { ...project, resources: [project.resources[0]!] },
+          copy: seed,
+          rootLocalProjectId: root.project.id,
+          rootCheckpointRepository: false,
+          legacyThreadIds: [],
+          rootIdentity: null,
+          releaseRequestId: null,
+          releaseReviewToken: null,
+          removalPath: null,
+          archivePath: null,
+          archiveDigest: null,
+        });
+        expect(Option.isNone(yield* projects.getById(migratedId))).toBe(true);
+        const copy = yield* workspace.prepareCopy({
+          requestId: "reuse-migrated",
+          project: { ...project, resources: [project.resources[0]!] },
+          rootPath,
+          strategy: "reuse",
+        });
+        expect(copy.id).toBe(seed.id);
+        expect(copy.repositories[0]?.localProjectId).toBe(migratedId);
+        expect(Option.isSome(yield* projects.getById(migratedId))).toBe(true);
+      }),
+  );
   it.effect(
     "prepares borrowed nested repositories and a managed context root without reacquiring their held lease",
     () =>

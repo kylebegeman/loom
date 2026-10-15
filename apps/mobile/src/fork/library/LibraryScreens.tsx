@@ -119,8 +119,11 @@ export function LibraryRouteScreen() {
   const canCreate = useAtomValue(library.createProject.permissionAtom(authority.environmentId));
   useFocusEffect(
     useCallback(() => {
-      if (authority.connected) catalog.refresh();
-    }, [authority.connected, catalog.refresh]),
+      if (authority.connected) {
+        catalog.refresh();
+        authority.info.refresh();
+      }
+    }, [authority.connected, catalog.refresh, authority.info.refresh]),
   );
   const query = search.trim().toLocaleLowerCase();
   const projects = (catalog.data ?? [])
@@ -168,6 +171,23 @@ export function LibraryRouteScreen() {
         <>
           {!authority.connected ? (
             <LibraryNotice detail="Library offline. Saved projects remain available; reconnect to save changes." />
+          ) : null}
+          {authority.connected && !authority.ready ? (
+            <LibraryNotice
+              error={authority.info.error}
+              detail={
+                authority.info.error
+                  ? null
+                  : !authority.supported
+                    ? "This computer needs a Loom update to manage shared projects."
+                    : !authority.canRead
+                      ? "Sign in to your Library to manage projects."
+                      : "Connecting to your Library..."
+              }
+              onRetry={authority.info.refresh}
+            />
+          ) : authority.ready && !canCreate ? (
+            <LibraryNotice detail="This connection can browse projects. Sign in with your owner account to create or edit them." />
           ) : null}
           <TextInput
             accessibilityLabel="Search projects"

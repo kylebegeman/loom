@@ -354,6 +354,76 @@ const make = Effect.gen(function* () {
       return yield* new LibraryError({ reason: "request-conflict" });
     if (existing?.copy.state === "ready" || existing?.copy.state === "released")
       return existing.copy;
+    const reusable = receipts.find(
+      (receipt) =>
+        receipt.copy.rootPath === rootPath &&
+        receipt.copy.ownership === "borrowed" &&
+        receipt.copy.registered !== false &&
+        receipt.copy.projectId === input.project.id &&
+        (receipt.copy.state === "ready" || receipt.copy.state === "missing"),
+    );
+    if (existing === undefined && reusable !== undefined && input.strategy === "reuse") {
+      yield* resolveBinding({
+        binding: {
+          projectId: input.project.id,
+          projectRevision: input.project.revision,
+          workingCopyId: reusable.copy.id,
+          environmentId,
+          resourceIds: requestedIds,
+        },
+        project: input.project,
+      });
+      // Shadow imports preserve source IDs without writing the live catalog. Materialize any
+      // component records through the normal project service when this copy is first reused.
+      const required = [
+        ...(reusable.rootLocalProjectId
+          ? [{ id: reusable.rootLocalProjectId, cwd: rootPath, title: input.project.title }]
+          : []),
+        ...reusable.copy.repositories.map((repository) => ({
+          id: repository.localProjectId,
+          cwd: repository.path,
+          title:
+            input.project.resources.find((resource) => resource.id === repository.resourceId)
+              ?.title ?? input.project.title,
+        })),
+      ];
+      for (const record of required) {
+        const current = yield* projects.getById(record.id);
+        if (Option.isSome(current)) {
+          if (
+            (yield* fs.realPath(current.value.workspaceRoot)) !== (yield* fs.realPath(record.cwd))
+          )
+            return yield* new LibraryError({ reason: "invalid" });
+        } else {
+          const created = yield* projects.bootstrap(
+            {
+              commandId: CommandId.make(`library-reuse:${reusable.copy.id}:${record.id}`),
+              projectId: record.id,
+              title: record.title,
+              workspaceRoot: record.cwd,
+            },
+            { workspaceLeaseHeld: record.cwd === requestedRoot(input.rootPath) },
+          );
+          if (created.project.id !== record.id)
+            return yield* new LibraryError({ reason: "blocked" });
+        }
+      }
+      const restored = {
+        ...reusable,
+        copy: {
+          ...reusable.copy,
+          rootLocalProjectId: reusable.rootLocalProjectId,
+          state: "ready" as const,
+          updatedAt: yield* now,
+        },
+        registrationRequests: [
+          ...(reusable.registrationRequests ?? []),
+          { requestId: input.requestId, fingerprint },
+        ],
+      };
+      yield* store.put(restored);
+      return restored.copy;
+    }
     const retired = receipts.find(
       (receipt) =>
         receipt.copy.rootPath === rootPath &&
