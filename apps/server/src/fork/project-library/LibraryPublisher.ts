@@ -1,11 +1,16 @@
 import { libraryJsonBody } from "./transfer.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
-import { EnvironmentId, IsoDateTime } from "@t3tools/contracts";
+import { EnvironmentId, IsoDateTime, type ThreadId } from "@t3tools/contracts";
 import {
+  LibraryBriefProposal,
   LibraryComputerRegistration,
+  LibraryConversationBriefProposal,
+  LibraryProject,
+  type LibraryProposeBriefRequest,
   LibraryRegisterComputerRequest,
   LibraryError,
+  LibraryId,
   LibraryInfo,
   LibraryIngestHistoryRequest,
   LibraryIngestHistoryResult,
@@ -61,6 +66,13 @@ export class LibraryPublisher extends Context.Service<
     readonly recordActivity: (
       input: LibraryRecordActivityRequest,
     ) => Effect.Effect<LibraryRecordActivityResult, LibraryError>;
+    /** The project as the Library has it now. */
+    readonly project: (projectId: string) => Effect.Effect<LibraryProject, LibraryError>;
+    /** Proposes a brief as one of this computer's conversations. */
+    readonly proposeBrief: (
+      input: LibraryProposeBriefRequest,
+      threadId: ThreadId,
+    ) => Effect.Effect<LibraryBriefProposal, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryPublisher") {}
 
@@ -74,6 +86,15 @@ const decodeCopy = Schema.decodeUnknownEffect(LibraryWorkingCopy);
 const encodeActivity = Schema.encodeEffect(Schema.fromJsonString(LibraryRecordActivityRequest));
 const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityResult);
 const decodeAsset = Schema.decodeUnknownEffect(LibraryAsset);
+const encodeProjectRead = Schema.encodeEffect(
+  Schema.fromJsonString(Schema.Struct({ projectId: LibraryId })),
+);
+const decodeProject = Schema.decodeUnknownEffect(LibraryProject);
+const encodeProposal = Schema.encodeEffect(Schema.fromJsonString(LibraryConversationBriefProposal));
+const decodeProposal = Schema.decodeUnknownEffect(LibraryBriefProposal);
+const decodeReason = Schema.decodeUnknownEffect(
+  Schema.Struct({ reason: LibraryError.fields.reason }),
+);
 const HostCredential = Schema.Struct({
   computer: Schema.optional(LibraryComputerRegistration),
   version: Schema.Literal(1),
@@ -97,9 +118,10 @@ const make = Effect.gen(function* () {
     Config.option,
   );
   const sourceIdentity = yield* ServerEnvironmentIdentity;
+  const sourceEnvironmentId = yield* sourceIdentity.getEnvironmentId;
   const computerDirectory = libraryComputerDirectory(
     yield* HostProcess.HomeDirectory,
-    yield* sourceIdentity.getEnvironmentId,
+    sourceEnvironmentId,
   );
   const externalCredentialFile = path.join(computerDirectory, "publisher.json");
   const defaultCredentialFile = (yield* fs.exists(externalCredentialFile))
@@ -119,6 +141,8 @@ const make = Effect.gen(function* () {
       registerCopy: () => blocked,
       publishAttachments: () => blocked,
       recordActivity: () => blocked,
+      project: () => blocked,
+      proposeBrief: () => blocked,
     });
   };
   if (
@@ -167,6 +191,13 @@ const make = Effect.gen(function* () {
       registerCopy: localLibrary.registerCopy,
       publishAttachments: publishLocalAttachments,
       recordActivity: localLibrary.recordActivity,
+      project: (projectId) => localLibrary.project({ projectId }),
+      proposeBrief: (input, threadId) =>
+        localLibrary.proposeBrief(input, {
+          kind: "conversation",
+          environmentId: sourceEnvironmentId,
+          threadId,
+        }),
     });
   }
   const credentialResult = Option.isNone(credentialFile)
@@ -222,7 +253,11 @@ const make = Effect.gen(function* () {
       ? yield* Config.Redacted("LOOM_LIBRARY_TOKEN").pipe(Config.option)
       : Option.some(credential.accessToken);
   const http = yield* HttpClient.HttpClient;
-  const execute = Effect.fnUntraced(function* (request: HttpClientRequest.HttpClientRequest) {
+  const execute = Effect.fnUntraced(function* (
+    request: HttpClientRequest.HttpClientRequest,
+    /** Keep the reason the Library gave for refusing, such as a full proposal queue. */
+    keepReason = false,
+  ) {
     if (
       Option.isNone(token) ||
       (credential !== null && Date.parse(credential.expiresAt) <= (yield* Clock.currentTimeMillis))
@@ -235,6 +270,10 @@ const make = Effect.gen(function* () {
         Effect.timeout("3 minutes"),
         Effect.mapError(() => new LibraryError({ reason: "io" })),
       );
+    if (keepReason && (response.status === 400 || response.status === 409)) {
+      const refused = yield* response.json.pipe(Effect.flatMap(decodeReason), Effect.option);
+      if (Option.isSome(refused)) return yield* new LibraryError({ reason: refused.value.reason });
+    }
     if (response.status < 200 || response.status >= 300)
       return yield* new LibraryError({
         reason: response.status === 401 || response.status === 403 ? "blocked" : "io",
@@ -389,6 +428,39 @@ const make = Effect.gen(function* () {
     },
     Effect.mapError(() => new LibraryError({ reason: "io" })),
   );
+  const project = Effect.fnUntraced(function* (projectId: string) {
+    const body = yield* encodeProjectRead({ projectId }).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+    );
+    const response = yield* execute(
+      HttpClientRequest.post(endpoint("/api/loom/library/projects/read")).pipe(
+        HttpClientRequest.bodyText(body, "application/json"),
+      ),
+      true,
+    );
+    return yield* response.json.pipe(
+      Effect.flatMap(decodeProject),
+      Effect.mapError(() => new LibraryError({ reason: "io" })),
+    );
+  });
+  const proposeBrief = Effect.fnUntraced(function* (
+    input: LibraryProposeBriefRequest,
+    threadId: ThreadId,
+  ) {
+    const body = yield* encodeProposal({ ...input, threadId }).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+    );
+    const response = yield* execute(
+      HttpClientRequest.post(endpoint("/api/loom/library/brief/propose")).pipe(
+        HttpClientRequest.bodyText(body, "application/json"),
+      ),
+      true,
+    );
+    return yield* response.json.pipe(
+      Effect.flatMap(decodeProposal),
+      Effect.mapError(() => new LibraryError({ reason: "io" })),
+    );
+  });
   return LibraryPublisher.of({
     enabled: true,
     info,
@@ -396,6 +468,8 @@ const make = Effect.gen(function* () {
     registerCopy,
     publishAttachments,
     recordActivity,
+    project,
+    proposeBrief,
   });
 });
 export const layer = Layer.effect(LibraryPublisher, make);

@@ -147,6 +147,16 @@ conversation from its project and choose **Suggest brief updates**. Its computer
 connected; the agent receives a short follow-up asking it to review what changed. Suggestions
 appear once your Library supports them.
 
+To have Loom ask on its own, set **Suggest brief updates when a conversation settles** in the
+project's **Setup**. **Off**, the default, waits for you to ask. **Ask first** puts an offer on
+each settled conversation's Library page; choose **Suggest updates** to run it or **Not now**
+to drop it. **Automatic** runs as soon as a conversation settles. Either way a separate
+background conversation reads the settled one with its model, on the computer where it settled,
+and makes at most one suggestion for you to review. Your conversation is left as it was. Each
+computer runs at most 3 a day for a project; later settles are skipped, and the conversation's
+page says so. The setting appears once your Library supports it, and that computer needs the
+same update to run suggestions.
+
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.
 Removing a managed working copy preserves the Library project and saved conversations;

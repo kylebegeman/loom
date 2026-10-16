@@ -10,6 +10,7 @@ import {
   LIBRARY_READINESS_WS_METHODS as LR,
   LIBRARY_TIMELINE_WS_METHODS as LT,
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
+  LIBRARY_BRIEF_SUGGESTION_WS_METHODS as SUGGEST,
   LIBRARY_SEARCH_WS_METHODS as LS,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
@@ -222,6 +223,19 @@ export function createProjectLibraryAtoms<R, E>(
     dismissBriefProposal: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:dismiss-brief-proposal",
       tag: BRIEF.dismiss,
+    }),
+    /** Ask the conversation's computer, which must advertise `library-brief-suggestions`. */
+    briefSuggestion: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:brief-suggestion",
+      tag: SUGGEST.suggestion,
+    }),
+    startBriefSuggestion: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:start-brief-suggestion",
+      tag: SUGGEST.start,
+    }),
+    declineBriefSuggestion: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:decline-brief-suggestion",
+      tag: SUGGEST.decline,
     }),
   };
 }

@@ -7,9 +7,11 @@ import {
   LIBRARY_SEARCH_WS_METHODS,
   LIBRARY_TIMELINE_WS_METHODS as LT,
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
+  LIBRARY_BRIEF_SUGGESTION_WS_METHODS as SUGGEST,
   LIBRARY_WS_METHODS as L,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as LibraryBriefSuggestions from "./LibraryBriefSuggestions.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
@@ -23,6 +25,7 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
     const timeline = yield* LibraryTimeline.LibraryTimeline;
     const assets = yield* Assets.LibraryAssetService;
     const workspace = yield* LibraryWorkspace.LibraryWorkspace;
+    const suggestions = yield* LibraryBriefSuggestions.LibraryBriefSuggestions;
     return {
       [L.subscribeRefreshes]: () => auth.stream(L.subscribeRefreshes, library.subscribeRefreshes),
       [L.replicationStatus]: () => auth.effect(L.replicationStatus, replication.status),
@@ -103,5 +106,11 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(BRIEF.accept, library.acceptBriefProposal(input)),
       [BRIEF.dismiss]: (input: Parameters<typeof library.dismissBriefProposal>[0]) =>
         auth.effect(BRIEF.dismiss, library.dismissBriefProposal(input)),
+      [SUGGEST.suggestion]: (input: Parameters<typeof suggestions.suggestion>[0]) =>
+        auth.effect(SUGGEST.suggestion, suggestions.suggestion(input)),
+      [SUGGEST.start]: (input: Parameters<typeof suggestions.start>[0]) =>
+        auth.effect(SUGGEST.start, suggestions.start(input)),
+      [SUGGEST.decline]: (input: Parameters<typeof suggestions.decline>[0]) =>
+        auth.effect(SUGGEST.decline, suggestions.decline(input)),
     };
   });

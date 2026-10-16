@@ -8,6 +8,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
+import * as BriefSuggestions from "./LibraryBriefSuggestions.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Timeline from "./LibraryTimeline.ts";
 import * as Launch from "./LibraryLaunchCandidates.ts";
@@ -272,7 +273,11 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         ),
       ),
       loom_library_project: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.project(input))),
+        onHost(
+          Effect.flatMap(BriefSuggestions.LibraryBriefSuggestions, (service) =>
+            service.project(input),
+          ),
+        ),
       ),
       loom_library_conversations: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threads(input))),
@@ -351,8 +356,8 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       loom_library_brief_propose: McpToolAccess.writes((input) =>
         Effect.flatMap(proposalSource, (source) =>
           onHost(
-            Effect.flatMap(Catalog.LibraryService, (service) =>
-              service.proposeBrief(input, source),
+            Effect.flatMap(BriefSuggestions.LibraryBriefSuggestions, (service) =>
+              service.propose(input, source),
             ),
           ),
         ),

@@ -6,7 +6,10 @@ import {
   AuthOrchestrationOperateScope,
   AuthSessionId,
 } from "@t3tools/contracts";
-import { LibraryIngestHistoryRequest } from "@t3tools/contracts/fork";
+import {
+  LibraryIngestHistoryRequest,
+  type LibraryBriefProposalSource,
+} from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { HttpClientRequest } from "effect/http";
@@ -26,6 +29,7 @@ const encodeIngest = Schema.encodeEffect(
 const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const fixture = Effect.gen(function* () {
   const calls = yield* Ref.make(0);
+  const proposed = yield* Ref.make<LibraryBriefProposalSource | null>(null);
   const session = yield* Ref.make<EnvironmentAuth.AuthenticatedSession>({
     sessionId: AuthSessionId.make("session"),
     subject: `loom-host:${source}`,
@@ -48,6 +52,10 @@ const fixture = Effect.gen(function* () {
               enrolledAt: "2026-10-15T00:00:00.000Z",
               lastSeenAt: "2026-10-15T00:00:00.000Z",
             }),
+          ),
+        proposeBrief: (input, proposalSource) =>
+          Ref.set(proposed, proposalSource).pipe(
+            Effect.as({ id: "proposal", projectId: input.projectId } as never),
           ),
         ingestHistory: (input) =>
           Ref.update(calls, (count) => count + 1).pipe(
@@ -106,13 +114,43 @@ const fixture = Effect.gen(function* () {
         }),
       ),
     );
-  return { calls, session, input, request };
+  return { calls, proposed, session, input, request };
 });
 const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
   Effect.gen(function* () {
     return yield* use(yield* fixture);
   }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
 describe("Library host HTTP publishing boundaries", () => {
+  it.effect("records a forwarded proposal as the sending computer's conversation", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const body = yield* encodeJson({
+          requestId: "suggest",
+          projectId: "project",
+          baseRevision: 1,
+          proposedBrief: "Ship the viewer. Export as STEP.",
+          summary: "Record the export decision.",
+          threadId: "thread-1",
+        });
+        expect((yield* f.request("brief/propose", body)).status).toBe(200);
+        expect(yield* Ref.get(f.proposed)).toEqual({
+          kind: "conversation",
+          environmentId: source,
+          threadId: "thread-1",
+        });
+
+        // An operator session names no computer, so it cannot propose as a conversation.
+        yield* Ref.set(f.proposed, null);
+        yield* Ref.update(f.session, (session) => ({
+          ...session,
+          subject: "operator",
+          scopes: [AuthOrchestrationOperateScope],
+        }));
+        expect((yield* f.request("brief/propose", body)).status).toBe(403);
+        expect(yield* Ref.get(f.proposed)).toBeNull();
+      }),
+    ),
+  );
   it.effect(
     "accepts a dedicated host publisher only for its source and pinned authority tuple",
     () =>

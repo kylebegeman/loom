@@ -58,5 +58,6 @@ export * from "./project-library-activity.ts";
 export * from "./project-library-brief.ts";
 export * from "./project-library-readiness.ts";
 export * from "./project-library-launch.ts";
+export * from "./project-library-brief-suggestions.ts";
 
 export * from "./identity.ts";

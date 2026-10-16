@@ -62,6 +62,13 @@ export type LibraryRequiredTool = typeof LibraryRequiredTool.Type;
 /** An environment variable name. Values live on each computer; a profile only names them. */
 export const LibrarySecretName = Schema.String.check(Schema.isPattern(/^[A-Z_][A-Z0-9_]{0,127}$/));
 
+/**
+ * Whether a conversation that settles asks its computer's agent to suggest brief updates:
+ * never, after a person says yes, or right away. Absent means off.
+ */
+export const LibraryBriefSuggestionMode = Schema.Literals(["off", "ask", "automatic"]);
+export type LibraryBriefSuggestionMode = typeof LibraryBriefSuggestionMode.Type;
+
 const profileFields = {
   scripts: Schema.optional(
     Schema.Array(ProjectScript).check(Schema.isMaxLength(LIBRARY_PROFILE_LIMITS.scripts)),
@@ -81,6 +88,8 @@ const profileFields = {
     ),
   ),
   allowMini: Schema.optional(Schema.Boolean),
+  /** Saved only by a Library with `library-brief-suggestions`; an older one drops it. */
+  briefSuggestions: Schema.optional(LibraryBriefSuggestionMode),
 };
 
 /** A project's setup, defaults and requirements, saved with its brief in each revision. */

@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_BRIEF_PROPOSALS_FEATURE,
+  LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
   LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
   LIBRARY_PROJECT_PROFILE_FEATURE,
   type LibraryProject,
@@ -164,6 +165,11 @@ function ProjectView({
     library.environment?.serverConfig?.environment.capabilities,
     LIBRARY_BRIEF_PROPOSALS_FEATURE,
   );
+  // An older Library would drop the brief suggestion setting, so the field waits for it too.
+  const keepsBriefSuggestions = supportsLoomFeature(
+    library.environment?.serverConfig?.environment.capabilities,
+    LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
+  );
   const canWork = library.connected && !project.archived;
   const canStart = canRegister && canWork;
   const threads = (library.threads.data ?? [])
@@ -267,6 +273,7 @@ function ProjectView({
               copies={activeCopies}
               computers={library.computers}
               canEdit={update.canEdit}
+              keepsBriefSuggestions={keepsBriefSuggestions}
               busy={update.busy}
               error={update.error}
               hostLabel={hostLabel}
