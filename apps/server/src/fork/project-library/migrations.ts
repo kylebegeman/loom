@@ -47,5 +47,14 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE fork_library_computers (environment_id TEXT PRIMARY KEY,payload_json TEXT NOT NULL)`;
       }),
     ],
+    [
+      4,
+      "BriefProposals",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_library_brief_proposals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES fork_library_projects(id), status TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX fork_library_brief_proposals_project ON fork_library_brief_proposals(project_id, status, created_at)`;
+      }),
+    ],
   ],
 };

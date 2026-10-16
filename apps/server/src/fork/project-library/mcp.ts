@@ -172,6 +172,23 @@ export const ProjectLibraryToolkit = Toolkit.make(
   })
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_brief_propose", {
+    description:
+      "Propose a full replacement project brief with a short summary of why. A person reviews it in the Library and accepts, edits or dismisses it; agents cannot accept. A new proposal replaces this conversation's earlier pending one.",
+    parameters: Library.LibraryProposeBriefRequest,
+    success: Library.LibraryBriefProposal,
+    failure,
+    dependencies,
+  })
+    .annotate(Tool.Readonly, false)
+    .annotate(Tool.Destructive, false),
+  Tool.make("loom_library_brief_proposals", {
+    description:
+      "List a project's brief proposals, newest first, optionally by status: pending, accepted, dismissed or superseded.",
+    parameters: Library.LibraryBriefProposalsRequest,
+    success: Library.LibraryBriefProposalPage,
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_history_flush", {
     description:
       "Upload committed bound conversation snapshots and referenced assets from this computer. Never retries an ambiguous provider dispatch.",
@@ -182,6 +199,24 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
 );
+/** Records which conversation or signed-in agent proposed a brief; request input never chooses it. */
+const proposalSource = McpInvocationContext.pipe(
+  Effect.map((scope): Library.LibraryBriefProposalSource => {
+    if (scope.thread !== undefined)
+      return {
+        kind: "conversation",
+        environmentId: scope.environmentId,
+        threadId: scope.thread.threadId,
+      };
+    const label = scope.client?.label.trim().slice(0, 160);
+    return {
+      kind: "agent",
+      id: scope.client?.sessionId ?? scope.requestNamespace,
+      label: label || "Agent",
+    };
+  }),
+);
+
 export const projectLibraryHandlers = McpToolAccess.toLayer(
   ProjectLibraryToolkit,
   Effect.gen(function* () {
@@ -256,6 +291,18 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
           onHost(
             Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.bindThread(input)),
           ),
+      ),
+      loom_library_brief_propose: McpToolAccess.writes((input) =>
+        Effect.flatMap(proposalSource, (source) =>
+          onHost(
+            Effect.flatMap(Catalog.LibraryService, (service) =>
+              service.proposeBrief(input, source),
+            ),
+          ),
+        ),
+      ),
+      loom_library_brief_proposals: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.briefProposals(input))),
       ),
       loom_library_history_flush: McpToolAccess.writesEnvironment(() =>
         onHost(

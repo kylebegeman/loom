@@ -17,6 +17,14 @@ import {
   LibraryInfo,
   LibraryError,
   LibraryRequestId,
+  LibraryBriefProposal,
+  LibraryBriefProposalPage,
+  LibraryAcceptBriefProposalRequest,
+  LibraryAcceptBriefProposalResult,
+  LibraryDismissBriefProposalRequest,
+  type LibraryBriefProposalSource,
+  type LibraryBriefProposalsRequest,
+  type LibraryProposeBriefRequest,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
@@ -41,6 +49,7 @@ import { libraryComputerDirectory, readLibraryDestination } from "./enrollment.t
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { libraryAttachments } from "./attachments.ts";
 import { validLibraryResources } from "./policy.ts";
+import * as BriefProposals from "./LibraryBriefProposals.ts";
 
 export class LibraryService extends Context.Service<
   LibraryService,
@@ -99,6 +108,21 @@ export class LibraryService extends Context.Service<
     readonly verifyImport: (input: {
       requestId: string;
     }) => Effect.Effect<LibraryImportReceipt, LibraryError>;
+    readonly proposeBrief: (
+      input: LibraryProposeBriefRequest,
+      source: LibraryBriefProposalSource,
+    ) => Effect.Effect<LibraryBriefProposal, LibraryError>;
+    readonly briefProposals: (
+      input: LibraryBriefProposalsRequest,
+    ) => Effect.Effect<LibraryBriefProposalPage, LibraryError>;
+    /** People only: agents propose, and the guarded RPC is the only caller. */
+    readonly acceptBriefProposal: (
+      input: LibraryAcceptBriefProposalRequest,
+    ) => Effect.Effect<LibraryAcceptBriefProposalResult, LibraryError>;
+    /** People only, like `acceptBriefProposal`. */
+    readonly dismissBriefProposal: (
+      input: LibraryDismissBriefProposalRequest,
+    ) => Effect.Effect<LibraryBriefProposal, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryService") {}
 
@@ -126,6 +150,11 @@ const codecs = {
   ingestResult: compileCodec(Schema.fromJsonString(LibraryIngestHistoryResult)),
   import: compileCodec(Schema.fromJsonString(Schema.toCodecJson(LibraryImportShadowRequest))),
   receipt: compileCodec(Schema.fromJsonString(LibraryImportReceipt)),
+  briefProposal: compileCodec(Schema.fromJsonString(LibraryBriefProposal)),
+  proposeBrief: compileCodec(Schema.fromJsonString(BriefProposals.LibraryProposeBriefCommand)),
+  acceptBrief: compileCodec(Schema.fromJsonString(LibraryAcceptBriefProposalRequest)),
+  acceptedBrief: compileCodec(Schema.fromJsonString(LibraryAcceptBriefProposalResult)),
+  dismissBrief: compileCodec(Schema.fromJsonString(LibraryDismissBriefProposalRequest)),
   authority: compileCodec(
     Schema.fromJsonString(Schema.Struct({ id: Schema.String, epoch: Schema.Int })),
   ),
@@ -484,31 +513,38 @@ const make = Effect.gen(function* () {
         });
       }),
     );
+  const reviseProject = (input: LibraryUpdateProjectRequest) =>
+    Effect.gen(function* () {
+      const current = yield* getProject(input.projectId);
+      if (current.revision !== input.expectedRevision)
+        return yield* new LibraryError({ reason: "revision-conflict" });
+      if (!validLibraryResources(input.resources)) return yield* invalid();
+      // Omitted keeps the saved color so older clients never clear it; null returns to automatic.
+      const { color: savedColor, ...rest } = current;
+      const color = input.color === undefined ? savedColor : (input.color ?? undefined);
+      return yield* putProject({
+        ...rest,
+        ...(color ? { color } : {}),
+        title: input.title.trim(),
+        brief: input.brief,
+        resources: input.resources,
+        revision: current.revision + 1,
+        updatedAt: yield* now,
+      });
+    });
   const updateProject = (input: LibraryUpdateProjectRequest) =>
     mutation(
       "update-project",
       input.requestId,
       encode(codecs.update, input),
       codecs.project,
-      Effect.gen(function* () {
-        const current = yield* getProject(input.projectId);
-        if (current.revision !== input.expectedRevision)
-          return yield* new LibraryError({ reason: "revision-conflict" });
-        if (!validLibraryResources(input.resources)) return yield* invalid();
-        // Omitted keeps the saved color so older clients never clear it; null returns to automatic.
-        const { color: savedColor, ...rest } = current;
-        const color = input.color === undefined ? savedColor : (input.color ?? undefined);
-        return yield* putProject({
-          ...rest,
-          ...(color ? { color } : {}),
-          title: input.title.trim(),
-          brief: input.brief,
-          resources: input.resources,
-          revision: current.revision + 1,
-          updatedAt: yield* now,
-        });
-      }),
+      reviseProject(input),
     );
+  const briefs = yield* BriefProposals.make({
+    getProject,
+    reviseProject,
+    appendEvent: store.appendEvent,
+  });
   const archiveProject = (input: LibraryArchiveProjectRequest) =>
     mutation(
       "archive-project",
@@ -747,6 +783,31 @@ const make = Effect.gen(function* () {
     ingestHistory,
     importShadow,
     verifyImport,
+    proposeBrief: (input, source) =>
+      mutation(
+        "propose-brief",
+        input.requestId,
+        encode(codecs.proposeBrief, { ...input, source }),
+        codecs.briefProposal,
+        briefs.propose({ ...input, source }),
+      ),
+    briefProposals: (input) => catalogRead(briefs.list(input).pipe(Effect.mapError(io))),
+    acceptBriefProposal: (input) =>
+      mutation(
+        "accept-brief-proposal",
+        input.requestId,
+        encode(codecs.acceptBrief, input),
+        codecs.acceptedBrief,
+        briefs.accept(input),
+      ),
+    dismissBriefProposal: (input) =>
+      mutation(
+        "dismiss-brief-proposal",
+        input.requestId,
+        encode(codecs.dismissBrief, input),
+        codecs.briefProposal,
+        briefs.dismiss(input),
+      ),
     project: (input) => catalogRead(getProject(input.projectId).pipe(Effect.mapError(io))),
     projects: (input) =>
       catalogRead(
