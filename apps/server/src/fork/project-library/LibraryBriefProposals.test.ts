@@ -27,6 +27,7 @@ import * as Assets from "./assets/LibraryAssetService.ts";
 import { resource } from "./Library.testkit.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryTimeline from "./LibraryTimeline.ts";
+import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 import { ProjectLibraryToolkit } from "./mcp.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 
@@ -319,6 +320,86 @@ describe("Library brief proposals", () => {
 
         const unchanged = yield* Effect.result(propose("same", "Ship the viewer."));
         expect(reason(unchanged)).toBe("invalid");
+      }),
+    ),
+  );
+
+  it.effect("a full review queue refuses new sources but still takes replacements", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const { project, propose } = yield* setup(service);
+        const sql = yield* SqlClient.SqlClient;
+        const agent = (index: number): LibraryBriefProposalSource => ({
+          kind: "agent",
+          id: `agent-${index}`,
+          label: `Agent ${index}`,
+        });
+        const first = yield* propose("conversation", "Ship the viewer. Export as STEP.");
+        const agents = [];
+        for (let index = 1; index < MAX_PENDING_BRIEF_PROPOSALS; index++)
+          agents.push(
+            yield* propose(`agent-${index}`, `Ship the viewer. Note ${index}.`, agent(index)),
+          );
+        const counts = () =>
+          Effect.all({
+            events: sql<{ n: number }>`SELECT count(*) AS n FROM fork_library_events`,
+            proposals: sql<{ n: number }>`SELECT count(*) AS n FROM fork_library_brief_proposals`,
+          });
+        const before = yield* counts();
+
+        const overflow = () =>
+          propose(
+            "overflow",
+            "Ship the viewer. One more note.",
+            agent(MAX_PENDING_BRIEF_PROPOSALS),
+          );
+        expect(reason(yield* Effect.result(overflow()))).toBe("blocked");
+        expect(yield* counts()).toEqual(before);
+
+        // Replacing the conversation's own pending proposal does not grow the queue.
+        const second = yield* propose("replace", "Ship the viewer. Export as STEP and 3MF.");
+        const pending = yield* service.briefProposals({ projectId: project.id, status: "pending" });
+        expect(pending.proposals).toHaveLength(MAX_PENDING_BRIEF_PROPOSALS);
+        expect(pending.proposals.map((entry) => entry.id)).toContain(second.id);
+        expect(pending.proposals.map((entry) => entry.id)).not.toContain(first.id);
+
+        // Once a person reviews one, the refused request goes through: it left no receipt.
+        const dismissed = yield* service.dismissBriefProposal({
+          requestId: "dismiss",
+          proposalId: agents[0]!.id,
+        });
+        expect((yield* overflow()).status).toBe("pending");
+
+        const events = yield* sql<{
+          event_type: string;
+          payload_json: string;
+        }>`SELECT event_type, payload_json FROM fork_library_events WHERE event_type IN ('brief.superseded', 'brief.dismissed') ORDER BY sequence`;
+        expect(
+          events.map((event) => ({
+            type: event.event_type,
+            payload: JSON.parse(event.payload_json),
+          })),
+        ).toEqual([
+          {
+            type: "brief.superseded",
+            payload: {
+              proposalId: first.id,
+              baseRevision: project.revision,
+              summary: first.summary,
+              source: conversation,
+              supersededBy: second.id,
+            },
+          },
+          {
+            type: "brief.dismissed",
+            payload: {
+              proposalId: dismissed.id,
+              baseRevision: project.revision,
+              summary: dismissed.summary,
+              source: agent(1),
+            },
+          },
+        ]);
       }),
     ),
   );

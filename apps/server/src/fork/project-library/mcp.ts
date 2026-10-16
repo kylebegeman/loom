@@ -7,6 +7,7 @@ import { McpInvocationContext } from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
+import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Timeline from "./LibraryTimeline.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
@@ -196,8 +197,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Readonly, false)
     .annotate(Tool.Destructive, false),
   Tool.make("loom_library_brief_propose", {
-    description:
-      "Propose a full replacement project brief with a short summary of why. A person reviews it in the Library and accepts, edits or dismisses it; agents cannot accept. A new proposal replaces this conversation's earlier pending one.",
+    description: `Propose a full replacement project brief with a short summary of why. A person reviews it in the Library and accepts, edits or dismisses it; agents cannot accept. A new proposal replaces this conversation's earlier pending one. A project holds at most ${MAX_PENDING_BRIEF_PROPOSALS} pending proposals; at that limit new ones fail as blocked, so wait for a person to review the queue rather than retrying.`,
     parameters: Library.LibraryProposeBriefRequest,
     success: Library.LibraryBriefProposal,
     failure,
