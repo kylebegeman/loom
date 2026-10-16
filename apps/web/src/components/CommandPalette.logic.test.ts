@@ -13,6 +13,7 @@ import {
   filterPinnedBrowseEntries,
   filterCommandPaletteGroups,
   findHighlightedCommandPaletteItem,
+  paletteClosedIntoDialog,
   reduceCommandPaletteUiState,
   resolveAddProjectOpenTarget,
   type CommandPaletteActionItem,
@@ -934,5 +935,28 @@ describe("resolveAddProjectOpenTarget", () => {
       environmentId: remote,
     });
     expect(resolveAddProjectOpenTarget([])).toEqual({ kind: "connect" });
+  });
+});
+
+// fork: library-palette
+describe("paletteClosedIntoDialog", () => {
+  const element = (...matches: string[]) => ({
+    closest: (selector: string) => (matches.some((match) => selector.includes(match)) ? {} : null),
+  });
+  // `closest` stands in for the DOM: each element lists the containers it sits inside.
+  it("leaves focus in a dialog an action opened", () => {
+    expect(paletteClosedIntoDialog(element('role="dialog"') as unknown as Element)).toBe(true);
+    expect(paletteClosedIntoDialog(element('role="alertdialog"') as unknown as Element)).toBe(true);
+  });
+
+  it("returns focus to the composer otherwise", () => {
+    expect(paletteClosedIntoDialog(null)).toBe(false);
+    expect(paletteClosedIntoDialog(element() as unknown as Element)).toBe(false);
+    // Focus still inside the closing palette is not a dialog someone else opened.
+    expect(
+      paletteClosedIntoDialog(
+        element('role="dialog"', "data-command-palette") as unknown as Element,
+      ),
+    ).toBe(false);
   });
 });

@@ -18,7 +18,9 @@ import {
 } from "@t3tools/contracts/fork";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { FileTextIcon, FolderGit2Icon, SquarePenIcon } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { openCommandPalette } from "~/commandPaletteBus";
 
 import {
   ADDON_ICON_CLASS,
@@ -29,12 +31,42 @@ import { useEnvironmentQuery } from "~/state/query";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { openLibraryAction, requestLibraryBriefEdit } from "../project-library/actions";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "../project-library/state";
+import { onForkCommand } from "../keybindings/forkCommandBus";
 import type { ForkCommandPaletteSource } from "./registry";
 
 // The Projects page asks for the same page of the index, so both read one cached result.
 const THREAD_INDEX_LIMIT = 100;
 
-/** What the Library source needs; null when no Library is configured. */
+/** Why the Library cannot be used yet. The palette then shows one quiet hint in its place. */
+export type LibraryPaletteBlocker =
+  | { readonly kind: "setup" }
+  | { readonly kind: "unavailable"; readonly reason: string };
+
+export function libraryPaletteBlocker(library: {
+  readonly authorityId: string | null;
+  readonly isReady: boolean;
+  readonly phase: string | undefined;
+  readonly connected: boolean;
+  readonly supported: boolean;
+  /** Live projects already loaded; an offline Library still lists them. */
+  readonly hasProjects: boolean;
+}): LibraryPaletteBlocker | null {
+  if (!library.authorityId) return { kind: "setup" };
+  if (!library.connected) {
+    if (library.hasProjects) return null;
+    const connecting =
+      !library.isReady || library.phase === "connecting" || library.phase === "reconnecting";
+    return {
+      kind: "unavailable",
+      reason: connecting ? "Connecting to the Library" : "Reconnect the Library server to use it",
+    };
+  }
+  if (!library.supported)
+    return { kind: "unavailable", reason: "Update Loom on the Library server to use it" };
+  return null;
+}
+
+/** What the Library source needs; null leaves the palette without Library entries. */
 export interface LibraryPaletteContext {
   /** Live projects; archived ones stay off the palette. */
   readonly projects: ReadonlyArray<LibraryProject>;
@@ -44,6 +76,9 @@ export interface LibraryPaletteContext {
   /** The active thread's project, from its live binding or the Library's saved record. */
   readonly threadProjectId: string | null;
   readonly openProject: (projectId: string) => Promise<void>;
+  readonly blocker: LibraryPaletteBlocker | null;
+  /** The Library page, which walks through setup when no Library is connected. */
+  readonly openLibrary: () => Promise<void>;
 }
 
 const icon = (Icon: typeof FolderGit2Icon, className = ITEM_ICON_CLASS): ReactNode => (
@@ -83,6 +118,30 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
   id: "library",
   items: ({ library }) => {
     if (!library) return [];
+    if (library.blocker?.kind === "setup")
+      return [
+        {
+          kind: "action",
+          value: "action:loom:library:setup",
+          title: "Set up Library...",
+          searchTerms: ["library", "projects", "connect", "setup"],
+          icon: icon(FolderGit2Icon),
+          run: library.openLibrary,
+        },
+      ];
+    if (library.blocker)
+      return [
+        {
+          kind: "action",
+          value: "action:loom:library:unavailable",
+          title: "Library projects",
+          description: library.blocker.reason,
+          searchTerms: ["library", "projects", "open", "switch"],
+          disabled: true,
+          icon: icon(FolderGit2Icon),
+          run: async () => {},
+        },
+      ];
     const threadProjectId = library.threadProjectId;
     const submenu = (
       name: string,
@@ -155,7 +214,7 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
   },
   // Typing part of a project's name finds it beside computer folders, so Enter opens it.
   searchItems: ({ library }) =>
-    library
+    library && !library.blocker
       ? projectItems(library, "project", FolderGit2Icon, library.openProject).map((item) => ({
           ...item,
           description: "Library project",
@@ -163,11 +222,35 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
       : [],
 };
 
+/** Projects, blocker and start permission, shared by the palette and the Library shortcuts. */
+function useLibraryPaletteState() {
+  const catalog = useLibraryProjects();
+  const projects = catalog.query.data ?? [];
+  const liveProjects = projects.filter((project) => !project.archived).length;
+  const { authorityId, isReady, connected, supported } = catalog;
+  const phase = catalog.environment?.connection.phase;
+  const hasProjects = liveProjects > 0;
+  // Stable across renders so the shortcut listeners only resubscribe when it changes.
+  const blocker = useMemo(
+    () => libraryPaletteBlocker({ authorityId, isReady, phase, connected, supported, hasProjects }),
+    [authorityId, isReady, phase, connected, supported, hasProjects],
+  );
+  const canRegister = useLibraryPermission(projectLibrary.registerThread, catalog.authorityId);
+  return {
+    catalog,
+    projects,
+    blocker,
+    canStart: canRegister && catalog.connected,
+    // Unknown until the first page loads; a failed load leaves nothing to pick.
+    liveProjects: catalog.query.data || catalog.query.error ? liveProjects : null,
+  };
+}
+
 /** Resolves the active thread's project the way New conversation does, live or from the Library. */
 export function useLibraryPaletteContext(
   activeThreadRef: ScopedThreadRef | null,
-): LibraryPaletteContext | null {
-  const catalog = useLibraryProjects();
+): LibraryPaletteContext {
+  const { catalog, projects, blocker, canStart } = useLibraryPaletteState();
   const { authorityId, connected, environments } = catalog;
   const navigate = useNavigate();
   // Route params cover a thread whose computer is offline and so absent from the store.
@@ -214,17 +297,68 @@ export function useLibraryPaletteContext(
         })
       : null,
   );
-  const canRegister = useLibraryPermission(projectLibrary.registerThread, authorityId);
   const canUpdate = useLibraryPermission(projectLibrary.updateProject, authorityId);
-  if (!authorityId) return null;
   return {
-    projects: catalog.query.data ?? [],
+    projects,
     threadIndex: threadIndex.data,
-    canStart: canRegister && connected,
+    canStart,
     canEditBrief: canUpdate && connected,
     threadProjectId: record.data?.projectId ?? null,
     openProject: async (projectId) => {
       await navigate({ to: "/library/$projectId", params: { projectId } });
     },
+    blocker,
+    openLibrary: async () => {
+      await navigate({ to: "/library" });
+    },
   };
+}
+
+const LIBRARY_SHORTCUTS = [
+  ["loom.library.goToProject", "action:loom:library:go-to-project"],
+  ["loom.library.newConversationIn", "action:loom:library:new-conversation"],
+] as const;
+
+export type LibraryShortcutCommand = (typeof LIBRARY_SHORTCUTS)[number][0];
+
+/**
+ * What a Library shortcut does: open the palette on its project picker, fall back to the Library's
+ * own setup or project chooser when there is nothing to pick, or nothing at all when the action is
+ * not permitted, like upstream's permission-gated preview shortcuts.
+ */
+export function libraryShortcutAction(
+  command: LibraryShortcutCommand,
+  library: {
+    readonly blocker: LibraryPaletteBlocker | null;
+    readonly canStart: boolean;
+    /** Null while the first page of projects loads; the palette then waits for its picker. */
+    readonly liveProjects: number | null;
+  },
+): "submenu" | "fallback" | null {
+  if (library.blocker?.kind === "setup") return "fallback";
+  if (library.blocker) return null;
+  if (command === "loom.library.newConversationIn" && !library.canStart) return null;
+  return library.liveProjects === 0 ? "fallback" : "submenu";
+}
+
+/** Handles the Library shortcuts with the same rules the palette uses for its Library entries. */
+export function useLibraryShortcuts() {
+  const { blocker, canStart, liveProjects } = useLibraryPaletteState();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const unsubscribes = LIBRARY_SHORTCUTS.map(([command, submenu]) =>
+      onForkCommand(command, () => {
+        const action = libraryShortcutAction(command, { blocker, canStart, liveProjects });
+        if (action === "submenu") openCommandPalette({ submenu });
+        else if (action === "fallback") {
+          // Both fallbacks walk through setup when no Library is connected yet.
+          if (command === "loom.library.goToProject") void navigate({ to: "/library" });
+          else openLibraryAction("new-conversation");
+        }
+      }),
+    );
+    return () => {
+      for (const unsubscribe of unsubscribes) unsubscribe();
+    };
+  }, [blocker, canStart, liveProjects, navigate]);
 }

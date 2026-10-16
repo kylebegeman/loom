@@ -195,6 +195,7 @@ import {
   filterPinnedBrowseEntries,
   getCommandPaletteInputPlaceholder,
   getCommandPaletteMode,
+  paletteClosedIntoDialog, // fork: library-palette
   ITEM_ICON_CLASS,
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
@@ -590,7 +591,9 @@ function CommandPaletteDialog(props: {
       data-palette-mode={props.mode}
       data-testid="command-palette"
       finalFocus={() => {
-        composerHandleRef?.current?.focusAtEnd();
+        if (!paletteClosedIntoDialog(document.activeElement)) {
+          composerHandleRef?.current?.focusAtEnd(); // fork: library-palette
+        }
         return false;
       }}
       onBackdropPointerDown={() => {
