@@ -4,6 +4,7 @@ import {
   libraryProjectScopeKey,
   parseLibraryProjectScope,
   libraryThreadMatchesScope,
+  libraryHoldsLocalRefs,
   libraryProjectForLocalRefs,
 } from "./library-navigation.ts";
 import type { LibraryThreadSummary, LibraryWorkingCopy } from "@t3tools/contracts/fork";
@@ -63,6 +64,15 @@ describe("one project filter for durable and existing work", () => {
         [{ environmentId: "host", projectId: "web" }],
       ),
     ).toBeNull();
+  });
+  it("still treats a folder as held when two projects share it or one computer lacks a copy", () => {
+    const web = { environmentId: "host", projectId: "web" };
+    const shared = [row("AspectAvy", "web"), row("other", "web")];
+    expect(libraryProjectForLocalRefs(shared, [web])).toBeNull();
+    expect(libraryHoldsLocalRefs(shared, [web])).toBe(true);
+    const elsewhere = { environmentId: "other-host", projectId: "web" };
+    expect(libraryHoldsLocalRefs([row("AspectAvy", "web")], [web, elsewhere])).toBe(true);
+    expect(libraryHoldsLocalRefs([row("AspectAvy", "web")], [elsewhere])).toBe(false);
   });
   it("maps registered folders without depending on a recent thread index", () => {
     const copy: LibraryWorkingCopy = {

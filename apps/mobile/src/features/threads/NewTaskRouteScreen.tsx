@@ -1,4 +1,4 @@
-import { libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
+import { libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useEnvironmentQuery } from "../../state/query";
@@ -225,7 +225,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       ),
   );
   const legacyScopes = listScopes.filter(
-    (scope) => !libraryProjectForLocalRefs([], scope.projectRefs, sharedCopies.data ?? []),
+    (scope) => !libraryHoldsLocalRefs([], scope.projectRefs, sharedCopies.data ?? []),
   );
   const visibleScopes = filterProjectScopes(legacyScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);

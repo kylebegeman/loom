@@ -1,7 +1,7 @@
 import {
   parseLibraryProjectScope,
   libraryProjectFilterItems,
-  libraryProjectForLocalRefs,
+  libraryHoldsLocalRefs,
 } from "@t3tools/client-runtime/fork";
 import { library, useLibraryAuthority } from "../../fork/library/libraryState";
 import { useEnvironmentQuery } from "../../state/query";
@@ -490,7 +490,7 @@ export function HomeScreen(props: HomeScreenProps) {
       ...projectScopes
         .filter(
           (scope) =>
-            !libraryProjectForLocalRefs(
+            !libraryHoldsLocalRefs(
               sharedIndex.data?.threads ?? [],
               scope.projectRefs,
               sharedCopies.data ?? [],

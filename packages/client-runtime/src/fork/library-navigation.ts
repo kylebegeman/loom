@@ -45,14 +45,13 @@ export function libraryProjectFilterItems(projects: readonly LibraryProject[]) {
       })),
   ]);
 }
-/** Match by explicit source identity, never by a display name or coincidentally identical path. */
-export function libraryProjectForLocalRefs(
+/** The Library projects each local folder belongs to, by its copies and registered threads. */
+function libraryProjectIdsForLocalRefs(
   threads: readonly LibraryThreadSummary[],
   refs: readonly { environmentId: string; projectId: string }[],
-  copies: readonly LibraryWorkingCopy[] = [],
+  copies: readonly LibraryWorkingCopy[],
 ) {
-  if (!refs.length) return null;
-  const projects = refs.map(
+  return refs.map(
     (ref) =>
       new Set([
         ...copies
@@ -72,6 +71,27 @@ export function libraryProjectForLocalRefs(
           .map((t) => t.projectId),
       ]),
   );
+}
+/**
+ * Whether any Library project already holds one of these folders. Unlike
+ * `libraryProjectForLocalRefs`, a folder shared by two projects, or linked on only one of its
+ * computers, still counts, so it is never offered as a folder outside every project.
+ */
+export function libraryHoldsLocalRefs(
+  threads: readonly LibraryThreadSummary[],
+  refs: readonly { environmentId: string; projectId: string }[],
+  copies: readonly LibraryWorkingCopy[] = [],
+) {
+  return libraryProjectIdsForLocalRefs(threads, refs, copies).some((ids) => ids.size > 0);
+}
+/** Match by explicit source identity, never by a display name or coincidentally identical path. */
+export function libraryProjectForLocalRefs(
+  threads: readonly LibraryThreadSummary[],
+  refs: readonly { environmentId: string; projectId: string }[],
+  copies: readonly LibraryWorkingCopy[] = [],
+) {
+  if (!refs.length) return null;
+  const projects = libraryProjectIdsForLocalRefs(threads, refs, copies);
   if (projects.some((ids) => ids.size !== 1)) return null;
   const ids = new Set(projects.flatMap((ids) => [...ids]));
   return ids.size === 1 ? [...ids][0]! : null;

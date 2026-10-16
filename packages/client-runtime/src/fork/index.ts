@@ -32,6 +32,7 @@ export {
   parseLibraryProjectScope,
   libraryThreadMatchesScope,
   libraryProjectFilterItems,
+  libraryHoldsLocalRefs,
   libraryProjectForLocalRefs,
 } from "./library-navigation.ts";
 

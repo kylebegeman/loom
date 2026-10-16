@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProjectColor } from "@t3tools/contracts/fork";
-import { libraryActiveCopies, libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
+import { libraryActiveCopies, libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
 import { ProjectFavicon } from "~/components/ProjectFavicon";
 import { Button } from "~/components/ui/button";
 import {
@@ -122,7 +122,7 @@ export function LibraryProjectsPage() {
     "Saved computer";
   // Folders already behind a project copy are part of that project, not loose folders.
   const looseFolders = localProjects.filter(
-    (group) => libraryProjectForLocalRefs([], group.memberProjectRefs, activeCopies) === null,
+    (group) => !libraryHoldsLocalRefs([], group.memberProjectRefs, activeCopies),
   );
   const entries = projectEntries(
     catalog.query.data ?? [],
