@@ -1,0 +1,104 @@
+import type {
+  LibraryAcceptBriefProposalRequest,
+  LibraryBriefProposal,
+  LibraryProject,
+} from "@t3tools/contracts/fork";
+
+/**
+ * How a proposal reads against the brief on screen. The diff always starts from the current
+ * brief, so a proposal written against an older revision shows what accepting would change now.
+ */
+export type LibraryBriefReview = {
+  readonly before: string;
+  readonly after: string;
+  /** The brief was revised after the proposal was written. */
+  readonly stale: boolean;
+  /** Accepting would leave the brief as it is. */
+  readonly unchanged: boolean;
+};
+
+export function libraryBriefReview(
+  proposal: LibraryBriefProposal,
+  project: LibraryProject,
+): LibraryBriefReview {
+  return {
+    before: project.brief,
+    after: proposal.proposedBrief,
+    stale: proposal.baseRevision !== project.revision,
+    unchanged: proposal.proposedBrief === project.brief,
+  };
+}
+
+export type LibraryBriefAcceptance =
+  /** The base is stale and the person has not yet said to replace the newer brief. */
+  | { readonly kind: "confirm-stale" }
+  /** The text to save matches the current brief, so there is nothing to accept. */
+  | { readonly kind: "unchanged" }
+  | {
+      readonly kind: "ready";
+      readonly input: Omit<LibraryAcceptBriefProposalRequest, "requestId">;
+    };
+
+/**
+ * What accepting sends. The Library applies a proposal as written only against its own base, so a
+ * stale or edited acceptance sends the text to save, after the person confirms a stale one.
+ */
+export function libraryBriefAcceptance(
+  proposal: LibraryBriefProposal,
+  project: LibraryProject,
+  decision: { readonly edited?: string; readonly confirmedStale: boolean },
+): LibraryBriefAcceptance {
+  const review = libraryBriefReview(proposal, project);
+  const text = decision.edited ?? proposal.proposedBrief;
+  if (text === project.brief) return { kind: "unchanged" };
+  if (review.stale && !decision.confirmedStale) return { kind: "confirm-stale" };
+  const sendText = review.stale || text !== proposal.proposedBrief;
+  return {
+    kind: "ready",
+    input: {
+      proposalId: proposal.id,
+      expectedRevision: project.revision,
+      ...(sendText ? { brief: text } : {}),
+    },
+  };
+}
+
+export const libraryBriefSuggestionsLabel = (count: number) =>
+  count === 1 ? "1 suggested update" : `${count} suggested updates`;
+
+export type LibraryBriefSuggestionAvailability =
+  | { readonly kind: "hidden" }
+  | { readonly kind: "disabled"; readonly reason: string }
+  | { readonly kind: "ready" };
+
+/**
+ * Whether a saved conversation can be asked to suggest brief updates. It only applies to settled
+ * conversations in a live project on a Library that keeps proposals; the rest of the time the
+ * action explains what is missing.
+ */
+export function libraryBriefSuggestionAvailability(input: {
+  readonly libraryKeepsProposals: boolean;
+  readonly settled: boolean;
+  readonly archived: boolean;
+  readonly hostLabel: string;
+  readonly hostConnected: boolean;
+  /** The conversation's computer has the `loom_library_brief_propose` tool. */
+  readonly hostProposes: boolean;
+  readonly canSend: boolean;
+}): LibraryBriefSuggestionAvailability {
+  if (!input.libraryKeepsProposals || !input.settled || input.archived) return { kind: "hidden" };
+  if (!input.hostConnected)
+    return { kind: "disabled", reason: `Connect ${input.hostLabel} to ask its agent.` };
+  if (!input.hostProposes)
+    return {
+      kind: "disabled",
+      reason: `Update Loom on ${input.hostLabel} so its agent can suggest brief updates.`,
+    };
+  if (!input.canSend)
+    return { kind: "disabled", reason: "This connection can't send messages to conversations." };
+  return { kind: "ready" };
+}
+
+/** The follow-up a settled conversation's agent receives. It proposes; a person decides. */
+export const libraryBriefSuggestionPrompt = (projectId: string) =>
+  `Please look back over this conversation and suggest updates to the project brief. Read the current brief with loom_library_project (project ${projectId}). If what we did or learned should change it, call loom_library_brief_propose with the full new brief, its current revision as the base, and a short summary of why. If it doesn't need to change, say so and stop.`;

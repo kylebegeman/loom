@@ -7,6 +7,7 @@ import {
   LibraryThreadArchive,
   LIBRARY_WS_METHODS as L,
   LIBRARY_HEALTH_WS_METHODS as LH,
+  LIBRARY_BRIEF_WS_METHODS as BRIEF,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
@@ -163,6 +164,20 @@ export function createProjectLibraryAtoms<R, E>(
     importShadow: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:import-shadow",
       tag: L.importShadow,
+    }),
+    /** Ask the Library computer, which must advertise `library-brief-proposals`. */
+    briefProposals: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:brief-proposals",
+      tag: BRIEF.proposals,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    }),
+    acceptBriefProposal: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:accept-brief-proposal",
+      tag: BRIEF.accept,
+    }),
+    dismissBriefProposal: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:dismiss-brief-proposal",
+      tag: BRIEF.dismiss,
     }),
   };
 }
