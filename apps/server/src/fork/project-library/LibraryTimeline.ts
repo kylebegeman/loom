@@ -10,6 +10,8 @@ import {
   LibraryThreadSummary,
   LibraryTimelineEntry,
   LibraryWorkingCopy,
+  type LibraryActivity,
+  type LibraryCopyHealth,
   type LibraryThreadArchive,
   type LibraryTimelineConversation,
   type LibraryTimelineConversationEntry,
@@ -236,13 +238,15 @@ export function projectTimeline(
   ];
 }
 
+const timelineCopy = (copy: LibraryWorkingCopy) => ({ id: copy.id, rootPath: copy.rootPath });
+
 /** Copy added on first save; released or failed when its state changes to one. */
 export function copyTimeline(
   previous: LibraryWorkingCopy | null,
   next: LibraryWorkingCopy,
 ): LibraryTimelineDraft[] {
   const drafts: LibraryTimelineDraft[] = [];
-  const copy = { id: next.id, rootPath: next.rootPath };
+  const copy = timelineCopy(next);
   const copyEntry = (kind: (typeof LibraryTimelineCopyEntry.Type)["kind"], at: string) =>
     drafts.push({
       projectId: next.projectId,
@@ -254,6 +258,68 @@ export function copyTimeline(
   if (next.state === "failed" && previous?.state !== "failed")
     copyEntry("copy-failed", next.updatedAt);
   return drafts;
+}
+
+/**
+ * A commits entry for each repository whose head moved from the kept health report to the one
+ * replacing it. The count comes from the computer, and only when it counted from that same head.
+ */
+export function commitsTimeline(
+  copy: LibraryWorkingCopy,
+  previous: LibraryCopyHealth | undefined,
+  next: LibraryCopyHealth | undefined,
+): LibraryTimelineDraft[] {
+  if (previous === undefined || next === undefined || previous === next) return [];
+  const heads = new Map(
+    previous.repositories.flatMap((repository) =>
+      repository.head ? [[repository.resourceId, repository.head] as const] : [],
+    ),
+  );
+  return next.repositories.flatMap((repository): LibraryTimelineDraft[] => {
+    const from = heads.get(repository.resourceId);
+    const to = repository.head;
+    if (!from || !to || from === to) return [];
+    const counted = repository.commitsSince?.head === from ? repository.commitsSince : undefined;
+    return [
+      {
+        projectId: copy.projectId,
+        entry: {
+          kind: "commits",
+          at: timeOf(next.checkedAt, repository.checkedAt),
+          environmentId: copy.environmentId,
+          copy: timelineCopy(copy),
+          repository: {
+            resourceId: repository.resourceId,
+            ...(repository.branch ? { branch: repository.branch } : {}),
+          },
+          from,
+          to,
+          ...(counted ? { count: counted.count } : {}),
+        },
+      },
+    ];
+  });
+}
+
+/** The entry for finished work a computer reported in one of its copies. */
+export function activityTimeline(
+  copy: LibraryWorkingCopy,
+  activity: LibraryActivity,
+): LibraryTimelineDraft {
+  const base = {
+    at: timeOf(activity.at),
+    environmentId: copy.environmentId,
+    copy: timelineCopy(copy),
+  };
+  switch (activity.kind) {
+    case "scheduled-run":
+      return {
+        projectId: copy.projectId,
+        entry: { ...base, kind: "scheduled-run", run: activity.run },
+      };
+    case "mini-job":
+      return { projectId: copy.projectId, entry: { ...base, kind: "mini-job", job: activity.job } };
+  }
 }
 
 const unknownJson = Schema.fromJsonString(Schema.Unknown);

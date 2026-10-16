@@ -10,6 +10,8 @@ import {
   LibraryUpdateProjectRequest,
   LibraryArchiveProjectRequest,
   LibraryRegisterCopyRequest,
+  LibraryRecordActivityRequest,
+  LibraryRecordActivityResult,
   LibraryIngestHistoryRequest,
   LibraryIngestHistoryResult,
   LibraryImportShadowRequest,
@@ -59,6 +61,7 @@ import { validLibraryResources } from "./policy.ts";
 import { makeLibrarySearch } from "./LibrarySearch.ts";
 import * as BriefProposals from "./LibraryBriefProposals.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
+import { LOOM_SERVER_FEATURES } from "../features.ts";
 
 export class LibraryService extends Context.Service<
   LibraryService,
@@ -88,6 +91,10 @@ export class LibraryService extends Context.Service<
     readonly registerCopy: (
       input: LibraryRegisterCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    /** Records a computer's finished scheduled run or Mini job on its copy's project timeline. */
+    readonly recordActivity: (
+      input: LibraryRecordActivityRequest,
+    ) => Effect.Effect<LibraryRecordActivityResult, LibraryError>;
     readonly copies: (input: {
       projectId?: string | undefined;
       includeReleased?: boolean | undefined;
@@ -150,6 +157,8 @@ const codecs = {
   update: compileCodec(Schema.fromJsonString(LibraryUpdateProjectRequest)),
   archiveProject: compileCodec(Schema.fromJsonString(LibraryArchiveProjectRequest)),
   register: compileCodec(Schema.fromJsonString(LibraryRegisterCopyRequest)),
+  recordActivity: compileCodec(Schema.fromJsonString(LibraryRecordActivityRequest)),
+  activityResult: compileCodec(Schema.fromJsonString(LibraryRecordActivityResult)),
   registerThread: compileCodec(
     Schema.fromJsonString(
       Schema.toCodecJson(
@@ -322,12 +331,21 @@ const make = Effect.gen(function* () {
         // A stale record can still carry the newest health report.
         const updated = CopyHealthPublication.withCopyHealth(old, health);
         yield* store.putCopy({ ...updated, payload: yield* encode(codecs.copy, updated) });
+        yield* LibraryTimeline.recordTimeline(
+          store,
+          LibraryTimeline.commitsTimeline(updated, old.health, health),
+        );
         return updated;
       }
     }
     const copy = CopyHealthPublication.withCopyHealth(incoming, health);
     const payload = yield* encode(codecs.copy, copy);
     yield* store.putCopy({ ...copy, payload });
+    // A moved head is history even when nothing else about the copy changed.
+    yield* LibraryTimeline.recordTimeline(
+      store,
+      LibraryTimeline.commitsTimeline(copy, old?.health, health),
+    );
     // Health reports alone are not copy history. Logging each one would flood the event log
     // that the timeline replays.
     const withoutHealth = (entry: LibraryWorkingCopy) =>
@@ -528,6 +546,7 @@ const make = Effect.gen(function* () {
         authorityId: authority.id,
         authorityEpoch: authority.epoch,
         assets: assets.mode,
+        ...(isAuthority ? { features: LOOM_SERVER_FEATURES } : {}),
       };
     }),
   );
@@ -637,6 +656,30 @@ const make = Effect.gen(function* () {
         if (input.copy.health !== undefined && at > 0)
           yield* store.deleteReceipts(input.requestId.slice(0, at + marker.length));
         return yield* saveCopy(input.copy);
+      }),
+    );
+  const recordActivity = (input: LibraryRecordActivityRequest) =>
+    mutation(
+      "record-activity",
+      input.requestId,
+      encode(codecs.recordActivity, input),
+      codecs.activityResult,
+      Effect.gen(function* () {
+        const { activity } = input;
+        if (
+          Number.isNaN(Date.parse(activity.at)) ||
+          (activity.kind === "scheduled-run" && Number.isNaN(Date.parse(activity.run.startedAt)))
+        )
+          return yield* invalid();
+        const saved = yield* store.copy(activity.copyId);
+        if (saved === null) return yield* new LibraryError({ reason: "not-found" });
+        const copy = yield* decode(codecs.copy, saved);
+        // A computer reports work only in its own copies.
+        if (copy.environmentId !== input.environmentId) return yield* invalid();
+        yield* LibraryTimeline.recordTimeline(store, [
+          LibraryTimeline.activityTimeline(copy, activity),
+        ]);
+        return { projectId: copy.projectId, copyId: copy.id };
       }),
     );
   const registerThread = (input: { requestId: string; thread: LibraryThreadArchive }) =>
@@ -847,6 +890,7 @@ const make = Effect.gen(function* () {
     updateProject,
     archiveProject,
     registerCopy,
+    recordActivity,
     registerThread,
     ingestHistory,
     importShadow,

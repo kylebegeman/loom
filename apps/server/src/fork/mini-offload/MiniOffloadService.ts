@@ -219,6 +219,16 @@ export class MiniOffloadService extends Context.Service<
     readonly list: (
       threadId: ThreadId,
     ) => Effect.Effect<ReadonlyArray<MiniReceipt>, MiniOffloadError>;
+    /**
+     * Jobs this computer has seen reach a final state, from receipts saved at or after `sinceMs`.
+     * `recordedAt` is when the final state was saved, which is when this computer learned of it.
+     */
+    readonly finished: (
+      sinceMs: number,
+    ) => Effect.Effect<
+      ReadonlyArray<{ readonly receipt: MiniReceipt; readonly recordedAt: string }>,
+      MiniOffloadError
+    >;
     readonly inspect: (input: MiniRef) => Effect.Effect<typeof MiniDetail.Type, MiniOffloadError>;
     readonly cancel: (input: MiniRef) => Effect.Effect<MiniReceipt, MiniOffloadError>;
     readonly patch: (input: MiniRef) => Effect.Effect<typeof MiniPatch.Type, MiniOffloadError>;
@@ -286,6 +296,15 @@ const make = Effect.gen(function* () {
     )
       return yield* fail("conflict");
     return stored;
+  });
+  const receiptNames = disk(async () => {
+    try {
+      return (await NodeFSP.readdir(root)).filter((name) => /^[a-f0-9]{32}$/.test(name));
+    } catch (cause) {
+      if (typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT")
+        return [];
+      throw cause;
+    }
   });
   const save = (stored: Stored) =>
     disk(() =>
@@ -600,22 +619,8 @@ const make = Effect.gen(function* () {
     list: (threadId) =>
       Effect.gen(function* () {
         yield* workspace(threadId);
-        const names = yield* disk(async () => {
-          try {
-            return await NodeFSP.readdir(root);
-          } catch (cause) {
-            if (
-              typeof cause === "object" &&
-              cause !== null &&
-              "code" in cause &&
-              cause.code === "ENOENT"
-            )
-              return [];
-            throw cause;
-          }
-        });
         const receipts = yield* Effect.forEach(
-          names.filter((name) => /^[a-f0-9]{32}$/.test(name)),
+          yield* receiptNames,
           (name) =>
             Effect.gen(function* () {
               const value = yield* disk(() =>
@@ -631,6 +636,38 @@ const make = Effect.gen(function* () {
               receipt !== null && receipt.request.threadId === threadId,
           )
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      }),
+    finished: (sinceMs) =>
+      Effect.gen(function* () {
+        const found = yield* Effect.forEach(
+          yield* receiptNames,
+          (name) =>
+            Effect.gen(function* () {
+              const file = NodePath.join(pathFor(name), "receipt.json");
+              const modified = yield* disk(async () => {
+                try {
+                  return (await NodeFSP.stat(file)).mtimeMs;
+                } catch {
+                  return null;
+                }
+              });
+              if (modified === null || modified < sinceMs) return null;
+              const value = yield* disk(() => readJson(file));
+              if (value === null) return null;
+              const stored = yield* decode(Stored, value).pipe(Effect.option);
+              if (Option.isNone(stored)) return null;
+              const { receipt } = stored.value;
+              const state = receipt.job?.state;
+              return state === "succeeded" ||
+                state === "failed" ||
+                state === "cancelled" ||
+                state === "interrupted"
+                ? { receipt, recordedAt: DateTime.formatIso(DateTime.makeUnsafe(modified)) }
+                : null;
+            }),
+          { concurrency: 4 },
+        );
+        return found.filter((entry) => entry !== null);
       }),
     inspect: (input) =>
       decode(MiniRef, input).pipe(

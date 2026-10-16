@@ -26,7 +26,11 @@ export const HEALTH_CHANGE_DEBOUNCE = Duration.seconds(30);
 export class LibraryCopyHealthSource extends Context.Service<
   LibraryCopyHealthSource,
   {
-    readonly read: (copy: LibraryWorkingCopy) => Effect.Effect<LibraryCopyHealth>;
+    /** `since` holds each repository's last published head, to count the commits after it. */
+    readonly read: (
+      copy: LibraryWorkingCopy,
+      since?: ReadonlyMap<string, string>,
+    ) => Effect.Effect<LibraryCopyHealth>;
     /** Emits whenever the local VCS status of one of these folders changes. */
     readonly changes: (paths: ReadonlyArray<string>) => Stream.Stream<void>;
   }
@@ -38,7 +42,7 @@ export const layerSource = Layer.effect(
     const read = yield* makeCopyHealthReader;
     const broadcaster = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     return LibraryCopyHealthSource.of({
-      read: (copy) => read(copy),
+      read: (copy, since) => read(copy, { since }),
       changes: (paths) =>
         Stream.mergeAll(
           paths.map((cwd) =>
@@ -58,11 +62,27 @@ export const layerSource = Layer.effect(
 export const publishesHealth = (copy: LibraryWorkingCopy) =>
   copy.registered !== false && (copy.state === "ready" || copy.state === "missing");
 
-/** What a health report says, without the read times that change on every check. */
+/**
+ * What a health report says, without the read times that change on every check. The commit count
+ * only describes a head change, which the head itself already shows.
+ */
 export const copyHealthFingerprint = (health: LibraryCopyHealth) =>
   JSON.stringify(
     health.repositories.map(
-      ({ checkedAt: _checkedAt, fetchedAt: _fetchedAt, ...repository }) => repository,
+      ({
+        checkedAt: _checkedAt,
+        fetchedAt: _fetchedAt,
+        commitsSince: _commitsSince,
+        ...repository
+      }) => repository,
+    ),
+  );
+
+/** Each repository's head in a report, keyed by resource id. */
+const reportedHeads = (health: LibraryCopyHealth): ReadonlyMap<string, string> =>
+  new Map(
+    health.repositories.flatMap((repository) =>
+      repository.head ? [[repository.resourceId, repository.head] as const] : [],
     ),
   );
 
@@ -130,6 +150,9 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
   const crypto = yield* Crypto.Crypto;
   const lock = yield* Semaphore.make(1);
   const published = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
+  // Heads from each copy's last acknowledged report. Lost on restart, so the first report after
+  // one says a head moved without counting the commits.
+  const heads = yield* Ref.make<ReadonlyMap<string, ReadonlyMap<string, string>>>(new Map());
   const watched = yield* SubscriptionRef.make<ReadonlyArray<string>>([]);
 
   const publish = Effect.fnUntraced(function* (
@@ -165,24 +188,34 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
         copies.flatMap((copy) => copy.repositories.map((repository) => repository.path)).toSorted(),
       );
       const last = yield* Ref.get(published);
+      const lastHeads = yield* Ref.get(heads);
       const next = new Map<string, string>();
+      const nextHeads = new Map<string, ReadonlyMap<string, string>>();
       let failure: LibraryError | null = null;
       if (copies.length > 0) {
         const authority = yield* input.authority;
         for (const copy of copies) {
-          const health = yield* input.source.read(copy);
+          const since = lastHeads.get(copy.id);
+          const health = yield* input.source.read(copy, since);
           const fingerprint = copyHealthFingerprint(health);
           if (last.get(copy.id) === fingerprint) {
             next.set(copy.id, fingerprint);
+            if (since) nextHeads.set(copy.id, since);
             continue;
           }
           // An unacknowledged report stays out of the map, so the next trigger retries it.
           const result = yield* publish(authority, copy, health).pipe(Effect.result);
-          if (result._tag === "Success") next.set(copy.id, fingerprint);
-          else failure ??= result.failure;
+          if (result._tag === "Success") {
+            next.set(copy.id, fingerprint);
+            nextHeads.set(copy.id, reportedHeads(health));
+          } else {
+            failure ??= result.failure;
+            if (since) nextHeads.set(copy.id, since);
+          }
         }
       }
       yield* Ref.set(published, next);
+      yield* Ref.set(heads, nextHeads);
       if (failure !== null) return yield* failure;
     }),
   );

@@ -23,12 +23,19 @@ export type LibraryRepositoryHealthError = typeof LibraryRepositoryHealthError.T
  * `upstream`, `ahead` and `behind` are absent without an upstream, `upstreamGone` marks an upstream
  * branch deleted on its remote (no counts), and `fetchedAt` is the last time the remotes were
  * actually fetched. `fetchFailed` marks a requested remote check that could not fetch, so the
- * counts are from the last fetch.
+ * counts are from the last fetch. `commitsSince` counts the commits from the head this computer
+ * last reported to this one, present only when this head builds on that one.
  */
 export const LibraryRepositoryHealth = Schema.Struct({
   resourceId: HealthId,
   branch: Schema.optional(RefName),
   head: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
+  commitsSince: Schema.optional(
+    Schema.Struct({
+      head: Schema.String.check(Schema.isMaxLength(64)),
+      count: NonNegativeInt,
+    }),
+  ),
   upstream: Schema.optional(RefName),
   upstreamGone: Schema.optional(Schema.Boolean),
   ahead: Schema.optional(NonNegativeInt),

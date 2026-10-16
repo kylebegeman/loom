@@ -61,6 +61,8 @@ export const toRepositoryHealth = (input: {
   readonly upstream: UpstreamTracking | null;
   readonly divergence: readonly [ahead: number, behind: number] | null;
   readonly head: string | null;
+  /** Commits since the head last reported, when that head is still an ancestor of this one. */
+  readonly commitsSince?: LibraryRepositoryHealth["commitsSince"] | null;
   /** Null when the count failed. With commits to count, that is unreadable, never zero. */
   readonly unpushedCommits: number | null;
   readonly checkedAt: string;
@@ -77,6 +79,7 @@ export const toRepositoryHealth = (input: {
     resourceId: input.resourceId,
     ...(status.refName ? { branch: status.refName } : {}),
     ...(input.head ? { head: input.head } : {}),
+    ...(input.head && input.commitsSince ? { commitsSince: input.commitsSince } : {}),
     ...(upstream?.gone
       ? { upstream: upstream.name, upstreamGone: true }
       : upstream
@@ -105,6 +108,8 @@ export const parseDivergence = (output: string | null): readonly [number, number
   return match ? [Number(match[1]), Number(match[2])] : null;
 };
 
+const COMMIT_ID = /^[0-9a-f]{40,64}$/;
+
 /** Reads live health for a copy's repositories on this computer. Never fails. */
 export const makeCopyHealthReader = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -120,6 +125,31 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         Effect.map((result) => (result.code === 0 ? result.stdout.trim() || null : null)),
         Effect.orElseSucceed(() => null),
       );
+
+  // Counted only when the earlier head is an ancestor. After a force push, a rebase or a branch
+  // switch the range means nothing, so the report says the head moved without a count.
+  const commitsSince = (cwd: string, since: string) =>
+    Effect.gen(function* () {
+      if (!COMMIT_ID.test(since)) return null;
+      const ancestor = yield* runner
+        .run({
+          command: "git",
+          args: ["merge-base", "--is-ancestor", since, "HEAD"],
+          cwd,
+          timeout: "30 seconds",
+          maxOutputBytes: 1024,
+        })
+        .pipe(
+          Effect.map((result) => result.code === 0),
+          Effect.orElseSucceed(() => false),
+        );
+      if (!ancestor) return null;
+      const count = Number.parseInt(
+        (yield* git(cwd, ["rev-list", "--count", `${since}..HEAD`])) ?? "",
+        10,
+      );
+      return Number.isFinite(count) ? { head: since, count } : null;
+    });
 
   const modifiedAt = (file: string) =>
     fs.stat(file).pipe(
@@ -148,6 +178,7 @@ export const makeCopyHealthReader = Effect.gen(function* () {
   const readRepository = (
     repository: LibraryWorkingCopy["repositories"][number],
     refreshRemote: boolean,
+    since: string | undefined,
   ) =>
     Effect.gen(function* () {
       if (!(yield* fs.exists(repository.path).pipe(Effect.orElseSucceed(() => false))))
@@ -194,6 +225,10 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         { concurrency: "unbounded" },
       );
       const unpushedCommits = unpushed === null ? Number.NaN : Number.parseInt(unpushed, 10);
+      const commits =
+        since !== undefined && head !== null && since !== head
+          ? yield* commitsSince(repository.path, since)
+          : null;
       const upstream = parseUpstreamTracking(tracking);
       return toRepositoryHealth({
         resourceId: repository.resourceId,
@@ -201,6 +236,7 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         upstream,
         divergence: parseDivergence(divergence),
         head,
+        commitsSince: commits,
         unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : null,
         checkedAt,
         fetchedAt,
@@ -210,11 +246,20 @@ export const makeCopyHealthReader = Effect.gen(function* () {
 
   return Effect.fn("LibraryCopyHealth.read")(function* (
     copy: LibraryWorkingCopy,
-    options?: { readonly refreshRemote?: boolean | undefined },
+    options?: {
+      readonly refreshRemote?: boolean | undefined;
+      /** Each repository's last reported head, so the report can count the commits since. */
+      readonly since?: ReadonlyMap<string, string> | undefined;
+    },
   ) {
     const repositories = yield* Effect.forEach(
       copy.repositories,
-      (repository) => readRepository(repository, options?.refreshRemote === true),
+      (repository) =>
+        readRepository(
+          repository,
+          options?.refreshRemote === true,
+          options?.since?.get(repository.resourceId),
+        ),
       { concurrency: HEALTH_CONCURRENCY },
     );
     return {

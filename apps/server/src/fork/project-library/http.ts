@@ -9,6 +9,7 @@ import {
   LibraryImportShadowRequest,
   LibraryIngestHistoryRequest,
   LibraryRegisterCopyRequest,
+  LibraryRecordActivityRequest,
   LibraryRequestId,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -27,7 +28,10 @@ const decodeCopy = Schema.decodeUnknownEffect(LibraryRegisterCopyRequest);
 const decodeVerify = Schema.decodeUnknownEffect(Schema.Struct({ requestId: LibraryRequestId }));
 const decodeImport = Schema.decodeUnknownEffect(Schema.toCodecJson(LibraryImportShadowRequest));
 const decodeComputer = Schema.decodeUnknownEffect(LibraryRegisterComputerRequest);
-const handler = (operation: "info" | "computer" | "ingest" | "copy" | "import" | "verify") =>
+const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityRequest);
+const handler = (
+  operation: "info" | "computer" | "ingest" | "copy" | "activity" | "import" | "verify",
+) =>
   withForkRuntime(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -91,6 +95,16 @@ const handler = (operation: "info" | "computer" | "ingest" | "copy" | "import" |
           headers: { "cache-control": "no-store" },
         });
       }
+      if (operation === "activity") {
+        const input = yield* decodeActivity(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        if (!sourceAllowed(input.environmentId, input))
+          return HttpServerResponse.text("Access denied", { status: 403 });
+        return HttpServerResponse.jsonUnsafe(yield* library.recordActivity(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
       if (operation === "import") {
         const input = yield* decodeImport(body).pipe(
           Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
@@ -148,6 +162,11 @@ export const LibraryHttpRoutes = Layer.unwrap(
         "POST",
         "/api/loom/library/copies/register",
         handler("copy").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/activity/record",
+        handler("activity").pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       HttpRouter.add(
         "POST",

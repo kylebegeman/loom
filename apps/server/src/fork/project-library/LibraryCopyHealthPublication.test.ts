@@ -59,6 +59,7 @@ const fixture = Effect.gen(function* () {
   const copies = yield* Ref.make<ReadonlyArray<LibraryWorkingCopy>>([copy]);
   const health = yield* Ref.make(healthAt("2026-10-16T00:00:00.000Z", 0));
   const reads = yield* Ref.make(0);
+  const since = yield* Ref.make<Array<ReadonlyMap<string, string> | undefined>>([]);
   const published = yield* Ref.make<LibraryRegisterCopyRequest[]>([]);
   const failPublish = yield* Ref.make(false);
   const watched = yield* Deferred.make<ReadonlyArray<string>>();
@@ -89,6 +90,7 @@ const fixture = Effect.gen(function* () {
         yield* Ref.update(published, (requests) => [...requests, input]);
         return input.copy;
       }),
+    recordActivity: () => Effect.die("unused"),
     publishAttachments: () => Effect.void,
     ingest: () => Effect.die("unused"),
   });
@@ -97,7 +99,11 @@ const fixture = Effect.gen(function* () {
     publisher,
     workspaces,
     source: Publication.LibraryCopyHealthSource.of({
-      read: () => Ref.update(reads, (count) => count + 1).pipe(Effect.andThen(Ref.get(health))),
+      read: (_copy, heads) =>
+        Ref.update(reads, (count) => count + 1).pipe(
+          Effect.andThen(Ref.update(since, (all) => [...all, heads])),
+          Effect.andThen(Ref.get(health)),
+        ),
       changes: (paths) =>
         paths.length === 0
           ? Stream.empty
@@ -117,6 +123,7 @@ const fixture = Effect.gen(function* () {
     copies,
     health,
     reads,
+    since,
     published,
     publishedCount,
     failPublish,
@@ -170,6 +177,34 @@ describe("copy health publication", () => {
         expect(yield* f.publishedCount).toBe(1);
         yield* f.report;
         expect(yield* f.publishedCount).toBe(1);
+      }),
+    ),
+  );
+
+  it.effect("passes each copy's last acknowledged heads to the next read", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const withHead = (checkedAt: string, head: string): LibraryCopyHealth => {
+          const health = healthAt(checkedAt, 0);
+          return { ...health, repositories: [{ ...health.repositories[0]!, head }] };
+        };
+        const one = "1".repeat(40);
+        const two = "2".repeat(40);
+        yield* Ref.set(f.health, withHead("2026-10-16T00:00:00.000Z", one));
+        yield* f.report;
+        yield* Ref.set(f.health, withHead("2026-10-16T00:05:00.000Z", two));
+        yield* Ref.set(f.failPublish, true);
+        yield* f.report.pipe(Effect.flip);
+        // The Library never took the second head, so the retry still counts from the first.
+        yield* Ref.set(f.failPublish, false);
+        yield* f.report;
+        yield* f.report;
+        expect(yield* Ref.get(f.since)).toEqual([
+          undefined,
+          new Map([[resource.id, one]]),
+          new Map([[resource.id, one]]),
+          new Map([[resource.id, two]]),
+        ]);
       }),
     ),
   );

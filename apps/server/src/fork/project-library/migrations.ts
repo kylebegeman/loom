@@ -77,5 +77,16 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_library_brief_proposals_project ON fork_library_brief_proposals(project_id, status, created_at)`;
       }),
     ],
+    [
+      7,
+      "TimelineActivity",
+      // Computer side: finished scheduled runs and Mini jobs waiting for the Library. Idempotent
+      // because parallel packets renumber this migration at merge.
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_library_source_activity (activity_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL, finished_at TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_library_source_activity_pending ON fork_library_source_activity(acknowledged, finished_at)`;
+      }),
+    ],
   ],
 };

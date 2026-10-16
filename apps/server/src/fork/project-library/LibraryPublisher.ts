@@ -10,6 +10,8 @@ import {
   LibraryIngestHistoryRequest,
   LibraryIngestHistoryResult,
   LibraryRegisterCopyRequest,
+  LibraryRecordActivityRequest,
+  LibraryRecordActivityResult,
   LibraryWorkingCopy,
   type LibraryThreadArchive,
 } from "@t3tools/contracts/fork";
@@ -56,6 +58,9 @@ export class LibraryPublisher extends Context.Service<
     readonly publishAttachments: (
       archive: LibraryThreadArchive,
     ) => Effect.Effect<void, LibraryError>;
+    readonly recordActivity: (
+      input: LibraryRecordActivityRequest,
+    ) => Effect.Effect<LibraryRecordActivityResult, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryPublisher") {}
 
@@ -66,6 +71,8 @@ const decodeInfo = Schema.decodeUnknownEffect(LibraryInfo);
 const decodeIngest = Schema.decodeUnknownEffect(LibraryIngestHistoryResult);
 const encodeCopy = Schema.encodeEffect(Schema.fromJsonString(LibraryRegisterCopyRequest));
 const decodeCopy = Schema.decodeUnknownEffect(LibraryWorkingCopy);
+const encodeActivity = Schema.encodeEffect(Schema.fromJsonString(LibraryRecordActivityRequest));
+const decodeActivity = Schema.decodeUnknownEffect(LibraryRecordActivityResult);
 const decodeAsset = Schema.decodeUnknownEffect(LibraryAsset);
 const HostCredential = Schema.Struct({
   computer: Schema.optional(LibraryComputerRegistration),
@@ -111,6 +118,7 @@ const make = Effect.gen(function* () {
       ingest: () => blocked,
       registerCopy: () => blocked,
       publishAttachments: () => blocked,
+      recordActivity: () => blocked,
     });
   };
   if (
@@ -158,6 +166,7 @@ const make = Effect.gen(function* () {
       ingest: localLibrary.ingestHistory,
       registerCopy: localLibrary.registerCopy,
       publishAttachments: publishLocalAttachments,
+      recordActivity: localLibrary.recordActivity,
     });
   }
   const credentialResult = Option.isNone(credentialFile)
@@ -305,6 +314,20 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
   });
+  const recordActivity = Effect.fnUntraced(function* (input: LibraryRecordActivityRequest) {
+    const body = yield* encodeActivity(input).pipe(
+      Effect.mapError(() => new LibraryError({ reason: "invalid" })),
+    );
+    const response = yield* execute(
+      HttpClientRequest.post(endpoint("/api/loom/library/activity/record")).pipe(
+        HttpClientRequest.bodyText(body, "application/json"),
+      ),
+    );
+    return yield* response.json.pipe(
+      Effect.flatMap(decodeActivity),
+      Effect.mapError(() => new LibraryError({ reason: "io" })),
+    );
+  });
   const uploadAsset = Effect.fnUntraced(function* (
     environmentId: EnvironmentId,
     attachmentId: string,
@@ -366,6 +389,13 @@ const make = Effect.gen(function* () {
     },
     Effect.mapError(() => new LibraryError({ reason: "io" })),
   );
-  return LibraryPublisher.of({ enabled: true, info, ingest, registerCopy, publishAttachments });
+  return LibraryPublisher.of({
+    enabled: true,
+    info,
+    ingest,
+    registerCopy,
+    publishAttachments,
+    recordActivity,
+  });
 });
 export const layer = Layer.effect(LibraryPublisher, make);

@@ -310,6 +310,53 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
     }),
   );
 
+  it.effect("counts commits since the last reported head, but not across a rewrite", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "copy-health-" }),
+      );
+      const repo = path.join(root, "web");
+      yield* fs.makeDirectory(repo);
+      yield* git(repo, ["init", "--initial-branch=main"]);
+      const commit = (message: string) =>
+        git(repo, [
+          "-c",
+          "user.email=test@example.com",
+          "-c",
+          "user.name=Test",
+          "commit",
+          "--allow-empty",
+          "-m",
+          message,
+        ]);
+      yield* commit("one");
+      const read = yield* makeCopyHealthReader;
+      const copy = copyWith(root, ["web"]);
+      const first = (yield* read(copy)).repositories[0]!;
+      expect(first.commitsSince).toBeUndefined();
+      yield* commit("two");
+      yield* commit("three");
+      const moved = (yield* read(copy, { since: new Map([["web", first.head!]]) }))
+        .repositories[0]!;
+      expect(moved.commitsSince).toEqual({ head: first.head, count: 2 });
+      // An unchanged head has nothing to count.
+      const same = (yield* read(copy, { since: new Map([["web", moved.head!]]) })).repositories[0]!;
+      expect(same.commitsSince).toBeUndefined();
+      // After a rewrite the old head is no ancestor, so only the move is reported.
+      yield* git(repo, ["reset", "--quiet", "--hard", first.head!]);
+      yield* commit("rewritten");
+      const rewritten = (yield* read(copy, { since: new Map([["web", moved.head!]]) }))
+        .repositories[0]!;
+      expect(rewritten.head).not.toBe(moved.head);
+      expect(rewritten.commitsSince).toBeUndefined();
+      // A value that is not a commit id is never passed to Git.
+      const odd = (yield* read(copy, { since: new Map([["web", "--all"]]) })).repositories[0]!;
+      expect(odd.commitsSince).toBeUndefined();
+    }),
+  );
+
   it.effect("fetches only when asked", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
