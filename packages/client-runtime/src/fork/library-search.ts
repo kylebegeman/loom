@@ -105,7 +105,7 @@ export function librarySnippetParts(
       end: Math.max(0, Math.min(end, snippet.length)),
     }))
     .filter(({ start, end }) => start < end)
-    .toSorted((a, b) => a.start - b.start);
+    .sort((a, b) => a.start - b.start);
   const parts: LibrarySnippetPart[] = [];
   let at = 0;
   for (const range of ranges) {
