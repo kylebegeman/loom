@@ -4,6 +4,7 @@ import type { LibraryHistorySource } from "./project-library/LibraryHistorySourc
 import type { LibraryAssetService } from "./project-library/assets/LibraryAssetService.ts";
 import type { LibraryService } from "./project-library/LibraryService.ts";
 import type { LibraryTimeline } from "./project-library/LibraryTimeline.ts";
+import type { LibraryLaunchCandidates } from "./project-library/LibraryLaunchCandidates.ts";
 import type { LibraryWorkspace } from "./project-library/LibraryWorkspace.ts";
 import type { ProjectCheckoutManagement } from "../project/ProjectCheckoutManagement.ts";
 import type { ComputerNaming } from "./computer-naming/ComputerNaming.ts";
@@ -28,6 +29,7 @@ export type ForkServices =
   | LibraryAssetService
   | LibraryService
   | LibraryTimeline
+  | LibraryLaunchCandidates
   | LibraryWorkspace
   | ProjectCheckoutManagement
   | ComputerNaming

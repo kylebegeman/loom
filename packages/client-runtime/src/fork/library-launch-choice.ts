@@ -1,20 +1,25 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
+  LibraryProfileReadiness,
   LibraryProject,
   LibraryThreadSummary,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
-  rankLibraryLaunchCandidates,
+  rankLibraryProjectLaunch,
   type LibraryLaunchCandidate,
   type LibraryLaunchComputer,
+  type LibraryLaunchMiniWorker,
   type LibraryLaunchRanking,
 } from "@t3tools/shared/fork/library-launch";
-import { libraryCopiesForScope } from "./library-copy-choice.ts";
 import { libraryRepositoryCanPull } from "./library-copy-health.ts";
 
-/** Rank this project's computers for one scope, counting only copies that cover it. */
+/**
+ * Rank this project's computers for one scope, counting only copies that cover it. While
+ * required-tool checks are still loading nothing is preselected, so a computer missing a tool is
+ * never chosen before its check arrives.
+ */
 export function libraryLaunchRanking(input: {
   readonly project: LibraryProject;
   readonly copies: readonly LibraryWorkingCopy[];
@@ -23,25 +28,24 @@ export function libraryLaunchRanking(input: {
   /** One selected component, or null for the whole project. */
   readonly resourceId: string | null;
   readonly liveHealth?: ReadonlyMap<string, LibraryCopyHealth> | undefined;
+  /** Required-tool checks read on each computer, keyed by computer. */
+  readonly readiness?: ReadonlyMap<EnvironmentId, LibraryProfileReadiness> | undefined;
+  /** True while a computer's required-tool check has not answered yet. */
+  readonly readinessPending?: boolean | undefined;
+  readonly miniWorkers?: readonly LibraryLaunchMiniWorker[] | undefined;
 }): LibraryLaunchRanking {
-  const resourceIds = input.resourceId === null ? null : [input.resourceId];
-  return rankLibraryLaunchCandidates({
-    computers: input.computers,
-    copies: input.computers.flatMap((computer) =>
-      libraryCopiesForScope(input.project, input.copies, computer.environmentId, resourceIds),
-    ),
-    threads: input.threads.filter(
-      (thread) => thread.projectId === input.project.id && thread.deleted !== true,
-    ),
-    resourceIds,
-    liveHealth: input.liveHealth,
+  const ranking = rankLibraryProjectLaunch({
+    ...input,
+    resourceIds: input.resourceId === null ? null : [input.resourceId],
   });
+  return input.readinessPending === true ? { ...ranking, preselected: null } : ranking;
 }
 
 /**
  * The computer and copy a dialog launches with. An explicit choice wins; otherwise the ranking's
  * preselection follows the data as it arrives. On a chosen computer, the best ranked copy applies
- * unless a copy was picked by hand.
+ * unless a copy was picked by hand. Mini workers are never the launch target: a conversation starts
+ * on a computer and sends long jobs to Mini from there.
  */
 export function libraryLaunchChoice(input: {
   readonly ranking: LibraryLaunchRanking;
@@ -50,7 +54,9 @@ export function libraryLaunchChoice(input: {
 }): { readonly hostId: EnvironmentId | null; readonly candidate: LibraryLaunchCandidate | null } {
   const hostId = input.hostId ?? input.ranking.preselected?.environmentId ?? null;
   if (hostId === null) return { hostId, candidate: null };
-  const onHost = input.ranking.candidates.filter((candidate) => candidate.environmentId === hostId);
+  const onHost = input.ranking.candidates.filter(
+    (candidate) => candidate.environmentId === hostId && candidate.kind !== "mini",
+  );
   const candidate =
     onHost.find((entry) => entry.kind === "copy" && entry.copyId === input.copyId) ??
     onHost[0] ??

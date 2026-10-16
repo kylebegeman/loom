@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
+  LibraryProfileReadiness,
   LibraryProject,
   LibraryRepositoryHealth,
   LibraryThreadSummary,
@@ -185,6 +186,68 @@ describe("libraryLaunchChoice", () => {
       hostId: null,
       candidate: null,
     });
+  });
+});
+
+describe("libraryLaunchRanking with the project's setup", () => {
+  const xcodeMissing: LibraryProfileReadiness = {
+    projectId: project.id,
+    environmentId: MINI,
+    checks: [{ id: "xcode", label: "Xcode", status: "missing" }],
+    secrets: [],
+    checkedAt: CHECKED,
+  };
+  const miniWorkers = [
+    {
+      environmentId: BOOK,
+      readiness: {
+        workerId: "worker-1",
+        name: "Build Mini",
+        checkedAt: CHECKED,
+        status: "ready" as const,
+        architecture: "arm64",
+        cpuCount: 10,
+        slots: 2,
+        active: 0,
+        nativeServerRunning: true,
+        outputBundles: true,
+        missingTools: [],
+        reasons: [],
+      },
+    },
+  ];
+
+  it("holds the preselection while a required-tool check is still loading", () => {
+    const input = {
+      project,
+      copies: [copy("mini-copy", MINI)],
+      computers,
+      threads: [],
+      resourceId: null,
+    };
+    expect(libraryLaunchRanking(input).preselected?.environmentId).toBe(MINI);
+    expect(libraryLaunchRanking({ ...input, readinessPending: true }).preselected).toBeNull();
+    expect(
+      libraryLaunchRanking({ ...input, readiness: new Map([[MINI, xcodeMissing]]) }).preselected
+        ?.environmentId,
+    ).toBe(BOOK);
+  });
+
+  it("offers Mini only when the project's profile allows it, and never launches on it", () => {
+    const input = { copies: [], computers, threads: [], resourceId: null, miniWorkers };
+    expect(
+      libraryLaunchRanking({ ...input, project }).candidates.some(
+        (candidate) => candidate.kind === "mini",
+      ),
+    ).toBe(false);
+    const allowed = libraryLaunchRanking({
+      ...input,
+      project: { ...project, profile: { allowMini: true } },
+    });
+    expect(allowed.candidates.at(-1)?.kind).toBe("mini");
+    expect(
+      libraryLaunchChoice({ ranking: allowed, hostId: BOOK, copyId: null }).candidate?.kind,
+    ).toBe("get-copy");
   });
 });
 

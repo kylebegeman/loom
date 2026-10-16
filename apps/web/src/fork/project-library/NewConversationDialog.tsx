@@ -371,6 +371,15 @@ export function NewConversationDialog({
   const executionHosts = authority.environments
     .filter((entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false)
     .toSorted((left, right) => rankOf(left.environmentId) - rankOf(right.environmentId));
+  /** Why a computer ranks low and is never preselected, for example "Xcode missing". */
+  const toolProblemsOf = (environmentId: EnvironmentId) =>
+    ranking.candidates
+      .find((candidate) => candidate.environmentId === environmentId && candidate.kind !== "mini")
+      ?.toolProblems.join(", ") ?? "";
+  // Mini runs long jobs for conversations on the computer it is registered on.
+  const miniCandidates = ranking.candidates.filter(
+    (candidate) => candidate.kind === "mini" && candidate.environmentId === hostId,
+  );
   if (preparing)
     return (
       <CopyDialog
@@ -481,7 +490,11 @@ export function NewConversationDialog({
               {executionHosts.map((entry) => (
                 <SelectItem key={entry.environmentId} value={entry.environmentId}>
                   {entry.label}
-                  {entry.connection.phase !== "connected" ? " (offline)" : ""}
+                  {entry.connection.phase !== "connected"
+                    ? " (offline)"
+                    : toolProblemsOf(entry.environmentId)
+                      ? ` (${toolProblemsOf(entry.environmentId)})`
+                      : ""}
                 </SelectItem>
               ))}
               {authority.computers
@@ -504,6 +517,16 @@ export function NewConversationDialog({
               {libraryLaunchCandidateSummary(chosen)}
             </p>
           ) : null}
+          {!attempt
+            ? miniCandidates.map((candidate) => (
+                <p
+                  key={candidate.kind === "mini" ? candidate.workerId : candidate.label}
+                  className="mt-1 text-xs text-muted-foreground"
+                >
+                  {libraryLaunchCandidateSummary(candidate)}
+                </p>
+              ))
+            : null}
         </LibraryField>
         {authority.computers.some(
           (computer) =>
