@@ -6,11 +6,14 @@ import {
   type LibrarySearchResult,
 } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { Fragment } from "effect/sql/Statement";
+import { LibraryEmbedder } from "./LibraryEmbedder.ts";
+import { fuseRankings, makeLibrarySemanticSearch } from "./LibrarySemanticSearch.ts";
 
 /**
  * Full-text search over saved conversation history.
@@ -44,6 +47,12 @@ const MIN_PREFIX_CHARS = 3;
 // Private-use characters mark matches in snippets. Indexed text has them removed.
 const MATCH_OPEN = "";
 const MATCH_CLOSE = "";
+// A blended search reads this many full-text matches, enough for every page a cursor can reach.
+const FUSED_TEXT_DEPTH = MAX_OFFSET + LIBRARY_SEARCH_MAX_LIMIT + 1;
+// A semantic hit's snippet is the start of its item, cut at a word near this length.
+const LEAD_SNIPPET_CHARS = 160;
+// Past this the query is answered by words alone rather than kept waiting on the model.
+const QUERY_EMBED_TIMEOUT = Duration.seconds(3);
 
 export const LIBRARY_SEARCH_SCHEMA = [
   `CREATE TABLE fork_library_search_items (id INTEGER PRIMARY KEY, library_id TEXT NOT NULL, position INTEGER NOT NULL, item_id TEXT NOT NULL, role TEXT NOT NULL, occurred_at TEXT NOT NULL, body TEXT NOT NULL)`,
@@ -145,12 +154,24 @@ const decodeCursor = (cursor: string) => {
   const bound = Number(parts[2]);
   return offset <= MAX_OFFSET && Number.isSafeInteger(bound) ? { offset, bound } : null;
 };
+/** The start of an item's text, as the snippet of a hit that matched by meaning alone. */
+export function leadSnippet(text: string) {
+  const flat = text.replace(/\s+/gu, " ").trim();
+  if (flat.length <= LEAD_SNIPPET_CHARS) return flat;
+  const cut = flat.lastIndexOf(" ", LEAD_SNIPPET_CHARS);
+  return `${flat.slice(0, cut > LEAD_SNIPPET_CHARS / 2 ? cut : LEAD_SNIPPET_CHARS).trimEnd()}…`;
+}
+// Quoted text asks for those exact words, so such a query is not blended with meaning.
+const hasQuotedPhrase = (query: string) => /"[^"]*[\p{L}\p{N}][^"]*"/u.test(query);
 const invalid = () => new LibraryError({ reason: "invalid" });
 const io = (cause: unknown) => new LibraryError({ reason: "io", cause });
 const decodeHit = Schema.decodeUnknownEffect(LibrarySearchHit);
 
 export const makeLibrarySearch = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const embedder = yield* LibraryEmbedder;
+  /** Null unless this server has the semantic search model. */
+  const semantic = embedder === null ? null : yield* makeLibrarySemanticSearch(embedder);
   /**
    * Bring one conversation's entries in step with its saved items. Run inside the ingest
    * transaction. An item keeps its row, and so its id, for as long as it is saved at the same
@@ -174,6 +195,107 @@ export const makeLibrarySearch = Effect.gen(function* () {
       { discard: true },
     ).pipe(Effect.mapError(io));
   };
+  /**
+   * One page of full-text matches blended with the items closest in meaning, by reciprocal rank
+   * fusion. Both rankings are read whole for the snapshot `bound`, then paged by offset like a
+   * plain search, so a cursor keeps the same format and the same snapshot guarantee.
+   */
+  const blended = Effect.fnUntraced(function* (
+    limit: number,
+    offset: number,
+    knownBound: number | undefined,
+    match: string,
+    query: Float32Array,
+    scope: (bound: Fragment) => Fragment,
+  ) {
+    const bound =
+      knownBound ??
+      (yield* sql<{
+        bound: number;
+      }>`SELECT coalesce(max(id), 0) AS bound FROM fork_library_search_items`)[0]!.bound;
+    const text = yield* sql<{ id: number }>`
+        SELECT i.id FROM fork_library_search
+        JOIN fork_library_search_items AS i ON i.id = fork_library_search.rowid
+        JOIN fork_library_threads AS t ON t.library_id = i.library_id
+        WHERE fork_library_search MATCH ${match} AND ${scope(sql`${bound}`)}
+        ORDER BY fork_library_search.rank, i.id
+        LIMIT ${FUSED_TEXT_DEPTH}`;
+    const ranked = fuseRankings(
+      text.map(({ id }) => id),
+      yield* semantic!.nearest(query, scope(sql`${bound}`)),
+    );
+    const entries = ranked.slice(offset, offset + limit);
+    if (entries.length === 0) return { hits: [], nextCursor: null } satisfies LibrarySearchResult;
+    const rows = yield* sql<{
+      id: number;
+      library_id: string;
+      position: number;
+      item_id: string;
+      role: string;
+      occurred_at: string;
+      project_id: string;
+      environment_id: string;
+      thread_id: string;
+      title: string | null;
+      archived: number | null;
+      lead: string;
+    }>`
+        SELECT i.id, i.library_id, i.position, i.item_id, i.role, i.occurred_at,
+          t.project_id, t.source_environment_id AS environment_id, t.source_thread_id AS thread_id,
+          json_extract(t.summary_json, '$.title') AS title,
+          json_extract(t.summary_json, '$.archived') AS archived,
+          substr(i.body, 1, ${LEAD_SNIPPET_CHARS * 2}) AS lead
+        FROM fork_library_search_items AS i
+        JOIN fork_library_threads AS t ON t.library_id = i.library_id
+        WHERE i.id IN ${sql.in(entries.map(({ id }) => id))}`;
+    const textIds = entries.filter((entry) => entry.text).map(({ id }) => id);
+    const snippets = new Map(
+      textIds.length === 0
+        ? []
+        : (yield* sql<{ id: number; snippet: string }>`
+              SELECT rowid AS id,
+                snippet(fork_library_search, 0, char(57344), char(57345), '…', ${SNIPPET_TOKENS}) AS snippet
+              FROM fork_library_search
+              WHERE fork_library_search MATCH ${match} AND rowid IN ${sql.in(textIds)}`).map(
+            (row) => [row.id, row.snippet],
+          ),
+    );
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    const hits = yield* Effect.forEach(
+      // An item removed since the rankings were read is left out of the page.
+      entries.flatMap((entry) => {
+        const row = byId.get(entry.id);
+        return row === undefined ? [] : [{ entry, row }];
+      }),
+      ({ entry, row }) => {
+        const snippet = snippets.get(entry.id);
+        return decodeHit({
+          id: row.library_id,
+          projectId: row.project_id,
+          environmentId: row.environment_id,
+          threadId: row.thread_id,
+          title: row.title ?? "",
+          archived: row.archived === 1,
+          itemId: row.item_id,
+          position: row.position,
+          role: row.role,
+          ...(snippet === undefined
+            ? { snippet: leadSnippet(row.lead), highlights: [] }
+            : parseLibrarySnippet(snippet)),
+          occurredAt: row.occurred_at,
+          rank: entry.score,
+          match: entry.text ? (entry.semantic ? "both" : "text") : "semantic",
+        });
+      },
+    );
+    return {
+      hits,
+      nextCursor:
+        ranked.length > offset + limit && offset + limit <= MAX_OFFSET
+          ? `${offset + limit}.${bound}`
+          : null,
+    } satisfies LibrarySearchResult;
+  }, Effect.mapError(io));
   const search = Effect.fnUntraced(function* (input: LibrarySearchRequest) {
     const match = libraryMatchQuery(input.query);
     const since = isoTime(input.since);
@@ -196,6 +318,25 @@ export const makeLibrarySearch = Effect.gen(function* () {
         ? sql`(SELECT coalesce(max(id), 0) FROM fork_library_search_items)`
         : sql`${page.bound}`;
     if (match === null) return { hits: [], nextCursor: null } satisfies LibrarySearchResult;
+    /** The items a search may return, on `fork_library_search_items AS i` and `fork_library_threads AS t`. */
+    const scope = (bound: Fragment) => sql`i.id <= ${bound}
+        AND coalesce(json_extract(t.summary_json, '$.deleted'), 0) = 0
+        ${input.projectId === undefined ? sql`` : sql`AND t.project_id = ${input.projectId}`}
+        ${input.environmentId === undefined ? sql`` : sql`AND t.source_environment_id = ${input.environmentId}`}
+        ${since === undefined ? sql`` : sql`AND i.occurred_at >= ${since}`}
+        ${until === undefined ? sql`` : sql`AND i.occurred_at < ${until}`}`;
+    if (semantic !== null && input.semantic !== false && !hasQuotedPhrase(input.query)) {
+      const query = yield* semantic.embedQuery(input.query).pipe(
+        Effect.timeoutOption(QUERY_EMBED_TIMEOUT),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Semantic search fell back to words", cause).pipe(
+            Effect.as(Option.none()),
+          ),
+        ),
+      );
+      if (Option.isSome(query))
+        return yield* blended(input.limit, offset, page.bound, match, query.value, scope);
+    }
     const rows = yield* sql<{
       library_id: string;
       position: number;
@@ -220,12 +361,7 @@ export const makeLibrarySearch = Effect.gen(function* () {
       FROM fork_library_search
       JOIN fork_library_search_items AS i ON i.id = fork_library_search.rowid
       JOIN fork_library_threads AS t ON t.library_id = i.library_id
-      WHERE fork_library_search MATCH ${match} AND i.id <= ${bound}
-        AND coalesce(json_extract(t.summary_json, '$.deleted'), 0) = 0
-        ${input.projectId === undefined ? sql`` : sql`AND t.project_id = ${input.projectId}`}
-        ${input.environmentId === undefined ? sql`` : sql`AND t.source_environment_id = ${input.environmentId}`}
-        ${since === undefined ? sql`` : sql`AND i.occurred_at >= ${since}`}
-        ${until === undefined ? sql`` : sql`AND i.occurred_at < ${until}`}
+      WHERE fork_library_search MATCH ${match} AND ${scope(bound)}
       ORDER BY fork_library_search.rank, i.id
       LIMIT ${input.limit + 1} OFFSET ${offset}`.pipe(Effect.mapError(io));
     const hits = yield* Effect.forEach(rows.slice(0, input.limit), (row) =>
@@ -253,5 +389,5 @@ export const makeLibrarySearch = Effect.gen(function* () {
           : null,
     } satisfies LibrarySearchResult;
   });
-  return { index, search };
+  return { index, search, semantic };
 });

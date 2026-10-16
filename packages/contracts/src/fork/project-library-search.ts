@@ -11,6 +11,7 @@ import {
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
 import { LibraryError, LibraryId } from "./project-library.ts";
+import { LibrarySearchMatch } from "./project-library-semantic-search.ts";
 
 /** Advertised by a Library that can search saved history. Clients show no search without it. */
 export const LIBRARY_SEARCH_FEATURE = "library-search";
@@ -32,6 +33,11 @@ export const LibrarySearchRequest = Schema.Struct({
    * indexed when the first page was read, so history saved meanwhile appears in a new search.
    */
   cursor: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(32))),
+  /**
+   * With `library-semantic-search`, results also include items close in meaning unless this is
+   * false. Ignored by Libraries without it. A query with a quoted phrase matches words only.
+   */
+  semantic: Schema.optional(Schema.Boolean),
 });
 export type LibrarySearchRequest = typeof LibrarySearchRequest.Type;
 
@@ -54,6 +60,8 @@ export const LibrarySearchHit = Schema.Struct({
   occurredAt: IsoDateTime,
   /** Relevance. Higher is better; comparable only within one search. */
   rank: Schema.Number,
+  /** Set when the search blended in meaning (`library-semantic-search`). */
+  match: Schema.optional(LibrarySearchMatch),
 });
 export type LibrarySearchHit = typeof LibrarySearchHit.Type;
 

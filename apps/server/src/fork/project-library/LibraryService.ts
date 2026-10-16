@@ -59,6 +59,8 @@ import * as Assets from "./assets/LibraryAssetService.ts";
 import { libraryAttachments } from "./attachments.ts";
 import { validLibraryResources } from "./policy.ts";
 import { makeLibrarySearch } from "./LibrarySearch.ts";
+import { warnIfLibraryEmbeddingsUnusable } from "./LibraryEmbedder.ts";
+import * as ServerActivation from "../../serverActivation.ts";
 import * as BriefProposals from "./LibraryBriefProposals.ts";
 import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import { LOOM_SERVER_FEATURES } from "../features.ts";
@@ -217,6 +219,9 @@ const make = Effect.gen(function* () {
   const historySearch = yield* makeLibrarySearch;
   const lock = yield* Semaphore.make(1);
   const refreshes = yield* SubscriptionRef.make(0);
+  if (isAuthority && historySearch.semantic !== null)
+    yield* ServerActivation.forkParked(historySearch.semantic.backfill(refreshes));
+  else if (isAuthority) yield* warnIfLibraryEmbeddingsUnusable;
   const decode = <A>(codec: ReturnType<typeof compileCodec<A>>, text: string) =>
     codec.decode(text).pipe(Effect.mapError(io));
   const encode = <A>(codec: ReturnType<typeof compileCodec<A>>, value: A) =>

@@ -252,3 +252,6 @@ apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	1
 apps/web/src/components/CommandPalette.logic.test.ts	library-palette	1
 apps/web/src/components/CommandPalette.logic.ts	library-palette	4
 apps/web/src/components/CommandPalette.tsx	library-palette	4
+scripts/build-cli-archive.ts	library-semantic-search	2
+apps/server/package.json	-	"onnxruntime-web": "1.30.0"
+pnpm-workspace.yaml	-	protobufjs: false

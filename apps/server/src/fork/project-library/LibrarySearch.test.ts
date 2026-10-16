@@ -17,16 +17,27 @@ import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { archiveFor, resource, source } from "./Library.testkit.ts";
+import {
+  LibraryEmbedder,
+  LibraryEmbedderError,
+  makeOnnxLibraryEmbedder,
+  resolveLibraryEmbeddingFiles,
+  type LibraryEmbedderShape,
+} from "./LibraryEmbedder.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryStore from "./LibraryStore.ts";
 import { libraryMatchQuery, parseLibrarySnippet } from "./LibrarySearch.ts";
+import { makeLibrarySemanticSearch } from "./LibrarySemanticSearch.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 
 const noAssets = Layer.succeed(Assets.LibraryAssetService, {
@@ -54,11 +65,18 @@ const withDatabase = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   );
 const run = <A, E, R>(
   use: (service: LibraryService.LibraryService["Service"]) => Effect.Effect<A, E, R>,
+  embedder: LibraryEmbedderShape | null = null,
 ) =>
   withDatabase(
     Effect.gen(function* () {
       yield* runForkMigrationSet(ProjectLibraryMigrations);
-      return yield* use(yield* LibraryService.LibraryService.pipe(Effect.provide(serviceLayer)));
+      return yield* use(
+        yield* LibraryService.LibraryService.pipe(
+          Effect.provide(
+            serviceLayer.pipe(Layer.provide(Layer.succeed(LibraryEmbedder, embedder))),
+          ),
+        ),
+      );
     }),
   );
 const encodeArchive = Schema.encodeEffect(
@@ -618,6 +636,298 @@ describe("Library history search", () => {
         const service = yield* LibraryService.LibraryService.pipe(Effect.provide(serviceLayer));
         const hits = (yield* service.search({ query: "osprey", limit: 10 })).hits;
         expect(hits.map((hit) => hit.threadId)).toEqual(["saved"]);
+      }),
+    ),
+  );
+});
+
+// Words that mean the same thing to the fake embedder. Text with none of them has no meaning.
+const CONCEPTS = [
+  ["deploy", "deployment", "rollout", "release", "ship", "launch"],
+  ["stall", "stuck", "hung", "blocked", "refused", "failed"],
+  ["bake", "bread", "oven", "sourdough", "flour"],
+];
+const meaning = (text: string) => {
+  const vector = new Float32Array(CONCEPTS.length);
+  for (const word of text.toLowerCase().match(/\p{L}+/gu) ?? []) {
+    const concept = CONCEPTS.findIndex((words) => words.includes(word));
+    if (concept >= 0) vector[concept] = 1;
+  }
+  const norm = Math.hypot(...vector) || 1;
+  return vector.map((value) => value / norm);
+};
+/** A deterministic embedder that records every text it is asked to embed. */
+const fakeEmbedder = (model = "fake-concepts", embedded: string[] = []): LibraryEmbedderShape => ({
+  model,
+  embed: (text) =>
+    Effect.sync(() => {
+      embedded.push(text);
+      return meaning(text);
+    }),
+});
+const brokenEmbedder: LibraryEmbedderShape = {
+  model: "broken",
+  embed: () => Effect.fail(new LibraryEmbedderError({ cause: new Error("no model") })),
+};
+const embedAll = (embedder: LibraryEmbedderShape) =>
+  makeLibrarySemanticSearch(embedder).pipe(
+    Effect.flatMap((semantic) => semantic.embedPending(1_000)),
+  );
+const said = (text: string, time = "2026-10-05T10:00:00.000Z") => ({
+  type: "user_message" as const,
+  text,
+  time,
+});
+/** Conversations about a stuck deploy in different words, and one about bread. */
+const meaningFixture = Effect.fnUntraced(function* (
+  service: LibraryService.LibraryService["Service"],
+) {
+  const project = yield* service.createProject({
+    requestId: "create",
+    title: "AspectAvy",
+    resources: [resource],
+  });
+  const elsewhere = yield* service.createProject({
+    requestId: "elsewhere",
+    title: "Elsewhere",
+    resources: [resource],
+  });
+  for (const thread of [
+    yield* conversation(project, {
+      name: "helios",
+      items: [said("Why did the Helios rollout stall?"), said("The pinned digest drifted.")],
+    }),
+    yield* conversation(project, { name: "notes", items: [said("The release is stuck again")] }),
+    yield* conversation(project, {
+      name: "bread",
+      items: [said("Bake the sourdough in a hot oven")],
+    }),
+    yield* conversation(project, {
+      name: "gone",
+      deleted: true,
+      items: [said("Launch hung overnight")],
+    }),
+    yield* conversation(elsewhere, { name: "other", items: [said("Ship blocked by review")] }),
+  ])
+    yield* service.registerThread({ requestId: thread.summary.id, thread });
+  return { project, elsewhere };
+});
+const matches = (result: {
+  hits: ReadonlyArray<{ threadId: string; match?: string | undefined }>;
+}) => result.hits.map((hit) => [hit.threadId, hit.match]);
+
+describe("Library semantic search", () => {
+  it.effect("finds a conversation by meaning when the words differ", () => {
+    const embedder = fakeEmbedder();
+    return run(
+      (service) =>
+        Effect.gen(function* () {
+          const { project } = yield* meaningFixture(service);
+          // Before the backfill reaches it, history matches by words alone.
+          expect(matches(yield* search(service, { query: "release stuck" }))).toEqual([
+            ["notes", "text"],
+          ]);
+          yield* embedAll(embedder);
+
+          const result = yield* search(service, { query: "release stuck" });
+          expect(result.hits[0]).toMatchObject({ threadId: "notes", match: "both" });
+          expect(result.hits[0]!.highlights).toHaveLength(2);
+          expect(matches(result).slice(1).toSorted()).toEqual([
+            ["helios", "semantic"],
+            ["other", "semantic"],
+          ]);
+          // A meaning-only hit shows the start of the item, with nothing highlighted.
+          expect(result.hits.find((hit) => hit.threadId === "helios")).toMatchObject({
+            itemId: "helios-item-0",
+            role: "user",
+            snippet: "Why did the Helios rollout stall?",
+            highlights: [],
+          });
+          expect(result.hits[0]!.rank).toBeGreaterThan(result.hits[1]!.rank);
+
+          // The project filter applies to meaning too; deleted history never returns.
+          expect(
+            matches(yield* search(service, { query: "release stuck", projectId: project.id })),
+          ).toEqual([
+            ["notes", "both"],
+            ["helios", "semantic"],
+          ]);
+          // Words with no match and no shared meaning find nothing.
+          expect((yield* search(service, { query: "quarterly budget" })).hits).toEqual([]);
+
+          // Paging walks the blended ranking with the same cursor format.
+          const first = yield* search(service, { query: "release stuck", limit: 2 });
+          expect(first.nextCursor).toMatch(/^2\.\d+$/);
+          const rest = yield* search(service, {
+            query: "release stuck",
+            limit: 2,
+            cursor: first.nextCursor!,
+          });
+          expect(rest.nextCursor).toBeNull();
+          expect([...first.hits, ...rest.hits].map((hit) => hit.threadId)).toEqual(
+            result.hits.map((hit) => hit.threadId),
+          );
+
+          // Asking for words only, or quoting a phrase, is plain full-text search.
+          for (const input of [
+            { query: "release stuck", semantic: false },
+            { query: '"release is stuck"' },
+          ]) {
+            const words = yield* search(service, input);
+            expect(words.hits.map((hit) => hit.threadId)).toEqual(["notes"]);
+            expect(words.hits[0]).not.toHaveProperty("match");
+          }
+        }),
+      embedder,
+    );
+  });
+
+  it.effect("returns the same words-only results without the model or when it fails", () =>
+    Effect.gen(function* () {
+      const results = [];
+      for (const embedder of [null, brokenEmbedder])
+        results.push(
+          yield* run(
+            (service) =>
+              Effect.gen(function* () {
+                yield* meaningFixture(service);
+                const result = yield* search(service, { query: "release stuck" });
+                // Project ids are random per run.
+                return result.hits.map(({ projectId: _projectId, ...hit }) => hit);
+              }),
+            embedder,
+          ),
+        );
+      expect(results[0]!.map((hit) => hit.threadId)).toEqual(["notes"]);
+      expect(results[0]![0]).not.toHaveProperty("match");
+      expect(results[1]).toEqual(results[0]);
+    }),
+  );
+
+  it.effect("embeds history newest first, resumes where it stopped, and follows edits", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const embedded: string[] = [];
+        const semantic = yield* makeLibrarySemanticSearch(fakeEmbedder("fake-concepts", embedded));
+        const vectors = () =>
+          sql<{ count: number }>`SELECT count(*) AS count FROM fork_library_search_vectors`.pipe(
+            Effect.map(([row]) => row!.count),
+          );
+        const project = yield* service.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
+        });
+        const save = Effect.fnUntraced(function* (sequence: number, texts: ReadonlyArray<string>) {
+          const thread = yield* conversation(project, {
+            name: "evolving",
+            sequence,
+            items: texts.map((text) => said(text)),
+          });
+          yield* service.ingestHistory({
+            requestId: `save-${sequence}`,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence: sequence - 1,
+            entries: [{ sequence, thread }],
+          });
+        });
+        yield* save(1, ["first", "second", "third", "fourth", "fifth"]);
+
+        // An interrupted backfill leaves the rest pending and picks it up without repeating work.
+        expect(yield* semantic.embedPending(2)).toBe(2);
+        expect(embedded).toEqual(["fifth", "fourth"]);
+        expect(yield* semantic.embedPending(16)).toBe(3);
+        expect(yield* semantic.embedPending(16)).toBe(0);
+        expect(embedded).toEqual(["fifth", "fourth", "third", "second", "first"]);
+        expect(yield* vectors()).toBe(5);
+
+        // Edited text is embedded again; removed items lose their vectors.
+        yield* save(2, ["first", "second, revised", "third"]);
+        expect(yield* vectors()).toBe(2);
+        expect(yield* semantic.embedPending(16)).toBe(1);
+        expect(embedded.at(-1)).toBe("second, revised");
+
+        // An item edited while it was being embedded is not given the stale vector.
+        embedded.length = 0;
+        yield* save(3, ["first", "second, revised", "third, revised"]);
+        const racing = yield* makeLibrarySemanticSearch({
+          model: "fake-concepts",
+          embed: (text) =>
+            sql`UPDATE fork_library_search_items SET body = 'third, edited meanwhile' WHERE body = ${text}`.pipe(
+              Effect.orDie,
+              Effect.as(meaning(text)),
+            ),
+        });
+        expect(yield* racing.embedPending(16)).toBe(1);
+        expect(yield* vectors()).toBe(2);
+        expect(yield* semantic.embedPending(16)).toBe(1);
+        expect(embedded).toEqual(["third, edited meanwhile"]);
+      }),
+    ),
+  );
+
+  // Runs the pinned model from LOOM_TEST_EMBEDDINGS_DIR, which holds its two files.
+  it.effect.skipIf(!process.env.LOOM_TEST_EMBEDDINGS_DIR)(
+    "finds a conversation by meaning with the pinned model",
+    () => {
+      const resolved = resolveLibraryEmbeddingFiles({
+        LOOM_LIBRARY_AUTHORITY: "true",
+        LOOM_LIBRARY_EMBEDDINGS_DIR: process.env.LOOM_TEST_EMBEDDINGS_DIR,
+      });
+      if (!("files" in resolved)) return Effect.die(new Error(resolved.off));
+      const embedder = makeOnnxLibraryEmbedder(resolved.files);
+      return run(
+        (service) =>
+          Effect.gen(function* () {
+            yield* meaningFixture(service);
+            yield* embedAll(embedder);
+            const result = yield* search(service, { query: "deployment got stuck" });
+            expect(matches(result)).toEqual([
+              ["notes", "semantic"],
+              ["other", "semantic"],
+            ]);
+          }),
+        embedder,
+      );
+    },
+    60_000,
+  );
+
+  it.effect("keeps embedding in the background and replaces another model's vectors", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* service.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
+        });
+        const register = Effect.fnUntraced(function* (name: string, text: string) {
+          const thread = yield* conversation(project, { name, items: [said(text)] });
+          yield* service.registerThread({ requestId: name, thread });
+        });
+        yield* register("old", "Embedded by an earlier model");
+        yield* embedAll(fakeEmbedder("earlier-model"));
+
+        const embedded = yield* Queue.unbounded<string>();
+        const semantic = yield* makeLibrarySemanticSearch({
+          model: "fake-concepts",
+          embed: (text) => Queue.offer(embedded, text).pipe(Effect.as(meaning(text))),
+        });
+        const revisions = yield* SubscriptionRef.make(0);
+        yield* Effect.forkChild(semantic.backfill(revisions));
+        yield* TestClock.adjust("30 seconds");
+        expect(yield* Queue.take(embedded)).toBe("Embedded by an earlier model");
+
+        // Saved history wakes the idle loop.
+        yield* register("new", "Saved after startup");
+        yield* SubscriptionRef.update(revisions, (revision) => revision + 1);
+        expect(yield* Queue.take(embedded)).toBe("Saved after startup");
+        const sql = yield* SqlClient.SqlClient;
+        const models = yield* sql<{ model: string }>`
+          SELECT model FROM fork_library_search_vectors ORDER BY id LIMIT 1`;
+        expect(models).toEqual([{ model: "fake-concepts" }]);
       }),
     ),
   );

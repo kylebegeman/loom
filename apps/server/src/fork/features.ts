@@ -1,3 +1,6 @@
+import { LIBRARY_SEMANTIC_SEARCH_FEATURE } from "@t3tools/contracts/fork";
+import { libraryEmbeddingConfiguration } from "./project-library/LibraryEmbedder.ts";
+
 /** Advertised as `capabilities.loomFeatures`. Packets with server support append their slug. */
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
@@ -51,4 +54,6 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "library-launch-candidates",
   "library-timeline-activity",
   "library-brief-suggestions",
+  // Only a Library authority with the pinned model's weights (LP-20).
+  ...("files" in libraryEmbeddingConfiguration() ? [LIBRARY_SEMANTIC_SEARCH_FEATURE] : []),
 ];
