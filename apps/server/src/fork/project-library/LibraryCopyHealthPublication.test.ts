@@ -140,7 +140,8 @@ describe("copy health publication", () => {
       Effect.gen(function* () {
         yield* f.report;
         const [first] = yield* Ref.get(f.published);
-        expect(first?.requestId.startsWith("journal:health:")).toBe(true);
+        // The marker names the copy, so the Library can drop its earlier health receipts.
+        expect(first?.requestId).toMatch(/^journal:health:[a-f0-9]{16}:[a-f0-9]{64}$/);
         expect(first).toMatchObject({ authorityId: "authority", authorityEpoch: 1 });
         expect(first?.copy.health).toEqual(yield* Ref.get(f.health));
 

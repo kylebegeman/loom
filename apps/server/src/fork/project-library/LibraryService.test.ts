@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
 import { LibraryError, LibraryThreadArchive } from "@t3tools/contracts/fork";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
@@ -14,6 +15,7 @@ import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.t
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
+import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as LibraryService from "./LibraryService.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 import {
@@ -593,6 +595,58 @@ describe("independent Library catalog and durable history", () => {
             })
             .pipe(Effect.flip)).reason,
         ).toBe("invalid");
+      }),
+    ),
+  );
+  it.effect("keeps only the newest health receipt for each copy", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const crypto = yield* Crypto.Crypto;
+        const project = yield* create(service);
+        const copy = copyFor(project);
+        const other = {
+          ...copy,
+          id: "other-copy",
+          rootPath: "/borrowed/other",
+          repositories: copy.repositories.map((repository) => ({
+            ...repository,
+            path: "/borrowed/other/api",
+          })),
+        };
+        yield* service.registerCopy({ requestId: "copy", copy });
+        yield* service.registerCopy({ requestId: "other", copy: other });
+        const report = (target: typeof copy, digest: string, checkedAt: string) =>
+          Effect.gen(function* () {
+            const marker = yield* CopyHealthPublication.copyHealthRequestMarker(crypto, target.id);
+            yield* service.registerCopy({
+              requestId: `journal${marker}${digest}`,
+              copy: {
+                ...target,
+                health: { copyId: target.id, environmentId: source, checkedAt, repositories: [] },
+              },
+            });
+          });
+        const healthReceipts = () =>
+          sql<{
+            readonly request_id: string;
+          }>`SELECT request_id FROM fork_library_commands WHERE request_id LIKE 'journal:health:%'`.pipe(
+            Effect.map((rows) => rows.map((row) => row.request_id.split(":").at(-1)).toSorted()),
+          );
+
+        yield* report(copy, "first", "2026-10-16T01:00:00.000Z");
+        yield* report(other, "other", "2026-10-16T01:30:00.000Z");
+        yield* report(copy, "second", "2026-10-16T02:00:00.000Z");
+        yield* report(copy, "third", "2026-10-16T03:00:00.000Z");
+        expect(yield* healthReceipts()).toEqual(["other", "third"]);
+        // A replay of a pruned report is harmless: it never replaces the newer health.
+        yield* report(copy, "first", "2026-10-16T01:00:00.000Z");
+        expect(
+          (yield* service.copies({ projectId: project.id }))
+            .map((entry) => entry.health?.checkedAt)
+            .toSorted(),
+        ).toEqual(["2026-10-16T01:30:00.000Z", "2026-10-16T03:00:00.000Z"]);
+        expect(yield* healthReceipts()).toEqual(["first", "other"]);
       }),
     ),
   );

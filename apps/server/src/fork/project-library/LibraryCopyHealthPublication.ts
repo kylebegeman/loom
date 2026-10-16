@@ -91,6 +91,16 @@ export const latestCopyHealth = (
     ? previous
     : incoming;
 
+/**
+ * The part of a health report's request id that names its copy. Each report has its own request
+ * id, so the Library keeps only the newest receipt per marker instead of one per report.
+ */
+export const copyHealthRequestMarker = (crypto: Crypto.Crypto, copyId: string) =>
+  crypto.digest("SHA-256", new TextEncoder().encode(copyId)).pipe(
+    Effect.map((bytes) => `:health:${Hex.encode(bytes).slice(0, 16)}:`),
+    Effect.mapError((cause) => new LibraryError({ reason: "io", cause })),
+  );
+
 export const withCopyHealth = (
   copy: LibraryWorkingCopy,
   health: LibraryCopyHealth | undefined,
@@ -137,7 +147,7 @@ export const makeCopyHealthPublication = Effect.fnUntraced(function* (input: {
         .pipe(Effect.mapError((cause) => new LibraryError({ reason: "io", cause }))),
     );
     yield* input.publisher.registerCopy({
-      requestId: `${authority.journalId}:health:${digest}`,
+      requestId: `${authority.journalId}${yield* copyHealthRequestMarker(crypto, copy.id)}${digest}`,
       authorityId: authority.authorityId,
       authorityEpoch: authority.authorityEpoch,
       copy: reported,

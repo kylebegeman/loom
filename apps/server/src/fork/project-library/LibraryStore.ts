@@ -145,6 +145,8 @@ export class LibraryStore extends Context.Service<
       fingerprint: string,
       result: string,
     ) => Effect.Effect<void, LibraryStoreError>;
+    /** Deletes the receipts whose request id starts with `prefix`. */
+    readonly deleteReceipts: (prefix: string) => Effect.Effect<void, LibraryStoreError>;
     readonly appendEvent: (
       aggregateId: string,
       eventType: string,
@@ -508,6 +510,11 @@ const make = Effect.gen(function* () {
       run(
         "put-receipt",
         sql`INSERT INTO fork_library_commands (request_id, operation, fingerprint, result_json) VALUES (${requestId}, ${operation}, ${fingerprint}, ${result})`,
+      ).pipe(Effect.asVoid),
+    deleteReceipts: (prefix) =>
+      run(
+        "delete-receipts",
+        sql`DELETE FROM fork_library_commands WHERE substr(request_id, 1, ${prefix.length}) = ${prefix}`,
       ).pipe(Effect.asVoid),
     appendEvent: (aggregateId, eventType, payload, createdAt) =>
       run(

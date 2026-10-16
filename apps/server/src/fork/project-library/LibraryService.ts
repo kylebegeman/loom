@@ -629,7 +629,15 @@ const make = Effect.gen(function* () {
       input.requestId,
       encode(codecs.register, input),
       codecs.copy,
-      validateAuthority(input).pipe(Effect.andThen(saveCopy(input.copy))),
+      Effect.gen(function* () {
+        yield* validateAuthority(input);
+        // A health report replaces the copy's previous one, and so does its receipt.
+        const marker = yield* CopyHealthPublication.copyHealthRequestMarker(crypto, input.copy.id);
+        const at = input.requestId.indexOf(marker);
+        if (input.copy.health !== undefined && at > 0)
+          yield* store.deleteReceipts(input.requestId.slice(0, at + marker.length));
+        return yield* saveCopy(input.copy);
+      }),
     );
   const registerThread = (input: { requestId: string; thread: LibraryThreadArchive }) =>
     mutation(
