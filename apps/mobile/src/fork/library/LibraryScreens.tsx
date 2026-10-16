@@ -6,9 +6,17 @@ import {
   useRoute,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  libraryActiveCopies,
+  libraryResourceLocation,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
+import type {
+  LibraryProject,
+  LibraryThreadSummary,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, View } from "react-native";
@@ -24,6 +32,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { uuidv4 } from "../../lib/uuid";
+import { relativeTime } from "../../lib/time";
 import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyboardCommands";
 import {
   library,
@@ -33,6 +42,9 @@ import {
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
+
+const RECENT_CONVERSATIONS = 5;
+const ago = (iso: string) => `${relativeTime(iso)} ago`;
 
 export function LibraryPage(props: {
   title: string;
@@ -378,12 +390,12 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
   const threads = useEnvironmentQuery(
     target ? library.threads({ environmentId: target, input: { projectId } }) : null,
   );
-  const [showRemovedCopies, setShowRemovedCopies] = useState(false);
+  // Removed copies feed the folded history, so the page always asks for them.
   const copies = useEnvironmentQuery(
     target
       ? library.copies({
           environmentId: target,
-          input: { projectId, ...(showRemovedCopies ? { includeReleased: true } : {}) },
+          input: { projectId, includeReleased: true },
         })
       : null,
   );
@@ -398,7 +410,8 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           ? "Loading conversation history…"
           : "Refreshing conversation history…"
       : null;
-  const [tab, setTab] = useState<"overview" | "resources" | "threads" | "copies">("overview");
+  const [showAllThreads, setShowAllThreads] = useState(false),
+    [showHistory, setShowHistory] = useState(false);
   const canArchive = useAtomValue(library.archiveProject.permissionAtom(target));
   const archive = useAtomCommand(library.archiveProject, { reportFailure: false });
   const [pending, setPending] = useState(false),
@@ -434,6 +447,21 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       "Saved computer";
   const showThread = (thread: LibraryThreadSummary) =>
     navigation.navigate("LibraryHistory", { projectId: p.id, archiveId: thread.id });
+  const reuseFolder = (copy: LibraryWorkingCopy) =>
+    navigation.navigate("LibraryStart", {
+      projectId: p.id,
+      reuseEnvironmentId: copy.environmentId,
+      reuseRootPath: copy.rootPath,
+    });
+  const repositories = libraryRepositories(p),
+    links = p.resources.length - repositories.length;
+  const activeCopies = libraryActiveCopies(copies.data ?? []),
+    removedCopies = (copies.data ?? [])
+      .filter((copy) => !activeCopies.includes(copy))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const visibleThreads = (threads.data ?? [])
+    .filter((thread) => !thread.deleted)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return (
     <LibraryPage
       title={p.title}
@@ -452,114 +480,100 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       ) : null}
       <View className="gap-3">
         <Text className="text-sm text-foreground-muted">
-          {libraryRepositories(p).length} components
-          {threads.data !== null
-            ? ` · ${threads.data.length} saved conversations`
-            : threadsState === "error"
-              ? " · Conversations unavailable"
-              : " · Loading conversations…"}
+          {[
+            `Edited ${ago(p.updatedAt)}`,
+            repositories.length
+              ? `${repositories.length} ${repositories.length === 1 ? "repository" : "repositories"}`
+              : null,
+            links ? `${links} ${links === 1 ? "link" : "links"}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </Text>
+        {p.archived ? (
+          <LibraryNotice detail="Archived. Conversations stay readable; reopen the project to change it or start new work." />
+        ) : null}
         <MaterialButton
           label="New conversation"
           tone="primary"
           disabled={!authority.ready || p.archived}
           onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
         />
-        {libraryRepositories(p).length === 0 ? (
-          <Text className="text-sm text-foreground-muted">
-            Start a discussion using this project's brief and links. Add repositories when the work
-            needs them.
+      </View>
+      <SettingsSection title="Brief">
+        <View className="p-4">
+          <Text selectable className="text-sm leading-normal text-foreground">
+            {p.brief ||
+              "Every conversation in this project starts with the brief. Say what you're building and what matters."}
+          </Text>
+        </View>
+      </SettingsSection>
+      <SettingsSection title="Repositories and links">
+        {p.resources.map((resource) => (
+          <View key={resource.id} className="gap-1 px-4 py-3">
+            <Text className="text-sm font-t3-medium text-foreground">{resource.title}</Text>
+            <Text selectable className="text-xs text-foreground-muted">
+              {libraryResourceLocation(resource)}
+            </Text>
+          </View>
+        ))}
+        {p.resources.length === 0 ? (
+          <Text className="p-4 text-sm text-foreground-muted">
+            Add the repositories this project is made of, plus any links worth keeping close.
           </Text>
         ) : null}
-      </View>
-      <View className="flex-row flex-wrap gap-2">
-        {(["overview", "resources", "threads", "copies"] as const).map((value) => (
-          <MaterialButton
-            key={value}
-            label={
-              value === "overview"
-                ? "Overview"
-                : value === "resources"
-                  ? "Resources"
-                  : value === "threads"
-                    ? "Conversations"
-                    : "Working copies"
-            }
-            tone={tab === value ? "secondary" : "text"}
-            onPress={() => {
-              if (
-                (value === "copies" || value === "threads") &&
-                authority.connected &&
-                authority.canRead
-              )
-                refreshLibraryWork(target, projectId);
-              setTab(value);
-            }}
+        <MaterialButton
+          label={p.resources.length ? "Edit project" : "Add repositories or links"}
+          tone="text"
+          disabled={!authority.ready || p.archived}
+          onPress={() => navigation.navigate("LibraryEdit", { projectId: p.id })}
+        />
+      </SettingsSection>
+      <View className="gap-3">
+        <Text className="text-base font-t3-medium text-foreground">On your computers</Text>
+        {activeCopies.map((copy) => (
+          <LibraryCopySection
+            key={copy.id}
+            copy={copy}
+            authorityEnvironmentId={target}
+            authorityReady={authority.ready && copiesReady}
+            computerLabel={hostLabel(copy.environmentId)}
+            onReuseFolder={() => reuseFolder(copy)}
+            onChanged={() => refreshLibraryWork(target, projectId)}
           />
         ))}
-      </View>
-      {tab === "overview" ? (
-        <>
-          <SettingsSection title="Shared brief">
-            <View className="p-4">
-              <Text selectable className="text-sm leading-normal text-foreground">
-                {p.brief || "Add a brief to capture the purpose of this project."}
-              </Text>
-            </View>
-          </SettingsSection>
-          <SettingsSection title="Recent activity">
-            {(threads.data ?? []).slice(0, 5).map((thread) => (
-              <LibraryThreadRow
-                key={thread.id}
-                thread={thread}
-                project={p}
-                computerLabel={hostLabel(thread.environmentId)}
-                onPress={() => showThread(thread)}
-              />
-            ))}
-            {threadsState === "empty" ? (
-              <Text className="p-4 text-sm text-foreground-muted">No saved conversations yet.</Text>
-            ) : null}
-            {threadListNotice || threads.error ? (
-              <View className="p-4">
-                <LibraryNotice
-                  detail={threadListNotice}
-                  error={threads.error}
-                  onRetry={threads.error ? threads.refresh : undefined}
-                />
-              </View>
-            ) : null}
-          </SettingsSection>
-        </>
-      ) : null}
-      {tab === "resources" ? (
-        <SettingsSection title="Components">
-          {p.resources.map((resource) => (
-            <View key={resource.id} className="gap-1 p-4">
-              <Text className="text-base font-t3-medium text-foreground">{resource.title}</Text>
-              <Text selectable className="text-sm text-foreground-muted">
-                {resource.kind === "link"
-                  ? resource.url
-                  : (resource.remoteUrl ?? "Existing local repository")}
-              </Text>
-              {resource.kind !== "link" ? (
-                <Text className="text-xs text-foreground-muted">
-                  Folder: {resource.relativePath}
-                </Text>
-              ) : null}
-            </View>
-          ))}
-          <MaterialButton
-            label="Edit resources"
-            tone="text"
-            disabled={!authority.ready}
-            onPress={() => navigation.navigate("LibraryEdit", { projectId: p.id })}
+        {copiesReady && activeCopies.length === 0 ? (
+          <Text className="text-sm text-foreground-muted">
+            No copies right now. Get one on any computer when you want to work, and remove it when
+            you're done. Conversations stay here either way.
+          </Text>
+        ) : null}
+        {copiesState === "loading" ? (
+          <LibraryNotice
+            detail={
+              !authority.connected
+                ? "Reconnect the selected library to check your computers."
+                : "Checking your computers…"
+            }
           />
-        </SettingsSection>
-      ) : null}
-      {tab === "threads" ? (
-        <SettingsSection title="Conversations">
-          {(threads.data ?? []).map((thread) => (
+        ) : null}
+        {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
+        <MaterialButton
+          label="Get a copy"
+          tone="secondary"
+          disabled={!authority.ready || p.archived}
+          onPress={() => navigation.navigate("LibraryStart", { projectId: p.id })}
+        />
+      </View>
+      <SettingsSection
+        title={
+          showAllThreads || visibleThreads.length <= RECENT_CONVERSATIONS
+            ? "Conversations"
+            : "Recent conversations"
+        }
+      >
+        {(showAllThreads ? visibleThreads : visibleThreads.slice(0, RECENT_CONVERSATIONS)).map(
+          (thread) => (
             <LibraryThreadRow
               key={thread.id}
               thread={thread}
@@ -567,65 +581,56 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
               computerLabel={hostLabel(thread.environmentId)}
               onPress={() => showThread(thread)}
             />
-          ))}
-          {threadListNotice || threads.error ? (
+          ),
+        )}
+        {visibleThreads.length > RECENT_CONVERSATIONS ? (
+          <MaterialButton
+            label={showAllThreads ? "Show recent only" : `Show all ${visibleThreads.length}`}
+            tone="text"
+            onPress={() => setShowAllThreads((current) => !current)}
+          />
+        ) : null}
+        {threadsState === "empty" ? (
+          <Text className="p-4 text-sm text-foreground-muted">
+            No conversations yet. Start one about the whole project or a single repository.
+          </Text>
+        ) : null}
+        {threadListNotice || threads.error ? (
+          <View className="p-4">
             <LibraryNotice
-              error={threads.error}
               detail={threadListNotice}
+              error={threads.error}
               onRetry={threads.error ? threads.refresh : undefined}
             />
-          ) : null}
-          {threadsState === "empty" ? (
-            <Text className="p-4 text-sm text-foreground-muted">No saved conversations yet.</Text>
-          ) : null}
-        </SettingsSection>
-      ) : null}
-      {tab === "copies" ? (
-        <View className="gap-4">
-          <Text className="text-sm text-foreground-muted">
-            Working files have a computer and folder. Removing a safe Loom-owned copy keeps this
-            project and its history.
-          </Text>
+          </View>
+        ) : null}
+      </SettingsSection>
+      {removedCopies.length ? (
+        <View className="gap-3">
           <MaterialButton
-            label={showRemovedCopies ? "Hide removed copies" : "Show removed copies"}
+            label={showHistory ? "Hide history" : "History"}
             tone="text"
-            onPress={() => setShowRemovedCopies((current) => !current)}
+            onPress={() => setShowHistory((current) => !current)}
           />
-          {(copies.data ?? []).map((copy) => (
-            <LibraryCopySection
-              key={copy.id}
-              copy={copy}
-              authorityEnvironmentId={target}
-              authorityReady={authority.ready && copiesReady}
-              computerLabel={hostLabel(copy.environmentId)}
-              onReuseFolder={() =>
-                navigation.navigate("LibraryStart", {
-                  projectId: p.id,
-                  reuseEnvironmentId: copy.environmentId,
-                  reuseRootPath: copy.rootPath,
-                })
-              }
-              onChanged={() => refreshLibraryWork(target, projectId)}
-            />
-          ))}
-          {copiesState === "empty" ? (
-            <Text className="text-sm text-foreground-muted">
-              No working copies. Start a conversation to choose a computer and reuse or prepare
-              files.
-            </Text>
+          {showHistory ? (
+            <>
+              <Text className="text-sm text-foreground-muted">
+                Copies that were removed. Removing a copy never touches conversations, and folders
+                you brought stay on disk.
+              </Text>
+              {removedCopies.map((copy) => (
+                <LibraryCopySection
+                  key={copy.id}
+                  copy={copy}
+                  authorityEnvironmentId={target}
+                  authorityReady={authority.ready && copiesReady}
+                  computerLabel={`${hostLabel(copy.environmentId)} · removed ${ago(copy.updatedAt)}`}
+                  onReuseFolder={() => reuseFolder(copy)}
+                  onChanged={() => refreshLibraryWork(target, projectId)}
+                />
+              ))}
+            </>
           ) : null}
-          {copiesState === "loading" ? (
-            <LibraryNotice
-              detail={
-                !authority.connected
-                  ? "Reconnect the selected library to load working copies."
-                  : copies.data === null
-                    ? "Loading working copies…"
-                    : "Refreshing working copies…"
-              }
-            />
-          ) : null}
-          {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
         </View>
       ) : null}
       {project.error ? <LibraryNotice error={project.error} onRetry={project.refresh} /> : null}

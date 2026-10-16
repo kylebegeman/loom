@@ -14,6 +14,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
+import { libraryResourceFromInput } from "@t3tools/client-runtime/fork";
 
 type ResourceDraft = {
   id: string;
@@ -80,6 +81,42 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
   const request = useRef(uuidv4()),
     submittedAuthority = useRef<string | null>(null),
     busy = useRef(false);
+  const [pasted, setPasted] = useState(""),
+    [pasteProblem, setPasteProblem] = useState<string | null>(null);
+  // Pasting a URL is the whole add flow; the drafts below stay editable for names and folders.
+  const addPasted = () => {
+    const existing: LibraryResource[] = resources.map((draft) => ({
+      id: draft.id,
+      kind: draft.kind,
+      title: draft.title,
+      url: draft.kind === "link" ? draft.url : null,
+      remoteUrl: draft.kind === "link" ? null : draft.url,
+      relativePath: draft.relativePath,
+      defaultBranch: null,
+    }));
+    const parsed = libraryResourceFromInput(pasted, existing);
+    if (!parsed) {
+      setPasteProblem("Paste a full web address, like github.com/owner/repo.");
+      return;
+    }
+    const url = (parsed.kind === "link" ? parsed.url : parsed.remoteUrl) ?? "";
+    if (resources.some((draft) => draft.url === url)) {
+      setPasteProblem("That's already in this project.");
+      return;
+    }
+    setResources((current) => [
+      ...current,
+      {
+        id: uuidv4(),
+        kind: parsed.kind === "link" ? "link" : "repository",
+        title: parsed.title,
+        url,
+        relativePath: parsed.relativePath,
+        defaultBranch: "",
+      },
+    ]);
+    setPasted("");
+  };
   const patch = (id: string, value: Partial<ResourceDraft>) =>
     setResources((current) =>
       current.map((resource) => (resource.id === id ? { ...resource, ...value } : resource)),
@@ -175,7 +212,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       <Text className="text-sm text-foreground-muted">
         {initial
           ? "Update shared context and resources. Existing conversations keep their reviewed execution bindings."
-          : "Start with a name and brief. Add components and references now or later. No computer or working files are required."}
+          : "Start with a name. Add a brief and the repositories or links it's made of now or later."}
       </Text>
       <SettingsSection title="Project">
         <View className="gap-3 p-4">
@@ -265,42 +302,36 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
           </View>
         </SettingsSection>
       ))}
-      <View className="flex-row flex-wrap gap-2">
-        <MaterialButton
-          label="Add repository"
-          disabled={pending || awaitingResult || resources.length >= 64}
-          onPress={() =>
-            setResources((current) => [
-              ...current,
-              {
-                id: uuidv4(),
-                kind: "repository",
-                title: "",
-                url: "",
-                relativePath: "",
-                defaultBranch: "",
-              },
-            ])
-          }
-        />
-        <MaterialButton
-          label="Add reference"
-          disabled={pending || awaitingResult || resources.length >= 64}
-          onPress={() =>
-            setResources((current) => [
-              ...current,
-              {
-                id: uuidv4(),
-                kind: "link",
-                title: "",
-                url: "",
-                relativePath: "",
-                defaultBranch: "",
-              },
-            ])
-          }
-        />
-      </View>
+      {resources.length < 64 ? (
+        <SettingsSection title="Add a repository or link">
+          <View className="gap-2 p-4">
+            <TextInput
+              accessibilityLabel="Repository or link URL"
+              placeholder="Paste a GitHub URL or any link"
+              value={pasted}
+              onChangeText={(value) => {
+                setPasted(value);
+                setPasteProblem(null);
+              }}
+              onSubmitEditing={addPasted}
+              returnKeyType="done"
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              editable={!pending && !awaitingResult}
+              className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
+            />
+            {pasteProblem ? (
+              <Text className="text-sm text-danger-foreground">{pasteProblem}</Text>
+            ) : null}
+            <MaterialButton
+              label="Add"
+              disabled={pending || awaitingResult || !pasted.trim()}
+              onPress={addPasted}
+            />
+          </View>
+        </SettingsSection>
+      ) : null}
       {!authority.environmentId ? (
         <MaterialButton
           label="Connect your Library"
