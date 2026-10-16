@@ -2,8 +2,10 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import {
   LibraryError,
+  type LibraryCopyHealth,
   type LibraryIngestHistoryRequest,
   type LibraryProject,
+  type LibraryRegisterCopyRequest,
   type LibraryResolvedBinding,
 } from "@t3tools/contracts/fork";
 import * as ConfigProvider from "effect/ConfigProvider";
@@ -11,10 +13,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Stream from "effect/Stream";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import { layerMemory } from "../../persistence/Sqlite.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { runForkMigrationSet } from "../persistence/migrations.ts";
+import * as CopyHealth from "./LibraryCopyHealthPublication.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as Replication from "./LibraryReplication.ts";
@@ -79,6 +83,24 @@ const workspace = WorkspaceStore.LibraryWorkspaceStore.of({
   repositoriesForRoot: () => Effect.succeed([]),
   validateThreadCwd: (input) => Effect.succeed(input.cwd),
 });
+const health: LibraryCopyHealth = {
+  copyId: copy.id,
+  environmentId: source,
+  checkedAt: "2026-10-16T00:00:00.000Z",
+  repositories: [
+    {
+      resourceId: resource.id,
+      branch: "main",
+      uncommittedFiles: 2,
+      unpushedCommits: 0,
+      checkedAt: "2026-10-16T00:00:00.000Z",
+    },
+  ],
+};
+const healthSource = CopyHealth.LibraryCopyHealthSource.of({
+  read: () => Effect.succeed(health),
+  changes: () => Stream.empty,
+});
 const fixture = Effect.gen(function* () {
   yield* runForkMigrationSet(ProjectLibraryMigrations);
   const sql = yield* SqlClient.SqlClient;
@@ -86,6 +108,7 @@ const fixture = Effect.gen(function* () {
   const snapshots = yield* Ref.make(0);
   const requests = yield* Ref.make<LibraryIngestHistoryRequest[]>([]);
   const order = yield* Ref.make<string[]>([]);
+  const registered = yield* Ref.make<LibraryRegisterCopyRequest[]>([]);
   const failAck = yield* Ref.make(false);
   const failAssets = yield* Ref.make(false);
   const claimedCursor = yield* Ref.make<number | null>(null);
@@ -99,7 +122,10 @@ const fixture = Effect.gen(function* () {
     enabled: true,
     info: Ref.get(authority),
     registerCopy: (input) =>
-      Ref.update(order, (steps) => [...steps, "copy"]).pipe(Effect.as(input.copy)),
+      Ref.update(order, (steps) => [...steps, "copy"]).pipe(
+        Effect.andThen(Ref.update(registered, (requests) => [...requests, input])),
+        Effect.as(input.copy),
+      ),
     publishAttachments: () =>
       Effect.gen(function* () {
         yield* Ref.update(order, (steps) => [...steps, "assets"]);
@@ -143,6 +169,7 @@ const fixture = Effect.gen(function* () {
     snapshots,
     requests,
     order,
+    registered,
     failAck,
     failAssets,
     claimedCursor,
@@ -156,6 +183,7 @@ const run = <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Eff
     return yield* use(state);
   }).pipe(
     Effect.provideService(ServerActivation, Effect.never),
+    Effect.provideService(CopyHealth.LibraryCopyHealthSource, healthSource),
     Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
     Effect.scoped,
   );
@@ -221,6 +249,23 @@ describe("durable Library history replication", () => {
           expect((yield* service.status).threads[0]?.acknowledgedSequence).toBe(121);
         }),
       ),
+  );
+
+  it.effect("reports copy health on the history journal fence only when it changed", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        yield* f.service.reportCopyHealth;
+        yield* f.service.reportCopyHealth;
+        const requests = yield* Ref.get(f.registered);
+        expect(requests).toHaveLength(1);
+        expect(requests[0]?.copy.health).toEqual(health);
+        const { journalId } = yield* f.service.status;
+        expect(requests[0]?.requestId.startsWith(`${journalId}:health:`)).toBe(true);
+        expect(requests[0]).toMatchObject({ authorityId: "authority", authorityEpoch: 1 });
+        // Health never waits on, or adds to, the history outbox.
+        expect(yield* Ref.get(f.requests)).toEqual([]);
+      }),
+    ),
   );
 
   it.effect("replays a persisted batch after a lost acknowledgement and host restart", () =>
@@ -418,6 +463,7 @@ describe("durable Library history replication", () => {
         snapshotThread: () => Effect.fail(new LibraryError({ reason: "not-found" })),
       }),
       Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, workspace),
+      Effect.provideService(CopyHealth.LibraryCopyHealthSource, healthSource),
       Effect.provideService(ServerEnvironmentIdentity, {
         getEnvironmentId: Effect.succeed(source),
       }),

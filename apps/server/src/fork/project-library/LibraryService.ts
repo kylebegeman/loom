@@ -58,6 +58,7 @@ import { libraryAttachments } from "./attachments.ts";
 import { validLibraryResources } from "./policy.ts";
 import { makeLibrarySearch } from "./LibrarySearch.ts";
 import * as BriefProposals from "./LibraryBriefProposals.ts";
+import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 
 export class LibraryService extends Context.Service<
   LibraryService,
@@ -284,38 +285,54 @@ const make = Effect.gen(function* () {
     if (authority.id !== input.authorityId || authority.epoch !== input.authorityEpoch)
       return yield* new LibraryError({ reason: "blocked" });
   });
-  const saveCopy = Effect.fnUntraced(function* (copy: LibraryWorkingCopy) {
-    const project = yield* getProject(copy.projectId, copy.projectRevision);
+  const saveCopy = Effect.fnUntraced(function* (incoming: LibraryWorkingCopy) {
+    const project = yield* getProject(incoming.projectId, incoming.projectRevision);
     if (
-      copy.repositories.length > 64 ||
-      new Set(copy.repositories.map((repo) => repo.resourceId)).size !== copy.repositories.length ||
-      copy.repositories.some(
+      incoming.repositories.length > 64 ||
+      new Set(incoming.repositories.map((repo) => repo.resourceId)).size !==
+        incoming.repositories.length ||
+      incoming.repositories.some(
         (repo) =>
           !project.resources.some(
             (resource) => resource.kind !== "link" && resource.id === repo.resourceId,
           ),
-      )
+      ) ||
+      (incoming.health !== undefined &&
+        !CopyHealthPublication.healthBelongsTo(incoming.health, incoming))
     )
       return yield* invalid();
-    if (copy.ownership === "borrowed" && copy.state === "released")
+    if (incoming.ownership === "borrowed" && incoming.state === "released")
       return yield* new LibraryError({ reason: "not-managed" });
-    const previous = yield* store.copy(copy.id);
+    const previous = yield* store.copy(incoming.id);
     const old = previous ? yield* decode(codecs.copy, previous) : null;
+    const health = CopyHealthPublication.latestCopyHealth(old?.health, incoming.health);
     if (old) {
       if (
-        old.projectId !== copy.projectId ||
-        old.environmentId !== copy.environmentId ||
-        old.rootPath !== copy.rootPath ||
-        old.ownership !== copy.ownership ||
-        old.createdAt !== copy.createdAt ||
-        old.projectRevision !== copy.projectRevision ||
-        (old.rootLocalProjectId != null && old.rootLocalProjectId !== copy.rootLocalProjectId)
+        old.projectId !== incoming.projectId ||
+        old.environmentId !== incoming.environmentId ||
+        old.rootPath !== incoming.rootPath ||
+        old.ownership !== incoming.ownership ||
+        old.createdAt !== incoming.createdAt ||
+        old.projectRevision !== incoming.projectRevision ||
+        (old.rootLocalProjectId != null && old.rootLocalProjectId !== incoming.rootLocalProjectId)
       )
         return yield* invalid();
-      if (Date.parse(copy.updatedAt) < Date.parse(old.updatedAt)) return old;
+      if (Date.parse(incoming.updatedAt) < Date.parse(old.updatedAt)) {
+        if (health === old.health) return old;
+        // A stale record can still carry the newest health report.
+        const updated = CopyHealthPublication.withCopyHealth(old, health);
+        yield* store.putCopy({ ...updated, payload: yield* encode(codecs.copy, updated) });
+        return updated;
+      }
     }
+    const copy = CopyHealthPublication.withCopyHealth(incoming, health);
     const payload = yield* encode(codecs.copy, copy);
     yield* store.putCopy({ ...copy, payload });
+    // Health reports alone are not copy history. Logging each one would flood the event log
+    // that the timeline replays.
+    const withoutHealth = (entry: LibraryWorkingCopy) =>
+      encode(codecs.copy, CopyHealthPublication.withCopyHealth(entry, undefined));
+    if (old !== null && (yield* withoutHealth(old)) === (yield* withoutHealth(copy))) return copy;
     yield* store.appendEvent(copy.id, "copy.saved", payload, copy.updatedAt);
     yield* LibraryTimeline.recordTimeline(store, LibraryTimeline.copyTimeline(old, copy));
     return copy;

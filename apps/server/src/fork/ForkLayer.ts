@@ -4,6 +4,7 @@ import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryS
 import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
 import * as LibraryReplication from "./project-library/LibraryReplication.ts";
+import * as LibraryCopyHealthPublication from "./project-library/LibraryCopyHealthPublication.ts";
 import { LibraryHttpRoutes } from "./project-library/http.ts";
 import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts";
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
@@ -68,6 +69,9 @@ const ForkServicesLive = Layer.mergeAll(
       ),
     ),
     Layer.provide(LibraryWorkspaceStore.layer),
+    Layer.provide(
+      LibraryCopyHealthPublication.layerSource.pipe(Layer.provide(ProcessRunner.layer)),
+    ),
   ),
   layerLibraryAssets,
   layerLibraryRecovery,

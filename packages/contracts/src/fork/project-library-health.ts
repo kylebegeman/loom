@@ -9,6 +9,8 @@ export * from "./project-library-health-schema.ts";
 
 /** Live copy health, read on the computer that holds the copy. */
 export const LIBRARY_COPY_HEALTH_FEATURE = "library-copy-health";
+/** The Library keeps each copy's last reported health and serves it with the copy. */
+export const LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE = "library-copy-health-published";
 
 export const LIBRARY_HEALTH_WS_METHODS = {
   copyHealth: "loom.library.copy-health",
