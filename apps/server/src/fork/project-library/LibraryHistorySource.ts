@@ -71,6 +71,7 @@ const make = Effect.gen(function* () {
           title: projection.thread.title,
           status: latestRun?.status ?? "idle",
           archived: projection.thread.archivedAt !== null,
+          settled: projection.thread.settledOverride === "settled",
           deleted: projection.thread.deletedAt !== null,
           createdAt: DateTime.formatIso(projection.thread.createdAt),
           updatedAt: DateTime.formatIso(projection.updatedAt),

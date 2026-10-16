@@ -97,6 +97,8 @@ describe("execution host Library snapshots", () => {
             localProjectId,
             workingCopyId: "copy",
             resourceIds: [resource.id],
+            archived: false,
+            settled: false,
             sequence: 2,
           });
           expect(snapshot.context).toEqual(project);
@@ -108,6 +110,26 @@ describe("execution host Library snapshots", () => {
           );
         }),
       ),
+  );
+  it.effect("saves whether the conversation was settled", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const projections = yield* ProjectionStore.ProjectionStoreV2;
+        const { projection } = yield* projections.getThreadSnapshot(threadId);
+        yield* projections.apply({
+          id: EventId.make("thread-settled"),
+          threadId,
+          type: "thread.settled",
+          payload: {
+            ...projection.thread,
+            settledOverride: "settled",
+            settledAt: projection.updatedAt,
+          },
+          occurredAt: projection.updatedAt,
+        });
+        expect((yield* f.service.snapshotThread({ threadId })).summary.settled).toBe(true);
+      }),
+    ),
   );
   it.effect("refuses unbound legacy threads and mismatched host bindings", () =>
     run((f) =>

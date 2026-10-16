@@ -129,6 +129,8 @@ export const LibraryThreadSummary = Schema.Struct({
   title: Schema.String,
   status: Schema.String,
   archived: Schema.Boolean,
+  /** Omitted by hosts that predate saving it; read as not settled. */
+  settled: Schema.optional(Schema.Boolean),
   deleted: Schema.optional(Schema.Boolean),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
