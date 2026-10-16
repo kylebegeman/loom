@@ -1,7 +1,11 @@
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_PROJECT_PROFILE_FEATURE,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   ArchiveIcon,
@@ -19,7 +23,11 @@ import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useProjects } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { libraryActiveCopies, libraryProjectColor } from "@t3tools/client-runtime/fork";
+import {
+  libraryActiveCopies,
+  libraryProjectColor,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import {
   projectLibrary,
   useLibraryProject,
@@ -35,6 +43,7 @@ import { libraryCopyReadiness } from "./copyChoice";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
+import { ProjectProfile } from "./ProjectProfile";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
@@ -131,6 +140,11 @@ function ProjectView({
     );
   const copies = library.copies.data ?? [];
   const activeCopies = libraryActiveCopies(copies);
+  // An older Library would drop a saved profile, so the section waits until it says it keeps one.
+  const keepsProfile = supportsLoomFeature(
+    library.environment?.serverConfig?.environment.capabilities,
+    LIBRARY_PROJECT_PROFILE_FEATURE,
+  );
   const canWork = library.connected && !project.archived;
   const canStart = canRegister && canWork;
   const threads = (library.threads.data ?? [])
@@ -212,6 +226,18 @@ function ProjectView({
             onChange={(resources) => update.save({ resources })}
             onStart={(resource) => setConversation({ resourceId: resource.id })}
           />
+          {keepsProfile ? (
+            <ProjectProfile
+              project={project}
+              copies={activeCopies}
+              computers={library.computers}
+              canEdit={update.canEdit}
+              busy={update.busy}
+              error={update.error}
+              hostLabel={hostLabel}
+              onSave={(profile) => update.save({ profile })}
+            />
+          ) : null}
           <ProjectHistory
             project={project}
             copies={copies}

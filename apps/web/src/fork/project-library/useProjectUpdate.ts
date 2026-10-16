@@ -1,6 +1,10 @@
 import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProject, LibraryProjectColor } from "@t3tools/contracts/fork";
+import type {
+  LibraryProject,
+  LibraryProjectColor,
+  LibraryProjectProfileInput,
+} from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { randomUUID } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -10,6 +14,8 @@ import { validateResources } from "./resources";
 type ProjectChange = Partial<Pick<LibraryProject, "title" | "brief" | "resources">> & {
   /** Null returns the project to its automatic color. */
   readonly color?: LibraryProjectColor | null;
+  /** Null removes the profile. */
+  readonly profile?: LibraryProjectProfileInput | null;
 };
 
 /**
@@ -54,6 +60,7 @@ export function useProjectUpdate({
           expectedRevision: project.revision,
           ...next,
           ...(change.color !== undefined ? { color: change.color } : {}),
+          ...(change.profile !== undefined ? { profile: change.profile } : {}),
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
