@@ -373,15 +373,74 @@ describe("Library history search", () => {
           })),
         });
         yield* service.registerThread({ requestId: "deep", thread });
-        const near = yield* search(service, { query: "heron", limit: 10, cursor: "990" });
-        expect(near.nextCursor).toBe("1000");
-        const last = yield* search(service, {
-          query: "heron",
-          limit: 50,
-          cursor: near.nextCursor!,
+        let page = yield* search(service, { query: "heron", limit: 50 });
+        let seen = page.hits.length;
+        while (page.nextCursor !== null) {
+          page = yield* search(service, { query: "heron", limit: 50, cursor: page.nextCursor });
+          seen += page.hits.length;
+        }
+        // The last cursor starts at offset 1000, and its page is the last one offered.
+        expect(seen).toBe(1050);
+        expect(page.hits).toHaveLength(50);
+      }),
+    ),
+  );
+
+  it.effect("keeps later pages on the first page's snapshot while history is indexed", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* service.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
         });
-        expect(last.hits).toHaveLength(50);
-        expect(last.nextCursor).toBeNull();
+        const time = "2026-10-05T09:00:00.000Z";
+        const sightings = (texts: string[]) =>
+          texts.map((text) => ({ type: "user_message" as const, text, time }));
+        const original = sightings(["Osprey over the north marsh today", "Osprey near the dam"]);
+        const marsh = yield* conversation(project, { name: "marsh", items: original });
+        const river = yield* conversation(project, {
+          name: "river",
+          items: sightings(["An osprey dove at the river bend", "Second osprey at the river"]),
+        });
+        yield* service.registerThread({ requestId: "marsh", thread: marsh });
+        yield* service.registerThread({ requestId: "river", thread: river });
+        const key = (hit: { id: string; position: number }) => `${hit.id}/${hit.position}`;
+        const before = (yield* search(service, { query: "osprey" })).hits.map(key);
+        expect(before).toHaveLength(4);
+
+        const first = yield* search(service, { query: "osprey", limit: 2 });
+        expect(first.nextCursor).not.toBeNull();
+        // Stronger matches arrive before the next page: new items in a conversation already
+        // indexed, which reindexes it, and a new conversation.
+        const louder = sightings(["Osprey osprey", "Osprey osprey osprey"]);
+        yield* service.ingestHistory({
+          requestId: "more",
+          sourceEnvironmentId: source,
+          journalId: "journal",
+          fromSequence: 0,
+          entries: [
+            {
+              sequence: 1,
+              thread: yield* conversation(project, {
+                name: "marsh",
+                sequence: 2,
+                items: [...original, ...louder],
+              }),
+            },
+            { sequence: 2, thread: yield* conversation(project, { name: "lake", items: louder }) },
+          ],
+        });
+        const second = yield* search(service, {
+          query: "osprey",
+          limit: 2,
+          cursor: first.nextCursor!,
+        });
+        expect(second.nextCursor).toBeNull();
+        const paged = [...first.hits, ...second.hits].map(key);
+        expect(paged.toSorted()).toEqual(before.toSorted());
+        // A new search sees the new history.
+        expect((yield* search(service, { query: "osprey" })).hits).toHaveLength(8);
       }),
     ),
   );
@@ -444,8 +503,18 @@ describe("Library history search", () => {
 
         for (const input of [
           { since: "yesterday" },
-          { cursor: "-1" },
-          { cursor: "5000" },
+          ...[
+            "-1",
+            "3",
+            "3.",
+            ".3",
+            "03.9",
+            "3.0",
+            "1001.9",
+            "3.99999999999999999",
+            "3.9.9",
+            " 3.9",
+          ].map((cursor) => ({ cursor })),
           { limit: 51 },
         ])
           expect((yield* Effect.result(search(service, { query: "budget", ...input })))._tag).toBe(
