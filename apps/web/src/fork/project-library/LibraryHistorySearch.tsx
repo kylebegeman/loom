@@ -226,6 +226,8 @@ function SearchHit({
           {LIBRARY_SEARCH_ROLE_LABELS[hit.role]} ·{" "}
           <time dateTime={hit.occurredAt}>{formatRelativeTimeLabel(hit.occurredAt)}</time>
           {hit.archived ? " · Archived" : null}
+          {/* Only a Library with semantic search sets `match`; these hits have no marked words. */}
+          {hit.match === "semantic" ? " · Similar meaning" : null}
         </span>
       </span>
     </Link>

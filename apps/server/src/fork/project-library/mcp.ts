@@ -119,7 +119,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_search", {
     description:
-      "Search saved conversation messages and plans across every computer, including offline ones. Every word must match; quote an exact phrase. Scope by projectId, environmentId or an ISO since/until. Pass nextCursor as cursor for the next page; later pages leave out history saved after the first. To read a hit in context, call loom_library_history with its id; history offsets count back from the newest item, so offset window.totalItems - 1 - position ends the page at the hit.",
+      'Search saved conversation messages and plans across every computer, including offline ones. Every word must match; quote an exact phrase. A Library with semantic search also returns messages close in meaning, marked match "semantic"; pass semantic false, or quote a phrase, to match words only. Scope by projectId, environmentId or an ISO since/until. Pass nextCursor as cursor for the next page; later pages leave out history saved after the first. To read a hit in context, call loom_library_history with its id; history offsets count back from the newest item, so offset window.totalItems - 1 - position ends the page at the hit.',
     parameters: searchParameters,
     success: Library.LibrarySearchResult,
     failure,

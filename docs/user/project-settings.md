@@ -122,6 +122,11 @@ command palette, **Search project history...** jumps to the search field for the
 have open, or for every project. Search appears once your Library supports it. Agents can
 search the same history through `loom_library_search`.
 
+When your Library is set up for semantic search, results also include messages that are close
+in meaning to your words without using them, marked **Similar meaning**. Put a phrase in quotes
+to match exact words only. The model runs on the Library server itself, so your history is not
+sent anywhere else to be searched.
+
 Agents can suggest changes to the brief, but only you can accept them. When suggestions are
 waiting, the brief shows **N suggested updates**. Open it to see each suggestion's reason and
 what it would change in the brief as it reads now. **Accept** saves it as the new brief,
