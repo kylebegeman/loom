@@ -208,7 +208,7 @@ const proposalSource = McpInvocationContext.pipe(
         environmentId: scope.environmentId,
         threadId: scope.thread.threadId,
       };
-    const label = scope.client?.label.trim().slice(0, 160);
+    const label = scope.client?.label.trim().slice(0, 160).trim();
     return {
       kind: "agent",
       id: scope.client?.sessionId ?? scope.requestNamespace,

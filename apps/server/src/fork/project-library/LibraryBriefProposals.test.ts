@@ -125,13 +125,60 @@ describe("Library brief proposals", () => {
         });
         expect(listed.proposals.map((entry) => entry.id)).toEqual([proposal.id]);
 
+        // Deciding it again under a new request finds it already decided.
+        const again = yield* Effect.result(
+          service.acceptBriefProposal({ ...accept, requestId: "accept-again" }),
+        );
+        expect(reason(again)).toBe("revision-conflict");
+        const dismissAfter = yield* Effect.result(
+          service.dismissBriefProposal({ requestId: "dismiss-after", proposalId: proposal.id }),
+        );
+        expect(reason(dismissAfter)).toBe("revision-conflict");
+
         const sql = yield* SqlClient.SqlClient;
+        // The accepted brief is an ordinary revision, so earlier revisions keep their text.
+        const revisions = yield* sql<{
+          revision: number;
+          payload_json: string;
+        }>`SELECT revision, payload_json FROM fork_library_project_revisions WHERE project_id = ${project.id} ORDER BY revision`;
+        expect(revisions.map((row) => [row.revision, JSON.parse(row.payload_json).brief])).toEqual([
+          [project.revision, "Ship the viewer."],
+          [project.revision + 1, "Ship the viewer. Export as STEP."],
+        ]);
         const events = yield* sql<{
+          aggregate_id: string;
           event_type: string;
-        }>`SELECT event_type FROM fork_library_events WHERE event_type LIKE 'brief.%' ORDER BY sequence`;
-        expect(events.map((event) => event.event_type)).toEqual([
-          "brief.proposed",
-          "brief.revised",
+          payload_json: string;
+        }>`SELECT aggregate_id, event_type, payload_json FROM fork_library_events WHERE event_type LIKE 'brief.%' ORDER BY sequence`;
+        expect(
+          events.map((event) => ({
+            aggregate: event.aggregate_id,
+            type: event.event_type,
+            payload: JSON.parse(event.payload_json),
+          })),
+        ).toEqual([
+          {
+            aggregate: project.id,
+            type: "brief.proposed",
+            payload: {
+              proposalId: proposal.id,
+              baseRevision: project.revision,
+              summary: proposal.summary,
+              source: conversation,
+            },
+          },
+          {
+            aggregate: project.id,
+            type: "brief.revised",
+            payload: {
+              proposalId: proposal.id,
+              baseRevision: project.revision,
+              revision: project.revision + 1,
+              summary: proposal.summary,
+              source: conversation,
+              edited: false,
+            },
+          },
         ]);
       }),
     ),
@@ -244,6 +291,78 @@ describe("Library brief proposals", () => {
 
         const unchanged = yield* Effect.result(propose("same", "Ship the viewer."));
         expect(reason(unchanged)).toBe("invalid");
+      }),
+    ),
+  );
+
+  it.effect("refuses proposals that cannot apply and binds the receipt to its source", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const { project, propose } = yield* setup(service);
+        const request = {
+          requestId: "future",
+          projectId: project.id,
+          baseRevision: project.revision + 1,
+          proposedBrief: "Ship the viewer. Export as STEP.",
+          summary: "Record the export decision.",
+        };
+        expect(reason(yield* Effect.result(service.proposeBrief(request, conversation)))).toBe(
+          "invalid",
+        );
+        expect(
+          reason(
+            yield* Effect.result(
+              service.proposeBrief(
+                { ...request, requestId: "missing", projectId: "missing" },
+                conversation,
+              ),
+            ),
+          ),
+        ).toBe("not-found");
+        expect(
+          reason(
+            yield* Effect.result(service.briefProposals({ projectId: project.id, limit: 201 })),
+          ),
+        ).toBe("invalid");
+
+        // Replaying a request id from another caller cannot return or relabel its proposal.
+        yield* propose("shared", "Ship the viewer. Export as STEP.");
+        expect(
+          reason(
+            yield* Effect.result(
+              propose("shared", "Ship the viewer. Export as STEP.", { kind: "user" }),
+            ),
+          ),
+        ).toBe("request-conflict");
+
+        const archived = yield* service.archiveProject({
+          requestId: "archive",
+          projectId: project.id,
+          expectedRevision: project.revision,
+          archived: true,
+        });
+        expect(
+          reason(
+            yield* Effect.result(
+              service.proposeBrief(
+                { ...request, requestId: "archived", baseRevision: archived.revision },
+                conversation,
+              ),
+            ),
+          ),
+        ).toBe("invalid");
+      }),
+    ),
+  );
+
+  it.effect("the proposals migration can run again after a renumbering", () =>
+    run(() =>
+      Effect.gen(function* () {
+        const migration = ProjectLibraryMigrations.migrations.find(
+          ([, name]) => name === "BriefProposals",
+        );
+        expect(migration).toBeDefined();
+        if (migration) yield* migration[2];
       }),
     ),
   );

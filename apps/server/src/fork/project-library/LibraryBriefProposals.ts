@@ -67,6 +67,8 @@ const sourceKey = (source: LibraryBriefProposalSource) => {
  * Brief proposals on the Library. Anyone may propose and list; only a person deciding
  * through the guarded RPC accepts or dismisses. Mutations run inside LibraryService's
  * request transaction, so accepting saves the brief and decides the proposal together.
+ * The `brief.proposed` and `brief.revised` events carry the proposal's id, summary and source,
+ * so a timeline can attribute them without reading the proposals table.
  */
 export const make = (catalog: LibraryBriefProposalCatalog) =>
   Effect.gen(function* () {
@@ -123,7 +125,8 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
 
     const propose = Effect.fnUntraced(function* (input: LibraryProposeBriefCommand) {
       const current = yield* catalog.getProject(input.projectId);
-      if (input.baseRevision > current.revision)
+      // Archived projects take no new proposals; people can still edit or reopen them.
+      if (current.archived || input.baseRevision > current.revision)
         return yield* new LibraryError({ reason: "invalid" });
       const base = yield* catalog.getProject(input.projectId, input.baseRevision);
       if (base.brief === input.proposedBrief) return yield* new LibraryError({ reason: "invalid" });
@@ -205,6 +208,8 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
           proposalId: proposal.id,
           baseRevision: proposal.baseRevision,
           revision: project.revision,
+          summary: proposal.summary,
+          source: proposal.source,
           edited: input.brief !== undefined && input.brief !== proposal.proposedBrief,
         }),
         project.updatedAt,
