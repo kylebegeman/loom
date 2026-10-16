@@ -174,6 +174,7 @@ export function LibraryProjectsPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
+            shape="pill"
             variant="outline"
             disabled={!catalog.authorityId || !catalog.connected}
             onClick={() => setImporting({})}
@@ -182,6 +183,7 @@ export function LibraryProjectsPage() {
             Add existing folder
           </Button>
           <Button
+            shape="pill"
             onClick={() => setCreating(true)}
             disabled={!!catalog.authorityId && (!canCreate || !catalog.connected)}
           >
@@ -201,7 +203,7 @@ export function LibraryProjectsPage() {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-              <InputGroup className="w-full sm:w-72">
+              <InputGroup shape="pill" className="w-full sm:w-72">
                 <InputGroupAddon>
                   <SearchIcon aria-hidden />
                 </InputGroupAddon>
@@ -220,6 +222,7 @@ export function LibraryProjectsPage() {
                 {query ? (
                   <InputGroupAddon align="inline-end">
                     <Button
+                      shape="pill"
                       size="icon-xs"
                       variant="ghost"
                       aria-label="Clear search"
@@ -255,6 +258,7 @@ export function LibraryProjectsPage() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <ToggleGroup
+                shape="pill"
                 aria-label="Project status"
                 variant="segmented"
                 value={[archived ? "archived" : "active"]}
@@ -273,7 +277,7 @@ export function LibraryProjectsPage() {
                 </ToggleGroupItem>
               </ToggleGroup>
               <Menu>
-                <MenuTrigger render={<Button size="sm" variant="ghost" />}>
+                <MenuTrigger render={<Button shape="pill" size="sm" variant="ghost" />}>
                   <ArrowDownUpIcon />
                   {PROJECT_SORT_LABELS[preferences.sort]}
                 </MenuTrigger>
@@ -297,6 +301,7 @@ export function LibraryProjectsPage() {
                 </MenuPopup>
               </Menu>
               <ToggleGroup
+                shape="pill"
                 aria-label="Layout"
                 variant="segmented"
                 value={[preferences.view]}
@@ -347,7 +352,7 @@ export function LibraryProjectsPage() {
                   </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                  <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
                     Clear filters
                   </Button>
                 </EmptyContent>
@@ -381,6 +386,7 @@ export function LibraryProjectsPage() {
                 </EmptyHeader>
                 <EmptyContent className="flex-row justify-center">
                   <Button
+                    shape="pill"
                     onClick={() => setCreating(true)}
                     disabled={!canCreate || !catalog.connected}
                   >
@@ -388,6 +394,7 @@ export function LibraryProjectsPage() {
                     Create your first project
                   </Button>
                   <Button
+                    shape="pill"
                     variant="outline"
                     disabled={!catalog.connected}
                     onClick={() => setImporting({})}
@@ -402,7 +409,7 @@ export function LibraryProjectsPage() {
       )}
       {catalog.authorityId && looseFolders.length ? (
         <details className="group/folders space-y-3">
-          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+          <summary className="-mx-2 flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full px-2 py-1 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
             <ChevronRightIcon
               aria-hidden
               className="size-4 text-muted-foreground transition-transform duration-150 group-open/folders:rotate-90"
@@ -442,6 +449,7 @@ export function LibraryProjectsPage() {
                     {root ? <PathLabel path={root} className="min-w-0 max-w-72" /> : null}
                   </span>
                   <Button
+                    shape="pill"
                     size="xs"
                     variant="outline"
                     disabled={!catalog.connected}
@@ -539,7 +547,9 @@ function ComputerFilter({
 }) {
   return (
     <Menu>
-      <MenuTrigger render={<Button size="sm" variant={selected ? "secondary" : "ghost"} />}>
+      <MenuTrigger
+        render={<Button shape="pill" size="sm" variant={selected ? "secondary" : "ghost"} />}
+      >
         {selected ? (
           <ComputerLabel
             environmentId={selected}

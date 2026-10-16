@@ -12,11 +12,16 @@ const inputGroupVariants = cva(
     defaultVariants: {
       variant: "default",
       size: "default",
+      shape: "default",
     },
     variants: {
       size: {
         default: null,
         lg: "h-9",
+      },
+      shape: {
+        default: null,
+        pill: "rounded-full before:rounded-full",
       },
       variant: {
         default:
@@ -35,11 +40,12 @@ function InputGroup({
   className,
   variant,
   size,
+  shape,
   ...props
 }: React.ComponentProps<"div"> & VariantProps<typeof inputGroupVariants>) {
   return (
     <div
-      className={cn(inputGroupVariants({ variant, size }), className)}
+      className={cn(inputGroupVariants({ variant, size, shape }), className)}
       data-slot="input-group"
       role="group"
       {...props}

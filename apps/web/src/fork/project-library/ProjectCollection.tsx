@@ -355,6 +355,7 @@ function ProjectMenu({
       <MenuTrigger
         render={
           <Button
+            shape="pill"
             size="icon-xs"
             variant="ghost"
             aria-label={`Actions for ${project.title}`}

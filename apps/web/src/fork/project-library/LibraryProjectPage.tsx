@@ -261,12 +261,14 @@ function ProjectOverview({
             </div>
           )}
           <div className="flex items-center gap-2">
-            <Button disabled={!canStart} onClick={onNewConversation}>
+            <Button shape="pill" disabled={!canStart} onClick={onNewConversation}>
               New conversation
             </Button>
             <Menu>
               <MenuTrigger
-                render={<Button size="icon" variant="ghost" aria-label="Project actions" />}
+                render={
+                  <Button shape="pill" size="icon" variant="ghost" aria-label="Project actions" />
+                }
               >
                 <EllipsisIcon />
               </MenuTrigger>
@@ -292,6 +294,7 @@ function ProjectOverview({
             work.
           </p>
           <Button
+            shape="pill"
             size="sm"
             variant="outline"
             disabled={!canArchive || !connected}
@@ -350,10 +353,10 @@ function TitleEditor({
           if (event.key === "Escape") onCancel();
         }}
       />
-      <Button type="submit" disabled={busy || !draft.trim()}>
+      <Button shape="pill" type="submit" disabled={busy || !draft.trim()}>
         Save
       </Button>
-      <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+      <Button shape="pill" type="button" variant="ghost" disabled={busy} onClick={onCancel}>
         Cancel
       </Button>
     </form>
@@ -378,7 +381,7 @@ function BriefEditor({
       title="Brief"
       action={
         canEdit && draft === null && brief ? (
-          <Button size="xs" variant="ghost" onClick={() => setDraft(brief)}>
+          <Button shape="pill" size="xs" variant="ghost" onClick={() => setDraft(brief)}>
             Edit
           </Button>
         ) : null
@@ -405,10 +408,11 @@ function BriefEditor({
             onChange={(event) => setDraft(event.target.value)}
           />
           <div className="flex gap-2">
-            <Button type="submit" size="sm" disabled={busy || draft === brief}>
+            <Button shape="pill" type="submit" size="sm" disabled={busy || draft === brief}>
               {busy ? "Saving..." : "Save"}
             </Button>
             <Button
+              shape="pill"
               type="button"
               size="sm"
               variant="ghost"
@@ -428,7 +432,7 @@ function BriefEditor({
             what matters.
           </p>
           {canEdit ? (
-            <Button size="xs" variant="outline" onClick={() => setDraft("")}>
+            <Button shape="pill" size="xs" variant="outline" onClick={() => setDraft("")}>
               Add a brief
             </Button>
           ) : null}
@@ -505,7 +509,12 @@ function ProjectConversations({
         </p>
       )}
       {visible.length > RECENT_CONVERSATIONS ? (
-        <Button size="xs" variant="ghost" onClick={() => setShowAll((value) => !value)}>
+        <Button
+          shape="pill"
+          size="xs"
+          variant="ghost"
+          onClick={() => setShowAll((value) => !value)}
+        >
           {showAll ? "Show recent only" : `Show all ${visible.length}`}
         </Button>
       ) : null}

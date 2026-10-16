@@ -187,7 +187,7 @@ export function PathLabel({
               copyToClipboard(path);
             }}
             className={cn(
-              "group/path relative z-10 inline-flex min-w-0 max-w-full items-center gap-1 rounded-md px-1 py-0.5 font-mono text-xs outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "group/path relative z-10 inline-flex min-w-0 max-w-full items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-xs outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               className,
             )}
           />
