@@ -226,7 +226,7 @@ function ProjectOverview({
               }}
             />
           ) : (
-            <div className="flex min-w-0 items-center gap-4">
+            <div className="flex min-w-0 items-center gap-3">
               <Popover>
                 <PopoverTrigger
                   disabled={!update.canEdit || update.busy}
@@ -253,7 +253,7 @@ function ProjectOverview({
                 </PopoverPopup>
               </Popover>
               <div className="min-w-0 space-y-1">
-                <h1 className="wrap-anywhere text-2xl font-semibold tracking-tight">
+                <h1 className="wrap-anywhere text-xl font-semibold tracking-tight">
                   {project.title}
                 </h1>
                 <p className="text-xs tabular-nums text-muted-foreground">{meta.join(" · ")}</p>

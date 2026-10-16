@@ -34,9 +34,9 @@ export function projectColorStyle(color: LibraryProjectColor): CSSProperties {
 }
 
 const TILE_SIZES = {
-  sm: "size-7 rounded-lg text-xs",
-  md: "size-10 rounded-xl text-sm",
-  lg: "size-13 rounded-2xl text-lg",
+  sm: "size-6 rounded-md text-3xs",
+  md: "size-8 rounded-lg text-xs",
+  lg: "size-11 rounded-xl text-base",
 } as const;
 
 /**

@@ -78,7 +78,7 @@ function ProjectCard({
   return (
     <li
       style={projectColorStyle(entry.color)}
-      className="group/card relative flex min-h-52 flex-col gap-4 rounded-2xl border border-border bg-card p-4 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5"
+      className="group/card relative flex min-h-44 flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5"
     >
       <ProjectOpenLink entry={entry} onOpen={onOpen} />
       <div className="flex items-start gap-3">
@@ -97,9 +97,9 @@ function ProjectCard({
         />
       </div>
       {project.brief.trim() ? (
-        <p className="line-clamp-2 text-sm leading-5 text-muted-foreground">{project.brief}</p>
+        <p className="line-clamp-2 text-xs leading-4.5 text-muted-foreground">{project.brief}</p>
       ) : (
-        <p className="text-sm leading-5 text-muted-foreground/60">No brief yet</p>
+        <p className="text-xs leading-4.5 text-muted-foreground/60">No brief yet</p>
       )}
       {shownResources.length ? (
         <ul className="flex flex-wrap gap-1.5" aria-label="Repositories and links">
@@ -108,7 +108,7 @@ function ProjectCard({
             return (
               <li
                 key={resource.id}
-                className="inline-flex h-6 max-w-44 items-center gap-1.5 rounded-full bg-muted px-2.5 text-xs text-foreground/80 dark:bg-accent"
+                className="inline-flex h-5 max-w-40 items-center gap-1 rounded-full bg-muted px-2 text-2xs text-foreground/80 dark:bg-accent"
               >
                 <Icon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
                 <span className="truncate">{resource.title}</span>
@@ -116,7 +116,7 @@ function ProjectCard({
             );
           })}
           {project.resources.length > MAX_CARD_RESOURCES ? (
-            <li className="inline-flex h-6 items-center px-1 text-xs tabular-nums text-muted-foreground">
+            <li className="inline-flex h-5 items-center px-1 text-2xs tabular-nums text-muted-foreground">
               +{project.resources.length - MAX_CARD_RESOURCES}
             </li>
           ) : null}
@@ -136,7 +136,7 @@ function ProjectCard({
             ) : null}
           </>
         ) : (
-          <p className="flex h-6 items-center gap-1.5 text-xs text-muted-foreground">
+          <p className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
             <HardDriveDownloadIcon aria-hidden className="size-3.5" />
             {repositories.length
               ? "Not on a computer yet. Start a conversation to clone it."
@@ -150,11 +150,11 @@ function ProjectCard({
 
 export function ProjectRows(props: CollectionProps) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card">
+    <div className="overflow-hidden rounded-xl border border-border bg-card">
       <div
         aria-hidden
         className={cn(
-          "hidden items-center gap-4 border-b border-border px-4 py-2 text-xs font-medium text-muted-foreground md:grid",
+          "hidden items-center gap-3 border-b border-border px-3.5 py-1.5 text-xs font-medium text-muted-foreground md:grid",
           ROW_COLUMNS,
         )}
       >
@@ -189,7 +189,7 @@ function ProjectRow({
     <li
       style={projectColorStyle(entry.color)}
       className={cn(
-        "relative grid grid-cols-[minmax(0,1fr)_1.5rem] items-center gap-4 px-4 py-3 transition-colors duration-150 hover:bg-accent/60",
+        "relative grid grid-cols-[minmax(0,1fr)_1.5rem] items-center gap-3 px-3.5 py-2 transition-colors duration-150 hover:bg-accent/60",
         ROW_COLUMNS,
       )}
     >
@@ -418,10 +418,10 @@ export function ProjectCollectionSkeleton({ view }: { readonly view: "cards" | "
       {Array.from({ length: 6 }, (_, index) => (
         <div
           key={index}
-          className="flex min-h-52 flex-col gap-4 rounded-2xl border border-border p-4"
+          className="flex min-h-44 flex-col gap-3 rounded-xl border border-border p-3.5"
         >
           <div className="flex items-center gap-3">
-            <Skeleton shape="card" className="size-10" />
+            <Skeleton shape="card" className="size-8" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-3.5 w-2/5" />
               <Skeleton className="h-3 w-1/4" />
@@ -439,11 +439,11 @@ export function ProjectCollectionSkeleton({ view }: { readonly view: "cards" | "
     <div
       role="status"
       aria-label="Loading projects"
-      className="divide-y divide-border rounded-2xl border border-border"
+      className="divide-y divide-border rounded-xl border border-border"
     >
       {Array.from({ length: 5 }, (_, index) => (
-        <div key={index} className="flex items-center gap-3 px-4 py-3.5">
-          <Skeleton shape="card" className="size-7" />
+        <div key={index} className="flex items-center gap-3 px-3.5 py-2.5">
+          <Skeleton shape="card" className="size-6" />
           <Skeleton className="h-3.5 w-1/4" />
           <Skeleton className="ms-auto h-3 w-1/5" />
         </div>

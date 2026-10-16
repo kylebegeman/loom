@@ -156,10 +156,10 @@ export function LibraryProjectsPage() {
   const computersInUse = new Set(activeCopies.map((copy) => copy.environmentId)).size;
   return (
     <LibraryPageFrame>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="space-y-1.5">
-          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          <p className="max-w-xl text-sm text-muted-foreground tabular-nums">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
+          <p className="max-w-xl text-xs text-muted-foreground tabular-nums">
             {catalog.authorityId && activeCount
               ? [
                   `${activeCount} ${activeCount === 1 ? "project" : "projects"}`,
@@ -172,9 +172,10 @@ export function LibraryProjectsPage() {
               : "Keep the context, repositories and conversations for each thing you’re building together."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1.5">
           <Button
             shape="pill"
+            size="sm"
             variant="outline"
             disabled={!catalog.authorityId || !catalog.connected}
             onClick={() => setImporting({})}
@@ -184,6 +185,7 @@ export function LibraryProjectsPage() {
           </Button>
           <Button
             shape="pill"
+            size="sm"
             onClick={() => setCreating(true)}
             disabled={!!catalog.authorityId && (!canCreate || !catalog.connected)}
           >
@@ -203,7 +205,7 @@ export function LibraryProjectsPage() {
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-              <InputGroup shape="pill" className="w-full sm:w-72">
+              <InputGroup shape="pill" className="w-full sm:w-64">
                 <InputGroupAddon>
                   <SearchIcon aria-hidden />
                 </InputGroupAddon>
@@ -216,6 +218,7 @@ export function LibraryProjectsPage() {
                       setQuery("");
                     }
                   }}
+                  size="sm"
                   placeholder="Search names, repos, folders"
                   aria-label="Search projects"
                 />
@@ -343,7 +346,7 @@ export function LibraryProjectsPage() {
               />
             )
           ) : catalog.query.error ? null : narrowed ? (
-            <div className="rounded-2xl border border-dashed border-border">
+            <div className="rounded-xl border border-dashed border-border">
               <Empty size="compact">
                 <EmptyHeader>
                   <EmptyTitle>No projects match</EmptyTitle>
@@ -359,7 +362,7 @@ export function LibraryProjectsPage() {
               </Empty>
             </div>
           ) : archived ? (
-            <div className="rounded-2xl border border-dashed border-border">
+            <div className="rounded-xl border border-dashed border-border">
               <Empty size="compact">
                 <EmptyHeader>
                   <EmptyTitle>No archived projects</EmptyTitle>
@@ -371,7 +374,7 @@ export function LibraryProjectsPage() {
               </Empty>
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-border">
+            <div className="rounded-xl border border-dashed border-border">
               <Empty>
                 <EmptyHeader>
                   <EmptyMedia>
@@ -423,16 +426,16 @@ export function LibraryProjectsPage() {
             Folders you've worked in on your computers. Add one to a project without moving or
             deleting its files.
           </p>
-          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {looseFolders.map((group) => {
               const ref = group.memberProjectRefs[0];
               const root = group.memberProjects[0]?.workspaceRoot;
               return (
                 <li
                   key={group.projectKey}
-                  className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5"
                 >
-                  <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
+                  <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground dark:bg-accent">
                     <FolderIcon aria-hidden className="size-3.5" />
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
