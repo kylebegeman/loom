@@ -118,6 +118,7 @@ overrides:
   '@expo/metro-config': 58.0.6
   expo-constants: 58.0.9
   expo-router: 58.0.10
+  expo-modules-jsi: 58.0.10
   expo-sharing>@expo/config-plugins: 58.0.4
   expo-sharing>@expo/config-types: 58.0.2
   '@pierre/diffs>@shikijs/transformers': ^4.2.0
@@ -8724,8 +8725,8 @@ packages:
       react-native-worklets:
         optional: true
 
-  expo-modules-jsi@58.0.7:
-    resolution: {integrity: sha512-Rb7/NwhMw2DDSeQrYa5K91LLme5YNXIwodG5z2foFAVvAYTFVvF5o9pEYR4RdDjYtwxKXl5gE6FsRsE+/b4WbA==}
+  expo-modules-jsi@58.0.10:
+    resolution: {integrity: sha512-kLXq/k5WZK/6eny0ZC/JX1q6mL5+WlYp/I1d9Pcn3d47cPEjX1aP/GqGUYHEpgT1RMvdm6QJj6xahcW/CDiOxw==}
     peerDependencies:
       react-native: '*'
 
@@ -19321,7 +19322,7 @@ snapshots:
 
   expo-modules-core@58.0.11(react-native-worklets@0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0):
     dependencies:
-      expo-modules-jsi: 58.0.7(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))
+      expo-modules-jsi: 58.0.10(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))
       expo-modules-macros: 0.14.0
       invariant: 2.2.4
       react: 19.3.0
@@ -19329,7 +19330,7 @@ snapshots:
     optionalDependencies:
       react-native-worklets: 0.13.0(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6))(react@19.3.0)
 
-  expo-modules-jsi@58.0.7(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6)):
+  expo-modules-jsi@58.0.10(react-native@0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6)):
     dependencies:
       react-native: 0.88.0-rc.3(@babel/core@7.29.7)(@react-native/metro-config@0.88.0-rc.3(@babel/core@7.29.7)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(utf-8-validate@6.0.6)
 
