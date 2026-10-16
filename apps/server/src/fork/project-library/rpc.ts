@@ -1,7 +1,7 @@
 import * as Replication from "./LibraryReplication.ts";
 import * as LibraryHistorySource from "./LibraryHistorySource.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
-import { LIBRARY_WS_METHODS as L } from "@t3tools/contracts/fork";
+import { LIBRARY_HEALTH_WS_METHODS as LH, LIBRARY_WS_METHODS as L } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
@@ -66,6 +66,8 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.prepareCopy, workspace.prepareCopy(input)),
       [L.copyStatus]: (input: Parameters<typeof workspace.status>[0]) =>
         auth.effect(L.copyStatus, workspace.status(input)),
+      [LH.copyHealth]: (input: Parameters<typeof workspace.health>[0]) =>
+        auth.effect(LH.copyHealth, workspace.health(input)),
       [L.unregisterCopy]: (input: Parameters<typeof workspace.unregister>[0]) =>
         auth.effect(L.unregisterCopy, workspace.unregister(input)),
       [L.releaseCopy]: (input: Parameters<typeof workspace.release>[0]) =>

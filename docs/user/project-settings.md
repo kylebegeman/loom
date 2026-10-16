@@ -65,6 +65,9 @@ conversation requires an explicit computer and either the whole project or one r
 Use a suitable existing copy on that computer, or prepare files first. **Clone project**
 prepares the project repositories together under one parent folder. Editing the shared brief
 applies to new conversations; existing conversations keep the context they started with.
+Each copy on a connected computer shows its branch, how far it is ahead of or behind its
+upstream as of the last fetch, and how many files are uncommitted; **Pull** appears when a
+copy is behind and has no local changes.
 
 The command palette reaches projects from anywhere. Type part of a project's name to open it,
 or use **Go to project...**, **New conversation in...** and **Open project brief...** to pick

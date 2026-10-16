@@ -2,6 +2,8 @@
 import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
+  type LibraryCopyHealth,
+  type LibraryCopyHealthRequest,
   type LibraryCopyStatus,
   type LibraryFolderInspection,
   type LibraryInspectFolderRequest,
@@ -39,6 +41,7 @@ import * as ProjectionStore from "../../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as LibraryRecoveryPublisher from "./LibraryRecoveryPublisher.ts";
+import { makeCopyHealthReader } from "./LibraryCopyHealth.ts";
 import { validLibraryResources } from "./policy.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 
@@ -57,6 +60,10 @@ export class LibraryWorkspace extends Context.Service<
     readonly status: (input: {
       readonly workingCopyId: string;
     }) => Effect.Effect<LibraryCopyStatus, LibraryError>;
+    /** Live branch, divergence and change counts for each repository in a copy on this computer. */
+    readonly health: (
+      input: LibraryCopyHealthRequest,
+    ) => Effect.Effect<LibraryCopyHealth, LibraryError>;
     readonly release: (
       input: LibraryReleaseCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -145,6 +152,7 @@ const make = Effect.gen(function* () {
     Config.withDefault(!authorityOnly),
   );
   const locks = yield* KeyedLock.make<string>();
+  const readHealth = yield* makeCopyHealthReader;
   const environmentId = yield* identity.getEnvironmentId;
   const homeDirectory = yield* HostProcess.HomeDirectory;
   const requestedRoot = (rootPath: string) =>
@@ -1155,7 +1163,20 @@ const make = Effect.gen(function* () {
       ),
     status: (input) =>
       mapIo(
-        status(input).pipe(Effect.map(({ contentsDigest: _contentsDigest, ...review }) => review)),
+        Effect.gen(function* () {
+          const { contentsDigest: _contentsDigest, ...review } = yield* status(input);
+          if (review.copy.state === "released" || review.copy.registered === false) return review;
+          return { ...review, health: yield* readHealth(review.copy) };
+        }),
+      ),
+    health: (input) =>
+      mapIo(
+        Effect.gen(function* () {
+          const { copy } = yield* store.get(input.workingCopyId);
+          if (copy.state === "released" || copy.registered === false)
+            return yield* new LibraryError({ reason: "invalid" });
+          return yield* readHealth(copy, { refreshRemote: input.refreshRemote });
+        }),
       ),
     unregister: (input) => locks.withLock("prepare", mapIo(unregister(input))),
     release: (input) =>
