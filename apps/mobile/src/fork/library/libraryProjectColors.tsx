@@ -22,17 +22,6 @@ const LIBRARY_PROJECT_COLOR_VALUES: Record<
 /** Hex alpha suffix for tile backgrounds, about 14% opacity. */
 const TILE_ALPHA = "24";
 
-export const LIBRARY_PROJECT_COLOR_LABELS: Record<LibraryProjectColor, string> = {
-  plum: "Plum",
-  red: "Red",
-  orange: "Orange",
-  gold: "Gold",
-  green: "Green",
-  teal: "Teal",
-  blue: "Blue",
-  slate: "Slate",
-};
-
 /** Resolves a named project color for the current light or dark appearance. */
 export function useLibraryProjectColorValue() {
   const { themeAppearance } = useAppearancePreferences();

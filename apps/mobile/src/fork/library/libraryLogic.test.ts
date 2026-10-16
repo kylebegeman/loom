@@ -1,12 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "vite-plus/test";
-import {
-  libraryBinding,
-  libraryEligibleCopies,
-  libraryListState,
-  libraryResourceDraft,
-} from "./libraryLogic";
+import { libraryBinding, libraryListState, libraryResourceDraft } from "./libraryLogic";
 const host = EnvironmentId.make("travel");
 const project: LibraryProject = {
   id: "durable",
@@ -62,8 +57,11 @@ describe("durable library execution selection", () => {
     expect(
       libraryListState({ ...settled, data: [copy], error: "Refresh failed", isSuccess: false }),
     ).toBe("error");
+    expect(libraryListState({ ...settled, error: "Refresh failed", isPending: true })).toBe(
+      "loading",
+    );
   });
-  it("never reuses another host, released copy, or incomplete scope", () => {
+  it("binds only a copy that covers the selected components", () => {
     const scoped = {
       ...copy,
       repositories: [
@@ -76,23 +74,6 @@ describe("durable library execution selection", () => {
         },
       ],
     };
-    expect(libraryEligibleCopies(project, host, ["ios"], [scoped])).toEqual([scoped]);
-    expect(libraryEligibleCopies(project, EnvironmentId.make("other"), ["ios"], [scoped])).toEqual(
-      [],
-    );
-    expect(libraryEligibleCopies(project, host, ["web", "ios"], [scoped])).toEqual([]);
-    expect(
-      libraryEligibleCopies(
-        project,
-        host,
-        ["ios"],
-        [
-          { ...scoped, state: "released" },
-          { ...scoped, registered: false },
-          { ...scoped, projectId: "other-project" },
-        ],
-      ),
-    ).toEqual([]);
     expect(libraryBinding(project, scoped, ["ios"])).toMatchObject({
       projectId: "durable",
       projectRevision: 2,
@@ -100,6 +81,9 @@ describe("durable library execution selection", () => {
       resourceIds: ["ios"],
     });
     expect(() => libraryBinding(project, scoped, ["web"])).toThrow("every selected component");
+    expect(() => libraryBinding(project, { ...scoped, state: "released" }, ["ios"])).toThrow(
+      "every selected component",
+    );
   });
   it("reuses a compatible earlier superset while pinning the reviewed project revision", () => {
     const earlierCopy: LibraryWorkingCopy = {
@@ -115,7 +99,6 @@ describe("durable library execution selection", () => {
       })),
     };
     const current = { ...project, resources: [project.resources[1]!] };
-    expect(libraryEligibleCopies(current, host, ["ios"], [earlierCopy])).toEqual([earlierCopy]);
     expect(libraryBinding(current, earlierCopy, ["ios"])).toMatchObject({
       projectRevision: 2,
       resourceIds: ["ios"],
@@ -124,27 +107,12 @@ describe("durable library execution selection", () => {
       ...current,
       resources: [{ ...current.resources[0]!, relativePath: "apps/ios" }],
     };
-    expect(libraryEligibleCopies(moved, host, ["ios"], [earlierCopy])).toEqual([]);
-    expect(libraryEligibleCopies(current, host, ["retired"], [earlierCopy])).toEqual([]);
-    expect(libraryEligibleCopies(current, host, ["ios", "ios"], [earlierCopy])).toEqual([]);
+    expect(() => libraryBinding(moved, earlierCopy, ["ios"])).toThrow("every selected component");
   });
   it("permits repository-free discussions without inheriting removed repository scope", () => {
     const discussion = { ...project, resources: [] };
     expect(libraryBinding(discussion, copy, [])).toMatchObject({ resourceIds: [] });
     expect(() => libraryBinding(project, copy, [])).toThrow("every selected component");
-    const repositoryCopy = {
-      ...copy,
-      repositories: [
-        {
-          resourceId: "ios",
-          path: `${copy.rootPath}/ios`,
-          localProjectId: "local" as LibraryWorkingCopy["repositories"][number]["localProjectId"],
-          head: null,
-          branch: null,
-        },
-      ],
-    };
-    expect(libraryEligibleCopies(discussion, host, [], [repositoryCopy])).toEqual([]);
   });
   it("protects parent folder boundaries and allows independent repository URLs", () => {
     for (const relativePath of ["../web", "/web", "C:/web", "a/../../web", "web\\ios"])

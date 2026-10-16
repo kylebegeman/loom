@@ -1,4 +1,3 @@
-import type { LibraryThreadSummary } from "@t3tools/contracts/fork";
 import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { deriveTimelineEntriesFromVisibleTurnItems, type TimelineEntry } from "~/session-logic";
@@ -39,12 +38,4 @@ export function libraryArchiveMessages(
   return libraryArchiveTimeline(projection).flatMap((entry) =>
     entry.kind === "message" ? [entry.message] : [],
   );
-}
-
-/** Cheap summary updates reload only the conversation currently being read. */
-export function shouldRefreshLibraryArchive(
-  archive: Pick<LibraryThreadSummary, "id" | "sequence"> | null,
-  listed: Pick<LibraryThreadSummary, "id" | "sequence"> | undefined,
-) {
-  return archive !== null && listed?.id === archive.id && listed.sequence > archive.sequence;
 }

@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
-import type { ProjectThreadActivity } from "~/fork/project-navigation/activity";
-import type { ProjectSort } from "./projectList";
+import type { ProjectNavigationThreadActivity } from "./project-navigation.ts";
+import type { ProjectSort } from "./library-project-list.ts";
 
 export const UNTITLED_CONVERSATION = "Untitled conversation";
 
@@ -17,13 +17,13 @@ export const CONVERSATION_LANE_LABELS: Record<ConversationLane, string> = {
 /** What a connected computer reports right now about one of its threads. */
 export type LiveConversation = {
   readonly archived: boolean;
-  readonly activity: ProjectThreadActivity;
+  readonly activity: ProjectNavigationThreadActivity;
 };
 
 export type ConversationStatus = {
   readonly lane: ConversationLane;
   /** Null when there's nothing worth flagging, or nothing current to go on. */
-  readonly activity: ProjectThreadActivity | null;
+  readonly activity: ProjectNavigationThreadActivity | null;
 };
 
 /**
@@ -87,5 +87,5 @@ export function sortConversations(threads: readonly LibraryThreadSummary[], sort
     created: (a: LibraryThreadSummary, b: LibraryThreadSummary) =>
       b.createdAt.localeCompare(a.createdAt),
   }[sort];
-  return threads.toSorted(compare);
+  return [...threads].sort(compare);
 }

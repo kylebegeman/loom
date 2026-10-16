@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
-import { libraryCopiesForScope, libraryCopyReadiness } from "./copyChoice";
+import { libraryCopiesForScope, libraryCopyReadiness } from "./library-copy-choice.ts";
 
 const host = EnvironmentId.make("dorothy");
 const other = EnvironmentId.make("mini");
@@ -98,11 +98,11 @@ describe("Library working-copy selection", () => {
       ownership: "borrowed",
       repositories: copy().repositories.filter((repository) => repository.resourceId === "local"),
     });
-    expect(libraryCopiesForScope(project, [borrowed], host, "local")).toEqual([borrowed]);
+    expect(libraryCopiesForScope(project, [borrowed], host, ["local"])).toEqual([borrowed]);
   });
   it("rejects missing components and reference links as repository scopes", () => {
-    expect(libraryCopiesForScope(project, [copy()], host, "missing")).toEqual([]);
-    expect(libraryCopiesForScope(project, [copy()], host, "docs")).toEqual([]);
+    expect(libraryCopiesForScope(project, [copy()], host, ["missing"])).toEqual([]);
+    expect(libraryCopiesForScope(project, [copy()], host, ["docs"])).toEqual([]);
   });
   it("offers a fresh discussion copy after every repository is removed", () => {
     const discussionProject = { ...project, revision: 3, resources: [] };
@@ -118,6 +118,39 @@ describe("Library working-copy selection", () => {
       resources: project.resources.filter((resource) => resource.id !== "local"),
     };
     expect(libraryCopiesForScope(narrowedProject, [copy()], host, null)).toHaveLength(1);
+  });
+  it("covers every listed component and rejects duplicate or empty repository scopes", () => {
+    expect(libraryCopiesForScope(project, [copy()], host, ["app", "local"])).toHaveLength(1);
+    const partial = copy({
+      repositories: copy().repositories.filter((repository) => repository.resourceId === "app"),
+    });
+    expect(libraryCopiesForScope(project, [partial], host, ["app", "local"])).toEqual([]);
+    expect(libraryCopiesForScope(project, [copy()], host, ["app", "app"])).toEqual([]);
+    expect(libraryCopiesForScope(project, [copy()], host, [])).toEqual([]);
+  });
+  it("stops reusing a copy once the project moves a repository to another folder", () => {
+    const moved = {
+      ...project,
+      resources: project.resources.map((resource) =>
+        resource.id === "app" ? { ...resource, relativePath: "apps/app" } : resource,
+      ),
+    };
+    expect(libraryCopiesForScope(moved, [copy()], host, ["app"])).toEqual([]);
+    expect(libraryCopiesForScope(moved, [copy()], host, ["local"])).toHaveLength(1);
+  });
+  it("matches a root import and tolerates trailing or Windows separators", () => {
+    const rootProject = {
+      ...project,
+      resources: [{ ...project.resources[0]!, relativePath: "." }],
+    };
+    const rootCopy = copy({
+      rootPath: "C:\\workspace\\loom\\",
+      repositories: [{ ...copy().repositories[0]!, path: "C:\\workspace\\loom" }],
+    });
+    expect(libraryCopiesForScope(rootProject, [rootCopy], host, null)).toEqual([rootCopy]);
+  });
+  it("offers no copies for an archived project", () => {
+    expect(libraryCopiesForScope({ ...project, archived: true }, [copy()], host, null)).toEqual([]);
   });
   it("supports a brief-only project without requiring repository resources", () => {
     expect(

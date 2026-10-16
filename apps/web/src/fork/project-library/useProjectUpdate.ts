@@ -1,3 +1,4 @@
+import { validateResources } from "@t3tools/client-runtime/fork";
 import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryProjectColor } from "@t3tools/contracts/fork";
@@ -5,7 +6,6 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { randomUUID } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission } from "./state";
-import { validateResources } from "./resources";
 
 type ProjectChange = Partial<Pick<LibraryProject, "title" | "brief" | "resources">> & {
   /** Null returns the project to its automatic color. */

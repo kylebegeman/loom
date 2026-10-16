@@ -9,6 +9,8 @@ import {
   libraryPathParts,
   libraryProjectColor,
   libraryProjectInitials,
+  PROJECT_COLOR_NAMES,
+  type LocalProjectIcon,
 } from "@t3tools/client-runtime/fork";
 import { isProjectFaviconFallbackUrl } from "@t3tools/shared/projectFavicon";
 import { useAtomValue } from "@effect/atom-react";
@@ -20,18 +22,6 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { projectFaviconUrlAtom } from "~/state/assets";
 import { useEnvironmentMachines } from "~/state/environments";
-import type { LocalProjectIcon } from "./projectList";
-
-export const PROJECT_COLOR_NAMES: Record<LibraryProjectColor, string> = {
-  plum: "Plum",
-  red: "Red",
-  orange: "Orange",
-  gold: "Gold",
-  green: "Green",
-  teal: "Teal",
-  blue: "Blue",
-  slate: "Slate",
-};
 
 /** Scopes `--project-color` so tiles, dots and tints under it share one themed ink. */
 export function projectColorStyle(color: LibraryProjectColor): CSSProperties {

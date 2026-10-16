@@ -21,8 +21,12 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
-import { LIBRARY_PROJECT_COLOR_LABELS, useLibraryProjectColorValue } from "./libraryProjectColors";
-import { libraryResourceFromInput } from "@t3tools/client-runtime/fork";
+import { useLibraryProjectColorValue } from "./libraryProjectColors";
+import {
+  libraryResourceFromInput,
+  PROJECT_COLOR_NAMES,
+  validateResources,
+} from "@t3tools/client-runtime/fork";
 
 type ResourceDraft = {
   id: string;
@@ -155,19 +159,8 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
               defaultBranch: null,
             },
       );
-      if (
-        parsed.some(
-          (resource) =>
-            !resource.title ||
-            (resource.kind === "link" && !/^https?:\/\//i.test(resource.url ?? "")),
-        )
-      )
-        throw new Error("Reference links need a name and HTTP or HTTPS URL.");
-      const paths = parsed
-        .filter((resource) => resource.kind !== "link")
-        .map((resource) => resource.relativePath);
-      if (new Set(paths).size !== paths.length)
-        throw new Error("Each repository needs its own component folder.");
+      const invalid = validateResources(parsed);
+      if (invalid) throw new Error(invalid);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Review the project resources.");
       return;
@@ -408,7 +401,7 @@ function LibraryColorPicker(props: {
           <Pressable
             key={option}
             accessibilityRole="radio"
-            accessibilityLabel={LIBRARY_PROJECT_COLOR_LABELS[option]}
+            accessibilityLabel={PROJECT_COLOR_NAMES[option]}
             accessibilityState={{ checked: selected, disabled: props.disabled }}
             disabled={props.disabled}
             onPress={() => props.onChange(option)}

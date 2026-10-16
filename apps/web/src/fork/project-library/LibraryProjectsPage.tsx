@@ -16,7 +16,22 @@ import {
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { LIBRARY_PROJECT_COLORS, type LibraryProjectColor } from "@t3tools/contracts/fork";
-import { libraryActiveCopies, libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
+import {
+  libraryActiveCopies,
+  libraryHoldsLocalRefs,
+  PROJECT_COLOR_NAMES,
+  filterProjectEntries,
+  isRestingEntry,
+  PROJECT_GROUP_LABELS,
+  PROJECT_GROUPS,
+  PROJECT_SORT_LABELS,
+  PROJECT_SORTS,
+  projectEntries,
+  projectSections,
+  sortProjectEntries,
+  type ProjectEntry,
+  type ProjectGroup,
+} from "@t3tools/client-runtime/fork";
 import { ProjectFavicon } from "~/components/ProjectFavicon";
 import { Button } from "~/components/ui/button";
 import {
@@ -55,26 +70,7 @@ import {
   ProjectCompactCards,
   ProjectRows,
 } from "./ProjectCollection";
-import {
-  ComputerLabel,
-  PathLabel,
-  PROJECT_COLOR_NAMES,
-  ProjectColorDot,
-  projectColorStyle,
-} from "./ProjectIdentity";
-import {
-  filterProjectEntries,
-  isRestingEntry,
-  PROJECT_GROUP_LABELS,
-  PROJECT_GROUPS,
-  PROJECT_SORT_LABELS,
-  PROJECT_SORTS,
-  projectEntries,
-  projectSections,
-  sortProjectEntries,
-  type ProjectEntry,
-  type ProjectGroup,
-} from "./projectList";
+import { ComputerLabel, PathLabel, ProjectColorDot, projectColorStyle } from "./ProjectIdentity";
 import {
   useLibraryPermission,
   useLibraryProjects,

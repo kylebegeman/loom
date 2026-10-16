@@ -8,7 +8,7 @@ import {
   LibraryPrepareCopyRequest,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { supportsLoomFeature, isRepositoryResource } from "@t3tools/client-runtime/fork";
 import * as Schema from "effect/Schema";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -26,7 +26,6 @@ import { useLibraryAttempt } from "./attempts";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { usePrimaryEnvironmentId } from "~/state/environments";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
-import { isRepositoryResource } from "./resources";
 
 const isLibraryError = Schema.is(LibraryError);
 const PreparationAttempt = Schema.NullOr(

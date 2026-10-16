@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { libraryContinuationContext } from "@t3tools/client-runtime/fork";
+import {
+  libraryContinuationContext,
+  libraryCopiesForScope,
+  libraryCopyReadiness,
+  isRepositoryResource,
+} from "@t3tools/client-runtime/fork";
 import { useEnvironmentQuery } from "~/state/query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { EnvironmentId, ModelSelection, RuntimeMode, ThreadId } from "@t3tools/contracts";
@@ -33,9 +38,7 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
-import { libraryCopiesForScope, libraryCopyReadiness } from "./copyChoice";
 import type { EnvironmentQueryView } from "~/state/query";
-import { isRepositoryResource } from "./resources";
 
 const ConversationAttempt = Schema.NullOr(
   Schema.Struct({
@@ -92,7 +95,12 @@ export function NewConversationDialog({
       entry.entry.enabled &&
       entry.connection.phase === "connected" &&
       entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
-      libraryCopiesForScope(project, copies, entry.environmentId, suggestedScope).length > 0,
+      libraryCopiesForScope(
+        project,
+        copies,
+        entry.environmentId,
+        suggestedScope === null ? null : [suggestedScope],
+      ).length > 0,
   );
   const [hostId, setHostId] = useState<EnvironmentId | null>(
     attempt?.environmentId ??
@@ -141,7 +149,7 @@ export function NewConversationDialog({
               : []),
           ],
           hostId,
-          resourceId,
+          resourceId === null ? null : [resourceId],
         )
       : [];
   const copy =

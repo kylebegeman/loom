@@ -1,9 +1,10 @@
+import { shouldRefreshLibraryArchive } from "@t3tools/client-runtime/fork";
 import type { TimelineEntry } from "~/session-logic";
 import { turnItemOutputText, toolCallLines } from "@t3tools/client-runtime/work-log/item-detail";
 import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
 import { WorkLogBlock, WorkLogButton, WorkLogDetails } from "~/components/chat/WorkLog";
 import { LibraryAttachment } from "./LibraryAttachment";
-import { libraryArchiveTimeline, shouldRefreshLibraryArchive } from "./libraryArchive";
+import { libraryArchiveTimeline } from "./libraryArchive";
 import { LibraryUploadStatus } from "./LibraryUploadStatus";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";

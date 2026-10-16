@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { LibraryResource } from "@t3tools/contracts/fork";
-import { resourceLink, validateResources } from "./resources";
+import { resourceLink, validateResources } from "./library-resources.ts";
 const repository = (path: string): LibraryResource => ({
   id: path,
   title: path,

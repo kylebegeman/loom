@@ -1,3 +1,8 @@
+import {
+  PROJECT_COLOR_NAMES,
+  type ProjectEntry,
+  isRepositoryResource,
+} from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { LIBRARY_PROJECT_COLORS, type LibraryWorkingCopy } from "@t3tools/contracts/fork";
@@ -30,13 +35,10 @@ import { formatRelativeTimeLabel } from "~/timestampFormat";
 import {
   ComputerLabel,
   PathLabel,
-  PROJECT_COLOR_NAMES,
   ProjectColorDot,
   ProjectTile,
   projectColorStyle,
 } from "./ProjectIdentity";
-import type { ProjectEntry } from "./projectList";
-import { isRepositoryResource } from "./resources";
 import { projectLibrary, useLibraryPermission } from "./state";
 import { useProjectUpdate } from "./useProjectUpdate";
 

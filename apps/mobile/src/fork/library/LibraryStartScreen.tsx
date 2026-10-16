@@ -6,7 +6,11 @@ import {
   usePreventRemove,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { libraryContinuationContext, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  libraryContinuationContext,
+  libraryCopiesForScope,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -44,7 +48,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryWork, useLibraryAuthority } from "./libraryState";
-import { libraryEligibleCopies, libraryListState, libraryRepositories } from "./libraryLogic";
+import { libraryListState, libraryRepositories } from "./libraryLogic";
 import {
   emptyLibraryLaunchReceipt,
   launchLibraryConversation,
@@ -212,9 +216,7 @@ function LibraryStartContent(props: {
   const scope =
     selectedScope ??
     (sourceScope?.length === 1 &&
-    props.project.resources.some(
-      (resource) => resource.id === sourceScope[0] && resource.kind !== "link",
-    )
+    libraryRepositories(props.project).some((resource) => resource.id === sourceScope[0])
       ? sourceScope[0]!
       : "all");
   const launchProject = progress.intent?.project ?? props.project;
@@ -238,12 +240,12 @@ function LibraryStartContent(props: {
       entry.connection.phase === "connected" &&
       entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
       operable.has(entry.environmentId) &&
-      libraryEligibleCopies(launchProject, entry.environmentId, resourceIds, copies.data ?? [])
+      libraryCopiesForScope(launchProject, copies.data ?? [], entry.environmentId, resourceIds)
         .length > 0,
   );
   const execution =
     selectedExecution ?? (suggestedHosts.length === 1 ? suggestedHosts[0]!.environmentId : null);
-  const eligible = libraryEligibleCopies(launchProject, execution, resourceIds, copies.data ?? []);
+  const eligible = libraryCopiesForScope(launchProject, copies.data ?? [], execution, resourceIds);
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
   const selectedCopy = eligible.find((copy) => copy.id === copyId) ?? eligible[0] ?? null;
