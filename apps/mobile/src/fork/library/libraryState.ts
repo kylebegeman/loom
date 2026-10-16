@@ -1,6 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import { createProjectLibraryAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { AuthOrchestrationReadScope, EnvironmentId } from "@t3tools/contracts";
+import { LIBRARY_PROJECT_PROFILE_FEATURE } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback } from "react";
 import { connectionAtomRuntime } from "../../connection/runtime";
@@ -66,6 +67,11 @@ export function useLibraryAuthority() {
     connected,
     canRead,
     supported,
+    // An older Library would drop a saved profile, so editing waits until it says it keeps one.
+    keepsProfile: supportsLoomFeature(
+      config?.environment.capabilities,
+      LIBRARY_PROJECT_PROFILE_FEATURE,
+    ),
     ready:
       connected &&
       canRead &&

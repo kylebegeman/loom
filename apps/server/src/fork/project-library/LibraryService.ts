@@ -18,6 +18,9 @@ import {
   LibraryError,
   LibraryRequestId,
   libraryProfileAddedUnknownTools,
+  libraryProfileSecretValueField,
+  libraryProfileSecretValueMessage,
+  libraryProfileUnknownToolsMessage,
   LibrarySearchRequest,
   LibrarySearchResult,
   LibraryBriefProposal,
@@ -171,7 +174,9 @@ const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const isLibraryError = Schema.is(LibraryError);
 const io = (cause: unknown) =>
   isLibraryError(cause) ? cause : new LibraryError({ reason: "io", cause });
-const invalid = () => new LibraryError({ reason: "invalid" });
+/** A detail says what to fix; it reaches people and agents as the error message. */
+const invalid = (detail?: string) =>
+  new LibraryError({ reason: "invalid", ...(detail === undefined ? {} : { cause: detail }) });
 const unknownJson = Schema.fromJsonString(Schema.Unknown);
 const decodeUnknownJson = Schema.decodeSync(unknownJson);
 const encodeUnknownJson = Schema.encodeSync(unknownJson);
@@ -544,8 +549,15 @@ const make = Effect.gen(function* () {
       const { color: savedColor, profile: savedProfile, ...rest } = current;
       const color = input.color === undefined ? savedColor : (input.color ?? undefined);
       const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
-      if (profile && libraryProfileAddedUnknownTools(profile, savedProfile).length)
-        return yield* invalid();
+      // Only what this save adds is checked, so a profile saved under older rules still
+      // survives an unrelated edit or being resent unchanged.
+      if (input.profile) {
+        const unknownTools = libraryProfileAddedUnknownTools(input.profile, savedProfile);
+        if (unknownTools.length)
+          return yield* invalid(libraryProfileUnknownToolsMessage(unknownTools));
+        const secretField = libraryProfileSecretValueField(input.profile, savedProfile);
+        if (secretField) return yield* invalid(libraryProfileSecretValueMessage(secretField));
+      }
       const next = {
         ...rest,
         ...(color ? { color } : {}),

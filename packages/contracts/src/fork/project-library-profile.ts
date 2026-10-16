@@ -87,16 +87,17 @@ const profileFields = {
 export const LibraryProjectProfile = Schema.Struct(profileFields);
 export type LibraryProjectProfile = typeof LibraryProjectProfile.Type;
 
-/** What a client may save: each tool once, bounded in size, and no secret values. */
+/**
+ * What a client may save: each tool once and bounded in size. Secret values are refused by the
+ * Library against the saved profile (`libraryProfileSecretValueField`), so a profile saved
+ * before a detection rule existed can still be resent unchanged.
+ */
 export const LibraryProjectProfileInput = Schema.Struct(profileFields).check(
   Schema.makeFilter((profile) => {
     const ids = profile.requiredTools?.map((tool) => tool.id) ?? [];
     if (new Set(ids).size !== ids.length) return "List each required tool once.";
-    if (JSON.stringify(profile).length > LIBRARY_PROFILE_LIMITS.bytes)
-      return "This setup is too large to save.";
-    const field = libraryProfileSecretValueField(profile);
-    return field
-      ? `${field} looks like it holds a secret. Save only its name; each computer keeps the value.`
+    return JSON.stringify(profile).length > LIBRARY_PROFILE_LIMITS.bytes
+      ? "This setup is too large to save."
       : true;
   }),
 );
@@ -117,6 +118,12 @@ export function libraryProfileAddedUnknownTools(
   return (profile.requiredTools ?? [])
     .map((tool) => tool.id)
     .filter((id) => !CATALOG_IDS.has(id) && !kept.has(id));
+}
+
+/** Why a save with tools from `libraryProfileAddedUnknownTools` is refused, naming them. */
+export function libraryProfileUnknownToolsMessage(ids: readonly string[]): string {
+  const named = ids.map((id) => `"${id}"`).join(", ");
+  return `This Library does not know the required ${ids.length === 1 ? "tool" : "tools"} ${named}. Use tool ids from ${LIBRARY_TOOL_IDS.join(", ")}.`;
 }
 
 const CREDENTIAL_SHAPES = [
@@ -142,36 +149,103 @@ const CREDENTIAL_SHAPES = [
   /[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIALS?)\s*=\s*["']?(?![$"'`\s])\S/i,
 ];
 
+/** Shannon entropy in bits per character. */
+function entropy(text: string) {
+  const counts = new Map<string, number>();
+  for (const char of text) counts.set(char, (counts.get(char) ?? 0) + 1);
+  let bits = 0;
+  for (const count of counts.values())
+    bits -= (count / text.length) * Math.log2(count / text.length);
+  return bits;
+}
+
+// A run of token characters standing on its own: never part of a path, host or `$VARIABLE`,
+// and not followed by more than base64 padding.
+const OPAQUE_TOKEN = /(?<![A-Za-z0-9_+/.$-])[A-Za-z0-9_+-]{32,}={0,2}(?![A-Za-z0-9_+=/.-])/g;
+const WORD = /[A-Z]?[a-z]{4,}|[A-Z]{4,}/g;
+// Random 32 to 64 character base62 and base64url tokens measure 4.07 bits or more in 99.9% of
+// samples, while repeated placeholders sit far below. Entropy alone cannot tell a token from a
+// long identifier with digits, which reaches 4.5, so identifiers are also recognised by their
+// words: random tokens keep under 40% of their characters in four-letter runs 92-99% of the time,
+// and real identifiers keep well over half.
+const OPAQUE_TOKEN_MIN_ENTROPY = 4;
+const OPAQUE_TOKEN_MAX_WORD_SHARE = 0.4;
+
+/** Whether text holds a long random-looking literal, such as a key with no known prefix. */
+function hasOpaqueToken(text: string) {
+  return (text.match(OPAQUE_TOKEN) ?? []).some((token) => {
+    if (!/\d/.test(token) || !/[a-z]/.test(token) || !/[A-Z]/.test(token)) return false;
+    const wordChars = (token.match(WORD) ?? []).join("").length;
+    return (
+      wordChars / token.length < OPAQUE_TOKEN_MAX_WORD_SHARE &&
+      entropy(token) >= OPAQUE_TOKEN_MIN_ENTROPY
+    );
+  });
+}
+
 /** Whether free text carries something shaped like a credential rather than a reference to one. */
 export const looksLikeSecretValue = (text: string) =>
-  CREDENTIAL_SHAPES.some((pattern) => pattern.test(text));
+  CREDENTIAL_SHAPES.some((pattern) => pattern.test(text)) || hasOpaqueToken(text);
+
+/** Why a profile is refused when `libraryProfileSecretValueField` names a field. */
+export const libraryProfileSecretValueMessage = (field: string) =>
+  `${field} looks like it holds a secret. Save only its name; each computer keeps the value.`;
+
+type SecretCheckedProfile = Pick<
+  LibraryProjectProfile,
+  "scripts" | "defaultModelSelection" | "secretNames" | "preferredEnvironmentIds"
+>;
+
+const scriptText = (script: ProjectScript) => [
+  script.id,
+  script.name,
+  script.command,
+  script.previewUrl ?? "",
+];
+const modelText = (selection: ModelSelection) => [
+  selection.model,
+  ...(selection.options ?? []).flatMap((option) =>
+    typeof option.value === "string" ? [option.value] : [],
+  ),
+];
 
 /**
  * The first profile field that appears to hold a secret value, or null. Profiles travel to
  * every computer and into saved history, so they may name secrets but never carry them.
+ * Entries already in `saved` are not checked again, so a rule added later never blocks a
+ * save that leaves them unchanged.
  */
 export function libraryProfileSecretValueField(
-  profile: Pick<
-    LibraryProjectProfile,
-    "scripts" | "defaultModelSelection" | "secretNames" | "preferredEnvironmentIds"
-  >,
+  profile: SecretCheckedProfile,
+  saved?: SecretCheckedProfile,
 ): string | null {
+  const savedScripts = new Set(saved?.scripts?.map((script) => JSON.stringify(scriptText(script))));
   // Labels name the field by position, never by its text, which may be the secret itself.
   for (const [index, script] of (profile.scripts ?? []).entries()) {
-    const text = [script.id, script.name, script.command, script.previewUrl ?? ""];
-    if (text.some(looksLikeSecretValue)) return `Script ${index + 1}`;
+    const text = scriptText(script);
+    if (!savedScripts.has(JSON.stringify(text)) && text.some(looksLikeSecretValue))
+      return `Script ${index + 1}`;
   }
   const selection = profile.defaultModelSelection;
   if (
     selection &&
-    [
-      selection.model,
-      ...(selection.options ?? []).flatMap((option) =>
-        typeof option.value === "string" ? [option.value] : [],
-      ),
-    ].some(looksLikeSecretValue)
+    !(
+      saved?.defaultModelSelection &&
+      JSON.stringify(modelText(saved.defaultModelSelection)) ===
+        JSON.stringify(modelText(selection))
+    ) &&
+    modelText(selection).some(looksLikeSecretValue)
   )
     return "The default model";
-  if (profile.preferredEnvironmentIds?.some(looksLikeSecretValue)) return "A preferred computer";
-  return profile.secretNames?.some(looksLikeSecretValue) ? "A secret name" : null;
+  const added = (values: readonly string[] | undefined, kept: readonly string[] | undefined) =>
+    (values ?? []).filter((value) => !kept?.includes(value));
+  if (
+    added(profile.preferredEnvironmentIds, saved?.preferredEnvironmentIds).some(
+      looksLikeSecretValue,
+    )
+  )
+    return "A preferred computer";
+  return added(profile.secretNames, saved?.secretNames).some(looksLikeSecretValue)
+    ? "A secret name"
+    : null;
 }

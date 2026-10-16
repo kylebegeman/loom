@@ -509,7 +509,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       actions={[
         {
           icon: "pencil",
-          accessibilityLabel: "Edit project resources and brief",
+          accessibilityLabel: "Edit project",
           disabled: !authority.ready,
           onPress: () => navigation.navigate("LibraryEdit", { projectId: p.id }),
         },

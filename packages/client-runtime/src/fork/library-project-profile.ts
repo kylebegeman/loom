@@ -6,7 +6,11 @@ import {
   LibrarySecretName,
   LibraryToolVersion,
   libraryProfileSecretValueField,
+  libraryProfileSecretValueMessage,
   looksLikeSecretValue,
+  type LibraryComputer,
+  type LibraryProjectProfile,
+  type LibraryRequiredTool,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
@@ -17,6 +21,37 @@ const isToolVersion = Schema.is(LibraryToolVersion);
 
 export function libraryToolLabel(id: string) {
   return LIBRARY_TOOL_CATALOG.find((tool) => tool.id === id)?.label ?? id;
+}
+
+/** A required tool as people read it, like `Node.js 22+`. */
+export function libraryToolText(tool: LibraryRequiredTool) {
+  return `${libraryToolLabel(tool.id)}${tool.minimumVersion ? ` ${tool.minimumVersion}+` : ""}`;
+}
+
+/** Sets or clears one tool's minimum version from what someone typed. */
+export function libraryToolsWithVersion(
+  tools: readonly LibraryRequiredTool[],
+  id: string,
+  input: string,
+): LibraryRequiredTool[] {
+  const minimumVersion = input.trim();
+  return tools.map((entry) =>
+    entry.id === id ? { id: entry.id, ...(minimumVersion ? { minimumVersion } : {}) } : entry,
+  );
+}
+
+/**
+ * Computers a project can prefer: each one that runs work, plus any already chosen, so a
+ * computer that has since gone away can still be cleared.
+ */
+export function libraryProfileComputerIds(
+  computers: readonly Pick<LibraryComputer, "environmentId" | "supportsExecution">[],
+  selected: readonly EnvironmentId[],
+): EnvironmentId[] {
+  return [
+    ...computers.filter((computer) => computer.supportsExecution).map((c) => c.environmentId),
+    ...selected,
+  ].filter((id, index, all) => all.indexOf(id) === index);
 }
 
 /**
@@ -50,11 +85,36 @@ export function compactLibraryProfile(
   return entries.length ? (Object.fromEntries(entries) as LibraryProjectProfileInput) : null;
 }
 
-/** Why a profile cannot be saved, in words a person can act on, or null when it can. */
-export function libraryProfileProblem(profile: LibraryProjectProfileInput): string | null {
-  const secretField = libraryProfileSecretValueField(profile);
-  if (secretField)
-    return `${secretField} looks like it holds a secret. Save only its name; each computer keeps the value.`;
+const stableJson = (value: unknown): string =>
+  JSON.stringify(value, (_key, entry: unknown) =>
+    entry && typeof entry === "object" && !Array.isArray(entry)
+      ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => a.localeCompare(b)))
+      : entry,
+  );
+
+/**
+ * What a save should send for an edited profile: undefined when it matches the saved one, so
+ * the save keeps it untouched, otherwise the profile, or null to remove it.
+ */
+export function libraryProfileChange(
+  draft: LibraryProfileDraft,
+  saved: LibraryProjectProfile | undefined,
+): LibraryProjectProfileInput | null | undefined {
+  const profile = compactLibraryProfile(draft);
+  const kept = saved ? compactLibraryProfile(saved) : null;
+  return stableJson(profile) === stableJson(kept) ? undefined : profile;
+}
+
+/**
+ * Why a profile cannot be saved, in words a person can act on, or null when it can. Entries
+ * already in the saved profile are not checked for secrets again, the way the Library saves.
+ */
+export function libraryProfileProblem(
+  profile: LibraryProjectProfileInput,
+  saved?: LibraryProjectProfile,
+): string | null {
+  const secretField = libraryProfileSecretValueField(profile, saved);
+  if (secretField) return libraryProfileSecretValueMessage(secretField);
   const tool = profile.requiredTools?.find(
     (entry) => entry.minimumVersion !== undefined && !isToolVersion(entry.minimumVersion),
   );
