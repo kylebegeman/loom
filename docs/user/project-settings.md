@@ -87,6 +87,15 @@ can also mark preferred computers and allow Mini jobs. On mobile, edit the setup
 project's **Edit project** screen. Setup appears once your Library supports it. Agents can edit it
 through `loom_library_project_update`.
 
+**Timeline** on the project page lists what happened on the project from every computer,
+including offline ones: conversations started, settled, failed or archived, pull requests
+opened, merged, closed or failing checks, brief revisions and copies coming and going. Use the
+chips to show only some kinds, and scroll to read further back. Selecting a conversation opens
+the live thread when its computer is connected and the saved conversation otherwise; a pull
+request opens in your browser. Entries marked **estimated** were rebuilt from records saved
+before the Library kept a timeline. A Library that does not keep a timeline yet shows a shorter
+**History** of copies instead. Agents can read the timeline through `loom_library_timeline`.
+
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.
 Removing a managed working copy preserves the Library project and saved conversations;
