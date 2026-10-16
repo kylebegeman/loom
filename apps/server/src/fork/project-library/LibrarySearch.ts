@@ -154,22 +154,22 @@ export const makeLibrarySearch = Effect.gen(function* () {
   /**
    * Bring one conversation's entries in step with its saved items. Run inside the ingest
    * transaction. An item keeps its row, and so its id, for as long as it is saved at the same
-   * position; search cursors rely on that.
+   * position; search cursors rely on that. `NOT IN` builds each lookup once, where a correlated
+   * `NOT EXISTS` rescanned the conversation per item and took a second per save at 8,000 items.
    */
   const index = (libraryId: string) => {
     const saved = searchItemRows(sql, sql`t.library_id = ${libraryId}`);
     return Effect.all(
       [
         sql`DELETE FROM fork_library_search_items AS i WHERE i.library_id = ${libraryId}
-          AND NOT EXISTS (SELECT 1 FROM (${saved}) AS s WHERE s.position = i.position AND s.item_id = i.item_id)`,
+          AND (i.position, i.item_id) NOT IN (SELECT position, item_id FROM (${saved}))`,
         sql`UPDATE fork_library_search_items AS i SET role = s.role, occurred_at = s.occurred_at, body = s.body
           FROM (${saved}) AS s
           WHERE i.library_id = ${libraryId} AND s.position = i.position AND s.item_id = i.item_id
             AND (i.role, i.occurred_at, i.body) IS NOT (s.role, s.occurred_at, s.body)`,
         sql`INSERT INTO fork_library_search_items (library_id, position, item_id, role, occurred_at, body)
-          SELECT * FROM (${saved}) AS s WHERE NOT EXISTS (
-            SELECT 1 FROM fork_library_search_items AS i
-            WHERE i.library_id = s.library_id AND i.position = s.position AND i.item_id = s.item_id)`,
+          SELECT * FROM (${saved}) AS s WHERE (s.position, s.item_id) NOT IN (
+            SELECT position, item_id FROM fork_library_search_items WHERE library_id = ${libraryId})`,
       ],
       { discard: true },
     ).pipe(Effect.mapError(io));
