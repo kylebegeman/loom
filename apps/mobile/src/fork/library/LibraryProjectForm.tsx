@@ -21,8 +21,8 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
-import { LIBRARY_PROJECT_COLOR_LABELS, useLibraryProjectColorValue } from "./libraryProjectColors";
-import { libraryResourceFromInput } from "@t3tools/client-runtime/fork";
+import { useLibraryProjectColorValue } from "./libraryProjectColors";
+import { libraryResourceFromInput, PROJECT_COLOR_NAMES } from "@t3tools/client-runtime/fork";
 
 type ResourceDraft = {
   id: string;
@@ -408,7 +408,7 @@ function LibraryColorPicker(props: {
           <Pressable
             key={option}
             accessibilityRole="radio"
-            accessibilityLabel={LIBRARY_PROJECT_COLOR_LABELS[option]}
+            accessibilityLabel={PROJECT_COLOR_NAMES[option]}
             accessibilityState={{ checked: selected, disabled: props.disabled }}
             disabled={props.disabled}
             onPress={() => props.onChange(option)}

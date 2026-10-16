@@ -19,7 +19,15 @@ import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useProjects } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { libraryActiveCopies, libraryProjectColor } from "@t3tools/client-runtime/fork";
+import {
+  libraryActiveCopies,
+  libraryProjectColor,
+  libraryCopyReadiness,
+  isRestingSince,
+  libraryLocalProjectIcon,
+  localProjectsByRef,
+  type LocalProjectIcon,
+} from "@t3tools/client-runtime/fork";
 import {
   projectLibrary,
   useLibraryProject,
@@ -31,19 +39,12 @@ import { LibrarySetup } from "./LibrarySetup";
 import { LIBRARY_ROW, LibraryErrorNotice } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
-import { libraryCopyReadiness } from "./copyChoice";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
-import {
-  isRestingSince,
-  libraryLocalProjectIcon,
-  localProjectsByRef,
-  type LocalProjectIcon,
-} from "./projectList";
 
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;

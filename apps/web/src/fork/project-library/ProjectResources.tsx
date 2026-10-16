@@ -1,13 +1,17 @@
 import { useState } from "react";
 import type { LibraryResource } from "@t3tools/contracts/fork";
-import { libraryResourceFromInput, libraryResourceLocation } from "@t3tools/client-runtime/fork";
+import {
+  libraryResourceFromInput,
+  libraryResourceLocation,
+  isRepositoryResource,
+  resourceLink,
+} from "@t3tools/client-runtime/fork";
 import { ArrowUpRightIcon, EllipsisIcon, FolderGit2Icon, LinkIcon, PlusIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { randomUUID } from "~/lib/utils";
 import { LibraryField, LibraryPanel } from "./LibraryControls";
-import { isRepositoryResource, resourceLink } from "./resources";
 
 const MAX_RESOURCES = 64;
 

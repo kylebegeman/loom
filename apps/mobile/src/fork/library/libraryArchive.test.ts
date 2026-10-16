@@ -10,11 +10,7 @@ import {
 import type { LibraryReplicationStatus, LibraryThreadSummary } from "@t3tools/contracts/fork";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
-import {
-  libraryArchiveRows,
-  libraryHistoryFreshness,
-  shouldRefreshLibraryArchive,
-} from "./libraryArchive";
+import { libraryArchiveRows, libraryHistoryFreshness } from "./libraryArchive";
 const threadId = ThreadId.make("saved-thread"),
   timestamp = DateTime.makeUnsafe("2026-10-15T00:00:00Z");
 const base = (id: string, ordinal: number) => ({
@@ -70,15 +66,6 @@ const status: LibraryReplicationStatus = {
   ],
 };
 describe("captured library history", () => {
-  it("reloads only a displayed archive whose listed summary has a newer saved sequence", () => {
-    const displayed = { id: "displayed", sequence: 10 };
-    expect(shouldRefreshLibraryArchive(displayed, { id: "displayed", sequence: 11 })).toBe(true);
-    expect(shouldRefreshLibraryArchive(displayed, { id: "other", sequence: 11 })).toBe(false);
-    expect(shouldRefreshLibraryArchive(displayed, { id: "displayed", sequence: 10 })).toBe(false);
-    expect(shouldRefreshLibraryArchive(displayed, { id: "displayed", sequence: 9 })).toBe(false);
-    expect(shouldRefreshLibraryArchive(null, { id: "displayed", sequence: 1 })).toBe(false);
-    expect(shouldRefreshLibraryArchive(displayed, undefined)).toBe(false);
-  });
   it("preserves the visible timeline and hydrates captured command detail without needing the original host", () => {
     const user: OrchestrationV2TurnItem = {
       ...base("user", 0),

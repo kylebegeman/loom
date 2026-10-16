@@ -7,13 +7,17 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import {
+  filterProjectEntries,
   libraryActiveCopies,
   libraryResourceLocation,
+  projectEntries,
+  sortProjectEntries,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type {
   LibraryProject,
+  LibraryProjectColor,
   LibraryThreadSummary,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
@@ -48,6 +52,7 @@ import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryProjectTile } from "./libraryProjectColors";
 
 const RECENT_CONVERSATIONS = 5;
+const ANY_COLOR: ReadonlySet<LibraryProjectColor> = new Set();
 const ago = (iso: string) => `${relativeTime(iso)} ago`;
 
 export function LibraryPage(props: {
@@ -141,17 +146,20 @@ export function LibraryRouteScreen() {
       }
     }, [authority.connected, catalog.refresh, authority.info.refresh]),
   );
-  const query = search.trim().toLocaleLowerCase();
-  const projects = (catalog.data ?? [])
-    .filter(
-      (p) =>
-        p.archived === archived &&
-        (!query ||
-          [p.title, p.brief, ...p.resources.map((r) => r.title)].some((text) =>
-            text.toLocaleLowerCase().includes(query),
-          )),
-    )
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const query = search.trim();
+  // The list carries no copies, so search reads names, briefs and repositories, never computers.
+  const projects = sortProjectEntries(
+    filterProjectEntries(
+      projectEntries(
+        (catalog.data ?? []).filter((p) => p.archived === archived),
+        [],
+        null,
+      ),
+      { search, colors: ANY_COLOR, computer: null },
+      () => "",
+    ),
+    "activity",
+  ).map((entry) => entry.project);
   return (
     <LibraryPage
       title="Projects"

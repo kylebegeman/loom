@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { LibraryProject } from "@t3tools/contracts/fork";
-import { libraryRouteParams, resolveLibrarySelection } from "./selection";
+import { libraryRouteParams, resolveLibrarySelection } from "./library-selection.ts";
 const project: LibraryProject = {
   id: "new-project",
   title: "New project",

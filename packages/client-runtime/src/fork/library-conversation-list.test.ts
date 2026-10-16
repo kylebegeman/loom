@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryThreadSummary } from "@t3tools/contracts/fork";
-import { conversationStatus, filterConversations, sortConversations } from "./conversationList";
+import {
+  conversationStatus,
+  filterConversations,
+  sortConversations,
+} from "./library-conversation-list.ts";
 
 const dorothy = EnvironmentId.make("dorothy");
 const nora = EnvironmentId.make("nora");

@@ -1,4 +1,8 @@
-import { parseLibraryProjectScope, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  parseLibraryProjectScope,
+  supportsLoomFeature,
+  libraryRouteParams,
+} from "@t3tools/client-runtime/fork";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useParams } from "@tanstack/react-router";
@@ -8,7 +12,6 @@ import { useStableCallback } from "~/hooks/useStableCallback";
 import { projectLibrary, useLibraryAuthority } from "./state";
 import { openLibraryAction } from "./actions";
 import { useUiStateStore } from "~/uiStateStore";
-import { libraryRouteParams } from "./selection";
 
 /** Resolve context on the source before choosing a new execution binding. No full history read. */
 export function useLibraryNewConversation() {

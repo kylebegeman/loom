@@ -1,5 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentProject } from "../state/shell.ts";
 import type {
   LibraryProject,
   LibraryProjectColor,
@@ -7,7 +7,7 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { LIBRARY_PROJECT_COLORS } from "@t3tools/contracts/fork";
-import { libraryProjectColor } from "@t3tools/client-runtime/fork";
+import { libraryProjectColor } from "./library-project.ts";
 
 export const PROJECT_SORTS = ["activity", "name", "created"] as const;
 export type ProjectSort = (typeof PROJECT_SORTS)[number];
@@ -16,6 +16,17 @@ export const PROJECT_SORT_LABELS: Record<ProjectSort, string> = {
   activity: "Recent activity",
   name: "Name",
   created: "Newest first",
+};
+
+export const PROJECT_COLOR_NAMES: Record<LibraryProjectColor, string> = {
+  plum: "Plum",
+  red: "Red",
+  orange: "Orange",
+  gold: "Gold",
+  green: "Green",
+  teal: "Teal",
+  blue: "Blue",
+  slate: "Slate",
 };
 
 export const PROJECT_GROUPS = ["activity", "color", "none"] as const;
@@ -140,7 +151,7 @@ export function sortProjectEntries(entries: readonly ProjectEntry[], sort: Proje
     created: (a: ProjectEntry, b: ProjectEntry) =>
       b.project.createdAt.localeCompare(a.project.createdAt),
   }[sort];
-  return entries.toSorted(compare);
+  return [...entries].sort(compare);
 }
 
 export type ProjectSection =

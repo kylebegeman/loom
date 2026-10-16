@@ -11,14 +11,6 @@ export type LibraryArchiveRow =
   | Extract<ThreadFeedEntry, { type: "message" | "html-render" | "mcp-app" }>
   | { readonly type: "activity"; readonly id: string; readonly activity: ThreadFeedActivity };
 
-/** Compact summary updates reload only the conversation currently being read. */
-export function shouldRefreshLibraryArchive(
-  archive: Pick<LibraryThreadSummary, "id" | "sequence"> | null,
-  listed: Pick<LibraryThreadSummary, "id" | "sequence"> | undefined,
-) {
-  return archive !== null && listed?.id === archive.id && listed.sequence > archive.sequence;
-}
-
 /** Preserve the visible sequence, hydrating detail only from the captured archive. */
 export function libraryArchiveRows(
   projection: Pick<

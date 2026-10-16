@@ -14,7 +14,7 @@ import {
   RESTING_AFTER_MS,
   sortProjectEntries,
   type LocalProjectIcon,
-} from "./projectList";
+} from "./library-project-list.ts";
 
 const dorothy = EnvironmentId.make("dorothy");
 const nora = EnvironmentId.make("nora");

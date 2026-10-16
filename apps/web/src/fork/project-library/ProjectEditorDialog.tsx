@@ -17,8 +17,11 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { LibrarySetup } from "./LibrarySetup";
-import { isRepositoryResource, validateResources } from "./resources";
-import { libraryResourceLocation } from "@t3tools/client-runtime/fork";
+import {
+  libraryResourceLocation,
+  isRepositoryResource,
+  validateResources,
+} from "@t3tools/client-runtime/fork";
 import { FolderGit2Icon, LinkIcon, XIcon } from "lucide-react";
 import { ResourceAdder } from "./ProjectResources";
 import { ProjectColorPicker, ProjectTile } from "./ProjectIdentity";

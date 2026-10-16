@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { isRepositoryResource, libraryCopiesForScope } from "@t3tools/client-runtime/fork";
 import type {
   LibraryProject,
   LibraryResource,
@@ -7,7 +7,7 @@ import type {
 } from "@t3tools/contracts/fork";
 
 export function libraryRepositories(project: LibraryProject) {
-  return project.resources.filter((resource) => resource.kind !== "link");
+  return project.resources.filter(isRepositoryResource);
 }
 
 /** Cached empty data cannot justify preparing another copy while its refresh is unsettled. */
@@ -22,43 +22,12 @@ export function libraryListState(query: {
   return query.data.length === 0 ? "empty" : "ready";
 }
 
-export function libraryEligibleCopies(
-  project: LibraryProject,
-  environmentId: EnvironmentId | null,
-  resourceIds: readonly string[],
-  copies: readonly LibraryWorkingCopy[],
-) {
-  const resources = libraryRepositories(project);
-  if (
-    new Set(resourceIds).size !== resourceIds.length ||
-    (resourceIds.length === 0 && resources.length > 0) ||
-    resourceIds.some((id) => !resources.some((resource) => resource.id === id))
-  )
-    return [];
-  const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
-  return copies.filter(
-    (copy) =>
-      copy.projectId === project.id &&
-      copy.environmentId === environmentId &&
-      copy.registered !== false &&
-      copy.state === "ready" &&
-      (resources.length > 0 || copy.repositories.length === 0) &&
-      resourceIds.every((id) => {
-        const resource = resources.find((resource) => resource.id === id)!;
-        const expected = `${normalizePath(copy.rootPath)}/${resource.relativePath}`;
-        return copy.repositories.some(
-          (repo) => repo.resourceId === id && normalizePath(repo.path) === expected,
-        );
-      }),
-  );
-}
-
 export function libraryBinding(
   project: LibraryProject,
   copy: LibraryWorkingCopy,
   resourceIds: readonly string[],
 ): LibraryThreadBinding {
-  if (!libraryEligibleCopies(project, copy.environmentId, resourceIds, [copy]).length)
+  if (!libraryCopiesForScope(project, [copy], copy.environmentId, resourceIds).length)
     throw new Error("Choose a current working copy containing every selected component.");
   return {
     projectId: project.id,
