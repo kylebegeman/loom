@@ -1436,3 +1436,29 @@ effectIt.effect(
       expect(harness.projection().messages.find((entry) => entry.role === "user")?.text).toBe(text);
     }),
 );
+
+effectIt.effect("tells a bound conversation's agent once that it can propose brief updates", () =>
+  Effect.gen(function* () {
+    const project: LibraryProject = {
+      id: "aspectavy",
+      title: "AspectAvy",
+      brief: "Coordinate the app and server contract.",
+      revision: 2,
+      resources: [],
+      archived: false,
+      createdAt: "2026-10-15T00:00:00.000Z",
+      updatedAt: "2026-10-15T00:00:00.000Z",
+    };
+    const harness = makeLocalCommandHarness({
+      text: "Implement the next step",
+      libraryProject: project,
+      failReadsAfterRunning: true,
+    });
+    yield* harness.start;
+    const sent = harness.startRootRun.mock.calls[0]?.[0].message.text ?? "";
+    const hint = ProviderTurnStart.libraryBriefProposalHint(project.id);
+    expect(hint).not.toContain("\n");
+    expect(sent.split(hint)).toHaveLength(2);
+    expect(sent.split("loom_library_brief_propose")).toHaveLength(2);
+  }),
+);
