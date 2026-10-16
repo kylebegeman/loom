@@ -3,6 +3,7 @@ import { ProjectLibraryHealthRpcGroup } from "./project-library-health.ts";
 import { LibrarySearchRpcGroup } from "./project-library-search.ts";
 import { ProjectLibraryTimelineRpcGroup } from "./project-library-timeline.ts";
 import { ProjectLibraryBriefRpcGroup } from "./project-library-brief.ts";
+import { ProjectLibraryReadinessRpcGroup } from "./project-library-readiness.ts";
 import { ProjectCheckoutRpcGroup } from "./project-checkout.ts";
 import { ComputerNamingRpcGroup } from "./computer-naming.ts";
 import { GitHubHostSetupRpcGroup, GITHUB_HOST_SETUP_WS_METHODS } from "./github-host-setup.ts";
@@ -50,6 +51,7 @@ export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   LibrarySearchRpcGroup,
   ProjectLibraryTimelineRpcGroup,
   ProjectLibraryBriefRpcGroup,
+  ProjectLibraryReadinessRpcGroup,
   ProjectCheckoutRpcGroup,
   ComputerNamingRpcGroup,
   MiniOffloadRpcGroup,

@@ -3,6 +3,7 @@ import * as LibraryHistorySource from "./LibraryHistorySource.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import {
   LIBRARY_HEALTH_WS_METHODS as LH,
+  LIBRARY_READINESS_WS_METHODS as LR,
   LIBRARY_SEARCH_WS_METHODS,
   LIBRARY_TIMELINE_WS_METHODS as LT,
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
@@ -78,6 +79,12 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.copyStatus, workspace.status(input)),
       [LH.copyHealth]: (input: Parameters<typeof workspace.health>[0]) =>
         auth.effect(LH.copyHealth, workspace.health(input)),
+      [LR.readiness]: (input: Parameters<typeof workspace.readiness>[0]) =>
+        auth.effect(LR.readiness, workspace.readiness(input)),
+      [LR.profileSettings]: (input: Parameters<typeof workspace.profileSettings>[0]) =>
+        auth.effect(LR.profileSettings, workspace.profileSettings(input)),
+      [LR.applyProfile]: (input: Parameters<typeof workspace.applyProfile>[0]) =>
+        auth.effect(LR.applyProfile, workspace.applyProfile(input)),
       [L.unregisterCopy]: (input: Parameters<typeof workspace.unregister>[0]) =>
         auth.effect(L.unregisterCopy, workspace.unregister(input)),
       [L.releaseCopy]: (input: Parameters<typeof workspace.release>[0]) =>

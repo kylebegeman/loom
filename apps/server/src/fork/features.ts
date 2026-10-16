@@ -46,4 +46,5 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "library-search",
   "library-timeline",
   "library-brief-proposals",
+  "library-profile-readiness",
 ];

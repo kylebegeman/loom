@@ -175,6 +175,13 @@ export const ProjectLibraryToolkit = Toolkit.make(
     success: Library.LibraryCopyStatus,
     failure,
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_profile_readiness", {
+    description:
+      "Check a Library project's required tools on this computer: ok, missing, outdated (with the version found) or unknown when a check could not run. Also lists the secret names to configure; secret values are never read. Pass the current profile from loom_library_project when this computer has no copy yet.",
+    parameters: Library.LibraryProfileReadinessRequest,
+    success: Library.LibraryProfileReadiness,
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_binding_resolve", {
     description:
       "Verify a proposed immutable conversation computer, working copy, component scope and context. Does not run an agent.",
@@ -312,6 +319,9 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_copy_status: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.status(input))),
+      ),
+      loom_library_profile_readiness: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.readiness(input))),
       ),
       loom_library_binding_resolve: McpToolAccess.reads((input) =>
         onHost(
