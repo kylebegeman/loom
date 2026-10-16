@@ -102,6 +102,16 @@ request opens in your browser. Entries marked **estimated time** were rebuilt fr
 before the Library kept a timeline. A Library that does not keep a timeline yet shows a shorter
 **History** of copies instead. Agents can read the timeline through `loom_library_timeline`.
 
+Agents can suggest changes to the brief, but only you can accept them. When suggestions are
+waiting, the brief shows **N suggested updates**. Open it to see each suggestion's reason and
+what it would change in the brief as it reads now. **Accept** saves it as the new brief,
+**Edit, then accept** lets you adjust the text first, and **Dismiss** drops it. If the brief
+changed after an agent made its suggestion, Loom says so and asks before replacing the newer
+text. Accepted changes apply to new conversations. To ask for suggestions, open a settled
+conversation from its project and choose **Suggest brief updates**. Its computer must be
+connected; the agent receives a short follow-up asking it to review what changed. Suggestions
+appear once your Library supports them.
+
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.
 Removing a managed working copy preserves the Library project and saved conversations;

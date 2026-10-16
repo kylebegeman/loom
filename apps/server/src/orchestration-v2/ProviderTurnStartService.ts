@@ -74,6 +74,10 @@ const refusedBeforePrompt = (error: unknown): boolean =>
   Predicate.isTagged(error, "ClaudeBackgroundWorkBlocksQueryReplacementError") ||
   (Predicate.hasProperty(error, "cause") && refusedBeforePrompt(error.cause));
 
+/** The one line of a bound conversation's project context that says agents may propose brief changes. */
+export const libraryBriefProposalHint = (projectId: string) =>
+  `To suggest a change to this brief, call loom_library_brief_propose for project ${projectId} with the full new brief and why; a person reviews it.`;
+
 export interface ProviderTurnStartServiceV2Shape {
   /**
    * Starts the run's provider turn. When `willRetry` is true, a session open
@@ -1078,6 +1082,7 @@ export const layer: Layer.Layer<
             `Project: ${pinnedProject.title}`,
             `Project context revision: ${resolved.binding.projectRevision}`,
             pinnedProject.brief,
+            libraryBriefProposalHint(pinnedProject.id),
             selected.length > 0
               ? `Components in scope:\n${selected.map((resource) => `${resource.title}: ${resource.relativePath}`).join("\n")}`
               : "Whole-project discussion",

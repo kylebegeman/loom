@@ -1,4 +1,5 @@
-import { shouldRefreshLibraryArchive } from "@t3tools/client-runtime/fork";
+import { shouldRefreshLibraryArchive, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import { LIBRARY_BRIEF_PROPOSALS_FEATURE } from "@t3tools/contracts/fork";
 import type { TimelineEntry } from "~/session-logic";
 import { turnItemOutputText, toolCallLines } from "@t3tools/client-runtime/work-log/item-detail";
 import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
@@ -21,6 +22,7 @@ import {
 import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibraryErrorNotice } from "./LibraryControls";
 import { NewConversationDialog } from "./NewConversationDialog";
+import { SuggestBriefUpdates } from "./SuggestBriefUpdates";
 
 export function LibraryConversationPage({ conversationId }: { readonly conversationId: string }) {
   const authority = useLibraryAuthority();
@@ -60,6 +62,11 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
   const host = authority.environments.find(
     (entry) => entry.environmentId === archive?.summary.environmentId,
   );
+  const hostLabel =
+    host?.label ??
+    authority.computers.find((entry) => entry.environmentId === archive?.summary.environmentId)
+      ?.label ??
+    "its original computer";
   if (!archive)
     return (
       <LibraryPageFrame>
@@ -83,16 +90,25 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
           </LibraryBackLink>
           <h1 className="text-xl font-semibold tracking-tight">{archive.summary.title}</h1>
           <p className="text-xs text-muted-foreground">
-            Runs on{" "}
-            {host?.label ??
-              authority.computers.find(
-                (entry) => entry.environmentId === archive.summary.environmentId,
-              )?.label ??
-              "its original computer"}
-            . Saved to Library {new Date(archive.summary.syncedAt).toLocaleString()}.
+            Runs on {hostLabel}. Saved to Library{" "}
+            {new Date(archive.summary.syncedAt).toLocaleString()}.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-start gap-2">
+          <SuggestBriefUpdates
+            summary={archive.summary}
+            projectArchived={library.project.data?.archived ?? false}
+            libraryKeepsProposals={supportsLoomFeature(
+              authority.environment?.serverConfig?.environment.capabilities,
+              LIBRARY_BRIEF_PROPOSALS_FEATURE,
+            )}
+            hostLabel={hostLabel}
+            hostConnected={host?.entry.enabled === true && host.connection.phase === "connected"}
+            hostProposes={supportsLoomFeature(
+              host?.serverConfig?.environment.capabilities,
+              LIBRARY_BRIEF_PROPOSALS_FEATURE,
+            )}
+          />
           {host?.connection.phase === "connected" ? (
             <Button
               variant="outline"

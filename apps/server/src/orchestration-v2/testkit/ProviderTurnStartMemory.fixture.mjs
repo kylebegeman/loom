@@ -16,7 +16,7 @@ const [Effect, Layer, FileSystem, Path] = await Promise.all([
 const app = (file) => import(NodeURL.pathToFileURL(root + "/apps/server/src/" + file + ".ts"));
 const providerCore = (file) =>
   import(NodeURL.pathToFileURL(root + "/packages/provider-core/src/server/" + file + ".ts"));
-const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project, Auth] =
+const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Auth, Testkit] =
   await Promise.all([
     app("orchestration-v2/ProviderTurnStartService"),
     app("orchestration-v2/ProjectionStore"),
@@ -26,9 +26,8 @@ const [Start, Projection, Run, Sessions, Policy, Id, Sink, Handoff, Git, Project
     providerCore("IdAllocator"),
     app("orchestration-v2/EventSink"),
     app("orchestration-v2/ContextHandoffService"),
-    app("git/GitWorkflowService"),
-    app("project/ProjectService"),
     app("provider/ProviderAuthService"),
+    app("orchestration-v2/ProviderTurnStartService.testkit"),
   ]);
 let current;
 let fullReads = 0;
@@ -47,12 +46,11 @@ const session = {
   compactThread: () => Effect.void,
 };
 const dependencies = Layer.mergeAll(
+  Testkit.layer,
   Layer.mock(Handoff.ContextHandoffServiceV2)({}),
   Id.layer,
   FileSystem.layerNoop({}),
   Path.layer,
-  Layer.mock(Git.GitWorkflowService)({}),
-  Layer.mock(Project.ProjectService)({}),
   Layer.mock(Auth.ProviderAuthService)({}),
   Layer.mock(Projection.ProjectionStoreV2)({
     getThreadProjection: () =>
