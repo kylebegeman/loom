@@ -52,5 +52,6 @@ export * from "./project-checkout.ts";
 export * from "./project-library.ts";
 export * from "./project-library-health.ts";
 export * from "./project-library-profile.ts";
+export * from "./project-library-search.ts";
 
 export * from "./identity.ts";

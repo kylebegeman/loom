@@ -1,5 +1,6 @@
 import { ProjectLibraryRpcGroup, LIBRARY_WS_METHODS } from "./project-library.ts";
 import { ProjectLibraryHealthRpcGroup } from "./project-library-health.ts";
+import { LibrarySearchRpcGroup } from "./project-library-search.ts";
 import { ProjectCheckoutRpcGroup } from "./project-checkout.ts";
 import { ComputerNamingRpcGroup } from "./computer-naming.ts";
 import { GitHubHostSetupRpcGroup, GITHUB_HOST_SETUP_WS_METHODS } from "./github-host-setup.ts";
@@ -44,6 +45,7 @@ const LoomCoreInfoRpc = Rpc.make(FORK_WS_METHODS.coreInfo, {
 export const ForkRpcGroup = RpcGroup.make(LoomCoreInfoRpc).merge(
   ProjectLibraryRpcGroup,
   ProjectLibraryHealthRpcGroup,
+  LibrarySearchRpcGroup,
   ProjectCheckoutRpcGroup,
   ComputerNamingRpcGroup,
   MiniOffloadRpcGroup,
