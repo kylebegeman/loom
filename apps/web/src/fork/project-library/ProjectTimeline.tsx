@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  LIBRARY_TIMELINE_ACTIVITY_FEATURE,
   LIBRARY_TIMELINE_FEATURE,
   type LibraryTimelineEntry,
   type LibraryTimelineKind,
@@ -7,11 +8,11 @@ import {
 import {
   EMPTY_LIBRARY_TIMELINE_FEED,
   LIBRARY_TIMELINE_FILTER_LABELS,
-  LIBRARY_TIMELINE_FILTERS,
   libraryPathParts,
   libraryTimelineEntryFailed,
   libraryTimelineEntryLink,
   libraryTimelineEntrySummary,
+  libraryTimelineFilters,
   libraryTimelineKinds,
   mergeLibraryTimelinePage,
   supportsLoomFeature,
@@ -57,7 +58,11 @@ export function ProjectTimeline({
 }) {
   const [filters, setFilters] = useState<readonly LibraryTimelineFilter[]>([]);
   if (!supportsLoomFeature(capabilities, LIBRARY_TIMELINE_FEATURE)) return fallback;
-  const kinds = libraryTimelineKinds(filters);
+  // Commits and runs chips appear only for a Library that records them.
+  const shown = libraryTimelineFilters(
+    supportsLoomFeature(capabilities, LIBRARY_TIMELINE_ACTIVITY_FEATURE),
+  );
+  const kinds = libraryTimelineKinds(filters, shown);
   return (
     <LibraryPanel title="Timeline">
       <div
@@ -65,7 +70,7 @@ export function ProjectTimeline({
         aria-label="Show only"
         className="flex flex-wrap gap-1.5 border-t border-border px-3.5 py-2.5"
       >
-        {LIBRARY_TIMELINE_FILTERS.map((filter) => (
+        {shown.map((filter) => (
           <Toggle
             key={filter}
             size="xs"

@@ -6,19 +6,33 @@ import type {
 } from "@t3tools/contracts/fork";
 
 /** Filter chips group the timeline's kinds the way a person thinks about them. */
-export const LIBRARY_TIMELINE_FILTERS = [
+const LIBRARY_TIMELINE_FILTERS = [
   "conversations",
   "pull-requests",
   "brief",
   "copies",
+  "commits",
+  "runs",
 ] as const;
 export type LibraryTimelineFilter = (typeof LIBRARY_TIMELINE_FILTERS)[number];
+
+/** Chips for kinds only a Library with `library-timeline-activity` records. */
+const ACTIVITY_FILTERS: ReadonlySet<LibraryTimelineFilter> = new Set(["commits", "runs"]);
+
+/** The chips a Library can fill: activity chips only when it records commits and runs. */
+export function libraryTimelineFilters(activity: boolean): readonly LibraryTimelineFilter[] {
+  return activity
+    ? LIBRARY_TIMELINE_FILTERS
+    : LIBRARY_TIMELINE_FILTERS.filter((filter) => !ACTIVITY_FILTERS.has(filter));
+}
 
 export const LIBRARY_TIMELINE_FILTER_LABELS: Record<LibraryTimelineFilter, string> = {
   conversations: "Conversations",
   "pull-requests": "Pull requests",
   brief: "Brief",
   copies: "Copies",
+  commits: "Commits",
+  runs: "Runs",
 };
 
 const FILTER_KINDS: Record<LibraryTimelineFilter, readonly LibraryTimelineKind[]> = {
@@ -36,6 +50,8 @@ const FILTER_KINDS: Record<LibraryTimelineFilter, readonly LibraryTimelineKind[]
   ],
   brief: ["brief-revised", "brief-proposed"],
   copies: ["copy-added", "copy-released", "copy-failed"],
+  commits: ["commits"],
+  runs: ["scheduled-run", "mini-job"],
 };
 
 /** Turns a chip on or off, keeping the chips' own order so equal choices make equal requests. */
@@ -49,12 +65,17 @@ export function toggleLibraryTimelineFilter(
   return LIBRARY_TIMELINE_FILTERS.filter((entry) => next.has(entry));
 }
 
-/** The request's `kinds`, or undefined for everything when no chip (or every chip) is on. */
+/**
+ * The request's `kinds`, or undefined for everything when no chip (or every shown chip) is on.
+ * `shown` is the chips on screen, from `libraryTimelineFilters`, so a chip the Library cannot
+ * fill never narrows a request. It defaults to a Library without timeline activity.
+ */
 export function libraryTimelineKinds(
   filters: readonly LibraryTimelineFilter[],
+  shown: readonly LibraryTimelineFilter[] = libraryTimelineFilters(false),
 ): readonly LibraryTimelineKind[] | undefined {
-  const chosen = LIBRARY_TIMELINE_FILTERS.filter((filter) => filters.includes(filter));
-  if (chosen.length === 0 || chosen.length === LIBRARY_TIMELINE_FILTERS.length) return undefined;
+  const chosen = shown.filter((filter) => filters.includes(filter));
+  if (chosen.length === 0 || chosen.length === shown.length) return undefined;
   return chosen.flatMap((filter) => FILTER_KINDS[filter]);
 }
 
@@ -137,6 +158,9 @@ export function libraryTimelineEntryLink(
     case "copy-added":
     case "copy-released":
     case "copy-failed":
+    case "commits":
+    case "scheduled-run":
+    case "mini-job":
       return null;
   }
 }
@@ -191,6 +215,36 @@ export function libraryTimelineEntrySummary(entry: LibraryTimelineEntry) {
       return "Copy removed";
     case "copy-failed":
       return "Copy failed";
+    case "commits": {
+      const branch = entry.repository.branch?.trim() || "The checkout";
+      // Without a count the head may have moved by a rewrite, so it says only where it went.
+      if (entry.count === undefined) return `${branch} moved to ${shortCommit(entry.to)}`;
+      const commits = entry.count === 1 ? "1 new commit" : `${entry.count} new commits`;
+      return entry.repository.branch?.trim() ? `${commits} on ${branch}` : commits;
+    }
+    case "scheduled-run": {
+      const run = `Scheduled run ${named(entry.run.title)}`;
+      return entry.run.status === "failed" ? `${run} failed` : `${run} finished`;
+    }
+    case "mini-job": {
+      const worker = entry.job.workerName?.trim();
+      const job = `Mini job ${named(entry.job.label)}${worker ? ` on ${worker}` : ""}`;
+      switch (entry.job.status) {
+        case "succeeded":
+          return `${job} succeeded`;
+        case "cancelled":
+          return `${job} was cancelled`;
+        case "interrupted":
+          return `${job} was interrupted`;
+        case "failed": {
+          const summary = entry.job.summary?.trim();
+          if (summary) return `${job} failed: ${summary}`;
+          return entry.job.exitCode === undefined
+            ? `${job} failed`
+            : `${job} failed with exit code ${entry.job.exitCode}`;
+        }
+      }
+    }
   }
 }
 
@@ -199,8 +253,19 @@ export function libraryTimelineEntryFailed(entry: LibraryTimelineEntry) {
   return (
     entry.kind === "conversation-failed" ||
     entry.kind === "pull-request-checks-failed" ||
-    entry.kind === "copy-failed"
+    entry.kind === "copy-failed" ||
+    (entry.kind === "scheduled-run" && entry.run.status === "failed") ||
+    (entry.kind === "mini-job" &&
+      (entry.job.status === "failed" || entry.job.status === "interrupted"))
   );
+}
+
+function named(title: string) {
+  return title.trim() ? `"${title.trim()}"` : "without a name";
+}
+
+function shortCommit(commit: string) {
+  return commit.slice(0, 7);
 }
 
 function quoted(title: string) {

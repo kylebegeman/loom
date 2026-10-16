@@ -3,7 +3,10 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { LibraryTimelineEntry, LibraryTimelinePage } from "@t3tools/contracts/fork";
 import {
   EMPTY_LIBRARY_TIMELINE_FEED,
+  libraryTimelineEntryFailed,
   libraryTimelineEntryLink,
+  libraryTimelineEntrySummary,
+  libraryTimelineFilters,
   libraryTimelineKinds,
   mergeLibraryTimelinePage,
   toggleLibraryTimelineFilter,
@@ -55,6 +58,78 @@ describe("library timeline filters", () => {
       "copy-failed",
     ]);
     expect(toggleLibraryTimelineFilter(one, "brief")).toEqual(["copies"]);
+  });
+});
+
+describe("timeline activity", () => {
+  const base = {
+    sequence: 1,
+    at: "2026-10-10T00:00:00.000Z",
+    environmentId: dorothy,
+    copy: { id: "copy", rootPath: "/work/loom" },
+  };
+  const entry = (fields: object) => ({ ...base, ...fields }) as LibraryTimelineEntry;
+
+  it("shows commit and run chips only for a Library that records them", () => {
+    expect(libraryTimelineFilters(false)).not.toContain("runs");
+    const shown = libraryTimelineFilters(true);
+    expect(shown).toContain("commits");
+    expect(libraryTimelineKinds(["runs"], shown)).toEqual(["scheduled-run", "mini-job"]);
+    expect(libraryTimelineKinds(shown, shown)).toBeUndefined();
+    // A chip a Library cannot fill never narrows what it is asked for.
+    expect(libraryTimelineKinds(["runs"])).toBeUndefined();
+  });
+
+  it("says how many commits landed only when the computer counted them", () => {
+    const commits = {
+      kind: "commits",
+      repository: { resourceId: "api", branch: "main" },
+      from: "1".repeat(40),
+      to: "abcdef0123456789abcdef0123456789abcdef01",
+    };
+    expect(libraryTimelineEntrySummary(entry({ ...commits, count: 3 }))).toBe(
+      "3 new commits on main",
+    );
+    expect(libraryTimelineEntrySummary(entry({ ...commits, count: 1 }))).toBe(
+      "1 new commit on main",
+    );
+    expect(libraryTimelineEntrySummary(entry(commits))).toBe("main moved to abcdef0");
+    expect(
+      libraryTimelineEntrySummary(entry({ ...commits, repository: { resourceId: "api" } })),
+    ).toBe("The checkout moved to abcdef0");
+  });
+
+  it("names finished runs and marks the ones that broke", () => {
+    const run = (status: string) =>
+      entry({
+        kind: "scheduled-run",
+        run: { taskId: "task", title: " Nightly ", status, startedAt: base.at },
+      });
+    expect(libraryTimelineEntrySummary(run("succeeded"))).toBe('Scheduled run "Nightly" finished');
+    expect(libraryTimelineEntrySummary(run("failed"))).toBe('Scheduled run "Nightly" failed');
+    expect(libraryTimelineEntryFailed(run("failed"))).toBe(true);
+    expect(libraryTimelineEntryFailed(run("succeeded"))).toBe(false);
+
+    const job = (fields: object) =>
+      entry({
+        kind: "mini-job",
+        job: { requestId: "job", label: "Unit tests", workerName: "studio", ...fields },
+      });
+    expect(libraryTimelineEntrySummary(job({ status: "succeeded" }))).toBe(
+      'Mini job "Unit tests" on studio succeeded',
+    );
+    expect(libraryTimelineEntrySummary(job({ status: "failed", exitCode: 2 }))).toBe(
+      'Mini job "Unit tests" on studio failed with exit code 2',
+    );
+    expect(
+      libraryTimelineEntrySummary(
+        job({ status: "failed", exitCode: 2, summary: "3 tests failed" }),
+      ),
+    ).toBe('Mini job "Unit tests" on studio failed: 3 tests failed');
+    expect(libraryTimelineEntryFailed(job({ status: "interrupted" }))).toBe(true);
+    expect(libraryTimelineEntryFailed(job({ status: "cancelled" }))).toBe(false);
+    // Neither a run nor a job has a conversation saved to open.
+    expect(libraryTimelineEntryLink(job({ status: "failed" }), () => true)).toBeNull();
   });
 });
 

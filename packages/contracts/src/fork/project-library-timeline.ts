@@ -30,7 +30,7 @@ const PULL_REQUEST_KINDS = [
 ] as const;
 const COPY_KINDS = ["copy-added", "copy-released", "copy-failed"] as const;
 /** Recorded only by a Library that advertises `library-timeline-activity`. */
-export const LIBRARY_TIMELINE_ACTIVITY_KINDS = ["commits", "scheduled-run", "mini-job"] as const;
+const LIBRARY_TIMELINE_ACTIVITY_KINDS = ["commits", "scheduled-run", "mini-job"] as const;
 export const LIBRARY_TIMELINE_KINDS = [
   ...CONVERSATION_KINDS,
   ...PULL_REQUEST_KINDS,

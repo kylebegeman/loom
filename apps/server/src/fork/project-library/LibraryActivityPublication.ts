@@ -28,7 +28,7 @@ import type { WorkspaceReceipt } from "./LibraryWorkspaceStore.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
 
 /** How often a computer looks for finished work and publishes what the Library lacks. */
-export const ACTIVITY_REPORT_INTERVAL = Duration.minutes(1);
+const ACTIVITY_REPORT_INTERVAL = Duration.minutes(1);
 /** How far back finished work is looked for, so a computer that was off catches up. */
 const ACTIVITY_LOOKBACK_MS = Duration.toMillis(Duration.days(7));
 /** Queued work older than this is dropped, published or not, so the queue stays small. */

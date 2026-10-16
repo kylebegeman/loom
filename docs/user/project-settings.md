@@ -106,8 +106,13 @@ check with `loom_library_profile_readiness`. Computers on an older version show 
 
 **Timeline** on the project page lists what happened on the project from every computer,
 including offline ones: conversations started, settled, failed or archived, pull requests
-opened, merged, closed or failing checks, brief revisions and copies coming and going. Use the
-chips to show only some kinds, and scroll to read further back. Selecting a conversation opens
+opened, merged, closed or failing checks, brief revisions and copies coming and going. It also
+shows new commits in each copy, and scheduled runs and Mini jobs that finished in one, with their
+title, result and a short summary, never the prompt or command. A computer sends runs and jobs
+when it next reaches the Library, so they stay listed after it goes offline. A commit count
+appears when the computer could count from the last head it reported; after a force push or a
+restart the entry says only where the branch moved. Use the chips to show only some kinds, and
+scroll to read further back. Selecting a conversation opens
 the live thread when its computer is connected and the saved conversation otherwise; a pull
 request opens in your browser. Entries marked **estimated time** were rebuilt from records saved
 before the Library kept a timeline. A Library that does not keep a timeline yet shows a shorter
