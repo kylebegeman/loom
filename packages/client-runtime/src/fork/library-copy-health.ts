@@ -14,7 +14,10 @@ export function libraryRepositoryHealthSummary(health: LibraryRepositoryHealth):
     health.branch ??
       (health.head ? `detached at ${health.head.slice(0, SHORT_COMMIT_LENGTH)}` : "detached"),
   ];
-  if (health.ahead === undefined || health.behind === undefined) {
+  if (health.upstreamGone === true) {
+    parts.push("upstream gone");
+    if (health.unpushedCommits > 0) parts.push(`${health.unpushedCommits} unpushed`);
+  } else if (health.ahead === undefined || health.behind === undefined) {
     // Detached heads never track an upstream, so only call it out for branches.
     if (health.branch !== undefined) parts.push("no upstream");
     if (health.unpushedCommits > 0) parts.push(`${health.unpushedCommits} unpushed`);
@@ -32,6 +35,7 @@ export function libraryRepositoryCanPull(health: LibraryRepositoryHealth): boole
   return (
     health.error === undefined &&
     health.branch !== undefined &&
+    health.upstreamGone !== true &&
     health.ahead === 0 &&
     (health.behind ?? 0) > 0 &&
     health.uncommittedFiles === 0

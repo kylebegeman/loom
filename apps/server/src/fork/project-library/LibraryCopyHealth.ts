@@ -1,4 +1,4 @@
-import type { VcsStatusResult } from "@t3tools/contracts";
+import type { VcsStatusLocalResult } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
   LibraryRepositoryHealth,
@@ -28,15 +28,22 @@ export const unreadableRepositoryHealth = (
   error,
 });
 
+/** The branch's configured upstream. `gone` means it was deleted on its remote. */
+export interface UpstreamTracking {
+  readonly name: string;
+  readonly gone: boolean;
+}
+
 /**
- * Maps a repository's VCS status to Library health. Without an upstream, VCS status measures
- * `aheadCount` against the default branch, so ahead and behind are left out rather than reported
- * against a branch the repository does not track.
+ * Maps a repository's local VCS status to Library health. Git decides the upstream and the
+ * counts: VCS status measures `aheadCount` against the default branch without an upstream, and
+ * a gone upstream has nothing to count against, so neither reports ahead and behind.
  */
 export const toRepositoryHealth = (input: {
   readonly resourceId: string;
-  readonly status: VcsStatusResult;
-  readonly upstream: string | null;
+  readonly status: VcsStatusLocalResult;
+  readonly upstream: UpstreamTracking | null;
+  readonly divergence: readonly [ahead: number, behind: number] | null;
   readonly head: string | null;
   readonly unpushedCommits: number;
   readonly checkedAt: string;
@@ -44,23 +51,30 @@ export const toRepositoryHealth = (input: {
 }): LibraryRepositoryHealth => {
   if (!input.status.isRepo)
     return unreadableRepositoryHealth(input.resourceId, "not-a-repository", input.checkedAt);
-  const { status } = input;
+  const { status, upstream, divergence } = input;
   return {
     resourceId: input.resourceId,
     ...(status.refName ? { branch: status.refName } : {}),
     ...(input.head ? { head: input.head } : {}),
-    ...(status.hasUpstream
-      ? {
-          ...(input.upstream ? { upstream: input.upstream } : {}),
-          ahead: status.aheadCount,
-          behind: status.behindCount,
-        }
-      : {}),
+    ...(upstream?.gone
+      ? { upstream: upstream.name, upstreamGone: true }
+      : upstream
+        ? {
+            upstream: upstream.name,
+            ...(divergence ? { ahead: divergence[0], behind: divergence[1] } : {}),
+          }
+        : {}),
     uncommittedFiles: status.workingTree.files.length,
     unpushedCommits: input.unpushedCommits,
     checkedAt: input.checkedAt,
     ...(input.fetchedAt ? { fetchedAt: input.fetchedAt } : {}),
   };
+};
+
+/** Parses `for-each-ref --format=%(upstream:short)%09%(upstream:track,nobracket)` output. */
+export const parseUpstreamTracking = (output: string | null): UpstreamTracking | null => {
+  const [name, track] = (output ?? "").split("\t");
+  return name ? { name, gone: track?.trim() === "gone" } : null;
 };
 
 /** Parses `git rev-list --left-right --count A...B` output into [ahead, behind]. */
@@ -112,30 +126,31 @@ export const makeCopyHealthReader = Effect.gen(function* () {
           .pipe(Effect.orElseSucceed(() => false)))
       )
         return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", yield* now);
+      // Only a requested refresh fetches. A plain read leaves the shared status cache's remote
+      // part alone, so other readers still fetch when theirs is stale.
+      const local = broadcaster.refreshLocalStatus(repository.path);
       const status = yield* (
         refreshRemote
-          ? broadcaster.refreshStatus(repository.path)
-          : broadcaster
-              .refreshLocalStatus(repository.path)
-              .pipe(
-                Effect.andThen(
-                  broadcaster.getStatus({ cwd: repository.path }, { refreshUpstream: false }),
-                ),
-              )
+          ? broadcaster.refreshStatus(repository.path).pipe(Effect.catch(() => local))
+          : local
       ).pipe(Effect.option);
       const checkedAt = yield* now;
       if (Option.isNone(status))
         return unreadableRepositoryHealth(repository.resourceId, "unreadable", checkedAt);
       if (!status.value.isRepo)
         return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", checkedAt);
-      const [upstream, head, unpushed, divergence, fetchedAt] = yield* Effect.all(
+      const refName = status.value.refName;
+      // Counting against the upstream ref reads the last fetch, never fetches, and reflects a
+      // pull at once instead of after the broadcaster's background refresh.
+      const [tracking, head, unpushed, divergence, fetchedAt] = yield* Effect.all(
         [
-          git(repository.path, [
-            "rev-parse",
-            "--abbrev-ref",
-            "--symbolic-full-name",
-            "@{upstream}",
-          ]),
+          refName
+            ? git(repository.path, [
+                "for-each-ref",
+                "--format=%(upstream:short)%09%(upstream:track,nobracket)",
+                `refs/heads/${refName}`,
+              ])
+            : Effect.succeed(null),
           git(repository.path, ["rev-parse", "--verify", "HEAD"]),
           git(repository.path, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
           git(repository.path, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
@@ -144,16 +159,11 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         { concurrency: "unbounded" },
       );
       const unpushedCommits = Number.parseInt(unpushed ?? "0", 10);
-      const counts = parseDivergence(divergence);
       return toRepositoryHealth({
         resourceId: repository.resourceId,
-        // Cached remote counts lag a pull until the broadcaster's background refresh lands, so
-        // count against the upstream ref directly. This reads the last fetch and never fetches.
-        status:
-          counts === null
-            ? status.value
-            : { ...status.value, hasUpstream: true, aheadCount: counts[0], behindCount: counts[1] },
-        upstream,
+        status: status.value,
+        upstream: parseUpstreamTracking(tracking),
+        divergence: parseDivergence(divergence),
         head,
         unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : 0,
         checkedAt,

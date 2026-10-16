@@ -1,6 +1,11 @@
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId, ProjectId, type VcsStatusResult } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  type VcsStatusLocalResult,
+  type VcsStatusResult,
+} from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -9,26 +14,36 @@ import * as Path from "effect/Path";
 import { describe, expect } from "vite-plus/test";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
-import { makeCopyHealthReader, parseDivergence, toRepositoryHealth } from "./LibraryCopyHealth.ts";
+import {
+  makeCopyHealthReader,
+  parseDivergence,
+  parseUpstreamTracking,
+  toRepositoryHealth,
+  type UpstreamTracking,
+} from "./LibraryCopyHealth.ts";
 
 const checkedAt = "2026-10-16T12:00:00.000Z";
-const clean: VcsStatusResult = {
+const clean: VcsStatusLocalResult = {
   isRepo: true,
   hasPrimaryRemote: true,
   isDefaultRef: true,
   refName: "main",
   hasWorkingTreeChanges: false,
   workingTree: { files: [], insertions: 0, deletions: 0 },
-  hasUpstream: true,
-  aheadCount: 0,
-  behindCount: 0,
-  pr: null,
 };
-const map = (status: Partial<VcsStatusResult>, extra: { upstream?: string | null } = {}) =>
+const tracked: UpstreamTracking = { name: "origin/main", gone: false };
+const map = (
+  status: Partial<VcsStatusLocalResult>,
+  extra: {
+    upstream?: UpstreamTracking | null;
+    divergence?: readonly [number, number] | null;
+  } = {},
+) =>
   toRepositoryHealth({
     resourceId: "web",
     status: { ...clean, ...status },
-    upstream: extra.upstream === undefined ? "origin/main" : extra.upstream,
+    upstream: extra.upstream === undefined ? tracked : extra.upstream,
+    divergence: extra.divergence === undefined ? [0, 0] : extra.divergence,
     head: "0123456789abcdef0123456789abcdef01234567",
     unpushedCommits: 0,
     checkedAt,
@@ -53,20 +68,31 @@ describe("toRepositoryHealth", () => {
   });
 
   it("reports ahead and behind against the upstream", () => {
-    expect(map({ aheadCount: 2 })).toMatchObject({ upstream: "origin/main", ahead: 2, behind: 0 });
-    expect(map({ behindCount: 3 })).toMatchObject({ upstream: "origin/main", ahead: 0, behind: 3 });
+    expect(map({}, { divergence: [2, 0] })).toMatchObject({
+      upstream: "origin/main",
+      ahead: 2,
+      behind: 0,
+    });
+    expect(map({}, { divergence: [0, 3] })).toMatchObject({ ahead: 0, behind: 3 });
   });
 
-  it("omits divergence without an upstream instead of reporting the default-branch fallback", () => {
-    const health = map({ hasUpstream: false, aheadCount: 4 }, { upstream: null });
+  it("omits divergence without an upstream", () => {
+    const health = map({}, { upstream: null, divergence: null });
     expect(health.branch).toBe("main");
     expect(health.upstream).toBeUndefined();
     expect(health.ahead).toBeUndefined();
     expect(health.behind).toBeUndefined();
   });
 
+  it("marks a gone upstream and counts nothing against it", () => {
+    const health = map({}, { upstream: { name: "origin/feature", gone: true }, divergence: null });
+    expect(health).toMatchObject({ upstream: "origin/feature", upstreamGone: true });
+    expect(health.ahead).toBeUndefined();
+    expect(health.behind).toBeUndefined();
+  });
+
   it("leaves the branch out on a detached head and keeps the commit", () => {
-    const health = map({ refName: null, hasUpstream: false }, { upstream: null });
+    const health = map({ refName: null }, { upstream: null, divergence: null });
     expect(health.branch).toBeUndefined();
     expect(health.head).toBe("0123456789abcdef0123456789abcdef01234567");
   });
@@ -79,6 +105,21 @@ describe("toRepositoryHealth", () => {
       checkedAt,
       error: "not-a-repository",
     });
+  });
+});
+
+describe("parseUpstreamTracking", () => {
+  it("reads the upstream name and whether it is gone", () => {
+    expect(parseUpstreamTracking("origin/main\tbehind 2")).toEqual({
+      name: "origin/main",
+      gone: false,
+    });
+    expect(parseUpstreamTracking("origin/main")).toEqual({ name: "origin/main", gone: false });
+    expect(parseUpstreamTracking("origin/feature\tgone")).toEqual({
+      name: "origin/feature",
+      gone: true,
+    });
+    expect(parseUpstreamTracking(null)).toBeNull();
   });
 });
 
@@ -97,15 +138,10 @@ const broadcaster = Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
       vcsCalls.push(`local:${cwd}`);
       return clean;
     }),
-  getStatus: (input, options) =>
-    Effect.sync(() => {
-      vcsCalls.push(`get:${input.cwd}:${String(options?.refreshUpstream)}`);
-      return { ...clean, behindCount: 1 };
-    }),
   refreshStatus: (cwd) =>
-    Effect.sync(() => {
+    Effect.sync((): VcsStatusResult => {
       vcsCalls.push(`fetch:${cwd}`);
-      return { ...clean, behindCount: 5 };
+      return { ...clean, hasUpstream: true, aheadCount: 0, behindCount: 5, pr: null };
     }),
 });
 const layer = Layer.mergeAll(broadcaster, ProcessRunner.layer).pipe(
@@ -152,15 +188,13 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
       const health = yield* read(copyWith(root, ["web", "plain", "gone"]));
       expect(health.copyId).toBe("copy-health");
       const [web, plain, gone] = health.repositories;
-      expect(web).toMatchObject({ resourceId: "web", branch: "main", behind: 1 });
+      expect(web).toMatchObject({ resourceId: "web", branch: "main" });
+      expect(web?.upstream).toBeUndefined();
       // Never fetched, so no fetch time is claimed.
       expect(web?.fetchedAt).toBeUndefined();
       expect(plain).toMatchObject({ resourceId: "plain", error: "not-a-repository" });
       expect(gone).toMatchObject({ resourceId: "gone", error: "missing" });
-      expect(vcsCalls.filter((call) => call.includes(root))).toEqual([
-        `local:${repo}`,
-        `get:${repo}:false`,
-      ]);
+      expect(vcsCalls.filter((call) => call.includes(root))).toEqual([`local:${repo}`]);
     }),
   );
 
@@ -191,7 +225,6 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
       yield* commit(origin, "two");
       yield* git(repo, ["fetch", "--quiet"]);
       const read = yield* makeCopyHealthReader;
-      // The mocked cache always says one behind; only the upstream ref decides.
       const before = yield* read(copyWith(root, ["web"]));
       expect(before.repositories[0]).toMatchObject({
         branch: "main",
@@ -203,6 +236,18 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
       yield* git(repo, ["pull", "--quiet", "--ff-only"]);
       const after = yield* read(copyWith(root, ["web"]));
       expect(after.repositories[0]).toMatchObject({ ahead: 0, behind: 0 });
+
+      // A branch deleted on its remote keeps its upstream name but has nothing to count against.
+      yield* git(repo, ["push", "--quiet", "-u", "origin", "main:feature"]);
+      yield* git(origin, ["branch", "-D", "feature"]);
+      yield* git(repo, ["fetch", "--quiet", "--prune"]);
+      const gone = yield* read(copyWith(root, ["web"]));
+      expect(gone.repositories[0]).toMatchObject({
+        branch: "main",
+        upstream: "origin/feature",
+        upstreamGone: true,
+      });
+      expect(gone.repositories[0]?.behind).toBeUndefined();
     }),
   );
 
@@ -220,7 +265,6 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
       yield* fs.writeFileString(path.join(repo, ".git", "FETCH_HEAD"), "");
       const read = yield* makeCopyHealthReader;
       const health = yield* read(copyWith(root, ["web"]), { refreshRemote: true });
-      expect(health.repositories[0]).toMatchObject({ behind: 5 });
       expect(health.repositories[0]?.fetchedAt).toEqual(expect.any(String));
       expect(vcsCalls.filter((call) => call.includes(root))).toEqual([`fetch:${repo}`]);
     }),

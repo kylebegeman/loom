@@ -32,6 +32,14 @@ describe("libraryRepositoryHealthSummary", () => {
     );
   });
 
+  it("calls out an upstream branch deleted on its remote", () => {
+    const gone = { ...noUpstream, upstream: "origin/feature", upstreamGone: true };
+    expect(libraryRepositoryHealthSummary({ ...gone, unpushedCommits: 2 })).toBe(
+      "main · upstream gone · 2 unpushed",
+    );
+    expect(libraryRepositoryCanPull({ ...gone, ahead: 0, behind: 1 })).toBe(false);
+  });
+
   it("shows the commit on a detached head", () => {
     const { branch: _branch, ...detached } = noUpstream;
     expect(

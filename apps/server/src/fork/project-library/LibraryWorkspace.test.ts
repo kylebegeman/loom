@@ -118,14 +118,13 @@ const vcsStatus = {
     insertions: 1,
     deletions: 0,
   },
-  hasUpstream: true,
+  hasUpstream: false,
   aheadCount: 0,
-  behindCount: 2,
+  behindCount: 0,
   pr: null,
 };
 const broadcasterLayer = Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
   refreshLocalStatus: (cwd) => Effect.sync(() => (vcsCalls.push(`local:${cwd}`), vcsStatus)),
-  getStatus: (input) => Effect.sync(() => (vcsCalls.push(`get:${input.cwd}`), vcsStatus)),
   refreshStatus: (cwd) => Effect.sync(() => (vcsCalls.push(`fetch:${cwd}`), vcsStatus)),
 });
 const hostDependencies = Layer.mergeAll(
@@ -295,11 +294,10 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         Object.fromEntries(
           (status.health?.repositories ?? []).map((repository) => [
             repository.resourceId,
-            repository.error ??
-              `${repository.branch} ${repository.behind} ${repository.uncommittedFiles}`,
+            repository.error ?? `${repository.branch} ${repository.uncommittedFiles}`,
           ]),
         ),
-      ).toEqual({ web: "main 2 1", server: "missing" });
+      ).toEqual({ web: "main 1", server: "missing" });
       const ownCalls = () => vcsCalls.filter((call) => call.includes(rootPath));
       expect(ownCalls().some((call) => call.startsWith("fetch:"))).toBe(false);
       yield* service.health({ workingCopyId: copy.id, refreshRemote: true });
