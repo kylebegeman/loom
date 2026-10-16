@@ -93,6 +93,16 @@ can also mark preferred computers and allow Mini jobs. On mobile, edit the setup
 project's **Edit project** screen. Setup appears once your Library supports it. Agents can edit it
 through `loom_library_project_update`.
 
+When a computer gets or reuses a copy, the setup's scripts and default model fill in only the
+settings its local projects leave empty. Settings someone already chose on that computer are
+never replaced on their own: the copy lists where they differ from the setup, and **Use the
+project setup** replaces exactly the differences shown. If they change before you choose, the
+copy asks you to review them again. Each ready copy, and New conversation when it offers to
+get a copy, also checks the required tools on that computer, showing each tool's version, a tool that is missing, or one
+older than the minimum. A check that fails shows the tool as not checked rather than ready. The
+secret names are listed as a reminder; their values are never read. Agents can run the same
+check with `loom_library_profile_readiness`. Computers on an older version show neither.
+
 **Timeline** on the project page lists what happened on the project from every computer,
 including offline ones: conversations started, settled, failed or archived, pull requests
 opened, merged, closed or failing checks, brief revisions and copies coming and going. Use the
