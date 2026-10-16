@@ -17,6 +17,8 @@ import {
   LibraryInfo,
   LibraryError,
   LibraryRequestId,
+  LibrarySearchRequest,
+  LibrarySearchResult,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
@@ -41,6 +43,7 @@ import { libraryComputerDirectory, readLibraryDestination } from "./enrollment.t
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { libraryAttachments } from "./attachments.ts";
 import { validLibraryResources } from "./policy.ts";
+import { makeLibrarySearch } from "./LibrarySearch.ts";
 
 export class LibraryService extends Context.Service<
   LibraryService,
@@ -99,6 +102,9 @@ export class LibraryService extends Context.Service<
     readonly verifyImport: (input: {
       requestId: string;
     }) => Effect.Effect<LibraryImportReceipt, LibraryError>;
+    readonly search: (
+      input: LibrarySearchRequest,
+    ) => Effect.Effect<LibrarySearchResult, LibraryError>;
   }
 >()("t3/fork/project-library/LibraryService") {}
 
@@ -162,6 +168,7 @@ const make = Effect.gen(function* () {
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Crypto.Crypto;
   const assets = yield* Assets.LibraryAssetService;
+  const historySearch = yield* makeLibrarySearch;
   const lock = yield* Semaphore.make(1);
   const refreshes = yield* SubscriptionRef.make(0);
   const decode = <A>(codec: ReturnType<typeof compileCodec<A>>, text: string) =>
@@ -357,6 +364,7 @@ const make = Effect.gen(function* () {
       payload: yield* encode(codecs.archive, normalized),
       updatedAt: summary.updatedAt,
     });
+    yield* historySearch.index(summary.id);
     if (version === null)
       yield* store.putThreadVersion(
         summary.id,
@@ -747,6 +755,7 @@ const make = Effect.gen(function* () {
     ingestHistory,
     importShadow,
     verifyImport,
+    search: (input) => catalogRead(historySearch.search(input)),
     project: (input) => catalogRead(getProject(input.projectId).pipe(Effect.mapError(io))),
     projects: (input) =>
       catalogRead(

@@ -30,6 +30,10 @@ const updateProjectParameters = Schema.Struct({
     }),
   ),
 });
+const searchParameters = Schema.Struct({
+  ...Library.LibrarySearchRequest.fields,
+  limit: Schema.optional(Library.LibrarySearchRequest.fields.limit),
+});
 export const ProjectLibraryToolkit = Toolkit.make(
   Tool.make("loom_library_projects", {
     description: "List durable projects in this Library, independent of working computers.",
@@ -104,6 +108,13 @@ export const ProjectLibraryToolkit = Toolkit.make(
       ),
     }),
     success: Library.LibraryThreadArchive,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_search", {
+    description:
+      "Search saved conversation messages and plans across every computer, including offline ones. Every word must match; quote an exact phrase. Scope by projectId, environmentId or an ISO since/until. Read a hit in context with loom_library_history.",
+    parameters: searchParameters,
+    success: Library.LibrarySearchResult,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_project_create", {
@@ -227,6 +238,13 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
         onHost(
           Effect.flatMap(Catalog.LibraryService, (service) =>
             service.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
+          ),
+        ),
+      ),
+      loom_library_search: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Catalog.LibraryService, (service) =>
+            service.search({ ...input, limit: input.limit ?? 20 }),
           ),
         ),
       ),

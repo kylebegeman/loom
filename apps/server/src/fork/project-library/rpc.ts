@@ -1,7 +1,7 @@
 import * as Replication from "./LibraryReplication.ts";
 import * as LibraryHistorySource from "./LibraryHistorySource.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
-import { LIBRARY_WS_METHODS as L } from "@t3tools/contracts/fork";
+import { LIBRARY_SEARCH_WS_METHODS, LIBRARY_WS_METHODS as L } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as LibraryService from "./LibraryService.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
@@ -74,5 +74,7 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.resolveBinding, workspace.resolveBinding(input)),
       [L.bindThread]: (input: Parameters<typeof workspace.bindThread>[0]) =>
         auth.effect(L.bindThread, workspace.bindThread(input)),
+      [LIBRARY_SEARCH_WS_METHODS.search]: (input: Parameters<typeof library.search>[0]) =>
+        auth.effect(LIBRARY_SEARCH_WS_METHODS.search, library.search(input)),
     };
   });
