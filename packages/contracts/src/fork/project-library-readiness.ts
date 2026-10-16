@@ -96,7 +96,7 @@ export type LibraryProfileSettingsRequest = typeof LibraryProfileSettingsRequest
 
 export const LibraryApplyProfileRequest = Schema.Struct({
   ...LibraryProfileSettingsRequest.fields,
-  /** From the settings the person reviewed. A changed difference refuses with `blocked`. */
+  /** From the settings the person reviewed. A changed difference refuses with `invalid`. */
   reviewToken: Schema.String.check(Schema.isMaxLength(128)),
 });
 export type LibraryApplyProfileRequest = typeof LibraryApplyProfileRequest.Type;

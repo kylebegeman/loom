@@ -580,6 +580,8 @@ export function NewConversationDialog({
           </div>
         ) : hostId ? (
           <LaunchGetCopy
+            environmentId={hostId}
+            project={project}
             hostLabel={host?.label ?? "this computer"}
             firstCopy={!ranking.candidates.some((candidate) => candidate.kind === "copy")}
             disabled={busy || pulling || attempt !== null || host?.connection.phase !== "connected"}

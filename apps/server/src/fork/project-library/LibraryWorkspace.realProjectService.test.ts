@@ -165,7 +165,7 @@ it.layer(layer)("Library workspace with real project services", (it) => {
       const stale = yield* workspace
         .applyProfile({ workingCopyId: copy.id, reviewToken: "not-what-was-reviewed" })
         .pipe(Effect.flip);
-      expect(stale.reason).toBe("blocked");
+      expect(stale.reason).toBe("invalid");
       expect((yield* local(web.localProjectId)).scripts).toEqual(localScripts);
 
       const applied = yield* workspace.applyProfile({

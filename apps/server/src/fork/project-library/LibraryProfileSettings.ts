@@ -130,7 +130,10 @@ export const makeProfileSettings = Effect.gen(function* () {
     }) {
       const current = yield* read(input);
       if (current.reviewToken !== input.reviewToken)
-        return yield* new LibraryError({ reason: "blocked" });
+        return yield* new LibraryError({
+          reason: "invalid",
+          cause: "These settings changed since they were reviewed. Review the differences again.",
+        });
       for (const project of current.projects) {
         const values = Object.fromEntries(
           project.differences.map((difference) => [difference.field, difference.profile]),

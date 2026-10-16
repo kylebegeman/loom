@@ -35,6 +35,7 @@ import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
+import { CopyProfileSetup } from "./ProfileReadiness";
 import { ComputerLabel, PathLabel } from "./ProjectIdentity";
 import { projectLibrary, useLibraryPermission } from "./state";
 
@@ -351,6 +352,9 @@ export function ProjectCopies({
                 <PathLabel path={copy.rootPath} className="-ms-1.5" />
                 {online && copy.state === "ready" && supportsHealth(copy.environmentId) ? (
                   <CopyHealth project={project} copy={copy} />
+                ) : null}
+                {online && copy.state === "ready" ? (
+                  <CopyProfileSetup project={project} copy={copy} />
                 ) : null}
                 {copy.projectRevision !== project.revision && copy.state === "ready" ? (
                   <p className="text-xs text-muted-foreground">
