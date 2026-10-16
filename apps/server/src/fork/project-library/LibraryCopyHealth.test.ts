@@ -100,6 +100,35 @@ describe("toRepositoryHealth", () => {
     expect(health.head).toBe("0123456789abcdef0123456789abcdef01234567");
   });
 
+  it("reports a failed unpushed count as unreadable, never as zero", () => {
+    const health = toRepositoryHealth({
+      resourceId: "web",
+      status: clean,
+      upstream: tracked,
+      divergence: [0, 0],
+      head: "0123456789abcdef0123456789abcdef01234567",
+      unpushedCommits: null,
+      checkedAt,
+      fetchedAt: null,
+    });
+    expect(health.error).toBe("unreadable");
+  });
+
+  it("counts nothing unpushed before the first commit", () => {
+    const health = toRepositoryHealth({
+      resourceId: "web",
+      status: clean,
+      upstream: null,
+      divergence: null,
+      head: null,
+      unpushedCommits: null,
+      checkedAt,
+      fetchedAt: null,
+    });
+    expect(health).toMatchObject({ unpushedCommits: 0 });
+    expect(health.error).toBeUndefined();
+  });
+
   it("reports a folder that is not a repository", () => {
     expect(map({ isRepo: false })).toEqual({
       resourceId: "web",

@@ -61,13 +61,17 @@ export const toRepositoryHealth = (input: {
   readonly upstream: UpstreamTracking | null;
   readonly divergence: readonly [ahead: number, behind: number] | null;
   readonly head: string | null;
-  readonly unpushedCommits: number;
+  /** Null when the count failed. With commits to count, that is unreadable, never zero. */
+  readonly unpushedCommits: number | null;
   readonly checkedAt: string;
   readonly fetchedAt: string | null;
   readonly fetchFailed?: boolean;
 }): LibraryRepositoryHealth => {
   if (!input.status.isRepo)
     return unreadableRepositoryHealth(input.resourceId, "not-a-repository", input.checkedAt);
+  // Tidy releases copies it reads as fully pushed, so a failed count must not read as zero.
+  if (input.head && input.unpushedCommits === null)
+    return unreadableRepositoryHealth(input.resourceId, "unreadable", input.checkedAt);
   const { status, upstream, divergence } = input;
   return {
     resourceId: input.resourceId,
@@ -82,7 +86,7 @@ export const toRepositoryHealth = (input: {
           }
         : {}),
     uncommittedFiles: status.workingTree.files.length,
-    unpushedCommits: input.unpushedCommits,
+    unpushedCommits: input.unpushedCommits ?? 0,
     checkedAt: input.checkedAt,
     ...(input.fetchedAt ? { fetchedAt: input.fetchedAt } : {}),
     ...(input.fetchFailed ? { fetchFailed: true } : {}),
@@ -189,7 +193,7 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         ],
         { concurrency: "unbounded" },
       );
-      const unpushedCommits = Number.parseInt(unpushed ?? "0", 10);
+      const unpushedCommits = unpushed === null ? Number.NaN : Number.parseInt(unpushed, 10);
       const upstream = parseUpstreamTracking(tracking);
       return toRepositoryHealth({
         resourceId: repository.resourceId,
@@ -197,7 +201,7 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         upstream,
         divergence: parseDivergence(divergence),
         head,
-        unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : 0,
+        unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : null,
         checkedAt,
         fetchedAt,
         fetchFailed: refreshRemote && remoteCheckFailed(upstream, fetchedAt, checkedAt),
