@@ -78,15 +78,16 @@ function ProjectCard({
   return (
     <li
       style={projectColorStyle(entry.color)}
-      className="group/card relative flex min-h-44 flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5"
+      className="group/card relative isolate flex min-h-44 flex-col gap-3 rounded-xl border border-border bg-card p-3.5 transition-[border-color,box-shadow] duration-200 hover:border-(--project-color)/35 hover:shadow-lg/5 has-focus-visible:border-(--project-color)/35"
     >
+      <ProjectWash />
       <ProjectOpenLink entry={entry} onOpen={onOpen} />
       <div className="flex items-start gap-3">
         <ProjectTile project={project} local={entry.localIcon} />
         <div className="min-w-0 flex-1 pt-0.5">
-          <h2 className="truncate text-sm font-semibold leading-5 tracking-tight">
+          <h3 className="truncate text-sm font-semibold leading-5 tracking-tight">
             {project.title}
-          </h2>
+          </h3>
           <ProjectActivity entry={entry} />
         </div>
         <ProjectMenu
@@ -148,6 +149,58 @@ function ProjectCard({
   );
 }
 
+/**
+ * Resting and archived projects still deserve a face, just a smaller one: enough to recognize
+ * and reopen without pushing the active work down the page.
+ */
+export function ProjectCompactCards(props: CollectionProps) {
+  return (
+    <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" aria-label="Projects">
+      {props.entries.map((entry) => (
+        <li
+          key={entry.project.id}
+          style={projectColorStyle(entry.color)}
+          className="group/card relative isolate flex min-w-0 items-center gap-2.5 rounded-xl border border-border bg-card py-2 ps-2.5 pe-2 transition-[border-color] duration-200 hover:border-(--project-color)/35 has-focus-visible:border-(--project-color)/35"
+        >
+          <ProjectWash />
+          <ProjectOpenLink entry={entry} onOpen={props.onOpen} />
+          <span
+            className={cn(
+              "transition-[filter,opacity] duration-200",
+              entry.project.archived &&
+                "opacity-70 grayscale group-hover/card:opacity-100 group-hover/card:grayscale-0",
+            )}
+          >
+            <ProjectTile project={entry.project} local={entry.localIcon} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-sm font-medium leading-5">{entry.project.title}</h3>
+            <p className="truncate text-xs tabular-nums text-muted-foreground">
+              Last active {formatRelativeTimeLabel(entry.activeAt)}
+            </p>
+          </div>
+          <ProjectMenu
+            entry={entry}
+            authorityId={props.authorityId}
+            connected={props.connected}
+            onChanged={props.onChanged}
+          />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** A faint wash of the project's color that answers hover and focus without drawing an edge. */
+function ProjectWash() {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0 -z-10 rounded-[inherit] bg-linear-to-b from-(--project-color)/7 to-transparent to-70% opacity-0 transition-opacity duration-200 group-hover/card:opacity-100 group-has-focus-visible/card:opacity-100"
+    />
+  );
+}
+
 export function ProjectRows(props: CollectionProps) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -197,7 +250,7 @@ function ProjectRow({
       <div className="flex min-w-0 items-center gap-3">
         <ProjectTile project={project} local={entry.localIcon} size="sm" />
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-medium">{project.title}</h2>
+          <h3 className="truncate text-sm font-medium">{project.title}</h3>
           <p className="truncate text-xs text-muted-foreground">
             {project.brief.trim() || <span className="text-muted-foreground/60">No brief yet</span>}
           </p>
@@ -330,16 +383,12 @@ function ProjectMenu({
   const update = useProjectUpdate({ project, authorityId, connected, onSaved: onChanged });
   const archive = useAtomCommand(projectLibrary.archiveProject, { reportFailure: false });
   const canArchive = useLibraryPermission(projectLibrary.archiveProject, authorityId);
-  const setArchived = async (archived: boolean) => {
+  const setArchived = async (archived: boolean, expectedRevision: number, undoable: boolean) => {
     const result = await archive({
       environmentId: authorityId,
-      input: {
-        requestId: randomUUID(),
-        projectId: project.id,
-        expectedRevision: project.revision,
-        archived,
-      },
+      input: { requestId: randomUUID(), projectId: project.id, expectedRevision, archived },
     });
+    onChanged();
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       toastManager.add({
@@ -347,8 +396,21 @@ function ProjectMenu({
         title: archived ? "Could not archive the project" : "Could not restore the project",
         ...(cause instanceof Error ? { description: cause.message } : {}),
       });
+      return;
     }
-    onChanged();
+    if (!undoable) return;
+    const { revision } = result.value;
+    toastManager.add({
+      type: "success",
+      title: archived ? `Archived ${project.title}` : `Restored ${project.title}`,
+      description: archived
+        ? "Its conversations stay readable. Restore it any time from Archived."
+        : "It’s back in the project pickers.",
+      actionProps: {
+        children: "Undo",
+        onClick: () => void setArchived(!archived, revision, false),
+      },
+    });
   };
   return (
     <Menu>
@@ -399,7 +461,7 @@ function ProjectMenu({
         <MenuSeparator />
         <MenuItem
           disabled={!canArchive || !connected}
-          onClick={() => void setArchived(!project.archived)}
+          onClick={() => void setArchived(!project.archived, project.revision, true)}
         >
           {project.archived ? "Restore project" : "Archive project"}
         </MenuItem>

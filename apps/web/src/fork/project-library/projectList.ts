@@ -6,6 +6,7 @@ import type {
   LibraryThreadIndex,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import { LIBRARY_PROJECT_COLORS } from "@t3tools/contracts/fork";
 import { libraryProjectColor } from "@t3tools/client-runtime/fork";
 
 export const PROJECT_SORTS = ["activity", "name", "created"] as const;
@@ -16,6 +17,21 @@ export const PROJECT_SORT_LABELS: Record<ProjectSort, string> = {
   name: "Name",
   created: "Newest first",
 };
+
+export const PROJECT_GROUPS = ["activity", "color", "none"] as const;
+export type ProjectGroup = (typeof PROJECT_GROUPS)[number];
+
+export const PROJECT_GROUP_LABELS: Record<ProjectGroup, string> = {
+  activity: "Activity",
+  color: "Color",
+  none: "No grouping",
+};
+
+/**
+ * Projects rarely end; they go quiet. After two weeks without a conversation or an edit a project
+ * rests on its own, and the next conversation brings it back, so nobody has to park anything.
+ */
+export const RESTING_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 
 /** The local project record whose favicon or chosen icon stands in for a Library project. */
 export type LocalProjectIcon = Pick<
@@ -90,7 +106,6 @@ export function projectEntries(
 }
 
 export type ProjectFilter = {
-  readonly archived: boolean;
   readonly search: string;
   readonly colors: ReadonlySet<LibraryProjectColor>;
   readonly computer: EnvironmentId | null;
@@ -104,7 +119,6 @@ export function filterProjectEntries(
 ) {
   const search = filter.search.trim().toLocaleLowerCase();
   return entries.filter(({ project, color, copies }) => {
-    if (project.archived !== filter.archived) return false;
     if (filter.colors.size && !filter.colors.has(color)) return false;
     if (filter.computer && !copies.some((copy) => copy.environmentId === filter.computer))
       return false;
@@ -127,4 +141,38 @@ export function sortProjectEntries(entries: readonly ProjectEntry[], sort: Proje
       b.project.createdAt.localeCompare(a.project.createdAt),
   }[sort];
   return entries.toSorted(compare);
+}
+
+export type ProjectSection =
+  | { readonly kind: "active" | "resting" | "all"; readonly entries: readonly ProjectEntry[] }
+  | {
+      readonly kind: "color";
+      readonly color: LibraryProjectColor;
+      readonly entries: readonly ProjectEntry[];
+    };
+
+export function isRestingEntry(entry: ProjectEntry, now: number) {
+  return now - Date.parse(entry.activeAt) >= RESTING_AFTER_MS;
+}
+
+/** Splits entries into the sections the page shows, keeping each section in the given order. */
+export function projectSections(
+  entries: readonly ProjectEntry[],
+  group: ProjectGroup,
+  now: number,
+): ProjectSection[] {
+  const sections: ProjectSection[] =
+    group === "none"
+      ? [{ kind: "all", entries }]
+      : group === "color"
+        ? LIBRARY_PROJECT_COLORS.map((color) => ({
+            kind: "color" as const,
+            color,
+            entries: entries.filter((entry) => entry.color === color),
+          }))
+        : [
+            { kind: "active", entries: entries.filter((entry) => !isRestingEntry(entry, now)) },
+            { kind: "resting", entries: entries.filter((entry) => isRestingEntry(entry, now)) },
+          ];
+  return sections.filter((section) => section.entries.length > 0);
 }

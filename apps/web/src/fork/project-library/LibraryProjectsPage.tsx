@@ -1,21 +1,22 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
-  ArrowDownUpIcon,
   ChevronRightIcon,
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
   LayoutGridIcon,
+  ListFilterIcon,
   ListIcon,
   MessageSquareIcon,
   PlusIcon,
   SearchIcon,
+  SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProjectColor } from "@t3tools/contracts/fork";
+import { LIBRARY_PROJECT_COLORS, type LibraryProjectColor } from "@t3tools/contracts/fork";
 import { libraryActiveCopies, libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
 import { ProjectFavicon } from "~/components/ProjectFavicon";
 import { Button } from "~/components/ui/button";
@@ -30,15 +31,16 @@ import {
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
   Menu,
+  MenuCheckboxItem,
   MenuGroup,
   MenuGroupLabel,
   MenuPopup,
   MenuRadioGroup,
   MenuRadioItem,
+  MenuSeparator,
   MenuTrigger,
 } from "~/components/ui/menu";
 import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
 import { cn } from "~/lib/utils";
@@ -49,19 +51,31 @@ import { LibrarySetup } from "./LibrarySetup";
 import { LibraryErrorNotice } from "./LibraryControls";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
-import { ProjectCards, ProjectCollectionSkeleton, ProjectRows } from "./ProjectCollection";
+import {
+  ProjectCards,
+  ProjectCollectionSkeleton,
+  ProjectCompactCards,
+  ProjectRows,
+} from "./ProjectCollection";
 import {
   ComputerLabel,
   PathLabel,
   PROJECT_COLOR_NAMES,
+  ProjectColorDot,
   projectColorStyle,
 } from "./ProjectIdentity";
 import {
   filterProjectEntries,
+  isRestingEntry,
+  PROJECT_GROUP_LABELS,
+  PROJECT_GROUPS,
   PROJECT_SORT_LABELS,
   PROJECT_SORTS,
   projectEntries,
+  projectSections,
   sortProjectEntries,
+  type ProjectEntry,
+  type ProjectGroup,
 } from "./projectList";
 import {
   useLibraryPermission,
@@ -74,8 +88,15 @@ const PREFERENCES_KEY = "loom:library:projects-view:v1";
 const ProjectsPreferences = Schema.Struct({
   view: Schema.Literals(["cards", "list"]),
   sort: Schema.Literals(PROJECT_SORTS),
+  // Optional so views saved before grouping still load.
+  group: Schema.optional(Schema.Literals(PROJECT_GROUPS)),
 });
-const DEFAULT_PREFERENCES: typeof ProjectsPreferences.Type = { view: "cards", sort: "activity" };
+type ProjectsPreferences = typeof ProjectsPreferences.Type;
+const DEFAULT_PREFERENCES: ProjectsPreferences = {
+  view: "cards",
+  sort: "activity",
+  group: "activity",
+};
 /** Shares the sidebar's request, so the page adds no extra index fetch. */
 const THREAD_INDEX_LIMIT = 100;
 
@@ -90,8 +111,10 @@ export function LibraryProjectsPage() {
     DEFAULT_PREFERENCES,
     ProjectsPreferences,
   );
+  const group = preferences.group ?? "activity";
+  // Read once per visit: a project that goes quiet while the page is open can wait for the next one.
+  const [now] = useState(() => Date.now());
   const [query, setQuery] = useState("");
-  const [archived, setArchived] = useState(false);
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
   const [creating, setCreating] = useState(false);
@@ -130,25 +153,34 @@ export function LibraryProjectsPage() {
     threadIndex.data,
     environmentProjects,
   );
-  const statusEntries = entries.filter((entry) => entry.project.archived === archived);
-  const archivedCount = entries.filter((entry) => entry.project.archived).length;
-  const activeCount = entries.length - archivedCount;
-  const usedColors = new Set(statusEntries.map((entry) => entry.color));
-  const usedComputers = [
-    ...new Set(statusEntries.flatMap((entry) => entry.copies.map((copy) => copy.environmentId))),
-  ];
-  const filtered = filterProjectEntries(
-    entries,
-    { archived, search: query, colors, computer },
-    hostLabel,
+  const filtered = sortProjectEntries(
+    filterProjectEntries(entries, { search: query, colors, computer }, hostLabel),
+    preferences.sort,
   );
-  const visible = sortProjectEntries(filtered, preferences.sort);
+  const current = filtered.filter((entry) => !entry.project.archived);
+  const archived = filtered.filter((entry) => entry.project.archived);
+  const sections = projectSections(current, group, now);
+  const liveEntries = entries.filter((entry) => !entry.project.archived);
+  const restingCount = liveEntries.filter((entry) => isRestingEntry(entry, now)).length;
+  const archivedCount = entries.length - liveEntries.length;
+  const colorCounts = LIBRARY_PROJECT_COLORS.flatMap((color) => {
+    const count = liveEntries.filter((entry) => entry.color === color).length;
+    return count ? [{ color, count }] : [];
+  });
+  const usedComputers = [...new Set(activeCopies.map((copy) => copy.environmentId))];
   const narrowed = !!query.trim() || colors.size > 0 || computer !== null;
   const clearFilters = () => {
     setQuery("");
     setColors(new Set());
     setComputer(null);
   };
+  const toggleColor = (color: LibraryProjectColor) =>
+    setColors((selected) => {
+      const next = new Set(selected);
+      if (next.has(color)) next.delete(color);
+      else next.add(color);
+      return next;
+    });
   const saved = (project: { id: string }) => {
     setCreating(false);
     setImporting(null);
@@ -161,22 +193,33 @@ export function LibraryProjectsPage() {
     copies.refresh();
   };
   const loading = catalog.query.isPending && !catalog.query.data;
-  const computersInUse = new Set(activeCopies.map((copy) => copy.environmentId)).size;
+  const show = (list: readonly ProjectEntry[], compact: boolean) => {
+    if (!catalog.authorityId) return null;
+    const props = {
+      entries: list,
+      authorityId: catalog.authorityId,
+      connected: catalog.connected,
+      hostLabel,
+      onOpen: selectProject,
+      onChanged: refresh,
+    };
+    if (preferences.view === "list") return <ProjectRows {...props} />;
+    return compact ? <ProjectCompactCards {...props} /> : <ProjectCards {...props} />;
+  };
   return (
     <LibraryPageFrame>
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-xl font-semibold tracking-tight">Projects</h1>
           <p className="max-w-xl text-xs text-muted-foreground tabular-nums">
-            {catalog.authorityId && activeCount
+            {catalog.authorityId && liveEntries.length
               ? [
-                  `${activeCount} ${activeCount === 1 ? "project" : "projects"}`,
-                  computersInUse
-                    ? `on ${computersInUse} ${computersInUse === 1 ? "computer" : "computers"}`
-                    : null,
+                  plural(liveEntries.length, "project"),
+                  restingCount ? `${restingCount} resting` : null,
+                  usedComputers.length ? `on ${plural(usedComputers.length, "computer")}` : null,
                 ]
                   .filter(Boolean)
-                  .join(" ")
+                  .join(" · ")
               : "Keep the context, repositories and conversations for each thing you’re building together."}
           </p>
         </div>
@@ -211,9 +254,9 @@ export function LibraryProjectsPage() {
         </section>
       ) : (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-              <InputGroup shape="pill" className="w-full sm:w-64">
+          {entries.length ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <InputGroup shape="pill" className="w-full sm:w-72">
                 <InputGroupAddon>
                   <SearchIcon aria-hidden />
                 </InputGroupAddon>
@@ -244,139 +287,125 @@ export function LibraryProjectsPage() {
                   </InputGroupAddon>
                 ) : null}
               </InputGroup>
-              {usedColors.size > 1 ? (
-                <ColorFilter
-                  colors={[...usedColors]}
-                  selected={colors}
-                  onToggle={(color) =>
-                    setColors((current) => {
-                      const next = new Set(current);
-                      if (next.has(color)) next.delete(color);
-                      else next.add(color);
-                      return next;
-                    })
-                  }
-                />
+              <FilterMenu
+                colorCounts={colorCounts}
+                computers={usedComputers}
+                colors={colors}
+                computer={computer}
+                hostLabel={hostLabel}
+                onToggleColor={toggleColor}
+                onComputer={setComputer}
+              />
+              {[...colors].map((color) => (
+                <Button
+                  key={color}
+                  shape="pill"
+                  size="xs"
+                  variant="secondary"
+                  aria-label={`Stop showing only ${PROJECT_COLOR_NAMES[color]} projects`}
+                  onClick={() => toggleColor(color)}
+                >
+                  <ProjectColorDot color={color} />
+                  {PROJECT_COLOR_NAMES[color]}
+                  <XIcon aria-hidden />
+                </Button>
+              ))}
+              {computer ? (
+                <Button
+                  shape="pill"
+                  size="xs"
+                  variant="secondary"
+                  aria-label={`Stop showing only projects on ${hostLabel(computer)}`}
+                  onClick={() => setComputer(null)}
+                >
+                  <ComputerLabel
+                    environmentId={computer}
+                    label={hostLabel(computer)}
+                    className="text-foreground"
+                  />
+                  <XIcon aria-hidden />
+                </Button>
               ) : null}
-              {usedComputers.length > 1 || computer ? (
-                <ComputerFilter
-                  computers={usedComputers}
-                  selected={computer}
-                  hostLabel={hostLabel}
-                  onSelect={setComputer}
+              <div className="ms-auto flex items-center gap-1.5">
+                <DisplayMenu
+                  preferences={{ ...preferences, group }}
+                  onChange={(next) => setPreferences(next)}
                 />
-              ) : null}
+                <ToggleGroup
+                  shape="pill"
+                  aria-label="Layout"
+                  variant="segmented"
+                  value={[preferences.view]}
+                  onValueChange={(value) => {
+                    const view = value[0];
+                    if (view === "cards" || view === "list")
+                      setPreferences({ ...preferences, view });
+                  }}
+                >
+                  <ToggleGroupItem value="cards" aria-label="Cards">
+                    <LayoutGridIcon />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem value="list" aria-label="List">
+                    <ListIcon />
+                  </ToggleGroupItem>
+                </ToggleGroup>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <ToggleGroup
-                shape="pill"
-                aria-label="Project status"
-                variant="segmented"
-                value={[archived ? "archived" : "active"]}
-                onValueChange={(value) => {
-                  const next = value[0];
-                  if (next === "active" || next === "archived") setArchived(next === "archived");
-                }}
-              >
-                <ToggleGroupItem value="active">
-                  Active
-                  <span className="tabular-nums opacity-60">{activeCount}</span>
-                </ToggleGroupItem>
-                <ToggleGroupItem value="archived">
-                  Archived
-                  <span className="tabular-nums opacity-60">{archivedCount}</span>
-                </ToggleGroupItem>
-              </ToggleGroup>
-              <Menu>
-                <MenuTrigger render={<Button shape="pill" size="sm" variant="ghost" />}>
-                  <ArrowDownUpIcon />
-                  {PROJECT_SORT_LABELS[preferences.sort]}
-                </MenuTrigger>
-                <MenuPopup side="bottom" align="end">
-                  <MenuGroup>
-                    <MenuGroupLabel>Sort by</MenuGroupLabel>
-                    <MenuRadioGroup
-                      value={preferences.sort}
-                      onValueChange={(value) => {
-                        const sort = PROJECT_SORTS.find((entry) => entry === value);
-                        if (sort) setPreferences({ ...preferences, sort });
-                      }}
-                    >
-                      {PROJECT_SORTS.map((sort) => (
-                        <MenuRadioItem key={sort} value={sort}>
-                          {PROJECT_SORT_LABELS[sort]}
-                        </MenuRadioItem>
-                      ))}
-                    </MenuRadioGroup>
-                  </MenuGroup>
-                </MenuPopup>
-              </Menu>
-              <ToggleGroup
-                shape="pill"
-                aria-label="Layout"
-                variant="segmented"
-                value={[preferences.view]}
-                onValueChange={(value) => {
-                  const view = value[0];
-                  if (view === "cards" || view === "list") setPreferences({ ...preferences, view });
-                }}
-              >
-                <ToggleGroupItem value="cards" aria-label="Cards">
-                  <LayoutGridIcon />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="list" aria-label="List">
-                  <ListIcon />
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
-          </div>
+          ) : null}
           <LibraryErrorNotice error={catalog.query.error} onRetry={catalog.query.refresh} />
           {loading ? (
             <ProjectCollectionSkeleton view={preferences.view} />
-          ) : visible.length ? (
-            preferences.view === "cards" ? (
-              <ProjectCards
-                entries={visible}
-                authorityId={catalog.authorityId}
-                connected={catalog.connected}
-                hostLabel={hostLabel}
-                onOpen={selectProject}
-                onChanged={refresh}
-              />
-            ) : (
-              <ProjectRows
-                entries={visible}
-                authorityId={catalog.authorityId}
-                connected={catalog.connected}
-                hostLabel={hostLabel}
-                onOpen={selectProject}
-                onChanged={refresh}
-              />
-            )
-          ) : catalog.query.error ? null : narrowed ? (
-            <div className="rounded-xl border border-dashed border-border">
-              <Empty size="compact">
-                <EmptyHeader>
-                  <EmptyTitle>No projects match</EmptyTitle>
-                  <EmptyDescription>
-                    Search looks at names, briefs, repositories, folders and computers.
-                  </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                  <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                </EmptyContent>
-              </Empty>
+          ) : sections.length ? (
+            <div className="space-y-7">
+              {sections.map((section) => {
+                const heading = SECTION_HEADINGS[section.kind];
+                return (
+                  <section
+                    key={section.kind === "color" ? section.color : section.kind}
+                    className="space-y-2.5"
+                  >
+                    {section.kind === "all" ? null : (
+                      <SectionHeading
+                        title={
+                          section.kind === "color"
+                            ? PROJECT_COLOR_NAMES[section.color]
+                            : heading.title
+                        }
+                        count={section.entries.length}
+                        hint={section.kind === "color" ? undefined : heading.hint}
+                        color={section.kind === "color" ? section.color : undefined}
+                      />
+                    )}
+                    {show(section.entries, section.kind === "resting")}
+                  </section>
+                );
+              })}
             </div>
-          ) : archived ? (
+          ) : catalog.query.error ? null : narrowed ? (
+            archived.length ? null : (
+              <div className="rounded-xl border border-dashed border-border">
+                <Empty size="compact">
+                  <EmptyHeader>
+                    <EmptyTitle>No projects match</EmptyTitle>
+                    <EmptyDescription>
+                      Search looks at names, briefs, repositories, folders and computers.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              </div>
+            )
+          ) : archivedCount ? (
             <div className="rounded-xl border border-dashed border-border">
               <Empty size="compact">
                 <EmptyHeader>
-                  <EmptyTitle>No archived projects</EmptyTitle>
+                  <EmptyTitle>Everything is archived</EmptyTitle>
                   <EmptyDescription>
-                    Archiving keeps a project’s context and conversations. Restore it whenever you
-                    need it.
+                    Restore a project below to pick it up again, or start something new.
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
@@ -416,24 +445,26 @@ export function LibraryProjectsPage() {
               </Empty>
             </div>
           )}
+          {archived.length ? (
+            <FoldedSection
+              // A search that finds archived projects opens the section so the match is visible.
+              key={narrowed ? "narrowed" : "all"}
+              defaultOpen={narrowed}
+              title="Archived"
+              count={archived.length}
+              hint="Finished or set aside. Conversations stay readable, and the project leaves the project pickers until you restore it."
+            >
+              {show(archived, true)}
+            </FoldedSection>
+          ) : null}
         </>
       )}
-      {catalog.authorityId && looseFolders.length ? (
-        <details className="group/folders space-y-3">
-          <summary className="-mx-2 flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-full px-2 py-1 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
-            <ChevronRightIcon
-              aria-hidden
-              className="size-4 text-muted-foreground transition-transform duration-150 group-open/folders:rotate-90"
-            />
-            Folders not in a project
-            <span className="text-xs font-normal tabular-nums text-muted-foreground">
-              {looseFolders.length}
-            </span>
-          </summary>
-          <p className="max-w-xl text-xs text-muted-foreground">
-            Folders you've worked in on your computers. Add one to a project without moving or
-            deleting its files.
-          </p>
+      {catalog.authorityId && looseFolders.length && !narrowed ? (
+        <FoldedSection
+          title="Folders not in a project"
+          count={looseFolders.length}
+          hint="Folders you’ve worked in on your computers. Add one to a project without moving or deleting its files."
+        >
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {looseFolders.map((group) => {
               const ref = group.memberProjectRefs[0];
@@ -487,7 +518,7 @@ export function LibraryProjectsPage() {
               );
             })}
           </ul>
-        </details>
+        </FoldedSection>
       ) : null}
       {creating ? (
         <ProjectEditorDialog
@@ -509,89 +540,200 @@ export function LibraryProjectsPage() {
   );
 }
 
-/** Narrows to the colors people chose, so a color can stand for a client, a team or a phase. */
-function ColorFilter({
-  colors,
-  selected,
-  onToggle,
+const plural = (count: number, noun: string) => `${count} ${count === 1 ? noun : `${noun}s`}`;
+
+const SECTION_HEADINGS = {
+  active: { title: "Active", hint: "Worked on in the last two weeks" },
+  resting: {
+    title: "Resting",
+    hint: "Quiet for two weeks or more. The next conversation brings one back.",
+  },
+  all: { title: "Projects", hint: undefined },
+  color: { title: "", hint: undefined },
+} as const;
+
+function SectionHeading({
+  title,
+  count,
+  hint,
+  color,
 }: {
-  readonly colors: readonly LibraryProjectColor[];
-  readonly selected: ReadonlySet<LibraryProjectColor>;
-  readonly onToggle: (color: LibraryProjectColor) => void;
+  readonly title: string;
+  readonly count: number;
+  readonly hint?: string | undefined;
+  readonly color?: LibraryProjectColor | undefined;
 }) {
   return (
-    <div role="group" aria-label="Filter by color" className="flex items-center gap-1">
-      {colors.map((color) => {
-        const pressed = selected.has(color);
-        return (
-          <Tooltip key={color}>
-            <TooltipTrigger
-              render={
-                <button
-                  type="button"
-                  aria-pressed={pressed}
-                  aria-label={`${PROJECT_COLOR_NAMES[color]} projects`}
-                  style={projectColorStyle(color)}
-                  onClick={() => onToggle(color)}
-                  className="inline-flex size-6 items-center justify-center rounded-full outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                />
-              }
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "size-2.5 rounded-full bg-(--project-color) transition-[box-shadow,opacity] duration-150",
-                  pressed && "ring-2 ring-(--project-color) ring-offset-1 ring-offset-background",
-                  selected.size > 0 && !pressed && "opacity-40",
-                )}
-              />
-            </TooltipTrigger>
-            <TooltipPopup side="top">{PROJECT_COLOR_NAMES[color]}</TooltipPopup>
-          </Tooltip>
-        );
-      })}
+    <div className="flex min-w-0 items-baseline gap-2">
+      {color ? <ProjectColorDot color={color} className="self-center" /> : null}
+      <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
+      <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+      {hint ? (
+        <p className="ms-1 hidden min-w-0 truncate text-xs text-muted-foreground/75 sm:block">
+          {hint}
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function ComputerFilter({
-  computers,
-  selected,
-  hostLabel,
-  onSelect,
+/** A section that stays out of the way until asked for, like archived projects and loose folders. */
+function FoldedSection({
+  title,
+  count,
+  hint,
+  defaultOpen = false,
+  children,
 }: {
+  readonly title: string;
+  readonly count: number;
+  readonly hint: string;
+  readonly defaultOpen?: boolean;
+  readonly children: ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} className="group/fold space-y-2.5">
+      <summary className="-mx-2 flex w-fit max-w-full cursor-pointer list-none items-baseline gap-2 rounded-full px-2 py-1 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon
+          aria-hidden
+          className="size-3.5 shrink-0 self-center text-muted-foreground transition-transform duration-150 group-open/fold:rotate-90"
+        />
+        <span className="text-sm font-semibold tracking-tight">{title}</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{count}</span>
+      </summary>
+      <p className="max-w-2xl text-xs text-muted-foreground">{hint}</p>
+      {children}
+    </details>
+  );
+}
+
+/**
+ * Narrowing lives behind one control, the way the pull request list does it, so twenty projects
+ * in eight colors never turn into a row of dots. Chosen filters show beside it as chips.
+ */
+function FilterMenu({
+  colorCounts,
+  computers,
+  colors,
+  computer,
+  hostLabel,
+  onToggleColor,
+  onComputer,
+}: {
+  readonly colorCounts: readonly { color: LibraryProjectColor; count: number }[];
   readonly computers: readonly EnvironmentId[];
-  readonly selected: EnvironmentId | null;
+  readonly colors: ReadonlySet<LibraryProjectColor>;
+  readonly computer: EnvironmentId | null;
   readonly hostLabel: (id: EnvironmentId) => string;
-  readonly onSelect: (id: EnvironmentId | null) => void;
+  readonly onToggleColor: (color: LibraryProjectColor) => void;
+  readonly onComputer: (id: EnvironmentId | null) => void;
+}) {
+  const showComputers = computers.length > 1 || computer !== null;
+  if (colorCounts.length < 2 && !showComputers && !colors.size) return null;
+  const active = colors.size + (computer ? 1 : 0);
+  return (
+    <Menu>
+      <MenuTrigger render={<Button shape="pill" size="sm" variant="outline" />}>
+        <ListFilterIcon />
+        Filters
+        {active ? (
+          <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums text-muted-foreground">
+            {active}
+          </span>
+        ) : null}
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="start">
+        <MenuGroup>
+          <MenuGroupLabel>Color</MenuGroupLabel>
+          {colorCounts.map(({ color, count }) => (
+            <MenuCheckboxItem
+              key={color}
+              checked={colors.has(color)}
+              onCheckedChange={() => onToggleColor(color)}
+            >
+              <span className="flex w-full items-center gap-2">
+                <ProjectColorDot color={color} className="size-2.5" />
+                <span className="flex-1">{PROJECT_COLOR_NAMES[color]}</span>
+                <span className="ps-4 text-xs tabular-nums text-muted-foreground">{count}</span>
+              </span>
+            </MenuCheckboxItem>
+          ))}
+        </MenuGroup>
+        {showComputers ? (
+          <>
+            <MenuSeparator />
+            <MenuGroup>
+              <MenuGroupLabel>Computer</MenuGroupLabel>
+              <MenuRadioGroup
+                value={computer ?? "all"}
+                onValueChange={(value) => onComputer(computers.find((id) => id === value) ?? null)}
+              >
+                <MenuRadioItem value="all">Any computer</MenuRadioItem>
+                {computers.map((id) => (
+                  <MenuRadioItem key={id} value={id}>
+                    <ComputerLabel
+                      environmentId={id}
+                      label={hostLabel(id)}
+                      className="text-foreground"
+                    />
+                  </MenuRadioItem>
+                ))}
+              </MenuRadioGroup>
+            </MenuGroup>
+          </>
+        ) : null}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function DisplayMenu({
+  preferences,
+  onChange,
+}: {
+  readonly preferences: ProjectsPreferences & { readonly group: ProjectGroup };
+  readonly onChange: (preferences: ProjectsPreferences) => void;
 }) {
   return (
     <Menu>
-      <MenuTrigger
-        render={<Button shape="pill" size="sm" variant={selected ? "secondary" : "ghost"} />}
-      >
-        {selected ? (
-          <ComputerLabel
-            environmentId={selected}
-            label={hostLabel(selected)}
-            className="text-foreground"
-          />
-        ) : (
-          "All computers"
-        )}
+      <MenuTrigger render={<Button shape="pill" size="sm" variant="ghost" />}>
+        <SlidersHorizontalIcon />
+        Display
       </MenuTrigger>
-      <MenuPopup side="bottom" align="start">
-        <MenuRadioGroup
-          value={selected ?? "all"}
-          onValueChange={(value) => onSelect(computers.find((id) => id === value) ?? null)}
-        >
-          <MenuRadioItem value="all">All computers</MenuRadioItem>
-          {computers.map((id) => (
-            <MenuRadioItem key={id} value={id}>
-              <ComputerLabel environmentId={id} label={hostLabel(id)} className="text-foreground" />
-            </MenuRadioItem>
-          ))}
-        </MenuRadioGroup>
+      <MenuPopup side="bottom" align="end">
+        <MenuGroup>
+          <MenuGroupLabel>Group by</MenuGroupLabel>
+          <MenuRadioGroup
+            value={preferences.group}
+            onValueChange={(value) => {
+              const group = PROJECT_GROUPS.find((entry) => entry === value);
+              if (group) onChange({ ...preferences, group });
+            }}
+          >
+            {PROJECT_GROUPS.map((group) => (
+              <MenuRadioItem key={group} value={group}>
+                {PROJECT_GROUP_LABELS[group]}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
+        <MenuSeparator />
+        <MenuGroup>
+          <MenuGroupLabel>Sort by</MenuGroupLabel>
+          <MenuRadioGroup
+            value={preferences.sort}
+            onValueChange={(value) => {
+              const sort = PROJECT_SORTS.find((entry) => entry === value);
+              if (sort) onChange({ ...preferences, sort });
+            }}
+          >
+            {PROJECT_SORTS.map((sort) => (
+              <MenuRadioItem key={sort} value={sort}>
+                {PROJECT_SORT_LABELS[sort]}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
+        </MenuGroup>
       </MenuPopup>
     </Menu>
   );

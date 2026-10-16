@@ -10,6 +10,8 @@ import {
   libraryLocalProjectIcon,
   localProjectsByRef,
   projectEntries,
+  projectSections,
+  RESTING_AFTER_MS,
   sortProjectEntries,
   type LocalProjectIcon,
 } from "./projectList";
@@ -144,7 +146,7 @@ describe("filterProjectEntries", () => {
   const titles = (filter: Partial<Parameters<typeof filterProjectEntries>[1]>) =>
     filterProjectEntries(
       entries,
-      { archived: false, search: "", colors: new Set(), computer: null, ...filter },
+      { search: "", colors: new Set(), computer: null, ...filter },
       label,
     ).map((entry) => entry.project.title);
 
@@ -153,9 +155,9 @@ describe("filterProjectEntries", () => {
     expect(titles({ search: "dorothy" })).toEqual(["iris"]);
   });
 
-  it("narrows by color, computer and archive state together", () => {
-    expect(titles({ colors: new Set(["plum"]) })).toEqual(["iris"]);
-    expect(titles({ colors: new Set(["plum"]), archived: true })).toEqual(["Archive me"]);
+  it("narrows by color and computer together, leaving archive state to the sections", () => {
+    expect(titles({ colors: new Set(["plum"]) })).toEqual(["iris", "Archive me"]);
+    expect(titles({ colors: new Set(["plum"]), computer: dorothy })).toEqual(["iris"]);
     expect(titles({ computer: nora })).toEqual(["Loom"]);
   });
 });
@@ -175,5 +177,33 @@ describe("sortProjectEntries", () => {
       "iris",
       "loom",
     ]);
+  });
+});
+
+describe("projectSections", () => {
+  const now = Date.parse("2026-10-19T00:00:00.000Z");
+  const entries = projectEntries([loom, iris], [], undefined);
+  const kinds = (group: Parameters<typeof projectSections>[1], at = now) =>
+    projectSections(entries, group, at).map((section) => [
+      section.kind === "color" ? section.color : section.kind,
+      section.entries.map((entry) => entry.project.id),
+    ]);
+
+  it("lets a project rest after two quiet weeks and keeps the order it was given", () => {
+    expect(kinds("activity")).toEqual([
+      ["active", ["iris"]],
+      ["resting", ["loom"]],
+    ]);
+    expect(kinds("activity", Date.parse(loom.updatedAt) + RESTING_AFTER_MS - 1)).toEqual([
+      ["active", ["loom", "iris"]],
+    ]);
+  });
+
+  it("groups by color in palette order and leaves out empty groups", () => {
+    expect(kinds("color")).toEqual([
+      ["plum", ["iris"]],
+      ["teal", ["loom"]],
+    ]);
+    expect(kinds("none")).toEqual([["all", ["loom", "iris"]]]);
   });
 });
