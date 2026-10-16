@@ -329,46 +329,24 @@ export const ChatHeader = memo(function ChatHeader({
         {activeProject ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">
-              {/* One wrapper so the parent-collapse measurement sees the
-                  project and its computer badge as a single label. */}
-              <span className="inline-flex min-w-0 max-w-full items-center gap-2">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={`New thread in ${activeProjectName}`}
-                        onClick={onNewThreadInProject}
-                        className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                      />
-                    }
-                  >
-                    <ProjectFavicon project={activeProject} className="size-3.5" />
-                    <WorkspaceBreadcrumbText className="max-w-40">
-                      {activeProjectName}
-                    </WorkspaceBreadcrumbText>
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
-                </Tooltip>
-                {/* Where this thread's files live and its agent runs. */}
-                {environmentLabel ? (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span className="inline-flex min-w-0 shrink items-center gap-1 rounded-md bg-muted px-1.5 text-xs font-normal text-muted-foreground" />
-                      }
-                    >
-                      <EnvironmentMachineIcon
-                        aria-hidden
-                        kind={environmentMachine}
-                        className="size-3 shrink-0"
-                      />
-                      <span className="min-w-0 max-w-32 truncate py-0.5">{environmentLabel}</span>
-                    </TooltipTrigger>
-                    <TooltipPopup side="top">Running on {environmentLabel}</TooltipPopup>
-                  </Tooltip>
-                ) : null}
-              </span>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={`New thread in ${activeProjectName}`}
+                      onClick={onNewThreadInProject}
+                      className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    />
+                  }
+                >
+                  <ProjectFavicon project={activeProject} className="size-3.5" />
+                  <WorkspaceBreadcrumbText className="max-w-40">
+                    {activeProjectName}
+                  </WorkspaceBreadcrumbText>
+                </TooltipTrigger>
+                <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+              </Tooltip>
             </WorkspaceBreadcrumbItem>
             <WorkspaceBreadcrumbSeparator>
               <WorkspaceBreadcrumbText>/</WorkspaceBreadcrumbText>
@@ -432,42 +410,66 @@ export const ChatHeader = memo(function ChatHeader({
               onFocus={(event) => event.currentTarget.select()}
               onKeyDown={handleRenameKeyDown}
             />
-          ) : isServerThread ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <button
-                    ref={titleButtonRef}
-                    type="button"
-                    aria-label={`Thread actions for ${activeThreadTitle}`}
-                    aria-haspopup="menu"
-                    onClick={openMenuFromTitle}
-                    onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
-                    onBlur={cancelPendingTitleMenu}
-                    className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  />
-                }
-              >
-                <h2 className="min-w-0">
-                  <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
-                </h2>
-                <ChevronDownIcon
-                  aria-hidden
-                  data-thread-title-chevron
-                  className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
-                />
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
-            </Tooltip>
           ) : (
-            <Tooltip>
-              <TooltipTrigger
-                render={<h2 aria-label={activeThreadTitle} className="min-w-0 flex-1" />}
-              >
-                <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
-              </TooltipTrigger>
-              <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
-            </Tooltip>
+            // One wrapper so the parent-collapse measurement sees the title
+            // and its computer chip as a single label.
+            <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+              {isServerThread ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        ref={titleButtonRef}
+                        type="button"
+                        aria-label={`Thread actions for ${activeThreadTitle}`}
+                        aria-haspopup="menu"
+                        onClick={openMenuFromTitle}
+                        onDoubleClick={canOperateThread ? handleTitleDoubleClick : undefined}
+                        onBlur={cancelPendingTitleMenu}
+                        className="group/thread-title inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1 rounded-sm text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                      />
+                    }
+                  >
+                    <h2 className="min-w-0">
+                      <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                    </h2>
+                    <ChevronDownIcon
+                      aria-hidden
+                      data-thread-title-chevron
+                      className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover/thread-title:opacity-100 group-focus-visible/thread-title:opacity-100"
+                    />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+                </Tooltip>
+              ) : (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<h2 aria-label={activeThreadTitle} className="min-w-0 flex-1" />}
+                  >
+                    <WorkspaceBreadcrumbText>{activeThreadTitle}</WorkspaceBreadcrumbText>
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">{activeThreadTitle}</TooltipPopup>
+                </Tooltip>
+              )}
+              {/* The computer this thread runs on: its files live and its agent works there. */}
+              {environmentLabel ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 text-xs font-normal text-muted-foreground" />
+                    }
+                  >
+                    <EnvironmentMachineIcon
+                      aria-hidden
+                      kind={environmentMachine}
+                      className="size-3 shrink-0"
+                    />
+                    <span className="min-w-0 max-w-32 truncate py-0.5">{environmentLabel}</span>
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">Running on {environmentLabel}</TooltipPopup>
+                </Tooltip>
+              ) : null}
+            </span>
           )}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
