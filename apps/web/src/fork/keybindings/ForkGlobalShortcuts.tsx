@@ -2,7 +2,7 @@ import { isForkKeybindingCommand } from "@t3tools/contracts/fork";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect } from "react";
 
-import { isCommandPaletteOpen, openCommandPalette } from "~/commandPaletteBus";
+import { isCommandPaletteOpen } from "~/commandPaletteBus";
 import { resolveShortcutCommand } from "~/keybindings";
 import { isEditableFocused } from "~/lib/editableFocus";
 import { isPreviewFocused } from "~/lib/previewFocus";
@@ -11,14 +11,9 @@ import { isModelPickerOpen } from "~/modelPickerVisibility";
 import { selectActiveRightPanel, useRightPanelStore } from "~/rightPanelStore";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "~/terminalUiStateStore";
+import { useLibraryShortcuts } from "../commandPalette/library";
 import { useRouteThread } from "../routeThread";
-import { dispatchForkCommand, onForkCommand } from "./forkCommandBus";
-
-/** Commands that open the palette in one of a source's submenus. */
-const PALETTE_SUBMENU_COMMANDS = [
-  ["loom.library.goToProject", "action:loom:library:go-to-project"],
-  ["loom.library.newConversationIn", "action:loom:library:new-conversation"],
-] as const;
+import { dispatchForkCommand } from "./forkCommandBus";
 
 /**
  * Resolves fork commands with the same `when` context as upstream's chat shortcuts
@@ -36,14 +31,7 @@ export function ForkGlobalShortcuts() {
   const previewOpen = useRightPanelStore((state) =>
     threadRef ? selectActiveRightPanel(state.byThreadKey, threadRef) === "preview" : false,
   );
-  useEffect(() => {
-    const unsubscribes = PALETTE_SUBMENU_COMMANDS.map(([command, submenu]) =>
-      onForkCommand(command, () => openCommandPalette({ submenu })),
-    );
-    return () => {
-      for (const unsubscribe of unsubscribes) unsubscribe();
-    };
-  }, []);
+  useLibraryShortcuts();
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || isCommandPaletteOpen()) return;

@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { AuthOrchestrationReadScope, type EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
   type LibraryProject,
@@ -29,6 +29,7 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
+import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -86,17 +87,37 @@ function CopyHealth({
   );
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const canPull = useLibraryPermission(vcsEnvironment.pull, copy.environmentId);
+  const refreshRemote = useAtomCommand(projectLibrary.refreshCopyHealth, { reportFailure: false });
+  // The server checks the same read scope it uses for vcs.refreshStatus.
+  const canRefreshRemote = useEnvironmentScope(copy.environmentId, AuthOrchestrationReadScope);
   const [pulling, setPulling] = useState<string | null>(null);
-  const [pullError, setPullError] = useState<string | null>(null);
+  const [checkingRemote, setCheckingRemote] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const busy = pulling !== null || checkingRemote;
   const pullRepository = async (resourceId: string, cwd: string) => {
     setPulling(resourceId);
-    setPullError(null);
+    setActionError(null);
     const result = await pull({ environmentId: copy.environmentId, input: { cwd } });
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
-      setPullError(cause instanceof Error ? cause.message : "Could not pull the latest changes.");
+      setActionError(cause instanceof Error ? cause.message : "Could not pull the latest changes.");
     }
     setPulling(null);
+    health.refresh();
+  };
+  const checkRemote = async () => {
+    setCheckingRemote(true);
+    setActionError(null);
+    const result = await refreshRemote({
+      environmentId: copy.environmentId,
+      input: { workingCopyId: copy.id, refreshRemote: true },
+    });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      setActionError(cause instanceof Error ? cause.message : "Could not check the remote.");
+    }
+    setCheckingRemote(false);
+    // The fetch updated the remote refs, so a plain read now shows the new counts.
     health.refresh();
   };
   const data = health.data;
@@ -137,16 +158,27 @@ function CopyHealth({
                 shape="pill"
                 size="xs"
                 variant="ghost"
-                disabled={pulling !== null}
+                disabled={busy}
                 onClick={() => void pullRepository(repository.resourceId, cwd)}
               >
                 {pulling === repository.resourceId ? "Pulling..." : "Pull"}
               </Button>
             ) : null}
+            {index === data.repositories.length - 1 && canRefreshRemote ? (
+              <Button
+                shape="pill"
+                size="xs"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => void checkRemote()}
+              >
+                {checkingRemote ? "Checking..." : "Check remote"}
+              </Button>
+            ) : null}
           </div>
         );
       })}
-      {pullError ? <p className="text-xs text-warning-foreground">{pullError}</p> : null}
+      {actionError ? <p className="text-xs text-warning-foreground">{actionError}</p> : null}
     </div>
   );
 }

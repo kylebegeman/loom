@@ -127,7 +127,8 @@ export const makeCopyHealthReader = Effect.gen(function* () {
       )
         return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", yield* now);
       // Only a requested refresh fetches. A plain read leaves the shared status cache's remote
-      // part alone, so other readers still fetch when theirs is stale.
+      // part alone, so other readers still fetch when theirs is stale. A requested refresh is the
+      // app's own status refresh, so it also auto-pulls when the project has auto-pull on.
       const local = broadcaster.refreshLocalStatus(repository.path);
       const status = yield* (
         refreshRemote

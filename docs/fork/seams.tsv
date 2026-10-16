@@ -249,5 +249,6 @@ apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	1
 apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	1
 apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	1
 apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	1
-apps/web/src/components/CommandPalette.logic.ts	library-palette	3
-apps/web/src/components/CommandPalette.tsx	library-palette	2
+apps/web/src/components/CommandPalette.logic.test.ts	library-palette	1
+apps/web/src/components/CommandPalette.logic.ts	library-palette	4
+apps/web/src/components/CommandPalette.tsx	library-palette	4

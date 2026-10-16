@@ -60,6 +60,18 @@ export function browseInputEndPaddingClass(input: {
  */
 export type SearchOverlayMode = "command" | "files" | "content";
 
+/**
+ * True when focus already sits in a dialog an action opened as the palette closed, such as
+ * Library's New conversation; the palette then leaves it there instead of focusing the composer.
+ */
+// fork: library-palette
+export function paletteClosedIntoDialog(activeElement: Pick<Element, "closest"> | null): boolean {
+  return (
+    activeElement?.closest('[role="dialog"], [role="alertdialog"]') != null &&
+    activeElement.closest("[data-command-palette]") == null
+  );
+}
+
 export type CommandPaletteOpenIntent =
   | { readonly kind: "add-project"; readonly environmentId?: EnvironmentId }
   | { readonly kind: "new-thread-in" | "change-theme" }

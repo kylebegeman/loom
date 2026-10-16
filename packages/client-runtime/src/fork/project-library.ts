@@ -111,6 +111,11 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:copy-health",
       tag: LH.copyHealth,
     }),
+    /** Fetches the copy's remotes before reading health; the app's own status refresh. */
+    refreshCopyHealth: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:refresh-copy-health",
+      tag: LH.copyHealth,
+    }),
     resolveBinding: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:resolve-binding",
       tag: L.resolveBinding,
