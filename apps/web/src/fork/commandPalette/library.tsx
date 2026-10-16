@@ -13,7 +13,7 @@ import {
 } from "@t3tools/contracts/fork";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { FileTextIcon, FolderGit2Icon, SquarePenIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import {
   ADDON_ICON_CLASS,
@@ -195,6 +195,14 @@ export function useLibraryPaletteContext(
         })
       : null,
   );
+  // A cached "no project" can predate the thread's binding, so the palette asks again on open.
+  const record = live ? binding : saved;
+  const [openedAt] = useState(() => Date.now());
+  const recheck = record.isSuccess && record.data === null && record.dataUpdatedAt < openedAt;
+  const refreshRecord = record.refresh;
+  useEffect(() => {
+    if (recheck) refreshRecord();
+  }, [recheck, refreshRecord]);
   const threadIndex = useEnvironmentQuery(
     authorityId
       ? projectLibrary.threadIndex({
@@ -211,7 +219,7 @@ export function useLibraryPaletteContext(
     threadIndex: threadIndex.data,
     canStart: canRegister && connected,
     canEditBrief: canUpdate && connected,
-    threadProjectId: (live ? binding.data?.projectId : saved.data?.projectId) ?? null,
+    threadProjectId: record.data?.projectId ?? null,
     openProject: async (projectId) => {
       await navigate({ to: "/library/$projectId", params: { projectId } });
     },

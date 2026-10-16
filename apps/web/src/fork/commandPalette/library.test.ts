@@ -11,7 +11,11 @@ import {
   type CommandPaletteActionItem,
   type CommandPaletteSubmenuItem,
 } from "~/components/CommandPalette.logic";
-import { onLibraryAction, takeLibraryBriefEdit } from "../project-library/actions";
+import {
+  dropLibraryBriefEdit,
+  onLibraryAction,
+  takeLibraryBriefEdit,
+} from "../project-library/actions";
 import { libraryPaletteSource, type LibraryPaletteContext } from "./library";
 
 const project = (patch: Partial<LibraryProject>): LibraryProject => ({
@@ -116,6 +120,14 @@ describe("Library palette source", () => {
     expect(openProject).toHaveBeenLastCalledWith("loom");
     expect(takeLibraryBriefEdit("iris")).toBe(false);
     expect(takeLibraryBriefEdit("loom")).toBe(true);
+    expect(takeLibraryBriefEdit("loom")).toBe(false);
+  });
+
+  it("forgets a brief request once its project's page is left", async () => {
+    const brief = submenu(items(), "action:loom:library:project-brief")?.groups[0]?.items[0];
+    await run(brief);
+    dropLibraryBriefEdit("iris");
+    dropLibraryBriefEdit("loom");
     expect(takeLibraryBriefEdit("loom")).toBe(false);
   });
 

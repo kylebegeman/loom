@@ -62,6 +62,11 @@ export function takeLibraryBriefEdit(projectId: string) {
   return true;
 }
 
+/** Drops a request this project's page never took, so a later visit does not open the editor. */
+export function dropLibraryBriefEdit(projectId: string) {
+  if (pendingBrief === projectId) pendingBrief = null;
+}
+
 export function onLibraryBriefEdit(listener: () => void) {
   window.addEventListener(BRIEF_EVENT, listener);
   return () => window.removeEventListener(BRIEF_EVENT, listener);
