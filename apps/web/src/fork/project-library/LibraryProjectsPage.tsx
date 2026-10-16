@@ -65,6 +65,7 @@ import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch } from "./LibraryControl
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import { TidyProjectDialog } from "./TidyProjectDialog";
+import { LibraryHistorySearch } from "./LibraryHistorySearch";
 import {
   ProjectCards,
   ProjectCollectionSkeleton,
@@ -283,6 +284,15 @@ export function LibraryProjectsPage() {
         </section>
       ) : (
         <>
+          <LibraryHistorySearch
+            authorityId={catalog.authorityId}
+            connected={catalog.connected}
+            capabilities={catalog.environment?.serverConfig?.environment.capabilities}
+            hostLabel={hostLabel}
+            projectTitle={(id) =>
+              catalog.query.data?.find((project) => project.id === id)?.title ?? "Project"
+            }
+          />
           {entries.length ? (
             <div className="flex flex-wrap items-center gap-2">
               <LibrarySearch

@@ -39,3 +39,20 @@ export function libraryArchiveMessages(
     entry.kind === "message" ? [entry.message] : [],
   );
 }
+
+/**
+ * The saved history item an entry shows, as history search names it: the turn item's id, or the
+ * message's own id in archives saved before turn items.
+ */
+export function libraryEntryItemId(entry: TimelineEntry): string {
+  switch (entry.kind) {
+    case "message":
+      return entry.projectedItem?.item.id ?? entry.id;
+    case "event":
+      return entry.projectedItem.item.id;
+    case "work":
+      return entry.entry.projectedItem?.item.id ?? entry.id;
+    default:
+      return entry.id;
+  }
+}

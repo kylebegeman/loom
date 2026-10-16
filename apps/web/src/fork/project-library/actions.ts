@@ -71,3 +71,29 @@ export function onLibraryBriefEdit(listener: () => void) {
   window.addEventListener(BRIEF_EVENT, listener);
   return () => window.removeEventListener(BRIEF_EVENT, listener);
 }
+
+const HISTORY_SEARCH_EVENT = "loom:library:search-history";
+// The scope the last request named: a project's id, or "" for every project.
+let pendingHistorySearch: string | null = null;
+
+/**
+ * Asks a history search field to take focus: the project page's field for `projectId`, or the
+ * projects page's field for every project. A field already showing takes it at once; otherwise
+ * the request waits for that page to mount.
+ */
+export function requestLibraryHistorySearch(projectId?: string) {
+  pendingHistorySearch = projectId ?? "";
+  window.dispatchEvent(new Event(HISTORY_SEARCH_EVENT));
+}
+
+/** True once for the field whose scope the last request named. */
+export function takeLibraryHistorySearch(projectId?: string) {
+  if (pendingHistorySearch !== (projectId ?? "")) return false;
+  pendingHistorySearch = null;
+  return true;
+}
+
+export function onLibraryHistorySearch(listener: () => void) {
+  window.addEventListener(HISTORY_SEARCH_EVENT, listener);
+  return () => window.removeEventListener(HISTORY_SEARCH_EVENT, listener);
+}

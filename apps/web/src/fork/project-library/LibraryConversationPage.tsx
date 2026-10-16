@@ -1,14 +1,19 @@
-import { shouldRefreshLibraryArchive, supportsLoomFeature } from "@t3tools/client-runtime/fork";
+import {
+  libraryHistoryOffsetForItem,
+  shouldRefreshLibraryArchive,
+  supportsLoomFeature,
+} from "@t3tools/client-runtime/fork";
 import { LIBRARY_BRIEF_PROPOSALS_FEATURE } from "@t3tools/contracts/fork";
 import type { TimelineEntry } from "~/session-logic";
 import { turnItemOutputText, toolCallLines } from "@t3tools/client-runtime/work-log/item-detail";
 import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
 import { WorkLogBlock, WorkLogButton, WorkLogDetails } from "~/components/chat/WorkLog";
 import { LibraryAttachment } from "./LibraryAttachment";
-import { libraryArchiveTimeline } from "./libraryArchive";
+import { libraryArchiveTimeline, libraryEntryItemId } from "./libraryArchive";
 import { LibraryUploadStatus } from "./LibraryUploadStatus";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
+import { cn } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { useEnvironmentQuery } from "~/state/query";
@@ -24,11 +29,23 @@ import { LibraryErrorNotice } from "./LibraryControls";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { SuggestBriefUpdates } from "./SuggestBriefUpdates";
 
-export function LibraryConversationPage({ conversationId }: { readonly conversationId: string }) {
+/** Anchors each saved item, so a link can name the one to open at. */
+export const libraryItemAnchor = (itemId: string) => `item-${itemId}`;
+
+export function LibraryConversationPage({
+  conversationId,
+  target,
+}: {
+  readonly conversationId: string;
+  /** A history search result's item and its position in saved history, oldest first. */
+  readonly target?: { readonly item: string; readonly position: number };
+}) {
   const authority = useLibraryAuthority();
   const [, selectProject] = useSelectedLibraryProject();
   const [historyOffset, setHistoryOffset] = useState(0);
   const [previousOffsets, setPreviousOffsets] = useState<readonly number[]>([]);
+  // Paging toward the target item until a page shows it. Paging by hand stops the search.
+  const [seeking, setSeeking] = useState(target !== undefined);
   const history = useEnvironmentQuery(
     authority.authorityId
       ? projectLibrary.history({
@@ -46,6 +63,28 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
     () => (archive ? libraryArchiveTimeline(archive.projection) : []),
     [archive],
   );
+  const historyWindow = archive?.window;
+  const targetItem = target?.item;
+  const targetPosition = target?.position;
+  useEffect(() => {
+    if (!seeking || targetPosition === undefined || historyWindow?.offset !== historyOffset) return;
+    const offset = libraryHistoryOffsetForItem(targetPosition, historyWindow);
+    if (offset === null) setSeeking(false);
+    else setHistoryOffset(offset);
+  }, [seeking, targetPosition, historyWindow, historyOffset]);
+  const shownTimeline = useMemo(() => timeline.slice(-visibleMessages), [timeline]);
+  const matchedEntryId = targetItem
+    ? shownTimeline.find((entry) => libraryEntryItemId(entry) === targetItem)?.id
+    : undefined;
+  const matchRef = useRef<HTMLElement | null>(null);
+  const scrolledTo = useRef<string | null>(null);
+  // Brings the matched item into view once, without moving the page again as history refreshes.
+  useEffect(() => {
+    if (!matchedEntryId || scrolledTo.current === matchedEntryId) return;
+    scrolledTo.current = matchedEntryId;
+    matchRef.current?.scrollIntoView({ block: "center" });
+    matchRef.current?.focus({ preventScroll: true });
+  }, [matchedEntryId]);
   const savedProjectId = archive?.summary.projectId;
   const listedThread = library.threads.data?.find((thread) => thread.id === conversationId);
   const refreshArchive = shouldRefreshLibraryArchive(archive?.summary ?? null, listedThread);
@@ -164,6 +203,7 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
               variant="outline"
               size="sm"
               onClick={() => {
+                setSeeking(false);
                 setPreviousOffsets((offsets) => [...offsets, historyOffset]);
                 setHistoryOffset(archive.window?.nextOffset ?? historyOffset + 100);
               }}
@@ -176,6 +216,7 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
               variant="outline"
               size="sm"
               onClick={() => {
+                setSeeking(false);
                 setHistoryOffset(previousOffsets.at(-1) ?? 0);
                 setPreviousOffsets((offsets) => offsets.slice(0, -1));
               }}
@@ -189,12 +230,32 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
         </div>
       ) : null}
       <div className="divide-y divide-border">
-        {timeline.slice(-visibleMessages).map((entry) => {
+        {shownTimeline.map((entry) => {
+          const matched = entry.id === matchedEntryId;
+          const anchor = {
+            id: libraryItemAnchor(libraryEntryItemId(entry)),
+            ...(matched
+              ? {
+                  ref: (node: HTMLElement | null) => {
+                    matchRef.current = node;
+                  },
+                  tabIndex: -1,
+                }
+              : {}),
+          };
           if (entry.kind !== "message")
-            return <LibrarySavedActivity key={entry.id} entry={entry} />;
+            return (
+              <div key={entry.id} {...anchor} className={cn(matched && MATCHED_ITEM)}>
+                <LibrarySavedActivity entry={entry} expanded={matched} />
+              </div>
+            );
           const message = entry.message;
           return (
-            <article key={entry.id} className="space-y-3 py-5">
+            <article
+              key={entry.id}
+              {...anchor}
+              className={cn("space-y-3 py-5", matched && MATCHED_ITEM)}
+            >
               <h2 className="text-xs font-semibold text-muted-foreground">
                 {message.role === "user"
                   ? "You"
@@ -239,9 +300,19 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
   );
 }
 
+/** A search result's item stands out with a still fill, so it is found again after scrolling. */
+const MATCHED_ITEM = "-mx-3 rounded-xl bg-accent/50 px-3 outline-none";
+
 /** Saved activity uses the same disclosure rows as live chat, with no execution controls. */
-function LibrarySavedActivity({ entry }: { entry: Exclude<TimelineEntry, { kind: "message" }> }) {
-  const [expanded, setExpanded] = useState(false);
+function LibrarySavedActivity({
+  entry,
+  expanded: initiallyExpanded = false,
+}: {
+  entry: Exclude<TimelineEntry, { kind: "message" }>;
+  /** Opens the row, as for a proposed plan a history search matched. */
+  expanded?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(initiallyExpanded);
   const [visibleCharacters, setVisibleCharacters] = useState(12000);
   const item =
     entry.kind === "event"

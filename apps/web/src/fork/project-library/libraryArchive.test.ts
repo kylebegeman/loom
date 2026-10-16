@@ -9,7 +9,11 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 import { makeThreadProjectionFixture } from "~/test-fixtures";
-import { libraryArchiveMessages, libraryArchiveTimeline } from "./libraryArchive";
+import {
+  libraryArchiveMessages,
+  libraryArchiveTimeline,
+  libraryEntryItemId,
+} from "./libraryArchive";
 
 const now = DateTime.makeUnsafe("2026-10-15T12:00:00Z");
 const parentId = ThreadId.make("parent");
@@ -130,5 +134,19 @@ describe("saved Library conversation messages", () => {
       attachments: [attachment],
       createdAt: DateTime.formatIso(now),
     });
+  });
+  it("names each entry by the saved item history search points at", () => {
+    const own = { ...item("turn-item"), messageId: MessageId.make("chat-message") };
+    const saved = libraryArchiveTimeline({
+      ...makeThreadProjectionFixture(),
+      turnItems: [own],
+      visibleTurnItems: [visible(own, 0)],
+    });
+    const legacy = libraryArchiveTimeline({
+      ...makeThreadProjectionFixture(),
+      messages: [message("legacy")],
+    });
+    expect(saved.map(libraryEntryItemId)).toEqual(["turn-item"]);
+    expect(legacy.map(libraryEntryItemId)).toEqual(["legacy"]);
   });
 });
