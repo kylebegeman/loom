@@ -81,9 +81,11 @@ with the brief. **Use this copy's scripts** brings in the scripts a working copy
 project already has. Required tools are picked from a fixed list, with an optional minimum
 version, so a setup never asks a computer to run an arbitrary command. Secret names list the
 environment variables a computer must provide, such as `GITHUB_TOKEN`. Save only the name:
-each computer keeps its own value, and a setup that looks like it contains a token or
-password is refused. You can also mark preferred computers and allow Mini jobs. Setup appears
-once your Library supports it. Agents can edit it through `loom_library_project_update`.
+each computer keeps its own value. A new entry that looks like a token, password or random
+key is refused, and the message names which entry to fix; entries saved earlier are kept. You
+can also mark preferred computers and allow Mini jobs. On mobile, edit the setup from the
+project's **Edit project** screen. Setup appears once your Library supports it. Agents can edit it
+through `loom_library_project_update`.
 
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.

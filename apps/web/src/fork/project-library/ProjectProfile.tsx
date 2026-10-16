@@ -11,10 +11,13 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   compactLibraryProfile,
+  libraryProfileComputerIds,
   libraryProfileProblem,
   libraryProfileScriptSources,
   librarySecretNameFromInput,
   libraryToolLabel,
+  libraryToolsWithVersion,
+  libraryToolText,
   type LibraryProfileDraft,
 } from "@t3tools/client-runtime/fork";
 import { ChevronDownIcon, KeyRoundIcon, XIcon } from "lucide-react";
@@ -27,9 +30,6 @@ import { Switch } from "~/components/ui/switch";
 import { Toggle } from "~/components/ui/toggle";
 import { useProjects } from "~/state/entities";
 import { LibraryDialog, LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
-
-const toolText = (tool: LibraryRequiredTool) =>
-  `${libraryToolLabel(tool.id)}${tool.minimumVersion ? ` ${tool.minimumVersion}+` : ""}`;
 
 /**
  * How work on this project gets going on any computer: its scripts, the tools it needs, the
@@ -65,7 +65,7 @@ export function ProjectProfile({
           ? ["Scripts", profile.scripts.map((script) => script.name).join(", ")]
           : null,
         profile.requiredTools?.length
-          ? ["Needs", profile.requiredTools.map(toolText).join(", ")]
+          ? ["Needs", profile.requiredTools.map(libraryToolText).join(", ")]
           : null,
         profile.secretNames?.length ? ["Secrets", profile.secretNames.join(", ")] : null,
         profile.preferredEnvironmentIds?.length
@@ -156,7 +156,7 @@ function ProfileDialog({
   };
   const save = () => {
     const profile = compactLibraryProfile(draft);
-    const invalid = profile ? libraryProfileProblem(profile) : null;
+    const invalid = profile ? libraryProfileProblem(profile, project.profile) : null;
     if (invalid) {
       setProblem(invalid);
       return;
@@ -342,16 +342,9 @@ function ToolsField({
                 placeholder="Any version"
                 maxLength={32}
                 value={tool.minimumVersion ?? ""}
-                onChange={(event) => {
-                  const minimumVersion = event.target.value.trim();
-                  onChange(
-                    tools.map((entry) =>
-                      entry.id === tool.id
-                        ? { id: entry.id, ...(minimumVersion ? { minimumVersion } : {}) }
-                        : entry,
-                    ),
-                  );
-                }}
+                onChange={(event) =>
+                  onChange(libraryToolsWithVersion(tools, tool.id, event.target.value))
+                }
               />
               {LIBRARY_TOOL_CATALOG.some((entry) => entry.id === tool.id) ? null : (
                 // Only catalog tools have a toggle above, so others are removed here.
@@ -459,10 +452,7 @@ function ComputersField({
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly onChange: (selected: readonly EnvironmentId[]) => void;
 }) {
-  const ids = [
-    ...computers.filter((computer) => computer.supportsExecution).map((c) => c.environmentId),
-    ...selected,
-  ].filter((id, index, all) => all.indexOf(id) === index);
+  const ids = libraryProfileComputerIds(computers, selected);
   if (!ids.length) return null;
   return (
     <section className="space-y-2">

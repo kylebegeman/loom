@@ -16,16 +16,22 @@ import { MaterialButton } from "../../components/MaterialButton";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
+import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { LibraryProfileSection } from "./LibraryProfileSection";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
 import { useLibraryProjectColorValue } from "./libraryProjectColors";
 import {
+  libraryActiveCopies,
+  libraryProfileChange,
+  libraryProfileProblem,
   libraryResourceFromInput,
   PROJECT_COLOR_NAMES,
   validateResources,
+  type LibraryProfileDraft,
 } from "@t3tools/client-runtime/fork";
 
 type ResourceDraft = {
@@ -66,7 +72,8 @@ export function LibraryEditRouteScreen({
 function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
   const [initial] = useState(seed);
   const authority = useLibraryAuthority(),
-    navigation = useNavigation();
+    navigation = useNavigation(),
+    { environments } = useEnvironments();
   const create = useAtomCommand(library.createProject, { reportFailure: false }),
     update = useAtomCommand(library.updateProject, { reportFailure: false });
   const canSave = useAtomValue(
@@ -89,6 +96,21 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
         defaultBranch: resource.defaultBranch ?? "",
       })) ?? [],
   );
+  // The setup is edited with a saved project, and only once the Library says it keeps one.
+  const editsProfile = Boolean(initial && authority.keepsProfile);
+  const [profile, setProfile] = useState<LibraryProfileDraft>(() => ({ ...initial?.profile }));
+  const copies = useEnvironmentQuery(
+    editsProfile && initial && authority.environmentId
+      ? library.copies({
+          environmentId: authority.environmentId,
+          input: { projectId: initial.id, includeReleased: true },
+        })
+      : null,
+  );
+  const hostLabel = (id: string) =>
+    environments.find((env) => env.environmentId === id)?.label ??
+    authority.computers.find((entry) => entry.environmentId === id)?.label ??
+    "Saved computer";
   const [pending, setPending] = useState(false),
     [error, setError] = useState<string | null>(null);
   const [awaitingResult, setAwaitingResult] = useState(false);
@@ -165,6 +187,17 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
       setError(cause instanceof Error ? cause.message : "Review the project resources.");
       return;
     }
+    // Undefined keeps the saved setup, so a hidden or untouched section never changes it.
+    const profileChange = editsProfile
+      ? libraryProfileChange(profile, initial?.profile)
+      : undefined;
+    const profileProblem = profileChange
+      ? libraryProfileProblem(profileChange, initial?.profile)
+      : null;
+    if (profileProblem) {
+      setError(profileProblem);
+      return;
+    }
     if (submittedAuthority.current && submittedAuthority.current !== authority.environmentId) {
       setError("Reconnect the library used for this save before retrying it.");
       return;
@@ -187,6 +220,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
               resources: parsed,
               // Only send a color the person changed; null returns the project to automatic.
               ...((initial.color ?? null) !== color ? { color } : {}),
+              ...(profileChange === undefined ? {} : { profile: profileChange }),
             },
           })
         : await create({
@@ -349,6 +383,19 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
             />
           </View>
         </SettingsSection>
+      ) : null}
+      {editsProfile ? (
+        <LibraryProfileSection
+          draft={profile}
+          onChange={(change) => {
+            setError(null);
+            setProfile((current) => ({ ...current, ...change }));
+          }}
+          copies={libraryActiveCopies(copies.data ?? [])}
+          computers={authority.computers}
+          hostLabel={hostLabel}
+          disabled={pending || awaitingResult}
+        />
       ) : null}
       {!authority.environmentId ? (
         <MaterialButton
