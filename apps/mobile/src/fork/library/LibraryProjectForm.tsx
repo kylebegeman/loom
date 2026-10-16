@@ -1,19 +1,27 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { LibraryError, type LibraryProject, type LibraryResource } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_PROJECT_COLORS,
+  LibraryError,
+  type LibraryProject,
+  type LibraryProjectColor,
+  type LibraryResource,
+} from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
-import { View } from "react-native";
+import { Pressable, View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { MaterialButton } from "../../components/MaterialButton";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
+import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
 import { libraryResourceDraft } from "./libraryLogic";
+import { LIBRARY_PROJECT_COLOR_LABELS, useLibraryProjectColorValue } from "./libraryProjectColors";
 import { libraryResourceFromInput } from "@t3tools/client-runtime/fork";
 
 type ResourceDraft = {
@@ -64,6 +72,8 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
   );
   const [title, setTitle] = useState(initial?.title ?? ""),
     [brief, setBrief] = useState(initial?.brief ?? "");
+  // Null means automatic: the project keeps a stable color derived from its id.
+  const [color, setColor] = useState<LibraryProjectColor | null>(initial?.color ?? null);
   const [resources, setResources] = useState<readonly ResourceDraft[]>(
     () =>
       initial?.resources.map((resource) => ({
@@ -182,11 +192,19 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
               title: title.trim(),
               brief,
               resources: parsed,
+              // Only send a color the person changed; null returns the project to automatic.
+              ...((initial.color ?? null) !== color ? { color } : {}),
             },
           })
         : await create({
             environmentId: authority.environmentId,
-            input: { requestId: request.current, title: title.trim(), brief, resources: parsed },
+            input: {
+              requestId: request.current,
+              title: title.trim(),
+              brief,
+              resources: parsed,
+              ...(color ? { color } : {}),
+            },
           });
       if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
       refreshLibraryProject(authority.environmentId, result.value.id);
@@ -236,6 +254,13 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
             className="min-h-28 rounded-xl border border-input-border bg-input p-3 text-sm text-foreground"
           />
         </View>
+      </SettingsSection>
+      <SettingsSection title="Color">
+        <LibraryColorPicker
+          value={color}
+          onChange={setColor}
+          disabled={pending || awaitingResult}
+        />
       </SettingsSection>
       {resources.map((resource) => (
         <SettingsSection
@@ -352,5 +377,48 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
         }}
       />
     </LibraryPage>
+  );
+}
+
+function LibraryColorPicker(props: {
+  value: LibraryProjectColor | null;
+  onChange: (color: LibraryProjectColor | null) => void;
+  disabled: boolean;
+}) {
+  const colorValue = useLibraryProjectColorValue();
+  return (
+    <View accessibilityRole="radiogroup" className="flex-row flex-wrap items-center gap-2 p-4">
+      <Pressable
+        accessibilityRole="radio"
+        accessibilityLabel="Automatic color"
+        accessibilityState={{ checked: props.value === null, disabled: props.disabled }}
+        disabled={props.disabled}
+        onPress={() => props.onChange(null)}
+        className={cn(
+          "h-9 justify-center rounded-full border-2 px-3 active:opacity-70",
+          props.value === null ? "border-foreground" : "border-border",
+        )}
+      >
+        <Text className="text-sm text-foreground">Automatic</Text>
+      </Pressable>
+      {LIBRARY_PROJECT_COLORS.map((option) => {
+        const value = colorValue(option);
+        const selected = props.value === option;
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="radio"
+            accessibilityLabel={LIBRARY_PROJECT_COLOR_LABELS[option]}
+            accessibilityState={{ checked: selected, disabled: props.disabled }}
+            disabled={props.disabled}
+            onPress={() => props.onChange(option)}
+            className="size-9 items-center justify-center rounded-full border-2 active:opacity-70"
+            style={{ borderColor: selected ? value : "transparent" }}
+          >
+            <View className="size-6 rounded-full" style={{ backgroundColor: value }} />
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }

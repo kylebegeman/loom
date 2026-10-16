@@ -19,11 +19,13 @@ import type {
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useState, type ReactNode } from "react";
-import { Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useResolveClassNames } from "uniwind";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { ListChoiceRow } from "../../components/ListChoiceRow";
 import { MaterialButton } from "../../components/MaterialButton";
+import { RowPressable } from "../../components/RowPressable";
 import { ScreenHeader } from "../../components/ScreenHeader";
 import { ScreenScrollView } from "../../components/ScreenScrollView";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
@@ -31,6 +33,7 @@ import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
 import { relativeTime } from "../../lib/time";
 import { useHardwareKeyboardCommand } from "../../features/keyboard/hardwareKeyboardCommands";
@@ -42,6 +45,7 @@ import {
 } from "./libraryState";
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
+import { LibraryProjectTile } from "./libraryProjectColors";
 
 const RECENT_CONVERSATIONS = 5;
 const ago = (iso: string) => `${relativeTime(iso)} ago`;
@@ -228,18 +232,9 @@ export function LibraryRouteScreen() {
           />
           <SettingsSection>
             {projects.map((project, index) => (
-              <ListChoiceRow
+              <LibraryProjectRow
                 key={project.id}
-                label={project.title}
-                selected={false}
-                description={
-                  project.resources
-                    .filter((r) => r.kind !== "link")
-                    .map((r) => r.title)
-                    .join(", ") ||
-                  project.brief ||
-                  "No repositories added yet"
-                }
+                project={project}
                 separated={index > 0}
                 onPress={() => navigation.navigate("LibraryProject", { projectId: project.id })}
               />
@@ -274,6 +269,42 @@ export function LibraryRouteScreen() {
         </>
       )}
     </LibraryPage>
+  );
+}
+
+function LibraryProjectRow(props: {
+  project: LibraryProject;
+  separated: boolean;
+  onPress: () => void;
+}) {
+  const rippleStyle = useResolveClassNames("bg-subtle-strong");
+  const description =
+    props.project.resources
+      .filter((r) => r.kind !== "link")
+      .map((r) => r.title)
+      .join(", ") ||
+    props.project.brief ||
+    "No repositories added yet";
+  return (
+    <RowPressable
+      accessibilityRole="button"
+      accessibilityLabel={props.project.title}
+      accessibilityHint={description}
+      onPress={props.onPress}
+      android_ripple={{ color: rippleStyle.backgroundColor }}
+      unstable_pressDelay={Platform.OS === "android" ? 50 : undefined}
+      className={cn("bg-grouped-card", props.separated && "border-t border-border-subtle")}
+    >
+      <View className="min-h-18 flex-row items-center gap-3 px-4 py-3">
+        <LibraryProjectTile project={props.project} />
+        <View className="min-w-0 flex-1 gap-1">
+          <Text className="text-base text-foreground">{props.project.title}</Text>
+          <Text className="text-sm text-foreground-muted" numberOfLines={2}>
+            {description}
+          </Text>
+        </View>
+      </View>
+    </RowPressable>
   );
 }
 
