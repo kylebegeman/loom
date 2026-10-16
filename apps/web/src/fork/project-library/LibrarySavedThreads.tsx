@@ -10,6 +10,7 @@ export function LibrarySavedThreads({
   localThreads,
   projectKeys,
   search,
+  showHeading = true,
 }: {
   readonly localThreads: readonly {
     readonly id: ThreadId;
@@ -17,6 +18,7 @@ export function LibrarySavedThreads({
   }[];
   readonly projectKeys: ReadonlySet<string> | null;
   readonly search: string;
+  readonly showHeading?: boolean;
 }) {
   const library = useLibraryProjects(true);
   const index = useEnvironmentQuery(
@@ -46,7 +48,9 @@ export function LibrarySavedThreads({
   if (!threads.length) return null;
   return (
     <section className="space-y-1 py-3" aria-label="Saved conversations">
-      <h2 className="px-2 text-xs font-medium text-muted-foreground">Saved conversations</h2>
+      {showHeading ? (
+        <h2 className="px-2 text-xs font-medium text-muted-foreground">Saved conversations</h2>
+      ) : null}
       {threads.map((thread) => (
         <Link
           key={thread.id}

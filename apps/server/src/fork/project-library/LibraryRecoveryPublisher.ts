@@ -22,6 +22,9 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { LibraryPublishingCredentialFile } from "../../auth/LibraryPublishingCredential.ts";
 import * as LibraryRecoveryStore from "./assets/LibraryRecoveryStore.ts";
+import * as ServerConfig from "../../config.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { libraryComputerDirectory } from "./enrollment.ts";
 
 const decodeCredential = Schema.decodeEffect(
   Schema.fromJsonString(LibraryPublishingCredentialFile),
@@ -49,7 +52,21 @@ const make = Effect.gen(function* () {
   const http = yield* HttpClient.HttpClient;
   const localStore = yield* Effect.serviceOption(LibraryRecoveryStore.LibraryRecoveryStore);
   const localAuthority = env.LOOM_LIBRARY_AUTHORITY === "true";
-  const credentialPath = env.LOOM_LIBRARY_CREDENTIAL_FILE?.trim();
+  let credentialPath = env.LOOM_LIBRARY_CREDENTIAL_FILE?.trim();
+  if (!localAuthority && !credentialPath) {
+    const config = yield* Effect.serviceOption(ServerConfig.ServerConfig);
+    const identity = yield* Effect.serviceOption(ServerEnvironmentIdentity);
+    if (Option.isSome(config) && Option.isSome(identity)) {
+      const computerDirectory = libraryComputerDirectory(
+        yield* HostProcess.HomeDirectory,
+        yield* identity.value.getEnvironmentId,
+      );
+      const enrolled = path.join(computerDirectory, "publisher.json");
+      const legacy = path.join(config.value.secretsDir, "library-publisher.json");
+      if (yield* fs.exists(enrolled)) credentialPath = enrolled;
+      else if (yield* fs.exists(legacy)) credentialPath = legacy;
+    }
+  }
   const configured = localAuthority
     ? Option.isSome(localStore)
     : credentialPath !== undefined && credentialPath !== "";

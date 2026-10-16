@@ -31,6 +31,29 @@ describe("resolveFirstRunDecision", () => {
     });
   });
 
+  it("opens saved history without execution setup on a Library-only server", () => {
+    expect(
+      resolveFirstRunDecision({
+        ...freshWorkspace,
+        executionAvailable: false,
+        projectCount: 0,
+        threadCount: 0,
+      }),
+    ).toEqual({ decision: "app", persistCompletion: true });
+  });
+
+  it("waits for a live server before skipping execution setup", () => {
+    expect(
+      resolveFirstRunDecision({
+        ...freshWorkspace,
+        executionAvailable: false,
+        authoritative: false,
+        projectCount: 0,
+        threadCount: 0,
+      }),
+    ).toEqual({ decision: "pending", persistCompletion: false });
+  });
+
   it("does not permanently complete onboarding from cached project counts", () => {
     expect(
       resolveFirstRunDecision({

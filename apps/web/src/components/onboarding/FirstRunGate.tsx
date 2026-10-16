@@ -135,6 +135,7 @@ export function FirstRunGate({
       })
     : resolveFirstRunDecision({
         enabled,
+        executionAvailable: serverConfig?.environment.capabilities.supportsExecution !== false,
         hydrated,
         completed: onboardingCompletedAt !== null,
         bootstrapped,

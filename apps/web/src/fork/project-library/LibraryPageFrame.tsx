@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { ArrowLeftIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { SidebarInset } from "~/components/ui/sidebar";
@@ -18,6 +19,16 @@ export function LibraryPageFrame({
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
+        {title ? (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Back to projects"
+            render={<Link to="/projects" />}
+          >
+            <ArrowLeftIcon />
+          </Button>
+        ) : null}
         {title ? (
           <Button size="xs" variant="link" render={<Link to="/projects" />}>
             Projects

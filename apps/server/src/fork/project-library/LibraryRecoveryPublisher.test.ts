@@ -13,6 +13,9 @@ import * as Stream from "effect/Stream";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import * as Publisher from "./LibraryRecoveryPublisher.ts";
+import * as ServerConfig from "../../config.ts";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { libraryComputerDirectory } from "./enrollment.ts";
 import * as Recovery from "./assets/LibraryRecoveryStore.ts";
 
 const source = EnvironmentId.make("source-host");
@@ -34,7 +37,11 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
   const path = yield* Path.Path;
   const directory = yield* fs.makeTempDirectoryScoped({ prefix: "recovery-publisher-" });
   const archivePath = path.join(directory, "archive.tar");
-  const credentialPath = path.join(directory, "credential.json");
+  const credentialPath =
+    mode === "enrolled"
+      ? path.join(libraryComputerDirectory(directory, source), "publisher.json")
+      : path.join(directory, "credential.json");
+  yield* fs.makeDirectory(path.dirname(credentialPath), { recursive: true, mode: 0o700 });
   yield* fs.writeFile(archivePath, bytes);
   yield* fs.writeFileString(
     credentialPath,
@@ -112,9 +119,14 @@ const fixture = Effect.fnUntraced(function* (mode = "valid") {
   const publisher = yield* Publisher.LibraryRecoveryPublisher.pipe(
     Effect.provide(Publisher.layer),
     Effect.provideService(HttpClient.HttpClient, http),
+    Effect.provide(ServerConfig.layerTest(process.cwd(), { prefix: "recovery-enrollment-test-" })),
+    Effect.provideService(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(source) }),
+    Effect.provideService(HostProcess.HomeDirectory, directory),
     Effect.provideService(
       HostProcess.Environment,
-      mode === "unconfigured" ? {} : { LOOM_LIBRARY_CREDENTIAL_FILE: credentialPath },
+      ["unconfigured", "enrolled"].includes(mode)
+        ? {}
+        : { LOOM_LIBRARY_CREDENTIAL_FILE: credentialPath },
     ),
   );
   return { publisher, archivePath, sha256, receipt, requests, fs };
@@ -128,6 +140,21 @@ const run = <A, E, R>(
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer));
 
 describe("recovery archive publishing", () => {
+  it.effect("uses the computer enrollment for recovery without shell configuration", () =>
+    run("enrolled", (test) =>
+      Effect.gen(function* () {
+        expect(test.publisher.configured).toBe(true);
+        expect(
+          yield* test.publisher.publish({
+            archivePath: test.archivePath,
+            sha256: test.sha256,
+            manifest,
+          }),
+        ).toEqual(test.receipt);
+      }),
+    ),
+  );
+
   it.effect("uploads a bounded stream and verifies the entire downloaded archive", () =>
     run("valid", (test) =>
       Effect.gen(function* () {
