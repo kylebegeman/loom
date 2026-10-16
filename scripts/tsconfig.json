@@ -5,5 +5,9 @@
     "types": ["node"],
     "lib": ["ESNext", "esnext.disposable"]
   },
-  "include": ["**/*.ts"]
+  "include": [
+    "**/*.ts",
+    "../apps/desktop/src/updates/releaseNotes.ts",
+    "../apps/desktop/src/updates/updateChannels.ts"
+  ]
 }
