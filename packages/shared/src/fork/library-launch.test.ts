@@ -462,6 +462,7 @@ describe("rankLibraryLaunchCandidates with required tools", () => {
     });
     const mini = ranking.candidates.find((candidate) => candidate.environmentId === MINI)!;
     expect(mini.readiness).toBe("not-ready");
+    expect(mini.toolProblems).toEqual(["Xcode missing", "Go 1.21 (needs 1.24)"]);
     expect(libraryLaunchCandidateSummary(mini)).toBe(
       "Mac Mini · online, up to date, Xcode missing, Go 1.21 (needs 1.24)",
     );

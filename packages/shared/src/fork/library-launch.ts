@@ -62,6 +62,8 @@ interface LibraryLaunchCandidateBase {
   readonly lastUsedAt: string | null;
   readonly workingThreads: number;
   readonly readiness: LibraryLaunchReadiness;
+  /** Required tools that fail on this computer, for example ["Xcode missing"]. Also in `reasons`. */
+  readonly toolProblems: readonly string[];
   /** Short, plain reasons in display order, for example ["online", "up to date"]. */
   readonly reasons: readonly string[];
 }
@@ -256,6 +258,7 @@ export function rankLibraryLaunchCandidates(input: {
     const { readiness, problems } = libraryLaunchReadiness(
       checked?.environmentId === computer.environmentId ? checked : null,
     );
+    const toolProblems = problems.map(toolProblemReason);
     const base = {
       environmentId: computer.environmentId,
       label: computer.label,
@@ -263,9 +266,10 @@ export function rankLibraryLaunchCandidates(input: {
       lastUsedAt,
       workingThreads: computer.workingThreads,
       readiness,
+      toolProblems,
     };
     const context = [
-      ...problems.map(toolProblemReason),
+      ...toolProblems,
       ...(lastUsedAt !== null && lastUsedAt === mostRecentUse ? ["used last"] : []),
       ...(computer.online && computer.workingThreads > 0
         ? [`${computer.workingThreads} working`]
@@ -360,6 +364,7 @@ function miniCandidates(input: {
       lastUsedAt: null,
       workingThreads: worker.readiness.active,
       readiness: "ready",
+      toolProblems: [],
       reasons: [
         "for long jobs",
         `from ${host.label}`,
