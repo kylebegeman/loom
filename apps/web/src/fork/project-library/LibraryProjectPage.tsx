@@ -1,5 +1,5 @@
-import { randomUUID } from "~/lib/utils";
-import { useEffect, useState } from "react";
+import { randomUUID, cn } from "~/lib/utils";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type {
@@ -8,13 +8,26 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { ArchiveIcon, EllipsisIcon, MoonIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArrowRightIcon,
+  CheckIcon,
+  EllipsisIcon,
+  FolderGit2Icon,
+  MessageSquareIcon,
+  MoonIcon,
+  PencilLineIcon,
+  PlusIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
-import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
+import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useProjects } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
+import { libraryActiveCopies, libraryProjectColor } from "@t3tools/client-runtime/fork";
 import {
   projectLibrary,
   useLibraryProject,
@@ -23,19 +36,21 @@ import {
 } from "./state";
 import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { libraryCopyReadiness } from "./copyChoice";
 import { NewConversationDialog } from "./NewConversationDialog";
-import { isRepositoryResource } from "./resources";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
-import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
-import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { libraryActiveCopies, libraryProjectColor } from "@t3tools/client-runtime/fork";
-import { useProjects } from "~/state/entities";
+import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
+import {
+  ComputerLabel,
+  ProjectColorPicker,
+  ProjectTile,
+  projectColorStyle,
+} from "./ProjectIdentity";
+import { ProjectWash } from "./ProjectCollection";
 import {
   isRestingSince,
   libraryLocalProjectIcon,
@@ -43,7 +58,17 @@ import {
   type LocalProjectIcon,
 } from "./projectList";
 
-const RECENT_CONVERSATIONS = 5;
+const RECENT_CONVERSATIONS = 6;
+/** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
+const LONG_BRIEF_CHARACTERS = 320;
+const LONG_BRIEF_LINES = 4;
+
+type LibraryProjectView = ReturnType<typeof useLibraryProject>;
+type ConversationRequest = {
+  readonly hostId?: EnvironmentId;
+  readonly copyId?: string;
+  readonly resourceId?: string;
+};
 
 /**
  * A project is a name, a brief and the repositories and links it is made of. Copies on
@@ -53,16 +78,6 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
   // Removed copies feed the folded history, so the page always asks for them.
   const library = useLibraryProject(projectId, true);
   const [, selectProject] = useSelectedLibraryProject();
-  const [copyRequest, setCopyRequest] = useState<CopyRequest | null>(null);
-  const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
-  const [conversation, setConversation] = useState<{
-    hostId?: EnvironmentId;
-    copyId?: string;
-  } | null>(null);
-  const canRegister = useLibraryPermission(projectLibrary.registerThread, library.authorityId);
-  const localProjects = useProjects();
-  // Read once per visit, like the projects page, so render stays pure.
-  const [now] = useState(() => Date.now());
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
@@ -84,6 +99,41 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
         </p>
       </LibraryPageFrame>
     );
+  return (
+    <LibraryPageFrame title={project.title}>
+      <ProjectView library={library} authorityId={library.authorityId} project={project} />
+    </LibraryPageFrame>
+  );
+}
+
+/**
+ * The page reads top to bottom as the work does: what the project is, how to get going, then
+ * the conversations. Where it lives on disk and what it's made of sit alongside.
+ */
+function ProjectView({
+  library,
+  authorityId,
+  project,
+}: {
+  readonly library: LibraryProjectView;
+  readonly authorityId: EnvironmentId;
+  readonly project: LibraryProject;
+}) {
+  const [copyRequest, setCopyRequest] = useState<CopyRequest | null>(null);
+  const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
+  const [conversation, setConversation] = useState<ConversationRequest | null>(null);
+  const [editingBrief, setEditingBrief] = useState(false);
+  const [addingResource, setAddingResource] = useState(false);
+  const canRegister = useLibraryPermission(projectLibrary.registerThread, authorityId);
+  const update = useProjectUpdate({
+    project,
+    authorityId,
+    connected: library.connected,
+    onSaved: library.refresh,
+  });
+  const localProjects = useProjects();
+  // Read once per visit, like the projects page, so render stays pure.
+  const [now] = useState(() => Date.now());
   const hostLabel = (id: EnvironmentId) =>
     library.environments.find((entry) => entry.environmentId === id)?.label ??
     library.computers.find((entry) => entry.environmentId === id)?.label ??
@@ -94,60 +144,99 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
         entry.environmentId === id && entry.entry.enabled && entry.connection.phase === "connected",
     );
   const copies = library.copies.data ?? [];
+  const activeCopies = libraryActiveCopies(copies);
   const canWork = library.connected && !project.archived;
-  const activeAt = (library.threads.data ?? []).reduce(
-    (latest, thread) => (!thread.deleted && thread.updatedAt > latest ? thread.updatedAt : latest),
-    project.updatedAt,
-  );
+  const canStart = canRegister && canWork;
+  const threads = (library.threads.data ?? [])
+    .filter((thread) => !thread.deleted)
+    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const activeAt =
+    threads[0] && threads[0].updatedAt > project.updatedAt
+      ? threads[0].updatedAt
+      : project.updatedAt;
+  // A project nobody has talked about yet gets a path to its first conversation instead.
+  const settingUp =
+    !project.archived && !library.threads.isPending && !library.threads.error && !threads.length;
   return (
-    <LibraryPageFrame title={project.title} width="readable">
-      <ProjectOverview
+    <div style={projectColorStyle(libraryProjectColor(project))} className="contents">
+      <ProjectHero
         project={project}
-        localIcon={libraryLocalProjectIcon(
-          libraryActiveCopies(copies),
-          localProjectsByRef(localProjects),
-        )}
+        localIcon={libraryLocalProjectIcon(activeCopies, localProjectsByRef(localProjects))}
         activeAt={activeAt}
         resting={isRestingSince(activeAt, now)}
-        authorityId={library.authorityId}
+        authorityId={authorityId}
         connected={library.connected}
-        canStart={canRegister && canWork}
+        canStart={canStart}
+        update={update}
+        editingBrief={editingBrief}
+        onEditingBriefChange={setEditingBrief}
+        showEmptyBrief={!settingUp}
         onSaved={library.refresh}
         onNewConversation={() => setConversation({})}
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
-      <ProjectCopies
-        project={project}
-        copies={copies}
-        loading={libraryCopyReadiness(library.copies) === "loading"}
-        error={library.copies.error}
-        onRetry={library.copies.refresh}
-        canAct={canWork}
-        canStart={canRegister && canWork}
-        hostLabel={hostLabel}
-        hostConnected={hostConnected}
-        onGetCopy={setCopyRequest}
-        onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
-        onRemove={setReleasing}
-      />
-      <ProjectConversations
-        project={project}
-        threads={library.threads.data}
-        loading={library.threads.isPending}
-        error={library.threads.error}
-        onRetry={library.threads.refresh}
-        hostLabel={hostLabel}
-      />
-      <ProjectHistory
-        project={project}
-        copies={copies}
-        authorityId={library.authorityId}
-        connected={library.connected}
-        canAct={canWork}
-        hostLabel={hostLabel}
-        hostConnected={hostConnected}
-        onReuse={setCopyRequest}
-      />
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
+        <div className="flex min-w-0 flex-col gap-6">
+          {settingUp ? (
+            <ProjectSetup
+              project={project}
+              hasCopy={activeCopies.length > 0}
+              canEdit={update.canEdit}
+              canWork={canWork}
+              canStart={canStart}
+              onWriteBrief={() => setEditingBrief(true)}
+              onAddResource={() => setAddingResource(true)}
+              onGetCopy={setCopyRequest}
+              onStart={() => setConversation({})}
+            />
+          ) : (
+            <ProjectConversations
+              project={project}
+              threads={threads}
+              loading={library.threads.isPending}
+              error={library.threads.error}
+              onRetry={library.threads.refresh}
+              hostLabel={hostLabel}
+            />
+          )}
+        </div>
+        <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
+          <ProjectCopies
+            project={project}
+            copies={copies}
+            loading={libraryCopyReadiness(library.copies) === "loading"}
+            error={library.copies.error}
+            onRetry={library.copies.refresh}
+            canAct={canWork}
+            canStart={canStart}
+            hostLabel={hostLabel}
+            hostConnected={hostConnected}
+            onGetCopy={setCopyRequest}
+            onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
+            onRemove={setReleasing}
+          />
+          <ProjectResources
+            resources={project.resources}
+            canEdit={update.canEdit}
+            busy={update.busy}
+            adding={addingResource}
+            canStart={canStart}
+            onAddingChange={setAddingResource}
+            onChange={(resources) => update.save({ resources })}
+            onStart={(resource) => setConversation({ resourceId: resource.id })}
+          />
+          <ProjectHistory
+            project={project}
+            copies={copies}
+            authorityId={authorityId}
+            connected={library.connected}
+            canAct={canWork}
+            hostLabel={hostLabel}
+            hostConnected={hostConnected}
+            onReuse={setCopyRequest}
+          />
+        </aside>
+      </div>
       {copyRequest ? (
         <CopyDialog
           project={project}
@@ -178,16 +267,17 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
           copiesQuery={library.copies}
           {...(conversation.hostId ? { initialHostId: conversation.hostId } : {})}
           {...(conversation.copyId ? { initialCopyId: conversation.copyId } : {})}
+          {...(conversation.resourceId ? { initialResourceId: conversation.resourceId } : {})}
           onChanged={library.refresh}
           onClose={() => setConversation(null)}
         />
       ) : null}
-    </LibraryPageFrame>
+    </div>
   );
 }
 
-/** Name, brief and contents: the parts of a project someone defines, all edited in place. */
-function ProjectOverview({
+/** Who the project is at a glance: its mark, name, pulse and brief, with the way to start work. */
+function ProjectHero({
   project,
   localIcon,
   activeAt,
@@ -195,6 +285,10 @@ function ProjectOverview({
   authorityId,
   connected,
   canStart,
+  update,
+  editingBrief,
+  onEditingBriefChange,
+  showEmptyBrief,
   onSaved,
   onNewConversation,
 }: {
@@ -205,21 +299,17 @@ function ProjectOverview({
   readonly authorityId: EnvironmentId;
   readonly connected: boolean;
   readonly canStart: boolean;
+  readonly update: ReturnType<typeof useProjectUpdate>;
+  readonly editingBrief: boolean;
+  readonly onEditingBriefChange: (editing: boolean) => void;
+  readonly showEmptyBrief: boolean;
   readonly onSaved: () => void;
   readonly onNewConversation: () => void;
 }) {
-  const update = useProjectUpdate({ project, authorityId, connected, onSaved });
   const archive = useAtomCommand(projectLibrary.archiveProject, { reportFailure: false });
   const canArchive = useLibraryPermission(projectLibrary.archiveProject, authorityId);
   const [renaming, setRenaming] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
-  const repositories = project.resources.filter(isRepositoryResource).length;
-  const links = project.resources.length - repositories;
-  const meta = [
-    `Active ${formatRelativeTimeLabel(activeAt)}`,
-    repositories ? `${repositories} ${repositories === 1 ? "repository" : "repositories"}` : null,
-    links ? `${links} ${links === 1 ? "link" : "links"}` : null,
-  ].filter(Boolean);
   const setArchived = async (archived: boolean) => {
     setArchiveError(null);
     const result = await archive({
@@ -238,82 +328,73 @@ function ProjectOverview({
     onSaved();
   };
   return (
-    <>
-      <div
-        style={projectColorStyle(libraryProjectColor(project))}
-        className="relative isolate flex flex-col gap-2"
-      >
-        {/* The project's color lights the page from behind its mark, not along an edge. */}
-        <span
-          aria-hidden
-          className="pointer-events-none absolute -top-28 -left-32 -z-10 size-96 rounded-full bg-radial from-(--project-color)/16 to-transparent to-65%"
-        />
+    <header className="flex flex-col gap-5">
+      <div>
         <LibraryBackLink to="/projects">Projects</LibraryBackLink>
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          {renaming ? (
-            <TitleEditor
-              title={project.title}
-              busy={update.busy}
-              onCancel={() => setRenaming(false)}
-              onSave={async (title) => {
-                if (await update.save({ title })) setRenaming(false);
-              }}
-            />
-          ) : (
-            <div className="flex min-w-0 items-center gap-3">
-              <Popover>
-                <PopoverTrigger
-                  disabled={!update.canEdit || update.busy}
-                  aria-label="Change project color"
-                  render={
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-2xl outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring enabled:hover:scale-103 disabled:cursor-default"
-                    />
-                  }
-                >
-                  <ProjectTile project={project} local={localIcon} size="lg" />
-                </PopoverTrigger>
-                <PopoverPopup align="start" className="w-auto">
-                  <p className="mb-3 text-sm font-medium">Project color</p>
-                  <ProjectColorPicker
-                    value={project.color}
-                    automatic={libraryProjectColor({ id: project.id })}
-                    disabled={update.busy}
-                    onChange={(color) => {
-                      if ((project.color ?? null) !== color) void update.save({ color });
-                    }}
-                  />
-                </PopoverPopup>
-              </Popover>
-              <div className="min-w-0 space-y-1">
-                <h1 className="wrap-anywhere text-xl font-semibold tracking-tight">
-                  {project.title}
-                </h1>
-                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
-                  {project.archived || resting ? (
-                    <span className="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
-                      {project.archived ? (
-                        <ArchiveIcon aria-hidden className="size-3" />
-                      ) : (
-                        <MoonIcon aria-hidden className="size-3" />
-                      )}
-                      {project.archived ? "Archived" : "Resting"}
-                    </span>
-                  ) : null}
-                  {meta.join(" · ")}
-                </p>
-              </div>
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <Button shape="pill" disabled={!canStart} onClick={onNewConversation}>
+        <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
+          <Popover>
+            <PopoverTrigger
+              disabled={!update.canEdit || update.busy}
+              aria-label="Change project color"
+              render={
+                <button
+                  type="button"
+                  className="shrink-0 rounded-2xl outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring enabled:hover:scale-103 disabled:cursor-default"
+                />
+              }
+            >
+              <ProjectTile project={project} local={localIcon} size="xl" />
+            </PopoverTrigger>
+            <PopoverPopup align="start" className="w-auto">
+              <p className="mb-3 text-sm font-medium">Project color</p>
+              <ProjectColorPicker
+                value={project.color}
+                automatic={libraryProjectColor({ id: project.id })}
+                disabled={update.busy}
+                onChange={(color) => {
+                  if ((project.color ?? null) !== color) void update.save({ color });
+                }}
+              />
+            </PopoverPopup>
+          </Popover>
+          <div className="min-w-0 flex-1 basis-60 space-y-2 pt-1">
+            {renaming ? (
+              <TitleEditor
+                title={project.title}
+                busy={update.busy}
+                onCancel={() => setRenaming(false)}
+                onSave={async (title) => {
+                  if (await update.save({ title })) setRenaming(false);
+                }}
+              />
+            ) : (
+              <h1 className="wrap-anywhere text-2xl leading-tight font-semibold tracking-tight">
+                {project.title}
+              </h1>
+            )}
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
+              <StatusPill archived={project.archived} resting={resting} />
+              <span>Last active {formatRelativeTimeLabel(activeAt)}</span>
+              <span aria-hidden className="max-sm:hidden">
+                ·
+              </span>
+              <span className="max-sm:basis-full">Started {formatDay(project.createdAt)}</span>
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 pt-1">
+            <Button shape="pill" size="sm" disabled={!canStart} onClick={onNewConversation}>
+              <PlusIcon />
               New conversation
             </Button>
             <Menu>
               <MenuTrigger
                 render={
-                  <Button shape="pill" size="icon" variant="ghost" aria-label="Project actions" />
+                  <Button
+                    shape="pill"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label="Project actions"
+                  />
                 }
               >
                 <EllipsisIcon />
@@ -322,6 +403,10 @@ function ProjectOverview({
                 <MenuItem disabled={!update.canEdit} onClick={() => setRenaming(true)}>
                   Rename
                 </MenuItem>
+                <MenuItem disabled={!update.canEdit} onClick={() => onEditingBriefChange(true)}>
+                  Edit brief
+                </MenuItem>
+                <MenuSeparator />
                 <MenuItem
                   disabled={!canArchive || !connected}
                   onClick={() => void setArchived(!project.archived)}
@@ -332,6 +417,17 @@ function ProjectOverview({
             </Menu>
           </div>
         </div>
+      </div>
+      <div className="sm:ps-18">
+        <ProjectBrief
+          brief={project.brief}
+          canEdit={update.canEdit}
+          busy={update.busy}
+          editing={editingBrief}
+          showEmpty={showEmptyBrief}
+          onEditingChange={onEditingBriefChange}
+          onSave={(brief) => update.save({ brief })}
+        />
       </div>
       {project.archived ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 py-3 dark:bg-accent/50">
@@ -352,20 +448,41 @@ function ProjectOverview({
         </div>
       ) : null}
       <LibraryErrorNotice error={archiveError} />
-      <BriefEditor
-        brief={project.brief}
-        canEdit={update.canEdit}
-        busy={update.busy}
-        onSave={(brief) => update.save({ brief })}
-      />
-      <ProjectResources
-        resources={project.resources}
-        canEdit={update.canEdit}
-        busy={update.busy}
-        onChange={(resources) => update.save({ resources })}
-      />
       <LibraryErrorNotice error={update.error} />
-    </>
+    </header>
+  );
+}
+
+function formatDay(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** The same three states the projects page groups by, so a project reads the same in both places. */
+function StatusPill({
+  archived,
+  resting,
+}: {
+  readonly archived: boolean;
+  readonly resting: boolean;
+}) {
+  if (archived || resting) {
+    const Icon = archived ? ArchiveIcon : MoonIcon;
+    return (
+      <span className="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
+        <Icon aria-hidden className="size-3" />
+        {archived ? "Archived" : "Resting"}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex h-5 items-center gap-1.5 rounded-full bg-(--project-color)/12 px-2 text-2xs font-medium text-(--project-color) dark:bg-(--project-color)/16">
+      <span aria-hidden className="size-1.5 rounded-full bg-(--project-color)" />
+      Active
+    </span>
   );
 }
 
@@ -410,85 +527,285 @@ function TitleEditor({
   );
 }
 
-/** The brief rides along with every conversation, so it reads as prose until edited. */
-function BriefEditor({
+/** The brief rides along with every conversation, so it reads as the project's opening lines. */
+function ProjectBrief({
   brief,
   canEdit,
   busy,
+  editing,
+  showEmpty,
+  onEditingChange,
   onSave,
 }: {
   readonly brief: string;
   readonly canEdit: boolean;
   readonly busy: boolean;
+  readonly editing: boolean;
+  readonly showEmpty: boolean;
+  readonly onEditingChange: (editing: boolean) => void;
   readonly onSave: (brief: string) => Promise<boolean>;
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  return (
-    <LibrarySection
-      title="Brief"
-      action={
-        canEdit && draft === null && brief ? (
-          <Button shape="pill" size="xs" variant="ghost" onClick={() => setDraft(brief)}>
-            Edit
-          </Button>
-        ) : null
-      }
-    >
-      {draft !== null ? (
-        <form
-          className="space-y-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onSave(draft).then((saved) => {
-              if (saved) setDraft(null);
-            });
+  const [draft, setDraft] = useState(brief);
+  const [expanded, setExpanded] = useState(false);
+  const long = brief.length > LONG_BRIEF_CHARACTERS || brief.split("\n").length > LONG_BRIEF_LINES;
+  const edit = () => {
+    setDraft(brief);
+    onEditingChange(true);
+  };
+  if (editing)
+    return (
+      <form
+        className="max-w-3xl space-y-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSave(draft).then((saved) => {
+            if (saved) onEditingChange(false);
+          });
+        }}
+      >
+        <Textarea
+          autoFocus
+          rows={6}
+          maxLength={65536}
+          aria-label="Project brief"
+          placeholder="What are we making, and what matters?"
+          value={draft}
+          disabled={busy}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") onEditingChange(false);
           }}
-        >
-          <Textarea
-            autoFocus
-            rows={5}
-            maxLength={65536}
-            aria-label="Project brief"
-            placeholder="What are we making, and what matters?"
-            value={draft}
+        />
+        <div className="flex items-center gap-2">
+          <Button shape="pill" type="submit" size="sm" disabled={busy || draft === brief}>
+            {busy ? "Saving..." : "Save brief"}
+          </Button>
+          <Button
+            shape="pill"
+            type="button"
+            size="sm"
+            variant="ghost"
             disabled={busy}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-          <div className="flex gap-2">
-            <Button shape="pill" type="submit" size="sm" disabled={busy || draft === brief}>
-              {busy ? "Saving..." : "Save"}
-            </Button>
-            <Button
-              shape="pill"
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => setDraft(null)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
-      ) : brief ? (
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{brief}</p>
-      ) : (
-        <div className="space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Every conversation in this project starts with the brief. Say what you're building and
-            what matters.
-          </p>
-          {canEdit ? (
-            <Button shape="pill" size="xs" variant="outline" onClick={() => setDraft("")}>
-              Add a brief
-            </Button>
-          ) : null}
+            onClick={() => onEditingChange(false)}
+          >
+            Cancel
+          </Button>
+          <span className="ms-auto hidden text-xs text-muted-foreground sm:inline">
+            Every new conversation starts with this.
+          </span>
         </div>
-      )}
-    </LibrarySection>
+      </form>
+    );
+  if (brief)
+    return (
+      <div className="max-w-3xl space-y-1">
+        <p
+          className={cn(
+            "whitespace-pre-wrap text-sm leading-relaxed text-foreground/80",
+            long && !expanded && "line-clamp-4",
+          )}
+        >
+          {brief}
+        </p>
+        {long || canEdit ? (
+          <div className="-ms-2 flex items-center gap-0.5">
+            {long ? (
+              <Button
+                shape="pill"
+                size="xs"
+                variant="ghost"
+                onClick={() => setExpanded((value) => !value)}
+              >
+                {expanded ? "Show less" : "Read the whole brief"}
+              </Button>
+            ) : null}
+            {canEdit ? (
+              <Button shape="pill" size="xs" variant="ghost" onClick={edit}>
+                <PencilLineIcon />
+                Edit brief
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  if (!showEmpty) return null;
+  if (!canEdit) return <p className="text-sm text-muted-foreground">No brief yet.</p>;
+  return (
+    <button
+      type="button"
+      onClick={edit}
+      className="flex w-full max-w-3xl items-center gap-3 rounded-xl border border-dashed border-border px-3.5 py-3 text-left outline-none transition-colors duration-150 hover:border-(--project-color)/40 hover:bg-(--project-color)/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
+        <PencilLineIcon aria-hidden className="size-3.5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">Write a brief</span>
+        <span className="block text-xs text-muted-foreground">
+          Every conversation in this project starts with it. Say what you're building and what
+          matters.
+        </span>
+      </span>
+    </button>
   );
 }
 
+type SetupStep = {
+  readonly title: string;
+  readonly detail: string;
+  readonly done: boolean;
+  readonly action: ReactNode;
+};
+
+/**
+ * Four steps from a name to a first conversation. Each one gives agents more to work with, and
+ * the card steps aside for the conversation list once the first one exists.
+ */
+function ProjectSetup({
+  project,
+  hasCopy,
+  canEdit,
+  canWork,
+  canStart,
+  onWriteBrief,
+  onAddResource,
+  onGetCopy,
+  onStart,
+}: {
+  readonly project: LibraryProject;
+  readonly hasCopy: boolean;
+  readonly canEdit: boolean;
+  readonly canWork: boolean;
+  readonly canStart: boolean;
+  readonly onWriteBrief: () => void;
+  readonly onAddResource: () => void;
+  readonly onGetCopy: (request: CopyRequest) => void;
+  readonly onStart: () => void;
+}) {
+  const done = [Boolean(project.brief.trim()), project.resources.length > 0, hasCopy, false];
+  const next = done.indexOf(false);
+  // The next step to take gets the filled button; the rest wait as outlines.
+  const variant = (index: number) => (index === next ? "default" : "outline");
+  const steps: SetupStep[] = [
+    {
+      title: "Write a brief",
+      detail: "Say what you're building and what matters. Every conversation starts with it.",
+      done: done[0]!,
+      action: (
+        <Button
+          shape="pill"
+          size="xs"
+          variant={variant(0)}
+          disabled={!canEdit}
+          onClick={onWriteBrief}
+        >
+          Write brief
+        </Button>
+      ),
+    },
+    {
+      title: "Add its repositories",
+      detail: "Paste a GitHub URL. Copies clone every repository into one folder.",
+      done: done[1]!,
+      action: (
+        <Button
+          shape="pill"
+          size="xs"
+          variant={variant(1)}
+          disabled={!canEdit}
+          onClick={onAddResource}
+        >
+          Add repository
+        </Button>
+      ),
+    },
+    {
+      title: "Put it on a computer",
+      detail: "Clone it fresh, or point at a folder you already have.",
+      done: done[2]!,
+      action: <GetCopyMenu disabled={!canWork} variant={variant(2)} onGetCopy={onGetCopy} />,
+    },
+    {
+      title: "Start the first conversation",
+      detail: "About the whole project, or just one of its repositories.",
+      done: done[3]!,
+      action: (
+        <Button shape="pill" size="xs" variant={variant(3)} disabled={!canStart} onClick={onStart}>
+          Start conversation
+        </Button>
+      ),
+    },
+  ];
+  return (
+    <section
+      aria-label="Get started"
+      className="overflow-hidden rounded-xl border border-border bg-card"
+    >
+      <div className="space-y-3 px-4 pt-4 pb-3.5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-base font-semibold tracking-tight">Get {project.title} going</h2>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {done.filter(Boolean).length} of {steps.length}
+          </span>
+        </div>
+        <div aria-hidden className="flex gap-1">
+          {steps.map((step) => (
+            <span
+              key={step.title}
+              className={cn(
+                "h-1 flex-1 rounded-full transition-colors duration-300",
+                step.done ? "bg-(--project-color)" : "bg-muted dark:bg-accent",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+      <ol className="divide-y divide-border border-t border-border">
+        {steps.map((step, index) => (
+          <li
+            key={step.title}
+            className={cn(
+              "flex items-center gap-3 px-4 py-3",
+              index === next && "bg-(--project-color)/4",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums",
+                step.done
+                  ? "bg-(--project-color) text-background"
+                  : index === next
+                    ? "bg-(--project-color)/14 text-(--project-color)"
+                    : "bg-muted text-muted-foreground dark:bg-accent",
+              )}
+            >
+              {step.done ? (
+                <CheckIcon aria-hidden className="size-3.5" strokeWidth={3} />
+              ) : (
+                index + 1
+              )}
+              <span className="sr-only">{step.done ? "Done" : "To do"}</span>
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className={cn("text-sm font-medium", step.done && "text-muted-foreground")}>
+                {step.title}
+              </p>
+              {step.done ? null : <p className="text-xs text-muted-foreground">{step.detail}</p>}
+            </div>
+            {step.done ? (
+              <span className="shrink-0 text-xs text-muted-foreground">Done</span>
+            ) : (
+              <span className="shrink-0">{step.action}</span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** The latest conversation leads, since picking it back up is the most common reason to be here. */
 function ProjectConversations({
   project,
   threads,
@@ -498,74 +815,140 @@ function ProjectConversations({
   hostLabel,
 }: {
   readonly project: LibraryProject;
-  readonly threads: readonly LibraryThreadSummary[] | null | undefined;
+  readonly threads: readonly LibraryThreadSummary[];
   readonly loading: boolean;
   readonly error: string | null;
   readonly onRetry: () => void;
   readonly hostLabel: (id: EnvironmentId) => string;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const visible = (threads ?? [])
-    .filter((thread) => !thread.deleted)
-    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const shown = showAll ? visible : visible.slice(0, RECENT_CONVERSATIONS);
+  const [latest, ...rest] = threads;
+  const shown = showAll ? rest : rest.slice(0, RECENT_CONVERSATIONS - 1);
   return (
-    <LibrarySection
-      title={
-        showAll || visible.length <= RECENT_CONVERSATIONS ? "Conversations" : "Recent conversations"
+    <LibraryPanel
+      title="Conversations"
+      count={threads.length}
+      action={
+        threads.length > RECENT_CONVERSATIONS ? (
+          <Button
+            shape="pill"
+            size="xs"
+            variant="ghost"
+            onClick={() => setShowAll((value) => !value)}
+          >
+            {showAll ? "Show recent" : `Show all ${threads.length}`}
+          </Button>
+        ) : null
       }
-      count={visible.length}
     >
-      <LibraryErrorNotice error={error} onRetry={onRetry} />
-      {shown.length ? (
-        <ul className="-mx-2">
-          {shown.map((thread) => {
-            const scope =
-              thread.resourceIds.length === 1
-                ? project.resources.find((resource) => resource.id === thread.resourceIds[0])?.title
-                : null;
-            return (
-              <li key={thread.id}>
-                <Link
-                  to="/library/conversations/$conversationId"
-                  params={{ conversationId: thread.id }}
-                  className="flex items-baseline gap-3 rounded-lg px-2 py-1.5 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm">
-                    {thread.title || "Untitled conversation"}
-                  </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
-                    {[hostLabel(thread.environmentId), scope, thread.archived ? "Archived" : null]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                    {formatRelativeTimeLabel(thread.updatedAt)}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      {error ? (
+        <div className="px-3.5">
+          <LibraryErrorNotice error={error} onRetry={onRetry} />
+        </div>
+      ) : null}
+      {latest ? (
+        <div className="px-2 pb-2">
+          <Link
+            to="/library/conversations/$conversationId"
+            params={{ conversationId: latest.id }}
+            className="group/card relative isolate flex items-center gap-3 rounded-lg border border-border p-3 outline-none transition-[border-color] duration-200 hover:border-(--project-color)/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+          >
+            <ProjectWash />
+            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
+              <MessageSquareIcon aria-hidden className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-xs text-muted-foreground">
+                Pick up where you left off · {formatRelativeTimeLabel(latest.updatedAt)}
+              </p>
+              <p className="truncate text-sm font-medium">
+                {latest.title || "Untitled conversation"}
+              </p>
+              <ConversationMeta project={project} thread={latest} hostLabel={hostLabel} />
+            </div>
+            <ArrowRightIcon
+              aria-hidden
+              className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
+            />
+          </Link>
+        </div>
       ) : loading ? (
-        <p role="status" className="text-sm text-muted-foreground">
+        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
           Loading conversations...
         </p>
       ) : error ? null : (
-        <p className="text-sm text-muted-foreground">
-          No conversations yet. Start one about the whole project or a single repository.
+        <p className="px-3.5 pb-3 text-xs text-muted-foreground">
+          No conversations were saved in this project.
         </p>
       )}
-      {visible.length > RECENT_CONVERSATIONS ? (
-        <Button
-          shape="pill"
-          size="xs"
-          variant="ghost"
-          onClick={() => setShowAll((value) => !value)}
-        >
-          {showAll ? "Show recent only" : `Show all ${visible.length}`}
-        </Button>
+      {shown.length ? (
+        <ul className="divide-y divide-border border-t border-border">
+          {shown.map((thread) => (
+            <li key={thread.id}>
+              <Link
+                to="/library/conversations/$conversationId"
+                params={{ conversationId: thread.id }}
+                className="flex items-center gap-3 px-3.5 py-2 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              >
+                <MessageSquareIcon
+                  aria-hidden
+                  className="size-3.5 shrink-0 text-muted-foreground"
+                />
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {thread.title || "Untitled conversation"}
+                </span>
+                <ConversationMeta
+                  project={project}
+                  thread={thread}
+                  hostLabel={hostLabel}
+                  className="hidden max-w-1/2 sm:flex"
+                />
+                <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                  {formatRelativeTimeLabel(thread.updatedAt)}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
       ) : null}
-    </LibrarySection>
+    </LibraryPanel>
+  );
+}
+
+/** Where a conversation ran and what it was about, when it was about one repository. */
+function ConversationMeta({
+  project,
+  thread,
+  hostLabel,
+  className,
+}: {
+  readonly project: LibraryProject;
+  readonly thread: LibraryThreadSummary;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly className?: string;
+}) {
+  const scope =
+    thread.resourceIds.length === 1
+      ? project.resources.find((resource) => resource.id === thread.resourceIds[0])?.title
+      : null;
+  return (
+    <span className={cn("flex min-w-0 items-center gap-2", className)}>
+      <ComputerLabel
+        environmentId={thread.environmentId}
+        label={hostLabel(thread.environmentId)}
+        className="min-w-0 shrink"
+      />
+      {scope ? (
+        <span className="inline-flex h-5 min-w-0 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
+          <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
+          <span className="truncate">{scope}</span>
+        </span>
+      ) : null}
+      {thread.archived ? (
+        <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-muted px-2 text-2xs font-medium text-muted-foreground dark:bg-accent">
+          Archived
+        </span>
+      ) : null}
+    </span>
   );
 }

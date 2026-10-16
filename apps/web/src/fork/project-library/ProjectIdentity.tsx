@@ -42,12 +42,14 @@ const TILE_SIZES = {
   sm: "size-6 rounded-md text-3xs",
   md: "size-8 rounded-lg text-xs",
   lg: "size-11 rounded-xl text-base",
+  xl: "size-14 rounded-2xl text-lg",
 } as const;
 
 const TILE_ICON_SIZES = {
   sm: "size-3.5",
   md: "size-4.5",
   lg: "size-6",
+  xl: "size-7",
 } as const;
 
 type TileProps = {

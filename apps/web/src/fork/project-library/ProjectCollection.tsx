@@ -192,7 +192,7 @@ export function ProjectCompactCards(props: CollectionProps) {
 }
 
 /** A faint wash of the project's color that answers hover and focus without drawing an edge. */
-function ProjectWash() {
+export function ProjectWash() {
   return (
     <span
       aria-hidden

@@ -73,7 +73,11 @@ export function LibraryErrorNotice({
   ) : null;
 }
 
-export function LibrarySection({
+/**
+ * One titled card on a project page. The body sets its own padding, so lists can run edge to
+ * edge under the header while prose keeps the card's inset.
+ */
+export function LibraryPanel({
   title,
   count,
   action,
@@ -85,8 +89,8 @@ export function LibrarySection({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="space-y-2.5">
-      <div className="flex min-h-6 flex-wrap items-center justify-between gap-3">
+    <section aria-label={title} className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5 ps-3.5 pe-2">
         <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
           {title}
           {count ? (
