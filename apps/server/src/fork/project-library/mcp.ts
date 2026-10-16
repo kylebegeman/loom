@@ -58,7 +58,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   Tool.make("loom_library_connection", {
     description:
       "Read this computer's Library role and enrolled shared Library destination. Includes no credentials.",
-    parameters: Schema.Struct({}),
+    parameters: Tool.EmptyParams,
     success: Library.LibraryInfo,
     failure,
   }).annotate(Tool.Readonly, true),
