@@ -2,11 +2,61 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type {
   LibraryCopyHealth,
   LibraryProfileReadiness,
+  LibraryProject,
   LibraryProjectProfile,
   LibraryRepositoryHealth,
+  LibraryThreadSummary,
   LibraryToolCheck,
+  LibraryWorkingCopy,
   MiniWorkerReadiness,
 } from "@t3tools/contracts/fork";
+
+const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
+
+/** Where a resource sits inside a copy, matching how the server resolves it against the root. */
+const resourcePath = (rootPath: string, relativePath: string) =>
+  relativePath === "." ? normalizePath(rootPath) : `${normalizePath(rootPath)}/${relativePath}`;
+
+/**
+ * Reuse only the chosen host and current resource scope, including explicit copy identity.
+ * `resourceIds` lists the selected components, or is null for the whole project. A copy counts
+ * only while each selected repository still sits where the project now places it.
+ */
+export const libraryCopiesForScope = (
+  project: LibraryProject,
+  copies: readonly LibraryWorkingCopy[],
+  environmentId: EnvironmentId | null,
+  resourceIds: readonly string[] | null,
+): LibraryWorkingCopy[] => {
+  const repositories = project.resources.filter((resource) => resource.kind !== "link");
+  if (
+    project.archived ||
+    !environmentId ||
+    (resourceIds !== null &&
+      (new Set(resourceIds).size !== resourceIds.length ||
+        (resourceIds.length === 0 && repositories.length > 0) ||
+        resourceIds.some((id) => !repositories.some((resource) => resource.id === id))))
+  )
+    return [];
+  const required = repositories.filter(
+    (resource) => resourceIds === null || resourceIds.includes(resource.id),
+  );
+  return copies.filter(
+    (copy) =>
+      copy.projectId === project.id &&
+      copy.environmentId === environmentId &&
+      copy.state === "ready" &&
+      copy.registered !== false &&
+      (repositories.length > 0 || copy.repositories.length === 0) &&
+      required.every((resource) =>
+        copy.repositories.some(
+          (repository) =>
+            repository.resourceId === resource.id &&
+            normalizePath(repository.path) === resourcePath(copy.rootPath, resource.relativePath),
+        ),
+      ),
+  );
+};
 
 /** A computer that might run the conversation, as the caller sees it right now. */
 export interface LibraryLaunchComputer {
@@ -338,6 +388,37 @@ export function rankLibraryLaunchCandidates(input: {
         !(candidate.kind === "copy" && candidate.freshness === "broken"),
     ) ?? null;
   return { candidates: [...candidates, ...miniCandidates(input)], preselected };
+}
+
+/**
+ * Rank a Library project's computers for a scope, counting only copies that cover it and only
+ * this project's conversations. The project's profile decides required tools and Mini.
+ */
+export function rankLibraryProjectLaunch(input: {
+  readonly project: LibraryProject;
+  readonly copies: readonly LibraryWorkingCopy[];
+  readonly computers: readonly LibraryLaunchComputer[];
+  readonly threads: readonly LibraryThreadSummary[];
+  /** The selected components, or null for the whole project. */
+  readonly resourceIds: readonly string[] | null;
+  readonly liveHealth?: ReadonlyMap<string, LibraryCopyHealth> | undefined;
+  readonly readiness?: ReadonlyMap<EnvironmentId, LibraryProfileReadiness> | undefined;
+  readonly miniWorkers?: readonly LibraryLaunchMiniWorker[] | undefined;
+}): LibraryLaunchRanking {
+  return rankLibraryLaunchCandidates({
+    computers: input.computers,
+    copies: input.computers.flatMap((computer) =>
+      libraryCopiesForScope(input.project, input.copies, computer.environmentId, input.resourceIds),
+    ),
+    threads: input.threads.filter(
+      (thread) => thread.projectId === input.project.id && thread.deleted !== true,
+    ),
+    resourceIds: input.resourceIds,
+    liveHealth: input.liveHealth,
+    readiness: input.readiness,
+    profile: input.project.profile,
+    miniWorkers: input.miniWorkers,
+  });
 }
 
 /** Allowed, ready Mini workers on online computers that can run work, by label. */

@@ -11,6 +11,7 @@ import * as LibraryAssetService from "./project-library/assets/LibraryAssetServi
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
 import * as LibraryTimeline from "./project-library/LibraryTimeline.ts";
+import * as LibraryLaunchCandidates from "./project-library/LibraryLaunchCandidates.ts";
 import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "./project-library/LibraryWorkspaceStore.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -54,6 +55,9 @@ const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
   LibraryTimeline.layer,
+  LibraryLaunchCandidates.layer.pipe(
+    Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+  ),
   LibraryReplication.layer.pipe(
     Layer.provide(
       LibraryPublisher.layer.pipe(

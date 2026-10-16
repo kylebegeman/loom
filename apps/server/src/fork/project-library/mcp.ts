@@ -10,6 +10,7 @@ import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import { MAX_PENDING_BRIEF_PROPOSALS } from "./LibraryBriefProposals.ts";
 import * as Catalog from "./LibraryService.ts";
 import * as Timeline from "./LibraryTimeline.ts";
+import * as Launch from "./LibraryLaunchCandidates.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as Replication from "./LibraryReplication.ts";
 
@@ -128,6 +129,13 @@ export const ProjectLibraryToolkit = Toolkit.make(
     description: `Read what happened in a project, newest first, up to 200 entries a page. Optional kinds filters to: ${Library.LIBRARY_TIMELINE_KINDS.join(", ")}. Pass nextBefore as before for older entries. Entries marked approximate were rebuilt from records saved before the timeline existed.`,
     parameters: Library.LibraryTimelineRequest,
     success: Library.LibraryTimelinePage,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_launch_candidates", {
+    description:
+      "Rank where a Library project's next conversation should start, best first, as the New conversation dialog does: computers seen recently before offline ones, a copy covering the components before getting one, up to date before stale, then the computer used most recently. Each candidate has plain reasons and at most one is preselected. Omit resourceIds for the whole project. Required tools are not checked here; call loom_library_profile_readiness on a computer for that.",
+    parameters: Library.LibraryLaunchCandidatesRequest,
+    success: Library.LibraryLaunchCandidates,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_project_create", {
@@ -304,6 +312,11 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       ),
       loom_library_timeline: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Timeline.LibraryTimeline, (service) => service.page(input))),
+      ),
+      loom_library_launch_candidates: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Launch.LibraryLaunchCandidates, (service) => service.candidates(input)),
+        ),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.createProject(input))),

@@ -7,13 +7,12 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
-  rankLibraryLaunchCandidates,
+  rankLibraryProjectLaunch,
   type LibraryLaunchCandidate,
   type LibraryLaunchComputer,
   type LibraryLaunchMiniWorker,
   type LibraryLaunchRanking,
 } from "@t3tools/shared/fork/library-launch";
-import { libraryCopiesForScope } from "./library-copy-choice.ts";
 import { libraryRepositoryCanPull } from "./library-copy-health.ts";
 
 /**
@@ -35,20 +34,9 @@ export function libraryLaunchRanking(input: {
   readonly readinessPending?: boolean | undefined;
   readonly miniWorkers?: readonly LibraryLaunchMiniWorker[] | undefined;
 }): LibraryLaunchRanking {
-  const resourceIds = input.resourceId === null ? null : [input.resourceId];
-  const ranking = rankLibraryLaunchCandidates({
-    computers: input.computers,
-    copies: input.computers.flatMap((computer) =>
-      libraryCopiesForScope(input.project, input.copies, computer.environmentId, resourceIds),
-    ),
-    threads: input.threads.filter(
-      (thread) => thread.projectId === input.project.id && thread.deleted !== true,
-    ),
-    resourceIds,
-    liveHealth: input.liveHealth,
-    readiness: input.readiness,
-    profile: input.project.profile,
-    miniWorkers: input.miniWorkers,
+  const ranking = rankLibraryProjectLaunch({
+    ...input,
+    resourceIds: input.resourceId === null ? null : [input.resourceId],
   });
   return input.readinessPending === true ? { ...ranking, preselected: null } : ranking;
 }
