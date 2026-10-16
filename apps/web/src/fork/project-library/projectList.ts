@@ -151,8 +151,12 @@ export type ProjectSection =
       readonly entries: readonly ProjectEntry[];
     };
 
+export function isRestingSince(activeAt: string, now: number) {
+  return now - Date.parse(activeAt) >= RESTING_AFTER_MS;
+}
+
 export function isRestingEntry(entry: ProjectEntry, now: number) {
-  return now - Date.parse(entry.activeAt) >= RESTING_AFTER_MS;
+  return isRestingSince(entry.activeAt, now);
 }
 
 /** Splits entries into the sections the page shows, keeping each section in the given order. */

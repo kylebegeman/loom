@@ -8,7 +8,7 @@ import type {
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { EllipsisIcon } from "lucide-react";
+import { ArchiveIcon, EllipsisIcon, MoonIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
@@ -32,11 +32,16 @@ import { isRepositoryResource } from "./resources";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import { ProjectColorPicker, ProjectTile } from "./ProjectIdentity";
+import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { libraryActiveCopies, libraryProjectColor } from "@t3tools/client-runtime/fork";
 import { useProjects } from "~/state/entities";
-import { libraryLocalProjectIcon, localProjectsByRef, type LocalProjectIcon } from "./projectList";
+import {
+  isRestingSince,
+  libraryLocalProjectIcon,
+  localProjectsByRef,
+  type LocalProjectIcon,
+} from "./projectList";
 
 const RECENT_CONVERSATIONS = 5;
 
@@ -56,6 +61,8 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
   } | null>(null);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, library.authorityId);
   const localProjects = useProjects();
+  // Read once per visit, like the projects page, so render stays pure.
+  const [now] = useState(() => Date.now());
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
@@ -88,6 +95,10 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
     );
   const copies = library.copies.data ?? [];
   const canWork = library.connected && !project.archived;
+  const activeAt = (library.threads.data ?? []).reduce(
+    (latest, thread) => (!thread.deleted && thread.updatedAt > latest ? thread.updatedAt : latest),
+    project.updatedAt,
+  );
   return (
     <LibraryPageFrame title={project.title} width="readable">
       <ProjectOverview
@@ -96,6 +107,8 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
           libraryActiveCopies(copies),
           localProjectsByRef(localProjects),
         )}
+        activeAt={activeAt}
+        resting={isRestingSince(activeAt, now)}
         authorityId={library.authorityId}
         connected={library.connected}
         canStart={canRegister && canWork}
@@ -177,6 +190,8 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
 function ProjectOverview({
   project,
   localIcon,
+  activeAt,
+  resting,
   authorityId,
   connected,
   canStart,
@@ -185,6 +200,8 @@ function ProjectOverview({
 }: {
   readonly project: LibraryProject;
   readonly localIcon: LocalProjectIcon | null;
+  readonly activeAt: string;
+  readonly resting: boolean;
   readonly authorityId: EnvironmentId;
   readonly connected: boolean;
   readonly canStart: boolean;
@@ -199,7 +216,7 @@ function ProjectOverview({
   const repositories = project.resources.filter(isRepositoryResource).length;
   const links = project.resources.length - repositories;
   const meta = [
-    `Edited ${formatRelativeTimeLabel(project.updatedAt)}`,
+    `Active ${formatRelativeTimeLabel(activeAt)}`,
     repositories ? `${repositories} ${repositories === 1 ? "repository" : "repositories"}` : null,
     links ? `${links} ${links === 1 ? "link" : "links"}` : null,
   ].filter(Boolean);
@@ -222,7 +239,15 @@ function ProjectOverview({
   };
   return (
     <>
-      <div className="flex flex-col gap-2">
+      <div
+        style={projectColorStyle(libraryProjectColor(project))}
+        className="relative isolate flex flex-col gap-2"
+      >
+        {/* The project's color lights the page from behind its mark, not along an edge. */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-28 -left-32 -z-10 size-96 rounded-full bg-radial from-(--project-color)/16 to-transparent to-65%"
+        />
         <LibraryBackLink to="/projects">Projects</LibraryBackLink>
         <div className="flex flex-wrap items-start justify-between gap-4">
           {renaming ? (
@@ -265,7 +290,19 @@ function ProjectOverview({
                 <h1 className="wrap-anywhere text-xl font-semibold tracking-tight">
                   {project.title}
                 </h1>
-                <p className="text-xs tabular-nums text-muted-foreground">{meta.join(" · ")}</p>
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs tabular-nums text-muted-foreground">
+                  {project.archived || resting ? (
+                    <span className="inline-flex h-5 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
+                      {project.archived ? (
+                        <ArchiveIcon aria-hidden className="size-3" />
+                      ) : (
+                        <MoonIcon aria-hidden className="size-3" />
+                      )}
+                      {project.archived ? "Archived" : "Resting"}
+                    </span>
+                  ) : null}
+                  {meta.join(" · ")}
+                </p>
               </div>
             </div>
           )}
@@ -297,8 +334,9 @@ function ProjectOverview({
         </div>
       </div>
       {project.archived ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 px-4 py-3">
-          <p className="text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 py-3 dark:bg-accent/50">
+          <p className="flex items-center gap-2.5 text-sm text-muted-foreground">
+            <ArchiveIcon aria-hidden className="size-4 shrink-0" />
             Archived. Conversations stay readable; restore the project to change it or start new
             work.
           </p>
@@ -476,6 +514,7 @@ function ProjectConversations({
       title={
         showAll || visible.length <= RECENT_CONVERSATIONS ? "Conversations" : "Recent conversations"
       }
+      count={visible.length}
     >
       <LibraryErrorNotice error={error} onRetry={onRetry} />
       {shown.length ? (
@@ -490,7 +529,7 @@ function ProjectConversations({
                 <Link
                   to="/library/conversations/$conversationId"
                   params={{ conversationId: thread.id }}
-                  className="flex items-baseline gap-3 rounded-md px-2 py-2 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className="flex items-baseline gap-3 rounded-lg px-2 py-1.5 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                 >
                   <span className="min-w-0 flex-1 truncate text-sm">
                     {thread.title || "Untitled conversation"}
@@ -500,7 +539,7 @@ function ProjectConversations({
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
-                  <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">
+                  <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                     {formatRelativeTimeLabel(thread.updatedAt)}
                   </span>
                 </Link>

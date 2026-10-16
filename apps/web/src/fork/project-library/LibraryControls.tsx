@@ -75,17 +75,24 @@ export function LibraryErrorNotice({
 
 export function LibrarySection({
   title,
+  count,
   action,
   children,
 }: {
   readonly title: string;
+  readonly count?: number | undefined;
   readonly action?: ReactNode;
   readonly children: ReactNode;
 }) {
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold">{title}</h2>
+    <section className="space-y-2.5">
+      <div className="flex min-h-6 flex-wrap items-center justify-between gap-3">
+        <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
+          {title}
+          {count ? (
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">{count}</span>
+          ) : null}
+        </h2>
         {action}
       </div>
       {children}
