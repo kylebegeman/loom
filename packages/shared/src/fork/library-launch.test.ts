@@ -1,9 +1,18 @@
 import { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryCopyHealth, LibraryRepositoryHealth } from "@t3tools/contracts/fork";
+import type {
+  LibraryCopyHealth,
+  LibraryProfileReadiness,
+  LibraryProjectProfile,
+  LibraryRepositoryHealth,
+  LibraryToolCheck,
+  MiniWorkerReadiness,
+} from "@t3tools/contracts/fork";
 import { describe, expect, it } from "vite-plus/test";
 import {
   libraryLaunchCandidateSummary,
   libraryLaunchFreshness,
+  libraryLaunchMiniEligible,
+  libraryLaunchReadiness,
   rankLibraryLaunchCandidates,
   type LibraryLaunchComputer,
   type LibraryLaunchCopy,
@@ -59,6 +68,9 @@ const rank = (input: {
   threads?: readonly LibraryLaunchThread[];
   live?: readonly LibraryCopyHealth[];
   resourceIds?: readonly string[] | null;
+  readiness?: readonly LibraryProfileReadiness[];
+  profile?: Pick<LibraryProjectProfile, "allowMini" | "requiredTools">;
+  miniWorkers?: readonly { environmentId: EnvironmentId; readiness: MiniWorkerReadiness }[];
 }) =>
   rankLibraryLaunchCandidates({
     computers: input.computers,
@@ -66,13 +78,52 @@ const rank = (input: {
     threads: input.threads ?? [],
     resourceIds: input.resourceIds ?? null,
     liveHealth: new Map((input.live ?? []).map((entry) => [entry.copyId, entry])),
+    readiness: new Map((input.readiness ?? []).map((entry) => [entry.environmentId, entry])),
+    profile: input.profile,
+    miniWorkers: input.miniWorkers,
   });
+
+const tool = (
+  id: string,
+  label: string,
+  status: LibraryToolCheck["status"],
+  extra: Partial<LibraryToolCheck> = {},
+): LibraryToolCheck => ({ id, label, status, ...extra });
+
+const checks = (
+  environmentId: EnvironmentId,
+  toolChecks: readonly LibraryToolCheck[],
+): LibraryProfileReadiness => ({
+  projectId: "project",
+  environmentId,
+  checks: toolChecks,
+  secrets: [],
+  checkedAt: CHECKED,
+});
+
+const worker = (overrides: Partial<MiniWorkerReadiness> = {}): MiniWorkerReadiness => ({
+  workerId: "worker-1",
+  name: "Build Mini",
+  checkedAt: CHECKED,
+  status: "ready",
+  architecture: "arm64",
+  cpuCount: 10,
+  slots: 2,
+  active: 0,
+  nativeServerRunning: true,
+  outputBundles: true,
+  missingTools: [],
+  reasons: [],
+  ...overrides,
+});
 
 const order = (ranking: ReturnType<typeof rank>) =>
   ranking.candidates.map((candidate) =>
     candidate.kind === "copy"
       ? `${candidate.environmentId}:${candidate.copyId}`
-      : candidate.environmentId,
+      : candidate.kind === "mini"
+        ? `mini:${candidate.workerId}`
+        : candidate.environmentId,
   );
 
 describe("rankLibraryLaunchCandidates", () => {
@@ -311,6 +362,226 @@ describe("rankLibraryLaunchCandidates", () => {
     });
     expect(order(ranking)).toEqual(["mini:mini-copy", "book"]);
     expect(ranking.candidates[0]!.reasons).toEqual(["offline", "not checked"]);
+  });
+});
+
+describe("rankLibraryLaunchCandidates with required tools", () => {
+  const XCODE_MISSING = tool("xcode", "Xcode", "missing");
+  const GO_OLD = tool("go", "Go", "outdated", { version: "1.21", minimumVersion: "1.24" });
+  const NODE_OK = tool("node", "Node.js", "ok", { version: "24.1.0" });
+  const NODE_UNKNOWN = tool("node", "Node.js", "unknown");
+
+  const cases: ReadonlyArray<{
+    readonly name: string;
+    readonly computers: readonly LibraryLaunchComputer[];
+    readonly copies?: readonly LibraryLaunchCopy[];
+    readonly readiness: readonly LibraryProfileReadiness[];
+    readonly order: readonly string[];
+    readonly preselected: string | null;
+  }> = [
+    {
+      name: "never preselects the best copy when its computer is missing a required tool",
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI)), copy("book-copy", BOOK)],
+      readiness: [checks(MINI, [XCODE_MISSING]), checks(BOOK, [NODE_OK])],
+      order: ["book:book-copy", "mini:mini-copy"],
+      preselected: "book:book-copy",
+    },
+    {
+      name: "prefers getting a copy on a ready computer over a copy where a tool is too old",
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI))],
+      readiness: [checks(MINI, [GO_OLD])],
+      order: ["book", "mini:mini-copy"],
+      preselected: "book",
+    },
+    {
+      name: "preselects nothing when every online computer is missing a tool",
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI), copy("book-copy", BOOK)],
+      readiness: [checks(MINI, [XCODE_MISSING]), checks(BOOK, [XCODE_MISSING])],
+      order: ["mini:mini-copy", "book:book-copy"],
+      preselected: null,
+    },
+    {
+      name: "keeps today's order when no computer has checks",
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI)), copy("book-copy", BOOK)],
+      readiness: [],
+      order: ["mini:mini-copy", "book:book-copy"],
+      preselected: "mini:mini-copy",
+    },
+    {
+      name: "does not count checks that could not run as failing",
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI)), copy("book-copy", BOOK)],
+      readiness: [checks(MINI, [NODE_UNKNOWN]), checks(BOOK, [NODE_OK])],
+      order: ["mini:mini-copy", "book:book-copy"],
+      preselected: "mini:mini-copy",
+    },
+    {
+      name: "still lists an offline computer after a computer missing a tool",
+      computers: [computer(MINI, { online: false }), computer(BOOK)],
+      copies: [copy("mini-copy", MINI), copy("book-copy", BOOK)],
+      readiness: [checks(BOOK, [XCODE_MISSING])],
+      order: ["book:book-copy", "mini:mini-copy"],
+      preselected: null,
+    },
+  ];
+
+  it.each(cases)("$name", (testCase) => {
+    const ranking = rank({
+      computers: testCase.computers,
+      copies: testCase.copies ?? [],
+      readiness: testCase.readiness,
+    });
+    expect(order(ranking)).toEqual(testCase.order);
+    const preselected = ranking.preselected
+      ? order({ ...ranking, candidates: [ranking.preselected] })[0]
+      : null;
+    expect(preselected).toBe(testCase.preselected);
+  });
+
+  it("ignores checks filed under another computer", () => {
+    const ranking = rankLibraryLaunchCandidates({
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI)), copy("book-copy", BOOK)],
+      threads: [],
+      resourceIds: null,
+      readiness: new Map([[MINI, checks(BOOK, [XCODE_MISSING])]]),
+    });
+    expect(order(ranking)).toEqual(["mini:mini-copy", "book:book-copy"]);
+    expect(ranking.candidates.every((candidate) => candidate.readiness === "unknown")).toBe(true);
+  });
+
+  it("says which tool is missing or too old", () => {
+    const ranking = rank({
+      computers: [computer(MINI), computer(BOOK)],
+      copies: [copy("mini-copy", MINI, health("mini-copy", MINI))],
+      readiness: [checks(MINI, [XCODE_MISSING, GO_OLD, NODE_OK])],
+    });
+    const mini = ranking.candidates.find((candidate) => candidate.environmentId === MINI)!;
+    expect(mini.readiness).toBe("not-ready");
+    expect(libraryLaunchCandidateSummary(mini)).toBe(
+      "Mac Mini · online, up to date, Xcode missing, Go 1.21 (needs 1.24)",
+    );
+  });
+});
+
+describe("rankLibraryLaunchCandidates with Mini", () => {
+  const ALLOWED = { allowMini: true } as const;
+
+  const cases: ReadonlyArray<{
+    readonly name: string;
+    readonly profile?: Pick<LibraryProjectProfile, "allowMini" | "requiredTools">;
+    readonly host?: LibraryLaunchComputer;
+    readonly readiness?: Partial<MiniWorkerReadiness>;
+    readonly offered: boolean;
+  }> = [
+    { name: "offers a ready worker the profile allows", profile: ALLOWED, offered: true },
+    { name: "hides Mini when the profile says nothing", offered: false },
+    {
+      name: "hides Mini when the profile turns it off",
+      profile: { allowMini: false },
+      offered: false,
+    },
+    {
+      name: "hides a busy worker",
+      profile: ALLOWED,
+      readiness: { status: "busy" },
+      offered: false,
+    },
+    {
+      name: "hides a worker that needs setup",
+      profile: ALLOWED,
+      readiness: { status: "needs_setup" },
+      offered: false,
+    },
+    {
+      name: "hides an unreachable worker",
+      profile: ALLOWED,
+      readiness: { status: "unreachable" },
+      offered: false,
+    },
+    {
+      name: "hides a worker missing a required tool",
+      profile: { allowMini: true, requiredTools: [{ id: "node" }] },
+      readiness: { missingTools: ["node"] },
+      offered: false,
+    },
+    {
+      name: "offers a worker missing only a tool the project does not require",
+      profile: { allowMini: true, requiredTools: [{ id: "node" }] },
+      readiness: { missingTools: ["docker"] },
+      offered: true,
+    },
+    {
+      name: "hides a worker whose computer is offline",
+      profile: ALLOWED,
+      host: computer(BOOK, { online: false }),
+      offered: false,
+    },
+    {
+      name: "hides a worker whose computer cannot run agents",
+      profile: ALLOWED,
+      host: computer(BOOK, { supportsExecution: false }),
+      offered: false,
+    },
+  ];
+
+  it.each(cases)("$name", (testCase) => {
+    const ranking = rank({
+      computers: [testCase.host ?? computer(BOOK), computer(STUDIO)],
+      ...(testCase.profile ? { profile: testCase.profile } : {}),
+      miniWorkers: [{ environmentId: BOOK, readiness: worker(testCase.readiness) }],
+    });
+    expect(ranking.candidates.some((candidate) => candidate.kind === "mini")).toBe(
+      testCase.offered,
+    );
+    expect(ranking.preselected?.kind).not.toBe("mini");
+  });
+
+  it("lists Mini after every computer, says what it is for, and never preselects it", () => {
+    const ranking = rank({
+      computers: [computer(BOOK, { online: false })],
+      profile: ALLOWED,
+      miniWorkers: [
+        { environmentId: BOOK, readiness: worker() },
+        { environmentId: MINI, readiness: worker({ workerId: "elsewhere" }) },
+      ],
+    });
+    expect(ranking.candidates.some((candidate) => candidate.kind === "mini")).toBe(false);
+
+    const online = rank({
+      computers: [computer(STUDIO, { online: false }), computer(BOOK)],
+      profile: ALLOWED,
+      miniWorkers: [{ environmentId: BOOK, readiness: worker({ slots: 2, active: 1 }) }],
+    });
+    expect(order(online)).toEqual(["book", "studio", "mini:worker-1"]);
+    expect(online.preselected?.environmentId).toBe(BOOK);
+    expect(libraryLaunchCandidateSummary(online.candidates.at(-1)!)).toBe(
+      "Build Mini · for long jobs, from MacBook, 1 slot free",
+    );
+  });
+});
+
+describe("libraryLaunchReadiness", () => {
+  it("reads no checks, or only checks that could not run, as unknown", () => {
+    expect(libraryLaunchReadiness(null).readiness).toBe("unknown");
+    expect(libraryLaunchReadiness(checks(MINI, [])).readiness).toBe("unknown");
+    expect(
+      libraryLaunchReadiness(checks(MINI, [tool("node", "Node.js", "unknown")])).readiness,
+    ).toBe("unknown");
+    expect(libraryLaunchReadiness(checks(MINI, [tool("node", "Node.js", "ok")])).readiness).toBe(
+      "ready",
+    );
+  });
+});
+
+describe("libraryLaunchMiniEligible", () => {
+  it("needs the profile to allow Mini", () => {
+    expect(libraryLaunchMiniEligible(undefined, worker())).toBe(false);
+    expect(libraryLaunchMiniEligible({ allowMini: true }, worker())).toBe(true);
   });
 });
 

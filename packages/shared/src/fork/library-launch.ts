@@ -1,5 +1,12 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryCopyHealth, LibraryRepositoryHealth } from "@t3tools/contracts/fork";
+import type {
+  LibraryCopyHealth,
+  LibraryProfileReadiness,
+  LibraryProjectProfile,
+  LibraryRepositoryHealth,
+  LibraryToolCheck,
+  MiniWorkerReadiness,
+} from "@t3tools/contracts/fork";
 
 /** A computer that might run the conversation, as the caller sees it right now. */
 export interface LibraryLaunchComputer {
@@ -28,6 +35,19 @@ export interface LibraryLaunchThread {
   readonly updatedAt: string;
 }
 
+/** A Mini worker registered on a computer, with what its last check reported. */
+export interface LibraryLaunchMiniWorker {
+  /** The computer the worker is registered on. Its conversations send long jobs there. */
+  readonly environmentId: EnvironmentId;
+  readonly readiness: MiniWorkerReadiness;
+}
+
+/**
+ * Whether a computer has the project's required tools. `unknown` covers a computer that was
+ * not checked, is offline or cannot check, so it ranks as if the project required nothing.
+ */
+export type LibraryLaunchReadiness = "ready" | "not-ready" | "unknown";
+
 /**
  * How current a copy is. `up-to-date` is clean and not behind, `unknown` has no health yet,
  * `stale` is behind or has uncommitted files, and `broken` has a missing or non-Git folder.
@@ -41,6 +61,7 @@ interface LibraryLaunchCandidateBase {
   /** Most recent use of this project on this computer. */
   readonly lastUsedAt: string | null;
   readonly workingThreads: number;
+  readonly readiness: LibraryLaunchReadiness;
   /** Short, plain reasons in display order, for example ["online", "up to date"]. */
   readonly reasons: readonly string[];
 }
@@ -58,11 +79,19 @@ export type LibraryLaunchCandidate =
       readonly health: LibraryCopyHealth | null;
     })
   | (LibraryLaunchCandidateBase & { readonly kind: "get-copy" })
-  // Reserved for LP-18: a Mini worker for long jobs. Never produced here yet.
-  | (LibraryLaunchCandidateBase & { readonly kind: "mini" });
+  /**
+   * A Mini worker for long jobs, reached through the computer it is registered on. It is listed
+   * after every computer and never preselected: a conversation still starts on a computer.
+   */
+  | (LibraryLaunchCandidateBase & {
+      readonly kind: "mini";
+      readonly workerId: string;
+      /** Job slots free now. */
+      readonly freeSlots: number;
+    });
 
 export interface LibraryLaunchRanking {
-  /** Best first. Offline computers stay listed, after every online one. */
+  /** Best first. Offline computers stay listed, after every online one, and Mini workers last. */
   readonly candidates: readonly LibraryLaunchCandidate[];
   /** The top candidate when it may be chosen for the user, otherwise null. */
   readonly preselected: LibraryLaunchCandidate | null;
@@ -127,6 +156,44 @@ export function libraryLaunchFreshness(
   return { freshness, behind, changed };
 }
 
+/** "Xcode missing" or "Go 1.21 (needs 1.24)". */
+const toolProblemReason = (check: LibraryToolCheck) =>
+  check.status === "outdated"
+    ? `${check.label} ${check.version ?? "too old"} (needs ${check.minimumVersion ?? "newer"})`
+    : `${check.label} missing`;
+
+/**
+ * Whether a computer's checks pass, with the checks that fail. Only a missing or outdated tool
+ * fails; a check that could not run stays out of it, as does a computer with no checks at all.
+ */
+export function libraryLaunchReadiness(readiness: LibraryProfileReadiness | null): {
+  readonly readiness: LibraryLaunchReadiness;
+  readonly problems: readonly LibraryToolCheck[];
+} {
+  if (readiness === null) return { readiness: "unknown", problems: [] };
+  const problems = readiness.checks.filter(
+    (check) => check.status === "missing" || check.status === "outdated",
+  );
+  if (problems.length > 0) return { readiness: "not-ready", problems };
+  return {
+    readiness: readiness.checks.some((check) => check.status === "ok") ? "ready" : "unknown",
+    problems,
+  };
+}
+
+/**
+ * Whether a Mini worker may take this project's long jobs: the profile allows Mini, the worker
+ * reports ready, and it reports none of the profile's required tools as missing. A worker only
+ * reports the tools its toolsets know, so a tool it never mentions is not checked here.
+ */
+export function libraryLaunchMiniEligible(
+  profile: Pick<LibraryProjectProfile, "allowMini" | "requiredTools"> | null | undefined,
+  readiness: MiniWorkerReadiness,
+): boolean {
+  if (profile?.allowMini !== true || readiness.status !== "ready") return false;
+  return !(profile.requiredTools ?? []).some((tool) => readiness.missingTools.includes(tool.id));
+}
+
 function freshnessReason(freshness: LibraryLaunchFreshness, behind: number, changed: number) {
   switch (freshness) {
     case "up-to-date":
@@ -146,8 +213,10 @@ function freshnessReason(freshness: LibraryLaunchFreshness, behind: number, chan
  * Order every computer that could start this project's conversation, best first:
  * online before offline, a copy covering the scope before getting one, up to date before
  * unchecked before stale, the computer used most recently for this project, then the one with
- * the fewest working threads. Remaining ties fall to label, computer and copy id, so the order
- * never depends on input order. Live health wins over health the Library published.
+ * the fewest working threads. A computer whose checks show a required tool missing or too old
+ * ranks after every online computer that passes or was not checked. Remaining ties fall to label,
+ * computer and copy id, so the order never depends on input order. Live health wins over health
+ * the Library published. Mini workers the profile allows come last and are never preselected.
  */
 export function rankLibraryLaunchCandidates(input: {
   readonly computers: readonly LibraryLaunchComputer[];
@@ -157,6 +226,12 @@ export function rankLibraryLaunchCandidates(input: {
   readonly resourceIds: readonly string[] | null;
   /** Health read now on each copy's computer, keyed by copy id. */
   readonly liveHealth?: ReadonlyMap<string, LibraryCopyHealth> | undefined;
+  /** Required-tool checks read on each computer, keyed by computer. Absent means not known. */
+  readonly readiness?: ReadonlyMap<EnvironmentId, LibraryProfileReadiness> | undefined;
+  /** The project's setup: which tools it requires and whether Mini may run its jobs. */
+  readonly profile?: Pick<LibraryProjectProfile, "allowMini" | "requiredTools"> | undefined;
+  /** Mini workers on the listed computers, offered only when the profile allows Mini. */
+  readonly miniWorkers?: readonly LibraryLaunchMiniWorker[] | undefined;
 }): LibraryLaunchRanking {
   const computerLastUsed = new Map<EnvironmentId, string>();
   const copyLastUsed = new Map<string, string>();
@@ -177,14 +252,20 @@ export function rankLibraryLaunchCandidates(input: {
   for (const computer of input.computers) {
     if (!computer.supportsExecution) continue;
     const lastUsedAt = computerLastUsed.get(computer.environmentId) ?? null;
+    const checked = input.readiness?.get(computer.environmentId);
+    const { readiness, problems } = libraryLaunchReadiness(
+      checked?.environmentId === computer.environmentId ? checked : null,
+    );
     const base = {
       environmentId: computer.environmentId,
       label: computer.label,
       online: computer.online,
       lastUsedAt,
       workingThreads: computer.workingThreads,
+      readiness,
     };
     const context = [
+      ...problems.map(toolProblemReason),
       ...(lastUsedAt !== null && lastUsedAt === mostRecentUse ? ["used last"] : []),
       ...(computer.online && computer.workingThreads > 0
         ? [`${computer.workingThreads} working`]
@@ -223,6 +304,8 @@ export function rankLibraryLaunchCandidates(input: {
 
   const kindOrder = (candidate: LibraryLaunchCandidate) =>
     candidate.kind === "copy" ? 0 : candidate.kind === "get-copy" ? 1 : 2;
+  const readinessOrder = (candidate: LibraryLaunchCandidate) =>
+    candidate.readiness === "not-ready" ? 1 : 0;
   const freshnessOrder = (candidate: LibraryLaunchCandidate) =>
     candidate.kind === "copy" ? FRESHNESS_ORDER[candidate.freshness] : 0;
   const copyId = (candidate: LibraryLaunchCandidate) =>
@@ -230,6 +313,7 @@ export function rankLibraryLaunchCandidates(input: {
   candidates.sort(
     (left, right) =>
       Number(right.online) - Number(left.online) ||
+      readinessOrder(left) - readinessOrder(right) ||
       kindOrder(left) - kindOrder(right) ||
       freshnessOrder(left) - freshnessOrder(right) ||
       timestamp(right.lastUsedAt) - timestamp(left.lastUsedAt) ||
@@ -240,13 +324,57 @@ export function rankLibraryLaunchCandidates(input: {
       left.environmentId.localeCompare(right.environmentId) ||
       copyId(left).localeCompare(copyId(right)),
   );
-  // Offline computers and broken copies stay listed honestly but are never chosen for the user.
+  // Offline computers, broken copies and computers missing a required tool stay listed honestly
+  // but are never chosen for the user.
   const preselected =
     candidates.find(
       (candidate) =>
-        candidate.online && !(candidate.kind === "copy" && candidate.freshness === "broken"),
+        candidate.online &&
+        candidate.readiness !== "not-ready" &&
+        !(candidate.kind === "copy" && candidate.freshness === "broken"),
     ) ?? null;
-  return { candidates, preselected };
+  return { candidates: [...candidates, ...miniCandidates(input)], preselected };
+}
+
+/** Allowed, ready Mini workers on online computers that can run work, by label. */
+function miniCandidates(input: {
+  readonly computers: readonly LibraryLaunchComputer[];
+  readonly profile?: Pick<LibraryProjectProfile, "allowMini" | "requiredTools"> | undefined;
+  readonly miniWorkers?: readonly LibraryLaunchMiniWorker[] | undefined;
+}): LibraryLaunchCandidate[] {
+  const candidates: LibraryLaunchCandidate[] = [];
+  for (const worker of input.miniWorkers ?? []) {
+    const host = input.computers.find(
+      (computer) => computer.environmentId === worker.environmentId,
+    );
+    if (!host?.online || !host.supportsExecution) continue;
+    if (!libraryLaunchMiniEligible(input.profile, worker.readiness)) continue;
+    const freeSlots = Math.max(0, worker.readiness.slots - worker.readiness.active);
+    candidates.push({
+      kind: "mini",
+      workerId: worker.readiness.workerId,
+      freeSlots,
+      environmentId: host.environmentId,
+      label: worker.readiness.name,
+      online: true,
+      lastUsedAt: null,
+      workingThreads: worker.readiness.active,
+      readiness: "ready",
+      reasons: [
+        "for long jobs",
+        `from ${host.label}`,
+        `${freeSlots} ${freeSlots === 1 ? "slot" : "slots"} free`,
+      ],
+    });
+  }
+  return candidates.sort(
+    (left, right) =>
+      left.label.localeCompare(right.label) ||
+      left.environmentId.localeCompare(right.environmentId) ||
+      (left.kind === "mini" && right.kind === "mini"
+        ? left.workerId.localeCompare(right.workerId)
+        : 0),
+  );
 }
 
 /** "Mac Mini · online, up to date". */
