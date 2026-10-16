@@ -140,8 +140,35 @@ export const LibraryThreadArchive = Schema.Struct({
   projection: OrchestrationV2ThreadProjection,
 });
 export type LibraryThreadArchive = typeof LibraryThreadArchive.Type;
+export const LibraryComputerRegistration = Schema.Struct({
+  environmentId: EnvironmentId,
+  label: LibraryTitle,
+  platform: Schema.Struct({
+    os: Schema.String.check(Schema.isMaxLength(32)),
+    arch: Schema.String.check(Schema.isMaxLength(32)),
+  }),
+  appVersion: Schema.String.check(Schema.isMaxLength(160)),
+  supportsExecution: Schema.Boolean,
+  endpoints: Schema.Array(Schema.String.check(Schema.isMaxLength(2048))).check(
+    Schema.isMaxLength(8),
+  ),
+});
+export type LibraryComputerRegistration = typeof LibraryComputerRegistration.Type;
+export const LibraryComputer = Schema.Struct({
+  ...LibraryComputerRegistration.fields,
+  enrolledAt: IsoDateTime,
+  lastSeenAt: IsoDateTime,
+});
+export type LibraryComputer = typeof LibraryComputer.Type;
+export const LibraryRegisterComputerRequest = Schema.Struct({
+  authorityId: LibraryId,
+  authorityEpoch: PositiveInt,
+  computer: LibraryComputerRegistration,
+});
+export type LibraryRegisterComputerRequest = typeof LibraryRegisterComputerRequest.Type;
 export const LibraryInfo = Schema.Struct({
   isAuthority: Schema.optional(Schema.Boolean),
+  computers: Schema.optional(Schema.Array(LibraryComputer)),
   environmentId: EnvironmentId,
   authorityId: LibraryId,
   authorityEpoch: PositiveInt,

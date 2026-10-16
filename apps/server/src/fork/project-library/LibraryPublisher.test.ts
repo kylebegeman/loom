@@ -6,6 +6,8 @@ import * as Crypto from "effect/Crypto";
 import * as Hex from "effect/encoding/Hex";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { libraryComputerDirectory } from "./enrollment.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
@@ -70,6 +72,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
       let response: unknown;
       if (pathname.endsWith("/info"))
         response = {
+          ...(env.LOOM_TEST_CREDENTIAL === "external" ? { computers: [] } : {}),
           environmentId: source,
           authorityId: "authority",
           authorityEpoch: 1,
@@ -104,16 +107,38 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     }),
   );
   const effectiveEnv = { ...env };
+  const enrolledHome = `${config.stateDir}/isolated-home`;
   if (env.LOOM_TEST_CREDENTIAL !== undefined) {
     const mode = env.LOOM_TEST_CREDENTIAL;
     yield* fs.makeDirectory(config.secretsDir, { recursive: true, mode: 0o700 });
-    const useDefault = mode.endsWith("default");
-    const credentialFile = useDefault
-      ? `${config.secretsDir}/library-publisher.json`
-      : `${config.stateDir}/host-credential.json`;
+    const useDefault = mode.endsWith("default") || mode === "external";
+    const external = `${libraryComputerDirectory(enrolledHome, source)}/publisher.json`;
+    if (mode === "external")
+      yield* fs.makeDirectory(libraryComputerDirectory(enrolledHome, source), {
+        recursive: true,
+        mode: 0o700,
+      });
+    const credentialFile =
+      mode === "external"
+        ? external
+        : useDefault
+          ? `${config.secretsDir}/library-publisher.json`
+          : `${config.stateDir}/host-credential.json`;
     yield* fs.writeFileString(
       credentialFile,
       json({
+        ...(mode === "external"
+          ? {
+              computer: {
+                environmentId: source,
+                label: "Dorothy",
+                platform: { os: "darwin", arch: "arm64" },
+                appVersion: "0.0.58",
+                supportsExecution: true,
+                endpoints: ["https://computer.example.test"],
+              },
+            }
+          : {}),
         version: 1,
         sourceEnvironmentId: mode === "wrong-source" ? "another-computer" : source,
         libraryEnvironmentId: mode === "wrong-library" ? "another-library" : source,
@@ -142,6 +167,7 @@ const fixture = Effect.fnUntraced(function* (env: Record<string, string>) {
     Effect.provideService(HttpClient.HttpClient, http),
     Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnv({ env: effectiveEnv }))),
     Effect.provideService(ServerEnvironmentIdentity, { getEnvironmentId: Effect.succeed(source) }),
+    Effect.provideService(HostProcess.HomeDirectory, enrolledHome),
   );
   return { publisher, requests, corruptReply, remoteInput, sql, fs, config };
 });
@@ -220,10 +246,11 @@ describe("authenticated Library publishing", () => {
   it.effect(
     "adopts an enrolled host credential from its own private directory without shell configuration",
     () =>
-      run({ LOOM_TEST_CREDENTIAL: "default" }, (f) =>
+      run({ LOOM_TEST_CREDENTIAL: "external" }, (f) =>
         Effect.gen(function* () {
           expect(f.publisher.enabled).toBe(true);
           expect((yield* f.publisher.info).authorityId).toBe("authority");
+          expect(yield* Ref.get(f.requests)).toContain("/api/loom/library/computers/register");
         }),
       ),
   );

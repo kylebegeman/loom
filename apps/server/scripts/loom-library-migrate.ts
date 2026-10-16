@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { libraryJsonBody } from "../src/fork/project-library/transfer.ts";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -371,8 +372,9 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
         entries,
       };
       const response = yield* execute(
-        HttpClientRequest.post(new URL("/api/loom/library/history/ingest", base).toString()).pipe(
-          HttpClientRequest.bodyText(yield* encodeHistory(request), "application/json"),
+        yield* libraryJsonBody(
+          HttpClientRequest.post(new URL("/api/loom/library/history/ingest", base).toString()),
+          yield* encodeHistory(request),
         ),
       );
       const acknowledgement = yield* response.json.pipe(
@@ -401,11 +403,9 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
     return receipt;
   }
   const response = yield* execute(
-    HttpClientRequest.post(new URL("/api/loom/library/import-shadow", base).toString()).pipe(
-      HttpClientRequest.bodyText(
-        yield* encodeShadow({ ...shadow, ...authority }),
-        "application/json",
-      ),
+    yield* libraryJsonBody(
+      HttpClientRequest.post(new URL("/api/loom/library/import-shadow", base).toString()),
+      yield* encodeShadow({ ...shadow, ...authority }),
     ),
   );
   const receipt = yield* response.json.pipe(

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { libraryContinuationContext } from "@t3tools/client-runtime/fork";
 import { useEnvironmentQuery } from "~/state/query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { EnvironmentId, ModelSelection, RuntimeMode, ThreadId } from "@t3tools/contracts";
 import {
   LibraryThreadBinding,
@@ -84,8 +84,20 @@ export function NewConversationDialog({
     `loom:library:conversation:${authority.authorityId}:${project.id}`,
     ConversationAttempt,
   );
+  const suggestedScope =
+    initialResourceId ??
+    (continuation?.resourceIds.length === 1 ? continuation.resourceIds[0]! : null);
+  const suggestedHosts = authority.environments.filter(
+    (entry) =>
+      entry.entry.enabled &&
+      entry.connection.phase === "connected" &&
+      entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
+      libraryCopiesForScope(project, copies, entry.environmentId, suggestedScope).length > 0,
+  );
   const [hostId, setHostId] = useState<EnvironmentId | null>(
-    attempt?.environmentId ?? initialHostId ?? null,
+    attempt?.environmentId ??
+      initialHostId ??
+      (suggestedHosts.length === 1 ? suggestedHosts[0]!.environmentId : null),
   );
   const [resourceId, setResourceId] = useState<string | null>(
     attempt?.binding.resourceIds.length === 1
@@ -105,7 +117,10 @@ export function NewConversationDialog({
         })
       : null,
   );
-  const context = contextInput ?? (source.data ? libraryContinuationContext(source.data) : "");
+  const context =
+    attempt?.context ??
+    contextInput ??
+    (source.data ? libraryContinuationContext(source.data) : "");
   const [preparedCopy, setPreparedCopy] = useState<LibraryWorkingCopy | null>(null);
   const [copyId, setCopyId] = useState<string | null>(
     attempt?.binding.workingCopyId ?? initialCopyId ?? null,
@@ -408,9 +423,35 @@ export function NewConversationDialog({
                     {entry.connection.phase !== "connected" ? " (offline)" : ""}
                   </SelectItem>
                 ))}
+              {authority.computers
+                .filter(
+                  (computer) =>
+                    computer.supportsExecution &&
+                    !authority.environments.some(
+                      (entry) => entry.environmentId === computer.environmentId,
+                    ),
+                )
+                .map((computer) => (
+                  <SelectItem key={computer.environmentId} value={computer.environmentId} disabled>
+                    {computer.label} (connect first)
+                  </SelectItem>
+                ))}
             </SelectPopup>
           </Select>
         </LibraryField>
+        {authority.computers.some(
+          (computer) =>
+            computer.supportsExecution &&
+            !authority.environments.some((entry) => entry.environmentId === computer.environmentId),
+        ) ? (
+          <p className="text-sm text-muted-foreground">
+            Your Library remembers other computers.{" "}
+            <Link to="/settings/connections" className="underline underline-offset-4">
+              Connect a computer
+            </Link>{" "}
+            to run work there. Saved conversations are available here.
+          </p>
+        ) : null}
         {candidates.length > 1 ? (
           <LibraryField label="Working copy">
             <Select

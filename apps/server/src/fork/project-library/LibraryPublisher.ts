@@ -1,7 +1,10 @@
+import { libraryJsonBody } from "./transfer.ts";
 import * as LibraryService from "./LibraryService.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { EnvironmentId, IsoDateTime } from "@t3tools/contracts";
 import {
+  LibraryComputerRegistration,
+  LibraryRegisterComputerRequest,
   LibraryError,
   LibraryInfo,
   LibraryIngestHistoryRequest,
@@ -10,6 +13,8 @@ import {
   LibraryWorkingCopy,
   type LibraryThreadArchive,
 } from "@t3tools/contracts/fork";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { libraryComputerDirectory } from "./enrollment.ts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Clock from "effect/Clock";
@@ -19,7 +24,10 @@ import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
-import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import {
+  ServerEnvironment,
+  ServerEnvironmentIdentity,
+} from "../../environment/ServerEnvironment.ts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -60,6 +68,7 @@ const encodeCopy = Schema.encodeEffect(Schema.fromJsonString(LibraryRegisterCopy
 const decodeCopy = Schema.decodeUnknownEffect(LibraryWorkingCopy);
 const decodeAsset = Schema.decodeUnknownEffect(LibraryAsset);
 const HostCredential = Schema.Struct({
+  computer: Schema.optional(LibraryComputerRegistration),
   version: Schema.Literal(1),
   sourceEnvironmentId: EnvironmentId,
   libraryEnvironmentId: EnvironmentId,
@@ -80,7 +89,15 @@ const make = Effect.gen(function* () {
   const configuredCredentialFile = yield* Config.String("LOOM_LIBRARY_CREDENTIAL_FILE").pipe(
     Config.option,
   );
-  const defaultCredentialFile = path.join(config.secretsDir, "library-publisher.json");
+  const sourceIdentity = yield* ServerEnvironmentIdentity;
+  const computerDirectory = libraryComputerDirectory(
+    yield* HostProcess.HomeDirectory,
+    yield* sourceIdentity.getEnvironmentId,
+  );
+  const externalCredentialFile = path.join(computerDirectory, "publisher.json");
+  const defaultCredentialFile = (yield* fs.exists(externalCredentialFile))
+    ? externalCredentialFile
+    : path.join(config.secretsDir, "library-publisher.json");
   const credentialFile = Option.isSome(configuredCredentialFile)
     ? configuredCredentialFile
     : (yield* fs.exists(defaultCredentialFile))
@@ -206,7 +223,7 @@ const make = Effect.gen(function* () {
     const response = yield* http
       .execute(request.pipe(HttpClientRequest.bearerToken(token.value)))
       .pipe(
-        Effect.timeout("30 seconds"),
+        Effect.timeout("3 minutes"),
         Effect.mapError(() => new LibraryError({ reason: "io" })),
       );
     if (response.status < 200 || response.status >= 300)
@@ -216,6 +233,8 @@ const make = Effect.gen(function* () {
     return response;
   });
   const endpoint = (path: string) => new URL(path, base).toString();
+  const descriptorService = yield* Effect.serviceOption(ServerEnvironment);
+  const encodeComputer = Schema.encodeEffect(Schema.fromJsonString(LibraryRegisterComputerRequest));
   const info = Effect.gen(function* () {
     const response = yield* execute(HttpClientRequest.get(endpoint("/api/loom/library/info")));
     const info = yield* response.json.pipe(
@@ -224,6 +243,37 @@ const make = Effect.gen(function* () {
     );
     if (credential !== null && info.environmentId !== credential.libraryEnvironmentId)
       return yield* new LibraryError({ reason: "blocked" });
+    if (info.computers !== undefined) {
+      const descriptor = Option.isSome(descriptorService)
+        ? yield* descriptorService.value.getDescriptor
+        : null;
+      const computer = descriptor
+        ? {
+            environmentId: descriptor.environmentId,
+            label: descriptor.label,
+            platform: descriptor.platform,
+            appVersion: descriptor.serverVersion,
+            supportsExecution: descriptor.capabilities.supportsExecution !== false,
+            endpoints: credential?.computer?.endpoints ?? [],
+          }
+        : credential?.computer;
+      if (computer !== undefined && computer !== null) {
+        if (computer.environmentId !== (yield* sourceIdentity.getEnvironmentId))
+          return yield* new LibraryError({ reason: "blocked" });
+        yield* execute(
+          HttpClientRequest.post(endpoint("/api/loom/library/computers/register")).pipe(
+            HttpClientRequest.bodyText(
+              yield* encodeComputer({
+                authorityId: info.authorityId,
+                authorityEpoch: info.authorityEpoch,
+                computer,
+              }).pipe(Effect.mapError(() => new LibraryError({ reason: "invalid" }))),
+              "application/json",
+            ),
+          ),
+        );
+      }
+    }
     return info;
   });
   const ingest = Effect.fnUntraced(function* (input: LibraryIngestHistoryRequest) {
@@ -231,8 +281,9 @@ const make = Effect.gen(function* () {
       Effect.mapError(() => new LibraryError({ reason: "invalid" })),
     );
     const response = yield* execute(
-      HttpClientRequest.post(endpoint("/api/loom/library/history/ingest")).pipe(
-        HttpClientRequest.bodyText(body, "application/json"),
+      yield* libraryJsonBody(
+        HttpClientRequest.post(endpoint("/api/loom/library/history/ingest")),
+        body,
       ),
     );
     return yield* response.json.pipe(

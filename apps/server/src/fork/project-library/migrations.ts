@@ -39,5 +39,13 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE TABLE fork_library_history_items (library_id TEXT NOT NULL, position INTEGER NOT NULL, payload_json TEXT NOT NULL, PRIMARY KEY(library_id, position))`;
       }),
     ],
+    [
+      3,
+      "EnrolledComputers",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE fork_library_computers (environment_id TEXT PRIMARY KEY,payload_json TEXT NOT NULL)`;
+      }),
+    ],
   ],
 };

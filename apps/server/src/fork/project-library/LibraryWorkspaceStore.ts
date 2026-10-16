@@ -6,6 +6,10 @@ import {
   LibraryResolvedBinding,
 } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
+import * as Option from "effect/Option";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
+import { libraryComputerDirectory } from "./enrollment.ts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -137,7 +141,18 @@ const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
   const locks = yield* KeyedLock.make<string>();
-  const directory = path.join(config.stateDir, "project-library", "host");
+  const identity = yield* Effect.serviceOption(ServerEnvironmentIdentity);
+  const externalDirectory = Option.isSome(identity)
+    ? libraryComputerDirectory(
+        yield* HostProcess.HomeDirectory,
+        yield* identity.value.getEnvironmentId,
+      )
+    : null;
+  const directory =
+    externalDirectory !== null &&
+    (yield* fs.exists(path.join(externalDirectory, "project-library", "host", "workspaces.json")))
+      ? path.join(externalDirectory, "project-library", "host")
+      : path.join(config.stateDir, "project-library", "host");
   const databasePath = path.join(directory, "workspaces.json");
   const read = mapIo(
     Effect.gen(function* () {

@@ -1,4 +1,6 @@
 import {
+  LibraryComputer,
+  LibraryRegisterComputerRequest,
   LibraryProject,
   LibraryWorkingCopy,
   LibraryThreadArchive,
@@ -38,6 +40,9 @@ import { validLibraryResources } from "./policy.ts";
 export class LibraryService extends Context.Service<
   LibraryService,
   {
+    readonly registerComputer: (
+      input: LibraryRegisterComputerRequest,
+    ) => Effect.Effect<LibraryComputer, LibraryError>;
     readonly info: Effect.Effect<LibraryInfo, LibraryError>;
     readonly subscribeRefreshes: Stream.Stream<number>;
     readonly projects: (input: {
@@ -96,6 +101,7 @@ function compileCodec<A>(codec: Schema.Codec<A, string>) {
   return { decode: Schema.decodeEffect(codec), encode: Schema.encodeEffect(codec) };
 }
 const codecs = {
+  computer: compileCodec(Schema.fromJsonString(LibraryComputer)),
   project: compileCodec(Schema.fromJsonString(LibraryProject)),
   copy: compileCodec(Schema.fromJsonString(LibraryWorkingCopy)),
   archive: compileCodec(Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchive))),
@@ -353,6 +359,59 @@ const make = Effect.gen(function* () {
       );
     return normalized;
   });
+  const registerComputer = (input: LibraryRegisterComputerRequest) =>
+    transact(
+      Effect.gen(function* () {
+        if (!isAuthority) return yield* new LibraryError({ reason: "not-authority" });
+        yield* validateAuthority(input);
+        const computer = input.computer;
+        if (
+          computer.environmentId === (yield* identity.getEnvironmentId) ||
+          computer.endpoints.some((endpoint) => {
+            try {
+              const url = new URL(endpoint);
+              return (
+                url.username !== "" ||
+                url.password !== "" ||
+                url.search !== "" ||
+                url.hash !== "" ||
+                (url.protocol !== "https:" &&
+                  !(
+                    url.protocol === "http:" &&
+                    ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)
+                  ))
+              );
+            } catch {
+              return true;
+            }
+          })
+        )
+          return yield* invalid();
+        const saved = (yield* Effect.forEach(yield* store.computers, (row) =>
+          decode(codecs.computer, row),
+        )).find((entry) => entry.environmentId === computer.environmentId);
+        const timestamp = yield* now;
+        const current = {
+          ...computer,
+          enrolledAt: saved?.enrolledAt ?? timestamp,
+          lastSeenAt: timestamp,
+        };
+        yield* store.putComputer(computer.environmentId, yield* encode(codecs.computer, current));
+        return {
+          result: current,
+          changed:
+            !saved ||
+            saved.label !== current.label ||
+            saved.appVersion !== current.appVersion ||
+            saved.endpoints.join("\0") !== current.endpoints.join("\0"),
+        };
+      }),
+    ).pipe(
+      Effect.tap(({ changed }) =>
+        changed ? SubscriptionRef.update(refreshes, (revision) => revision + 1) : Effect.void,
+      ),
+      Effect.map(({ result }) => result),
+    );
   const info = transact(
     Effect.gen(function* () {
       const saved = yield* store.authority;
@@ -363,6 +422,9 @@ const make = Effect.gen(function* () {
       return {
         environmentId: yield* identity.getEnvironmentId,
         isAuthority,
+        computers: isAuthority
+          ? yield* Effect.forEach(yield* store.computers, (row) => decode(codecs.computer, row))
+          : [],
         authorityId: authority.id,
         authorityEpoch: authority.epoch,
         assets: assets.mode,
@@ -638,6 +700,7 @@ const make = Effect.gen(function* () {
     );
   return LibraryService.of({
     info,
+    registerComputer,
     subscribeRefreshes: SubscriptionRef.changes(refreshes),
     createProject,
     updateProject,

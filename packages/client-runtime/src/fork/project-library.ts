@@ -54,6 +54,7 @@ export function createProjectLibraryAtoms<R, E>(
     info: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:info",
       tag: L.info,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
       persistence: persistQuery(LibraryInfo),
     }),
     projects: createEnvironmentRpcQueryAtomFamily(runtime, {

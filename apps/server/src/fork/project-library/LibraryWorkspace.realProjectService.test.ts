@@ -3,6 +3,8 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { CommandId, ProjectId, EnvironmentId } from "@t3tools/contracts";
 import { type LibraryProject } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import { libraryComputerDirectory } from "./enrollment.ts";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -241,5 +243,45 @@ it.layer(layer)("Library workspace with real project services", (it) => {
       expect(resolved.cwd).toBe(path.join(rootPath, "web"));
       expect(yield* fs.exists(path.join(rootPath, "server", ".git"))).toBe(true);
     }),
+  );
+  it.effect(
+    "adopts staged source bindings from machine configuration without editing native history",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem,
+          path = yield* Path.Path,
+          config = yield* ServerConfig.ServerConfig;
+        const workspace = yield* Workspace.LibraryWorkspace;
+        const parent = yield* fs.realPath(
+          yield* fs.makeTempDirectoryScoped({ prefix: "library-external-enrollment-" }),
+        );
+        const copy = yield* workspace.prepareCopy({
+          requestId: "external-discussion",
+          project: { ...project, resources: [] },
+          rootPath: path.join(parent, "discussion"),
+          strategy: "clone",
+        });
+        const nativeFile = path.join(config.stateDir, "project-library", "host", "workspaces.json");
+        const original = yield* fs.readFileString(nativeFile);
+        const fakeHome = path.join(parent, "home");
+        const externalDir = path.join(
+          libraryComputerDirectory(fakeHome, copy.environmentId),
+          "project-library",
+          "host",
+        );
+        yield* fs.makeDirectory(externalDir, { recursive: true });
+        const externalFile = path.join(externalDir, "workspaces.json");
+        yield* fs.writeFileString(externalFile, original, { mode: 0o600 });
+        const adopted = yield* Store.LibraryWorkspaceStore.pipe(
+          Effect.provide(Layer.fresh(Store.layer)),
+          Effect.provideService(HostProcess.HomeDirectory, fakeHome),
+        );
+        const receipt = yield* adopted.get(copy.id);
+        expect(receipt.copy.rootPath).toBe(copy.rootPath);
+        yield* adopted.put({ ...receipt, copy: { ...receipt.copy, registered: false } });
+        expect((yield* adopted.get(copy.id)).copy.registered).toBe(false);
+        expect(yield* fs.readFileString(nativeFile)).toBe(original);
+        expect(yield* fs.readFileString(externalFile)).not.toBe(original);
+      }),
   );
 });

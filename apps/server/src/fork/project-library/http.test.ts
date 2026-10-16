@@ -9,6 +9,8 @@ import {
 import { LibraryIngestHistoryRequest } from "@t3tools/contracts/fork";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import { HttpClientRequest } from "effect/http";
+import { libraryJsonBody } from "./transfer.ts";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
@@ -21,6 +23,7 @@ import { source, resource, archiveFor } from "./Library.testkit.ts";
 const encodeIngest = Schema.encodeEffect(
   Schema.fromJsonString(Schema.toCodecJson(LibraryIngestHistoryRequest)),
 );
+const encodeJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const fixture = Effect.gen(function* () {
   const calls = yield* Ref.make(0);
   const session = yield* Ref.make<EnvironmentAuth.AuthenticatedSession>({
@@ -38,6 +41,14 @@ const fixture = Effect.gen(function* () {
           authorityEpoch: 1,
           assets: "local",
         }),
+        registerComputer: (input) =>
+          Ref.update(calls, (count) => count + 1).pipe(
+            Effect.as({
+              ...input.computer,
+              enrolledAt: "2026-10-15T00:00:00.000Z",
+              lastSeenAt: "2026-10-15T00:00:00.000Z",
+            }),
+          ),
         ingestHistory: (input) =>
           Ref.update(calls, (count) => count + 1).pipe(
             Effect.as({
@@ -85,7 +96,7 @@ const fixture = Effect.gen(function* () {
     authorityEpoch: 1,
     entries: [{ sequence: 1, thread: archive }],
   };
-  const request = (path: string, body?: string, headers?: Record<string, string>) =>
+  const request = (path: string, body?: string | ArrayBuffer, headers?: Record<string, string>) =>
     Effect.promise(() =>
       web.handler(
         new Request(`http://localhost/api/loom/library/${path}`, {
@@ -123,6 +134,71 @@ describe("Library host HTTP publishing boundaries", () => {
         }),
       ),
   );
+  it.effect(
+    "accepts compressed complete history and rejects corrupt compressed input before writing",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const thread = f.input.entries[0]!.thread;
+          const request = {
+            ...f.input,
+            entries: [
+              {
+                sequence: 1,
+                thread: {
+                  ...thread,
+                  projection: {
+                    ...thread.projection,
+                    messages: [
+                      { ...thread.projection.messages[0]!, text: "x".repeat(2 * 1024 * 1024) },
+                    ],
+                  },
+                },
+              },
+            ],
+          };
+          const body = yield* libraryJsonBody(
+            HttpClientRequest.post("https://library.test"),
+            yield* encodeIngest(request),
+          );
+          expect(body.headers["content-encoding"]).toBe("gzip");
+          if (body.body._tag !== "Uint8Array") throw new Error("Expected compressed body");
+          expect(
+            (yield* f.request("history/ingest", new Uint8Array(body.body.body).buffer, {
+              "content-encoding": "gzip",
+            })).status,
+          ).toBe(200);
+          expect(
+            (yield* f.request("history/ingest", new Uint8Array([1, 2, 3]).buffer, {
+              "content-encoding": "gzip",
+            })).status,
+          ).toBe(400);
+          expect(yield* Ref.get(f.calls)).toBe(1);
+        }),
+      ),
+  );
+  it.effect("fences computer directory updates to the enrolled source identity", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const payload = yield* encodeJson({
+          authorityId: "authority",
+          authorityEpoch: 1,
+          computer: {
+            environmentId: source,
+            label: "Dorothy",
+            platform: { os: "darwin", arch: "arm64" },
+            appVersion: "0.0.58",
+            supportsExecution: true,
+            endpoints: [],
+          },
+        });
+        expect((yield* f.request("computers/register", payload)).status).toBe(200);
+        yield* Ref.update(f.session, (session) => ({ ...session, subject: "loom-host:other" }));
+        expect((yield* f.request("computers/register", payload)).status).toBe(403);
+        expect(yield* Ref.get(f.calls)).toBe(1);
+      }),
+    ),
+  );
   it.effect("keeps catalog imports operator-only and bounds request bodies", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -134,7 +210,7 @@ describe("Library host HTTP publishing boundaries", () => {
         }));
         expect(
           (yield* f.request("history/ingest", yield* encodeIngest(f.input), {
-            "content-length": String(128 * 1024 * 1024 + 1),
+            "content-length": String(512 * 1024 * 1024 + 1),
           })).status,
         ).toBe(413);
         expect((yield* f.request("history/ingest", "{}")).status).toBe(400);

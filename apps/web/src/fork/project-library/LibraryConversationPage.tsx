@@ -79,8 +79,13 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
           </Link>
           <h1 className="text-xl font-semibold tracking-tight">{archive.summary.title}</h1>
           <p className="text-xs text-muted-foreground">
-            Runs on {host?.label ?? "its original computer"}. Saved to Library{" "}
-            {new Date(archive.summary.syncedAt).toLocaleString()}.
+            Runs on{" "}
+            {host?.label ??
+              authority.computers.find(
+                (entry) => entry.environmentId === archive.summary.environmentId,
+              )?.label ??
+              "its original computer"}
+            . Saved to Library {new Date(archive.summary.syncedAt).toLocaleString()}.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

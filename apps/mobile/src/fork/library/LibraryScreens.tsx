@@ -429,7 +429,9 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
     );
   const p = project.data,
     hostLabel = (id: string) =>
-      environments.find((env) => env.environmentId === id)?.label ?? "Saved computer";
+      environments.find((env) => env.environmentId === id)?.label ??
+      authority.computers.find((entry) => entry.environmentId === id)?.label ??
+      "Saved computer";
   const showThread = (thread: LibraryThreadSummary) =>
     navigation.navigate("LibraryHistory", { projectId: p.id, archiveId: thread.id });
   return (

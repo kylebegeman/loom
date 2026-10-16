@@ -27,6 +27,11 @@ export class LibraryStore extends Context.Service<
     readonly transaction: <A, E, R>(
       effect: Effect.Effect<A, E, R>,
     ) => Effect.Effect<A, E | LibraryStoreError, R>;
+    readonly computers: Effect.Effect<readonly string[], LibraryStoreError>;
+    readonly putComputer: (
+      environmentId: string,
+      payload: string,
+    ) => Effect.Effect<void, LibraryStoreError>;
     readonly authority: Effect.Effect<string | null, LibraryStoreError>;
     readonly putAuthority: (payload: string) => Effect.Effect<void, LibraryStoreError>;
     readonly projectRevision: (
@@ -249,6 +254,17 @@ const make = Effect.gen(function* () {
             Effect.fail(new LibraryStoreError({ operation: "transaction", cause })),
           ),
         ),
+    computers: run(
+      "computers",
+      sql<{
+        payload_json: string;
+      }>`SELECT payload_json FROM fork_library_computers ORDER BY environment_id`,
+    ).pipe(Effect.map(payloads)),
+    putComputer: (environmentId, payload) =>
+      run(
+        "computer",
+        sql`INSERT INTO fork_library_computers(environment_id,payload_json) VALUES (${environmentId},${payload}) ON CONFLICT(environment_id) DO UPDATE SET payload_json=excluded.payload_json`,
+      ).pipe(Effect.asVoid),
     authority: run(
       "authority",
       sql<{

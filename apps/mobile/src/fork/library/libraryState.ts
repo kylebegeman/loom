@@ -67,6 +67,7 @@ export function useLibraryAuthority() {
       environments.find((environment) => environment.environmentId === environmentId)?.label ??
       "Library server",
     info,
+    computers: info.data?.computers ?? [],
     select,
   } as const;
 }

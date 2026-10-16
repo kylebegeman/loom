@@ -58,6 +58,54 @@ const archiveCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryThreadArchi
 const encodeArchive = Schema.encodeEffect(archiveCodec);
 
 describe("independent Library catalog and durable history", () => {
+  it.effect(
+    "keeps enrolled computer identity and names across offline library visits and rejects unsafe endpoints",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const authority = yield* service.info;
+          const computer = {
+            environmentId: source,
+            label: "Dorothy",
+            platform: { os: "darwin", arch: "arm64" },
+            appVersion: "0.0.58",
+            supportsExecution: true,
+            endpoints: ["https://computer.example.test"],
+          };
+          const request = {
+            authorityId: authority.authorityId,
+            authorityEpoch: authority.authorityEpoch,
+            computer,
+          };
+          const first = yield* service.registerComputer(request);
+          const renamed = yield* service.registerComputer({
+            ...request,
+            computer: { ...computer, label: "Home Mac" },
+          });
+          expect(renamed.enrolledAt).toBe(first.enrolledAt);
+          expect((yield* service.info).computers?.map((entry) => entry.label)).toEqual([
+            "Home Mac",
+          ]);
+          expect(
+            (yield* Effect.result(
+              service.registerComputer({
+                ...request,
+                authorityEpoch: authority.authorityEpoch + 1,
+              }),
+            ))._tag,
+          ).toBe("Failure");
+          expect(
+            (yield* Effect.result(
+              service.registerComputer({
+                ...request,
+                computer: { ...computer, endpoints: ["https://example.test?token=private"] },
+              }),
+            ))._tag,
+          ).toBe("Failure");
+          expect((yield* service.info).computers).toHaveLength(1);
+        }),
+      ),
+  );
   it.effect("execution hosts cannot create a competing shared catalog", () =>
     Effect.gen(function* () {
       yield* runForkMigrationSet(ProjectLibraryMigrations);

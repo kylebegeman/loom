@@ -52,7 +52,20 @@ export function useLibraryAuthority() {
     if (!authorityId && primaryId && primaryInfo.data?.isAuthority === true)
       setAuthorityId(primaryId);
   }, [authorityId, primaryId, primaryInfo.data?.isAuthority, setAuthorityId]);
-  return { authorityId, setAuthorityId, environment, connected, supported, environments, isReady };
+  const info = useEnvironmentQuery(
+    authorityId ? projectLibrary.info({ environmentId: authorityId, input: {} }) : null,
+  );
+  return {
+    authorityId,
+    setAuthorityId,
+    environment,
+    connected,
+    supported,
+    environments,
+    isReady,
+    info,
+    computers: info.data?.computers ?? [],
+  };
 }
 
 export function useSelectedLibraryProject() {

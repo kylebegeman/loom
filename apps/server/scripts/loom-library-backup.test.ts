@@ -5,6 +5,8 @@ import { describe, expect, it } from "@effect/vitest";
 import { ChatAttachmentId } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as ConfigProvider from "effect/ConfigProvider";
+import * as Store from "../src/fork/project-library/LibraryStore.ts";
 import * as Hex from "effect/encoding/Hex";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -47,6 +49,9 @@ const fixture = Effect.gen(function* () {
     Recovery.layer,
   ).pipe(
     Layer.provideMerge(NodeSqliteClient.layer({ filename: database })),
+    Layer.provide(
+      ConfigProvider.layer(ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } })),
+    ),
     Layer.provide(ServerConfig.layerTest(process.cwd(), base)),
     Layer.provide(FetchHttpClient.layer),
     Layer.provide(
@@ -147,9 +152,18 @@ describe("cold Library backup and recovery commands", () => {
           });
           expect(restored.authority).toEqual({ id: f.info.authorityId, epoch: 2 });
           const rows = yield* SqlClient.SqlClient.use(
-            (sql) => sql<{ payload_json: string }>`SELECT payload_json FROM fork_library_threads`,
+            (sql) => sql<{ library_id: string }>`SELECT library_id FROM fork_library_threads`,
           ).pipe(Effect.provide(NodeSqliteClient.layer({ filename: destination, readonly: true })));
-          expect(rows[0]?.payload_json).toContain("Preserve this complete conversation");
+          const history = yield* Store.LibraryStore.use((store) =>
+            store.history(rows[0]!.library_id),
+          ).pipe(
+            Effect.provide(
+              Store.layer.pipe(
+                Layer.provide(NodeSqliteClient.layer({ filename: destination, readonly: true })),
+              ),
+            ),
+          );
+          expect(history).toContain("Preserve this complete conversation");
           expect((yield* f.fs.stat(destination)).mode & 0o777).toBe(0o600);
         }),
       ),

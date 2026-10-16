@@ -136,7 +136,9 @@ function LibraryStartContent(props: {
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const [selectedScope, setScope] = useState<string | null>(props.initialResourceId ?? null),
-    [execution, setExecution] = useState<EnvironmentId | null>(props.reuseEnvironmentId ?? null),
+    [selectedExecution, setExecution] = useState<EnvironmentId | null>(
+      props.reuseEnvironmentId ?? null,
+    ),
     [mode, setMode] = useState<"reuse" | "folder" | "clone">(
       props.reuseRootPath ? "folder" : "reuse",
     ),
@@ -169,6 +171,7 @@ function LibraryStartContent(props: {
     mode: "reuse" | "folder" | "clone";
     rootPath: string;
     copy: LibraryWorkingCopy | null;
+    carryContext: string;
   } | null>(null);
   const source = useEnvironmentQuery(
     authority.environmentId && props.sourceArchiveId
@@ -202,6 +205,17 @@ function LibraryStartContent(props: {
   );
   const [carryInput, setCarryContext] = useState<string | null>(null);
   const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
+  const suggestedHosts = environments.filter(
+    (entry) =>
+      entry.entry.enabled &&
+      entry.connection.phase === "connected" &&
+      entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
+      operable.has(entry.environmentId) &&
+      libraryEligibleCopies(launchProject, entry.environmentId, resourceIds, copies.data ?? [])
+        .length > 0,
+  );
+  const execution =
+    selectedExecution ?? (suggestedHosts.length === 1 ? suggestedHosts[0]!.environmentId : null);
   const eligible = libraryEligibleCopies(launchProject, execution, resourceIds, copies.data ?? []);
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
@@ -290,6 +304,7 @@ function LibraryStartContent(props: {
         mode,
         rootPath: rootPath.trim(),
         copy: selectedCopy,
+        carryContext,
       };
       setModelKey(chosenModel.key);
     }
@@ -411,8 +426,8 @@ function LibraryStartContent(props: {
           },
         },
       );
-      if (props.sourceArchiveId && carryContext.trim()) {
-        setComposerDraftText(scopedThreadKey(target), carryContext);
+      if (props.sourceArchiveId && review.carryContext.trim()) {
+        setComposerDraftText(scopedThreadKey(target), review.carryContext);
         await flushComposerDrafts();
       }
       refreshLibraryWork(authority.environmentId, launchProject.id);
@@ -554,6 +569,34 @@ function LibraryStartContent(props: {
               />
             );
           })}
+        {authority.computers
+          .filter(
+            (computer) =>
+              computer.supportsExecution &&
+              !environments.some((entry) => entry.environmentId === computer.environmentId),
+          )
+          .map((computer) => (
+            <ListChoiceRow
+              key={computer.environmentId}
+              label={computer.label}
+              description="Connect this computer to run work here. Its saved history is available in Projects."
+              selected={false}
+              disabled={locked}
+              onPress={() => navigation.navigate("Connections")}
+              separated
+            />
+          ))}
+        {authority.computers.some(
+          (computer) =>
+            computer.supportsExecution &&
+            !environments.some((entry) => entry.environmentId === computer.environmentId),
+        ) ? (
+          <MaterialButton
+            label="Connect a computer"
+            tone="text"
+            onPress={() => navigation.navigate("Connections")}
+          />
+        ) : null}
       </SettingsSection>
       {execution ? (
         <>

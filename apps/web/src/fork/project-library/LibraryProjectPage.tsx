@@ -48,7 +48,9 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
   const project = library.project.data;
   const copiesReadiness = libraryCopyReadiness(library.copies);
   const hostLabel = (id: LibraryWorkingCopy["environmentId"]) =>
-    library.environments.find((entry) => entry.environmentId === id)?.label ?? "Unknown computer";
+    library.environments.find((entry) => entry.environmentId === id)?.label ??
+    library.computers.find((entry) => entry.environmentId === id)?.label ??
+    "Saved computer";
   const setArchived = async () => {
     if (!project || !library.authorityId) return;
     setError(null);
