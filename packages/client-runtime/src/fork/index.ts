@@ -49,6 +49,7 @@ export * from "./library-selection.ts";
 export * from "./library-archive.ts";
 export * from "./library-project-profile.ts";
 export * from "./library-brief-review.ts";
+export * from "./library-brief-suggestions.ts";
 export * from "./library-profile-readiness.ts";
 export * from "./library-launch-choice.ts";
 export * from "./library-tidy.ts";

@@ -3,6 +3,7 @@ import type { EnvironmentId, ProjectScript } from "@t3tools/contracts";
 import {
   LIBRARY_PROFILE_LIMITS,
   LIBRARY_TOOL_CATALOG,
+  type LibraryBriefSuggestionMode,
   type LibraryComputer,
   type LibraryProject,
   type LibraryProjectProfileInput,
@@ -11,6 +12,10 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   compactLibraryProfile,
+  LIBRARY_BRIEF_SUGGESTION_CHOICES,
+  libraryBriefSuggestionChoice,
+  libraryBriefSuggestionChoiceLabel,
+  libraryBriefSuggestionDraftValue,
   libraryProfileComputerIds,
   libraryProfileProblem,
   libraryProfileScriptSources,
@@ -26,6 +31,7 @@ import { Button } from "~/components/ui/button";
 import { Checkbox } from "~/components/ui/checkbox";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
+import { Radio, RadioGroup } from "~/components/ui/radio-group";
 import { Switch } from "~/components/ui/switch";
 import { Toggle } from "~/components/ui/toggle";
 import { useProjects } from "~/state/entities";
@@ -40,6 +46,7 @@ export function ProjectProfile({
   copies,
   computers,
   canEdit,
+  keepsBriefSuggestions,
   busy,
   error,
   hostLabel,
@@ -50,6 +57,8 @@ export function ProjectProfile({
   readonly copies: readonly LibraryWorkingCopy[];
   readonly computers: readonly LibraryComputer[];
   readonly canEdit: boolean;
+  /** The Library advertises `library-brief-suggestions`, so it saves the setting. */
+  readonly keepsBriefSuggestions: boolean;
   readonly busy: boolean;
   readonly error: string | null;
   readonly hostLabel: (id: EnvironmentId) => string;
@@ -73,6 +82,9 @@ export function ProjectProfile({
           : null,
         profile.defaultModelSelection ? ["Model", profile.defaultModelSelection.model] : null,
         profile.allowMini ? ["Mini", "Can run its jobs"] : null,
+        keepsBriefSuggestions && libraryBriefSuggestionChoice(profile.briefSuggestions) !== "off"
+          ? ["Brief", `${libraryBriefSuggestionChoiceLabel(profile.briefSuggestions)} suggestions`]
+          : null,
       ].filter((row) => row !== null)
     : [];
   return (
@@ -115,6 +127,7 @@ export function ProjectProfile({
           project={project}
           copies={copies}
           computers={computers}
+          keepsBriefSuggestions={keepsBriefSuggestions}
           hostLabel={hostLabel}
           busy={busy}
           error={error}
@@ -132,6 +145,7 @@ function ProfileDialog({
   project,
   copies,
   computers,
+  keepsBriefSuggestions,
   hostLabel,
   busy,
   error,
@@ -141,6 +155,7 @@ function ProfileDialog({
   readonly project: LibraryProject;
   readonly copies: readonly LibraryWorkingCopy[];
   readonly computers: readonly LibraryComputer[];
+  readonly keepsBriefSuggestions: boolean;
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly busy: boolean;
   readonly error: string | null;
@@ -230,9 +245,58 @@ function ProfileDialog({
             onCheckedChange={(allowMini) => patch({ allowMini })}
           />
         </label>
+        {keepsBriefSuggestions ? (
+          <BriefSuggestionsField
+            mode={draft.briefSuggestions}
+            onChange={(briefSuggestions) => patch({ briefSuggestions })}
+          />
+        ) : null}
         <LibraryErrorNotice error={problem ?? error} />
       </div>
     </LibraryDialog>
+  );
+}
+
+/**
+ * Whether a conversation that settles asks its agent for brief updates. The agent only proposes;
+ * a person still accepts each change on the project page.
+ */
+function BriefSuggestionsField({
+  mode,
+  onChange,
+}: {
+  readonly mode: LibraryBriefSuggestionMode | undefined;
+  readonly onChange: (mode: LibraryBriefSuggestionMode | undefined) => void;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="space-y-0.5">
+        <p id="brief-suggestions-label" className="text-sm font-medium">
+          Suggest brief updates when a conversation settles
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Runs with the conversation's model on the computer where it settled.
+        </p>
+      </div>
+      <RadioGroup
+        aria-labelledby="brief-suggestions-label"
+        value={libraryBriefSuggestionChoice(mode)}
+        onValueChange={(value) => {
+          const choice = LIBRARY_BRIEF_SUGGESTION_CHOICES.find((entry) => entry.value === value);
+          if (choice) onChange(libraryBriefSuggestionDraftValue(choice.value));
+        }}
+      >
+        {LIBRARY_BRIEF_SUGGESTION_CHOICES.map((choice) => (
+          <label key={choice.value} className="flex items-start gap-2.5">
+            <Radio value={choice.value} />
+            <span className="space-y-0.5">
+              <span className="block text-sm">{choice.label}</span>
+              <span className="block text-xs text-muted-foreground">{choice.description}</span>
+            </span>
+          </label>
+        ))}
+      </RadioGroup>
+    </section>
   );
 }
 

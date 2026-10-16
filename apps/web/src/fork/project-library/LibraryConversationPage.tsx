@@ -3,7 +3,10 @@ import {
   shouldRefreshLibraryArchive,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
-import { LIBRARY_BRIEF_PROPOSALS_FEATURE } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_BRIEF_PROPOSALS_FEATURE,
+  LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
+} from "@t3tools/contracts/fork";
 import type { TimelineEntry } from "~/session-logic";
 import { turnItemOutputText, toolCallLines } from "@t3tools/client-runtime/work-log/item-detail";
 import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
@@ -27,6 +30,7 @@ import {
 import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibraryErrorNotice } from "./LibraryControls";
 import { NewConversationDialog } from "./NewConversationDialog";
+import { BriefSuggestionOffer } from "./BriefSuggestionOffer";
 import { SuggestBriefUpdates } from "./SuggestBriefUpdates";
 
 /** Anchors each saved item, so a link can name the one to open at. */
@@ -66,12 +70,12 @@ export function LibraryConversationPage({
   const historyWindow = archive?.window;
   const targetItem = target?.item;
   const targetPosition = target?.position;
-  useEffect(() => {
-    if (!seeking || targetPosition === undefined || historyWindow?.offset !== historyOffset) return;
+  // Adjusted while rendering, once each page arrives, so the next read starts without an extra pass.
+  if (seeking && targetPosition !== undefined && historyWindow?.offset === historyOffset) {
     const offset = libraryHistoryOffsetForItem(targetPosition, historyWindow);
     if (offset === null) setSeeking(false);
-    else setHistoryOffset(offset);
-  }, [seeking, targetPosition, historyWindow, historyOffset]);
+    else if (offset !== historyOffset) setHistoryOffset(offset);
+  }
   const shownTimeline = useMemo(() => timeline.slice(-visibleMessages), [timeline]);
   const matchedEntryId = targetItem
     ? shownTimeline.find((entry) => libraryEntryItemId(entry) === targetItem)?.id
@@ -187,6 +191,17 @@ export function LibraryConversationPage({
         <p className="text-xs text-muted-foreground">
           Linked continuation from conversation {archive.summary.continuationOf.threadId}.
         </p>
+      ) : null}
+      {host?.entry.enabled === true &&
+      host.connection.phase === "connected" &&
+      supportsLoomFeature(
+        host.serverConfig?.environment.capabilities,
+        LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
+      ) ? (
+        <BriefSuggestionOffer
+          environmentId={archive.summary.environmentId}
+          threadId={archive.summary.threadId}
+        />
       ) : null}
       {host?.connection.phase === "connected" ? (
         <LibraryUploadStatus
