@@ -5,6 +5,7 @@ import {
   LIBRARY_HEALTH_WS_METHODS as LH,
   LIBRARY_SEARCH_WS_METHODS,
   LIBRARY_TIMELINE_WS_METHODS as LT,
+  LIBRARY_BRIEF_WS_METHODS as BRIEF,
   LIBRARY_WS_METHODS as L,
 } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
@@ -87,5 +88,13 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.bindThread, workspace.bindThread(input)),
       [LIBRARY_SEARCH_WS_METHODS.search]: (input: Parameters<typeof library.search>[0]) =>
         auth.effect(LIBRARY_SEARCH_WS_METHODS.search, library.search(input)),
+      [BRIEF.propose]: (input: Parameters<typeof library.proposeBrief>[0]) =>
+        auth.effect(BRIEF.propose, library.proposeBrief(input, { kind: "user" })),
+      [BRIEF.proposals]: (input: Parameters<typeof library.briefProposals>[0]) =>
+        auth.effect(BRIEF.proposals, library.briefProposals(input)),
+      [BRIEF.accept]: (input: Parameters<typeof library.acceptBriefProposal>[0]) =>
+        auth.effect(BRIEF.accept, library.acceptBriefProposal(input)),
+      [BRIEF.dismiss]: (input: Parameters<typeof library.dismissBriefProposal>[0]) =>
+        auth.effect(BRIEF.dismiss, library.dismissBriefProposal(input)),
     };
   });

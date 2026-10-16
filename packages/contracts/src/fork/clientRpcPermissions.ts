@@ -1,4 +1,5 @@
 import { LIBRARY_WS_METHODS as LIB } from "./project-library.ts";
+import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "./project-library-brief.ts";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "./project-checkout.ts";
 import { AuthSettingsWriteScope } from "../auth.ts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "./computer-naming.ts";
@@ -29,6 +30,10 @@ export const FORK_CLIENT_GUARDED_RPC_SCOPES = {
   [LIB.bindThread]: AuthOrchestrationOperateScope,
   [LIB.ingestHistory]: AuthOrchestrationOperateScope,
   [LIB.importShadow]: AuthEnvironmentMaintainScope,
+  [BRIEF.propose]: AuthOrchestrationOperateScope,
+  // Accepting rewrites the brief, so deciding needs the grant that edits projects.
+  [BRIEF.accept]: AuthSettingsWriteScope,
+  [BRIEF.dismiss]: AuthSettingsWriteScope,
   [C.adopt]: AuthSettingsWriteScope,
   [C.setRetention]: AuthSettingsWriteScope,
   [N.rename]: AuthSettingsWriteScope,
