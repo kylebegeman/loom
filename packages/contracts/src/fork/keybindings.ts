@@ -14,6 +14,8 @@ export const FORK_KEYBINDING_COMMANDS = [
   "loom.device-qa.capture",
   "loom.device-qa.run-last-flow",
   "loom.panel-picker.open",
+  "loom.library.goToProject",
+  "loom.library.newConversationIn",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];
 

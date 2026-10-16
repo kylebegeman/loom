@@ -66,6 +66,13 @@ Use a suitable existing copy on that computer, or prepare files first. **Clone p
 prepares the project repositories together under one parent folder. Editing the shared brief
 applies to new conversations; existing conversations keep the context they started with.
 
+The command palette reaches projects from anywhere. Type part of a project's name to open it,
+or use **Go to project...**, **New conversation in...** and **Open project brief...** to pick
+one, most recently active first. In a thread that belongs to a project, **Go to this thread's
+project** opens it, even when that thread's computer is offline. To give **Go to project** or
+**New conversation in** a shortcut, bind `loom.library.goToProject` or
+`loom.library.newConversationIn` in **Settings → Keybindings**.
+
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.
 Removing a managed working copy preserves the Library project and saved conversations;

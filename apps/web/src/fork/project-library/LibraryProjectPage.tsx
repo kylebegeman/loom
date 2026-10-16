@@ -45,6 +45,7 @@ import { ProjectResources } from "./ProjectResources";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
+import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
 
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;
@@ -68,6 +69,8 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
+  // Leaving before the project loads drops the palette's brief request with it.
+  useEffect(() => () => dropLibraryBriefEdit(projectId), [projectId]);
   const project = library.project.data;
   if (!library.authorityId)
     return (
@@ -110,6 +113,14 @@ function ProjectView({
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
   const [editingBrief, setEditingBrief] = useState(false);
+  // The command palette's Open project brief lands here, whether or not this page was open.
+  useEffect(() => {
+    const open = () => {
+      if (takeLibraryBriefEdit(project.id)) setEditingBrief(true);
+    };
+    open();
+    return onLibraryBriefEdit(open);
+  }, [project.id]);
   const [addingResource, setAddingResource] = useState(false);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authorityId);
   const update = useProjectUpdate({
@@ -534,12 +545,15 @@ function ProjectBrief({
   readonly onSave: (brief: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState(brief);
+  const [wasEditing, setWasEditing] = useState(editing);
+  // The hero menu and the command palette open the editor too; each starts from the saved brief.
+  if (editing !== wasEditing) {
+    setWasEditing(editing);
+    if (editing) setDraft(brief);
+  }
   const [expanded, setExpanded] = useState(false);
   const long = brief.length > LONG_BRIEF_CHARACTERS || brief.split("\n").length > LONG_BRIEF_LINES;
-  const edit = () => {
-    setDraft(brief);
-    onEditingChange(true);
-  };
+  const edit = () => onEditingChange(true);
   if (editing)
     return (
       <form
