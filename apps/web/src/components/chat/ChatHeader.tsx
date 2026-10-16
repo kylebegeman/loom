@@ -456,7 +456,7 @@ export const ChatHeader = memo(function ChatHeader({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-muted px-1.5 text-xs font-normal text-muted-foreground" />
+                      <span className="inline-flex shrink-0 cursor-default items-center gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground transition-colors hover:bg-accent hover:text-foreground" />
                     }
                   >
                     <EnvironmentMachineIcon
