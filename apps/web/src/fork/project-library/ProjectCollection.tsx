@@ -82,7 +82,7 @@ function ProjectCard({
     >
       <ProjectOpenLink entry={entry} onOpen={onOpen} />
       <div className="flex items-start gap-3">
-        <ProjectTile project={project} />
+        <ProjectTile project={project} local={entry.localIcon} />
         <div className="min-w-0 flex-1 pt-0.5">
           <h2 className="truncate text-sm font-semibold leading-5 tracking-tight">
             {project.title}
@@ -195,7 +195,7 @@ function ProjectRow({
     >
       <ProjectOpenLink entry={entry} onOpen={onOpen} />
       <div className="flex min-w-0 items-center gap-3">
-        <ProjectTile project={project} size="sm" />
+        <ProjectTile project={project} local={entry.localIcon} size="sm" />
         <div className="min-w-0">
           <h2 className="truncate text-sm font-medium">{project.title}</h2>
           <p className="truncate text-xs text-muted-foreground">

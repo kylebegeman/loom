@@ -5,7 +5,14 @@ import type {
   LibraryThreadSummary,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
-import { filterProjectEntries, projectEntries, sortProjectEntries } from "./projectList";
+import {
+  filterProjectEntries,
+  libraryLocalProjectIcon,
+  localProjectsByRef,
+  projectEntries,
+  sortProjectEntries,
+  type LocalProjectIcon,
+} from "./projectList";
 
 const dorothy = EnvironmentId.make("dorothy");
 const nora = EnvironmentId.make("nora");
@@ -88,6 +95,46 @@ describe("projectEntries", () => {
   it("leaves the count unknown while the index is partial, and falls back to the last edit", () => {
     const [entry] = projectEntries([iris], [], { nextOffset: 100, threads: [] });
     expect(entry).toMatchObject({ conversations: null, activeAt: iris.updatedAt });
+  });
+});
+
+describe("libraryLocalProjectIcon", () => {
+  const local = (
+    patch: Partial<LocalProjectIcon> & Pick<LocalProjectIcon, "id">,
+  ): LocalProjectIcon => ({
+    environmentId: dorothy,
+    workspaceRoot: "/Users/kyle/Developer/project",
+    title: "Project",
+    faviconPath: null,
+    projectIcon: null,
+    ...patch,
+  });
+  const root = local({ id: ProjectId.make("root") });
+  const repo = local({ id: ProjectId.make("repo") });
+  const elsewhere = local({ id: ProjectId.make("root"), environmentId: nora });
+  const repository = {
+    resourceId: "r",
+    path: "app",
+    localProjectId: ProjectId.make("repo"),
+    head: null,
+    branch: null,
+  };
+
+  it("uses the folder a copy points at on that copy's computer", () => {
+    const shared = copy({ rootLocalProjectId: ProjectId.make("root"), repositories: [repository] });
+    expect(libraryLocalProjectIcon([shared], localProjectsByRef([elsewhere, repo, root]))).toBe(
+      root,
+    );
+    expect(libraryLocalProjectIcon([copy({})], localProjectsByRef([root]))).toBeNull();
+  });
+
+  it("prefers a folder someone chose an icon for", () => {
+    const chosen = local({
+      id: ProjectId.make("repo"),
+      projectIcon: { kind: "emoji", emoji: "🧵" },
+    });
+    const shared = copy({ rootLocalProjectId: ProjectId.make("root"), repositories: [repository] });
+    expect(libraryLocalProjectIcon([shared], localProjectsByRef([root, chosen]))).toBe(chosen);
   });
 });
 

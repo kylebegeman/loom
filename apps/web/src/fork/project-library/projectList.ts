@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type {
   LibraryProject,
   LibraryProjectColor,
@@ -16,11 +17,40 @@ export const PROJECT_SORT_LABELS: Record<ProjectSort, string> = {
   created: "Newest first",
 };
 
+/** The local project record whose favicon or chosen icon stands in for a Library project. */
+export type LocalProjectIcon = Pick<
+  EnvironmentProject,
+  "id" | "environmentId" | "workspaceRoot" | "title" | "faviconPath" | "projectIcon"
+>;
+
+/**
+ * Picks the local project that shows a Library project's icon, the same record its threads
+ * show. A deliberately chosen icon wins, then each copy's root folder before its repositories,
+ * so the project looks the same whichever computer is answering.
+ */
+export function libraryLocalProjectIcon(
+  copies: readonly LibraryWorkingCopy[],
+  byRef: ReadonlyMap<string, LocalProjectIcon>,
+): LocalProjectIcon | null {
+  const candidates = copies.flatMap((copy) =>
+    [copy.rootLocalProjectId, ...copy.repositories.map((repository) => repository.localProjectId)]
+      .map((id) => (id ? byRef.get(`${copy.environmentId}:${id}`) : undefined))
+      .filter((project) => project !== undefined),
+  );
+  return candidates.find((project) => project.projectIcon) ?? candidates[0] ?? null;
+}
+
+/** Indexes local projects by environment and id, the way Library copies point at them. */
+export function localProjectsByRef(projects: readonly LocalProjectIcon[]) {
+  return new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project]));
+}
+
 /** One project with everything a list or card shows about it. */
 export type ProjectEntry = {
   readonly project: LibraryProject;
   readonly color: LibraryProjectColor;
   readonly copies: readonly LibraryWorkingCopy[];
+  readonly localIcon: LocalProjectIcon | null;
   /** Null when the thread index is partial, so the count would undercount. */
   readonly conversations: number | null;
   /** The later of the last edit and the last conversation update. */
@@ -31,6 +61,7 @@ export function projectEntries(
   projects: readonly LibraryProject[],
   copies: readonly LibraryWorkingCopy[],
   index: LibraryThreadIndex | null | undefined,
+  localProjects: readonly LocalProjectIcon[] = [],
 ): ProjectEntry[] {
   const threads = new Map<string, { count: number; latest: string }>();
   for (const thread of index?.threads ?? []) {
@@ -42,12 +73,15 @@ export function projectEntries(
     });
   }
   const complete = index?.nextOffset === null;
+  const locals = localProjectsByRef(localProjects);
   return projects.map((project) => {
     const activity = threads.get(project.id);
+    const projectCopies = copies.filter((copy) => copy.projectId === project.id);
     return {
       project,
       color: libraryProjectColor(project),
-      copies: copies.filter((copy) => copy.projectId === project.id),
+      copies: projectCopies,
+      localIcon: libraryLocalProjectIcon(projectCopies, locals),
       conversations: complete ? (activity?.count ?? 0) : null,
       activeAt:
         activity && activity.latest > project.updatedAt ? activity.latest : project.updatedAt,

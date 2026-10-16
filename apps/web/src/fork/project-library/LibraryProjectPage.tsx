@@ -34,7 +34,9 @@ import { ProjectResources } from "./ProjectResources";
 import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile } from "./ProjectIdentity";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
-import { libraryProjectColor } from "@t3tools/client-runtime/fork";
+import { libraryActiveCopies, libraryProjectColor } from "@t3tools/client-runtime/fork";
+import { useProjects } from "~/state/entities";
+import { libraryLocalProjectIcon, localProjectsByRef, type LocalProjectIcon } from "./projectList";
 
 const RECENT_CONVERSATIONS = 5;
 
@@ -53,6 +55,7 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
     copyId?: string;
   } | null>(null);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, library.authorityId);
+  const localProjects = useProjects();
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
@@ -89,6 +92,10 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
     <LibraryPageFrame title={project.title} width="readable">
       <ProjectOverview
         project={project}
+        localIcon={libraryLocalProjectIcon(
+          libraryActiveCopies(copies),
+          localProjectsByRef(localProjects),
+        )}
         authorityId={library.authorityId}
         connected={library.connected}
         canStart={canRegister && canWork}
@@ -169,6 +176,7 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
 /** Name, brief and contents: the parts of a project someone defines, all edited in place. */
 function ProjectOverview({
   project,
+  localIcon,
   authorityId,
   connected,
   canStart,
@@ -176,6 +184,7 @@ function ProjectOverview({
   onNewConversation,
 }: {
   readonly project: LibraryProject;
+  readonly localIcon: LocalProjectIcon | null;
   readonly authorityId: EnvironmentId;
   readonly connected: boolean;
   readonly canStart: boolean;
@@ -238,7 +247,7 @@ function ProjectOverview({
                     />
                   }
                 >
-                  <ProjectTile project={project} size="lg" />
+                  <ProjectTile project={project} local={localIcon} size="lg" />
                 </PopoverTrigger>
                 <PopoverPopup align="start" className="w-auto">
                   <p className="mb-3 text-sm font-medium">Project color</p>

@@ -5,7 +5,7 @@ import {
 } from "@t3tools/shared/projectFavicon";
 import { FolderCodeIcon } from "lucide-react";
 import type { IconName } from "lucide-react/dynamic";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { lazy, Suspense, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { projectFaviconUrlAtom } from "../state/assets";
@@ -34,6 +34,8 @@ export function ProjectFavicon(input: {
   project: ProjectFaviconProject;
   className?: string | undefined;
   fallbackIcon?: ComponentType<{ className?: string }>;
+  /** Shown instead of the derived monogram when the project has no usable favicon. */
+  fallback?: ReactNode;
 }) {
   const { project } = input;
   const src = useAtomValue(
@@ -83,6 +85,7 @@ export function ProjectFavicon(input: {
   const FallbackIcon = input.fallbackIcon ?? FolderCodeIcon;
 
   if (!src || isProjectFaviconFallbackUrl(src)) {
+    if (input.fallback !== undefined) return input.fallback;
     return (
       <ProjectFaviconFallback
         className={input.className}
@@ -105,6 +108,7 @@ export function ProjectFavicon(input: {
       className={input.className}
       fallbackIcon={FallbackIcon}
       fallbackProjectName={project.title}
+      fallback={input.fallback}
     />
   );
 }
@@ -149,11 +153,13 @@ function ProjectFaviconImage({
   className,
   fallbackIcon: FallbackIcon,
   fallbackProjectName,
+  fallback,
 }: {
   readonly src: string;
   readonly className?: string | undefined;
   readonly fallbackIcon: ComponentType<{ className?: string }>;
   readonly fallbackProjectName?: string | undefined;
+  readonly fallback?: ReactNode;
 }) {
   const [displayedSrc, setDisplayedSrc] = useState<string | null>(() =>
     src.startsWith("data:image/") ? src : null,
@@ -165,13 +171,15 @@ function ProjectFaviconImage({
 
   return (
     <>
-      {displayedSrc === null ? (
-        <ProjectFaviconFallback
-          className={className}
-          icon={FallbackIcon}
-          projectName={fallbackProjectName}
-        />
-      ) : null}
+      {displayedSrc === null
+        ? (fallback ?? (
+            <ProjectFaviconFallback
+              className={className}
+              icon={FallbackIcon}
+              projectName={fallbackProjectName}
+            />
+          ))
+        : null}
       {displayedSrc ? (
         <img
           src={displayedSrc}

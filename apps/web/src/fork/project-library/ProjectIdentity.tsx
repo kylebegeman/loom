@@ -10,12 +10,17 @@ import {
   libraryProjectColor,
   libraryProjectInitials,
 } from "@t3tools/client-runtime/fork";
+import { isProjectFaviconFallbackUrl } from "@t3tools/shared/projectFavicon";
+import { useAtomValue } from "@effect/atom-react";
 import { CheckIcon, CopyIcon, SparklesIcon } from "lucide-react";
 import { EnvironmentMachineIcon } from "~/components/EnvironmentMachineIcon";
+import { ProjectFavicon } from "~/components/ProjectFavicon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
+import { projectFaviconUrlAtom } from "~/state/assets";
 import { useEnvironmentMachines } from "~/state/environments";
+import type { LocalProjectIcon } from "./projectList";
 
 export const PROJECT_COLOR_NAMES: Record<LibraryProjectColor, string> = {
   plum: "Plum",
@@ -39,19 +44,66 @@ const TILE_SIZES = {
   lg: "size-11 rounded-xl text-base",
 } as const;
 
-/**
- * A project's monogram on its color, the quickest way to find it in a list. `neutral` is for
- * drafts, whose automatic color isn't known until the Library assigns an id.
- */
-export function ProjectTile({
-  project,
-  size = "md",
-  neutral = false,
-}: {
+const TILE_ICON_SIZES = {
+  sm: "size-3.5",
+  md: "size-4.5",
+  lg: "size-6",
+} as const;
+
+type TileProps = {
   readonly project: Pick<LibraryProject, "id" | "title" | "color">;
   readonly size?: keyof typeof TILE_SIZES;
   readonly neutral?: boolean;
-}) {
+};
+
+/**
+ * A project's mark, the quickest way to find it in a list. With `local`, it shows the favicon
+ * or icon that project's threads show; otherwise, or when there is none, its monogram on its
+ * color. `neutral` is for drafts, whose automatic color isn't known until the Library assigns an id.
+ */
+export function ProjectTile({
+  local,
+  ...props
+}: TileProps & { readonly local?: LocalProjectIcon | null }) {
+  return local ? <LocalProjectTile local={local} {...props} /> : <MonogramTile {...props} />;
+}
+
+function LocalProjectTile({
+  local,
+  project,
+  size = "md",
+  neutral = false,
+}: TileProps & { readonly local: LocalProjectIcon }) {
+  const src = useAtomValue(
+    projectFaviconUrlAtom({
+      environmentId: local.environmentId,
+      cwd: local.workspaceRoot,
+      faviconPath: local.faviconPath,
+    }),
+  );
+  const monogram = <MonogramTile project={project} size={size} neutral={neutral} />;
+  if (local.projectIcon?.kind === "monogram") {
+    return <ProjectFavicon project={local} className={TILE_SIZES[size]} />;
+  }
+  if (!local.projectIcon && (!src || isProjectFaviconFallbackUrl(src))) return monogram;
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-flex shrink-0 select-none items-center justify-center bg-muted/70 dark:bg-accent",
+        TILE_SIZES[size],
+      )}
+    >
+      <ProjectFavicon
+        project={local}
+        className={TILE_ICON_SIZES[size]}
+        fallback={<span className="font-semibold">{libraryProjectInitials(project.title)}</span>}
+      />
+    </span>
+  );
+}
+
+function MonogramTile({ project, size = "md", neutral = false }: TileProps) {
   return (
     <span
       aria-hidden

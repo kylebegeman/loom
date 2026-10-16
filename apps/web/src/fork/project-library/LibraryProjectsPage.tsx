@@ -17,6 +17,7 @@ import {
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProjectColor } from "@t3tools/contracts/fork";
 import { libraryActiveCopies, libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
+import { ProjectFavicon } from "~/components/ProjectFavicon";
 import { Button } from "~/components/ui/button";
 import {
   Empty,
@@ -41,6 +42,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
 import { cn } from "~/lib/utils";
+import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
@@ -99,6 +101,7 @@ export function LibraryProjectsPage() {
     title?: string;
   } | null>(null);
   const canCreate = useLibraryPermission(projectLibrary.createProject, catalog.authorityId);
+  const environmentProjects = useProjects();
   const copies = useEnvironmentQuery(
     catalog.authorityId
       ? projectLibrary.copies({ environmentId: catalog.authorityId, input: {} })
@@ -121,7 +124,12 @@ export function LibraryProjectsPage() {
   const looseFolders = localProjects.filter(
     (group) => libraryProjectForLocalRefs([], group.memberProjectRefs, activeCopies) === null,
   );
-  const entries = projectEntries(catalog.query.data ?? [], activeCopies, threadIndex.data);
+  const entries = projectEntries(
+    catalog.query.data ?? [],
+    activeCopies,
+    threadIndex.data,
+    environmentProjects,
+  );
   const statusEntries = entries.filter((entry) => entry.project.archived === archived);
   const archivedCount = entries.filter((entry) => entry.project.archived).length;
   const activeCount = entries.length - archivedCount;
@@ -429,14 +437,23 @@ export function LibraryProjectsPage() {
           <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
             {looseFolders.map((group) => {
               const ref = group.memberProjectRefs[0];
-              const root = group.memberProjects[0]?.workspaceRoot;
+              const member = group.memberProjects[0];
+              const root = member?.workspaceRoot;
               return (
                 <li
                   key={group.projectKey}
                   className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5"
                 >
                   <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground dark:bg-accent">
-                    <FolderIcon aria-hidden className="size-3.5" />
+                    {member ? (
+                      <ProjectFavicon
+                        project={member}
+                        className="size-3.5"
+                        fallbackIcon={FolderIcon}
+                      />
+                    ) : (
+                      <FolderIcon aria-hidden className="size-3.5" />
+                    )}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium">
                     {group.displayName}
