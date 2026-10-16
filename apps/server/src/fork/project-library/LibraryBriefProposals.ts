@@ -50,6 +50,8 @@ const encodeProposal = Schema.encodeEffect(proposalJson);
 const encodeEventJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const conflict = () => new LibraryError({ reason: "revision-conflict" });
+/** Pending proposals a project holds before new ones wait for a person to review the queue. */
+export const MAX_PENDING_BRIEF_PROPOSALS = 20;
 
 /** Proposals from one conversation or agent replace that source's earlier pending ones. */
 const sourceKey = (source: LibraryBriefProposalSource) => {
@@ -67,8 +69,9 @@ const sourceKey = (source: LibraryBriefProposalSource) => {
  * Brief proposals on the Library. Anyone may propose and list; only a person deciding
  * through the guarded RPC accepts or dismisses. Mutations run inside LibraryService's
  * request transaction, so accepting saves the brief and decides the proposal together.
- * The `brief.proposed` and `brief.revised` events carry the proposal's id, summary and source,
- * so a timeline can attribute them without reading the proposals table.
+ * Each proposal and decision is logged: `brief.proposed`, `brief.revised` (accepted), `brief.dismissed` and
+ * `brief.superseded` (with the replacing proposal's id) carry the proposal's id, base revision,
+ * summary and source, so a timeline can attribute them without reading the proposals table.
  */
 export const make = (catalog: LibraryBriefProposalCatalog) =>
   Effect.gen(function* () {
@@ -116,6 +119,23 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
       );
       return proposal;
     });
+    const record = (proposal: LibraryBriefProposal, eventType: string, extra: object = {}) =>
+      Effect.flatMap(
+        encode({
+          proposalId: proposal.id,
+          baseRevision: proposal.baseRevision,
+          summary: proposal.summary,
+          source: proposal.source,
+          ...extra,
+        }),
+        (payload) =>
+          catalog.appendEvent(
+            proposal.projectId,
+            eventType,
+            payload,
+            proposal.decidedAt ?? proposal.createdAt,
+          ),
+      );
     const pending = Effect.fnUntraced(function* (id: string) {
       const proposal = yield* load(id);
       // A decided proposal changed under the person reviewing it; reloading shows its outcome.
@@ -130,14 +150,24 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
         return yield* new LibraryError({ reason: "invalid" });
       const base = yield* catalog.getProject(input.projectId, input.baseRevision);
       if (base.brief === input.proposedBrief) return yield* new LibraryError({ reason: "invalid" });
-      const timestamp = yield* now;
       const key = sourceKey(input.source);
-      if (key !== null)
-        for (const earlier of yield* rows(input.projectId, "pending", -1, 0))
-          if (sourceKey(earlier.source) === key)
-            yield* save({ ...earlier, status: "superseded", decidedAt: timestamp });
+      const queued = yield* rows(input.projectId, "pending", -1, 0);
+      const replaced = queued.filter(
+        (earlier) => key !== null && sourceKey(earlier.source) === key,
+      );
+      // Checked before any write, so a refused proposal leaves nothing behind.
+      if (queued.length - replaced.length >= MAX_PENDING_BRIEF_PROPOSALS)
+        return yield* new LibraryError({ reason: "blocked" });
+      const timestamp = yield* now;
+      const id = yield* randomUuidV4;
+      for (const earlier of replaced)
+        yield* record(
+          yield* save({ ...earlier, status: "superseded", decidedAt: timestamp }),
+          "brief.superseded",
+          { supersededBy: id },
+        );
       const proposal = yield* save({
-        id: yield* randomUuidV4,
+        id,
         projectId: input.projectId,
         baseRevision: input.baseRevision,
         proposedBrief: input.proposedBrief,
@@ -146,17 +176,7 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
         status: "pending",
         createdAt: timestamp,
       });
-      yield* catalog.appendEvent(
-        proposal.projectId,
-        "brief.proposed",
-        yield* encode({
-          proposalId: proposal.id,
-          baseRevision: proposal.baseRevision,
-          summary: proposal.summary,
-          source: proposal.source,
-        }),
-        timestamp,
-      );
+      yield* record(proposal, "brief.proposed");
       // The project timeline reads `timeline.*` events, so the proposal is recorded there too.
       yield* catalog.appendEvent(
         proposal.projectId,
@@ -214,25 +234,18 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
         decidedAt: project.updatedAt,
         acceptedRevision: project.revision,
       });
-      yield* catalog.appendEvent(
-        project.id,
-        "brief.revised",
-        yield* encode({
-          proposalId: proposal.id,
-          baseRevision: proposal.baseRevision,
-          revision: project.revision,
-          summary: proposal.summary,
-          source: proposal.source,
-          edited: input.brief !== undefined && input.brief !== proposal.proposedBrief,
-        }),
-        project.updatedAt,
-      );
+      yield* record(accepted, "brief.revised", {
+        revision: project.revision,
+        edited: input.brief !== undefined && input.brief !== proposal.proposedBrief,
+      });
       return { proposal: accepted, project };
     });
 
     const dismiss = Effect.fnUntraced(function* (input: LibraryDismissBriefProposalRequest) {
       const proposal = yield* pending(input.proposalId);
-      return yield* save({ ...proposal, status: "dismissed", decidedAt: yield* now });
+      const dismissed = yield* save({ ...proposal, status: "dismissed", decidedAt: yield* now });
+      yield* record(dismissed, "brief.dismissed");
+      return dismissed;
     });
 
     return { propose, list, accept, dismiss };
