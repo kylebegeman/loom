@@ -1,13 +1,16 @@
 import { useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProject } from "@t3tools/contracts/fork";
+import type { LibraryProject, LibraryProjectColor } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { randomUUID } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission } from "./state";
 import { validateResources } from "./resources";
 
-type ProjectChange = Partial<Pick<LibraryProject, "title" | "brief" | "resources">>;
+type ProjectChange = Partial<Pick<LibraryProject, "title" | "brief" | "resources">> & {
+  /** Null returns the project to its automatic color. */
+  readonly color?: LibraryProjectColor | null;
+};
 
 /**
  * Saves one in-place edit against the revision on screen. A conflict reports and refreshes
@@ -50,6 +53,7 @@ export function useProjectUpdate({
           projectId: project.id,
           expectedRevision: project.revision,
           ...next,
+          ...(change.color !== undefined ? { color: change.color } : {}),
         },
       });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);

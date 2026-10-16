@@ -1153,6 +1153,16 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --terminal-foreground: var(--foreground);
   --terminal-cursor: rgb(38 56 78);
   --terminal-selection-background: rgb(37 63 99 / 20%);
+  /* Project colors a person picks to tell projects apart, after Iris's tag palette.
+     Each is a readable ink; surfaces tint it with color-mix. */
+  --project-plum: #8a4bb5;
+  --project-red: #c8423c;
+  --project-orange: #c2620f;
+  --project-gold: #a07a00;
+  --project-green: #2e8a53;
+  --project-teal: #16848a;
+  --project-blue: #3a67d0;
+  --project-slate: #667286;
 
   @variant dark {
     color-scheme: dark;
@@ -1192,6 +1202,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     --sidebar-stage-fade: var(--card);
     --terminal-cursor: rgb(180 203 255);
     --terminal-selection-background: rgb(180 203 255 / 25%);
+    --project-plum: #c9a2ec;
+    --project-red: #f28b82;
+    --project-orange: #f5a25d;
+    --project-gold: #e3c35a;
+    --project-green: #72cf96;
+    --project-teal: #5fcfcf;
+    --project-blue: #93b3f7;
+    --project-slate: #aab5c6;
   }
 }
 

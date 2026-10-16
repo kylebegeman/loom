@@ -32,6 +32,9 @@ import { isRepositoryResource } from "./resources";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
+import { ProjectColorPicker, ProjectTile } from "./ProjectIdentity";
+import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { libraryProjectColor } from "@t3tools/client-runtime/fork";
 
 const RECENT_CONVERSATIONS = 5;
 
@@ -223,11 +226,38 @@ function ProjectOverview({
               }}
             />
           ) : (
-            <div className="min-w-0 space-y-1">
-              <h1 className="wrap-anywhere text-2xl font-semibold tracking-tight">
-                {project.title}
-              </h1>
-              <p className="text-xs text-muted-foreground">{meta.join(" · ")}</p>
+            <div className="flex min-w-0 items-center gap-4">
+              <Popover>
+                <PopoverTrigger
+                  disabled={!update.canEdit || update.busy}
+                  aria-label="Change project color"
+                  render={
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-2xl outline-none transition-transform duration-150 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring enabled:hover:scale-103 disabled:cursor-default"
+                    />
+                  }
+                >
+                  <ProjectTile project={project} size="lg" />
+                </PopoverTrigger>
+                <PopoverPopup align="start" className="w-auto">
+                  <p className="mb-3 text-sm font-medium">Project color</p>
+                  <ProjectColorPicker
+                    value={project.color}
+                    automatic={libraryProjectColor({ id: project.id })}
+                    disabled={update.busy}
+                    onChange={(color) => {
+                      if ((project.color ?? null) !== color) void update.save({ color });
+                    }}
+                  />
+                </PopoverPopup>
+              </Popover>
+              <div className="min-w-0 space-y-1">
+                <h1 className="wrap-anywhere text-2xl font-semibold tracking-tight">
+                  {project.title}
+                </h1>
+                <p className="text-xs tabular-nums text-muted-foreground">{meta.join(" · ")}</p>
+              </div>
             </div>
           )}
           <div className="flex items-center gap-2">

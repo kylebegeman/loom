@@ -1,26 +1,81 @@
 import { useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRightIcon, FolderIcon, PlusIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import * as Schema from "effect/Schema";
+import {
+  ArrowDownUpIcon,
+  ChevronRightIcon,
+  FolderGit2Icon,
+  FolderIcon,
+  FolderPlusIcon,
+  LayoutGridIcon,
+  ListIcon,
+  MessageSquareIcon,
+  PlusIcon,
+  SearchIcon,
+  XIcon,
+} from "lucide-react";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { LibraryProjectColor } from "@t3tools/contracts/fork";
+import { libraryActiveCopies, libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
 import { Button } from "~/components/ui/button";
-import { Input } from "~/components/ui/input";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "~/components/ui/empty";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
+import {
+  Menu,
+  MenuGroup,
+  MenuGroupLabel,
+  MenuPopup,
+  MenuRadioGroup,
+  MenuRadioItem,
+  MenuTrigger,
+} from "~/components/ui/menu";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useSidebarProjectGroups } from "~/hooks/useSidebarProjectGroups";
+import { cn } from "~/lib/utils";
+import { useEnvironmentQuery } from "~/state/query";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
 import { LibraryErrorNotice } from "./LibraryControls";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
+import { ProjectCards, ProjectCollectionSkeleton, ProjectRows } from "./ProjectCollection";
+import {
+  ComputerLabel,
+  PathLabel,
+  PROJECT_COLOR_NAMES,
+  projectColorStyle,
+} from "./ProjectIdentity";
+import {
+  filterProjectEntries,
+  PROJECT_SORT_LABELS,
+  PROJECT_SORTS,
+  projectEntries,
+  sortProjectEntries,
+} from "./projectList";
 import {
   useLibraryPermission,
   useLibraryProjects,
   useSelectedLibraryProject,
   projectLibrary,
 } from "./state";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
-import { libraryActiveCopies, libraryProjectForLocalRefs } from "@t3tools/client-runtime/fork";
-import { useEnvironmentQuery } from "~/state/query";
-import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { isRepositoryResource } from "./resources";
+
+const PREFERENCES_KEY = "loom:library:projects-view:v1";
+const ProjectsPreferences = Schema.Struct({
+  view: Schema.Literals(["cards", "list"]),
+  sort: Schema.Literals(PROJECT_SORTS),
+});
+const DEFAULT_PREFERENCES: typeof ProjectsPreferences.Type = { view: "cards", sort: "activity" };
+/** Shares the sidebar's request, so the page adds no extra index fetch. */
+const THREAD_INDEX_LIMIT = 100;
 
 /** Management shares the normal app shell. The thread filter remains the only project selector. */
 export function LibraryProjectsPage() {
@@ -28,8 +83,15 @@ export function LibraryProjectsPage() {
   const [, selectProject] = useSelectedLibraryProject();
   const localProjects = useSidebarProjectGroups();
   const navigate = useNavigate();
+  const [preferences, setPreferences] = useLocalStorage(
+    PREFERENCES_KEY,
+    DEFAULT_PREFERENCES,
+    ProjectsPreferences,
+  );
   const [query, setQuery] = useState("");
   const [archived, setArchived] = useState(false);
+  const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
+  const [computer, setComputer] = useState<EnvironmentId | null>(null);
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState<{
     hostId?: EnvironmentId;
@@ -42,26 +104,43 @@ export function LibraryProjectsPage() {
       ? projectLibrary.copies({ environmentId: catalog.authorityId, input: {} })
       : null,
   );
+  const threadIndex = useEnvironmentQuery(
+    catalog.authorityId
+      ? projectLibrary.threadIndex({
+          environmentId: catalog.authorityId,
+          input: { limit: THREAD_INDEX_LIMIT },
+        })
+      : null,
+  );
   const activeCopies = libraryActiveCopies(copies.data ?? []);
   const hostLabel = (id: EnvironmentId) =>
     catalog.environments.find((entry) => entry.environmentId === id)?.label ??
     catalog.computers.find((entry) => entry.environmentId === id)?.label ??
-    "a saved computer";
+    "Saved computer";
   // Folders already behind a project copy are part of that project, not loose folders.
   const looseFolders = localProjects.filter(
     (group) => libraryProjectForLocalRefs([], group.memberProjectRefs, activeCopies) === null,
   );
-  const search = query.trim().toLocaleLowerCase();
-  const projects = (catalog.query.data ?? [])
-    .filter(
-      (project) =>
-        project.archived === archived &&
-        (!search ||
-          [project.title, project.brief, ...project.resources.map((r) => r.title)].some((text) =>
-            text.toLocaleLowerCase().includes(search),
-          )),
-    )
-    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const entries = projectEntries(catalog.query.data ?? [], activeCopies, threadIndex.data);
+  const statusEntries = entries.filter((entry) => entry.project.archived === archived);
+  const archivedCount = entries.filter((entry) => entry.project.archived).length;
+  const activeCount = entries.length - archivedCount;
+  const usedColors = new Set(statusEntries.map((entry) => entry.color));
+  const usedComputers = [
+    ...new Set(statusEntries.flatMap((entry) => entry.copies.map((copy) => copy.environmentId))),
+  ];
+  const filtered = filterProjectEntries(
+    entries,
+    { archived, search: query, colors, computer },
+    hostLabel,
+  );
+  const visible = sortProjectEntries(filtered, preferences.sort);
+  const narrowed = !!query.trim() || colors.size > 0 || computer !== null;
+  const clearFilters = () => {
+    setQuery("");
+    setColors(new Set());
+    setComputer(null);
+  };
   const saved = (project: { id: string }) => {
     setCreating(false);
     setImporting(null);
@@ -69,14 +148,28 @@ export function LibraryProjectsPage() {
     catalog.query.refresh();
     void navigate({ to: "/library/$projectId", params: { projectId: project.id } });
   };
+  const refresh = () => {
+    catalog.query.refresh();
+    copies.refresh();
+  };
+  const loading = catalog.query.isPending && !catalog.query.data;
+  const computersInUse = new Set(activeCopies.map((copy) => copy.environmentId)).size;
   return (
     <LibraryPageFrame>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-1">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-          <p className="max-w-xl text-sm text-muted-foreground">
-            Keep the context, repositories and conversations for each thing you’re building
-            together.
+          <p className="max-w-xl text-sm text-muted-foreground tabular-nums">
+            {catalog.authorityId && activeCount
+              ? [
+                  `${activeCount} ${activeCount === 1 ? "project" : "projects"}`,
+                  computersInUse
+                    ? `on ${computersInUse} ${computersInUse === 1 ? "computer" : "computers"}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" ")
+              : "Keep the context, repositories and conversations for each thing you’re building together."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -85,6 +178,7 @@ export function LibraryProjectsPage() {
             disabled={!catalog.authorityId || !catalog.connected}
             onClick={() => setImporting({})}
           >
+            <FolderPlusIcon />
             Add existing folder
           </Button>
           <Button
@@ -95,9 +189,9 @@ export function LibraryProjectsPage() {
             New project
           </Button>
         </div>
-      </div>
+      </header>
       {!catalog.authorityId ? (
-        <section className="space-y-4 rounded-xl border border-border p-5">
+        <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
           <LibrarySetup />
           <p className="max-w-xl text-xs text-muted-foreground">
             Your existing threads and folders stay available while you connect the shared Library.
@@ -106,101 +200,215 @@ export function LibraryProjectsPage() {
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="w-full max-w-sm">
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search projects"
-                aria-label="Search projects"
-              />
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+              <InputGroup className="w-full sm:w-72">
+                <InputGroupAddon>
+                  <SearchIcon aria-hidden />
+                </InputGroupAddon>
+                <InputGroupInput
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && query) {
+                      event.preventDefault();
+                      setQuery("");
+                    }
+                  }}
+                  placeholder="Search names, repos, folders"
+                  aria-label="Search projects"
+                />
+                {query ? (
+                  <InputGroupAddon align="inline-end">
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label="Clear search"
+                      onClick={() => setQuery("")}
+                    >
+                      <XIcon />
+                    </Button>
+                  </InputGroupAddon>
+                ) : null}
+              </InputGroup>
+              {usedColors.size > 1 ? (
+                <ColorFilter
+                  colors={[...usedColors]}
+                  selected={colors}
+                  onToggle={(color) =>
+                    setColors((current) => {
+                      const next = new Set(current);
+                      if (next.has(color)) next.delete(color);
+                      else next.add(color);
+                      return next;
+                    })
+                  }
+                />
+              ) : null}
+              {usedComputers.length > 1 || computer ? (
+                <ComputerFilter
+                  computers={usedComputers}
+                  selected={computer}
+                  hostLabel={hostLabel}
+                  onSelect={setComputer}
+                />
+              ) : null}
             </div>
-            <div className="flex gap-1" aria-label="Project status">
-              <Button
-                size="sm"
-                variant={archived ? "ghost" : "secondary"}
-                aria-pressed={!archived}
-                onClick={() => setArchived(false)}
+            <div className="flex flex-wrap items-center gap-2">
+              <ToggleGroup
+                aria-label="Project status"
+                variant="segmented"
+                value={[archived ? "archived" : "active"]}
+                onValueChange={(value) => {
+                  const next = value[0];
+                  if (next === "active" || next === "archived") setArchived(next === "archived");
+                }}
               >
-                Active
-              </Button>
-              <Button
-                size="sm"
-                variant={archived ? "secondary" : "ghost"}
-                aria-pressed={archived}
-                onClick={() => setArchived(true)}
+                <ToggleGroupItem value="active">
+                  Active
+                  <span className="tabular-nums opacity-60">{activeCount}</span>
+                </ToggleGroupItem>
+                <ToggleGroupItem value="archived">
+                  Archived
+                  <span className="tabular-nums opacity-60">{archivedCount}</span>
+                </ToggleGroupItem>
+              </ToggleGroup>
+              <Menu>
+                <MenuTrigger render={<Button size="sm" variant="ghost" />}>
+                  <ArrowDownUpIcon />
+                  {PROJECT_SORT_LABELS[preferences.sort]}
+                </MenuTrigger>
+                <MenuPopup side="bottom" align="end">
+                  <MenuGroup>
+                    <MenuGroupLabel>Sort by</MenuGroupLabel>
+                    <MenuRadioGroup
+                      value={preferences.sort}
+                      onValueChange={(value) => {
+                        const sort = PROJECT_SORTS.find((entry) => entry === value);
+                        if (sort) setPreferences({ ...preferences, sort });
+                      }}
+                    >
+                      {PROJECT_SORTS.map((sort) => (
+                        <MenuRadioItem key={sort} value={sort}>
+                          {PROJECT_SORT_LABELS[sort]}
+                        </MenuRadioItem>
+                      ))}
+                    </MenuRadioGroup>
+                  </MenuGroup>
+                </MenuPopup>
+              </Menu>
+              <ToggleGroup
+                aria-label="Layout"
+                variant="segmented"
+                value={[preferences.view]}
+                onValueChange={(value) => {
+                  const view = value[0];
+                  if (view === "cards" || view === "list") setPreferences({ ...preferences, view });
+                }}
               >
-                Archived
-              </Button>
+                <ToggleGroupItem value="cards" aria-label="Cards">
+                  <LayoutGridIcon />
+                </ToggleGroupItem>
+                <ToggleGroupItem value="list" aria-label="List">
+                  <ListIcon />
+                </ToggleGroupItem>
+              </ToggleGroup>
             </div>
           </div>
           <LibraryErrorNotice error={catalog.query.error} onRetry={catalog.query.refresh} />
-          {catalog.query.isPending && !catalog.query.data ? (
-            <p role="status" className="py-8 text-sm text-muted-foreground">
-              Loading projects...
-            </p>
-          ) : projects.length ? (
-            <div className="divide-y divide-border">
-              {projects.map((project) => (
-                <Link
-                  key={project.id}
-                  to="/library/$projectId"
-                  params={{ projectId: project.id }}
-                  onClick={() => selectProject(project.id)}
-                  className="group flex items-start gap-4 rounded-lg px-3 py-4 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                >
-                  <FolderIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <h2 className="text-base font-medium">{project.title}</h2>
-                    {project.brief ? (
-                      <p className="line-clamp-1 max-w-2xl text-sm text-muted-foreground">
-                        {project.brief}
-                      </p>
-                    ) : null}
-                    <p className="text-xs text-muted-foreground">
-                      {projectSummary(project, activeCopies, hostLabel)}
-                    </p>
-                  </div>
-                  <ArrowRightIcon
-                    aria-hidden
-                    className="mt-1 size-4 shrink-0 text-muted-foreground"
-                  />
-                </Link>
-              ))}
+          {loading ? (
+            <ProjectCollectionSkeleton view={preferences.view} />
+          ) : visible.length ? (
+            preferences.view === "cards" ? (
+              <ProjectCards
+                entries={visible}
+                authorityId={catalog.authorityId}
+                connected={catalog.connected}
+                hostLabel={hostLabel}
+                onOpen={selectProject}
+                onChanged={refresh}
+              />
+            ) : (
+              <ProjectRows
+                entries={visible}
+                authorityId={catalog.authorityId}
+                connected={catalog.connected}
+                hostLabel={hostLabel}
+                onOpen={selectProject}
+                onChanged={refresh}
+              />
+            )
+          ) : catalog.query.error ? null : narrowed ? (
+            <div className="rounded-2xl border border-dashed border-border">
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyTitle>No projects match</EmptyTitle>
+                  <EmptyDescription>
+                    Search looks at names, briefs, repositories, folders and computers.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                  <Button size="sm" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </EmptyContent>
+              </Empty>
             </div>
-          ) : !catalog.query.error ? (
-            <section className="space-y-3 py-10">
-              <h2 className="text-base font-medium">
-                {search
-                  ? "No matching projects"
-                  : archived
-                    ? "No archived projects"
-                    : "Bring your work together"}
-              </h2>
-              <p className="max-w-lg text-sm text-muted-foreground">
-                {search
-                  ? "Try another name or component."
-                  : archived
-                    ? "Archiving keeps the project’s context and conversations. Restore it whenever you need it."
-                    : "Create a project with its own brief and repositories, or add a folder you already use. Choose a computer when you start a conversation."}
-              </p>
-              {!search && !archived ? (
-                <Button
-                  size="sm"
-                  onClick={() => setCreating(true)}
-                  disabled={!canCreate || !catalog.connected}
-                >
-                  Create your first project
-                </Button>
-              ) : null}
-            </section>
-          ) : null}
+          ) : archived ? (
+            <div className="rounded-2xl border border-dashed border-border">
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyTitle>No archived projects</EmptyTitle>
+                  <EmptyDescription>
+                    Archiving keeps a project’s context and conversations. Restore it whenever you
+                    need it.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-border">
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia>
+                    <StarterTiles />
+                  </EmptyMedia>
+                  <EmptyTitle>Bring your work together</EmptyTitle>
+                  <EmptyDescription>
+                    A project holds a brief, its repositories and every conversation about it. Give
+                    each one a color so it’s easy to spot, then choose a computer when you start
+                    working.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent className="flex-row justify-center">
+                  <Button
+                    onClick={() => setCreating(true)}
+                    disabled={!canCreate || !catalog.connected}
+                  >
+                    <PlusIcon />
+                    Create your first project
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={!catalog.connected}
+                    onClick={() => setImporting({})}
+                  >
+                    Add existing folder
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            </div>
+          )}
         </>
       )}
       {catalog.authorityId && looseFolders.length ? (
-        <details className="space-y-3">
-          <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+        <details className="group/folders space-y-3">
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+            <ChevronRightIcon
+              aria-hidden
+              className="size-4 text-muted-foreground transition-transform duration-150 group-open/folders:rotate-90"
+            />
             Folders not in a project
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">
               {looseFolders.length}
             </span>
           </summary>
@@ -208,31 +416,49 @@ export function LibraryProjectsPage() {
             Folders you've worked in on your computers. Add one to a project without moving or
             deleting its files.
           </p>
-          <div className="divide-y divide-border">
-            {looseFolders.map((project) => (
-              <div
-                key={project.projectKey}
-                className="flex flex-wrap items-center justify-between gap-3 py-3"
-              >
-                <span className="min-w-0 truncate text-sm">{project.displayName}</span>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={!catalog.connected}
-                  onClick={() => {
-                    const ref = project.memberProjectRefs[0];
-                    setImporting({
-                      ...(ref ? { hostId: ref.environmentId } : {}),
-                      title: project.displayName,
-                      rootPath: project.memberProjects[0]?.workspaceRoot,
-                    });
-                  }}
+          <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card">
+            {looseFolders.map((group) => {
+              const ref = group.memberProjectRefs[0];
+              const root = group.memberProjects[0]?.workspaceRoot;
+              return (
+                <li
+                  key={group.projectKey}
+                  className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3"
                 >
-                  Add to project
-                </Button>
-              </div>
-            ))}
-          </div>
+                  <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
+                    <FolderIcon aria-hidden className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {group.displayName}
+                  </span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    {ref ? (
+                      <ComputerLabel
+                        environmentId={ref.environmentId}
+                        label={hostLabel(ref.environmentId)}
+                        className="max-w-32"
+                      />
+                    ) : null}
+                    {root ? <PathLabel path={root} className="min-w-0 max-w-72" /> : null}
+                  </span>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={!catalog.connected}
+                    onClick={() =>
+                      setImporting({
+                        ...(ref ? { hostId: ref.environmentId } : {}),
+                        title: group.displayName,
+                        rootPath: root,
+                      })
+                    }
+                  >
+                    Add to project
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
         </details>
       ) : null}
       {creating ? (
@@ -255,29 +481,112 @@ export function LibraryProjectsPage() {
   );
 }
 
-/** What a project holds and where it currently lives, in one glanceable line. */
-function projectSummary(
-  project: LibraryProject,
-  copies: readonly LibraryWorkingCopy[],
-  hostLabel: (id: EnvironmentId) => string,
-) {
-  const repositories = project.resources.filter(isRepositoryResource).length;
-  const links = project.resources.length - repositories;
-  const hosts = [
-    ...new Set(
-      copies.filter((copy) => copy.projectId === project.id).map((copy) => copy.environmentId),
-    ),
-  ];
-  return [
-    repositories ? `${repositories} ${repositories === 1 ? "repository" : "repositories"}` : null,
-    links ? `${links} ${links === 1 ? "link" : "links"}` : null,
-    hosts.length === 1
-      ? `Copy on ${hostLabel(hosts[0]!)}`
-      : hosts.length
-        ? `Copies on ${hosts.length} computers`
-        : null,
-    `Edited ${formatRelativeTimeLabel(project.updatedAt)}`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+/** Narrows to the colors people chose, so a color can stand for a client, a team or a phase. */
+function ColorFilter({
+  colors,
+  selected,
+  onToggle,
+}: {
+  readonly colors: readonly LibraryProjectColor[];
+  readonly selected: ReadonlySet<LibraryProjectColor>;
+  readonly onToggle: (color: LibraryProjectColor) => void;
+}) {
+  return (
+    <div role="group" aria-label="Filter by color" className="flex items-center gap-1">
+      {colors.map((color) => {
+        const pressed = selected.has(color);
+        return (
+          <Tooltip key={color}>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-pressed={pressed}
+                  aria-label={`${PROJECT_COLOR_NAMES[color]} projects`}
+                  style={projectColorStyle(color)}
+                  onClick={() => onToggle(color)}
+                  className="inline-flex size-6 items-center justify-center rounded-full outline-none transition-colors duration-150 hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                />
+              }
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-2.5 rounded-full bg-(--project-color) transition-[box-shadow,opacity] duration-150",
+                  pressed && "ring-2 ring-(--project-color) ring-offset-1 ring-offset-background",
+                  selected.size > 0 && !pressed && "opacity-40",
+                )}
+              />
+            </TooltipTrigger>
+            <TooltipPopup side="top">{PROJECT_COLOR_NAMES[color]}</TooltipPopup>
+          </Tooltip>
+        );
+      })}
+    </div>
+  );
+}
+
+function ComputerFilter({
+  computers,
+  selected,
+  hostLabel,
+  onSelect,
+}: {
+  readonly computers: readonly EnvironmentId[];
+  readonly selected: EnvironmentId | null;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly onSelect: (id: EnvironmentId | null) => void;
+}) {
+  return (
+    <Menu>
+      <MenuTrigger render={<Button size="sm" variant={selected ? "secondary" : "ghost"} />}>
+        {selected ? (
+          <ComputerLabel
+            environmentId={selected}
+            label={hostLabel(selected)}
+            className="text-foreground"
+          />
+        ) : (
+          "All computers"
+        )}
+      </MenuTrigger>
+      <MenuPopup side="bottom" align="start">
+        <MenuRadioGroup
+          value={selected ?? "all"}
+          onValueChange={(value) => onSelect(computers.find((id) => id === value) ?? null)}
+        >
+          <MenuRadioItem value="all">All computers</MenuRadioItem>
+          {computers.map((id) => (
+            <MenuRadioItem key={id} value={id}>
+              <ComputerLabel environmentId={id} label={hostLabel(id)} className="text-foreground" />
+            </MenuRadioItem>
+          ))}
+        </MenuRadioGroup>
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+/** A small arrangement of project tiles that shows what the page will look like once it's in use. */
+function StarterTiles() {
+  const tiles = [
+    { color: "plum", icon: FolderGit2Icon, offset: "-rotate-6 translate-y-1" },
+    { color: "teal", icon: MessageSquareIcon, offset: "z-10 -translate-y-1" },
+    { color: "gold", icon: FolderIcon, offset: "rotate-6 translate-y-1" },
+  ] as const;
+  return (
+    <div aria-hidden className="flex items-center -space-x-2">
+      {tiles.map(({ color, icon: Icon, offset }) => (
+        <span
+          key={color}
+          style={projectColorStyle(color)}
+          className={cn("rounded-2xl bg-background ring-4 ring-background", offset)}
+        >
+          <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-(--project-color)/16 text-(--project-color)">
+            <Icon className="size-5" />
+          </span>
+        </span>
+      ))}
+    </div>
+  );
 }

@@ -1,6 +1,11 @@
 import { randomUUID } from "~/lib/utils";
 import { useState } from "react";
-import { LibraryError, LibraryResource, type LibraryProject } from "@t3tools/contracts/fork";
+import {
+  LibraryError,
+  LibraryProjectColor,
+  LibraryResource,
+  type LibraryProject,
+} from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { useLibraryAttempt } from "./attempts";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -16,6 +21,7 @@ import { isRepositoryResource, validateResources } from "./resources";
 import { libraryResourceLocation } from "@t3tools/client-runtime/fork";
 import { FolderGit2Icon, LinkIcon, XIcon } from "lucide-react";
 import { ResourceAdder } from "./ProjectResources";
+import { ProjectColorPicker, ProjectTile } from "./ProjectIdentity";
 
 const isLibraryError = Schema.is(LibraryError);
 const EditorAttempt = Schema.NullOr(
@@ -24,6 +30,7 @@ const EditorAttempt = Schema.NullOr(
     title: Schema.String,
     brief: Schema.String,
     resources: Schema.Array(LibraryResource),
+    color: Schema.optional(LibraryProjectColor),
   }),
 );
 
@@ -44,6 +51,7 @@ export function ProjectEditorDialog({
   const [title, setTitle] = useState(attempt?.title ?? "");
   const [brief, setBrief] = useState(attempt?.brief ?? "");
   const [resources, setResources] = useState<readonly LibraryResource[]>(attempt?.resources ?? []);
+  const [color, setColor] = useState<LibraryProjectColor | undefined>(attempt?.color);
   const catalog = useLibraryProjects();
   const existing = catalog.query.data?.find(
     (entry) => entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
@@ -63,7 +71,13 @@ export function ProjectEditorDialog({
     setBusy(true);
     setError(null);
     try {
-      const input = attempt ?? { requestId: randomUUID(), title: title.trim(), brief, resources };
+      const input = attempt ?? {
+        requestId: randomUUID(),
+        title: title.trim(),
+        brief,
+        resources,
+        ...(color ? { color } : {}),
+      };
       saveAttempt(input);
       const result = await create({ environmentId: authorityId, input });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
@@ -108,16 +122,29 @@ export function ProjectEditorDialog({
           void save();
         }}
       >
-        <LibraryField label="Name">
-          <Input
-            autoFocus
-            placeholder="AspectAvy"
-            maxLength={160}
-            value={title}
+        <div className="flex items-end gap-3">
+          <ProjectTile project={{ id: "", title, color }} neutral={!color} />
+          <div className="min-w-0 flex-1">
+            <LibraryField label="Name">
+              <Input
+                autoFocus
+                placeholder="AspectAvy"
+                maxLength={160}
+                value={title}
+                disabled={locked}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </LibraryField>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Color</p>
+          <ProjectColorPicker
+            value={color}
             disabled={locked}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(next) => setColor(next ?? undefined)}
           />
-        </LibraryField>
+        </div>
         {existing ? (
           <div className="space-y-2 rounded-lg bg-muted/40 p-3">
             <p className="text-sm">A project named {existing.title} already exists.</p>
