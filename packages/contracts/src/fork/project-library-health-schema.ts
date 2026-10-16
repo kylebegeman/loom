@@ -22,7 +22,8 @@ export type LibraryRepositoryHealthError = typeof LibraryRepositoryHealthError.T
  * One repository in a copy, as its computer sees it. `branch` is absent on a detached head,
  * `upstream`, `ahead` and `behind` are absent without an upstream, `upstreamGone` marks an upstream
  * branch deleted on its remote (no counts), and `fetchedAt` is the last time the remotes were
- * actually fetched.
+ * actually fetched. `fetchFailed` marks a requested remote check that could not fetch, so the
+ * counts are from the last fetch.
  */
 export const LibraryRepositoryHealth = Schema.Struct({
   resourceId: HealthId,
@@ -36,6 +37,7 @@ export const LibraryRepositoryHealth = Schema.Struct({
   unpushedCommits: NonNegativeInt,
   checkedAt: IsoDateTime,
   fetchedAt: Schema.optional(IsoDateTime),
+  fetchFailed: Schema.optional(Schema.Boolean),
   error: Schema.optional(LibraryRepositoryHealthError),
 });
 export type LibraryRepositoryHealth = typeof LibraryRepositoryHealth.Type;

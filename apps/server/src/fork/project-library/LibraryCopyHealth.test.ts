@@ -7,10 +7,12 @@ import {
   type VcsStatusResult,
 } from "@t3tools/contracts";
 import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as TestClock from "effect/testing/TestClock";
 import { describe, expect } from "vite-plus/test";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
@@ -18,6 +20,7 @@ import {
   makeCopyHealthReader,
   parseDivergence,
   parseUpstreamTracking,
+  remoteCheckFailed,
   toRepositoryHealth,
   type UpstreamTracking,
 } from "./LibraryCopyHealth.ts";
@@ -128,6 +131,20 @@ describe("parseDivergence", () => {
     expect(parseDivergence("2\t5")).toEqual([2, 5]);
     expect(parseDivergence(null)).toBeNull();
     expect(parseDivergence("fatal: no upstream")).toBeNull();
+  });
+});
+
+describe("remoteCheckFailed", () => {
+  const upstream = { name: "origin/main", gone: false };
+  it("fails a check whose remotes were not fetched recently", () => {
+    expect(remoteCheckFailed(upstream, "2026-10-16T11:58:00.000Z", checkedAt)).toBe(true);
+    expect(remoteCheckFailed(upstream, null, checkedAt)).toBe(true);
+  });
+  it("accepts a fetch the status refresh just made or skipped as recent", () => {
+    expect(remoteCheckFailed(upstream, "2026-10-16T11:59:50.000Z", checkedAt)).toBe(false);
+  });
+  it("never fails a repository without an upstream, which has nothing to fetch", () => {
+    expect(remoteCheckFailed(null, null, checkedAt)).toBe(false);
   });
 });
 
@@ -248,6 +265,19 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
         upstreamGone: true,
       });
       expect(gone.repositories[0]?.behind).toBeUndefined();
+
+      // The mocked refresh never fetches, so FETCH_HEAD only moves when this test fetches. The
+      // test clock starts at the epoch, so an epoch FETCH_HEAD reads as an hour old.
+      const epoch = DateTime.toDateUtc(DateTime.makeUnsafe(0));
+      yield* fs.utimes(path.join(repo, ".git", "FETCH_HEAD"), epoch, epoch);
+      yield* TestClock.adjust("1 hour");
+      const stale = yield* read(copyWith(root, ["web"]), { refreshRemote: true });
+      expect(stale.repositories[0]?.fetchFailed).toBe(true);
+      // A plain read never claims a failed check.
+      expect((yield* read(copyWith(root, ["web"]))).repositories[0]?.fetchFailed).toBeUndefined();
+      yield* git(repo, ["fetch", "--quiet"]);
+      const fresh = yield* read(copyWith(root, ["web"]), { refreshRemote: true });
+      expect(fresh.repositories[0]?.fetchFailed).toBeUndefined();
     }),
   );
 

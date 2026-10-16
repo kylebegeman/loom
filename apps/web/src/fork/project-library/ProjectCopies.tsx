@@ -115,6 +115,8 @@ function CopyHealth({
     if (result._tag === "Failure") {
       const cause = squashAtomCommandFailure(result);
       setActionError(cause instanceof Error ? cause.message : "Could not check the remote.");
+    } else if (result.value.repositories.some((repository) => repository.fetchFailed)) {
+      setActionError("Could not reach the remote. Counts are from the last fetch.");
     }
     setCheckingRemote(false);
     // The fetch updated the remote refs, so a plain read now shows the new counts.

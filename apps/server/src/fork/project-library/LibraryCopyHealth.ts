@@ -14,6 +14,22 @@ import * as ProcessRunner from "../../processRunner.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 
 const HEALTH_CONCURRENCY = 4;
+// The status fetch skips a remote it fetched in the last 15 seconds
+// (`STATUS_UPSTREAM_REFRESH_INTERVAL`), so a requested check counts a fetch this recent as its own.
+const FRESH_FETCH_MS = 30_000;
+
+/**
+ * Whether a requested remote check failed to fetch: the repository has an upstream, but its
+ * remotes were last fetched before the check could have. The status refresh swallows fetch
+ * errors, so FETCH_HEAD's age is the only sign.
+ */
+export const remoteCheckFailed = (
+  upstream: UpstreamTracking | null,
+  fetchedAt: string | null,
+  checkedAt: string,
+) =>
+  upstream !== null &&
+  (fetchedAt === null || Date.parse(checkedAt) - Date.parse(fetchedAt) > FRESH_FETCH_MS);
 
 /** A repository whose health could not be read, with honest zero counts. */
 export const unreadableRepositoryHealth = (
@@ -48,6 +64,7 @@ export const toRepositoryHealth = (input: {
   readonly unpushedCommits: number;
   readonly checkedAt: string;
   readonly fetchedAt: string | null;
+  readonly fetchFailed?: boolean;
 }): LibraryRepositoryHealth => {
   if (!input.status.isRepo)
     return unreadableRepositoryHealth(input.resourceId, "not-a-repository", input.checkedAt);
@@ -68,6 +85,7 @@ export const toRepositoryHealth = (input: {
     unpushedCommits: input.unpushedCommits,
     checkedAt: input.checkedAt,
     ...(input.fetchedAt ? { fetchedAt: input.fetchedAt } : {}),
+    ...(input.fetchFailed ? { fetchFailed: true } : {}),
   };
 };
 
@@ -99,16 +117,28 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         Effect.orElseSucceed(() => null),
       );
 
-  // FETCH_HEAD is rewritten on every fetch, so its mtime is the last time remotes were read.
+  const modifiedAt = (file: string) =>
+    fs.stat(file).pipe(
+      Effect.map((info) => Option.getOrNull(info.mtime)?.getTime() ?? null),
+      Effect.orElseSucceed(() => null),
+    );
+  // FETCH_HEAD is rewritten on every fetch, so its mtime is the last time remotes were read. A
+  // linked worktree has two: its own, from a `git fetch` run there, and the shared one the
+  // status fetch writes through `--git-dir`. The newer one counts.
   const lastFetchedAt = (cwd: string) =>
     Effect.gen(function* () {
-      const fetchHead = yield* git(cwd, ["rev-parse", "--git-path", "FETCH_HEAD"]);
-      if (fetchHead === null) return null;
-      const info = yield* fs.stat(path.resolve(cwd, fetchHead));
-      return Option.match(info.mtime, {
-        onNone: () => null,
-        onSome: (mtime) => mtime.toISOString(),
-      });
+      const [own, common] = yield* Effect.all([
+        git(cwd, ["rev-parse", "--git-path", "FETCH_HEAD"]),
+        git(cwd, ["rev-parse", "--git-common-dir"]),
+      ]);
+      const times = yield* Effect.all([
+        own === null ? Effect.succeed(null) : modifiedAt(path.resolve(cwd, own)),
+        common === null
+          ? Effect.succeed(null)
+          : modifiedAt(path.resolve(cwd, common, "FETCH_HEAD")),
+      ]);
+      const latest = Math.max(...times.map((time) => time ?? -Infinity));
+      return Number.isFinite(latest) ? DateTime.formatIso(DateTime.makeUnsafe(latest)) : null;
     }).pipe(Effect.orElseSucceed(() => null));
 
   const readRepository = (
@@ -160,15 +190,17 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         { concurrency: "unbounded" },
       );
       const unpushedCommits = Number.parseInt(unpushed ?? "0", 10);
+      const upstream = parseUpstreamTracking(tracking);
       return toRepositoryHealth({
         resourceId: repository.resourceId,
         status: status.value,
-        upstream: parseUpstreamTracking(tracking),
+        upstream,
         divergence: parseDivergence(divergence),
         head,
         unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : 0,
         checkedAt,
         fetchedAt,
+        fetchFailed: refreshRemote && remoteCheckFailed(upstream, fetchedAt, checkedAt),
       });
     });
 
