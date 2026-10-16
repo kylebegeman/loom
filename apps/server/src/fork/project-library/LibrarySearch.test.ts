@@ -224,6 +224,8 @@ describe("Library history search", () => {
           const words = yield* search(service, { query: "rollout HELIOS" });
           expect(words.hits.map((entry) => entry.role).toSorted()).toEqual(["assistant", "user"]);
           expect((yield* search(service, { query: "privat reasoning" })).hits).toEqual([]);
+          // A control character separates words instead of ending the FTS5 query.
+          expect((yield* search(service, { query: "pinned\u0000digest" })).hits).toHaveLength(1);
           // Punctuation alone is not searchable rather than an FTS syntax error.
           expect(yield* search(service, { query: "&& --" })).toEqual({
             hits: [],
@@ -276,6 +278,110 @@ describe("Library history search", () => {
           count: number;
         }>`SELECT COUNT(*) AS count FROM fork_library_search_items WHERE library_id = ${deleted.summary.id}`;
         expect(rows[0]?.count).toBe(0);
+      }),
+    ),
+  );
+
+  it.effect("keeps the index in step as a conversation is edited, deleted and restored", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* service.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
+        });
+        const time = "2026-10-03T09:00:00.000Z";
+        const save = Effect.fnUntraced(function* (
+          sequence: number,
+          text: string,
+          flags: { archived?: boolean; deleted?: boolean } = {},
+        ) {
+          const thread = yield* conversation(project, {
+            name: "evolving",
+            sequence,
+            ...flags,
+            items: [{ type: "user_message", text, time }],
+          });
+          yield* service.ingestHistory({
+            requestId: `save-${sequence}`,
+            sourceEnvironmentId: source,
+            journalId: "journal",
+            fromSequence: sequence - 1,
+            entries: [{ sequence, thread }],
+          });
+        });
+        const found = (query: string) =>
+          search(service, { query }).pipe(
+            Effect.map((result) => result.hits.map((hit) => [hit.snippet, hit.archived])),
+          );
+
+        yield* save(1, "Draft the walrus migration");
+        expect(yield* found("walrus")).toEqual([["Draft the walrus migration", false]]);
+        yield* save(2, "Ship the narwhal migration", { archived: true });
+        expect(yield* found("walrus")).toEqual([]);
+        expect(yield* found("narwhal")).toEqual([["Ship the narwhal migration", true]]);
+        yield* save(3, "Ship the narwhal migration", { deleted: true });
+        expect(yield* found("narwhal")).toEqual([]);
+        yield* save(4, "Ship the narwhal migration", { deleted: false });
+        expect(yield* found("narwhal")).toEqual([["Ship the narwhal migration", false]]);
+      }),
+    ),
+  );
+
+  it.effect("reports highlights as UTF-16 ranges around accented and emoji text", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* service.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
+        });
+        const thread = yield* conversation(project, {
+          name: "unicode",
+          items: [
+            {
+              type: "assistant_message",
+              text: "😀🚀 日本語 then the Café menu",
+              time: "2026-10-03T09:00:00.000Z",
+            },
+          ],
+        });
+        yield* service.registerThread({ requestId: "unicode", thread });
+        const [hit] = (yield* search(service, { query: "cafe 日本語" })).hits;
+        expect(hit!.highlights.map(({ start, end }) => hit!.snippet.slice(start, end))).toEqual([
+          "日本語",
+          "Café",
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("stops offering a cursor at the deepest page it accepts", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const project = yield* service.createProject({
+          requestId: "create",
+          title: "AspectAvy",
+          resources: [resource],
+        });
+        const thread = yield* conversation(project, {
+          name: "deep",
+          items: Array.from({ length: 1060 }, (_, n) => ({
+            type: "user_message" as const,
+            text: `Heron sighting ${n}`,
+            time: "2026-10-03T09:00:00.000Z",
+          })),
+        });
+        yield* service.registerThread({ requestId: "deep", thread });
+        const near = yield* search(service, { query: "heron", limit: 10, cursor: "990" });
+        expect(near.nextCursor).toBe("1000");
+        const last = yield* search(service, {
+          query: "heron",
+          limit: 50,
+          cursor: near.nextCursor!,
+        });
+        expect(last.hits).toHaveLength(50);
+        expect(last.nextCursor).toBeNull();
       }),
     ),
   );
@@ -457,7 +563,16 @@ describe("Library search query parsing", () => {
     expect(libraryMatchQuery('a"b')).toBe('"a" "b"');
     expect(libraryMatchQuery("&& -- ...")).toBeNull();
   });
+  it("ignores control characters and FTS5 operators in user text", () => {
+    expect(libraryMatchQuery("a\u0000b NEAR(x) body:secret -c")).toBe(
+      '"a" "b" "NEAR(x)"* "body:secret"* "-c"',
+    );
+  });
   it("turns snippet markers into highlight ranges", () => {
+    expect(parseLibrarySnippet("😀 \uE000café\uE001")).toEqual({
+      snippet: "😀 café",
+      highlights: [{ start: 3, end: 7 }],
+    });
     expect(parseLibrarySnippet("…the pinned digest drifted")).toEqual({
       snippet: "…the pinned digest drifted",
       highlights: [

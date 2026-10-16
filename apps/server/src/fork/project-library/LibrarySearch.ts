@@ -39,6 +39,7 @@ export const LIBRARY_SEARCH_SCHEMA = [
   `CREATE VIRTUAL TABLE fork_library_search USING fts5(body, content='fork_library_search_items', content_rowid='id', tokenize='unicode61 remove_diacritics 2')`,
   `CREATE TRIGGER fork_library_search_items_insert AFTER INSERT ON fork_library_search_items BEGIN INSERT INTO fork_library_search(rowid, body) VALUES (new.id, new.body); END`,
   `CREATE TRIGGER fork_library_search_items_delete AFTER DELETE ON fork_library_search_items BEGIN INSERT INTO fork_library_search(fork_library_search, rowid, body) VALUES ('delete', old.id, old.body); END`,
+  `CREATE TRIGGER fork_library_search_items_update AFTER UPDATE ON fork_library_search_items BEGIN INSERT INTO fork_library_search(fork_library_search, rowid, body) VALUES ('delete', old.id, old.body); INSERT INTO fork_library_search(rowid, body) VALUES (new.id, new.body); END`,
 ] as const;
 
 /**
@@ -92,7 +93,9 @@ export const backfillLibrarySearch = Effect.gen(function* () {
  */
 export function libraryMatchQuery(query: string): string | null {
   const terms: string[] = [];
-  for (const match of query.matchAll(/"([^"]*)"|([^\s"]+)/g)) {
+  // FTS5 reads a NUL as the end of the query, so control characters only separate words.
+  const words = query.replace(/\p{Cc}/gu, " ");
+  for (const match of words.matchAll(/"([^"]*)"|([^\s"]+)/g)) {
     const phrase = match[1] !== undefined;
     const text = (match[1] ?? match[2] ?? "").trim();
     if (!/[\p{L}\p{N}]/u.test(text)) continue;
@@ -202,7 +205,10 @@ export const makeLibrarySearch = Effect.gen(function* () {
     );
     return {
       hits,
-      nextCursor: rows.length > input.limit ? String(offset + input.limit) : null,
+      nextCursor:
+        rows.length > input.limit && offset + input.limit <= MAX_OFFSET
+          ? String(offset + input.limit)
+          : null,
     } satisfies LibrarySearchResult;
   });
   return { index, search };
