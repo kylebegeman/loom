@@ -2,6 +2,7 @@ import type { LibraryRecoveryStore } from "./project-library/assets/LibraryRecov
 import type { LibraryReplication } from "./project-library/LibraryReplication.ts";
 import type { LibraryHistorySource } from "./project-library/LibraryHistorySource.ts";
 import type { LibraryAssetService } from "./project-library/assets/LibraryAssetService.ts";
+import type { LibraryBriefSuggestions } from "./project-library/LibraryBriefSuggestions.ts";
 import type { LibraryService } from "./project-library/LibraryService.ts";
 import type { LibraryTimeline } from "./project-library/LibraryTimeline.ts";
 import type { LibraryWorkspace } from "./project-library/LibraryWorkspace.ts";
@@ -40,7 +41,8 @@ export type ForkServices =
   | DeviceQaService
   | CodeGraphService
   | WorkspaceHandoffService
-  | SwitchboardStatus;
+  | SwitchboardStatus
+  | LibraryBriefSuggestions;
 
 /** ForkLayer publishes its services without adding requirements to upstream transports. */
 export class ForkRuntime extends Context.Reference<Context.Context<ForkServices> | undefined>(

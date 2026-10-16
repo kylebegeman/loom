@@ -56,5 +56,6 @@ export * from "./project-library-search.ts";
 export * from "./project-library-timeline.ts";
 export * from "./project-library-brief.ts";
 export * from "./project-library-readiness.ts";
+export * from "./project-library-brief-suggestions.ts";
 
 export * from "./identity.ts";

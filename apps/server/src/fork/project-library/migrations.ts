@@ -77,5 +77,16 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         yield* sql`CREATE INDEX IF NOT EXISTS fork_library_brief_proposals_project ON fork_library_brief_proposals(project_id, status, created_at)`;
       }),
     ],
+    [
+      7,
+      "BriefSuggestionRuns",
+      // Kept by the computer where a conversation settles. Idempotent for renumbering at merge.
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE TABLE IF NOT EXISTS fork_library_brief_suggestions (thread_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, run_thread_id TEXT, status TEXT NOT NULL, started_at TEXT, payload_json TEXT NOT NULL)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_library_brief_suggestions_project ON fork_library_brief_suggestions(project_id, started_at)`;
+        yield* sql`CREATE UNIQUE INDEX IF NOT EXISTS fork_library_brief_suggestions_run ON fork_library_brief_suggestions(run_thread_id)`;
+      }),
+    ],
   ],
 };

@@ -4,6 +4,8 @@ import {
   EnvironmentId,
 } from "@t3tools/contracts";
 import {
+  LibraryConversationBriefProposal,
+  LibraryId,
   LibraryRegisterComputerRequest,
   LibraryError,
   LibraryImportShadowRequest,
@@ -27,7 +29,12 @@ const decodeCopy = Schema.decodeUnknownEffect(LibraryRegisterCopyRequest);
 const decodeVerify = Schema.decodeUnknownEffect(Schema.Struct({ requestId: LibraryRequestId }));
 const decodeImport = Schema.decodeUnknownEffect(Schema.toCodecJson(LibraryImportShadowRequest));
 const decodeComputer = Schema.decodeUnknownEffect(LibraryRegisterComputerRequest);
-const handler = (operation: "info" | "computer" | "ingest" | "copy" | "import" | "verify") =>
+const decodeProjectRead = Schema.decodeUnknownEffect(Schema.Struct({ projectId: LibraryId }));
+const decodeProposal = Schema.decodeUnknownEffect(LibraryConversationBriefProposal);
+const decodeEnvironmentId = Schema.decodeUnknownEffect(EnvironmentId);
+const handler = (
+  operation: "info" | "computer" | "ingest" | "copy" | "import" | "verify" | "project" | "propose",
+) =>
   withForkRuntime(
     Effect.gen(function* () {
       const request = yield* HttpServerRequest.HttpServerRequest;
@@ -40,7 +47,9 @@ const handler = (operation: "info" | "computer" | "ingest" | "copy" | "import" |
       if (
         (!operator && !publisher) ||
         session.subject === "mcp-client" ||
-        ((operation === "import" || operation === "verify") && !operator)
+        ((operation === "import" || operation === "verify") && !operator) ||
+        // A forwarded proposal names its conversation's computer by the session that sent it.
+        (operation === "propose" && !publisher)
       )
         return HttpServerResponse.text("Access denied", { status: 403 });
       const sourceAllowed = (
@@ -70,6 +79,26 @@ const handler = (operation: "info" | "computer" | "ingest" | "copy" | "import" |
         return HttpServerResponse.jsonUnsafe(yield* library.verifyImport(input), {
           headers: { "cache-control": "no-store" },
         });
+      }
+      if (operation === "project") {
+        const input = yield* decodeProjectRead(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        return HttpServerResponse.jsonUnsafe(yield* library.project(input), {
+          headers: { "cache-control": "no-store" },
+        });
+      }
+      if (operation === "propose") {
+        const { threadId, ...input } = yield* decodeProposal(body).pipe(
+          Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })),
+        );
+        const environmentId = yield* decodeEnvironmentId(
+          session.subject.slice("loom-host:".length),
+        ).pipe(Effect.mapError((cause) => new LibraryError({ reason: "invalid", cause })));
+        return HttpServerResponse.jsonUnsafe(
+          yield* library.proposeBrief(input, { kind: "conversation", environmentId, threadId }),
+          { headers: { "cache-control": "no-store" } },
+        );
       }
       if (operation === "computer") {
         const input = yield* decodeComputer(body).pipe(
@@ -153,6 +182,16 @@ export const LibraryHttpRoutes = Layer.unwrap(
         "POST",
         "/api/loom/library/verify-import",
         handler("verify").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/projects/read",
+        handler("project").pipe(Effect.provideService(ForkRuntime, runtime)),
+      ),
+      HttpRouter.add(
+        "POST",
+        "/api/loom/library/brief/propose",
+        handler("propose").pipe(Effect.provideService(ForkRuntime, runtime)),
       ),
       HttpRouter.add(
         "POST",

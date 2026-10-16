@@ -126,6 +126,8 @@ const fixture = Effect.gen(function* () {
         Effect.andThen(Ref.update(registered, (requests) => [...requests, input])),
         Effect.as(input.copy),
       ),
+    project: () => Effect.die("unused"),
+    proposeBrief: () => Effect.die("unused"),
     publishAttachments: () =>
       Effect.gen(function* () {
         yield* Ref.update(order, (steps) => [...steps, "assets"]);
@@ -216,6 +218,8 @@ describe("durable Library history replication", () => {
               info: Ref.get(f.authority),
               registerCopy: (input) => Effect.succeed(input.copy),
               publishAttachments: () => Effect.void,
+              project: () => Effect.die("unused"),
+              proposeBrief: () => Effect.die("unused"),
               ingest: (input) =>
                 Ref.update(f.requests, (rows) => [...rows, input]).pipe(
                   Effect.as({
@@ -450,6 +454,8 @@ describe("durable Library history replication", () => {
         ingest: () => Effect.fail(new LibraryError({ reason: "blocked" })),
         registerCopy: () => Effect.fail(new LibraryError({ reason: "blocked" })),
         publishAttachments: () => Effect.void,
+        project: () => Effect.die("unused"),
+        proposeBrief: () => Effect.die("unused"),
       });
       const disabled = yield* Replication.LibraryReplication.pipe(
         Effect.provide(Replication.layer),

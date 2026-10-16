@@ -3,6 +3,7 @@ import * as LibraryRecoveryPublisher from "./project-library/LibraryRecoveryPubl
 import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryStore.ts";
 import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
+import * as LibraryBriefSuggestions from "./project-library/LibraryBriefSuggestions.ts";
 import * as LibraryReplication from "./project-library/LibraryReplication.ts";
 import * as LibraryCopyHealthPublication from "./project-library/LibraryCopyHealthPublication.ts";
 import { LibraryHttpRoutes } from "./project-library/http.ts";
@@ -127,6 +128,22 @@ const ForkServicesLive = Layer.mergeAll(
   CodeGraphReactorLive.pipe(
     Layer.provideMerge(
       CodeGraph.layer.pipe(Layer.provide(Layer.merge(ProjectionStore.layer, ProjectStore.layer))),
+    ),
+  ),
+  // The reactor runs suggestions for the service MCP and RPC also call.
+  LibraryBriefSuggestions.BriefSuggestionsReactorLive.pipe(
+    Layer.provideMerge(
+      LibraryBriefSuggestions.layer.pipe(
+        Layer.provide(
+          LibraryPublisher.layer.pipe(
+            Layer.provide(FetchHttpClient.layer),
+            Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+            Layer.provide(layerLibraryAssets),
+          ),
+        ),
+        Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+        Layer.provide(LibraryWorkspaceStore.layer),
+      ),
     ),
   ),
 );
