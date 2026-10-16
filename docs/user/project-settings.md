@@ -101,6 +101,14 @@ conversation with a fresh agent session and the context you choose to carry forw
 Removing a managed working copy preserves the Library project and saved conversations;
 active work or local changes can prevent removal. A project can have zero working copies.
 
+A project rests on its own after two weeks without a conversation or an edit, and its next
+conversation brings it back. Resting projects show a **Tidy** chip on the Projects page. Tidy
+lists which copies are safe to remove, meaning their computer is connected and nothing is
+uncommitted or unpushed, and which need attention and why. One confirmation removes the safe
+copies, checking each one again just before removing it, and can also archive the project.
+Archive is for work you have finished or set aside: an archived project leaves the project
+pickers, its conversations stay readable, and you can restore it any time from **Archived**.
+
 Saved projects and conversation history remain readable when a computer is offline.
 Conversation history shows when it was last saved to the Library; work that has not uploaded
 may be missing. Open saved attachments from the Library, and use **Save pending history**
