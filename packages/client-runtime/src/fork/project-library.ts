@@ -7,6 +7,7 @@ import {
   LibraryThreadArchive,
   LIBRARY_WS_METHODS as L,
   LIBRARY_HEALTH_WS_METHODS as LH,
+  LIBRARY_TIMELINE_WS_METHODS as LT,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
@@ -101,6 +102,16 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:history",
       tag: L.history,
       persistence: persistQuery(LibraryThreadArchive),
+    }),
+    /**
+     * Query the authority, which must advertise `library-timeline`. Only the newest page follows
+     * Library changes; older pages are fixed by their cursor because the log is append-only.
+     */
+    timeline: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:timeline",
+      tag: LT.timeline,
+      refreshTrigger: ({ environmentId, input }) =>
+        input.before === undefined ? refreshes({ environmentId, input: {} }) : undefined,
     }),
     copyStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:copy-status",
