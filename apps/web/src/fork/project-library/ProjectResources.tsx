@@ -2,11 +2,11 @@ import { useState } from "react";
 import type { LibraryResource } from "@t3tools/contracts/fork";
 import { libraryResourceFromInput, libraryResourceLocation } from "@t3tools/client-runtime/fork";
 import { ArrowUpRightIcon, EllipsisIcon, FolderGit2Icon, LinkIcon, PlusIcon } from "lucide-react";
-import { cn, randomUUID } from "~/lib/utils";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
-import { LIBRARY_ROW, LibraryField, LibrarySection } from "./LibraryControls";
+import { randomUUID } from "~/lib/utils";
+import { LibraryField, LibraryPanel } from "./LibraryControls";
 import { isRepositoryResource, resourceLink } from "./resources";
 
 const MAX_RESOURCES = 64;
@@ -37,7 +37,7 @@ export function ProjectResources({
   const [editingId, setEditingId] = useState<string | null>(null);
   const canAdd = canEdit && resources.length < MAX_RESOURCES;
   return (
-    <LibrarySection
+    <LibraryPanel
       title="Repositories and links"
       count={resources.length}
       action={
@@ -62,10 +62,10 @@ export function ProjectResources({
       }
     >
       {resources.length ? (
-        <ul>
+        <ul className="divide-y divide-border border-t border-border">
           {resources.map((resource) =>
             editingId === resource.id ? (
-              <li key={resource.id} className="py-2">
+              <li key={resource.id} className="px-3.5 py-3">
                 <ResourceEditor
                   resource={resource}
                   busy={busy}
@@ -94,12 +94,12 @@ export function ProjectResources({
           )}
         </ul>
       ) : (
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
           The repositories this project is made of, plus any links worth keeping close.
         </p>
       )}
       {canAdd && (adding || !resources.length) ? (
-        <div className={resources.length ? "pt-2" : undefined}>
+        <div className={resources.length ? "border-t border-border px-3.5 py-3" : "px-3.5 pb-3.5"}>
           <ResourceAdder
             resources={resources}
             busy={busy}
@@ -108,7 +108,7 @@ export function ProjectResources({
           />
         </div>
       ) : null}
-    </LibrarySection>
+    </LibraryPanel>
   );
 }
 
@@ -131,8 +131,10 @@ function ResourceRow({
   const repository = isRepositoryResource(resource);
   const Icon = repository ? FolderGit2Icon : LinkIcon;
   return (
-    <li className={cn(LIBRARY_ROW, "flex items-center gap-2.5 py-1.5 pe-1")}>
-      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+    <li className="group/resource flex items-center gap-2.5 py-2 ps-3.5 pe-2 transition-colors duration-150 hover:bg-accent/40">
+      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
+        <Icon aria-hidden className="size-3.5" />
+      </span>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{resource.title}</p>
         <p className="truncate text-xs text-muted-foreground">

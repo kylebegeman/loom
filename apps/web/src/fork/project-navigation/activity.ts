@@ -3,6 +3,8 @@ import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import type { ServerConfig } from "@t3tools/contracts";
 import { resolveSidebarThreadStatus } from "~/components/Sidebar.logic";
 
+export type ProjectThreadActivity = ReturnType<typeof resolveProjectThreadActivity>;
+
 export function resolveProjectThreadActivity(
   thread: EnvironmentThreadShell,
   config: ServerConfig | undefined,

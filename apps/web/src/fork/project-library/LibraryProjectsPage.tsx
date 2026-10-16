@@ -11,7 +11,6 @@ import {
   ListIcon,
   MessageSquareIcon,
   PlusIcon,
-  SearchIcon,
   SlidersHorizontalIcon,
   XIcon,
 } from "lucide-react";
@@ -28,7 +27,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "~/components/ui/empty";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
   Menu,
   MenuCheckboxItem,
@@ -48,7 +46,7 @@ import { useProjects } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LibraryErrorNotice } from "./LibraryControls";
+import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch } from "./LibraryControls";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
 import {
@@ -114,6 +112,7 @@ export function LibraryProjectsPage() {
   const group = preferences.group ?? "activity";
   // Read once per visit: a project that goes quiet while the page is open can wait for the next one.
   const [now] = useState(() => Date.now());
+  const [showArchived, setShowArchived] = useState(false);
   const [query, setQuery] = useState("");
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
@@ -153,18 +152,24 @@ export function LibraryProjectsPage() {
     threadIndex.data,
     environmentProjects,
   );
-  const filtered = sortProjectEntries(
-    filterProjectEntries(entries, { search: query, colors, computer }, hostLabel),
-    preferences.sort,
-  );
-  const current = filtered.filter((entry) => !entry.project.archived);
-  const archived = filtered.filter((entry) => entry.project.archived);
-  const sections = projectSections(current, group, now);
   const liveEntries = entries.filter((entry) => !entry.project.archived);
+  const archivedEntries = entries.filter((entry) => entry.project.archived);
+  const viewEntries = showArchived ? archivedEntries : liveEntries;
+  const matching = (list: readonly ProjectEntry[]) =>
+    filterProjectEntries(list, { search: query, colors, computer }, hostLabel);
+  const filtered = sortProjectEntries(matching(viewEntries), preferences.sort);
+  // Set-aside projects have no rhythm worth grouping by, so activity grouping lists them plainly.
+  const sections = projectSections(
+    filtered,
+    showArchived && group === "activity" ? "none" : group,
+    now,
+  );
+  // A search that only matches on the other side of the toggle says so instead of coming up empty.
+  const otherMatches = matching(showArchived ? liveEntries : archivedEntries).length;
   const restingCount = liveEntries.filter((entry) => isRestingEntry(entry, now)).length;
-  const archivedCount = entries.length - liveEntries.length;
+  const archivedCount = archivedEntries.length;
   const colorCounts = LIBRARY_PROJECT_COLORS.flatMap((color) => {
-    const count = liveEntries.filter((entry) => entry.color === color).length;
+    const count = viewEntries.filter((entry) => entry.color === color).length;
     return count ? [{ color, count }] : [];
   });
   const usedComputers = [...new Set(activeCopies.map((copy) => copy.environmentId))];
@@ -223,7 +228,29 @@ export function LibraryProjectsPage() {
               : "Keep the context, repositories and conversations for each thing you’re building together."}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {catalog.authorityId && (archivedCount || showArchived) ? (
+            <ToggleGroup
+              shape="pill"
+              aria-label="Which projects"
+              variant="segmented"
+              className="me-1.5"
+              value={[showArchived ? "archived" : "current"]}
+              onValueChange={(value) => {
+                if (value[0] === "current" || value[0] === "archived")
+                  setShowArchived(value[0] === "archived");
+              }}
+            >
+              <ToggleGroupItem value="current">
+                Current
+                <span className="tabular-nums opacity-60">{liveEntries.length}</span>
+              </ToggleGroupItem>
+              <ToggleGroupItem value="archived">
+                Archived
+                <span className="tabular-nums opacity-60">{archivedCount}</span>
+              </ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
           <Button
             shape="pill"
             size="sm"
@@ -256,37 +283,12 @@ export function LibraryProjectsPage() {
         <>
           {entries.length ? (
             <div className="flex flex-wrap items-center gap-2">
-              <InputGroup shape="pill" className="w-full sm:w-72">
-                <InputGroupAddon>
-                  <SearchIcon aria-hidden />
-                </InputGroupAddon>
-                <InputGroupInput
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape" && query) {
-                      event.preventDefault();
-                      setQuery("");
-                    }
-                  }}
-                  size="sm"
-                  placeholder="Search names, repos, folders"
-                  aria-label="Search projects"
-                />
-                {query ? (
-                  <InputGroupAddon align="inline-end">
-                    <Button
-                      shape="pill"
-                      size="icon-xs"
-                      variant="ghost"
-                      aria-label="Clear search"
-                      onClick={() => setQuery("")}
-                    >
-                      <XIcon />
-                    </Button>
-                  </InputGroupAddon>
-                ) : null}
-              </InputGroup>
+              <LibrarySearch
+                value={query}
+                onChange={setQuery}
+                placeholder="Search names, repos, folders"
+                label="Search projects"
+              />
               <FilterMenu
                 colorCounts={colorCounts}
                 computers={usedComputers}
@@ -353,6 +355,12 @@ export function LibraryProjectsPage() {
             </div>
           ) : null}
           <LibraryErrorNotice error={catalog.query.error} onRetry={catalog.query.refresh} />
+          {showArchived && sections.length ? (
+            <p className="-mt-2 max-w-2xl text-xs text-muted-foreground">
+              Finished or set aside. Conversations stay readable, and these projects stay out of the
+              project pickers until you restore them.
+            </p>
+          ) : null}
           {loading ? (
             <ProjectCollectionSkeleton view={preferences.view} />
           ) : sections.length ? (
@@ -376,36 +384,56 @@ export function LibraryProjectsPage() {
                         color={section.kind === "color" ? section.color : undefined}
                       />
                     )}
-                    {show(section.entries, section.kind === "resting")}
+                    {show(section.entries, showArchived || section.kind === "resting")}
                   </section>
                 );
               })}
             </div>
           ) : catalog.query.error ? null : narrowed ? (
-            archived.length ? null : (
-              <div className="rounded-xl border border-dashed border-border">
-                <Empty size="compact">
-                  <EmptyHeader>
-                    <EmptyTitle>No projects match</EmptyTitle>
-                    <EmptyDescription>
-                      Search looks at names, briefs, repositories, folders and computers.
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
-                      Clear filters
+            <div className="rounded-xl border border-dashed border-border">
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyTitle>No {showArchived ? "archived " : ""}projects match</EmptyTitle>
+                  <EmptyDescription>
+                    Search looks at names, briefs, repositories, folders and computers.
+                  </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent className="flex-row justify-center">
+                  {otherMatches ? (
+                    <Button
+                      shape="pill"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setShowArchived(!showArchived)}
+                    >
+                      Show {otherMatches} {showArchived ? "current" : "archived"}
                     </Button>
-                  </EmptyContent>
-                </Empty>
-              </div>
-            )
+                  ) : null}
+                  <Button shape="pill" size="sm" variant="outline" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </EmptyContent>
+              </Empty>
+            </div>
+          ) : showArchived ? (
+            <div className="rounded-xl border border-dashed border-border">
+              <Empty size="compact">
+                <EmptyHeader>
+                  <EmptyTitle>No archived projects</EmptyTitle>
+                  <EmptyDescription>
+                    Archiving keeps a project’s context and conversations. Restore it whenever you
+                    need it.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            </div>
           ) : archivedCount ? (
             <div className="rounded-xl border border-dashed border-border">
               <Empty size="compact">
                 <EmptyHeader>
                   <EmptyTitle>Everything is archived</EmptyTitle>
                   <EmptyDescription>
-                    Restore a project below to pick it up again, or start something new.
+                    Open Archived to restore a project, or start something new.
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
@@ -445,27 +473,15 @@ export function LibraryProjectsPage() {
               </Empty>
             </div>
           )}
-          {archived.length ? (
-            <FoldedSection
-              // A search that finds archived projects opens the section so the match is visible.
-              key={narrowed ? "narrowed" : "all"}
-              defaultOpen={narrowed}
-              title="Archived"
-              count={archived.length}
-              hint="Finished or set aside. Conversations stay readable, and the project leaves the project pickers until you restore it."
-            >
-              {show(archived, true)}
-            </FoldedSection>
-          ) : null}
         </>
       )}
-      {catalog.authorityId && looseFolders.length && !narrowed ? (
+      {catalog.authorityId && looseFolders.length && !narrowed && !showArchived ? (
         <FoldedSection
           title="Folders not in a project"
           count={looseFolders.length}
           hint="Folders you’ve worked in on your computers. Add one to a project without moving or deleting its files."
         >
-          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+          <ul>
             {looseFolders.map((group) => {
               const ref = group.memberProjectRefs[0];
               const member = group.memberProjects[0];
@@ -473,7 +489,7 @@ export function LibraryProjectsPage() {
               return (
                 <li
                   key={group.projectKey}
-                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3.5 py-2.5"
+                  className={cn(LIBRARY_ROW, "flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2")}
                 >
                   <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground dark:bg-accent">
                     {member ? (
@@ -577,22 +593,20 @@ function SectionHeading({
   );
 }
 
-/** A section that stays out of the way until asked for, like archived projects and loose folders. */
+/** A section that stays out of the way until asked for, like folders not yet in a project. */
 function FoldedSection({
   title,
   count,
   hint,
-  defaultOpen = false,
   children,
 }: {
   readonly title: string;
   readonly count: number;
   readonly hint: string;
-  readonly defaultOpen?: boolean;
   readonly children: ReactNode;
 }) {
   return (
-    <details open={defaultOpen} className="group/fold space-y-2.5">
+    <details className="group/fold space-y-2.5">
       <summary className="-mx-2 flex w-fit max-w-full cursor-pointer list-none items-baseline gap-2 rounded-full px-2 py-1 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon
           aria-hidden

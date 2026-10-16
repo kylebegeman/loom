@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { SearchIcon, XIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import {
   Dialog,
   DialogPopup,
@@ -54,6 +56,53 @@ export function LibraryField({
   );
 }
 
+/** The pill search field the Library lists share. Escape clears it before it leaves the field. */
+export function LibrarySearch({
+  value,
+  onChange,
+  placeholder,
+  label,
+}: {
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  readonly placeholder: string;
+  readonly label: string;
+}) {
+  return (
+    <InputGroup shape="pill" className="w-full sm:w-72">
+      <InputGroupAddon>
+        <SearchIcon aria-hidden />
+      </InputGroupAddon>
+      <InputGroupInput
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape" && value) {
+            event.preventDefault();
+            onChange("");
+          }
+        }}
+        size="sm"
+        placeholder={placeholder}
+        aria-label={label}
+      />
+      {value ? (
+        <InputGroupAddon align="inline-end">
+          <Button
+            shape="pill"
+            size="icon-xs"
+            variant="ghost"
+            aria-label="Clear search"
+            onClick={() => onChange("")}
+          >
+            <XIcon />
+          </Button>
+        </InputGroupAddon>
+      ) : null}
+    </InputGroup>
+  );
+}
+
 export function LibraryErrorNotice({
   error,
   onRetry,
@@ -91,6 +140,37 @@ export function LibrarySection({
   return (
     <section aria-label={title} className="flex min-w-0 flex-col gap-2">
       <div className="flex min-h-7 items-center justify-between gap-3">
+        <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
+          {title}
+          {count ? (
+            <span className="text-xs font-normal tabular-nums text-muted-foreground">{count}</span>
+          ) : null}
+        </h2>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/**
+ * One titled card in the project page's side rail. The body sets its own padding, so lists run edge to
+ * edge under the header while prose keeps the card's inset.
+ */
+export function LibraryPanel({
+  title,
+  count,
+  action,
+  children,
+}: {
+  readonly title: string;
+  readonly count?: number | undefined;
+  readonly action?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section aria-label={title} className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5 ps-3.5 pe-2">
         <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
           {title}
           {count ? (

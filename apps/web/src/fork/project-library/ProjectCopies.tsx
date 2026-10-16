@@ -10,6 +10,7 @@ import {
   ChevronRightIcon,
   EllipsisIcon,
   MessageSquarePlusIcon,
+  MonitorIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
@@ -18,7 +19,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { LIBRARY_ROW, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { ComputerLabel, PathLabel } from "./ProjectIdentity";
 
@@ -117,20 +118,27 @@ export function ProjectCopies({
       toastManager.add({ type: "success", title: "Path copied", description: path }),
   });
   return (
-    <LibrarySection
+    <LibraryPanel
       title="On your computers"
       count={active.length}
       action={canAct && active.length ? <GetCopyMenu label="Add" onGetCopy={onGetCopy} /> : null}
     >
-      <LibraryErrorNotice error={error} onRetry={onRetry} />
+      {error ? (
+        <div className="px-3.5">
+          <LibraryErrorNotice error={error} onRetry={onRetry} />
+        </div>
+      ) : null}
       {active.length ? (
-        <ul>
+        <ul className="divide-y divide-border border-t border-border">
           {active.map((copy) => {
             const online = hostConnected(copy.environmentId);
             const status = copyStatus(copy, online);
             const label = hostLabel(copy.environmentId);
             return (
-              <li key={copy.id} className={cn(LIBRARY_ROW, "space-y-1 py-2 pe-1")}>
+              <li
+                key={copy.id}
+                className="space-y-1 py-2.5 ps-3.5 pe-2 transition-colors duration-150 hover:bg-accent/40"
+              >
                 <div className="flex min-w-0 items-center gap-2">
                   <ComputerLabel
                     environmentId={copy.environmentId}
@@ -212,19 +220,24 @@ export function ProjectCopies({
           })}
         </ul>
       ) : loading ? (
-        <p role="status" className="text-xs text-muted-foreground">
+        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
           Checking your computers...
         </p>
       ) : error ? null : (
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            Not on a computer right now. Get a copy when you want to work and remove it when you're
-            done. Conversations stay either way.
-          </p>
+        <div className="flex flex-col items-start gap-3 px-3.5 pb-3.5">
+          <div className="flex items-start gap-2.5">
+            <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
+              <MonitorIcon aria-hidden className="size-3.5" />
+            </span>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Not on a computer right now. Get a copy when you want to work and remove it when
+              you're done. Conversations stay either way.
+            </p>
+          </div>
           {canAct ? <GetCopyMenu variant="outline" onGetCopy={onGetCopy} /> : null}
         </div>
       )}
-    </LibrarySection>
+    </LibraryPanel>
   );
 }
 
@@ -251,13 +264,8 @@ export function ProjectHistory({
   const events = libraryProjectTimeline(project, copies);
   const anyRemoved = events.some((event) => event.kind === "copy-removed");
   return (
-    <details className="group/fold">
-      <summary
-        className={cn(
-          LIBRARY_ROW,
-          "flex min-h-8 cursor-pointer list-none items-center gap-2 py-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden",
-        )}
-      >
+    <details className="group/fold overflow-hidden rounded-xl border border-border bg-card">
+      <summary className="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3.5 py-1.5 outline-none transition-colors duration-150 hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
         <span className="text-sm font-semibold tracking-tight">History</span>
         <span className="text-xs tabular-nums text-muted-foreground">{events.length}</span>
         <ChevronRightIcon
@@ -265,7 +273,7 @@ export function ProjectHistory({
           className="ms-auto size-3.5 text-muted-foreground transition-transform duration-150 group-open/fold:rotate-90"
         />
       </summary>
-      <ol className="space-y-3 pt-2">
+      <ol className="space-y-3 border-t border-border px-3.5 py-3">
         {events.map((event) => (
           <li
             key={`${event.kind}:${"copy" in event ? event.copy.id : ""}`}
@@ -323,7 +331,7 @@ export function ProjectHistory({
         ))}
       </ol>
       {anyRemoved ? (
-        <p className="pt-3 text-xs text-muted-foreground">
+        <p className="px-3.5 pb-3 text-xs text-muted-foreground">
           Removing a copy never touches conversations. Folders you brought stay on disk.
         </p>
       ) : null}

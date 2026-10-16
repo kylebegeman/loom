@@ -1,20 +1,12 @@
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
-import type {
-  LibraryProject,
-  LibraryThreadSummary,
-  LibraryWorkingCopy,
-} from "@t3tools/contracts/fork";
+import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   ArchiveIcon,
-  ArrowRightIcon,
   CheckIcon,
   EllipsisIcon,
-  FolderGit2Icon,
-  MessageSquareIcon,
   MoonIcon,
   PencilLineIcon,
   PlusIcon,
@@ -36,7 +28,7 @@ import {
 } from "./state";
 import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LIBRARY_ROW, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import { LIBRARY_ROW, LibraryErrorNotice } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { libraryCopyReadiness } from "./copyChoice";
@@ -44,13 +36,8 @@ import { NewConversationDialog } from "./NewConversationDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
 import { ProjectResources } from "./ProjectResources";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
-import {
-  ComputerLabel,
-  ProjectColorPicker,
-  ProjectTile,
-  projectColorStyle,
-} from "./ProjectIdentity";
-import { ProjectWash } from "./ProjectCollection";
+import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
+import { ProjectConversations } from "./ProjectConversations";
 import {
   isRestingSince,
   libraryLocalProjectIcon,
@@ -58,7 +45,6 @@ import {
   type LocalProjectIcon,
 } from "./projectList";
 
-const RECENT_CONVERSATIONS = 6;
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
 const LONG_BRIEF_CHARACTERS = 320;
 const LONG_BRIEF_LINES = 4;
@@ -197,10 +183,11 @@ function ProjectView({
               error={library.threads.error}
               onRetry={library.threads.refresh}
               hostLabel={hostLabel}
+              hostConnected={hostConnected}
             />
           )}
         </div>
-        <aside aria-label="Project details" className="flex min-w-0 flex-col gap-8">
+        <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
           <ProjectCopies
             project={project}
             copies={copies}
@@ -808,150 +795,5 @@ function ProjectSetup({
         ))}
       </ol>
     </section>
-  );
-}
-
-/** The latest conversation leads, since picking it back up is the most common reason to be here. */
-function ProjectConversations({
-  project,
-  threads,
-  loading,
-  error,
-  onRetry,
-  hostLabel,
-}: {
-  readonly project: LibraryProject;
-  readonly threads: readonly LibraryThreadSummary[];
-  readonly loading: boolean;
-  readonly error: string | null;
-  readonly onRetry: () => void;
-  readonly hostLabel: (id: EnvironmentId) => string;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const [latest, ...rest] = threads;
-  const shown = showAll ? rest : rest.slice(0, RECENT_CONVERSATIONS - 1);
-  return (
-    <LibrarySection
-      title="Conversations"
-      count={threads.length}
-      action={
-        threads.length > RECENT_CONVERSATIONS ? (
-          <Button
-            shape="pill"
-            size="xs"
-            variant="ghost"
-            onClick={() => setShowAll((value) => !value)}
-          >
-            {showAll ? "Show recent" : `Show all ${threads.length}`}
-          </Button>
-        ) : null
-      }
-    >
-      <LibraryErrorNotice error={error} onRetry={onRetry} />
-      {latest ? (
-        <Link
-          to="/library/conversations/$conversationId"
-          params={{ conversationId: latest.id }}
-          className="group/card relative isolate -mx-3 flex items-center gap-4 rounded-xl p-3 outline-none transition-colors duration-200 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <ProjectWash />
-          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
-            <MessageSquareIcon aria-hidden className="size-4.5" />
-          </span>
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Pick up where you left off · {formatRelativeTimeLabel(latest.updatedAt)}
-            </p>
-            <p className="truncate text-base font-semibold tracking-tight">
-              {latest.title || "Untitled conversation"}
-            </p>
-            <ConversationMeta project={project} thread={latest} hostLabel={hostLabel} />
-          </div>
-          <ArrowRightIcon
-            aria-hidden
-            className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
-          />
-        </Link>
-      ) : loading ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Loading conversations...
-        </p>
-      ) : error ? null : (
-        <p className="text-xs text-muted-foreground">
-          No conversations were saved in this project.
-        </p>
-      )}
-      {shown.length ? (
-        <ul className="pt-1">
-          {shown.map((thread) => (
-            <li key={thread.id}>
-              <Link
-                to="/library/conversations/$conversationId"
-                params={{ conversationId: thread.id }}
-                className={cn(
-                  LIBRARY_ROW,
-                  "-mx-3 flex items-center gap-3 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                )}
-              >
-                <MessageSquareIcon
-                  aria-hidden
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                />
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {thread.title || "Untitled conversation"}
-                </span>
-                <ConversationMeta
-                  project={project}
-                  thread={thread}
-                  hostLabel={hostLabel}
-                  className="hidden max-w-1/2 sm:flex"
-                />
-                <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                  {formatRelativeTimeLabel(thread.updatedAt)}
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </LibrarySection>
-  );
-}
-
-/** Where a conversation ran and what it was about, when it was about one repository. */
-function ConversationMeta({
-  project,
-  thread,
-  hostLabel,
-  className,
-}: {
-  readonly project: LibraryProject;
-  readonly thread: LibraryThreadSummary;
-  readonly hostLabel: (id: EnvironmentId) => string;
-  readonly className?: string;
-}) {
-  const scope =
-    thread.resourceIds.length === 1
-      ? project.resources.find((resource) => resource.id === thread.resourceIds[0])?.title
-      : null;
-  return (
-    <span className={cn("flex min-w-0 items-center gap-2", className)}>
-      <ComputerLabel
-        environmentId={thread.environmentId}
-        label={hostLabel(thread.environmentId)}
-        className="min-w-0 shrink"
-      />
-      {scope ? (
-        <span className="inline-flex h-5 min-w-0 items-center gap-1 rounded-full bg-muted px-2 text-2xs font-medium text-foreground/80 dark:bg-accent">
-          <FolderGit2Icon aria-hidden className="size-3 shrink-0" />
-          <span className="truncate">{scope}</span>
-        </span>
-      ) : null}
-      {thread.archived ? (
-        <span className="inline-flex h-5 shrink-0 items-center rounded-full bg-muted px-2 text-2xs font-medium text-muted-foreground dark:bg-accent">
-          Archived
-        </span>
-      ) : null}
-    </span>
   );
 }
