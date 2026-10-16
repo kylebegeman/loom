@@ -67,7 +67,8 @@ prepares the project repositories together under one parent folder. Editing the 
 applies to new conversations; existing conversations keep the context they started with.
 Each copy on a connected computer shows its branch, how far it is ahead of or behind its
 upstream as of the last fetch, and how many files are uncommitted; **Pull** appears when a
-copy is behind and has no local changes.
+copy is behind and has no local changes. When a computer is offline, its copies show the last
+state it reported and how old that report is.
 
 The command palette reaches projects from anywhere. Type part of a project's name to open it,
 or use **Go to project...**, **New conversation in...** and **Open project brief...** to pick

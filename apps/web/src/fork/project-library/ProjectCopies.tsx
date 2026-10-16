@@ -5,6 +5,7 @@ import {
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
+  effectiveLibraryCopyHealth,
   libraryActiveCopies,
   libraryProjectTimeline,
   libraryRepositoryCanPull,
@@ -68,16 +69,74 @@ const STATUS_DOT: Record<CopyStatus["tone"], string> = {
   warning: "bg-warning",
 };
 
+const repositoryTitle = (project: LibraryProject, resourceId: string) =>
+  project.resources.find((resource) => resource.id === resourceId)?.title ?? resourceId;
+
+/**
+ * The last health the copy's computer published to the Library, aged by when the Library last
+ * heard from that computer. Renders nothing when the computer never reported.
+ */
+function PublishedCopyHealth({
+  project,
+  copy,
+  lastSeenAt,
+  offlineLabel,
+}: {
+  readonly project: LibraryProject;
+  readonly copy: LibraryWorkingCopy;
+  readonly lastSeenAt: string | undefined;
+  /** The computer's name when it is not connected here. */
+  readonly offlineLabel: string | null;
+}) {
+  const effective = effectiveLibraryCopyHealth({ copy, live: null, lastSeenAt });
+  if (effective === null) return null;
+  const { repositories } = effective.health;
+  const named = repositories.length > 1;
+  return (
+    <div className="space-y-0.5">
+      {repositories.map((repository, index) => (
+        <p
+          key={repository.resourceId}
+          className={cn(
+            "min-w-0 truncate text-xs",
+            repository.error ? "text-warning-foreground" : "text-muted-foreground",
+          )}
+        >
+          {named ? (
+            <span className="text-foreground">
+              {repositoryTitle(project, repository.resourceId)} ·{" "}
+            </span>
+          ) : null}
+          {libraryRepositoryHealthSummary(repository)}
+          {index === repositories.length - 1 ? (
+            <span>
+              {" "}
+              · as of {formatRelativeTimeLabel(effective.asOf)}
+              {offlineLabel === null ? null : ` · ${offlineLabel} offline`}
+            </span>
+          ) : null}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 /**
  * Live branch and change counts for a ready copy, read on its own computer. Only rendered when
- * that computer is connected and advertises copy health, so older computers show nothing.
+ * that computer is connected and advertises copy health, so older computers show nothing. Until
+ * the live read arrives, or when it fails, the last published health stands in.
  */
 function CopyHealth({
   project,
   copy,
+  published,
+  lastSeenAt,
 }: {
   readonly project: LibraryProject;
   readonly copy: LibraryWorkingCopy;
+  /** The Library keeps published health, so it can stand in for the live read. */
+  readonly published: boolean;
+  readonly lastSeenAt: string | undefined;
 }) {
   const health = useEnvironmentQuery(
     projectLibrary.copyHealth({
@@ -123,6 +182,19 @@ function CopyHealth({
     health.refresh();
   };
   const data = health.data;
+  if (
+    data === null &&
+    published &&
+    effectiveLibraryCopyHealth({ copy, live: null, lastSeenAt }) !== null
+  )
+    return (
+      <PublishedCopyHealth
+        project={project}
+        copy={copy}
+        lastSeenAt={lastSeenAt}
+        offlineLabel={null}
+      />
+    );
   if (data === null)
     return health.error ? (
       <p className="text-xs text-muted-foreground">Could not check this copy.</p>
@@ -135,9 +207,7 @@ function CopyHealth({
   return (
     <div className="space-y-0.5">
       {data.repositories.map((repository, index) => {
-        const title =
-          project.resources.find((resource) => resource.id === repository.resourceId)?.title ??
-          repository.resourceId;
+        const title = repositoryTitle(project, repository.resourceId);
         const cwd = copy.repositories.find(
           (entry) => entry.resourceId === repository.resourceId,
         )?.path;
@@ -227,6 +297,8 @@ export function ProjectCopies({
   canStart,
   hostLabel,
   hostConnected,
+  lastSeenAt,
+  publishedHealth,
   onGetCopy,
   onStart,
   onRemove,
@@ -240,6 +312,10 @@ export function ProjectCopies({
   readonly canStart: boolean;
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly hostConnected: (id: EnvironmentId) => boolean;
+  /** When the Library last heard from a computer. */
+  readonly lastSeenAt: (id: EnvironmentId) => string | undefined;
+  /** The Library keeps the health each computer publishes for its copies. */
+  readonly publishedHealth: boolean;
   readonly onGetCopy: (request: CopyRequest) => void;
   readonly onStart: (copy: LibraryWorkingCopy) => void;
   readonly onRemove: (copy: LibraryWorkingCopy) => void;
@@ -349,8 +425,20 @@ export function ProjectCopies({
                   </span>
                 </div>
                 <PathLabel path={copy.rootPath} className="-ms-1.5" />
-                {online && copy.state === "ready" && supportsHealth(copy.environmentId) ? (
-                  <CopyHealth project={project} copy={copy} />
+                {copy.state !== "ready" ? null : online && supportsHealth(copy.environmentId) ? (
+                  <CopyHealth
+                    project={project}
+                    copy={copy}
+                    published={publishedHealth}
+                    lastSeenAt={lastSeenAt(copy.environmentId)}
+                  />
+                ) : publishedHealth ? (
+                  <PublishedCopyHealth
+                    project={project}
+                    copy={copy}
+                    lastSeenAt={lastSeenAt(copy.environmentId)}
+                    offlineLabel={online ? null : label}
+                  />
                 ) : null}
                 {copy.projectRevision !== project.revision && copy.state === "ready" ? (
                   <p className="text-xs text-muted-foreground">

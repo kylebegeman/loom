@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { LibraryRepositoryHealth } from "@t3tools/contracts/fork";
-import { libraryRepositoryCanPull, libraryRepositoryHealthSummary } from "./library-copy-health.ts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type {
+  LibraryCopyHealth,
+  LibraryRepositoryHealth,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
+import {
+  effectiveLibraryCopyHealth,
+  libraryRepositoryCanPull,
+  libraryRepositoryHealthSummary,
+} from "./library-copy-health.ts";
 
 const base: LibraryRepositoryHealth = {
   resourceId: "web",
@@ -72,5 +81,88 @@ describe("libraryRepositoryCanPull", () => {
     expect(libraryRepositoryCanPull(base)).toBe(false);
     expect(libraryRepositoryCanPull(noUpstream)).toBe(false);
     expect(libraryRepositoryCanPull(repo({ behind: 3, error: "unreadable" }))).toBe(false);
+  });
+});
+
+describe("effectiveLibraryCopyHealth", () => {
+  const environmentId = EnvironmentId.make("macbook");
+  const copy: LibraryWorkingCopy = {
+    id: "copy",
+    projectId: "project",
+    projectRevision: 1,
+    environmentId,
+    rootPath: "/work/project",
+    repositories: [
+      {
+        resourceId: "web",
+        path: "/work/project/web",
+        localProjectId: ProjectId.make("local-web"),
+        head: null,
+        branch: "main",
+      },
+    ],
+    ownership: "managed",
+    state: "ready",
+    createdAt: "2026-10-16T08:00:00.000Z",
+    updatedAt: "2026-10-16T08:00:00.000Z",
+  };
+  const healthAt = (checkedAt: string, uncommittedFiles = 0): LibraryCopyHealth => ({
+    copyId: copy.id,
+    environmentId,
+    checkedAt,
+    repositories: [{ ...base, uncommittedFiles, checkedAt }],
+  });
+  const published = healthAt("2026-10-16T09:00:00.000Z", 2);
+
+  it("prefers live health from the connected computer", () => {
+    const live = healthAt("2026-10-16T12:00:00.000Z");
+    expect(
+      effectiveLibraryCopyHealth({
+        copy: { ...copy, health: published },
+        live,
+        lastSeenAt: "2026-10-16T12:00:00.000Z",
+      }),
+    ).toEqual({ health: live, source: "live", asOf: live.checkedAt });
+  });
+
+  it("ages the published report by when the Library last heard from the computer", () => {
+    expect(
+      effectiveLibraryCopyHealth({
+        copy: { ...copy, health: published },
+        live: null,
+        lastSeenAt: "2026-10-16T11:00:00.000Z",
+      }),
+    ).toEqual({ health: published, source: "published", asOf: "2026-10-16T11:00:00.000Z" });
+    expect(
+      effectiveLibraryCopyHealth({ copy: { ...copy, health: published }, live: null })?.asOf,
+    ).toBe(published.checkedAt);
+    expect(
+      effectiveLibraryCopyHealth({
+        copy: { ...copy, health: published },
+        live: null,
+        lastSeenAt: "2026-10-16T08:30:00.000Z",
+      })?.asOf,
+    ).toBe(published.checkedAt);
+  });
+
+  it("shows nothing for a computer that never reported", () => {
+    expect(effectiveLibraryCopyHealth({ copy, live: null, lastSeenAt: published.checkedAt })).toBe(
+      null,
+    );
+    expect(
+      effectiveLibraryCopyHealth({
+        copy: { ...copy, health: { ...published, repositories: [] } },
+        live: null,
+      }),
+    ).toBe(null);
+  });
+
+  it("ignores health that describes another copy", () => {
+    expect(
+      effectiveLibraryCopyHealth({
+        copy: { ...copy, health: { ...published, copyId: "other" } },
+        live: { ...published, environmentId: EnvironmentId.make("other-computer") },
+      }),
+    ).toBe(null);
   });
 });

@@ -1,4 +1,8 @@
-import type { LibraryRepositoryHealth } from "@t3tools/contracts/fork";
+import type {
+  LibraryCopyHealth,
+  LibraryRepositoryHealth,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 
 const SHORT_COMMIT_LENGTH = 7;
 const ERROR_LABELS: Record<NonNullable<LibraryRepositoryHealth["error"]>, string> = {
@@ -40,4 +44,46 @@ export function libraryRepositoryCanPull(health: LibraryRepositoryHealth): boole
     (health.behind ?? 0) > 0 &&
     health.uncommittedFiles === 0
   );
+}
+
+/** The copy health worth showing, and how old it is. */
+export interface LibraryEffectiveCopyHealth {
+  readonly health: LibraryCopyHealth;
+  /** `live` was just read on the connected computer. `published` is the Library's last report. */
+  readonly source: "live" | "published";
+  /** When this health was last known to hold. */
+  readonly asOf: string;
+}
+
+const describesCopy = (health: LibraryCopyHealth, copy: LibraryWorkingCopy) =>
+  health.copyId === copy.id && health.environmentId === copy.environmentId;
+
+/**
+ * Live health from the copy's connected computer wins. Otherwise the last report the computer
+ * published to the Library, aged by when the Library last heard from that computer. A copy whose
+ * computer never reported has no health, which is never the same as clean.
+ */
+export function effectiveLibraryCopyHealth(input: {
+  readonly copy: LibraryWorkingCopy;
+  readonly live: LibraryCopyHealth | null;
+  /** `LibraryComputer.lastSeenAt` for the copy's computer, when the Library knows it. */
+  readonly lastSeenAt?: string | undefined;
+}): LibraryEffectiveCopyHealth | null {
+  const { copy, live, lastSeenAt } = input;
+  if (live !== null && describesCopy(live, copy))
+    return { health: live, source: "live", asOf: live.checkedAt };
+  const published = copy.health;
+  if (
+    published === undefined ||
+    !describesCopy(published, copy) ||
+    published.repositories.length === 0
+  )
+    return null;
+  // A computer rereads its copies while it is in touch with the Library and reports any change,
+  // so its last report still held when the Library last heard from it.
+  const asOf =
+    lastSeenAt !== undefined && Date.parse(lastSeenAt) > Date.parse(published.checkedAt)
+      ? lastSeenAt
+      : published.checkedAt;
+  return { health: published, source: "published", asOf };
 }
