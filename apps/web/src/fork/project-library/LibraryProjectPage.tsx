@@ -51,6 +51,7 @@ import { ProjectProfile } from "./ProjectProfile";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
+import { ProjectTimeline } from "./ProjectTimeline";
 import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
 
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
@@ -248,15 +249,25 @@ function ProjectView({
               onSave={(profile) => update.save({ profile })}
             />
           ) : null}
-          <ProjectHistory
-            project={project}
-            copies={copies}
+          <ProjectTimeline
+            projectId={project.id}
             authorityId={authorityId}
             connected={library.connected}
-            canAct={canWork}
+            capabilities={library.environment?.serverConfig?.environment.capabilities}
             hostLabel={hostLabel}
             hostConnected={hostConnected}
-            onReuse={setCopyRequest}
+            fallback={
+              <ProjectHistory
+                project={project}
+                copies={copies}
+                authorityId={authorityId}
+                connected={library.connected}
+                canAct={canWork}
+                hostLabel={hostLabel}
+                hostConnected={hostConnected}
+                onReuse={setCopyRequest}
+              />
+            }
           />
         </aside>
       </div>
