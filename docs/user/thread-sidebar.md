@@ -9,6 +9,17 @@ The app opens with your threads. Use the existing project filter above the threa
 to narrow it to one project, or choose **All projects** to see every thread. Filtering
 does not move conversations or change the computer they run on.
 
+Switch the sidebar between **Threads** and **Projects** with the toggle above the list. The
+Projects view groups the same threads under their Library project, so work on the same project
+from two computers sits under one heading, and each thread from another computer shows which
+one it runs on. Threads that need you or are working come first, and settled threads stay
+folded at the end of each group. Threads in folders that no project claims appear under **Not
+in a project**. A project's heading starts a new conversation in it or opens its page. Without
+a Library connection, threads are grouped by repository instead. Each view keeps its own scroll
+position, and the project filter applies to both. **Switch sidebar view** in the command
+palette changes view; bind `loom.navigation.toggleView` in **Settings → Keybindings** to give it
+a shortcut.
+
 **Projects** in the sidebar utility row opens project management separately. Use
 **Settings → Projects** for project settings. Returning from management restores the
 conversation you left.
