@@ -67,6 +67,8 @@ export interface TimelineThread {
   readonly summary: LibraryThreadSummary;
   readonly settledAt: string | null;
   readonly archivedAt: string | null;
+  /** When the latest run finished, if it failed. */
+  readonly failedAt: string | null;
   readonly pullRequests: ReadonlyArray<TimelinePullRequest>;
 }
 
@@ -128,11 +130,19 @@ function pullRequestsOf(thread: {
 }
 
 export const timelineThread = (archive: LibraryThreadArchive): TimelineThread => {
-  const { thread } = archive.projection;
+  const { thread, runs } = archive.projection;
+  const latestRun = runs.reduce<(typeof runs)[number] | undefined>(
+    (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
+    undefined,
+  );
   return {
     summary: archive.summary,
     settledAt: thread.settledAt === null ? null : DateTime.formatIso(thread.settledAt),
     archivedAt: thread.archivedAt === null ? null : DateTime.formatIso(thread.archivedAt),
+    failedAt:
+      latestRun?.status === "failed" && latestRun.completedAt !== null
+        ? DateTime.formatIso(latestRun.completedAt)
+        : null,
     pullRequests: pullRequestsOf(thread),
   };
 };
@@ -162,7 +172,7 @@ export function threadTimeline(
     conversationEntry("conversation-settled", timeOf(summary.updatedAt, next.settledAt));
   // Keyed on the transition, so a run that fails again after recovering is recorded again.
   if (summary.status === "failed" && before?.status !== "failed")
-    conversationEntry("conversation-failed", timeOf(summary.updatedAt));
+    conversationEntry("conversation-failed", timeOf(summary.updatedAt, next.failedAt));
   if (summary.archived && before?.archived !== true)
     conversationEntry("conversation-archived", timeOf(summary.updatedAt, next.archivedAt));
   const known = new Map(previous?.pullRequests.map((link) => [link.url, link]));
@@ -296,11 +306,16 @@ export const recordProjectTimeline = Effect.fnUntraced(function* (
 });
 
 /**
- * Rebuilds approximate entries from rows saved before timelines existed. Runs once, inside the
- * migration that introduces them. Records it cannot read are skipped rather than failing startup.
+ * Rebuilds approximate entries from rows saved before timelines existed, inside the migration that
+ * introduces them. Does nothing once any entry exists, so running it again (say, after the
+ * migration is renumbered) never duplicates. Records it cannot read are skipped rather than
+ * failing startup.
  */
 export const backfillTimeline = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const recorded =
+    yield* sql`SELECT 1 FROM fork_library_events WHERE event_type LIKE 'timeline.%' LIMIT 1`;
+  if (recorded.length > 0) return;
   const drafts: LibraryTimelineDraft[] = [];
   // Pull requests sit on the thread object, which the visible-history header keeps uncompressed.
   // Archives saved before that index existed are still plain JSON on the thread row.
@@ -322,6 +337,7 @@ export const backfillTimeline = Effect.gen(function* () {
         summary: summary.value,
         settledAt: Option.isSome(thread) ? (thread.value.settledAt ?? null) : null,
         archivedAt: Option.isSome(thread) ? (thread.value.archivedAt ?? null) : null,
+        failedAt: null,
         pullRequests: Option.isSome(thread)
           ? pullRequestsOf({
               linkedPullRequest: thread.value.linkedPullRequest,

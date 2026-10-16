@@ -108,8 +108,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_timeline", {
-    description:
-      "Read what happened in a project, newest first: conversations started, settled, failed or archived, pull requests linked, merged, closed or failing checks, brief revisions and copies. Pass nextBefore as before for older entries.",
+    description: `Read what happened in a project, newest first, up to 200 entries a page. Optional kinds filters to: ${Library.LIBRARY_TIMELINE_KINDS.join(", ")}. Pass nextBefore as before for older entries. Entries marked approximate were rebuilt from records saved before the timeline existed.`,
     parameters: Library.LibraryTimelineRequest,
     success: Library.LibraryTimelinePage,
     failure,

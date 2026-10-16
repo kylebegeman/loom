@@ -299,6 +299,24 @@ describe("Library project timeline", () => {
         expect((yield* timeline.page({ projectId: "missing" }).pipe(Effect.flip)).reason).toBe(
           "not-found",
         );
+        const all = yield* timeline.page({ projectId: project.id });
+        expect(all.entries).toHaveLength(2);
+        // Nothing precedes the first sequence; a cursor past the newest reads the newest page.
+        expect(yield* timeline.page({ projectId: project.id, before: 1 })).toEqual({
+          entries: [],
+          nextBefore: null,
+        });
+        expect(yield* timeline.page({ projectId: project.id, before: 1_000_000 })).toEqual(all);
+        // A page that ends exactly at the oldest entry has no next page.
+        expect((yield* timeline.page({ projectId: project.id, limit: 2 })).nextBefore).toBeNull();
+        const newest = yield* timeline.page({ projectId: project.id, limit: 1 });
+        expect(newest.nextBefore).toBe(all.entries[0]!.sequence);
+        expect(
+          yield* timeline.page({ projectId: project.id, before: newest.nextBefore!, limit: 1 }),
+        ).toEqual({ entries: [all.entries[1]], nextBefore: null });
+        expect(
+          (yield* timeline.page({ projectId: project.id, limit: 0 }).pipe(Effect.flip)).reason,
+        ).toBe("invalid");
       }),
     ),
   );
@@ -347,6 +365,128 @@ describe("Library project timeline", () => {
           recorded.entries.map((entry) => entry.kind).toSorted(),
         );
         expect(rebuilt.entries.every((entry) => entry.approximate === true)).toBe(true);
+        // Running it again, as a renumbered migration would, adds nothing.
+        yield* LibraryTimeline.backfillTimeline;
+        expect((yield* timeline.page({ projectId: project.id })).entries).toEqual(rebuilt.entries);
+      }),
+    ),
+  );
+
+  it.effect("records a closed pull request once with its close time", () =>
+    run(({ project, timeline, ingest, replay }) =>
+      Effect.gen(function* () {
+        const started = yield* conversation(project, 1);
+        yield* ingest(revise(started, 1, {}, { pullRequests: [link(null)] }));
+        const closed = link({ state: "closed", closedAt: "2026-10-16T10:04:00.000Z" });
+        yield* ingest(revise(started, 4, {}, { pullRequests: [closed] }));
+        expect(yield* replay).toBe(0);
+        // A later sync of the same closed pull request is not news.
+        const resynced = link({
+          state: "closed",
+          closedAt: "2026-10-16T10:04:00.000Z",
+          syncedAt: "2026-10-16T10:06:00.000Z",
+        });
+        yield* ingest(revise(started, 6, {}, { pullRequests: [resynced] }));
+        const page = yield* timeline.page({
+          projectId: project.id,
+          kinds: ["pull-request-linked", "pull-request-closed"],
+        });
+        expect(
+          page.entries.map((entry) => [
+            entry.kind,
+            entry.at,
+            "pullRequest" in entry ? entry.pullRequest.url : null,
+          ]),
+        ).toEqual([
+          ["pull-request-closed", "2026-10-16T10:04:00.000Z", pullRequestUrl],
+          ["pull-request-linked", "2026-10-16T10:02:00.000Z", pullRequestUrl],
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("ignores stale snapshots and keeps each computer's conversation separate", () =>
+    run(({ project, library, ingest, kinds }) =>
+      Effect.gen(function* () {
+        const started = yield* conversation(project, 1);
+        yield* ingest(revise(started, 3, { status: "failed" }));
+        // Older snapshots arriving late change nothing, including ones that look like news.
+        yield* library.registerThread({
+          requestId: "late",
+          thread: revise(started, 1, { status: "running", settled: true, archived: true }),
+        });
+        expect(yield* kinds()).toEqual(["conversation-failed", "conversation-started"]);
+        // The same thread id on another computer is a different conversation.
+        const elsewhere = EnvironmentId.make("other-computer");
+        yield* library.registerThread({
+          requestId: "elsewhere",
+          thread: revise(
+            {
+              ...started,
+              summary: {
+                ...started.summary,
+                id: "conversation-elsewhere",
+                environmentId: elsewhere,
+                workingCopyId: null,
+              },
+            },
+            2,
+          ),
+        });
+        expect(yield* kinds()).toEqual([
+          "conversation-started",
+          "conversation-failed",
+          "conversation-started",
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("records nothing for a write that fails and rolls back", () =>
+    run(({ project, library, kinds }) =>
+      Effect.gen(function* () {
+        const valid = yield* conversation(project, 2);
+        const invalid = {
+          ...valid,
+          summary: { ...valid.summary, environmentId: EnvironmentId.make("wrong") },
+        };
+        const failure = yield* library
+          .ingestHistory({
+            requestId: "batch",
+            sourceEnvironmentId: source,
+            journalId: "batch-journal",
+            fromSequence: 0,
+            entries: [
+              { sequence: 1, thread: valid },
+              { sequence: 2, thread: invalid },
+            ],
+          })
+          .pipe(Effect.flip);
+        expect(failure.reason).toBe("invalid");
+        expect(yield* kinds()).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("dates a failure by when its run finished, not when the Library heard", () =>
+    run(({ project }) =>
+      Effect.gen(function* () {
+        const { summary } = yield* conversation(project, 1);
+        const before = {
+          summary,
+          settledAt: null,
+          archivedAt: null,
+          failedAt: null,
+          pullRequests: [],
+        };
+        const drafts = LibraryTimeline.threadTimeline(before, {
+          ...before,
+          summary: { ...summary, status: "failed", updatedAt: "2026-10-16T10:09:00.000Z" },
+          failedAt: "2026-10-16T10:04:00.000Z",
+        });
+        expect(drafts.map(({ entry }) => [entry.kind, entry.at])).toEqual([
+          ["conversation-failed", "2026-10-16T10:04:00.000Z"],
+        ]);
       }),
     ),
   );

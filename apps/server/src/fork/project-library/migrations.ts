@@ -53,7 +53,7 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
       "ProjectTimeline",
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        yield* sql`CREATE INDEX fork_library_events_aggregate ON fork_library_events(aggregate_id, sequence)`;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_library_events_aggregate ON fork_library_events(aggregate_id, sequence)`;
         yield* backfillTimeline;
       }),
     ],
