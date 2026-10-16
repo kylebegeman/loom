@@ -1,10 +1,19 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_COPY_HEALTH_FEATURE,
+  type LibraryProject,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import {
   libraryActiveCopies,
   libraryProjectTimeline,
+  libraryRepositoryCanPull,
+  libraryRepositoryHealthSummary,
+  supportsLoomFeature,
   type LibraryProjectEvent,
 } from "@t3tools/client-runtime/fork";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useState } from "react";
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -18,10 +27,15 @@ import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { cn } from "~/lib/utils";
+import { useEnvironments } from "~/state/environments";
+import { useEnvironmentQuery } from "~/state/query";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { ComputerLabel, PathLabel } from "./ProjectIdentity";
+import { projectLibrary, useLibraryPermission } from "./state";
 
 export type CopyRequest = {
   readonly strategy: "clone" | "reuse";
@@ -52,6 +66,90 @@ const STATUS_DOT: Record<CopyStatus["tone"], string> = {
   quiet: "bg-muted-foreground/45",
   warning: "bg-warning",
 };
+
+/**
+ * Live branch and change counts for a ready copy, read on its own computer. Only rendered when
+ * that computer is connected and advertises copy health, so older computers show nothing.
+ */
+function CopyHealth({
+  project,
+  copy,
+}: {
+  readonly project: LibraryProject;
+  readonly copy: LibraryWorkingCopy;
+}) {
+  const health = useEnvironmentQuery(
+    projectLibrary.copyHealth({
+      environmentId: copy.environmentId,
+      input: { workingCopyId: copy.id },
+    }),
+  );
+  const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
+  const canPull = useLibraryPermission(vcsEnvironment.pull, copy.environmentId);
+  const [pulling, setPulling] = useState<string | null>(null);
+  const [pullError, setPullError] = useState<string | null>(null);
+  const pullRepository = async (resourceId: string, cwd: string) => {
+    setPulling(resourceId);
+    setPullError(null);
+    const result = await pull({ environmentId: copy.environmentId, input: { cwd } });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      setPullError(cause instanceof Error ? cause.message : "Could not pull the latest changes.");
+    }
+    setPulling(null);
+    health.refresh();
+  };
+  const data = health.data;
+  if (data === null)
+    return health.error ? (
+      <p className="text-xs text-muted-foreground">Could not check this copy.</p>
+    ) : health.isPending ? (
+      <p role="status" className="text-xs text-muted-foreground">
+        Checking repositories...
+      </p>
+    ) : null;
+  const named = data.repositories.length > 1;
+  return (
+    <div className="space-y-0.5">
+      {data.repositories.map((repository, index) => {
+        const title =
+          project.resources.find((resource) => resource.id === repository.resourceId)?.title ??
+          repository.resourceId;
+        const cwd = copy.repositories.find(
+          (entry) => entry.resourceId === repository.resourceId,
+        )?.path;
+        return (
+          <div key={repository.resourceId} className="flex min-w-0 items-center gap-2 text-xs">
+            <p
+              className={cn(
+                "min-w-0 truncate",
+                repository.error ? "text-warning-foreground" : "text-muted-foreground",
+              )}
+            >
+              {named ? <span className="text-foreground">{title} · </span> : null}
+              {libraryRepositoryHealthSummary(repository)}
+              {index === data.repositories.length - 1 ? (
+                <span> · checked {formatRelativeTimeLabel(data.checkedAt)}</span>
+              ) : null}
+            </p>
+            {cwd !== undefined && canPull && libraryRepositoryCanPull(repository) ? (
+              <Button
+                shape="pill"
+                size="xs"
+                variant="ghost"
+                disabled={pulling !== null}
+                onClick={() => void pullRepository(repository.resourceId, cwd)}
+              >
+                {pulling === repository.resourceId ? "Pulling..." : "Pull"}
+              </Button>
+            ) : null}
+          </div>
+        );
+      })}
+      {pullError ? <p className="text-xs text-warning-foreground">{pullError}</p> : null}
+    </div>
+  );
+}
 
 /** The two ways to put a project on a computer, shared by the panel header and the setup steps. */
 export function GetCopyMenu({
@@ -113,6 +211,13 @@ export function ProjectCopies({
   readonly onRemove: (copy: LibraryWorkingCopy) => void;
 }) {
   const active = libraryActiveCopies(copies);
+  const { environments } = useEnvironments();
+  const supportsHealth = (id: EnvironmentId) =>
+    supportsLoomFeature(
+      environments.find((entry) => entry.environmentId === id)?.serverConfig?.environment
+        .capabilities,
+      LIBRARY_COPY_HEALTH_FEATURE,
+    );
   const { copyToClipboard } = useCopyToClipboard<string>({
     onCopy: (path) =>
       toastManager.add({ type: "success", title: "Path copied", description: path }),
@@ -210,6 +315,9 @@ export function ProjectCopies({
                   </span>
                 </div>
                 <PathLabel path={copy.rootPath} className="-ms-1.5" />
+                {online && copy.state === "ready" && supportsHealth(copy.environmentId) ? (
+                  <CopyHealth project={project} copy={copy} />
+                ) : null}
                 {copy.projectRevision !== project.revision && copy.state === "ready" ? (
                   <p className="text-xs text-muted-foreground">
                     From an earlier version of the project

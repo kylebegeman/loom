@@ -6,6 +6,7 @@ import {
   LibraryThreadIndex,
   LibraryThreadArchive,
   LIBRARY_WS_METHODS as L,
+  LIBRARY_HEALTH_WS_METHODS as LH,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
@@ -104,6 +105,11 @@ export function createProjectLibraryAtoms<R, E>(
     copyStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:copy-status",
       tag: L.copyStatus,
+    }),
+    /** Query the copy's own computer, which must advertise `library-copy-health`. */
+    copyHealth: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:copy-health",
+      tag: LH.copyHealth,
     }),
     resolveBinding: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:resolve-binding",

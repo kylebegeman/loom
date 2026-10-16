@@ -65,6 +65,9 @@ conversation requires an explicit computer and either the whole project or one r
 Use a suitable existing copy on that computer, or prepare files first. **Clone project**
 prepares the project repositories together under one parent folder. Editing the shared brief
 applies to new conversations; existing conversations keep the context they started with.
+Each copy on a connected computer shows its branch, how far it is ahead of or behind its
+upstream as of the last fetch, and how many files are uncommitted; **Pull** appears when a
+copy is behind and has no local changes.
 
 A conversation stays on its original computer. **Continue elsewhere** creates a linked
 conversation with a fresh agent session and the context you choose to carry forward.

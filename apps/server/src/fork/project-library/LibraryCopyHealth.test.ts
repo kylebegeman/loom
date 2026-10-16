@@ -9,7 +9,7 @@ import * as Path from "effect/Path";
 import { describe, expect } from "vite-plus/test";
 import * as ProcessRunner from "../../processRunner.ts";
 import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
-import { makeCopyHealthReader, toRepositoryHealth } from "./LibraryCopyHealth.ts";
+import { makeCopyHealthReader, parseDivergence, toRepositoryHealth } from "./LibraryCopyHealth.ts";
 
 const checkedAt = "2026-10-16T12:00:00.000Z";
 const clean: VcsStatusResult = {
@@ -79,6 +79,14 @@ describe("toRepositoryHealth", () => {
       checkedAt,
       error: "not-a-repository",
     });
+  });
+});
+
+describe("parseDivergence", () => {
+  it("reads ahead and behind, and nothing without an upstream", () => {
+    expect(parseDivergence("2\t5")).toEqual([2, 5]);
+    expect(parseDivergence(null)).toBeNull();
+    expect(parseDivergence("fatal: no upstream")).toBeNull();
   });
 });
 
@@ -153,6 +161,48 @@ it.layer(layer)("makeCopyHealthReader", (it) => {
         `local:${repo}`,
         `get:${repo}:false`,
       ]);
+    }),
+  );
+
+  it.effect("counts against the upstream ref, so a pull shows at once", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const root = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "copy-health-" }),
+      );
+      const origin = path.join(root, "origin");
+      const repo = path.join(root, "web");
+      yield* fs.makeDirectory(origin);
+      yield* git(origin, ["init", "--initial-branch=main"]);
+      const commit = (cwd: string, message: string) =>
+        git(cwd, [
+          "-c",
+          "user.email=test@example.com",
+          "-c",
+          "user.name=Test",
+          "commit",
+          "--allow-empty",
+          "-m",
+          message,
+        ]);
+      yield* commit(origin, "one");
+      yield* git(root, ["clone", "--quiet", origin, repo]);
+      yield* commit(origin, "two");
+      yield* git(repo, ["fetch", "--quiet"]);
+      const read = yield* makeCopyHealthReader;
+      // The mocked cache always says one behind; only the upstream ref decides.
+      const before = yield* read(copyWith(root, ["web"]));
+      expect(before.repositories[0]).toMatchObject({
+        branch: "main",
+        upstream: "origin/main",
+        ahead: 0,
+        behind: 1,
+      });
+      expect(before.repositories[0]?.fetchedAt).toEqual(expect.any(String));
+      yield* git(repo, ["pull", "--quiet", "--ff-only"]);
+      const after = yield* read(copyWith(root, ["web"]));
+      expect(after.repositories[0]).toMatchObject({ ahead: 0, behind: 0 });
     }),
   );
 

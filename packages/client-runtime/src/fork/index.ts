@@ -27,6 +27,7 @@ export * from "./project-computer-choices.ts";
 export * from "./project-storage-rollout.ts";
 
 export * from "./project-library.ts";
+export * from "./library-copy-health.ts";
 export {
   libraryProjectScopeKey,
   parseLibraryProjectScope,

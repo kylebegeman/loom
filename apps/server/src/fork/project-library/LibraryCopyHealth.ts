@@ -63,6 +63,12 @@ export const toRepositoryHealth = (input: {
   };
 };
 
+/** Parses `git rev-list --left-right --count A...B` output into [ahead, behind]. */
+export const parseDivergence = (output: string | null): readonly [number, number] | null => {
+  const match = output?.match(/^(\d+)\s+(\d+)$/);
+  return match ? [Number(match[1]), Number(match[2])] : null;
+};
+
 /** Reads live health for a copy's repositories on this computer. Never fails. */
 export const makeCopyHealthReader = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
@@ -122,7 +128,7 @@ export const makeCopyHealthReader = Effect.gen(function* () {
         return unreadableRepositoryHealth(repository.resourceId, "unreadable", checkedAt);
       if (!status.value.isRepo)
         return unreadableRepositoryHealth(repository.resourceId, "not-a-repository", checkedAt);
-      const [upstream, head, unpushed, fetchedAt] = yield* Effect.all(
+      const [upstream, head, unpushed, divergence, fetchedAt] = yield* Effect.all(
         [
           git(repository.path, [
             "rev-parse",
@@ -132,14 +138,21 @@ export const makeCopyHealthReader = Effect.gen(function* () {
           ]),
           git(repository.path, ["rev-parse", "--verify", "HEAD"]),
           git(repository.path, ["rev-list", "--count", "HEAD", "--not", "--remotes"]),
+          git(repository.path, ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"]),
           lastFetchedAt(repository.path),
         ],
         { concurrency: "unbounded" },
       );
       const unpushedCommits = Number.parseInt(unpushed ?? "0", 10);
+      const counts = parseDivergence(divergence);
       return toRepositoryHealth({
         resourceId: repository.resourceId,
-        status: status.value,
+        // Cached remote counts lag a pull until the broadcaster's background refresh lands, so
+        // count against the upstream ref directly. This reads the last fetch and never fetches.
+        status:
+          counts === null
+            ? status.value
+            : { ...status.value, hasUpstream: true, aheadCount: counts[0], behindCount: counts[1] },
         upstream,
         head,
         unpushedCommits: Number.isFinite(unpushedCommits) ? unpushedCommits : 0,
