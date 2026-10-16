@@ -54,6 +54,7 @@ import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
 import { ProjectTimeline } from "./ProjectTimeline";
+import { LibraryHistorySearch } from "./LibraryHistorySearch";
 import { ProjectBriefProposals } from "./ProjectBriefProposals";
 import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
 
@@ -197,6 +198,13 @@ function ProjectView({
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
       <div className="grid items-start gap-x-14 gap-y-10 border-t border-border pt-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
         <div className="flex min-w-0 flex-col gap-10">
+          <LibraryHistorySearch
+            authorityId={authorityId}
+            connected={library.connected}
+            capabilities={library.environment?.serverConfig?.environment.capabilities}
+            projectId={project.id}
+            hostLabel={hostLabel}
+          />
           {settingUp ? (
             <ProjectSetup
               project={project}

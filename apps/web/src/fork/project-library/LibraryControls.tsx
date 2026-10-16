@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { SearchIcon, XIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
@@ -62,11 +62,13 @@ export function LibrarySearch({
   onChange,
   placeholder,
   label,
+  inputRef,
 }: {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly placeholder: string;
   readonly label: string;
+  readonly inputRef?: Ref<HTMLInputElement>;
 }) {
   return (
     <InputGroup shape="pill" className="w-full sm:w-72">
@@ -74,6 +76,7 @@ export function LibrarySearch({
         <SearchIcon aria-hidden />
       </InputGroupAddon>
       <InputGroupInput
+        ref={inputRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {

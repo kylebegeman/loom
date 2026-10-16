@@ -54,3 +54,4 @@ export * from "./library-tidy.ts";
 export * from "./library-timeline.ts";
 export * from "./sidebar-project-groups.ts";
 export * from "./library-sidebar-projects.ts";
+export * from "./library-search.ts";

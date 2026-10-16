@@ -12,12 +12,13 @@ import {
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
+  LIBRARY_SEARCH_FEATURE,
   PROJECT_LIBRARY_FEATURE,
   type LibraryProject,
   type LibraryThreadIndex,
 } from "@t3tools/contracts/fork";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { FileTextIcon, FolderGit2Icon, SquarePenIcon } from "lucide-react";
+import { FileTextIcon, FolderGit2Icon, SearchIcon, SquarePenIcon } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
@@ -29,7 +30,11 @@ import {
 } from "~/components/CommandPalette.logic";
 import { useEnvironmentQuery } from "~/state/query";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { openLibraryAction, requestLibraryBriefEdit } from "../project-library/actions";
+import {
+  openLibraryAction,
+  requestLibraryBriefEdit,
+  requestLibraryHistorySearch,
+} from "../project-library/actions";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "../project-library/state";
 import { onForkCommand } from "../keybindings/forkCommandBus";
 import type { ForkCommandPaletteSource } from "./registry";
@@ -79,6 +84,11 @@ export interface LibraryPaletteContext {
   readonly blocker: LibraryPaletteBlocker | null;
   /** The Library page, which walks through setup when no Library is connected. */
   readonly openLibrary: () => Promise<void>;
+  /**
+   * Focuses history search: the open project page's, otherwise every project's on the Library
+   * page. Null when the Library cannot search.
+   */
+  readonly searchHistory: (() => Promise<void>) | null;
 }
 
 const icon = (Icon: typeof FolderGit2Icon, className = ITEM_ICON_CLASS): ReactNode => (
@@ -184,6 +194,18 @@ export const libraryPaletteSource: ForkCommandPaletteSource = {
         searchTerms: ["library", "projects", "open", "switch"],
         shortcutCommand: "loom.library.goToProject",
       }),
+      ...(library.searchHistory
+        ? [
+            {
+              kind: "action" as const,
+              value: "action:loom:library:search-history",
+              title: "Search project history...",
+              searchTerms: ["library", "search", "history", "conversations", "messages", "find"],
+              icon: icon(SearchIcon),
+              run: library.searchHistory,
+            },
+          ]
+        : []),
       ...(library.canStart
         ? submenu(
             "new-conversation",
@@ -252,6 +274,12 @@ export function useLibraryPaletteContext(
 ): LibraryPaletteContext {
   const { catalog, projects, blocker, canStart } = useLibraryPaletteState();
   const { authorityId, connected, environments } = catalog;
+  const canSearch =
+    connected &&
+    supportsLoomFeature(
+      catalog.environment?.serverConfig?.environment.capabilities,
+      LIBRARY_SEARCH_FEATURE,
+    );
   const navigate = useNavigate();
   // Route params cover a thread whose computer is offline and so absent from the store.
   const params = libraryRouteParams(useParams({ strict: false }));
@@ -311,6 +339,14 @@ export function useLibraryPaletteContext(
     openLibrary: async () => {
       await navigate({ to: "/library" });
     },
+    searchHistory: canSearch
+      ? async () => {
+          // Only a project page names a project; anywhere else searches every project.
+          const projectId = params.projectId;
+          requestLibraryHistorySearch(projectId);
+          if (!projectId) await navigate({ to: "/library" });
+        }
+      : null,
   };
 }
 
