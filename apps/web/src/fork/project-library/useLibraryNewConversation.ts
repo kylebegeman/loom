@@ -37,9 +37,11 @@ export function useLibraryNewConversation() {
     if (!thread) {
       const scope = parseLibraryProjectScope(filterKey);
       if (!scope) return false;
-      openLibraryAction("new-conversation", scope.projectId, {
-        ...(scope.resourceId ? { resourceId: scope.resourceId } : {}),
-      });
+      openLibraryAction(
+        "new-conversation",
+        scope.projectId,
+        scope.resourceId ? { resourceId: scope.resourceId } : {},
+      );
       return true;
     }
     if (!authority.authorityId) return false;

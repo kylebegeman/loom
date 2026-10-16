@@ -138,13 +138,15 @@ export function LibraryRouteScreen() {
       : null,
   );
   const canCreate = useAtomValue(library.createProject.permissionAtom(authority.environmentId));
+  const refreshCatalog = catalog.refresh;
+  const refreshInfo = authority.info.refresh;
   useFocusEffect(
     useCallback(() => {
       if (authority.connected) {
-        catalog.refresh();
-        authority.info.refresh();
+        refreshCatalog();
+        refreshInfo();
       }
-    }, [authority.connected, catalog.refresh, authority.info.refresh]),
+    }, [authority.connected, refreshCatalog, refreshInfo]),
   );
   const query = search.trim();
   // The list carries no copies, so search reads names, briefs and repositories, never computers.
