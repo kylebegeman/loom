@@ -1295,7 +1295,7 @@ export function HomeScreen(props: HomeScreenProps) {
                   />
                 </>
               }
-              ListEmptyComponent={v2ListEmpty}
+              ListEmptyComponent={sharedAuthority.environmentId ? null : v2ListEmpty}
               style={{ flex: 1 }}
               automaticallyAdjustsScrollIndicatorInsets={Platform.OS === "ios"}
               contentInsetAdjustmentBehavior="never"
