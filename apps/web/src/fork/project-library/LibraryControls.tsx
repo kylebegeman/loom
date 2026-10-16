@@ -74,10 +74,10 @@ export function LibraryErrorNotice({
 }
 
 /**
- * One titled card on a project page. The body sets its own padding, so lists can run edge to
- * edge under the header while prose keeps the card's inset.
+ * One titled stretch of a project page. No box around it: the heading and the rows carry the
+ * structure, and rows answer hover on their own.
  */
-export function LibraryPanel({
+export function LibrarySection({
   title,
   count,
   action,
@@ -89,8 +89,8 @@ export function LibraryPanel({
   readonly children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="overflow-hidden rounded-xl border border-border bg-card">
-      <div className="flex min-h-10 items-center justify-between gap-3 py-1.5 ps-3.5 pe-2">
+    <section aria-label={title} className="flex min-w-0 flex-col gap-2">
+      <div className="flex min-h-7 items-center justify-between gap-3">
         <h2 className="flex items-baseline gap-2 text-sm font-semibold tracking-tight">
           {title}
           {count ? (
@@ -103,3 +103,7 @@ export function LibraryPanel({
     </section>
   );
 }
+
+/** A row inside a section: no rule between rows, a soft fill on hover that bleeds past the text. */
+export const LIBRARY_ROW =
+  "-mx-2.5 rounded-lg px-2.5 transition-colors duration-150 hover:bg-accent/50";

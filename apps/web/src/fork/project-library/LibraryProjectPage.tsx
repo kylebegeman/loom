@@ -36,7 +36,7 @@ import {
 } from "./state";
 import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
-import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
+import { LIBRARY_ROW, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { libraryCopyReadiness } from "./copyChoice";
@@ -175,8 +175,8 @@ function ProjectView({
         onNewConversation={() => setConversation({})}
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_19rem]">
-        <div className="flex min-w-0 flex-col gap-6">
+      <div className="grid items-start gap-x-14 gap-y-10 border-t border-border pt-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="flex min-w-0 flex-col gap-10">
           {settingUp ? (
             <ProjectSetup
               project={project}
@@ -200,7 +200,7 @@ function ProjectView({
             />
           )}
         </div>
-        <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
+        <aside aria-label="Project details" className="flex min-w-0 flex-col gap-8">
           <ProjectCopies
             project={project}
             copies={copies}
@@ -328,7 +328,7 @@ function ProjectHero({
     onSaved();
   };
   return (
-    <header className="flex flex-col gap-5">
+    <header className="flex flex-col gap-6">
       <div>
         <LibraryBackLink to="/projects">Projects</LibraryBackLink>
         <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
@@ -357,7 +357,7 @@ function ProjectHero({
               />
             </PopoverPopup>
           </Popover>
-          <div className="min-w-0 flex-1 basis-60 space-y-2 pt-1">
+          <div className="min-w-0 flex-1 basis-60 space-y-1.5">
             {renaming ? (
               <TitleEditor
                 title={project.title}
@@ -368,7 +368,7 @@ function ProjectHero({
                 }}
               />
             ) : (
-              <h1 className="wrap-anywhere text-2xl leading-tight font-semibold tracking-tight">
+              <h1 className="wrap-anywhere text-3xl leading-tight font-semibold tracking-tight">
                 {project.title}
               </h1>
             )}
@@ -635,11 +635,12 @@ function ProjectBrief({
     <button
       type="button"
       onClick={edit}
-      className="flex w-full max-w-3xl items-center gap-3 rounded-xl border border-dashed border-border px-3.5 py-3 text-left outline-none transition-colors duration-150 hover:border-(--project-color)/40 hover:bg-(--project-color)/5 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className={cn(
+        LIBRARY_ROW,
+        "flex w-full max-w-3xl items-start gap-3 py-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+      )}
     >
-      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
-        <PencilLineIcon aria-hidden className="size-3.5" />
-      </span>
+      <PencilLineIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-(--project-color)" />
       <span className="min-w-0">
         <span className="block text-sm font-medium">Write a brief</span>
         <span className="block text-xs text-muted-foreground">
@@ -738,13 +739,10 @@ function ProjectSetup({
     },
   ];
   return (
-    <section
-      aria-label="Get started"
-      className="overflow-hidden rounded-xl border border-border bg-card"
-    >
-      <div className="space-y-3 px-4 pt-4 pb-3.5">
+    <section aria-label="Get started" className="flex flex-col gap-6">
+      <div className="space-y-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-base font-semibold tracking-tight">Get {project.title} going</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Get {project.title} going</h2>
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             {done.filter(Boolean).length} of {steps.length}
           </span>
@@ -761,22 +759,25 @@ function ProjectSetup({
           ))}
         </div>
       </div>
-      <ol className="divide-y divide-border border-t border-border">
+      <ol>
         {steps.map((step, index) => (
-          <li
-            key={step.title}
-            className={cn(
-              "flex items-center gap-3 px-4 py-3",
-              index === next && "bg-(--project-color)/4",
-            )}
-          >
+          <li key={step.title} className="relative flex gap-4 pb-7 last:pb-0">
+            {index < steps.length - 1 ? (
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute start-3 top-8 bottom-1 w-px -translate-x-1/2",
+                  step.done ? "bg-(--project-color)/40" : "bg-border",
+                )}
+              />
+            ) : null}
             <span
               className={cn(
                 "inline-flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums",
                 step.done
                   ? "bg-(--project-color) text-background"
                   : index === next
-                    ? "bg-(--project-color)/14 text-(--project-color)"
+                    ? "bg-(--project-color)/14 text-(--project-color) ring-4 ring-(--project-color)/6"
                     : "bg-muted text-muted-foreground dark:bg-accent",
               )}
             >
@@ -787,17 +788,22 @@ function ProjectSetup({
               )}
               <span className="sr-only">{step.done ? "Done" : "To do"}</span>
             </span>
-            <div className="min-w-0 flex-1">
-              <p className={cn("text-sm font-medium", step.done && "text-muted-foreground")}>
-                {step.title}
-              </p>
-              {step.done ? null : <p className="text-xs text-muted-foreground">{step.detail}</p>}
+            <div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-x-4 gap-y-2 pt-0.5">
+              <div className="min-w-0 flex-1 basis-56 space-y-0.5">
+                <p
+                  className={cn(
+                    "text-sm font-medium",
+                    step.done
+                      ? "text-muted-foreground line-through decoration-muted-foreground/40"
+                      : index !== next && "text-foreground/80",
+                  )}
+                >
+                  {step.title}
+                </p>
+                {step.done ? null : <p className="text-xs text-muted-foreground">{step.detail}</p>}
+              </div>
+              {step.done ? null : <span className="shrink-0">{step.action}</span>}
             </div>
-            {step.done ? (
-              <span className="shrink-0 text-xs text-muted-foreground">Done</span>
-            ) : (
-              <span className="shrink-0">{step.action}</span>
-            )}
           </li>
         ))}
       </ol>
@@ -825,7 +831,7 @@ function ProjectConversations({
   const [latest, ...rest] = threads;
   const shown = showAll ? rest : rest.slice(0, RECENT_CONVERSATIONS - 1);
   return (
-    <LibraryPanel
+    <LibrarySection
       title="Conversations"
       count={threads.length}
       action={
@@ -841,54 +847,51 @@ function ProjectConversations({
         ) : null
       }
     >
-      {error ? (
-        <div className="px-3.5">
-          <LibraryErrorNotice error={error} onRetry={onRetry} />
-        </div>
-      ) : null}
+      <LibraryErrorNotice error={error} onRetry={onRetry} />
       {latest ? (
-        <div className="px-2 pb-2">
-          <Link
-            to="/library/conversations/$conversationId"
-            params={{ conversationId: latest.id }}
-            className="group/card relative isolate flex items-center gap-3 rounded-lg border border-border p-3 outline-none transition-[border-color] duration-200 hover:border-(--project-color)/35 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-          >
-            <ProjectWash />
-            <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
-              <MessageSquareIcon aria-hidden className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1 space-y-1">
-              <p className="text-xs text-muted-foreground">
-                Pick up where you left off · {formatRelativeTimeLabel(latest.updatedAt)}
-              </p>
-              <p className="truncate text-sm font-medium">
-                {latest.title || "Untitled conversation"}
-              </p>
-              <ConversationMeta project={project} thread={latest} hostLabel={hostLabel} />
-            </div>
-            <ArrowRightIcon
-              aria-hidden
-              className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
-            />
-          </Link>
-        </div>
+        <Link
+          to="/library/conversations/$conversationId"
+          params={{ conversationId: latest.id }}
+          className="group/card relative isolate -mx-3 flex items-center gap-4 rounded-xl p-3 outline-none transition-colors duration-200 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <ProjectWash />
+          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
+            <MessageSquareIcon aria-hidden className="size-4.5" />
+          </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Pick up where you left off · {formatRelativeTimeLabel(latest.updatedAt)}
+            </p>
+            <p className="truncate text-base font-semibold tracking-tight">
+              {latest.title || "Untitled conversation"}
+            </p>
+            <ConversationMeta project={project} thread={latest} hostLabel={hostLabel} />
+          </div>
+          <ArrowRightIcon
+            aria-hidden
+            className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
+          />
+        </Link>
       ) : loading ? (
-        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
+        <p role="status" className="text-xs text-muted-foreground">
           Loading conversations...
         </p>
       ) : error ? null : (
-        <p className="px-3.5 pb-3 text-xs text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           No conversations were saved in this project.
         </p>
       )}
       {shown.length ? (
-        <ul className="divide-y divide-border border-t border-border">
+        <ul className="pt-1">
           {shown.map((thread) => (
             <li key={thread.id}>
               <Link
                 to="/library/conversations/$conversationId"
                 params={{ conversationId: thread.id }}
-                className="flex items-center gap-3 px-3.5 py-2 outline-none transition-colors duration-150 hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                className={cn(
+                  LIBRARY_ROW,
+                  "-mx-3 flex items-center gap-3 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                )}
               >
                 <MessageSquareIcon
                   aria-hidden
@@ -911,7 +914,7 @@ function ProjectConversations({
           ))}
         </ul>
       ) : null}
-    </LibraryPanel>
+    </LibrarySection>
   );
 }
 
