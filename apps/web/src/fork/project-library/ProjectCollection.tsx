@@ -40,6 +40,7 @@ import {
   projectColorStyle,
 } from "./ProjectIdentity";
 import { projectLibrary, useLibraryPermission } from "./state";
+import { TidyChip } from "./TidyProjectDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
 
 type CollectionProps = {
@@ -49,6 +50,11 @@ type CollectionProps = {
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly onOpen: (projectId: string) => void;
   readonly onChanged: () => void;
+  /** Resting projects that offer Tidy, and how to open it. */
+  readonly tidy?: {
+    readonly projectIds: ReadonlySet<string>;
+    readonly open: (entry: ProjectEntry) => void;
+  };
 };
 
 const MAX_CARD_COPIES = 2;
@@ -73,6 +79,7 @@ function ProjectCard({
   hostLabel,
   onOpen,
   onChanged,
+  tidy,
 }: Omit<CollectionProps, "entries"> & { readonly entry: ProjectEntry }) {
   const { project, copies } = entry;
   const repositories = project.resources.filter(isRepositoryResource);
@@ -92,6 +99,7 @@ function ProjectCard({
           </h3>
           <ProjectActivity entry={entry} />
         </div>
+        <ProjectTidy entry={entry} tidy={tidy} />
         <ProjectMenu
           entry={entry}
           authorityId={authorityId}
@@ -181,6 +189,7 @@ export function ProjectCompactCards(props: CollectionProps) {
               Last active {formatRelativeTimeLabel(entry.activeAt)}
             </p>
           </div>
+          <ProjectTidy entry={entry} tidy={props.tidy} />
           <ProjectMenu
             entry={entry}
             authorityId={props.authorityId}
@@ -235,6 +244,7 @@ function ProjectRow({
   hostLabel,
   onOpen,
   onChanged,
+  tidy,
 }: Omit<CollectionProps, "entries"> & { readonly entry: ProjectEntry }) {
   const { project, copies } = entry;
   const repositories = project.resources.filter(isRepositoryResource).length;
@@ -257,6 +267,7 @@ function ProjectRow({
             {project.brief.trim() || <span className="text-muted-foreground/60">No brief yet</span>}
           </p>
         </div>
+        <ProjectTidy entry={entry} tidy={tidy} />
       </div>
       <div className="hidden min-w-0 items-center gap-2 md:flex">
         {firstCopy ? (
@@ -290,6 +301,18 @@ function ProjectRow({
       />
     </li>
   );
+}
+
+function ProjectTidy({
+  entry,
+  tidy,
+}: {
+  readonly entry: ProjectEntry;
+  readonly tidy: CollectionProps["tidy"];
+}) {
+  return tidy?.projectIds.has(entry.project.id) ? (
+    <TidyChip entry={entry} onTidy={() => tidy.open(entry)} />
+  ) : null;
 }
 
 /** The whole card or row opens the project; controls inside sit above this layer. */

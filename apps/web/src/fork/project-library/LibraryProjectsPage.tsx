@@ -64,6 +64,7 @@ import { LibrarySetup } from "./LibrarySetup";
 import { LIBRARY_ROW, LibraryErrorNotice, LibrarySearch } from "./LibraryControls";
 import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { ImportProjectDialog } from "./ImportProjectDialog";
+import { TidyProjectDialog } from "./TidyProjectDialog";
 import {
   ProjectCards,
   ProjectCollectionSkeleton,
@@ -113,6 +114,7 @@ export function LibraryProjectsPage() {
   const [colors, setColors] = useState<ReadonlySet<LibraryProjectColor>>(new Set());
   const [computer, setComputer] = useState<EnvironmentId | null>(null);
   const [creating, setCreating] = useState(false);
+  const [tidying, setTidying] = useState<ProjectEntry | null>(null);
   const [importing, setImporting] = useState<{
     hostId?: EnvironmentId;
     rootPath?: string | undefined;
@@ -162,7 +164,10 @@ export function LibraryProjectsPage() {
   );
   // A search that only matches on the other side of the toggle says so instead of coming up empty.
   const otherMatches = matching(showArchived ? liveEntries : archivedEntries).length;
-  const restingCount = liveEntries.filter((entry) => isRestingEntry(entry, now)).length;
+  const restingIds = new Set(
+    liveEntries.filter((entry) => isRestingEntry(entry, now)).map((entry) => entry.project.id),
+  );
+  const restingCount = restingIds.size;
   const archivedCount = archivedEntries.length;
   const colorCounts = LIBRARY_PROJECT_COLORS.flatMap((color) => {
     const count = viewEntries.filter((entry) => entry.color === color).length;
@@ -203,6 +208,7 @@ export function LibraryProjectsPage() {
       hostLabel,
       onOpen: selectProject,
       onChanged: refresh,
+      ...(showArchived ? {} : { tidy: { projectIds: restingIds, open: setTidying } }),
     };
     if (preferences.view === "list") return <ProjectRows {...props} />;
     return compact ? <ProjectCompactCards {...props} /> : <ProjectCards {...props} />;
@@ -537,6 +543,14 @@ export function LibraryProjectsPage() {
           authorityId={catalog.authorityId}
           onClose={() => setCreating(false)}
           onSaved={saved}
+        />
+      ) : null}
+      {tidying ? (
+        <TidyProjectDialog
+          entry={tidying}
+          now={now}
+          onChanged={refresh}
+          onClose={() => setTidying(null)}
         />
       ) : null}
       {importing ? (

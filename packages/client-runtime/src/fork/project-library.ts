@@ -116,6 +116,15 @@ export function createProjectLibraryAtoms<R, E>(
       label: "loom:library:refresh-copy-health",
       tag: LH.copyHealth,
     }),
+    /** One-off reads for flows that check many copies, or re-check a copy right before acting. */
+    readCopyHealth: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:read-copy-health",
+      tag: LH.copyHealth,
+    }),
+    readCopyStatus: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:read-copy-status",
+      tag: L.copyStatus,
+    }),
     resolveBinding: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:resolve-binding",
       tag: L.resolveBinding,
