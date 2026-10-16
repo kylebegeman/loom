@@ -287,8 +287,7 @@ function LibraryProjectRow(props: {
 }) {
   const rippleStyle = useResolveClassNames("bg-subtle-strong");
   const description =
-    props.project.resources
-      .filter((r) => r.kind !== "link")
+    libraryRepositories(props.project)
       .map((r) => r.title)
       .join(", ") ||
     props.project.brief ||

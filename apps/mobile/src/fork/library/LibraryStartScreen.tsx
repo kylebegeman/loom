@@ -216,9 +216,7 @@ function LibraryStartContent(props: {
   const scope =
     selectedScope ??
     (sourceScope?.length === 1 &&
-    props.project.resources.some(
-      (resource) => resource.id === sourceScope[0] && resource.kind !== "link",
-    )
+    libraryRepositories(props.project).some((resource) => resource.id === sourceScope[0])
       ? sourceScope[0]!
       : "all");
   const launchProject = progress.intent?.project ?? props.project;

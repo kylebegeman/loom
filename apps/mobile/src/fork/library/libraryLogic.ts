@@ -1,4 +1,8 @@
-import { isRepositoryResource, libraryCopiesForScope } from "@t3tools/client-runtime/fork";
+import {
+  isRepositoryResource,
+  libraryCopiesForScope,
+  libraryCopyReadiness,
+} from "@t3tools/client-runtime/fork";
 import type {
   LibraryProject,
   LibraryResource,
@@ -17,8 +21,9 @@ export function libraryListState(query: {
   readonly isPending: boolean;
   readonly isSuccess: boolean;
 }) {
-  if (query.error !== null) return "error";
-  if (query.isPending || !query.isSuccess || query.data === null) return "loading";
+  const readiness = libraryCopyReadiness(query);
+  if (readiness !== "ready") return readiness;
+  if (query.data === null) return "loading";
   return query.data.length === 0 ? "empty" : "ready";
 }
 

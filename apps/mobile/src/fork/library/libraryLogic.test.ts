@@ -57,6 +57,9 @@ describe("durable library execution selection", () => {
     expect(
       libraryListState({ ...settled, data: [copy], error: "Refresh failed", isSuccess: false }),
     ).toBe("error");
+    expect(libraryListState({ ...settled, error: "Refresh failed", isPending: true })).toBe(
+      "loading",
+    );
   });
   it("binds only a copy that covers the selected components", () => {
     const scoped = {

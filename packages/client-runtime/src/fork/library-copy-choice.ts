@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import { isRepositoryResource } from "./library-resources.ts";
 
 const normalizePath = (path: string) => path.replace(/\\/g, "/").replace(/\/+$/, "");
 
@@ -18,7 +19,7 @@ export const libraryCopiesForScope = (
   environmentId: EnvironmentId | null,
   resourceIds: readonly string[] | null,
 ): LibraryWorkingCopy[] => {
-  const repositories = project.resources.filter((resource) => resource.kind !== "link");
+  const repositories = project.resources.filter(isRepositoryResource);
   if (
     project.archived ||
     !environmentId ||
