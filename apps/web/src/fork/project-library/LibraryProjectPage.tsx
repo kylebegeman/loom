@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_BRIEF_PROPOSALS_FEATURE,
+  LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
   LIBRARY_PROJECT_PROFILE_FEATURE,
   type LibraryProject,
   type LibraryWorkingCopy,
@@ -231,6 +232,13 @@ function ProjectView({
             canStart={canStart}
             hostLabel={hostLabel}
             hostConnected={hostConnected}
+            lastSeenAt={(id) =>
+              library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+            }
+            publishedHealth={supportsLoomFeature(
+              library.environment?.serverConfig?.environment.capabilities,
+              LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
+            )}
             onGetCopy={setCopyRequest}
             onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
             onRemove={setReleasing}

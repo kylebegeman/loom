@@ -20,6 +20,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as ServerActivation from "../../serverActivation.ts";
+import * as CopyHealthPublication from "./LibraryCopyHealthPublication.ts";
 import * as HistorySource from "./LibraryHistorySource.ts";
 import * as Publisher from "./LibraryPublisher.ts";
 import * as WorkspaceStore from "./LibraryWorkspaceStore.ts";
@@ -28,6 +29,8 @@ export class LibraryReplication extends Context.Service<
   LibraryReplication,
   {
     readonly drain: Effect.Effect<void, LibraryError>;
+    /** Publishes this computer's copy health now, if it changed since the last report. */
+    readonly reportCopyHealth: Effect.Effect<void, LibraryError>;
     readonly status: Effect.Effect<
       {
         readonly enabled: boolean;
@@ -70,6 +73,7 @@ const make = Effect.gen(function* () {
   if (!publisher.enabled)
     return LibraryReplication.of({
       drain: Effect.void,
+      reportCopyHealth: Effect.void,
       status: Effect.succeed({
         enabled: false,
         journalId: null,
@@ -345,6 +349,27 @@ const make = Effect.gen(function* () {
   yield* ServerActivation.forkParked(
     drain.pipe(Effect.ignore, Effect.repeat(Schedule.spaced("5 seconds"))),
   );
-  return LibraryReplication.of({ drain, status });
+  // Copy health rides the same journal fence as history, but never waits on the history outbox.
+  const copyHealth = yield* CopyHealthPublication.makeCopyHealthPublication({
+    environmentId,
+    publisher,
+    workspaces,
+    source: yield* CopyHealthPublication.LibraryCopyHealthSource,
+    authority: lock.withPermit(
+      mapIo(
+        Effect.gen(function* () {
+          if ((yield* readState)[0] === undefined) yield* ensureAuthority(yield* publisher.info);
+          const current = yield* state;
+          return {
+            journalId: current.journal_id,
+            authorityId: current.authority_id,
+            authorityEpoch: current.authority_epoch,
+          };
+        }),
+      ),
+    ),
+  });
+  yield* ServerActivation.forkParked(copyHealth.run);
+  return LibraryReplication.of({ drain, status, reportCopyHealth: copyHealth.report });
 });
 export const layer = Layer.effect(LibraryReplication, make);

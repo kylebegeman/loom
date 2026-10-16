@@ -532,6 +532,70 @@ describe("independent Library catalog and durable history", () => {
       }),
     ),
   );
+  it.effect("keeps the latest published copy health and serves it with the copy", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        const project = yield* create(service);
+        const copy = copyFor(project);
+        const healthAt = (checkedAt: string, uncommittedFiles: number) => ({
+          copyId: copy.id,
+          environmentId: source,
+          checkedAt,
+          repositories: [
+            { resourceId: resource.id, uncommittedFiles, unpushedCommits: 0, checkedAt },
+          ],
+        });
+        const copySaves = () =>
+          sql<{
+            readonly count: number;
+          }>`SELECT COUNT(*) AS count FROM fork_library_events WHERE aggregate_id = ${copy.id} AND event_type = 'copy.saved'`.pipe(
+            Effect.map((rows) => rows[0]?.count),
+          );
+        yield* service.registerCopy({ requestId: "copy", copy });
+        expect((yield* service.copies({ projectId: project.id }))[0]?.health).toBeUndefined();
+
+        const reported = healthAt("2026-10-16T01:00:00.000Z", 2);
+        yield* service.registerCopy({ requestId: "health", copy: { ...copy, health: reported } });
+        expect((yield* service.copies({ projectId: project.id }))[0]?.health).toEqual(reported);
+        // A health report alone is not copy history.
+        expect(yield* copySaves()).toBe(1);
+
+        // A save without health, from history publishing or an older computer, keeps the report.
+        const moved = { ...copy, updatedAt: "2026-10-16T02:00:00.000Z" };
+        yield* service.registerCopy({ requestId: "moved", copy: moved });
+        expect((yield* service.copies({ projectId: project.id }))[0]).toMatchObject({
+          updatedAt: moved.updatedAt,
+          health: reported,
+        });
+        expect(yield* copySaves()).toBe(2);
+
+        // An older report arriving late never replaces a newer one.
+        yield* service.registerCopy({
+          requestId: "late",
+          copy: { ...moved, health: healthAt("2026-10-16T00:30:00.000Z", 9) },
+        });
+        expect((yield* service.copies({ projectId: project.id }))[0]?.health).toEqual(reported);
+
+        // A stale copy record still delivers a newer report.
+        const newer = healthAt("2026-10-16T03:00:00.000Z", 0);
+        yield* service.registerCopy({ requestId: "stale", copy: { ...copy, health: newer } });
+        expect((yield* service.copies({ projectId: project.id }))[0]).toMatchObject({
+          updatedAt: moved.updatedAt,
+          health: newer,
+        });
+
+        expect(
+          (yield* service
+            .registerCopy({
+              requestId: "foreign",
+              copy: { ...moved, health: { ...newer, copyId: "another-copy" } },
+            })
+            .pipe(Effect.flip)).reason,
+        ).toBe("invalid");
+      }),
+    ),
+  );
   it.effect("rejects sequence gaps, conflicting replays, and rolls back a failed batch", () =>
     run((service) =>
       Effect.gen(function* () {
