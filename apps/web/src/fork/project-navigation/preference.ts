@@ -27,6 +27,23 @@ function browserStorage(): Storage | null {
   }
 }
 
+/** Stores the view and tells every mounted sidebar on this page about it. */
+function storeProjectNavigationView(view: ProjectNavigationView) {
+  try {
+    browserStorage()?.setItem(PROJECT_NAVIGATION_VIEW_KEY, view);
+  } catch {
+    // Browsing still works when private browsing or a full disk blocks persistence.
+  }
+  window.dispatchEvent(new CustomEvent(VIEW_CHANGE_EVENT, { detail: view }));
+}
+
+/** Flips the stored view, for callers outside the sidebar such as the command palette. */
+export function toggleProjectNavigationView() {
+  storeProjectNavigationView(
+    readProjectNavigationView(browserStorage()) === "threads" ? "projects" : "threads",
+  );
+}
+
 export function useProjectNavigationView() {
   const [view, setView] = useState(() => readProjectNavigationView(browserStorage()));
   useEffect(() => {
@@ -48,12 +65,7 @@ export function useProjectNavigationView() {
 
   const saveView = useCallback((nextView: ProjectNavigationView) => {
     setView(nextView);
-    try {
-      browserStorage()?.setItem(PROJECT_NAVIGATION_VIEW_KEY, nextView);
-    } catch {
-      // Browsing still works when private browsing or a full disk blocks persistence.
-    }
-    window.dispatchEvent(new CustomEvent(VIEW_CHANGE_EVENT, { detail: nextView }));
+    storeProjectNavigationView(nextView);
   }, []);
   return [view, saveView] as const;
 }
