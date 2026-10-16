@@ -6,6 +6,9 @@ import {
   libraryProjectTimeline,
   libraryResourceFromInput,
   libraryResourceLocation,
+  libraryPathParts,
+  libraryProjectColor,
+  libraryProjectInitials,
 } from "./library-project.ts";
 
 const dorothy = EnvironmentId.make("dorothy");
@@ -124,5 +127,39 @@ describe("project copies and history", () => {
       ["copy-added", "old"],
       ["created", null],
     ]);
+  });
+});
+
+describe("libraryProjectColor", () => {
+  it("keeps a saved color and derives a stable, non-slate one otherwise", () => {
+    expect(libraryProjectColor({ id: "a", color: "slate" })).toBe("slate");
+    const automatic = libraryProjectColor({ id: "7f1c2a" });
+    expect(automatic).not.toBe("slate");
+    expect(libraryProjectColor({ id: "7f1c2a" })).toBe(automatic);
+  });
+});
+
+describe("libraryProjectInitials", () => {
+  it("uses the first letters of the first two words", () => {
+    expect(libraryProjectInitials("Loom platform")).toBe("LP");
+    expect(libraryProjectInitials("loom")).toBe("L");
+    expect(libraryProjectInitials("office-web")).toBe("OW");
+    expect(libraryProjectInitials("   ")).toBe("?");
+  });
+});
+
+describe("libraryPathParts", () => {
+  it("leads with the folder name and shortens home directories", () => {
+    expect(libraryPathParts("/Users/kyle/Developer/active/loom")).toEqual({
+      parent: "~/Developer/active/",
+      name: "loom",
+    });
+    expect(libraryPathParts("/home/kyle/src/app/")).toEqual({ parent: "~/src/", name: "app" });
+    expect(libraryPathParts("C:\\Users\\kyle\\code\\loom")).toEqual({
+      parent: "~\\code\\",
+      name: "loom",
+    });
+    expect(libraryPathParts("/srv/loom")).toEqual({ parent: "/srv/", name: "loom" });
+    expect(libraryPathParts("/Users/kyle")).toEqual({ parent: "", name: "~" });
   });
 });

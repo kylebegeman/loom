@@ -27,12 +27,27 @@ export const LibraryResource = Schema.Struct({
   defaultBranch: Schema.NullOr(Schema.String.check(Schema.isMaxLength(200))),
 });
 export type LibraryResource = typeof LibraryResource.Type;
+/** Named colors a person picks to tell projects apart. Clients map each to themed values. */
+export const LIBRARY_PROJECT_COLORS = [
+  "plum",
+  "red",
+  "orange",
+  "gold",
+  "green",
+  "teal",
+  "blue",
+  "slate",
+] as const;
+export const LibraryProjectColor = Schema.Literals(LIBRARY_PROJECT_COLORS);
+export type LibraryProjectColor = typeof LibraryProjectColor.Type;
 export const LibraryProject = Schema.Struct({
   id: LibraryId,
   title: LibraryTitle,
   brief: Schema.String.check(Schema.isMaxLength(65536)),
   revision: PositiveInt,
   resources: Schema.Array(LibraryResource).check(Schema.isMaxLength(64)),
+  /** Absent until someone picks one; clients then show a stable automatic color. */
+  color: Schema.optional(LibraryProjectColor),
   archived: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -236,6 +251,7 @@ export const LibraryCreateProjectRequest = Schema.Struct({
   title: LibraryTitle,
   brief: Schema.optional(Schema.String.check(Schema.isMaxLength(65536))),
   resources: Schema.optional(Schema.Array(LibraryResource)),
+  color: Schema.optional(LibraryProjectColor),
 });
 export type LibraryCreateProjectRequest = typeof LibraryCreateProjectRequest.Type;
 export const LibraryUpdateProjectRequest = Schema.Struct({
@@ -245,6 +261,8 @@ export const LibraryUpdateProjectRequest = Schema.Struct({
   title: LibraryTitle,
   brief: Schema.String.check(Schema.isMaxLength(65536)),
   resources: Schema.Array(LibraryResource),
+  /** Omitted keeps the saved color, so older clients never clear it; null returns to automatic. */
+  color: Schema.optional(Schema.NullOr(LibraryProjectColor)),
 });
 export type LibraryUpdateProjectRequest = typeof LibraryUpdateProjectRequest.Type;
 export const LibraryArchiveProjectRequest = Schema.Struct({

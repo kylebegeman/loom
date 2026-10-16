@@ -1,5 +1,11 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import type { LibraryProject, LibraryResource, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_PROJECT_COLORS,
+  type LibraryProject,
+  type LibraryProjectColor,
+  type LibraryResource,
+  type LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 
 /** Hosts whose `/owner/repo` URLs are clonable repositories rather than reference pages. */
 const REPOSITORY_HOSTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "codeberg.org"]);
@@ -141,4 +147,46 @@ export function libraryProjectTimeline(
   // Within one instant the outcome reads first, above the arrival that led to it.
   const rank = { "copy-removed": 0, "copy-failed": 0, "copy-added": 1, created: 2 } as const;
   return [...events].sort((a, b) => b.at.localeCompare(a.at) || rank[a.kind] - rank[b.kind]);
+}
+
+// Slate stays a deliberate choice: automatic colors should tell projects apart.
+const AUTOMATIC_PROJECT_COLORS = LIBRARY_PROJECT_COLORS.filter((color) => color !== "slate");
+
+/** The saved color, or a stable one derived from the id so a project never changes hue unasked. */
+export function libraryProjectColor(
+  project: Pick<LibraryProject, "id" | "color">,
+): LibraryProjectColor {
+  if (project.color) return project.color;
+  let hash = 0;
+  for (const char of project.id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return AUTOMATIC_PROJECT_COLORS[hash % AUTOMATIC_PROJECT_COLORS.length]!;
+}
+
+/** One or two letters that stand in for a project wherever its name is too long to show. */
+export function libraryProjectInitials(title: string) {
+  const words = title
+    .trim()
+    .split(/[\s_\-./]+/u)
+    .filter(Boolean);
+  const letters =
+    words.length > 1 ? `${words[0]![0]}${words[1]![0]}` : (words[0]?.slice(0, 1) ?? "");
+  return letters.toLocaleUpperCase() || "?";
+}
+
+export type LibraryPathParts = {
+  /** The folders above the last one, with a home directory shortened to `~`. Empty at a root. */
+  readonly parent: string;
+  /** The folder a person recognizes the path by. */
+  readonly name: string;
+};
+
+const HOME_PREFIX = /^(?:\/Users\/[^/]+|\/home\/[^/]+|[A-Za-z]:[\\/]Users[\\/][^\\/]+)(?=$|[\\/])/u;
+
+/** Splits an absolute path so the folder name leads and the home directory reads as `~`. */
+export function libraryPathParts(path: string): LibraryPathParts {
+  const trimmed = path.replace(/[\\/]+$/u, "") || path;
+  const shortened = trimmed.replace(HOME_PREFIX, "~");
+  const separator = Math.max(shortened.lastIndexOf("/"), shortened.lastIndexOf("\\"));
+  if (separator < 0) return { parent: "", name: shortened };
+  return { parent: shortened.slice(0, separator + 1), name: shortened.slice(separator + 1) };
 }
