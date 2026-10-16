@@ -1,7 +1,9 @@
-import { MINI_OFFLOAD_WS_METHODS as M } from "@t3tools/contracts/fork";
+import { MINI_OFFLOAD_WS_METHODS as M, type MiniWorkerRef } from "@t3tools/contracts/fork";
 import { Atom } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { requestGuarded } from "../rpc/client.ts";
 import {
+  createEnvironmentQueryAtomFamily,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "../state/runtime.ts";
@@ -28,6 +30,15 @@ export function createMiniOffloadAtoms<R, E>(
       label: "loom:mini-patch",
       tag: M.patch,
       staleTimeMs: 0,
+    }),
+    /**
+     * The same check as a read, for screens that show a worker's readiness without a button. Each
+     * read reaches the worker over SSH, so it stays fresh for the default stale time. The check is
+     * a guarded method: gate reads on `check.permissionAtom`; the request is authorized again here.
+     */
+    readiness: createEnvironmentQueryAtomFamily(runtime, {
+      label: "loom:mini-readiness",
+      execute: (input: MiniWorkerRef) => requestGuarded(M.check, input),
     }),
     check: createEnvironmentRpcCommand(runtime, { label: "loom:mini-check", tag: M.check }),
     prepare: createEnvironmentRpcCommand(runtime, { label: "loom:mini-prepare", tag: M.prepare }),
