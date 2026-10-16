@@ -1,4 +1,4 @@
-import { useAtomValue } from "@effect/atom-react";
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import {
   StackActions,
   useFocusEffect,
@@ -37,6 +37,7 @@ import { environmentPresentations } from "../../state/presentation";
 import { useEnvironmentQuery } from "../../state/query";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/session";
 import { setComposerDraftText, flushComposerDrafts } from "../../state/use-composer-drafts";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -44,7 +45,12 @@ import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
 import { library, refreshLibraryWork, useLibraryAuthority } from "./libraryState";
 import { libraryEligibleCopies, libraryListState, libraryRepositories } from "./libraryLogic";
-import { emptyLibraryLaunchReceipt, launchLibraryConversation } from "./libraryLaunch";
+import {
+  emptyLibraryLaunchReceipt,
+  launchLibraryConversation,
+  readLibraryLaunchAttempt,
+  encodeLibraryLaunchAttempt,
+} from "./libraryLaunch";
 
 function unwrap<A, E>(result: AtomCommandResult<A, E>): A {
   if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
@@ -60,6 +66,7 @@ export function LibraryStartRouteScreen({
   readonly reuseRootPath?: string;
 }>) {
   const authority = useLibraryAuthority();
+  const preferences = useAtomValue(mobilePreferencesAtom);
   const project = useEnvironmentQuery(
     authority.environmentId
       ? library.project({
@@ -93,7 +100,7 @@ export function LibraryStartRouteScreen({
       route.params.sourceArchiveId,
     ]),
   );
-  return project.data ? (
+  return project.data && AsyncResult.isSuccess(preferences) ? (
     <LibraryStartContent
       key={`${route.params.projectId}:${route.params.sourceArchiveId ?? "new"}:${route.params.reuseEnvironmentId ?? ""}:${route.params.reuseRootPath ?? ""}:${route.params.initialResourceId ?? ""}`}
       project={project.data}
@@ -133,21 +140,39 @@ function LibraryStartContent(props: {
     navigation = useNavigation(),
     { environments } = useEnvironments(),
     configs = useServerConfigs();
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom, { mode: "promise" });
+  const attemptKey = JSON.stringify([
+    authority.environmentId,
+    props.project.id,
+    props.sourceArchiveId ?? "new",
+  ]);
+  const [saved] = useState(() =>
+    readLibraryLaunchAttempt(
+      AsyncResult.isSuccess(preferences)
+        ? preferences.value.loomLibraryLaunches?.[attemptKey]
+        : undefined,
+    ),
+  );
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
-  const [selectedScope, setScope] = useState<string | null>(props.initialResourceId ?? null),
+  const [selectedScope, setScope] = useState<string | null>(
+      saved?.receipt.intent?.resourceIds.length === 1
+        ? saved.receipt.intent.resourceIds[0]!
+        : (props.initialResourceId ?? null),
+    ),
     [selectedExecution, setExecution] = useState<EnvironmentId | null>(
-      props.reuseEnvironmentId ?? null,
+      saved?.receipt.intent?.executionEnvironmentId ?? props.reuseEnvironmentId ?? null,
     ),
     [mode, setMode] = useState<"reuse" | "folder" | "clone">(
-      props.reuseRootPath ? "folder" : "reuse",
+      saved?.review.mode ?? (props.reuseRootPath ? "folder" : "reuse"),
     ),
-    [rootPath, setRootPath] = useState(props.reuseRootPath ?? ""),
+    [rootPath, setRootPath] = useState(saved?.review.rootPath ?? props.reuseRootPath ?? ""),
     [copyId, setCopyId] = useState<string | null>(null),
     [title, setTitle] = useState(
-      props.sourceArchiveId ? "Linked continuation" : "Project discussion",
+      saved?.review.title ?? (props.sourceArchiveId ? "Linked continuation" : "Project discussion"),
     ),
-    [modelKey, setModelKey] = useState<string | null>(null),
+    [modelKey, setModelKey] = useState<string | null>(saved?.review.model.key ?? null),
     [showModels, setShowModels] = useState(false);
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
@@ -159,20 +184,20 @@ function LibraryStartContent(props: {
     if (launchedThread && pending === null)
       navigation.dispatch(StackActions.replace("Thread", launchedThread));
   }, [launchedThread, pending, navigation]);
-  const [progress, setProgress] = useState(emptyLibraryLaunchReceipt);
-  const receipt = useRef(emptyLibraryLaunchReceipt()),
-    requestId = useRef(uuidv4()),
-    threadId = useRef(ThreadId.make(uuidv4())),
+  const [progress, setProgress] = useState(saved?.receipt ?? emptyLibraryLaunchReceipt());
+  const receipt = useRef(saved?.receipt ?? emptyLibraryLaunchReceipt()),
+    requestId = useRef(saved?.requestId ?? uuidv4()),
+    threadId = useRef(saved?.threadId ?? ThreadId.make(uuidv4())),
     busy = useRef(false);
   const reviewed = useRef<{
     authorityEnvironmentId: EnvironmentId;
-    model: ReturnType<typeof buildModelOptions>[number];
+    model: Pick<ReturnType<typeof buildModelOptions>[number], "key" | "selection">;
     title: string;
     mode: "reuse" | "folder" | "clone";
     rootPath: string;
     copy: LibraryWorkingCopy | null;
     carryContext: string;
-  } | null>(null);
+  } | null>(saved?.review ?? null);
   const source = useEnvironmentQuery(
     authority.environmentId && props.sourceArchiveId
       ? library.history({
@@ -203,7 +228,7 @@ function LibraryStartContent(props: {
         })
       : null,
   );
-  const [carryInput, setCarryContext] = useState<string | null>(null);
+  const [carryInput, setCarryContext] = useState<string | null>(saved?.review.carryContext ?? null);
   const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
   const suggestedHosts = environments.filter(
     (entry) =>
@@ -336,6 +361,22 @@ function LibraryStartContent(props: {
         },
         receipt.current,
         {
+          persist: async () => {
+            const serialized = encodeLibraryLaunchAttempt({
+              version: 1,
+              requestId: requestId.current,
+              threadId: threadId.current,
+              receipt: receipt.current,
+              review,
+            });
+            if (serialized.length > 256 * 1024)
+              throw new Error("This preparation is too large to save safely on this device.");
+            await savePreferences({
+              transform: (current) => ({
+                loomLibraryLaunches: { ...current.loomLibraryLaunches, [attemptKey]: serialized },
+              }),
+            });
+          },
           prepare: async (intent) => {
             if (review.mode === "reuse" && review.copy?.ownership === "managed") return review.copy;
             const copy = unwrap(
@@ -431,6 +472,13 @@ function LibraryStartContent(props: {
         await flushComposerDrafts();
       }
       refreshLibraryWork(authority.environmentId, launchProject.id);
+      await savePreferences({
+        transform: (current) => {
+          const next = { ...current.loomLibraryLaunches };
+          delete next[attemptKey];
+          return { loomLibraryLaunches: next };
+        },
+      });
       setLaunchedThread(target);
     } catch (cause) {
       setError(
@@ -450,6 +498,9 @@ function LibraryStartContent(props: {
         {launchProject.title} supplies shared context. This conversation runs on one chosen
         computer. Its binding stays fixed.
       </Text>
+      {saved ? (
+        <LibraryNotice detail="An unfinished preparation is saved on this device. Resume it with the original computer, files and context." />
+      ) : null}
       {props.projectNotice && progress.intent === null ? (
         <LibraryNotice
           detail={props.projectError ? null : props.projectNotice}

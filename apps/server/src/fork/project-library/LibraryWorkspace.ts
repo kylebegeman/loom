@@ -63,6 +63,9 @@ export class LibraryWorkspace extends Context.Service<
     readonly unregister: (
       input: LibraryReleaseCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
+    readonly threadProject: (input: {
+      readonly threadId: ThreadId;
+    }) => Effect.Effect<LibraryProject | null, LibraryError>;
     readonly threadBinding: (input: {
       threadId: ThreadId;
     }) => Effect.Effect<LibraryThreadBinding | null, LibraryError>;
@@ -311,9 +314,16 @@ const make = Effect.gen(function* () {
     )
       return yield* new LibraryError({ reason: "invalid" });
     const requestedPath = requestedRoot(input.rootPath);
-    const rootPath = (yield* fs.exists(requestedPath))
-      ? yield* fs.realPath(requestedPath)
-      : path.join(yield* fs.realPath(path.dirname(requestedPath)), path.basename(requestedPath));
+    let ancestor = requestedPath;
+    while (!(yield* fs.exists(ancestor))) {
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) return yield* new LibraryError({ reason: "not-found" });
+      ancestor = parent;
+    }
+    const rootPath = path.resolve(
+      yield* fs.realPath(ancestor),
+      path.relative(ancestor, requestedPath),
+    );
     if (contained(rootPath, config.stateDir)) return yield* new LibraryError({ reason: "invalid" });
     const requestedIds =
       input.resourceIds === undefined
@@ -500,7 +510,7 @@ const make = Effect.gen(function* () {
         if (!(yield* fs.exists(rootPath))) return yield* new LibraryError({ reason: "not-found" });
       } else {
         if (yield* fs.exists(rootPath)) return yield* new LibraryError({ reason: "blocked" });
-        yield* fs.makeDirectory(rootPath);
+        yield* fs.makeDirectory(rootPath, { recursive: true });
       }
       const info = yield* fs.stat(rootPath);
       if (info.type !== "Directory") return yield* new LibraryError({ reason: "invalid" });
@@ -1121,6 +1131,7 @@ const make = Effect.gen(function* () {
   });
 
   return LibraryWorkspace.of({
+    threadProject: (input) => store.getBoundProject(input.threadId),
     threadBinding: (input) =>
       store.getBinding(input.threadId).pipe(Effect.map((resolved) => resolved?.binding ?? null)),
     inspectFolder: (input) => mapIo(inspectFolder(input)),

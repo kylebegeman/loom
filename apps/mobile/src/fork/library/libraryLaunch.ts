@@ -1,12 +1,13 @@
-import type { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
-import type {
+import { EnvironmentId, ModelSelection, ThreadId, type ProjectId } from "@t3tools/contracts";
+import {
   LibraryProject,
-  LibraryResolveBindingRequest,
+  type LibraryResolveBindingRequest,
   LibraryResolvedBinding,
-  LibraryThreadArchive,
+  type LibraryThreadArchive,
   LibraryThreadBinding,
   LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
+import * as Schema from "effect/Schema";
 import { libraryBinding } from "./libraryLogic";
 
 export interface LibraryLaunchIntent {
@@ -25,6 +26,53 @@ export interface LibraryLaunchReceipt {
   threadBound: boolean;
   historyRegistered: boolean;
 }
+const Receipt = Schema.Struct({
+  intent: Schema.NullOr(
+    Schema.Struct({
+      project: LibraryProject,
+      executionEnvironmentId: EnvironmentId,
+      resourceIds: Schema.Array(Schema.String),
+      threadId: ThreadId,
+      continuationOf: Schema.optional(LibraryThreadBinding.fields.continuationOf),
+    }),
+  ),
+  copy: Schema.NullOr(LibraryWorkingCopy),
+  copyRegistered: Schema.Boolean,
+  resolved: Schema.NullOr(LibraryResolvedBinding),
+  threadCreated: Schema.Boolean,
+  threadBound: Schema.Boolean,
+  historyRegistered: Schema.Boolean,
+});
+export const LibraryLaunchAttempt = Schema.Struct({
+  version: Schema.Literal(1),
+  requestId: Schema.String,
+  threadId: ThreadId,
+  receipt: Receipt,
+  review: Schema.Struct({
+    authorityEnvironmentId: EnvironmentId,
+    model: Schema.Struct({ key: Schema.String, selection: ModelSelection }),
+    title: Schema.String,
+    mode: Schema.Literals(["reuse", "folder", "clone"]),
+    rootPath: Schema.String,
+    copy: Schema.NullOr(LibraryWorkingCopy),
+    carryContext: Schema.String,
+  }),
+});
+const decodeLibraryLaunchAttempt = Schema.decodeSync(Schema.fromJsonString(LibraryLaunchAttempt));
+export function readLibraryLaunchAttempt(serialized: string | undefined) {
+  if (!serialized) return null;
+  try {
+    return decodeLibraryLaunchAttempt(serialized);
+  } catch {
+    throw new Error(
+      "The saved preparation could not be read. Keep it for recovery instead of starting a duplicate conversation.",
+    );
+  }
+}
+export const encodeLibraryLaunchAttempt = Schema.encodeSync(
+  Schema.fromJsonString(LibraryLaunchAttempt),
+);
+
 export function emptyLibraryLaunchReceipt(): LibraryLaunchReceipt {
   return {
     intent: null,
@@ -56,6 +104,7 @@ export async function launchLibraryConversation(
     snapshot: () => Promise<LibraryThreadArchive>;
     registerHistory: (archive: LibraryThreadArchive) => Promise<void>;
     progress: (label: string) => void;
+    persist?: () => Promise<void>;
   },
 ) {
   if (!receipt.intent) {
@@ -81,9 +130,11 @@ export async function launchLibraryConversation(
     throw new Error(
       "This preparation already has a reviewed destination and context. Resume the original conversation.",
     );
+  await ports.persist?.();
   if (!receipt.copy) {
     ports.progress("Preparing working files…");
     receipt.copy = await ports.prepare(intent);
+    await ports.persist?.();
   }
   if (receipt.copy.environmentId !== intent.executionEnvironmentId)
     throw new Error(
@@ -97,10 +148,12 @@ export async function launchLibraryConversation(
     ports.progress("Saving working copy…");
     await ports.registerCopy(receipt.copy);
     receipt.copyRegistered = true;
+    await ports.persist?.();
   }
   if (!receipt.resolved) {
     ports.progress("Resolving conversation workspace…");
     receipt.resolved = await ports.resolve({ binding, project: intent.project });
+    await ports.persist?.();
   }
   if (
     receipt.resolved.binding.environmentId !== intent.executionEnvironmentId ||
@@ -116,11 +169,13 @@ export async function launchLibraryConversation(
     ports.progress("Creating conversation…");
     await ports.create(receipt.resolved.localProjectId);
     receipt.threadCreated = true;
+    await ports.persist?.();
   }
   if (!receipt.threadBound) {
     ports.progress("Binding conversation…");
     await ports.bind({ threadId: intent.threadId, binding, project: intent.project });
     receipt.threadBound = true;
+    await ports.persist?.();
   }
   if (!receipt.historyRegistered) {
     ports.progress("Saving conversation history…");
@@ -137,6 +192,7 @@ export async function launchLibraryConversation(
       throw new Error("The saved conversation does not match its reviewed binding.");
     await ports.registerHistory(archive);
     receipt.historyRegistered = true;
+    await ports.persist?.();
   }
   return { environmentId: intent.executionEnvironmentId, threadId: intent.threadId };
 }

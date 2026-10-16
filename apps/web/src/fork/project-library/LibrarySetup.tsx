@@ -43,7 +43,8 @@ export function LibrarySetup({
   const onlyLibraryId = eligible.length === 1 ? eligible[0]!.environmentId : null;
   const [chosenCandidate, setCandidate] = useState<EnvironmentId | null>(authority.authorityId);
   const candidate = chosenCandidate ?? onlyLibraryId;
-  const signInBaseUrl = useEnvironmentHttpBaseUrl(candidate);
+  const connectedBaseUrl = useEnvironmentHttpBaseUrl(candidate);
+  const signInBaseUrl = connectedBaseUrl ?? authority.destination?.url;
   const environment = authority.environments.find((entry) => entry.environmentId === candidate);
   const connected =
     environment?.entry.enabled === true && environment.connection.phase === "connected";
@@ -108,7 +109,7 @@ export function LibrarySetup({
         </p>
       ) : null}
       {signInBaseUrl ? (
-        <LoomSignIn baseUrl={signInBaseUrl} onConnected={setCandidate} />
+        <LoomSignIn baseUrl={signInBaseUrl} onConnected={setCandidate} showUnavailable />
       ) : (
         <LoomSignIn onConnected={setCandidate} />
       )}

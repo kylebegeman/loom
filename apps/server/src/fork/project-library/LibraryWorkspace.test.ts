@@ -404,7 +404,7 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         const service = yield* LibraryWorkspace.LibraryWorkspace;
         const copy = yield* service.prepareCopy({
           requestId: "clone-all",
-          rootPath: path.join(parent, "all"),
+          rootPath: path.join(parent, "new", "nested", "all"),
           project,
           strategy: "clone",
         });
@@ -596,6 +596,79 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         ))._tag,
       ).toBe("Failure");
     }),
+  );
+  it.effect(
+    "lets only proven migrated worktrees reach recovery when their checkout is missing",
+    () =>
+      Effect.gen(function* () {
+        const rootPath = yield* makeTemp;
+        const path = yield* Path.Path;
+        const fs = yield* FileSystem.FileSystem;
+        yield* initRepo(rootPath);
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const store = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const copy = yield* service.prepareCopy({
+          requestId: "legacy-worktree-recovery",
+          project: projectFor(true),
+          rootPath,
+          strategy: "reuse",
+        });
+        const resolved = yield* service.resolveBinding({
+          binding: {
+            projectId: copy.projectId,
+            projectRevision: copy.projectRevision,
+            workingCopyId: copy.id,
+            environmentId,
+            resourceIds: ["root"],
+          },
+        });
+        const cwd = path.join(rootPath, "missing-parent", "old-worktree");
+        const threadId = ThreadId.make("legacy-missing-worktree");
+        const receipt = yield* store.get(copy.id);
+        yield* store.put({ ...receipt, legacyThreadIds: [threadId] });
+        yield* store.bind(threadId, {
+          ...resolved,
+          cwd,
+          repositoryPaths: [cwd],
+          legacyWorktreeRoot: rootPath,
+        });
+        expect(
+          yield* store.validateThreadCwd({
+            threadId,
+            localProjectId: resolved.localProjectId,
+            cwd,
+          }),
+        ).toBe(cwd);
+        expect(yield* fs.exists(cwd)).toBe(false);
+        expect(
+          (yield* Effect.result(
+            store.validateThreadCwd({
+              threadId,
+              localProjectId: resolved.localProjectId,
+              cwd: rootPath,
+            }),
+          ))._tag,
+        ).toBe("Failure");
+        const ordinary = ThreadId.make("ordinary-missing-copy");
+        yield* store.bind(ordinary, { ...resolved, cwd, repositoryPaths: [cwd] });
+        expect(
+          (yield* Effect.result(
+            store.validateThreadCwd({
+              threadId: ordinary,
+              localProjectId: resolved.localProjectId,
+              cwd,
+            }),
+          ))._tag,
+        ).toBe("Failure");
+        const redirected = path.join(rootPath, "missing-parent");
+        const other = yield* makeTemp;
+        yield* fs.symlink(other, redirected);
+        expect(
+          (yield* Effect.result(
+            store.validateThreadCwd({ threadId, localProjectId: resolved.localProjectId, cwd }),
+          ))._tag,
+        ).toBe("Failure");
+      }),
   );
   it.effect("blocks an orphan conversation before its first provider launch", () =>
     Effect.gen(function* () {

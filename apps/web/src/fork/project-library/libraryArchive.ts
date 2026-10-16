@@ -1,21 +1,27 @@
 import type { LibraryThreadSummary } from "@t3tools/contracts/fork";
 import type { OrchestrationV2ThreadProjection } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
-import { deriveTimelineEntriesFromVisibleTurnItems } from "~/session-logic";
+import { deriveTimelineEntriesFromVisibleTurnItems, type TimelineEntry } from "~/session-logic";
 import type { ChatMessage } from "~/types";
 
 /** Read the captured visible conversation, including the parent's history in a fork. */
-export function libraryArchiveMessages(
+export function libraryArchiveTimeline(
   projection: Pick<OrchestrationV2ThreadProjection, "messages" | "visibleTurnItems" | "turnItems">,
-): readonly ChatMessage[] {
-  if (projection.visibleTurnItems.length === 0)
+): readonly TimelineEntry[] {
+  if (projection.visibleTurnItems.length === 0) {
     return projection.messages.map(({ scheduledTaskId, senderThreadId, ...message }) => ({
-      ...message,
-      ...(scheduledTaskId === undefined ? {} : { scheduledTaskId }),
-      ...(senderThreadId === undefined ? {} : { senderThreadId }),
+      id: message.id,
+      kind: "message" as const,
       createdAt: DateTime.formatIso(message.createdAt),
-      updatedAt: DateTime.formatIso(message.updatedAt),
+      message: {
+        ...message,
+        ...(scheduledTaskId === undefined ? {} : { scheduledTaskId }),
+        ...(senderThreadId === undefined ? {} : { senderThreadId }),
+        createdAt: DateTime.formatIso(message.createdAt),
+        updatedAt: DateTime.formatIso(message.updatedAt),
+      },
     }));
+  }
   const fullItems = new Map(projection.turnItems.map((item) => [item.id, item]));
   const visibleTurnItems = projection.visibleTurnItems.map((row) => {
     const full = fullItems.get(row.sourceItemId);
@@ -24,7 +30,15 @@ export function libraryArchiveMessages(
   return deriveTimelineEntriesFromVisibleTurnItems({
     visibleTurnItems,
     optimisticMessages: [],
-  }).flatMap((entry) => (entry.kind === "message" ? [entry.message] : []));
+  });
+}
+
+export function libraryArchiveMessages(
+  projection: Pick<OrchestrationV2ThreadProjection, "messages" | "visibleTurnItems" | "turnItems">,
+): readonly ChatMessage[] {
+  return libraryArchiveTimeline(projection).flatMap((entry) =>
+    entry.kind === "message" ? [entry.message] : [],
+  );
 }
 
 /** Cheap summary updates reload only the conversation currently being read. */

@@ -167,6 +167,7 @@ export const LibraryRegisterComputerRequest = Schema.Struct({
 });
 export type LibraryRegisterComputerRequest = typeof LibraryRegisterComputerRequest.Type;
 export const LibraryInfo = Schema.Struct({
+  destination: Schema.optional(Schema.Struct({ environmentId: EnvironmentId, url: Schema.String })),
   isAuthority: Schema.optional(Schema.Boolean),
   computers: Schema.optional(Schema.Array(LibraryComputer)),
   environmentId: EnvironmentId,
@@ -346,6 +347,8 @@ export const LibraryResolveBindingRequest = Schema.Struct({
 });
 export type LibraryResolveBindingRequest = typeof LibraryResolveBindingRequest.Type;
 export const LibraryResolvedBinding = Schema.Struct({
+  /** Migration-only base repository for native checkout recovery at the original cwd. */
+  legacyWorktreeRoot: Schema.optional(Schema.String),
   project: Schema.optional(LibraryProject),
   cwd: Schema.String,
   localProjectId: ProjectId,

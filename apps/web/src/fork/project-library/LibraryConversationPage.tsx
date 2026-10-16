@@ -1,5 +1,9 @@
+import type { TimelineEntry } from "~/session-logic";
+import { turnItemOutputText, toolCallLines } from "@t3tools/client-runtime/work-log/item-detail";
+import { ChevronRightIcon, ChevronDownIcon } from "lucide-react";
+import { WorkLogBlock, WorkLogButton, WorkLogDetails } from "~/components/chat/WorkLog";
 import { LibraryAttachment } from "./LibraryAttachment";
-import { libraryArchiveMessages, shouldRefreshLibraryArchive } from "./libraryArchive";
+import { libraryArchiveTimeline, shouldRefreshLibraryArchive } from "./libraryArchive";
 import { LibraryUploadStatus } from "./LibraryUploadStatus";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
@@ -35,8 +39,8 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
   const [continuing, setContinuing] = useState(false);
   const visibleMessages = 100;
   const archive = history.data;
-  const messages = useMemo(
-    () => (archive ? libraryArchiveMessages(archive.projection) : []),
+  const timeline = useMemo(
+    () => (archive ? libraryArchiveTimeline(archive.projection) : []),
     [archive],
   );
   const savedProjectId = archive?.summary.projectId;
@@ -169,34 +173,40 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
         </div>
       ) : null}
       <div className="divide-y divide-border">
-        {messages.slice(-visibleMessages).map((message) => (
-          <article key={message.id} className="space-y-3 py-5">
-            <h2 className="text-xs font-semibold text-muted-foreground">
-              {message.role === "user"
-                ? "You"
-                : message.role === "assistant"
-                  ? "Agent"
-                  : "Project context"}
-            </h2>
-            <ChatMarkdown text={message.text} cwd={undefined} />
-            {authority.authorityId && (message.attachments?.length ?? 0) ? (
-              <div className="flex flex-wrap gap-3">
-                {message.attachments?.map((attachment) => (
-                  <LibraryAttachment
-                    key={attachment.id}
-                    authorityId={authority.authorityId!}
-                    sourceEnvironmentId={archive.summary.environmentId}
-                    attachment={attachment}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </article>
-        ))}
+        {timeline.slice(-visibleMessages).map((entry) => {
+          if (entry.kind !== "message")
+            return <LibrarySavedActivity key={entry.id} entry={entry} />;
+          const message = entry.message;
+          return (
+            <article key={entry.id} className="space-y-3 py-5">
+              <h2 className="text-xs font-semibold text-muted-foreground">
+                {message.role === "user"
+                  ? "You"
+                  : message.role === "assistant"
+                    ? "Agent"
+                    : "Project context"}
+              </h2>
+              <ChatMarkdown text={message.text} cwd={undefined} />
+              {authority.authorityId && (message.attachments?.length ?? 0) ? (
+                <div className="flex flex-wrap gap-3">
+                  {message.attachments?.map((attachment) => (
+                    <LibraryAttachment
+                      key={attachment.id}
+                      authorityId={authority.authorityId!}
+                      sourceEnvironmentId={archive.summary.environmentId}
+                      attachment={attachment}
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          );
+        })}
       </div>
-      {messages.length === 0 ? (
+      {timeline.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No messages yet. Open the live conversation to start.
+          This page has no displayed messages or activity. Use Earlier history to keep reading, or
+          open the live conversation.
         </p>
       ) : null}
       {continuing && library.project.data ? (
@@ -210,5 +220,100 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
         />
       ) : null}
     </LibraryPageFrame>
+  );
+}
+
+/** Saved activity uses the same disclosure rows as live chat, with no execution controls. */
+function LibrarySavedActivity({ entry }: { entry: Exclude<TimelineEntry, { kind: "message" }> }) {
+  const [expanded, setExpanded] = useState(false);
+  const [visibleCharacters, setVisibleCharacters] = useState(12000);
+  const item =
+    entry.kind === "event"
+      ? entry.projectedItem.item
+      : entry.kind === "work"
+        ? entry.entry.projectedItem?.item
+        : undefined;
+  const label =
+    entry.kind === "work"
+      ? entry.entry.label
+      : entry.kind === "proposed-plan"
+        ? "Proposed plan"
+        : entry.kind === "html-render"
+          ? "Saved page"
+          : entry.kind === "mcp-app"
+            ? "Saved app"
+            : (item?.title ?? item?.type.replaceAll("_", " ") ?? "Agent activity");
+  let call = "";
+  if (expanded && item && (item.type === "command_execution" || item.type === "dynamic_tool")) {
+    const input = toolCallLines(
+      item.type === "command_execution" ? { command: item.input } : { args: item.input },
+    );
+    call =
+      input.command ??
+      input.argsText ??
+      input.args?.map(([key, value]) => `${key}: ${value}`).join("\n") ??
+      "";
+  }
+  const detail = !expanded
+    ? ""
+    : entry.kind === "proposed-plan"
+      ? entry.proposedPlan.planMarkdown
+      : item?.type === "reasoning"
+        ? item.text
+        : item
+          ? (turnItemOutputText(item) ?? "")
+          : "";
+  const status = item?.status;
+  return (
+    <div className="py-2">
+      <WorkLogBlock>
+        <WorkLogButton
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+          icon={
+            expanded ? (
+              <ChevronDownIcon className="size-3" />
+            ) : (
+              <ChevronRightIcon className="size-3" />
+            )
+          }
+          label={label}
+          trailing={
+            status ? (
+              <span className="text-xs text-muted-foreground">
+                {status === "running" || status === "waiting" ? `${status} when saved` : status}
+              </span>
+            ) : null
+          }
+        />
+        {expanded ? (
+          <WorkLogDetails>
+            {call ? (
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                {call.slice(0, visibleCharacters)}
+              </pre>
+            ) : null}
+            {detail ? (
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs">
+                {detail.slice(0, visibleCharacters)}
+              </pre>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                No additional text was captured for this activity.
+              </p>
+            )}
+            {Math.max(call.length, detail.length) > visibleCharacters ? (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setVisibleCharacters((value) => value + 12000)}
+              >
+                Show more
+              </Button>
+            ) : null}
+          </WorkLogDetails>
+        ) : null}
+      </WorkLogBlock>
+    </div>
   );
 }

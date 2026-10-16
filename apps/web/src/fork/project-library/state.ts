@@ -65,6 +65,7 @@ export function useLibraryAuthority() {
     isReady,
     info,
     computers: info.data?.computers ?? [],
+    destination: primaryInfo.data?.destination,
   };
 }
 

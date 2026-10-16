@@ -362,6 +362,38 @@ const make = Effect.gen(function* () {
           }
           const receipt = yield* get(resolved.binding.workingCopyId);
           if (
+            !(yield* fs.exists(input.cwd)) &&
+            resolved.legacyWorktreeRoot !== undefined &&
+            receipt.copy.ownership === "borrowed" &&
+            receipt.copy.state === "ready" &&
+            receipt.legacyThreadIds.includes(input.threadId) &&
+            input.localProjectId === resolved.localProjectId &&
+            path.resolve(input.cwd) === resolved.cwd &&
+            resolved.cwd !== resolved.legacyWorktreeRoot &&
+            ((receipt.rootLocalProjectId === input.localProjectId &&
+              receipt.copy.rootPath === resolved.legacyWorktreeRoot) ||
+              receipt.copy.repositories.some(
+                (repository) =>
+                  repository.localProjectId === input.localProjectId &&
+                  repository.path === resolved.legacyWorktreeRoot,
+              )) &&
+            (yield* fs.exists(resolved.legacyWorktreeRoot)) &&
+            (yield* fs.realPath(resolved.legacyWorktreeRoot)) === resolved.legacyWorktreeRoot &&
+            (yield* fs.exists(path.join(resolved.legacyWorktreeRoot, ".git")))
+          ) {
+            // The normal provider-start path restores native branches/checkpoints. Only an
+            // imported native worktree may pass this gate without its immutable cwd existing.
+            let ancestor = path.dirname(resolved.cwd);
+            while (!(yield* fs.exists(ancestor))) {
+              const parent = path.dirname(ancestor);
+              if (parent === ancestor) return yield* new LibraryError({ reason: "blocked" });
+              ancestor = parent;
+            }
+            if ((yield* fs.realPath(ancestor)) !== ancestor)
+              return yield* new LibraryError({ reason: "invalid" });
+            return resolved.cwd;
+          }
+          if (
             receipt.copy.state !== "ready" ||
             input.localProjectId !== resolved.localProjectId ||
             !(yield* fs.exists(input.cwd)) ||

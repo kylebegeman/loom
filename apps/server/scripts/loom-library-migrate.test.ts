@@ -299,6 +299,38 @@ describe("verified Library migration commands", () => {
         }),
       ),
   );
+  it.effect("marks only native branch worktrees for recovery at their original path", () =>
+    run((f) =>
+      Effect.gen(function* () {
+        const shadow = yield* decodeShadow(yield* f.fs.readFileString(f.archivePath));
+        const cwd = f.path.join(f.repository, "gone", "worktree");
+        yield* f.fs.writeFileString(
+          f.archivePath,
+          yield* encodeShadow({
+            ...shadow,
+            threads: shadow.threads.map((thread) => ({
+              ...thread,
+              projection: {
+                ...thread.projection,
+                thread: { ...thread.projection.thread, branch: "old-branch", worktreePath: cwd },
+              },
+            })),
+          }),
+        );
+        yield* uploadMigration(f.upload);
+        yield* activateMigration(f.activate);
+        const bound = yield* WorkspaceStore.LibraryWorkspaceStore.use((store) =>
+          store.getBinding(threadId),
+        ).pipe(Effect.provide(f.workspace));
+        expect(bound).toMatchObject({
+          cwd,
+          repositoryPaths: [cwd],
+          legacyWorktreeRoot: f.repository,
+        });
+        expect(yield* f.fs.exists(cwd)).toBe(false);
+      }),
+    ),
+  );
   it.effect(
     "uploads assets before history and binds original threads to borrowed folders after readback",
     () =>

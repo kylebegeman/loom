@@ -42,7 +42,9 @@ function LibraryIdentityContent({ environmentId }: { environmentId: EnvironmentI
     navigation = useNavigation();
   const register = useAtomCommand(environmentCatalog.register, { reportFailure: false });
   const enable = useAtomCommand(environmentCatalog.setEnabled, { reportFailure: false });
-  const [address, setAddress] = useState(connection?.httpBaseUrl ?? "");
+  const [address, setAddress] = useState(
+    connection?.httpBaseUrl ?? authority.destination?.url ?? "",
+  );
   const [pending, setPending] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null);
   const busy = useRef(false);

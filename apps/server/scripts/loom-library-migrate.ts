@@ -574,6 +574,11 @@ const prepareActivation = Effect.fnUntraced(function* (input: {
       bindings.push({
         threadId: thread.summary.threadId,
         resolved: {
+          ...(thread.projection.thread.worktreePath !== null &&
+          thread.projection.thread.branch !== null &&
+          cwd !== local.cwd
+            ? { legacyWorktreeRoot: local.cwd }
+            : {}),
           cwd,
           localProjectId: thread.summary.localProjectId,
           repositoryPaths,

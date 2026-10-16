@@ -9,7 +9,11 @@ import {
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 import { makeThreadProjectionFixture } from "~/test-fixtures";
-import { libraryArchiveMessages, shouldRefreshLibraryArchive } from "./libraryArchive";
+import {
+  libraryArchiveMessages,
+  libraryArchiveTimeline,
+  shouldRefreshLibraryArchive,
+} from "./libraryArchive";
 
 const now = DateTime.makeUnsafe("2026-10-15T12:00:00Z");
 const parentId = ThreadId.make("parent");
@@ -102,6 +106,23 @@ describe("saved Library conversation messages", () => {
     expect(result.map((value) => value.text)).toEqual(["Full captured message"]);
   });
 
+  it("keeps activity-only history pages visible in their captured order", () => {
+    const activity: OrchestrationV2TurnItem = {
+      ...item("reasoning"),
+      type: "reasoning",
+      text: "Captured reasoning",
+    };
+    const result = libraryArchiveTimeline({
+      ...makeThreadProjectionFixture(),
+      turnItems: [activity],
+      visibleTurnItems: [visible(activity, 0)],
+    });
+    expect(result.map((entry) => entry.kind)).toEqual(["work"]);
+    expect(result[0]?.kind === "work" && result[0].entry.projectedItem?.item).toMatchObject({
+      type: "reasoning",
+      text: "Captured reasoning",
+    });
+  });
   it("reads message-only legacy archives when visible turn items are unavailable", () => {
     const result = libraryArchiveMessages({
       ...makeThreadProjectionFixture(),

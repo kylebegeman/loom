@@ -54,6 +54,9 @@ const PullRequestListPreferences = Schema.Struct({
 });
 export type PullRequestListPreferences = typeof PullRequestListPreferences.Type;
 
+const isLibraryLaunches = Schema.is(
+  Schema.Record(Schema.String, Schema.String.check(Schema.isMaxLength(256 * 1024))),
+);
 const isThreadListFilters = Schema.is(ThreadListFilters);
 const isPullRequestListPreferences = Schema.is(PullRequestListPreferences);
 
@@ -75,6 +78,7 @@ export interface Preferences {
   // fork: project-navigation - Shared compact/sidebar navigation mode on this device.
   readonly loomNavigationView?: "threads" | "projects";
   readonly loomProjectPreparations?: ProjectPreparationReceipts;
+  readonly loomLibraryLaunches?: Readonly<Record<string, string>>;
   readonly "loom.library.authorityEnvironmentId"?: string | null;
   /** What the Return key does in the composer on a hardware keyboard. iOS only. */
   readonly composerEnterBehavior?: ComposerEnterBehavior;
@@ -161,6 +165,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     collapsedProjectGroups?: readonly string[];
     loomNavigationView?: "threads" | "projects";
     loomProjectPreparations?: ProjectPreparationReceipts;
+    loomLibraryLaunches?: Readonly<Record<string, string>>;
     "loom.library.authorityEnvironmentId"?: string | null;
     composerEnterBehavior?: ComposerEnterBehavior;
     followUpBehavior?: FollowUpBehavior;
@@ -301,6 +306,8 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   ) {
     preferences["loom.library.authorityEnvironmentId"] = libraryAuthority;
   }
+  if (isLibraryLaunches(parsed.loomLibraryLaunches))
+    preferences.loomLibraryLaunches = parsed.loomLibraryLaunches;
   const preparationReceipts = sanitizePreparationReceipts(parsed.loomProjectPreparations);
   if (preparationReceipts !== undefined) preferences.loomProjectPreparations = preparationReceipts;
   if (isThreadListFilters(parsed.threadListFilters)) {

@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import type {
   LibraryProject,
   LibraryResolveBindingRequest,
@@ -7,7 +7,12 @@ import type {
 } from "@t3tools/contracts/fork";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { makeRawThreadShell } from "../../test-fixtures";
-import { emptyLibraryLaunchReceipt, launchLibraryConversation } from "./libraryLaunch";
+import {
+  emptyLibraryLaunchReceipt,
+  launchLibraryConversation,
+  encodeLibraryLaunchAttempt,
+  readLibraryLaunchAttempt,
+} from "./libraryLaunch";
 const host = EnvironmentId.make("chosen-host"),
   threadId = ThreadId.make("thread"),
   localProjectId = ProjectId.make("compat-local");
@@ -126,6 +131,56 @@ function harness() {
   return { ports, order, archive };
 }
 describe("library conversation launch", () => {
+  it("saves intent before dispatch and resumes accepted steps after an app restart", async () => {
+    const h = harness(),
+      receipt = emptyLibraryLaunchReceipt();
+    let serialized = "";
+    const review = {
+      authorityEnvironmentId: EnvironmentId.make("authority"),
+      model: {
+        key: "codex",
+        selection: { instanceId: ProviderInstanceId.make("codex"), model: "model" },
+      },
+      title: "Project discussion",
+      mode: "reuse" as const,
+      rootPath: copy.rootPath,
+      copy,
+      carryContext: "Reviewed context",
+    };
+    h.ports.bind.mockRejectedValueOnce(new Error("offline"));
+    const persist = async () => {
+      serialized = encodeLibraryLaunchAttempt({
+        version: 1,
+        requestId: "stable-request",
+        threadId,
+        receipt,
+        review,
+      });
+    };
+    await expect(
+      launchLibraryConversation(input, receipt, { ...h.ports, persist }),
+    ).rejects.toThrow("offline");
+    const restored = readLibraryLaunchAttempt(serialized)!;
+    expect(restored.receipt.threadCreated).toBe(true);
+    expect(restored.review.carryContext).toBe("Reviewed context");
+    await launchLibraryConversation(input, restored.receipt, h.ports);
+    expect(h.ports.create).toHaveBeenCalledTimes(1);
+    expect(h.ports.prepare).toHaveBeenCalledTimes(1);
+  });
+  it("refuses dispatch when durable intent cannot be saved", async () => {
+    const h = harness();
+    await expect(
+      launchLibraryConversation(input, emptyLibraryLaunchReceipt(), {
+        ...h.ports,
+        persist: async () => {
+          throw new Error("storage full");
+        },
+      }),
+    ).rejects.toThrow("storage full");
+    expect(h.ports.prepare).not.toHaveBeenCalled();
+    expect(h.ports.create).not.toHaveBeenCalled();
+  });
+
   it("pins the reviewed project before preparation and keeps it across query refreshes", async () => {
     const h = harness(),
       receipt = emptyLibraryLaunchReceipt();

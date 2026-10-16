@@ -126,7 +126,12 @@ describe("independent Library catalog and durable history", () => {
       const result = yield* Effect.result(create(service));
       expect(result._tag).toBe("Failure");
       if (result._tag === "Failure") expect(result.failure.reason).toBe("not-authority");
-      expect(yield* service.projects({})).toEqual([]);
+      expect(yield* service.projects({}).pipe(Effect.flip)).toMatchObject({
+        reason: "not-authority",
+      });
+      expect(yield* service.history({ id: "missing" }).pipe(Effect.flip)).toMatchObject({
+        reason: "not-authority",
+      });
     }).pipe(
       Effect.provide(layerMemory.pipe(Layer.provideMerge(NodeServices.layer))),
       Effect.scoped,

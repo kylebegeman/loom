@@ -42,6 +42,15 @@ export function useLibraryAuthority() {
   const connected =
     presentation?.entry.enabled === true && presentation.connection.phase === "connected";
   const supported = supportsLoomFeature(config?.environment.capabilities, "project-library");
+  const sourceId = environments.find(
+    (entry) =>
+      entry.entry.enabled &&
+      entry.connection.phase === "connected" &&
+      entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+  )?.environmentId;
+  const sourceInfo = useEnvironmentQuery(
+    !environmentId && sourceId ? library.info({ environmentId: sourceId, input: {} }) : null,
+  );
   const info = useEnvironmentQuery(
     environmentId ? library.info({ environmentId, input: {} }) : null,
   );
@@ -68,6 +77,7 @@ export function useLibraryAuthority() {
       "Library server",
     info,
     computers: info.data?.computers ?? [],
+    destination: sourceInfo.data?.destination,
     select,
   } as const;
 }

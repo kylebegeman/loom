@@ -55,6 +55,20 @@ export const ProjectLibraryToolkit = Toolkit.make(
     success: Library.LibraryThreadIndex,
     failure,
   }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_connection", {
+    description:
+      "Read this computer's Library role and enrolled shared Library destination. Includes no credentials.",
+    parameters: Schema.Struct({}),
+    success: Library.LibraryInfo,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_bound_project", {
+    description:
+      "Read the pinned project brief and repository scope for a conversation on this execution computer, even when its Library is offline.",
+    parameters: Schema.Struct({ threadId: ThreadId }),
+    success: Schema.NullOr(Library.LibraryProject),
+    failure,
+  }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_thread_binding", {
     description:
       "Read the immutable project, scope and working-copy binding of an existing conversation on this computer.",
@@ -64,8 +78,14 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_history", {
     description:
-      "Read centrally uploaded full conversation history without contacting the original computer.",
-    parameters: Schema.Struct({ id: Library.LibraryId }),
+      "Read a bounded page of saved conversation history without contacting the original computer. Follow window.nextOffset for earlier items.",
+    parameters: Schema.Struct({
+      id: Library.LibraryId,
+      offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+      limit: Schema.optional(
+        Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100)),
+      ),
+    }),
     success: Library.LibraryThreadArchive,
     failure,
   }).annotate(Tool.Readonly, true),
@@ -173,13 +193,25 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
       loom_library_thread_index: McpToolAccess.reads((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.threadIndex(input))),
       ),
+      loom_library_connection: McpToolAccess.reads(() =>
+        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.info)),
+      ),
+      loom_library_bound_project: McpToolAccess.reads((input) =>
+        onHost(
+          Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.threadProject(input)),
+        ),
+      ),
       loom_library_thread_binding: McpToolAccess.reads((input) =>
         onHost(
           Effect.flatMap(Workspace.LibraryWorkspace, (service) => service.threadBinding(input)),
         ),
       ),
       loom_library_history: McpToolAccess.reads((input) =>
-        onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.history(input))),
+        onHost(
+          Effect.flatMap(Catalog.LibraryService, (service) =>
+            service.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
+          ),
+        ),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.createProject(input))),

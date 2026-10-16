@@ -33,6 +33,11 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryStore from "./LibraryStore.ts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as ServerConfig from "../../config.ts";
+import * as Option from "effect/Option";
+import * as FileSystem from "effect/FileSystem";
+import { libraryComputerDirectory, readLibraryDestination } from "./enrollment.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { libraryAttachments } from "./attachments.ts";
 import { validLibraryResources } from "./policy.ts";
@@ -153,6 +158,7 @@ const make = Effect.gen(function* () {
     Config.withDefault(false),
   );
   const store = yield* LibraryStore.LibraryStore;
+  const fs = yield* FileSystem.FileSystem;
   const identity = yield* ServerEnvironmentIdentity;
   const crypto = yield* Crypto.Crypto;
   const assets = yield* Assets.LibraryAssetService;
@@ -419,8 +425,32 @@ const make = Effect.gen(function* () {
         ? yield* decode(codecs.authority, saved)
         : { id: yield* randomUuidV4, epoch: 1 };
       if (!saved) yield* store.putAuthority(yield* encode(codecs.authority, authority));
+      const environmentId = yield* identity.getEnvironmentId;
+      const config = yield* Effect.serviceOption(ServerConfig.ServerConfig);
+      const destination =
+        isAuthority || Option.isNone(config)
+          ? undefined
+          : yield* Effect.gen(function* () {
+              const configuredFile = yield* Config.String("LOOM_LIBRARY_CREDENTIAL_FILE").pipe(
+                Config.option,
+              );
+              const home = yield* HostProcess.HomeDirectory;
+              return yield* readLibraryDestination({
+                sourceEnvironmentId: environmentId,
+                credentialPaths: Option.isSome(configuredFile)
+                  ? [configuredFile.value]
+                  : [
+                      `${libraryComputerDirectory(home, environmentId)}/publisher.json`,
+                      `${config.value.secretsDir}/library-publisher.json`,
+                    ],
+              });
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, fs),
+              Effect.catch(() => Effect.succeed(undefined)),
+            );
       return {
-        environmentId: yield* identity.getEnvironmentId,
+        ...(destination ? { destination } : {}),
+        environmentId,
         isAuthority,
         computers: isAuthority
           ? yield* Effect.forEach(yield* store.computers, (row) => decode(codecs.computer, row))
@@ -698,6 +728,8 @@ const make = Effect.gen(function* () {
         return yield* verifyProof(input);
       }),
     );
+  const catalogRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    isAuthority ? effect : Effect.fail(new LibraryError({ reason: "not-authority" }));
   return LibraryService.of({
     info,
     registerComputer,
@@ -710,33 +742,41 @@ const make = Effect.gen(function* () {
     ingestHistory,
     importShadow,
     verifyImport,
-    project: (input) => getProject(input.projectId).pipe(Effect.mapError(io)),
+    project: (input) => catalogRead(getProject(input.projectId).pipe(Effect.mapError(io))),
     projects: (input) =>
-      store.projects(input.includeArchived ?? false).pipe(
-        Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.project, row))),
-        Effect.mapError(io),
+      catalogRead(
+        store.projects(input.includeArchived ?? false).pipe(
+          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.project, row))),
+          Effect.mapError(io),
+        ),
       ),
     copies: (input) =>
-      store.copies(input.projectId).pipe(
-        Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.copy, row))),
-        Effect.map((copies) =>
-          input.includeReleased === true
-            ? copies
-            : copies.filter((copy) => copy.registered !== false && copy.state !== "released"),
+      catalogRead(
+        store.copies(input.projectId).pipe(
+          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.copy, row))),
+          Effect.map((copies) =>
+            input.includeReleased === true
+              ? copies
+              : copies.filter((copy) => copy.registered !== false && copy.state !== "released"),
+          ),
+          Effect.mapError(io),
         ),
-        Effect.mapError(io),
       ),
     threads: (input) =>
-      store.threads(input.projectId, 2147483647, 0).pipe(
-        Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
-        Effect.mapError(io),
+      catalogRead(
+        store.threads(input.projectId, 2147483647, 0).pipe(
+          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
+          Effect.mapError(io),
+        ),
       ),
     lookupThread: (input) =>
-      store.threadSummary(input.sourceEnvironmentId, input.threadId).pipe(
-        Effect.flatMap((row) =>
-          row === null ? Effect.succeed(null) : decode(codecs.summary, row),
+      catalogRead(
+        store.threadSummary(input.sourceEnvironmentId, input.threadId).pipe(
+          Effect.flatMap((row) =>
+            row === null ? Effect.succeed(null) : decode(codecs.summary, row),
+          ),
+          Effect.mapError(io),
         ),
-        Effect.mapError(io),
       ),
     threadIndex: (input) => {
       const offset = input.offset ?? 0;
@@ -749,46 +789,50 @@ const make = Effect.gen(function* () {
         limit > 200
       )
         return Effect.fail(new LibraryError({ reason: "invalid" }));
-      return store.threadIndex(limit + 1, offset).pipe(
-        Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
-        Effect.map((rows) => ({
-          threads: rows.slice(0, limit),
-          nextOffset: rows.length > limit ? offset + limit : null,
-        })),
-        Effect.mapError(io),
+      return catalogRead(
+        store.threadIndex(limit + 1, offset).pipe(
+          Effect.flatMap((rows) => Effect.forEach(rows, (row) => decode(codecs.summary, row))),
+          Effect.map((rows) => ({
+            threads: rows.slice(0, limit),
+            nextOffset: rows.length > limit ? offset + limit : null,
+          })),
+          Effect.mapError(io),
+        ),
       );
     },
     history: (input) =>
-      Effect.gen(function* () {
-        if (input.offset !== undefined || input.limit !== undefined) {
-          const offset = input.offset ?? 0,
-            limit = input.limit ?? 50;
-          if (
-            !Number.isSafeInteger(offset) ||
-            offset < 0 ||
-            !Number.isSafeInteger(limit) ||
-            limit < 1 ||
-            limit > 100
-          )
-            return yield* invalid();
-          const page = yield* store.historyWindow(input.id, offset, limit);
-          if (!page) return yield* new LibraryError({ reason: "not-found" });
-          const archive = yield* decode(codecs.archive, page.payload);
-          return {
-            ...archive,
-            window: {
-              offset,
-              totalItems: page.totalItems,
-              hasMore: offset + (page.itemCount ?? limit) < page.totalItems,
-              nextOffset: offset + (page.itemCount ?? limit),
-            },
-          };
-        }
-        const row = yield* store.history(input.id);
-        return row === null
-          ? yield* new LibraryError({ reason: "not-found" })
-          : yield* decode(codecs.archive, row);
-      }).pipe(Effect.mapError(io)),
+      catalogRead(
+        Effect.gen(function* () {
+          if (input.offset !== undefined || input.limit !== undefined) {
+            const offset = input.offset ?? 0,
+              limit = input.limit ?? 50;
+            if (
+              !Number.isSafeInteger(offset) ||
+              offset < 0 ||
+              !Number.isSafeInteger(limit) ||
+              limit < 1 ||
+              limit > 100
+            )
+              return yield* invalid();
+            const page = yield* store.historyWindow(input.id, offset, limit);
+            if (!page) return yield* new LibraryError({ reason: "not-found" });
+            const archive = yield* decode(codecs.archive, page.payload);
+            return {
+              ...archive,
+              window: {
+                offset,
+                totalItems: page.totalItems,
+                hasMore: offset + (page.itemCount ?? limit) < page.totalItems,
+                nextOffset: offset + (page.itemCount ?? limit),
+              },
+            };
+          }
+          const row = yield* store.history(input.id);
+          return row === null
+            ? yield* new LibraryError({ reason: "not-found" })
+            : yield* decode(codecs.archive, row);
+        }).pipe(Effect.mapError(io)),
+      ),
   });
 });
 export const layer = Layer.effect(LibraryService, make).pipe(Layer.provide(LibraryStore.layer));
