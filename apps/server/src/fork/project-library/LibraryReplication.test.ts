@@ -161,6 +161,68 @@ const run = <A, E, R>(use: (state: Effect.Success<typeof fixture>) => Effect.Eff
   );
 
 describe("durable Library history replication", () => {
+  it.effect(
+    "seeds verified imported watermarks without uploading old history and catches later milestones",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const importedWorkspace = {
+            ...workspace,
+            bindings: Effect.succeed([
+              {
+                threadId,
+                resolved,
+                importedHistory: {
+                  authorityId: "authority",
+                  authorityEpoch: 1,
+                  sequence: 100,
+                  sourceEventSequence: 120,
+                },
+              },
+            ]),
+          };
+          const service = yield* Replication.LibraryReplication.pipe(
+            Effect.provide(Replication.layer),
+            Effect.provideService(Publisher.LibraryPublisher, {
+              enabled: true,
+              info: Ref.get(f.authority),
+              registerCopy: (input) => Effect.succeed(input.copy),
+              publishAttachments: () => Effect.void,
+              ingest: (input) =>
+                Ref.update(f.requests, (rows) => [...rows, input]).pipe(
+                  Effect.as({
+                    sourceEnvironmentId: source,
+                    journalId: input.journalId,
+                    lastSequence: input.entries.at(-1)!.sequence,
+                    applied: input.entries.length,
+                  }),
+                ),
+            }),
+            Effect.provideService(WorkspaceStore.LibraryWorkspaceStore, importedWorkspace),
+            Effect.provideService(ServerEnvironmentIdentity, {
+              getEnvironmentId: Effect.succeed(source),
+            }),
+            Effect.provideService(HistorySource.LibraryHistorySource, {
+              snapshotThread: () =>
+                Ref.update(f.snapshots, (n) => n + 1).pipe(Effect.andThen(Ref.get(f.archive))),
+            }),
+          );
+          yield* service.drain;
+          expect(yield* Ref.get(f.snapshots)).toBe(0);
+          expect(yield* Ref.get(f.requests)).toEqual([]);
+          expect((yield* service.status).threads[0]?.acknowledgedSequence).toBe(100);
+          yield* f.event(121, "thread.metadata-updated", "{}");
+          yield* Ref.update(f.archive, (archive) => ({
+            ...archive,
+            summary: { ...archive.summary, sequence: 121 },
+          }));
+          yield* service.drain;
+          expect(yield* Ref.get(f.snapshots)).toBe(1);
+          expect((yield* service.status).threads[0]?.acknowledgedSequence).toBe(121);
+        }),
+      ),
+  );
+
   it.effect("replays a persisted batch after a lost acknowledgement and host restart", () =>
     run((f) =>
       Effect.gen(function* () {

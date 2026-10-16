@@ -15,8 +15,10 @@ export function LoomSignIn({
   description = true,
   onConnected,
   showUnavailable = false,
+  onAvailabilityChange,
 }: {
   readonly baseUrl?: string;
+  readonly onAvailabilityChange?: (available: boolean) => void;
   readonly description?: boolean;
   readonly showUnavailable?: boolean;
   readonly onConnected?: (environmentId: EnvironmentId) => void;
@@ -44,13 +46,24 @@ export function LoomSignIn({
         if (!abort.signal.aborted) {
           setChecked(target);
           if (metadata) setIdentity({ baseUrl: target, metadata });
+          onAvailabilityChange?.(
+            Boolean(
+              metadata?.enabled &&
+              (isElectron
+                ? metadata.nativeClientId && window.desktopBridge?.signInToLoom
+                : metadata.browserLoginEnabled),
+            ),
+          );
         }
       })
       .catch(() => {
-        if (!abort.signal.aborted) setChecked(target);
+        if (!abort.signal.aborted) {
+          setChecked(target);
+          onAvailabilityChange?.(false);
+        }
       });
     return () => abort.abort();
-  }, [baseUrl, checkAttempt]);
+  }, [baseUrl, checkAttempt, onAvailabilityChange]);
   const active = identity && (!baseUrl || identity.baseUrl === baseUrl) ? identity : null;
   const browserUrl = active ? loomBrowserLoginUrl(active.baseUrl, active.metadata) : null;
   const nativeEnabled =

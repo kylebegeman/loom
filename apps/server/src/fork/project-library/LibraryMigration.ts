@@ -39,6 +39,9 @@ export type LibraryMigrationPlan = typeof LibraryMigrationPlan.Type;
 export class LibraryMigration extends Context.Service<
   LibraryMigration,
   {
+    readonly withSnapshot: <A, E, R>(
+      effect: Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | LibraryError, R>;
     readonly inventory: Effect.Effect<
       {
         readonly projects: readonly ProjectStore.ProjectRow[];
@@ -225,6 +228,17 @@ const make = Effect.gen(function* () {
       isLibraryError(cause) ? cause : new LibraryError({ reason: "io" }),
     ),
   );
-  return LibraryMigration.of({ inventory, exportShadow });
+  return LibraryMigration.of({
+    inventory,
+    exportShadow,
+    withSnapshot: (effect) =>
+      sql
+        .withTransaction(effect)
+        .pipe(
+          Effect.mapError((cause) =>
+            isLibraryError(cause) ? cause : new LibraryError({ reason: "io" }),
+          ),
+        ),
+  });
 });
 export const layer = Layer.effect(LibraryMigration, make);

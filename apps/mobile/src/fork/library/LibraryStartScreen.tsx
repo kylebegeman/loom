@@ -157,8 +157,10 @@ function LibraryStartContent(props: {
   const operable = useEnvironmentsWithScope(environments, AuthOrchestrationOperateScope),
     writable = useEnvironmentsWithScope(environments, AuthSourceControlWriteScope);
   const [selectedScope, setScope] = useState<string | null>(
-      saved?.receipt.intent?.resourceIds.length === 1
-        ? saved.receipt.intent.resourceIds[0]!
+      saved?.receipt.intent
+        ? saved.receipt.intent.resourceIds.length === 1
+          ? saved.receipt.intent.resourceIds[0]!
+          : "all"
         : (props.initialResourceId ?? null),
     ),
     [selectedExecution, setExecution] = useState<EnvironmentId | null>(

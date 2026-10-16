@@ -22,8 +22,9 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { ThreadId } from "@t3tools/contracts";
+import { ThreadId, NonNegativeInt } from "@t3tools/contracts";
 import { Command, Flag } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 import * as ServerConfig from "../src/config.ts";
@@ -136,6 +137,7 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
   requestId: string;
   journalId: string;
   chunked?: boolean;
+  afterSequence?: number;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -155,58 +157,62 @@ export const exportMigration = Effect.fnUntraced(function* (input: {
   }
   yield* fs.makeDirectory(input.output, { recursive: false, mode: 0o700 });
   const result = yield* Migration.LibraryMigration.use((service) =>
-    Effect.gen(function* () {
-      const inventory = yield* service.inventory;
-      const included = inventory.threads.filter(
-        (t) => !plan.excludedThreadIds.includes(t.threadId),
-      );
-      const chunks: Array<(typeof ChunkManifest.Type.chunks)[number]> = [];
-      // One full thread at a time bounds memory independently of the library's lifetime.
-      // An incomplete export has no manifest and can never be uploaded or activated.
-      for (let index = 0; index < Math.max(1, included.length); index++) {
-        const thread = included[index];
-        const suffix = String(index).padStart(5, "0");
-        const shadow = yield* service.exportShadow({
-          requestId: `${input.requestId}:${suffix}`,
+    service.withSnapshot(
+      Effect.gen(function* () {
+        const inventory = yield* service.inventory;
+        const included = inventory.threads.filter(
+          (t) =>
+            !plan.excludedThreadIds.includes(t.threadId) &&
+            (input.afterSequence === undefined || t.sequence > input.afterSequence),
+        );
+        const chunks: Array<(typeof ChunkManifest.Type.chunks)[number]> = [];
+        // One full thread at a time bounds memory independently of the library's lifetime.
+        // An incomplete export has no manifest and can never be uploaded or activated.
+        for (let index = 0; index < Math.max(1, included.length); index++) {
+          const thread = included[index];
+          const suffix = String(index).padStart(5, "0");
+          const shadow = yield* service.exportShadow({
+            requestId: `${input.requestId}:${suffix}`,
+            journalId: input.journalId,
+            plan: {
+              ...plan,
+              excludedThreadIds: inventory.threads
+                .filter((t) => t.threadId !== thread?.threadId)
+                .map((t) => t.threadId),
+            },
+          });
+          const text = yield* encodeShadow(shadow);
+          const bytes = new TextEncoder().encode(text);
+          if (bytes.byteLength > 512 * 1024 * 1024)
+            return yield* new LibraryError({ reason: "storage-limit" });
+          const file = `chunk-${suffix}.json`;
+          yield* writePrivate(path.join(input.output, file), text);
+          chunks.push({
+            file,
+            sha256: Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+            byteLength: bytes.byteLength,
+            threads: shadow.threads.length,
+            threadIds: shadow.threads.map((t) => t.summary.threadId),
+          });
+        }
+        const manifest = {
+          version: 1 as const,
+          sourceEnvironmentId: plan.sourceEnvironmentId,
+          requestId: input.requestId,
           journalId: input.journalId,
-          plan: {
-            ...plan,
-            excludedThreadIds: inventory.threads
-              .filter((t) => t.threadId !== thread?.threadId)
-              .map((t) => t.threadId),
-          },
-        });
-        const text = yield* encodeShadow(shadow);
-        const bytes = new TextEncoder().encode(text);
-        if (bytes.byteLength > 512 * 1024 * 1024)
-          return yield* new LibraryError({ reason: "storage-limit" });
-        const file = `chunk-${suffix}.json`;
-        yield* writePrivate(path.join(input.output, file), text);
-        chunks.push({
-          file,
-          sha256: Hex.encode(yield* crypto.digest("SHA-256", bytes)),
-          byteLength: bytes.byteLength,
-          threads: shadow.threads.length,
-          threadIds: shadow.threads.map((t) => t.summary.threadId),
-        });
-      }
-      const manifest = {
-        version: 1 as const,
-        sourceEnvironmentId: plan.sourceEnvironmentId,
-        requestId: input.requestId,
-        journalId: input.journalId,
-        sourceEventSequence: inventory.eventSequence,
-        threads: included.length,
-        chunks,
-      };
-      yield* writePrivate(path.join(input.output, "manifest.json"), yield* encodeJson(manifest));
-      return {
-        projects: plan.projects.length,
-        copies: plan.copies.length,
-        threads: included.length,
-        output: input.output,
-      };
-    }),
+          sourceEventSequence: inventory.eventSequence,
+          threads: included.length,
+          chunks,
+        };
+        yield* writePrivate(path.join(input.output, "manifest.json"), yield* encodeJson(manifest));
+        return {
+          projects: plan.projects.length,
+          copies: plan.copies.length,
+          threads: included.length,
+          output: input.output,
+        };
+      }),
+    ),
   ).pipe(Effect.provide(sourceLayer(input.database)));
   return result;
 });
@@ -284,7 +290,7 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
   const token = yield* Config.Redacted("LOOM_LIBRARY_TOKEN");
   const execute = Effect.fnUntraced(function* (request: HttpClientRequest.HttpClientRequest) {
     const response = yield* http.execute(request.pipe(HttpClientRequest.bearerToken(token))).pipe(
-      Effect.timeout("60 seconds"),
+      Effect.timeout("5 minutes"),
       Effect.mapError(() => new LibraryError({ reason: "io" })),
     );
     if (response.status < 200 || response.status >= 300)
@@ -367,7 +373,7 @@ const uploadMigrationPart = Effect.fnUntraced(function* (input: {
         ...authority,
         requestId: `${shadow.requestId}:catch-up:${offset}`,
         sourceEnvironmentId: shadow.sourceEnvironmentId,
-        journalId: `${shadow.journalId}:catch-up`,
+        journalId: `${shadow.journalId}:catch-up:${shadow.requestId}`,
         fromSequence: cursor,
         entries,
       };
@@ -452,6 +458,7 @@ const prepareActivation = Effect.fnUntraced(function* (input: {
   plan: string;
   stateDir: string;
   libraryUrl: string;
+  sourceEventSequence?: number;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -531,6 +538,7 @@ const prepareActivation = Effect.fnUntraced(function* (input: {
   }
   const receipts: WorkspaceStore.WorkspaceReceipt[] = [];
   const bindings: {
+    importedHistory: typeof WorkspaceStore.ImportedHistoryWatermark.Type;
     threadId: (typeof shadow.threads)[number]["summary"]["threadId"];
     resolved: Parameters<WorkspaceStore.LibraryWorkspaceStore["Service"]["bind"]>[1];
     project: (typeof plan.projects)[number];
@@ -572,6 +580,12 @@ const prepareActivation = Effect.fnUntraced(function* (input: {
               .filter((repo) => thread.summary.resourceIds.includes(repo.resourceId))
               .map((repo) => repo.path);
       bindings.push({
+        importedHistory: {
+          authorityId: info.authorityId,
+          authorityEpoch: info.authorityEpoch,
+          sequence: thread.summary.sequence,
+          sourceEventSequence: input.sourceEventSequence ?? thread.summary.sequence,
+        },
         threadId: thread.summary.threadId,
         resolved: {
           ...(thread.projection.thread.worktreePath !== null &&
@@ -638,6 +652,7 @@ export const activateMigration = Effect.fnUntraced(function* (input: {
       prepared.push(
         yield* prepareActivation({
           ...input,
+          sourceEventSequence: manifest.sourceEventSequence,
           archive: path.join(input.archive, chunk.file),
           receipt: path.join(input.receipt, chunk.file),
         }),
@@ -709,9 +724,13 @@ const exportCommand = Command.make(
     requestId: Flag.String("request-id"),
     journalId: Flag.String("journal-id"),
     chunked: Flag.Boolean("chunked").pipe(Flag.withDefault(false)),
+    afterSequence: Flag.Int("after-sequence").pipe(Flag.withSchema(NonNegativeInt), Flag.optional),
   },
-  (input) =>
-    exportMigration(input).pipe(
+  ({ afterSequence, ...input }) =>
+    exportMigration({
+      ...input,
+      ...(Option.isSome(afterSequence) ? { afterSequence: afterSequence.value } : {}),
+    }).pipe(
       Effect.flatMap((result) =>
         Console.log(
           `Shadow export saved: ${result.projects} projects, ${result.copies} copies, ${result.threads} threads.`,

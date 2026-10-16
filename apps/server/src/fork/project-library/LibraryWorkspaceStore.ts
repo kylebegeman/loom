@@ -45,7 +45,14 @@ export const WorkspaceReceipt = Schema.Struct({
   archiveDigest: Schema.NullOr(Schema.String),
 });
 export type WorkspaceReceipt = typeof WorkspaceReceipt.Type;
+export const ImportedHistoryWatermark = Schema.Struct({
+  authorityId: Schema.String,
+  authorityEpoch: Schema.Number,
+  sequence: Schema.Number,
+  sourceEventSequence: Schema.Number,
+});
 const StoredBinding = Schema.Struct({
+  importedHistory: Schema.optional(ImportedHistoryWatermark),
   threadId: ThreadId,
   resolved: LibraryResolvedBinding,
   project: Schema.optional(LibraryProject),
@@ -105,6 +112,7 @@ export class LibraryWorkspaceStore extends Context.Service<
       readonly receipts: ReadonlyArray<WorkspaceReceipt>;
       readonly bindings: ReadonlyArray<{
         readonly threadId: ThreadId;
+        readonly importedHistory?: typeof ImportedHistoryWatermark.Type;
         readonly resolved: LibraryResolvedBinding;
         readonly project: LibraryProject;
       }>;
@@ -247,6 +255,20 @@ const make = Effect.gen(function* () {
                   (yield* encodeProject(pinned)) !== (yield* encodeProject(incoming.project))
                 )
                   return yield* new LibraryError({ reason: "blocked" });
+                if (incoming.importedHistory) {
+                  const previous = existing.importedHistory;
+                  if (
+                    previous &&
+                    (previous.authorityId !== incoming.importedHistory.authorityId ||
+                      previous.authorityEpoch !== incoming.importedHistory.authorityEpoch ||
+                      previous.sequence > incoming.importedHistory.sequence)
+                  )
+                    return yield* new LibraryError({ reason: "blocked" });
+                  bindings.set(incoming.threadId, {
+                    ...existing,
+                    importedHistory: incoming.importedHistory,
+                  });
+                }
               }
             }
             yield* write({

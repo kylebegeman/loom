@@ -67,7 +67,7 @@ export const layer = Layer.unwrap(
         client: deriveAuthClientMetadata({ request }),
       });
       return yield* setCookie(
-        HttpServerResponse.redirect("/library", { headers: HEADERS }),
+        HttpServerResponse.redirect("/", { headers: HEADERS }),
         sessions.cookieName,
         session.token,
         DateTime.toUtc(session.expiresAt),

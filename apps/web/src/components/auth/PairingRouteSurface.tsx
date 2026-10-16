@@ -38,6 +38,7 @@ export function PairingRouteSurface({
   initialErrorMessage?: string;
   onAuthenticated: () => void;
 }) {
+  const [accountAvailable, setAccountAvailable] = useState(false);
   const autoPairTokenRef = useRef<string | null>(peekPairingTokenFromUrl());
   const [credential, setCredential] = useState(() => autoPairTokenRef.current ?? "");
   const [errorMessage, setErrorMessage] = useState(initialErrorMessage ?? "");
@@ -105,18 +106,9 @@ export function PairingRouteSurface({
     };
   }, [submitCredential]);
 
-  return (
-    <StandalonePage tone="pairing">
-      <StandalonePageHeader
-        eyebrow={APP_DISPLAY_NAME}
-        title="Pair with this environment"
-        description={describeAuthGate(auth.bootstrapMethods)}
-      />
-
-      <div className="mt-6">
-        <LoomSignIn />
-      </div>
-      <form className="mt-6 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
+  const pairingForm = (
+    <>
+      <form className="mt-4 space-y-4" onSubmit={(event) => void handleSubmit(event)}>
         <div className="space-y-2">
           <label className="text-sm font-medium" htmlFor="pairing-token">
             Pairing token
@@ -159,6 +151,33 @@ export function PairingRouteSurface({
       <div className="mt-6 rounded-lg border border-border/70 bg-background/55 px-3 py-3 text-xs leading-relaxed text-muted-foreground">
         {describeSupportedMethods(auth.bootstrapMethods)}
       </div>
+    </>
+  );
+  return (
+    <StandalonePage tone="pairing">
+      <StandalonePageHeader
+        eyebrow={APP_DISPLAY_NAME}
+        title={accountAvailable ? "Welcome to Loom" : "Pair with this environment"}
+        description={
+          accountAvailable
+            ? "Sign in with your passkey to open your threads and projects."
+            : describeAuthGate(auth.bootstrapMethods)
+        }
+      />
+
+      <div className="mt-6">
+        <LoomSignIn onAvailabilityChange={setAccountAvailable} description={!accountAvailable} />
+      </div>
+      {accountAvailable ? (
+        <details open={Boolean(credential || errorMessage)} className="mt-6">
+          <summary className="cursor-pointer text-sm text-muted-foreground">
+            Use a pairing link instead
+          </summary>
+          {pairingForm}
+        </details>
+      ) : (
+        <div className="mt-6">{pairingForm}</div>
+      )}
     </StandalonePage>
   );
 }

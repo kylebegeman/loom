@@ -1,8 +1,9 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ChatAttachmentId, EnvironmentId } from "@t3tools/contracts";
+import { ChatAttachmentId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryImportShadowRequest,
+  LibraryIngestHistoryRequest,
   type LibraryImportReceipt,
   type LibraryProject,
 } from "@t3tools/contracts/fork";
@@ -33,6 +34,9 @@ const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 const shadowCodec = Schema.fromJsonString(Schema.toCodecJson(LibraryImportShadowRequest));
 const encodeShadow = Schema.encodeEffect(shadowCodec);
 const decodeShadow = Schema.decodeEffect(shadowCodec);
+const decodeHistory = Schema.decodeEffect(
+  Schema.fromJsonString(Schema.toCodecJson(LibraryIngestHistoryRequest)),
+);
 const encodePlan = Schema.encodeEffect(Schema.fromJsonString(LibraryMigrationPlan));
 
 const fixture = Effect.gen(function* () {
@@ -110,6 +114,7 @@ const fixture = Effect.gen(function* () {
   yield* fs.writeFile(path.join(attachmentsDir, `${attachment.id}.png`), new Uint8Array([1, 2, 3]));
   const responses = { authorityEpoch: 1, readbackVerified: true, assetDigestValid: true };
   const requests: string[] = [];
+  const catchUpCursors = new Map<string, number>();
   const uploadedArchives: LibraryImportShadowRequest[] = [];
   const verifiedReceipt: LibraryImportReceipt = {
     requestId: shadow.requestId,
@@ -150,6 +155,24 @@ const fixture = Effect.gen(function* () {
           contentType: attachment.mimeType,
           createdAt: timestamp,
         };
+      } else if (pathname.endsWith("/history/ingest")) {
+        const history = yield* decodeHistory(
+          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "",
+        );
+        expect(history.fromSequence).toBe(catchUpCursors.get(history.journalId) ?? 0);
+        const cursor = history.entries.at(-1)!.sequence;
+        catchUpCursors.set(history.journalId, cursor);
+        response = {
+          sourceEnvironmentId: source,
+          journalId: history.journalId,
+          lastSequence: cursor,
+          applied: history.entries.length,
+        };
+      } else if (pathname.endsWith("/copies/register")) {
+        const body = JSON.parse(
+          request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "{}",
+        );
+        response = body.copy;
       } else if (pathname.endsWith("/import-shadow")) {
         const body =
           request.body._tag === "Uint8Array" ? new TextDecoder().decode(request.body.body) : "";
@@ -233,6 +256,7 @@ const fixture = Effect.gen(function* () {
     responses,
     requests,
     uploadedArchives,
+    catchUpCursors,
   };
 });
 const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<A, E, R>) =>
@@ -252,6 +276,62 @@ const run = <A, E, R>(use: (f: Effect.Success<typeof fixture>) => Effect.Effect<
   );
 
 describe("verified Library migration commands", () => {
+  it.effect(
+    "gives independent catch-up chunks stable cursors instead of resetting one shared journal",
+    () =>
+      run((f) =>
+        Effect.gen(function* () {
+          const first = yield* decodeShadow(
+            yield* f.fs.readFileString(f.path.join(f.chunked, "chunk-00000.json")),
+          );
+          const manifestFile = f.path.join(f.chunked, "manifest.json");
+          const manifest = JSON.parse(yield* f.fs.readFileString(manifestFile));
+          const secondId = ThreadId.make("second-thread");
+          const second = {
+            ...first,
+            requestId: first.requestId.replace("00000", "00001"),
+            threads: first.threads.map((thread) => ({
+              ...thread,
+              summary: { ...thread.summary, id: "second-archive", threadId: secondId },
+              projection: {
+                ...thread.projection,
+                thread: { ...thread.projection.thread, id: secondId },
+              },
+            })),
+          };
+          const text = yield* encodeShadow(second);
+          const bytes = new TextEncoder().encode(text);
+          const crypto = yield* Crypto.Crypto;
+          yield* f.fs.writeFileString(f.path.join(f.chunked, "chunk-00001.json"), text);
+          yield* f.fs.writeFileString(
+            manifestFile,
+            JSON.stringify({
+              ...manifest,
+              threads: 2,
+              chunks: [
+                ...manifest.chunks,
+                {
+                  file: "chunk-00001.json",
+                  sha256: Hex.encode(yield* crypto.digest("SHA-256", bytes)),
+                  byteLength: bytes.length,
+                  threads: 1,
+                  threadIds: [secondId],
+                },
+              ],
+            }),
+          );
+          expect(
+            yield* uploadMigration({
+              ...f.upload,
+              archive: f.chunked,
+              receipt: f.chunkReceipts,
+              catchUp: true,
+            }),
+          ).toEqual({ verified: true, threads: 2 });
+          expect(f.catchUpCursors.size).toBe(2);
+        }),
+      ),
+  );
   it.effect("checks every chunk digest before any upload and refuses modified archive bytes", () =>
     run((f) =>
       Effect.gen(function* () {
@@ -370,6 +450,13 @@ describe("verified Library migration commands", () => {
             },
           });
           expect(bound.project).toEqual(f.project);
+          const history = yield* WorkspaceStore.LibraryWorkspaceStore.use(
+            (store) => store.bindings,
+          ).pipe(Effect.provide(f.workspace));
+          expect(history[0]?.importedHistory).toMatchObject({
+            authorityId: "central-authority",
+            authorityEpoch: 1,
+          });
           expect(bound.receipts).toHaveLength(1);
           expect(bound.receipts[0]?.copy.ownership).toBe("borrowed");
           expect(yield* f.fs.readDirectory(f.repository)).toEqual(["preserve.txt"]);

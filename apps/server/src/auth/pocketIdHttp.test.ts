@@ -131,7 +131,7 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
                 ),
                 context,
               );
-              expect(callback.headers.get("location")).toBe("/library");
+              expect(callback.headers.get("location")).toBe("/");
               expect(
                 callback.headers
                   .getSetCookie()

@@ -83,7 +83,7 @@ const make = Effect.gen(function* () {
     });
   const sql = yield* SqlClient.SqlClient;
   const maxPendingBytes = yield* Config.Int("LOOM_LIBRARY_MAX_PENDING_BYTES").pipe(
-    Config.withDefault(256 * 1024 * 1024),
+    Config.withDefault(512 * 1024 * 1024),
   );
   if (maxPendingBytes <= 0) return yield* new LibraryError({ reason: "invalid" });
   const source = yield* HistorySource.LibraryHistorySource;
@@ -123,7 +123,19 @@ const make = Effect.gen(function* () {
             return;
           }
           const journalId = yield* randomUuidV4;
-          yield* sql`INSERT INTO fork_library_source_state (key,journal_id,environment_id,authority_id,authority_epoch) VALUES ('host',${journalId},${environmentId},${authority.authorityId},${authority.authorityEpoch})`;
+          const bindings = yield* workspaces.bindings;
+          const imported = bindings.map((entry) => entry.importedHistory);
+          const scanSequence =
+            imported.length > 0 &&
+            imported.every(
+              (entry) =>
+                entry &&
+                entry.authorityId === authority.authorityId &&
+                entry.authorityEpoch === authority.authorityEpoch,
+            )
+              ? Math.min(...imported.map((entry) => entry!.sourceEventSequence))
+              : 0;
+          yield* sql`INSERT INTO fork_library_source_state (key,journal_id,environment_id,authority_id,authority_epoch,scan_sequence) VALUES ('host',${journalId},${environmentId},${authority.authorityId},${authority.authorityEpoch},${scanSequence})`;
         }),
       ),
     );
@@ -156,8 +168,19 @@ const make = Effect.gen(function* () {
         }>`SELECT thread_id FROM fork_library_source_threads`).map((entry) => entry.thread_id),
       );
       // A new binding needs an initial snapshot even when no later execution event arrives.
-      for (const entry of bindings)
-        if (!queued.has(entry.threadId)) yield* sql.withTransaction(queueThread(entry.threadId));
+      for (const entry of bindings) {
+        if (queued.has(entry.threadId)) continue;
+        const imported = entry.importedHistory;
+        if (
+          imported &&
+          imported.authorityId === current.authority_id &&
+          imported.authorityEpoch === current.authority_epoch
+        ) {
+          // Activation verified these exact bytes against this authority before staging the
+          // host binding. Seed acknowledgements without replaying the entire source history.
+          yield* sql`INSERT INTO fork_library_source_threads(thread_id,queued_sequence,acknowledged_sequence) VALUES (${entry.threadId},${imported.sequence},${imported.sequence})`;
+        } else yield* sql.withTransaction(queueThread(entry.threadId));
+      }
       const events = yield* sql<{ sequence: number; stream_id: string; milestone: number }>`
       SELECT sequence,stream_id,
         CASE WHEN event_type IN ('thread.created','thread.metadata-updated','thread.archived','thread.unarchived','thread.deleted','thread.settled','thread.unsettled','thread.snoozed','thread.unsnoozed','thread.provider-switched','thread.model-selection-updated','thread.runtime-mode-updated','thread.interaction-mode-updated','run.created','checkpoint.captured','checkpoint.rollback-requested','runtime-request.updated','context-handoff.updated','context-transfer.created','context-transfer.updated','thread.pinned','thread.unpinned','thread.auto-settle-set','thread.pull-request-synced')
