@@ -1,4 +1,5 @@
 import { LIBRARY_WS_METHODS as LIB } from "@t3tools/contracts/fork";
+import { LIBRARY_TIMELINE_WS_METHODS as LIBT } from "@t3tools/contracts/fork";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "@t3tools/contracts/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
@@ -56,6 +57,7 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [LIB.bindThread]: AuthOrchestrationOperateScope,
   [LIB.ingestHistory]: AuthOrchestrationOperateScope,
   [LIB.importShadow]: AuthEnvironmentMaintainScope,
+  [LIBT.timeline]: AuthOrchestrationReadScope,
   [C.preview]: AuthOrchestrationReadScope,
   [C.adopt]: AuthSettingsWriteScope,
   [C.setRetention]: AuthSettingsWriteScope,

@@ -9,6 +9,7 @@ import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts
 import * as LibraryAssetService from "./project-library/assets/LibraryAssetService.ts";
 import { LibraryAssetHttpRoutes } from "./project-library/assets/http.ts";
 import * as LibraryService from "./project-library/LibraryService.ts";
+import * as LibraryTimeline from "./project-library/LibraryTimeline.ts";
 import * as LibraryWorkspace from "./project-library/LibraryWorkspace.ts";
 import * as LibraryWorkspaceStore from "./project-library/LibraryWorkspaceStore.ts";
 import * as RuntimeLayer from "../orchestration-v2/runtimeLayer.ts";
@@ -51,6 +52,7 @@ const layerLibraryAssets = LibraryAssetService.layer.pipe(Layer.provide(FetchHtt
 const ForkServicesLive = Layer.mergeAll(
   Layer.empty,
   LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
+  LibraryTimeline.layer,
   LibraryReplication.layer.pipe(
     Layer.provide(
       LibraryPublisher.layer.pipe(

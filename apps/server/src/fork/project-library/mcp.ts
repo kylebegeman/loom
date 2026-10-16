@@ -8,6 +8,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as Catalog from "./LibraryService.ts";
+import * as Timeline from "./LibraryTimeline.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as Replication from "./LibraryReplication.ts";
 
@@ -104,6 +105,13 @@ export const ProjectLibraryToolkit = Toolkit.make(
       ),
     }),
     success: Library.LibraryThreadArchive,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_timeline", {
+    description:
+      "Read what happened in a project, newest first: conversations started, settled, failed or archived, pull requests linked, merged, closed or failing checks, brief revisions and copies. Pass nextBefore as before for older entries.",
+    parameters: Library.LibraryTimelineRequest,
+    success: Library.LibraryTimelinePage,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_project_create", {
@@ -229,6 +237,9 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
             service.history({ ...input, offset: input.offset ?? 0, limit: input.limit ?? 50 }),
           ),
         ),
+      ),
+      loom_library_timeline: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Timeline.LibraryTimeline, (service) => service.page(input))),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.createProject(input))),

@@ -1,9 +1,13 @@
 import * as Replication from "./LibraryReplication.ts";
 import * as LibraryHistorySource from "./LibraryHistorySource.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
-import { LIBRARY_WS_METHODS as L } from "@t3tools/contracts/fork";
+import {
+  LIBRARY_TIMELINE_WS_METHODS as LT,
+  LIBRARY_WS_METHODS as L,
+} from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as LibraryService from "./LibraryService.ts";
+import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as LibraryWorkspace from "./LibraryWorkspace.ts";
 import type { ForkRpcAuth } from "../rpcAuthorization.ts";
 
@@ -12,6 +16,7 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
     const replication = yield* Replication.LibraryReplication;
     const history = yield* LibraryHistorySource.LibraryHistorySource;
     const library = yield* LibraryService.LibraryService;
+    const timeline = yield* LibraryTimeline.LibraryTimeline;
     const assets = yield* Assets.LibraryAssetService;
     const workspace = yield* LibraryWorkspace.LibraryWorkspace;
     return {
@@ -54,6 +59,8 @@ export const makeProjectLibraryRpcHandlers = (auth: ForkRpcAuth) =>
         auth.effect(L.threadBinding, workspace.threadBinding(input)),
       [L.history]: (input: Parameters<typeof library.history>[0]) =>
         auth.effect(L.history, library.history(input)),
+      [LT.timeline]: (input: Parameters<typeof timeline.page>[0]) =>
+        auth.effect(LT.timeline, timeline.page(input)),
       [L.ingestHistory]: (input: Parameters<typeof library.ingestHistory>[0]) =>
         auth.effect(L.ingestHistory, library.ingestHistory(input)),
       [L.importShadow]: (input: Parameters<typeof library.importShadow>[0]) =>

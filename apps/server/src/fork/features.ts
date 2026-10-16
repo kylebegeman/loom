@@ -41,4 +41,5 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "apple-build-tooling",
   "device-qa",
   "code-graph",
+  "library-timeline",
 ];

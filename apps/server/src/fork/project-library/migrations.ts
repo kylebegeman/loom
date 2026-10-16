@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { ForkMigrationSet } from "../persistence/migrations.ts";
+import { backfillTimeline } from "./LibraryTimeline.ts";
 
 export const ProjectLibraryMigrations: ForkMigrationSet = {
   slug: "project-library",
@@ -45,6 +46,15 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         yield* sql`CREATE TABLE fork_library_computers (environment_id TEXT PRIMARY KEY,payload_json TEXT NOT NULL)`;
+      }),
+    ],
+    [
+      4,
+      "ProjectTimeline",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE INDEX fork_library_events_aggregate ON fork_library_events(aggregate_id, sequence)`;
+        yield* backfillTimeline;
       }),
     ],
   ],
