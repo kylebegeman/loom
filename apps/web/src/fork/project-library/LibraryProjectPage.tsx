@@ -2,6 +2,7 @@ import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  LIBRARY_BRIEF_PROPOSALS_FEATURE,
   LIBRARY_PROJECT_PROFILE_FEATURE,
   type LibraryProject,
   type LibraryWorkingCopy,
@@ -51,6 +52,7 @@ import { ProjectProfile } from "./ProjectProfile";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
+import { ProjectBriefProposals } from "./ProjectBriefProposals";
 import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
 
 /** Briefs longer than this start folded to a few lines, so the conversations stay in view. */
@@ -154,6 +156,11 @@ function ProjectView({
     library.environment?.serverConfig?.environment.capabilities,
     LIBRARY_PROJECT_PROFILE_FEATURE,
   );
+  // Suggested brief updates appear only once the Library says it keeps them.
+  const proposesBrief = supportsLoomFeature(
+    library.environment?.serverConfig?.environment.capabilities,
+    LIBRARY_BRIEF_PROPOSALS_FEATURE,
+  );
   const canWork = library.connected && !project.archived;
   const canStart = canRegister && canWork;
   const threads = (library.threads.data ?? [])
@@ -180,6 +187,8 @@ function ProjectView({
         editingBrief={editingBrief}
         onEditingBriefChange={setEditingBrief}
         showEmptyBrief={!settingUp}
+        proposesBrief={proposesBrief}
+        hostLabel={hostLabel}
         onSaved={library.refresh}
         onNewConversation={() => setConversation({})}
       />
@@ -312,6 +321,8 @@ function ProjectHero({
   editingBrief,
   onEditingBriefChange,
   showEmptyBrief,
+  proposesBrief,
+  hostLabel,
   onSaved,
   onNewConversation,
 }: {
@@ -326,6 +337,8 @@ function ProjectHero({
   readonly editingBrief: boolean;
   readonly onEditingBriefChange: (editing: boolean) => void;
   readonly showEmptyBrief: boolean;
+  readonly proposesBrief: boolean;
+  readonly hostLabel: (id: EnvironmentId) => string;
   readonly onSaved: () => void;
   readonly onNewConversation: () => void;
 }) {
@@ -441,7 +454,7 @@ function ProjectHero({
           </div>
         </div>
       </div>
-      <div className="sm:ps-18">
+      <div className="space-y-2 sm:ps-18">
         <ProjectBrief
           brief={project.brief}
           canEdit={update.canEdit}
@@ -451,6 +464,15 @@ function ProjectHero({
           onEditingChange={onEditingBriefChange}
           onSave={(brief) => update.save({ brief })}
         />
+        {proposesBrief ? (
+          <ProjectBriefProposals
+            project={project}
+            authorityId={authorityId}
+            connected={connected}
+            hostLabel={hostLabel}
+            onDecided={onSaved}
+          />
+        ) : null}
       </div>
       {project.archived ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-muted/50 px-4 py-3 dark:bg-accent/50">
