@@ -637,6 +637,34 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2019-present Fabio Spampinato, Andrew Maney"]
       }
+    },
+    {
+      "name": "onnxruntime-web",
+      "version": "1.30.0",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Microsoft Corporation"]
+      },
+      "sourceUrl": "https://github.com/microsoft/onnxruntime"
+    },
+    {
+      "name": "onnxruntime-common",
+      "version": "1.30.0",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Microsoft Corporation"]
+      },
+      "sourceUrl": "https://github.com/microsoft/onnxruntime"
+    },
+    {
+      "name": "guid-typescript",
+      "version": "1.0.9",
+      "generatedNotice": {
+        "licenseId": "ISC",
+        "copyrights": ["Copyright (c) nicolas"]
+      },
+      "license": "ISC",
+      "sourceUrl": "https://github.com/NicolasDeveloper/guid-typescript"
     }
   ]
 }
