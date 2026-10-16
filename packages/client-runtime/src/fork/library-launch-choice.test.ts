@@ -251,6 +251,25 @@ describe("libraryLaunchWarning", () => {
     ).toEqual({ message: "This copy is 1 commit behind.", pullPaths: ["/work/mini-copy/app"] });
   });
 
+  it("says when a folder in the copy is missing", () => {
+    expect(warningFor([repository("app", { error: "missing" })])).toBeNull();
+    const entry = copy("mini-copy", MINI);
+    const ranking = libraryLaunchRanking({
+      project,
+      copies: [entry],
+      computers: computers.slice(0, 1),
+      threads: [],
+      resourceId: null,
+      liveHealth: live(health(entry.id, MINI, [repository("app", { error: "missing" })])),
+    });
+    // Never preselected, but the copy can still be chosen by hand.
+    const chosen = libraryLaunchChoice({ ranking, hostId: MINI, copyId: entry.id }).candidate;
+    expect(libraryLaunchWarning(chosen, entry, null)).toEqual({
+      message: "A folder in this copy is missing or is no longer a Git repository.",
+      pullPaths: null,
+    });
+  });
+
   it("says nothing for a computer without a copy", () => {
     const ranking = libraryLaunchRanking({
       project,

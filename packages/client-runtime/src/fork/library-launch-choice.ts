@@ -67,14 +67,19 @@ export interface LibraryLaunchWarning {
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-/** What to say before launching on a copy that is behind or has uncommitted files. */
+/** What to say before launching on a copy that is behind, has uncommitted files, or is broken. */
 export function libraryLaunchWarning(
   candidate: LibraryLaunchCandidate | null,
   copy: LibraryWorkingCopy | null,
   resourceId: string | null,
 ): LibraryLaunchWarning | null {
-  if (candidate?.kind !== "copy" || candidate.freshness !== "stale" || candidate.health === null)
-    return null;
+  if (candidate?.kind !== "copy" || candidate.health === null) return null;
+  if (candidate.freshness === "broken")
+    return {
+      message: "A folder in this copy is missing or is no longer a Git repository.",
+      pullPaths: null,
+    };
+  if (candidate.freshness !== "stale") return null;
   const behind =
     candidate.behind > 0 ? `is ${plural(candidate.behind, "commit", "commits")} behind` : null;
   const changed =
