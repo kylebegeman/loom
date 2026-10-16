@@ -50,7 +50,10 @@ const encodeProposal = Schema.encodeEffect(proposalJson);
 const encodeEventJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const now = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 const conflict = () => new LibraryError({ reason: "revision-conflict" });
-/** Pending proposals a project holds before new ones wait for a person to review the queue. */
+/**
+ * Pending agent and conversation proposals a project holds before new ones wait for a person to
+ * review the queue. A person's own proposals are never refused.
+ */
 export const MAX_PENDING_BRIEF_PROPOSALS = 20;
 
 /** Proposals from one conversation or agent replace that source's earlier pending ones. */
@@ -156,7 +159,10 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
         (earlier) => key !== null && sourceKey(earlier.source) === key,
       );
       // Checked before any write, so a refused proposal leaves nothing behind.
-      if (queued.length - replaced.length >= MAX_PENDING_BRIEF_PROPOSALS)
+      if (
+        input.source.kind !== "user" &&
+        queued.length - replaced.length >= MAX_PENDING_BRIEF_PROPOSALS
+      )
         return yield* new LibraryError({ reason: "blocked" });
       const timestamp = yield* now;
       const id = yield* randomUuidV4;

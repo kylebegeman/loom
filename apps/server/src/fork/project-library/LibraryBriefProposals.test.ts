@@ -400,6 +400,17 @@ describe("Library brief proposals", () => {
             },
           },
         ]);
+
+        // The queue is full again, but a person's own proposal is never refused.
+        const another = propose(
+          "another-agent",
+          "Ship the viewer. Another note.",
+          agent(MAX_PENDING_BRIEF_PROPOSALS + 1),
+        );
+        expect(reason(yield* Effect.result(another))).toBe("blocked");
+        expect(
+          (yield* propose("person", "Ship the viewer. A person's note.", { kind: "user" })).status,
+        ).toBe("pending");
       }),
     ),
   );
