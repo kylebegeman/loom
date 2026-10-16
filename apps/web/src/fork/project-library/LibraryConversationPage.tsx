@@ -17,7 +17,7 @@ import {
   useLibraryPermission,
   useSelectedLibraryProject,
 } from "./state";
-import { LibraryPageFrame } from "./LibraryPageFrame";
+import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibraryErrorNotice } from "./LibraryControls";
 import { NewConversationDialog } from "./NewConversationDialog";
 
@@ -73,14 +73,13 @@ export function LibraryConversationPage({ conversationId }: { readonly conversat
   return (
     <LibraryPageFrame title={archive.summary.title}>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <Link
+        <div className="flex flex-col gap-2">
+          <LibraryBackLink
             to="/library/$projectId"
             params={{ projectId: archive.summary.projectId }}
-            className="text-sm text-muted-foreground underline underline-offset-4"
           >
-            {library.project.data?.title ?? "Back to project"}
-          </Link>
+            {library.project.data?.title ?? "Project"}
+          </LibraryBackLink>
           <h1 className="text-xl font-semibold tracking-tight">{archive.summary.title}</h1>
           <p className="text-xs text-muted-foreground">
             Runs on{" "}

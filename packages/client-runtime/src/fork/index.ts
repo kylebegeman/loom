@@ -36,3 +36,5 @@ export {
 } from "./library-navigation.ts";
 
 export * from "./library-continuation.ts";
+
+export * from "./library-project.ts";

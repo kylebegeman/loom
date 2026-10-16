@@ -1,7 +1,7 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useProjects, useThreadShells } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
-import { LibraryPageFrame } from "~/fork/project-library/LibraryPageFrame";
+import { LibraryBackLink, LibraryPageFrame } from "~/fork/project-library/LibraryPageFrame";
 import { Button } from "~/components/ui/button";
 export const Route = createFileRoute("/local")({
   beforeLoad: ({ context }) => {
@@ -19,7 +19,8 @@ function LocalConversations() {
   const { environments } = useEnvironments();
   return (
     <LibraryPageFrame title="Computer conversations">
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
+        <LibraryBackLink to="/projects">Projects</LibraryBackLink>
         <h1 className="text-2xl font-semibold tracking-tight">Computer conversations</h1>
         <p className="text-sm text-muted-foreground">
           Earlier conversations on your connected computers. Open one to pick up where you left off,

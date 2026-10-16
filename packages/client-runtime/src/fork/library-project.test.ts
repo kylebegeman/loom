@@ -1,0 +1,128 @@
+import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId } from "@t3tools/contracts";
+import type { LibraryResource, LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import {
+  libraryActiveCopies,
+  libraryProjectTimeline,
+  libraryResourceFromInput,
+  libraryResourceLocation,
+} from "./library-project.ts";
+
+const dorothy = EnvironmentId.make("dorothy");
+const copy = (patch: Partial<LibraryWorkingCopy>): LibraryWorkingCopy => ({
+  id: "copy",
+  projectId: "project",
+  projectRevision: 1,
+  environmentId: dorothy,
+  rootPath: "/work/aspectavy",
+  repositories: [],
+  ownership: "managed",
+  state: "ready",
+  createdAt: "2026-10-10T00:00:00.000Z",
+  updatedAt: "2026-10-10T00:00:00.000Z",
+  ...patch,
+});
+
+describe("libraryResourceFromInput", () => {
+  it("makes a pasted GitHub page a clonable repository named after the repo", () => {
+    expect(libraryResourceFromInput("https://github.com/kyle/aspectavy-web/")).toMatchObject({
+      kind: "repository",
+      title: "aspectavy-web",
+      remoteUrl: "https://github.com/kyle/aspectavy-web",
+      relativePath: "aspectavy-web",
+    });
+    expect(libraryResourceFromInput("github.com/kyle/ios")).toMatchObject({
+      kind: "repository",
+      remoteUrl: "https://github.com/kyle/ios",
+    });
+  });
+
+  it("keeps git remotes as given, including SSH and other hosts", () => {
+    expect(libraryResourceFromInput("git@github.com:kyle/server.git")).toMatchObject({
+      kind: "repository",
+      title: "server",
+      remoteUrl: "git@github.com:kyle/server.git",
+    });
+    expect(libraryResourceFromInput("https://git.example.com/team/app.git")).toMatchObject({
+      kind: "repository",
+      title: "app",
+      remoteUrl: "https://git.example.com/team/app.git",
+    });
+  });
+
+  it("treats every other web address, including deeper GitHub pages, as a reference link", () => {
+    expect(libraryResourceFromInput("https://github.com/kyle/web/issues/4")).toMatchObject({
+      kind: "link",
+      url: "https://github.com/kyle/web/issues/4",
+    });
+    expect(libraryResourceFromInput("www.figma.com/file/abc")).toMatchObject({
+      kind: "link",
+      title: "figma.com",
+    });
+  });
+
+  it("gives each repository its own folder", () => {
+    const existing = [
+      { kind: "repository", relativePath: "web" },
+      { kind: "repository", relativePath: "web-2" },
+    ] as LibraryResource[];
+    expect(libraryResourceFromInput("github.com/other/web", existing)?.relativePath).toBe("web-3");
+  });
+
+  it("rejects text that is not an address", () => {
+    expect(libraryResourceFromInput("")).toBeNull();
+    expect(libraryResourceFromInput("not a url")).toBeNull();
+    expect(libraryResourceFromInput("localhost")).toBeNull();
+    expect(libraryResourceFromInput("https://user:secret@github.com/a/b")).toBeNull();
+    expect(libraryResourceFromInput("ftp://example.com/file")).toBeNull();
+  });
+});
+
+describe("libraryResourceLocation", () => {
+  it("shows owner and repository for hosted remotes", () => {
+    expect(
+      libraryResourceLocation({
+        id: "r",
+        kind: "repository",
+        title: "Web",
+        remoteUrl: "https://github.com/kyle/web.git",
+        relativePath: "web",
+        defaultBranch: null,
+      }),
+    ).toBe("kyle/web");
+    expect(
+      libraryResourceLocation({
+        id: "r",
+        kind: "repository",
+        title: "Server",
+        remoteUrl: "git@github.com:kyle/server.git",
+        relativePath: "server",
+        defaultBranch: null,
+      }),
+    ).toBe("kyle/server");
+  });
+});
+
+describe("project copies and history", () => {
+  it("keeps removed copies out of the active list", () => {
+    const copies = [
+      copy({ id: "ready" }),
+      copy({ id: "released", state: "released" }),
+      copy({ id: "unregistered", ownership: "borrowed", registered: false }),
+    ];
+    expect(libraryActiveCopies(copies).map((entry) => entry.id)).toEqual(["ready"]);
+  });
+
+  it("records arrivals and removals newest first", () => {
+    const events = libraryProjectTimeline({ createdAt: "2026-10-01T00:00:00.000Z" }, [
+      copy({ id: "old", state: "released", updatedAt: "2026-10-12T00:00:00.000Z" }),
+      copy({ id: "new", createdAt: "2026-10-14T00:00:00.000Z" }),
+    ]);
+    expect(events.map((event) => [event.kind, "copy" in event ? event.copy.id : null])).toEqual([
+      ["copy-added", "new"],
+      ["copy-removed", "old"],
+      ["copy-added", "old"],
+      ["created", null],
+    ]);
+  });
+});

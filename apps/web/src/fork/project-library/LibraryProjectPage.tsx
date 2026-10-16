@@ -1,73 +1,59 @@
 import { randomUUID } from "~/lib/utils";
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { LibraryWorkingCopy } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type {
+  LibraryProject,
+  LibraryThreadSummary,
+  LibraryWorkingCopy,
+} from "@t3tools/contracts/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { EllipsisIcon } from "lucide-react";
 import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Textarea } from "~/components/ui/textarea";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { formatRelativeTimeLabel } from "~/timestampFormat";
 import {
   projectLibrary,
   useLibraryProject,
   useLibraryPermission,
   useSelectedLibraryProject,
 } from "./state";
-import { LibraryPageFrame } from "./LibraryPageFrame";
+import { LibraryBackLink, LibraryPageFrame } from "./LibraryPageFrame";
 import { LibrarySetup } from "./LibrarySetup";
 import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
-import { ProjectEditorDialog } from "./ProjectEditorDialog";
 import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
-import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { libraryCopyReadiness } from "./copyChoice";
 import { NewConversationDialog } from "./NewConversationDialog";
-import { isRepositoryResource, resourceLink } from "./resources";
+import { isRepositoryResource } from "./resources";
+import { useProjectUpdate } from "./useProjectUpdate";
+import { ProjectResources } from "./ProjectResources";
+import { ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 
+const RECENT_CONVERSATIONS = 5;
+
+/**
+ * A project is a name, a brief and the repositories and links it is made of. Copies on
+ * computers come and go; conversations and the project outlive them.
+ */
 export function LibraryProjectPage({ projectId }: { readonly projectId: string }) {
-  const [showRemovedCopies, setShowRemovedCopies] = useState(false);
-  const library = useLibraryProject(projectId, showRemovedCopies);
+  // Removed copies feed the folded history, so the page always asks for them.
+  const library = useLibraryProject(projectId, true);
   const [, selectProject] = useSelectedLibraryProject();
-  const [editing, setEditing] = useState(false);
-  const [copyAction, setCopyAction] = useState<{
-    strategy: "clone" | "reuse";
-    hostId?: LibraryWorkingCopy["environmentId"];
-    rootPath?: string;
-  } | null>(null);
+  const [copyRequest, setCopyRequest] = useState<CopyRequest | null>(null);
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<{
-    hostId?: LibraryWorkingCopy["environmentId"];
+    hostId?: EnvironmentId;
     copyId?: string;
   } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const archive = useAtomCommand(projectLibrary.archiveProject, { reportFailure: false });
-  const canEdit = useLibraryPermission(projectLibrary.updateProject, library.authorityId);
-  const canArchive = useLibraryPermission(projectLibrary.archiveProject, library.authorityId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, library.authorityId);
   useEffect(() => {
     selectProject(projectId);
   }, [projectId, selectProject]);
   const project = library.project.data;
-  const copiesReadiness = libraryCopyReadiness(library.copies);
-  const hostLabel = (id: LibraryWorkingCopy["environmentId"]) =>
-    library.environments.find((entry) => entry.environmentId === id)?.label ??
-    library.computers.find((entry) => entry.environmentId === id)?.label ??
-    "Saved computer";
-  const setArchived = async () => {
-    if (!project || !library.authorityId) return;
-    setError(null);
-    const result = await archive({
-      environmentId: library.authorityId,
-      input: {
-        requestId: randomUUID(),
-        projectId: project.id,
-        expectedRevision: project.revision,
-        archived: !project.archived,
-      },
-    });
-    if (result._tag === "Failure") {
-      const cause = squashAtomCommandFailure(result);
-      setError(cause instanceof Error ? cause.message : "Could not update this project.");
-    } else library.refresh();
-  };
   if (!library.authorityId)
     return (
       <LibraryPageFrame>
@@ -85,361 +71,69 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
         </p>
       </LibraryPageFrame>
     );
-  const activeCopies =
-    library.copies.data?.filter((copy) => copy.state !== "released" && copy.registered !== false) ??
-    [];
-  const visibleCopies = showRemovedCopies ? (library.copies.data ?? []) : activeCopies;
+  const hostLabel = (id: EnvironmentId) =>
+    library.environments.find((entry) => entry.environmentId === id)?.label ??
+    library.computers.find((entry) => entry.environmentId === id)?.label ??
+    "Saved computer";
+  const hostConnected = (id: EnvironmentId) =>
+    library.environments.some(
+      (entry) =>
+        entry.environmentId === id && entry.entry.enabled && entry.connection.phase === "connected",
+    );
+  const copies = library.copies.data ?? [];
+  const canWork = library.connected && !project.archived;
   return (
-    <LibraryPageFrame title={project.title}>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">{project.title}</h1>
-          {project.archived ? (
-            <p className="text-sm text-muted-foreground">
-              Archived project. Restore it to start new work.
-            </p>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            disabled={!canEdit || !library.connected}
-            onClick={() => setEditing(true)}
-          >
-            Edit project
-          </Button>
-          <Button
-            disabled={!canRegister || !library.connected || project.archived}
-            onClick={() => setConversation({})}
-          >
-            New conversation
-          </Button>
-        </div>
-      </div>
+    <LibraryPageFrame title={project.title} width="readable">
+      <ProjectOverview
+        project={project}
+        authorityId={library.authorityId}
+        connected={library.connected}
+        canStart={canRegister && canWork}
+        onSaved={library.refresh}
+        onNewConversation={() => setConversation({})}
+      />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
-      <LibraryErrorNotice error={error} />
-      <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0 space-y-8">
-          <LibrarySection title="Conversations">
-            <LibraryErrorNotice error={library.threads.error} onRetry={library.threads.refresh} />
-            <div className="divide-y divide-border">
-              {library.threads.data
-                ?.filter((thread) => !thread.deleted)
-                .map((thread) => (
-                  <Link
-                    key={thread.id}
-                    to="/library/conversations/$conversationId"
-                    params={{ conversationId: thread.id }}
-                    className="block rounded-lg px-3 py-4 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                  >
-                    <p className="text-base font-medium">
-                      {thread.title || "Untitled conversation"}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {hostLabel(thread.environmentId)} ·{" "}
-                      {thread.resourceIds.length === 1
-                        ? (project.resources.find(
-                            (resource) => resource.id === thread.resourceIds[0],
-                          )?.title ?? "Saved component")
-                        : "Whole project"}{" "}
-                      · {thread.status}
-                      {thread.archived ? " · Archived" : ""}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Saved to Library {new Date(thread.syncedAt).toLocaleString()}
-                    </p>
-                  </Link>
-                ))}
-            </div>
-            {library.threads.data?.length === 0 ? (
-              <div className="rounded-xl bg-muted/40 p-6">
-                <h3 className="font-medium">Where should we start?</h3>
-                <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-                  Discuss the whole project, or focus on one component. Your brief goes with every
-                  conversation.
-                </p>
-                <div className="mt-4">
-                  <Button
-                    size="sm"
-                    disabled={!canRegister || !library.connected || project.archived}
-                    onClick={() => setConversation({})}
-                  >
-                    Start a conversation
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            {library.threads.isPending && !library.threads.data ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                Loading conversations...
-              </p>
-            ) : null}
-          </LibrarySection>
-        </div>
-        <aside className="min-w-0 space-y-8" aria-label="Project context">
-          <LibrarySection title="Shared brief">
-            <p className="max-w-3xl whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-              {project.brief ||
-                "Add a brief so every conversation starts with the same project context."}
-            </p>
-          </LibrarySection>
-          <LibrarySection
-            title="Components and references"
-            action={
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={!canEdit || !library.connected}
-                onClick={() => setEditing(true)}
-              >
-                Edit components
-              </Button>
-            }
-          >
-            <div className="divide-y divide-border">
-              {project.resources.map((resource) => {
-                const href = resourceLink(resource);
-                return (
-                  <div
-                    key={resource.id}
-                    className="flex flex-wrap items-start justify-between gap-3 py-3"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium">
-                        {href ? (
-                          <a
-                            href={href}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="underline decoration-border underline-offset-4"
-                          >
-                            {resource.title}
-                          </a>
-                        ) : (
-                          resource.title
-                        )}
-                      </p>
-                      <p className="mt-1 break-words text-xs text-muted-foreground">
-                        {isRepositoryResource(resource)
-                          ? `Folder: ${resource.relativePath}`
-                          : resource.url}
-                      </p>
-                    </div>
-                    <span className="text-xs text-muted-foreground">
-                      {isRepositoryResource(resource) ? "Repository" : "Reference link"}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {project.resources.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                Add repositories or reference links when the work needs them.
-              </p>
-            ) : null}
-          </LibrarySection>
-        </aside>
-      </div>
-      <details className="rounded-xl border border-border p-5">
-        <summary className="cursor-pointer text-base font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-          Files on computers{" "}
-          <span className="ml-2 text-sm font-normal text-muted-foreground">
-            {activeCopies.length
-              ? `${activeCopies.length} available`
-              : "Prepare when you start work"}
-          </span>
-        </summary>
-        <div className="pt-5">
-          <LibrarySection
-            title="Files on computers"
-            action={
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="xs"
-                  variant="outline"
-                  aria-pressed={showRemovedCopies}
-                  onClick={() => setShowRemovedCopies((value) => !value)}
-                >
-                  {showRemovedCopies ? "Hide removed copies" : "Show removed copies"}
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={!library.connected || project.archived}
-                  onClick={() => setCopyAction({ strategy: "reuse" })}
-                >
-                  Use existing folder
-                </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  disabled={!library.connected || project.archived}
-                  onClick={() => setCopyAction({ strategy: "clone" })}
-                >
-                  Clone project
-                </Button>
-              </div>
-            }
-          >
-            <LibraryErrorNotice error={library.copies.error} onRetry={library.copies.refresh} />
-            <div className="divide-y divide-border">
-              {visibleCopies.map((copy) => {
-                const removed = copy.state === "released" || copy.registered === false;
-                const hostConnected = library.environments.some(
-                  (entry) =>
-                    entry.environmentId === copy.environmentId &&
-                    entry.entry.enabled &&
-                    entry.connection.phase === "connected",
-                );
-                return (
-                  <div
-                    key={copy.id}
-                    className="flex flex-wrap items-start justify-between gap-3 py-3"
-                  >
-                    <div className="min-w-0 space-y-1">
-                      <p className="text-sm font-medium">{hostLabel(copy.environmentId)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {copy.ownership === "borrowed" ? "Borrowed folder" : "Managed copy"} ·{" "}
-                        {copy.registered === false
-                          ? "Registration removed"
-                          : copy.state === "released"
-                            ? "Removed"
-                            : copy.state}
-                        {copy.projectRevision !== project.revision
-                          ? " · Prepared with earlier project context"
-                          : ""}
-                      </p>
-                      <details className="text-xs text-muted-foreground">
-                        <summary className="cursor-pointer">Locations</summary>
-                        <div className="mt-2 space-y-1 break-words font-mono">
-                          <p>{copy.rootPath}</p>
-                          {copy.repositories.map((repository) => (
-                            <p key={repository.resourceId}>{repository.path}</p>
-                          ))}
-                        </div>
-                      </details>
-                      {removed && copy.ownership === "borrowed" ? (
-                        <p className="max-w-xl text-xs text-muted-foreground">
-                          Existing conversations can still use these files. Review the folder again
-                          to use it for new work.
-                          {!hostConnected
-                            ? ` Reconnect ${hostLabel(copy.environmentId)} to review its files.`
-                            : ""}
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        {!removed ? (
-                          <>
-                            <Button
-                              size="xs"
-                              variant="outline"
-                              disabled={!library.connected || !canRegister || project.archived}
-                              onClick={() =>
-                                setConversation({ hostId: copy.environmentId, copyId: copy.id })
-                              }
-                            >
-                              Start here
-                            </Button>
-                            <Button
-                              size="xs"
-                              variant="ghost"
-                              disabled={!library.connected}
-                              onClick={() => setReleasing(copy)}
-                            >
-                              {copy.ownership === "borrowed"
-                                ? "Remove registration"
-                                : "Remove working copy"}
-                            </Button>
-                          </>
-                        ) : copy.ownership === "borrowed" ? (
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            disabled={
-                              !library.connected ||
-                              !canRegister ||
-                              project.archived ||
-                              !hostConnected
-                            }
-                            onClick={() =>
-                              setCopyAction({
-                                strategy: "reuse",
-                                hostId: copy.environmentId,
-                                rootPath: copy.rootPath,
-                              })
-                            }
-                          >
-                            Review existing folder
-                          </Button>
-                        ) : null}
-                      </div>
-                      {removed && copy.ownership === "managed" ? (
-                        copy.recovery ? (
-                          <LibraryRecoveryDownload
-                            authorityId={library.authorityId!}
-                            connected={library.connected}
-                            copy={copy}
-                          />
-                        ) : (
-                          <p className="text-xs text-muted-foreground">
-                            No verified recovery archive is saved for this copy.
-                          </p>
-                        )
-                      ) : null}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            {copiesReadiness === "ready" && visibleCopies.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No working copies. The project and conversations stay here. Prepare files when you
-                need to work on a computer.
-              </p>
-            ) : null}
-            {copiesReadiness === "loading" ? (
-              <p role="status" className="text-sm text-muted-foreground">
-                Loading working copies...
-              </p>
-            ) : null}
-          </LibrarySection>
-        </div>
-      </details>
-      <div className="pt-2">
-        <Button
-          size="xs"
-          variant="ghost"
-          disabled={!canArchive || !library.connected}
-          onClick={() => void setArchived()}
-        >
-          {project.archived ? "Restore project" : "Archive project"}
-        </Button>
-      </div>
-      {editing ? (
-        <ProjectEditorDialog
-          project={project}
-          authorityId={library.authorityId}
-          onClose={() => {
-            setEditing(false);
-            library.refresh();
-          }}
-          onSaved={() => {
-            setEditing(false);
-            library.refresh();
-          }}
-        />
-      ) : null}
-      {copyAction ? (
+      <ProjectCopies
+        project={project}
+        copies={copies}
+        loading={libraryCopyReadiness(library.copies) === "loading"}
+        error={library.copies.error}
+        onRetry={library.copies.refresh}
+        canAct={canWork}
+        canStart={canRegister && canWork}
+        hostLabel={hostLabel}
+        hostConnected={hostConnected}
+        onGetCopy={setCopyRequest}
+        onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
+        onRemove={setReleasing}
+      />
+      <ProjectConversations
+        project={project}
+        threads={library.threads.data}
+        loading={library.threads.isPending}
+        error={library.threads.error}
+        onRetry={library.threads.refresh}
+        hostLabel={hostLabel}
+      />
+      <ProjectHistory
+        project={project}
+        copies={copies}
+        authorityId={library.authorityId}
+        connected={library.connected}
+        canAct={canWork}
+        hostLabel={hostLabel}
+        hostConnected={hostConnected}
+        onReuse={setCopyRequest}
+      />
+      {copyRequest ? (
         <CopyDialog
           project={project}
-          strategy={copyAction.strategy}
-          {...(copyAction.hostId ? { initialHostId: copyAction.hostId } : {})}
-          {...(copyAction.rootPath ? { initialRootPath: copyAction.rootPath } : {})}
-          onClose={() => setCopyAction(null)}
+          strategy={copyRequest.strategy}
+          {...(copyRequest.hostId ? { initialHostId: copyRequest.hostId } : {})}
+          {...(copyRequest.rootPath ? { initialRootPath: copyRequest.rootPath } : {})}
+          onClose={() => setCopyRequest(null)}
           onSaved={() => {
-            setCopyAction(null);
+            setCopyRequest(null);
             library.refresh();
           }}
         />
@@ -457,7 +151,7 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
       {conversation ? (
         <NewConversationDialog
           project={project}
-          copies={library.copies.data ?? []}
+          copies={copies}
           copiesQuery={library.copies}
           {...(conversation.hostId ? { initialHostId: conversation.hostId } : {})}
           {...(conversation.copyId ? { initialCopyId: conversation.copyId } : {})}
@@ -466,5 +160,325 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
         />
       ) : null}
     </LibraryPageFrame>
+  );
+}
+
+/** Name, brief and contents: the parts of a project someone defines, all edited in place. */
+function ProjectOverview({
+  project,
+  authorityId,
+  connected,
+  canStart,
+  onSaved,
+  onNewConversation,
+}: {
+  readonly project: LibraryProject;
+  readonly authorityId: EnvironmentId;
+  readonly connected: boolean;
+  readonly canStart: boolean;
+  readonly onSaved: () => void;
+  readonly onNewConversation: () => void;
+}) {
+  const update = useProjectUpdate({ project, authorityId, connected, onSaved });
+  const archive = useAtomCommand(projectLibrary.archiveProject, { reportFailure: false });
+  const canArchive = useLibraryPermission(projectLibrary.archiveProject, authorityId);
+  const [renaming, setRenaming] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  const repositories = project.resources.filter(isRepositoryResource).length;
+  const links = project.resources.length - repositories;
+  const meta = [
+    `Edited ${formatRelativeTimeLabel(project.updatedAt)}`,
+    repositories ? `${repositories} ${repositories === 1 ? "repository" : "repositories"}` : null,
+    links ? `${links} ${links === 1 ? "link" : "links"}` : null,
+  ].filter(Boolean);
+  const setArchived = async (archived: boolean) => {
+    setArchiveError(null);
+    const result = await archive({
+      environmentId: authorityId,
+      input: {
+        requestId: randomUUID(),
+        projectId: project.id,
+        expectedRevision: project.revision,
+        archived,
+      },
+    });
+    if (result._tag === "Failure") {
+      const cause = squashAtomCommandFailure(result);
+      setArchiveError(cause instanceof Error ? cause.message : "Could not update this project.");
+    }
+    onSaved();
+  };
+  return (
+    <>
+      <div className="flex flex-col gap-2">
+        <LibraryBackLink to="/projects">Projects</LibraryBackLink>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          {renaming ? (
+            <TitleEditor
+              title={project.title}
+              busy={update.busy}
+              onCancel={() => setRenaming(false)}
+              onSave={async (title) => {
+                if (await update.save({ title })) setRenaming(false);
+              }}
+            />
+          ) : (
+            <div className="min-w-0 space-y-1">
+              <h1 className="wrap-anywhere text-2xl font-semibold tracking-tight">
+                {project.title}
+              </h1>
+              <p className="text-xs text-muted-foreground">{meta.join(" · ")}</p>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Button disabled={!canStart} onClick={onNewConversation}>
+              New conversation
+            </Button>
+            <Menu>
+              <MenuTrigger
+                render={<Button size="icon" variant="ghost" aria-label="Project actions" />}
+              >
+                <EllipsisIcon />
+              </MenuTrigger>
+              <MenuPopup side="bottom" align="end">
+                <MenuItem disabled={!update.canEdit} onClick={() => setRenaming(true)}>
+                  Rename
+                </MenuItem>
+                <MenuItem
+                  disabled={!canArchive || !connected}
+                  onClick={() => void setArchived(!project.archived)}
+                >
+                  {project.archived ? "Restore project" : "Archive project"}
+                </MenuItem>
+              </MenuPopup>
+            </Menu>
+          </div>
+        </div>
+      </div>
+      {project.archived ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-muted/40 px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            Archived. Conversations stay readable; restore the project to change it or start new
+            work.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!canArchive || !connected}
+            onClick={() => void setArchived(false)}
+          >
+            Restore
+          </Button>
+        </div>
+      ) : null}
+      <LibraryErrorNotice error={archiveError} />
+      <BriefEditor
+        brief={project.brief}
+        canEdit={update.canEdit}
+        busy={update.busy}
+        onSave={(brief) => update.save({ brief })}
+      />
+      <ProjectResources
+        resources={project.resources}
+        canEdit={update.canEdit}
+        busy={update.busy}
+        onChange={(resources) => update.save({ resources })}
+      />
+      <LibraryErrorNotice error={update.error} />
+    </>
+  );
+}
+
+function TitleEditor({
+  title,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  readonly title: string;
+  readonly busy: boolean;
+  readonly onSave: (title: string) => Promise<void>;
+  readonly onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(title);
+  return (
+    <form
+      className="flex min-w-0 flex-1 gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void onSave(draft);
+      }}
+    >
+      <Input
+        autoFocus
+        aria-label="Project name"
+        maxLength={160}
+        value={draft}
+        disabled={busy}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onCancel();
+        }}
+      />
+      <Button type="submit" disabled={busy || !draft.trim()}>
+        Save
+      </Button>
+      <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+        Cancel
+      </Button>
+    </form>
+  );
+}
+
+/** The brief rides along with every conversation, so it reads as prose until edited. */
+function BriefEditor({
+  brief,
+  canEdit,
+  busy,
+  onSave,
+}: {
+  readonly brief: string;
+  readonly canEdit: boolean;
+  readonly busy: boolean;
+  readonly onSave: (brief: string) => Promise<boolean>;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <LibrarySection
+      title="Brief"
+      action={
+        canEdit && draft === null && brief ? (
+          <Button size="xs" variant="ghost" onClick={() => setDraft(brief)}>
+            Edit
+          </Button>
+        ) : null
+      }
+    >
+      {draft !== null ? (
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onSave(draft).then((saved) => {
+              if (saved) setDraft(null);
+            });
+          }}
+        >
+          <Textarea
+            autoFocus
+            rows={5}
+            maxLength={65536}
+            aria-label="Project brief"
+            placeholder="What are we making, and what matters?"
+            value={draft}
+            disabled={busy}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm" disabled={busy || draft === brief}>
+              {busy ? "Saving..." : "Save"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => setDraft(null)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : brief ? (
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{brief}</p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Every conversation in this project starts with the brief. Say what you're building and
+            what matters.
+          </p>
+          {canEdit ? (
+            <Button size="xs" variant="outline" onClick={() => setDraft("")}>
+              Add a brief
+            </Button>
+          ) : null}
+        </div>
+      )}
+    </LibrarySection>
+  );
+}
+
+function ProjectConversations({
+  project,
+  threads,
+  loading,
+  error,
+  onRetry,
+  hostLabel,
+}: {
+  readonly project: LibraryProject;
+  readonly threads: readonly LibraryThreadSummary[] | null | undefined;
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly onRetry: () => void;
+  readonly hostLabel: (id: EnvironmentId) => string;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const visible = (threads ?? [])
+    .filter((thread) => !thread.deleted)
+    .toSorted((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const shown = showAll ? visible : visible.slice(0, RECENT_CONVERSATIONS);
+  return (
+    <LibrarySection
+      title={
+        showAll || visible.length <= RECENT_CONVERSATIONS ? "Conversations" : "Recent conversations"
+      }
+    >
+      <LibraryErrorNotice error={error} onRetry={onRetry} />
+      {shown.length ? (
+        <ul className="-mx-2">
+          {shown.map((thread) => {
+            const scope =
+              thread.resourceIds.length === 1
+                ? project.resources.find((resource) => resource.id === thread.resourceIds[0])?.title
+                : null;
+            return (
+              <li key={thread.id}>
+                <Link
+                  to="/library/conversations/$conversationId"
+                  params={{ conversationId: thread.id }}
+                  className="flex items-baseline gap-3 rounded-md px-2 py-2 outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm">
+                    {thread.title || "Untitled conversation"}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {[hostLabel(thread.environmentId), scope, thread.archived ? "Archived" : null]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                  <span className="w-16 shrink-0 text-right text-xs text-muted-foreground">
+                    {formatRelativeTimeLabel(thread.updatedAt)}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      ) : loading ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading conversations...
+        </p>
+      ) : error ? null : (
+        <p className="text-sm text-muted-foreground">
+          No conversations yet. Start one about the whole project or a single repository.
+        </p>
+      )}
+      {visible.length > RECENT_CONVERSATIONS ? (
+        <Button size="xs" variant="ghost" onClick={() => setShowAll((value) => !value)}>
+          {showAll ? "Show recent only" : `Show all ${visible.length}`}
+        </Button>
+      ) : null}
+    </LibrarySection>
   );
 }

@@ -499,7 +499,7 @@ export function NewConversationDialog({
                 disabled={busy || attempt !== null || host?.connection.phase !== "connected"}
                 onClick={() => setPreparing("reuse")}
               >
-                Use existing folder
+                Use a folder you already have
               </Button>
               <Button
                 size="sm"

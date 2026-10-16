@@ -65,7 +65,7 @@ export function LibraryRecoveryDownload({
       <p className="text-xs text-muted-foreground">
         {formatBytes(recovery.byteLength)} · Verified{" "}
         {new Date(recovery.verifiedAt).toLocaleString()}. Extract the archive, then review it with
-        Use existing folder before starting new work.
+        Use a folder you already have before starting new work.
       </p>
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">Archive checksum</summary>

@@ -12,7 +12,10 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { projectLibrary, useLibraryPermission, useLibraryProjects } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { LibrarySetup } from "./LibrarySetup";
-import { validateResources } from "./resources";
+import { isRepositoryResource, validateResources } from "./resources";
+import { libraryResourceLocation } from "@t3tools/client-runtime/fork";
+import { FolderGit2Icon, LinkIcon, XIcon } from "lucide-react";
+import { ResourceAdder } from "./ProjectResources";
 
 const isLibraryError = Schema.is(LibraryError);
 const EditorAttempt = Schema.NullOr(
@@ -21,61 +24,35 @@ const EditorAttempt = Schema.NullOr(
     title: Schema.String,
     brief: Schema.String,
     resources: Schema.Array(LibraryResource),
-    expectedRevision: Schema.Number,
   }),
 );
 
+/** Creating a project asks for a name; a brief and its repositories can come now or later. */
 export function ProjectEditorDialog({
-  project,
   authorityId,
   onSaved,
   onClose,
 }: {
-  readonly project?: LibraryProject;
   readonly authorityId: EnvironmentId | null;
   readonly onSaved: (project: LibraryProject) => void;
   readonly onClose: () => void;
 }) {
   const [attempt, saveAttempt] = useLibraryAttempt(
-    `loom:library:editor:${authorityId}:${project?.id ?? "new"}`,
+    `loom:library:editor:${authorityId}:new`,
     EditorAttempt,
   );
-  const [title, setTitle] = useState(attempt?.title ?? project?.title ?? "");
-  const [brief, setBrief] = useState(attempt?.brief ?? project?.brief ?? "");
-  const [resources, setResources] = useState<readonly LibraryResource[]>(
-    attempt?.resources ?? project?.resources ?? [],
-  );
+  const [title, setTitle] = useState(attempt?.title ?? "");
+  const [brief, setBrief] = useState(attempt?.brief ?? "");
+  const [resources, setResources] = useState<readonly LibraryResource[]>(attempt?.resources ?? []);
   const catalog = useLibraryProjects();
-  const existing = !project
-    ? catalog.query.data?.find(
-        (entry) => entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
-      )
-    : undefined;
+  const existing = catalog.query.data?.find(
+    (entry) => entry.title.toLocaleLowerCase() === title.trim().toLocaleLowerCase(),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const create = useAtomCommand(projectLibrary.createProject, { reportFailure: false });
-  const update = useAtomCommand(projectLibrary.updateProject, { reportFailure: false });
-  const allowed = useLibraryPermission(
-    project ? projectLibrary.updateProject : projectLibrary.createProject,
-    authorityId,
-  );
-  const change = (id: string, patch: Partial<LibraryResource>) =>
-    setResources((current) =>
-      current.map((resource) => (resource.id === id ? { ...resource, ...patch } : resource)),
-    );
-  const add = (kind: "repository" | "link") =>
-    setResources((current) => [
-      ...current,
-      {
-        id: randomUUID(),
-        kind,
-        title: "",
-        remoteUrl: null,
-        url: null,
-        relativePath: "",
-        defaultBranch: null,
-      },
-    ]);
+  const allowed = useLibraryPermission(projectLibrary.createProject, authorityId);
+  const locked = busy || attempt !== null;
   const save = async () => {
     if (!authorityId || !allowed || busy) return;
     const validation = validateResources(resources);
@@ -86,30 +63,16 @@ export function ProjectEditorDialog({
     setBusy(true);
     setError(null);
     try {
-      const input = attempt ?? {
-        requestId: randomUUID(),
-        title: title.trim(),
-        brief,
-        resources,
-        expectedRevision: project?.revision ?? 0,
-      };
+      const input = attempt ?? { requestId: randomUUID(), title: title.trim(), brief, resources };
       saveAttempt(input);
-      const result = project
-        ? await update({
-            environmentId: authorityId,
-            input: { ...input, projectId: project.id, expectedRevision: input.expectedRevision },
-          })
-        : await create({ environmentId: authorityId, input });
+      const result = await create({ environmentId: authorityId, input });
       if (result._tag === "Failure") throw squashAtomCommandFailure(result);
       saveAttempt(null);
       onSaved(result.value);
     } catch (cause) {
-      if (
-        isLibraryError(cause) &&
-        ["invalid", "revision-conflict", "not-found"].includes(cause.reason)
-      )
+      if (isLibraryError(cause) && ["invalid", "not-found"].includes(cause.reason))
         saveAttempt(null);
-      setError(cause instanceof Error ? cause.message : "Could not save the project. Try again.");
+      setError(cause instanceof Error ? cause.message : "Could not create the project. Try again.");
     } finally {
       setBusy(false);
     }
@@ -120,12 +83,8 @@ export function ProjectEditorDialog({
       onOpenChange={(open) => {
         if (!open && !busy) onClose();
       }}
-      title={project ? "Edit project" : "New project"}
-      description={
-        project
-          ? "Update the context shared by this project’s conversations."
-          : "A home for your work, across repositories and computers."
-      }
+      title="New project"
+      description="A home for one thing you're building: its brief, repositories and conversations."
       actions={
         <>
           <Button variant="outline" disabled={busy} onClick={onClose}>
@@ -136,13 +95,7 @@ export function ProjectEditorDialog({
             form="library-project-editor"
             disabled={busy || !allowed || !title.trim()}
           >
-            {busy
-              ? "Saving..."
-              : attempt
-                ? "Retry save"
-                : project
-                  ? "Save project"
-                  : "Create project"}
+            {busy ? "Creating..." : attempt ? "Retry" : "Create project"}
           </Button>
         </>
       }
@@ -155,147 +108,81 @@ export function ProjectEditorDialog({
           void save();
         }}
       >
-        <LibraryField label="Project name">
+        <LibraryField label="Name">
           <Input
             autoFocus
             placeholder="AspectAvy"
             maxLength={160}
             value={title}
-            disabled={busy || attempt !== null}
+            disabled={locked}
             onChange={(event) => setTitle(event.target.value)}
           />
         </LibraryField>
         {existing ? (
           <div className="space-y-2 rounded-lg bg-muted/40 p-3">
             <p className="text-sm">A project named {existing.title} already exists.</p>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || attempt !== null}
-              onClick={() => onSaved(existing)}
-            >
+            <Button size="sm" variant="outline" disabled={locked} onClick={() => onSaved(existing)}>
               Open existing project
             </Button>
           </div>
         ) : null}
-        <LibraryField label="What are you building?">
+        <LibraryField label="Brief (optional)">
           <Textarea
             rows={3}
             value={brief}
             maxLength={65536}
-            disabled={busy || attempt !== null}
+            disabled={locked}
             onChange={(event) => setBrief(event.target.value)}
             placeholder="What are we making, and what matters?"
           />
         </LibraryField>
-        <details open={project ? true : undefined} className="group space-y-4">
-          <summary className="cursor-pointer text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-            {project ? "Components and references" : "Add repositories or references"}
-            <span className="ml-2 text-xs font-normal text-muted-foreground">
-              {resources.length ? `${resources.length} added` : "Optional"}
-            </span>
-          </summary>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            One project can include separate web, iOS, server and Android repositories. Add them now
-            or later.
-          </p>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-sm font-medium">Repositories and links</h3>
-            <div className="flex gap-2">
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={busy || attempt !== null || resources.length >= 64}
-                onClick={() => add("repository")}
-              >
-                Add repository
-              </Button>
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={busy || attempt !== null || resources.length >= 64}
-                onClick={() => add("link")}
-              >
-                Add reference link
-              </Button>
-            </div>
-          </div>
-          {resources.map((resource) => (
-            <fieldset key={resource.id} className="space-y-3 rounded-lg bg-muted/40 p-4">
-              <legend className="sr-only">
-                {resource.title || (resource.kind === "link" ? "Reference link" : "Repository")}
-              </legend>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {resource.kind === "link" ? "Reference link" : "Repository"}
-                </span>
-                <Button
-                  size="xs"
-                  variant="ghost"
-                  disabled={busy || attempt !== null}
-                  onClick={() =>
-                    setResources((current) => current.filter((entry) => entry.id !== resource.id))
-                  }
-                >
-                  Remove
-                </Button>
-              </div>
-              <LibraryField label={resource.kind === "link" ? "Reference name" : "Component name"}>
-                <Input
-                  maxLength={160}
-                  placeholder={resource.kind === "link" ? "Design reference" : "Web, iOS, Server…"}
-                  disabled={busy || attempt !== null}
-                  value={resource.title}
-                  onChange={(event) => change(resource.id, { title: event.target.value })}
-                />
-              </LibraryField>
-              <LibraryField
-                label={
-                  resource.kind === "link"
-                    ? "URL"
-                    : "Repository URL (optional for an existing local repository)"
-                }
-              >
-                <Input
-                  disabled={busy || attempt !== null}
-                  value={(resource.kind === "link" ? resource.url : resource.remoteUrl) ?? ""}
-                  onChange={(event) =>
-                    change(
-                      resource.id,
-                      resource.kind === "link"
-                        ? { url: event.target.value }
-                        : { remoteUrl: event.target.value || null },
-                    )
-                  }
-                />
-              </LibraryField>
-              {resource.kind !== "link" ? (
-                <LibraryField label="Folder within the project">
-                  <Input
-                    disabled={busy || attempt !== null}
-                    value={resource.relativePath}
-                    placeholder="web"
-                    onChange={(event) => change(resource.id, { relativePath: event.target.value })}
-                  />
-                </LibraryField>
-              ) : null}
-            </fieldset>
-          ))}
-          {project ? (
-            <p className="text-xs text-muted-foreground">
-              Removing a component preserves its files and conversation history.
-            </p>
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Repositories and links (optional)</p>
+          {resources.length ? (
+            <ul className="divide-y divide-border">
+              {resources.map((resource) => {
+                const Icon = isRepositoryResource(resource) ? FolderGit2Icon : LinkIcon;
+                return (
+                  <li key={resource.id} className="flex items-center gap-3 py-2">
+                    <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm">{resource.title}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {libraryResourceLocation(resource)}
+                      </p>
+                    </div>
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label={`Remove ${resource.title}`}
+                      disabled={locked}
+                      onClick={() =>
+                        setResources((current) =>
+                          current.filter((entry) => entry.id !== resource.id),
+                        )
+                      }
+                    >
+                      <XIcon />
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
           ) : null}
-        </details>
-        {!project ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            After creating the project, start a conversation about the whole project or one
-            component. Choose where to run it then.
-          </p>
-        ) : null}
+          {resources.length < 64 ? (
+            <ResourceAdder
+              resources={resources}
+              busy={locked}
+              onAdd={async (resource) => {
+                setResources((current) => [...current, resource]);
+                return true;
+              }}
+            />
+          ) : null}
+        </div>
         {attempt ? (
           <p className="text-xs text-muted-foreground">
-            This project save is waiting for confirmation. Retry to recover the same change.
+            Creating this project is waiting for confirmation. Retry to finish it.
           </p>
         ) : null}
         <LibraryErrorNotice error={error} />

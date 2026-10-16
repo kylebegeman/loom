@@ -24,6 +24,7 @@ import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useLibraryAttempt } from "./attempts";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { isRepositoryResource } from "./resources";
 
@@ -60,11 +61,35 @@ export function CopyDialog({
     `loom:library:prepare:${authority.authorityId}:${project.id}`,
     PreparationAttempt,
   );
+  const executionHosts = authority.environments.filter(
+    (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
+  );
+  const primaryId = usePrimaryEnvironmentId();
+  const connectedHosts = executionHosts.filter(
+    (entry) => entry.entry.enabled && entry.connection.phase === "connected",
+  );
+  // Default to the only connected computer, or this one, so a copy is usually one click away.
+  const defaultHostId =
+    connectedHosts.length === 1
+      ? connectedHosts[0]!.environmentId
+      : (connectedHosts.find((entry) => entry.environmentId === primaryId)?.environmentId ?? null);
   const [hostId, setHostId] = useState<EnvironmentId | null>(
-    attempt?.environmentId ?? initialHostId ?? null,
+    attempt?.environmentId ?? initialHostId ?? defaultHostId,
   );
   const host = authority.environments.find((entry) => entry.environmentId === hostId);
-  const [rootPath, setRootPath] = useState(attempt?.input.rootPath ?? initialRootPath ?? "");
+  const suggestedPath = host?.serverConfig?.newProjectsRoot
+    ? `${host.serverConfig.newProjectsRoot}/${
+        project.title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "") || "project"
+      }`
+    : "";
+  // A clone starts in the suggested folder until someone types their own.
+  const [typedPath, setRootPath] = useState<string | null>(
+    attempt?.input.rootPath ?? initialRootPath ?? null,
+  );
+  const rootPath = typedPath ?? (strategy === "clone" ? suggestedPath : "");
   const [busy, setBusy] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const recover = useAtomQueryRunner(projectLibrary.preparation, {
@@ -213,14 +238,14 @@ export function CopyDialog({
       title={
         actualStrategy === "clone"
           ? resourceId
-            ? "Prepare repository"
-            : "Clone project"
-          : "Use existing folder"
+            ? "Get a copy of this repository"
+            : "Get a copy"
+          : "Use a folder you already have"
       }
       description={
         actualStrategy === "clone"
-          ? "Prepare project repositories together under one parent folder on the selected computer."
-          : "Register an existing folder as a borrowed working copy. Removing its registration preserves your files."
+          ? "Clone the project's repositories into one folder on a computer. Remove the copy whenever you're done; conversations stay in the project."
+          : "Point the project at a folder that already holds its repositories. Removing it later leaves your files where they are."
       }
       actions={
         <>
@@ -255,7 +280,7 @@ export function CopyDialog({
               : attempt
                 ? "Retry preparation"
                 : actualStrategy === "clone"
-                  ? "Clone project"
+                  ? "Clone"
                   : "Use folder"}
           </Button>
         </>
@@ -265,14 +290,10 @@ export function CopyDialog({
         <LibraryField label="Computer">
           <Select
             value={hostId}
-            items={authority.environments
-              .filter(
-                (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
-              )
-              .map((entry) => ({
-                value: entry.environmentId,
-                label: entry.label,
-              }))}
+            items={executionHosts.map((entry) => ({
+              value: entry.environmentId,
+              label: entry.label,
+            }))}
             onValueChange={(value) => setHostId(value)}
             disabled={busy || attempt !== null}
           >
@@ -280,28 +301,19 @@ export function CopyDialog({
               <SelectValue placeholder="Choose a computer" />
             </SelectTrigger>
             <SelectPopup>
-              {authority.environments
-                .filter(
-                  (entry) =>
-                    entry.serverConfig?.environment.capabilities.supportsExecution !== false,
-                )
-                .map((entry) => (
-                  <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                    {entry.label}
-                    {entry.connection.phase !== "connected" ? " (offline)" : ""}
-                  </SelectItem>
-                ))}
+              {executionHosts.map((entry) => (
+                <SelectItem key={entry.environmentId} value={entry.environmentId}>
+                  {entry.label}
+                  {entry.connection.phase !== "connected" ? " (offline)" : ""}
+                </SelectItem>
+              ))}
             </SelectPopup>
           </Select>
         </LibraryField>
-        <LibraryField label="Parent folder">
+        <LibraryField label={actualStrategy === "clone" ? "Clone into" : "Folder"}>
           <Input
             font="mono"
-            placeholder={
-              host?.serverConfig?.newProjectsRoot
-                ? `${host.serverConfig.newProjectsRoot}/${project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
-                : "/path/to/project"
-            }
+            placeholder={suggestedPath || "/path/to/project"}
             disabled={busy || attempt !== null}
             value={rootPath}
             onChange={(event) => setRootPath(event.target.value)}
