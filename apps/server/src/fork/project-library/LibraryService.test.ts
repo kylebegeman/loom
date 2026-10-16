@@ -821,11 +821,94 @@ describe("independent Library catalog and durable history", () => {
           const rejected = yield* service
             .updateProject({
               ...edit("secret", 4),
-              profile: { secretNames: ["ghp_abcdefghijklmnopqrstuvwxyz0123"] },
+              profile: { secretNames: ["AKIAIOSFODNN7EXAMPLE"] },
             })
             .pipe(Effect.flip);
           expect(rejected).toMatchObject({ reason: "invalid" });
+          expect(rejected.message).toBe(
+            "A secret name looks like it holds a secret. Save only its name; each computer keeps the value.",
+          );
+          expect(rejected.message).not.toContain("AKIA");
           expect((yield* service.project({ projectId: project.id })).revision).toBe(4);
+        }),
+      ),
+  );
+  it.effect(
+    "keeps a profile saved under older secret rules through unrelated edits and accepted briefs",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = yield* create(service);
+          const token = "CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT";
+          const deploy = {
+            id: "deploy",
+            name: "Deploy",
+            command: `ship --key ${token}`,
+            icon: "play" as const,
+            runOnWorktreeCreate: false,
+          };
+          // A Library from before the opaque-token rule saved this script.
+          const sql = yield* SqlClient.SqlClient;
+          const older = { ...project, profile: { scripts: [deploy] } };
+          yield* sql`UPDATE fork_library_projects SET payload_json = ${JSON.stringify(older)} WHERE id = ${project.id}`;
+          const edit = (requestId: string, expectedRevision: number) => ({
+            requestId,
+            projectId: project.id,
+            expectedRevision,
+            title: project.title,
+            brief: project.brief,
+            resources: project.resources,
+          });
+          const renamed = yield* service.updateProject({
+            ...edit("title", 1),
+            title: "AspectAvy 2",
+            brief: "New brief",
+            color: "teal",
+          });
+          expect(renamed).toMatchObject({ revision: 2, color: "teal", profile: older.profile });
+          // Clients resend the whole profile, so the old script rides along with a new change.
+          const resent = yield* service.updateProject({
+            ...edit("resend", 2),
+            title: renamed.title,
+            brief: renamed.brief,
+            profile: { scripts: [deploy], allowMini: false },
+          });
+          expect(resent).toMatchObject({ revision: 3, profile: { scripts: [deploy] } });
+          const added = yield* service
+            .updateProject({
+              ...edit("add", 3),
+              title: renamed.title,
+              brief: renamed.brief,
+              profile: { scripts: [deploy, { ...deploy, id: "copy", name: "Copy" }] },
+            })
+            .pipe(Effect.flip);
+          expect(added).toMatchObject({ reason: "invalid" });
+          expect(added.message).toMatch(/^Script 2 looks like it holds a secret/);
+          expect(added.message).not.toContain(token);
+          const proposal = yield* service.proposeBrief(
+            {
+              requestId: "propose",
+              projectId: project.id,
+              baseRevision: 3,
+              proposedBrief: "Ship the viewer.",
+              summary: "Record the goal.",
+            },
+            {
+              kind: "conversation",
+              environmentId: EnvironmentId.make("computer"),
+              threadId: threadId,
+            },
+          );
+          const accepted = yield* service.acceptBriefProposal({
+            requestId: "accept",
+            proposalId: proposal.id,
+            expectedRevision: 3,
+          });
+          expect(accepted.project).toMatchObject({
+            revision: 4,
+            brief: "Ship the viewer.",
+            profile: { scripts: [deploy] },
+          });
         }),
       ),
   );
@@ -847,6 +930,7 @@ describe("independent Library catalog and durable history", () => {
             .updateProject({ ...edit("curl", 1), profile: { requiredTools: [{ id: "curl" }] } })
             .pipe(Effect.flip);
           expect(unknown).toMatchObject({ reason: "invalid" });
+          expect(unknown.message).toMatch(/^This Library does not know the required tool "curl"\./);
           // A newer Library saved a tool this catalog does not know.
           const sql = yield* SqlClient.SqlClient;
           const newer = { ...project, profile: { requiredTools: [{ id: "zig" }] } };

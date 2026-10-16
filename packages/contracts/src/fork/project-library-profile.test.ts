@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { LibraryProject, LibraryUpdateProjectRequest } from "./project-library.ts";
+import { LibraryError, LibraryProject, LibraryUpdateProjectRequest } from "./project-library.ts";
 import {
   LIBRARY_PROFILE_LIMITS,
   LIBRARY_TOOL_CATALOG,
@@ -8,6 +8,8 @@ import {
   LibraryProjectProfileInput,
   libraryProfileAddedUnknownTools,
   libraryProfileSecretValueField,
+  libraryProfileUnknownToolsMessage,
+  looksLikeSecretValue,
 } from "./project-library-profile.ts";
 
 const profile = {
@@ -52,6 +54,12 @@ const project = {
 const accepts = Schema.is(LibraryProjectProfileInput);
 const decodeInput = Schema.decodeUnknownSync(LibraryProjectProfileInput);
 const reads = Schema.is(LibraryProjectProfile);
+// Plain literals stand in for branded ids, and the ghp_ name is one the schema would refuse.
+const secretField = (value: object, saved?: object) =>
+  libraryProfileSecretValueField(
+    value as LibraryProjectProfileInput,
+    saved as LibraryProjectProfileInput | undefined,
+  );
 // LibraryProject as a computer from before profiles knew it.
 const { profile: _added, ...olderFields } = LibraryProject.fields;
 const decodeOlder = Schema.decodeUnknownSync(Schema.Struct(olderFields));
@@ -123,18 +131,14 @@ describe("LibraryProjectProfile", () => {
     // Secret names are environment variable names: no assignment, spaces or lowercase tokens.
     for (const name of ["GITHUB_TOKEN", "_PRIVATE", "API_KEY_2"])
       expect(accepts({ secretNames: [name] })).toBe(true);
-    for (const name of [
-      "GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123",
-      "ghp_abcdefghijklmnopqrstuvwxyz0123",
-      "sk-ant-api03-abcdefghijklmnop",
-      "AKIAIOSFODNN7EXAMPLE",
-      "my token",
-      "2FA",
-    ])
+    for (const name of ["GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123", "my token", "2FA"])
       expect(accepts({ secretNames: [name] })).toBe(false);
+    // Name-shaped values pass the schema, so the Library refuses them by their shape.
+    for (const name of ["ghp_abcdefghijklmnopqrstuvwxyz0123", "AKIAIOSFODNN7EXAMPLE"])
+      expect(secretField({ secretNames: [name] })).toBe("A secret name");
     // Free-text script fields refuse credential-shaped text but keep references to secrets.
     const withCommand = (command: string, extra: object = {}) => ({
-      scripts: [{ ...profile.scripts[0], command, ...extra }],
+      scripts: [{ ...profile.scripts[0]!, command, icon: "play" as const, ...extra }],
     });
     for (const command of [
       "GITHUB_TOKEN=$GITHUB_TOKEN pnpm release",
@@ -148,7 +152,7 @@ describe("LibraryProjectProfile", () => {
       "MAX_TOKENS=4096 TOKEN_FILE=./token pnpm eval",
       "ssh://git@github.com:22/acme/app.git",
     ])
-      expect(accepts(withCommand(command))).toBe(true);
+      expect(secretField(withCommand(command))).toBeNull();
     for (const command of [
       "GITHUB_TOKEN=abc123 pnpm release",
       "deploy --password=hunter2",
@@ -160,21 +164,115 @@ describe("LibraryProjectProfile", () => {
       "git clone https://kyle:ghp_abcdefghijklmnopqrstuvwxyz0123@github.com/x/y",
       "echo '-----BEGIN OPENSSH PRIVATE KEY-----'",
     ])
-      expect(accepts(withCommand(command))).toBe(false);
-    expect(accepts(withCommand("pnpm dev", { previewUrl: "https://me:pass@host.dev" }))).toBe(
-      false,
+      expect(secretField(withCommand(command))).toBe("Script 1");
+    expect(secretField(withCommand("pnpm dev", { previewUrl: "https://me:pass@host.dev" }))).toBe(
+      "Script 1",
     );
     expect(
-      accepts({
+      secretField({
         defaultModelSelection: {
           instanceId: "codex",
           model: "gpt-6",
           options: [{ id: "key", value: "sk-abc123defghijklmnopqrstu" }],
         },
       }),
-    ).toBe(false);
-    expect(accepts({ preferredEnvironmentIds: ["ghp_abcdefghijklmnopqrstuvwxyz0123"] })).toBe(
-      false,
+    ).toBe("The default model");
+    expect(secretField({ preferredEnvironmentIds: ["ghp_abcdefghijklmnopqrstuvwxyz0123"] })).toBe(
+      "A preferred computer",
+    );
+  });
+
+  it("flags opaque random literals but not paths, hashes or identifiers", () => {
+    // Random 40-character base62 and base64url tokens with no known prefix.
+    for (const token of [
+      "CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT",
+      "034EoYiAKt9DsyMalKxX3ZRbiGkW7xiK2fbYgKXg",
+      "jkTFulcxsfR2GVqKcDuBhiYn9NbZJXmM9eIFx470",
+      "aEPx-3lnKv0PJ3AGowrq9FPRyBYm_xQPGST2qldW",
+      "AqWM2pE5PjIGPO07O1Oa6_WqBnepyjgseJSyUjfw",
+    ]) {
+      expect(looksLikeSecretValue(token)).toBe(true);
+      expect(looksLikeSecretValue(`deploy --key ${token} --region us-east-1`)).toBe(true);
+      expect(looksLikeSecretValue(`DEPLOY_HOOK=${token} ./ship`)).toBe(true);
+      expect(looksLikeSecretValue(`curl "https://hooks.example.com/run?key=${token}"`)).toBe(true);
+    }
+    for (const text of [
+      // Paths and hosts, even with a random-looking segment.
+      "/Users/kyle/Library/Developer/CoreSimulator/Devices/CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT/data",
+      "./build/034EoYiAKt9DsyMalKxX3ZRbiGkW7xiK2fbYgKXg.tar.gz",
+      "https://cdn.example.com/assets/jkTFulcxsfR2GVqKcDuBhiYn9NbZJXmM9eIFx470/app.js",
+      "jkTFulcxsfR2GVqKcDuBhiYn9NbZJXmM9eIFx470.example.com",
+      // Identifiers and hashes.
+      "550e8400-e29b-41d4-a716-446655440000",
+      "6F9619FF-8B86-D011-B42D-00CF4FC964FF",
+      "git checkout 3f786850e387550fdab836ed7e6dc881de23001b",
+      "docker pull node@sha256:2a9e5ad0c3b8f0dc1e1a4d0e5c3a2b6f7e8d9c0b1a2f3e4d5c6b7a8f9e0d1c2b",
+      "LibraryProjectProfileInputDecodeFailureForEnvironment",
+      "useLibraryProjectProfileV2ForEnvironment2026",
+      "AWSLambdaBasicExecutionRole2024Policy",
+      "createProjectLibraryAtomsForEnvironment3",
+      "pnpm --filter @acme/design-system-components-for-marketing-site build",
+      "xcodebuild -scheme MyApplicationTests2-iPhone15ProMaxSimulator test",
+      "TestFlightBuild2026-10-16-ReleaseCandidate3",
+      "x86_64-unknown-linux-gnu-ReleaseWithDebInfo2",
+      "NODE_OPTIONS=--max-old-space-size=8192 pnpm build",
+      "CLOUDFLARE_ACCOUNT_IDENTIFIER_FOR_PRODUCTION_DEPLOYS_2026 pnpm deploy",
+      "deploy --token $CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT",
+      'deploy --token "${DEPLOY_TOKEN_FOR_PRODUCTION_2026}"',
+      // Short tokens and repeated placeholders are left to the known shapes.
+      "Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr",
+      "Xx0Xx0Xx0Xx0Xx0Xx0Xx0Xx0Xx0Xx0Xx0Xx0Xx0",
+    ])
+      expect(looksLikeSecretValue(text)).toBe(false);
+  });
+
+  it("checks only entries a save adds, so an unchanged profile can always be resent", () => {
+    const token = "CGu46u5amB4HBpUsiU7g78UdCQgxY956Zsn2IBAT";
+    const flagged = {
+      ...profile.scripts[0]!,
+      icon: "play" as const,
+      command: `deploy --key ${token}`,
+    };
+    const saved = {
+      scripts: [flagged],
+      defaultModelSelection: { instanceId: "codex", model: token },
+      preferredEnvironmentIds: [token],
+      secretNames: ["NAME"],
+    };
+    expect(secretField(saved)).toBe("Script 1");
+    expect(secretField(saved, saved)).toBeNull();
+    // Keeping old entries while changing others is fine; a new flagged entry is named.
+    expect(secretField({ ...saved, scripts: [flagged, profile.scripts[1]!] }, saved)).toBeNull();
+    expect(secretField({ ...saved, scripts: [flagged, { ...flagged, id: "copy" }] }, saved)).toBe(
+      "Script 2",
+    );
+    expect(
+      secretField(
+        { ...saved, defaultModelSelection: { instanceId: "codex", model: `${token}x` } },
+        saved,
+      ),
+    ).toBe("The default model");
+    expect(secretField({ ...saved, preferredEnvironmentIds: [token, `x${token}`] }, saved)).toBe(
+      "A preferred computer",
+    );
+  });
+
+  it("explains a refused save in the error message, never the secret itself", () => {
+    expect(libraryProfileUnknownToolsMessage(["zig", "curl"])).toMatch(
+      /^This Library does not know the required tools "zig", "curl"\. Use tool ids from git, node,/,
+    );
+    const error = new LibraryError({
+      reason: "invalid",
+      cause: libraryProfileUnknownToolsMessage(["zig"]),
+    });
+    expect(error.message).toMatch(/required tool "zig"/);
+    // The detail survives the trip to an RPC client.
+    const codec = Schema.fromJsonString(LibraryError);
+    const decoded = Schema.decodeSync(codec)(Schema.encodeSync(codec)(error));
+    expect(decoded.message).toBe(error.message);
+    // An invalid error from a caught failure keeps the generic text.
+    expect(new LibraryError({ reason: "invalid", cause: new Error("x") }).message).toMatch(
+      /^Review the project/,
     );
   });
 
@@ -184,9 +282,6 @@ describe("LibraryProjectProfile", () => {
       scripts: [{ ...profile.scripts[0]!, name: secret, icon: "play" }],
     });
     expect(field).toBe("Script 1");
-    expect(() =>
-      decodeInput({ secretNames: [], scripts: [{ ...profile.scripts[0], name: secret }] }),
-    ).toThrow(/Script 1 looks like it holds a secret/);
   });
 
   it("lets an update keep, replace or remove the profile", () => {

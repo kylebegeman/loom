@@ -217,9 +217,12 @@ export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryErr
     "not-managed",
     "io",
   ]),
+  /** For `invalid`, a string is what to fix, written for the person or agent who asked. */
   cause: Schema.optional(Schema.Defect()),
 }) {
   override get message() {
+    // A string cause never comes from a caught error, so it is safe to show as written.
+    if (this.reason === "invalid" && typeof this.cause === "string") return this.cause;
     switch (this.reason) {
       case "not-authority":
         return "Use your Library connection to manage shared projects and saved history. This computer only runs your work.";
