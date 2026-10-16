@@ -102,6 +102,15 @@ request opens in your browser. Entries marked **estimated time** were rebuilt fr
 before the Library kept a timeline. A Library that does not keep a timeline yet shows a shorter
 **History** of copies instead. Agents can read the timeline through `loom_library_timeline`.
 
+Search finds what was said in saved conversations from every computer, including offline
+ones. The search field on the Projects page looks through every project, and the one on a
+project page looks through that project only. Each result shows the matching words with the
+project, the computer and when it was said. Selecting a result opens the saved conversation
+at that message and highlights it. Archived conversations are included and marked. In the
+command palette, **Search project history...** jumps to the search field for the project you
+have open, or for every project. Search appears once your Library supports it. Agents can
+search the same history through `loom_library_search`.
+
 Agents can suggest changes to the brief, but only you can accept them. When suggestions are
 waiting, the brief shows **N suggested updates**. Open it to see each suggestion's reason and
 what it would change in the brief as it reads now. **Accept** saves it as the new brief,

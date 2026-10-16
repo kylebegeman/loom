@@ -15,6 +15,8 @@ import {
   dropLibraryBriefEdit,
   onLibraryAction,
   takeLibraryBriefEdit,
+  requestLibraryHistorySearch,
+  takeLibraryHistorySearch,
 } from "../project-library/actions";
 import {
   libraryPaletteBlocker,
@@ -73,6 +75,7 @@ const library = (patch: Partial<LibraryPaletteContext> = {}): LibraryPaletteCont
   openProject,
   blocker: null,
   openLibrary,
+  searchHistory: null,
   ...patch,
 });
 const items = (patch?: Partial<LibraryPaletteContext> | null) =>
@@ -179,6 +182,29 @@ describe("Library palette source", () => {
   it("hides actions the Library does not permit", () => {
     const values = items({ canStart: false, canEditBrief: false }).map((item) => item.value);
     expect(values).toEqual(["action:loom:library:go-to-project"]);
+  });
+
+  it("offers history search only when the Library can search", async () => {
+    const value = "action:loom:library:search-history";
+    expect(items().some((item) => item.value === value)).toBe(false);
+    const searchHistory = vi.fn(async () => {});
+    const item = items({ searchHistory }).find((entry) => entry.value === value);
+    expect(item?.title).toBe("Search project history...");
+    await run(item);
+    expect(searchHistory).toHaveBeenCalledOnce();
+  });
+
+  it("hands a history search request to the field for its scope only", () => {
+    const requested: string[] = [];
+    window.addEventListener("loom:library:search-history", () => requested.push("event"));
+    requestLibraryHistorySearch("loom");
+    expect(requested).toEqual(["event"]);
+    expect(takeLibraryHistorySearch()).toBe(false);
+    expect(takeLibraryHistorySearch("loom")).toBe(true);
+    expect(takeLibraryHistorySearch("loom")).toBe(false);
+    requestLibraryHistorySearch();
+    expect(takeLibraryHistorySearch("loom")).toBe(false);
+    expect(takeLibraryHistorySearch()).toBe(true);
   });
 
   it("offers this thread's project only for a bound thread", async () => {
