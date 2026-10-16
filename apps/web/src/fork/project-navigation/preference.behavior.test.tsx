@@ -2,7 +2,11 @@
 import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import { PROJECT_NAVIGATION_VIEW_KEY, useProjectNavigationView } from "./preference";
+import {
+  PROJECT_NAVIGATION_VIEW_KEY,
+  toggleProjectNavigationView,
+  useProjectNavigationView,
+} from "./preference";
 
 const clients = new Map<number, ReturnType<typeof useProjectNavigationView>>();
 let renderer: ReactTestRenderer | null = null;
@@ -87,6 +91,18 @@ describe("project navigation persistence", () => {
     await act(async () => {
       window.dispatchEvent(new StorageEvent("storage", { key: null }));
     });
+    expect(clients.get(1)?.[0]).toBe("threads");
+  });
+
+  it("flips the stored view for mounted navigators and the next one to mount", async () => {
+    await mountClients();
+    await act(async () => toggleProjectNavigationView());
+    expect(clients.get(1)?.[0]).toBe("projects");
+    expect(window.localStorage.getItem(PROJECT_NAVIGATION_VIEW_KEY)).toBe("projects");
+    await act(async () => renderer?.unmount());
+    renderer = null;
+    toggleProjectNavigationView();
+    await mountClients();
     expect(clients.get(1)?.[0]).toBe("threads");
   });
 });

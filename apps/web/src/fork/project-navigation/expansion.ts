@@ -1,14 +1,20 @@
 import { useCallback } from "react";
 import { useUiStateStore } from "~/uiStateStore";
 
-const preferenceKey = (projectKey: string) => `loom:project-library:${projectKey}`;
+const preferenceKey = (key: string) => `loom:sidebar-projects:${key}`;
 
-export function useProjectLibraryExpansion(projectKey: string) {
-  const key = preferenceKey(projectKey);
-  const expanded = useUiStateStore((state) => state.projectExpandedById[key] ?? false);
+/**
+ * A persisted open or closed state for one Projects view section, kept apart from upstream's
+ * project expansion so the two views never share a preference. One store subscription per caller.
+ */
+export function useProjectNavigationExpansion(key: string, defaultExpanded = false) {
+  const storeKey = preferenceKey(key);
+  const expanded = useUiStateStore(
+    (state) => state.projectExpandedById[storeKey] ?? defaultExpanded,
+  );
   const toggleExpanded = useCallback(() => {
     const state = useUiStateStore.getState();
-    state.setProjectExpanded(key, !(state.projectExpandedById[key] ?? false));
-  }, [key]);
+    state.setProjectExpanded(storeKey, !(state.projectExpandedById[storeKey] ?? defaultExpanded));
+  }, [defaultExpanded, storeKey]);
   return [expanded, toggleExpanded] as const;
 }

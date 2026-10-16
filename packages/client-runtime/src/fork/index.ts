@@ -52,3 +52,5 @@ export * from "./library-brief-review.ts";
 export * from "./library-launch-choice.ts";
 export * from "./library-tidy.ts";
 export * from "./library-timeline.ts";
+export * from "./sidebar-project-groups.ts";
+export * from "./library-sidebar-projects.ts";

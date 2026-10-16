@@ -3,14 +3,14 @@ import { act, useLayoutEffect } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useUiStateStore } from "~/uiStateStore";
-import { useProjectLibraryExpansion } from "./expansion";
+import { useProjectNavigationExpansion } from "./expansion";
 
-const rows = new Map<string, ReturnType<typeof useProjectLibraryExpansion>>();
+const rows = new Map<string, ReturnType<typeof useProjectNavigationExpansion>>();
 let renderer: ReactTestRenderer | null = null;
 const initialExpansion = useUiStateStore.getState().projectExpandedById;
 
-function Row({ projectKey }: { projectKey: string }) {
-  const expansion = useProjectLibraryExpansion(projectKey);
+function Row({ projectKey, open = false }: { projectKey: string; open?: boolean }) {
+  const expansion = useProjectNavigationExpansion(projectKey, open);
   useLayoutEffect(() => {
     rows.set(projectKey, expansion);
   });
@@ -43,7 +43,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("keeps expanded project previews when switching views or reopening the sidebar", async () => {
+it("keeps a section's state when switching views or reopening the sidebar", async () => {
   await showProjects();
   expect(rows.get("logical-a")?.[0]).toBe(false);
   await act(async () => rows.get("logical-a")?.[1]());
@@ -61,11 +61,21 @@ it("keeps expanded project previews when switching views or reopening the sideba
   expect(rows.get("logical-a")?.[0]).toBe(false);
 });
 
-it("keeps library expansion independent from upstream project section preferences", async () => {
+it("keeps Projects view state independent from upstream project section preferences", async () => {
   useUiStateStore.setState({ projectExpandedById: { "logical-a": true } });
   await showProjects();
   expect(rows.get("logical-a")?.[0]).toBe(false);
   await act(async () => rows.get("logical-a")?.[1]());
   expect(useUiStateStore.getState().projectExpandedById["logical-a"]).toBe(true);
   expect(rows.get("logical-a")?.[0]).toBe(true);
+});
+
+it("starts open when asked and remembers closing", async () => {
+  await act(async () => {
+    renderer = create(<Row projectKey="group" open />);
+  });
+  expect(rows.get("group")?.[0]).toBe(true);
+  await act(async () => rows.get("group")?.[1]());
+  expect(rows.get("group")?.[0]).toBe(false);
+  expect(useUiStateStore.getState().projectExpandedById["loom:sidebar-projects:group"]).toBe(false);
 });
