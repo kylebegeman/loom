@@ -12,7 +12,8 @@
  *   t3 | t3.exe          the single-executable
  *   client/              web app served by the server
  *   resource-monitor/    per-platform Rust helper, same paths as the npm package
- *   node_modules/        runtime externals (node-pty, msgpackr-extract, fff)
+ *   node_modules/        runtime externals (node-pty, msgpackr-extract, fff), and on
+ *                        Linux the Library's embedding runtime (onnxruntime-web)
  */
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -41,6 +42,11 @@ import {
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
+import {
+  LIBRARY_EMBEDDER_RUNTIME_PACKAGE,
+  libraryEmbedderRuntimeRemovals,
+  selectLibraryEmbedderRuntimeDependencies,
+} from "./lib/library-embedder-runtime.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -175,6 +181,8 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
   const dependencies = {
     ...selectCliRuntimeExternalDependencies(serverDependencies),
     ...resolveFffNativeDependencies(input.platform, input.arch, fffNodeVersion),
+    // fork: library-semantic-search
+    ...selectLibraryEmbedderRuntimeDependencies(input.platform, serverDependencies),
   };
   const patchedDependencies = createStagePatchedDependencies(
     workspace.patchedDependencies ?? {},
@@ -241,6 +249,18 @@ const stageRuntimeExternals = Effect.fn("stageRuntimeExternals")(function* (inpu
     ...foreignPrebuilds.map((entry) => `node_modules/node-pty/prebuilds/${entry}`),
   ]) {
     yield* fs.remove(path.join(input.stageDir, entry), { recursive: true, force: true });
+  }
+  // fork: library-semantic-search
+  const embedderRuntimeDir = path.join(
+    input.stageDir,
+    "node_modules",
+    LIBRARY_EMBEDDER_RUNTIME_PACKAGE,
+  );
+  const embedderRuntimePaths = yield* fs
+    .readDirectory(embedderRuntimeDir, { recursive: true })
+    .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+  for (const entry of libraryEmbedderRuntimeRemovals(embedderRuntimePaths)) {
+    yield* fs.remove(path.join(embedderRuntimeDir, entry), { recursive: true, force: true });
   }
   // A hoisted install still leaves nested `node_modules/.bin` shim directories
   // inside packages that declare bins (msgpackr-extract's). They are symlinks
