@@ -7,6 +7,11 @@ import { appleBuildToolingPaletteSource } from "../apple-build-tooling/palette";
 import { deviceQaPaletteSource } from "../device-qa/palette";
 import { panelPickerPaletteSource } from "../panel-picker/palette";
 import { codeGraphPaletteSource } from "../code-graph/palette";
+import {
+  libraryPaletteSource,
+  useLibraryPaletteContext,
+  type LibraryPaletteContext,
+} from "./library";
 import { models } from "../model-preview-3d/state";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
@@ -35,6 +40,7 @@ export interface ForkCommandPaletteContext {
   readonly activeThreadRef: ScopedThreadRef | null;
   readonly modelFiles?: ReadonlyArray<string>;
   readonly loomFeatures: ReadonlyArray<string>;
+  readonly library?: LibraryPaletteContext | null;
 }
 
 export interface ForkCommandPaletteSource {
@@ -43,6 +49,10 @@ export interface ForkCommandPaletteSource {
   readonly items: (
     context: ForkCommandPaletteContext,
   ) => ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
+  /** Pure. Searched only once the user types, beside the palette's own project matches. */
+  readonly searchItems?: (
+    context: ForkCommandPaletteContext,
+  ) => ReadonlyArray<CommandPaletteActionItem>;
 }
 
 /** One line per packet. */
@@ -58,6 +68,7 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   deviceQaPaletteSource,
   panelPickerPaletteSource,
   codeGraphPaletteSource,
+  libraryPaletteSource,
 ];
 
 /** Every source's items. The palette matches search terms only, so a string title joins them. */
@@ -72,10 +83,14 @@ export const forkCommandPaletteItems = (context: ForkCommandPaletteContext) =>
       ),
   );
 
+export const forkCommandPaletteSearchItems = (context: ForkCommandPaletteContext) =>
+  FORK_COMMAND_PALETTE_SOURCES.flatMap((source) => source.searchItems?.(context) ?? []);
+
 /** Rebuilt on every render, like the palette's own action items. */
-export function useForkCommandPaletteItems(): ReadonlyArray<
-  CommandPaletteActionItem | CommandPaletteSubmenuItem
-> {
+export function useForkCommandPaletteItems(): {
+  readonly items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>;
+  readonly searchItems: ReadonlyArray<CommandPaletteActionItem>;
+} {
   const { activeThread } = useHandleNewThread();
   const activeThreadRef = activeThread
     ? scopeThreadRef(activeThread.environmentId, activeThread.id)
@@ -98,5 +113,10 @@ export function useForkCommandPaletteItems(): ReadonlyArray<
   );
   const modelFiles =
     Option.getOrNull(AsyncResult.value(listing))?.models.map((model) => model.path) ?? [];
-  return forkCommandPaletteItems({ activeThreadRef, loomFeatures, modelFiles });
+  const library = useLibraryPaletteContext(activeThreadRef);
+  const context = { activeThreadRef, loomFeatures, modelFiles, library };
+  return {
+    items: forkCommandPaletteItems(context),
+    searchItems: forkCommandPaletteSearchItems(context),
+  };
 }

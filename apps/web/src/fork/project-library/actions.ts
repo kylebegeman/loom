@@ -42,3 +42,27 @@ export function onLibraryAction(
   window.addEventListener(EVENT, handler);
   return () => window.removeEventListener(EVENT, handler);
 }
+
+const BRIEF_EVENT = "loom:library:edit-brief";
+let pendingBrief: string | null = null;
+
+/**
+ * Asks the project page to open its brief editor. A page already showing the project opens it
+ * at once; otherwise the request waits for that project's page to mount.
+ */
+export function requestLibraryBriefEdit(projectId: string) {
+  pendingBrief = projectId;
+  window.dispatchEvent(new Event(BRIEF_EVENT));
+}
+
+/** True once for the project the last request named. */
+export function takeLibraryBriefEdit(projectId: string) {
+  if (pendingBrief !== projectId) return false;
+  pendingBrief = null;
+  return true;
+}
+
+export function onLibraryBriefEdit(listener: () => void) {
+  window.addEventListener(BRIEF_EVENT, listener);
+  return () => window.removeEventListener(BRIEF_EVENT, listener);
+}

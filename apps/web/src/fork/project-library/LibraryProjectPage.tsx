@@ -38,6 +38,7 @@ import { ProjectResources } from "./ProjectResources";
 import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
 import { ProjectConversations } from "./ProjectConversations";
+import { onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
 import {
   isRestingSince,
   libraryLocalProjectIcon,
@@ -109,6 +110,14 @@ function ProjectView({
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
   const [editingBrief, setEditingBrief] = useState(false);
+  // The command palette's Open project brief lands here, whether or not this page was open.
+  useEffect(() => {
+    const open = () => {
+      if (takeLibraryBriefEdit(project.id)) setEditingBrief(true);
+    };
+    open();
+    return onLibraryBriefEdit(open);
+  }, [project.id]);
   const [addingResource, setAddingResource] = useState(false);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authorityId);
   const update = useProjectUpdate({

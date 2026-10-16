@@ -63,6 +63,7 @@ export type SearchOverlayMode = "command" | "files" | "content";
 export type CommandPaletteOpenIntent =
   | { readonly kind: "add-project"; readonly environmentId?: EnvironmentId }
   | { readonly kind: "new-thread-in" | "change-theme" }
+  | { readonly kind: "submenu"; readonly value: string } // fork: library-palette
   | {
       readonly kind: "search";
       readonly query: string;
@@ -105,6 +106,7 @@ export type CommandPaletteUiAction =
   | { readonly _tag: "OpenAddProject"; readonly environmentId?: EnvironmentId }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "OpenChangeTheme" }
+  | { readonly _tag: "OpenSubmenu"; readonly value: string } // fork: library-palette
   | { readonly _tag: "ClearOpenIntent" };
 
 export function reduceCommandPaletteUiState(
@@ -143,6 +145,8 @@ export function reduceCommandPaletteUiState(
       return { open: true, mode: "command", openIntent: { kind: "new-thread-in" } };
     case "OpenChangeTheme":
       return { open: true, mode: "command", openIntent: { kind: "change-theme" } };
+    case "OpenSubmenu": // fork: library-palette
+      return { open: true, mode: "command", openIntent: { kind: "submenu", value: action.value } };
     case "ClearOpenIntent":
       return state.openIntent ? { ...state, openIntent: null } : state;
   }

@@ -14,6 +14,8 @@ export interface CommandPaletteOpenDetail {
   readonly environmentId?: EnvironmentId;
   readonly query?: string;
   readonly linkedThreads?: CommandPaletteLinkedThreads;
+  /** Opens the root action submenu with this value. fork: library-palette */
+  readonly submenu?: string;
 }
 
 export function openCommandPalette(detail?: CommandPaletteOpenDetail): void {

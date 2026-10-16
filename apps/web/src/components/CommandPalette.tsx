@@ -523,6 +523,8 @@ export function CommandPalette({ children }: { children: ReactNode }) {
           openNewThreadIn();
         } else if (detail.open === "add-project") {
           openAddProject(detail.environmentId);
+        } else if (detail.submenu !== undefined) {
+          dispatch({ _tag: "OpenSubmenu", value: detail.submenu }); // fork: library-palette
         } else if (detail.query !== undefined) {
           dispatch({
             _tag: "OpenSearch",
@@ -2445,7 +2447,20 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
-  actionItems.push(...forkPaletteItems); // fork: ext-palette
+  actionItems.push(...forkPaletteItems.items); // fork: ext-palette
+
+  // fork: library-palette opens a fork submenu straight from its keybinding.
+  useLayoutEffect(() => {
+    if (openIntent?.kind !== "submenu") return;
+    // Waits while the source is still loading; closing the palette drops the request.
+    const submenu = forkPaletteItems.items.find(
+      (item) => item.kind === "submenu" && item.value === openIntent.value,
+    );
+    if (submenu?.kind !== "submenu") return;
+    clearOpenIntent();
+    setViewStack([]);
+    pushPaletteView(submenu);
+  }, [clearOpenIntent, forkPaletteItems.items, openIntent, pushPaletteView]);
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const settingsSearchItems: CommandPaletteActionItem[] = searchSettings(
     deferredQuery,
@@ -2487,7 +2502,7 @@ function OpenCommandPaletteDialog(props: {
     activeGroups,
     query: deferredQuery,
     isInSubmenu: currentView !== null,
-    projectSearchItems: projectSearchItems,
+    projectSearchItems: [...forkPaletteItems.searchItems, ...projectSearchItems], // fork: ext-palette
     settingsSearchItems,
     threadSearchItems:
       linkedThreadSearch?.linkedThreads && deferredQuery === linkedThreadSearch.query
