@@ -27,7 +27,10 @@ export const LibrarySearchRequest = Schema.Struct({
   /** Exclusive upper bound on the item's time. */
   until: Schema.optional(IsoDateTime),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(LIBRARY_SEARCH_MAX_LIMIT)),
-  /** `nextCursor` from the previous page of the same search. */
+  /**
+   * `nextCursor` from the previous page of the same search. Opaque. Later pages read the history
+   * indexed when the first page was read, so history saved meanwhile appears in a new search.
+   */
   cursor: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(32))),
 });
 export type LibrarySearchRequest = typeof LibrarySearchRequest.Type;
@@ -56,6 +59,7 @@ export type LibrarySearchHit = typeof LibrarySearchHit.Type;
 
 export const LibrarySearchResult = Schema.Struct({
   hits: Schema.Array(LibrarySearchHit),
+  /** Pass as `cursor` for the next page, or null after the last page. */
   nextCursor: Schema.NullOr(Schema.String),
 });
 export type LibrarySearchResult = typeof LibrarySearchResult.Type;
