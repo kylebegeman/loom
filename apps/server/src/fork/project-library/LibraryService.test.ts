@@ -768,6 +768,67 @@ describe("independent Library catalog and durable history", () => {
         }),
       ),
   );
+  it.effect(
+    "saves a project profile as a new revision, keeps it when an edit omits it, and removes it on null",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          const project = yield* create(service);
+          expect(project.profile).toBeUndefined();
+          const profile = {
+            scripts: [
+              {
+                id: "dev",
+                name: "Dev server",
+                command: "pnpm dev",
+                icon: "play" as const,
+                runOnWorktreeCreate: false,
+              },
+            ],
+            requiredTools: [{ id: "node" as const, minimumVersion: "22" }, { id: "pnpm" as const }],
+            secretNames: ["GITHUB_TOKEN"],
+            preferredEnvironmentIds: [source],
+            allowMini: false,
+          };
+          const edit = (requestId: string, expectedRevision: number) => ({
+            requestId,
+            projectId: project.id,
+            expectedRevision,
+            title: project.title,
+            brief: project.brief,
+            resources: project.resources,
+          });
+          const saved = yield* service.updateProject({ ...edit("profile", 1), profile });
+          expect(saved).toMatchObject({ revision: 2, profile });
+          expect((yield* service.project({ projectId: project.id })).profile).toEqual(profile);
+          // Each revision pins its own profile, the way it pins the brief.
+          const sql = yield* SqlClient.SqlClient;
+          const revisions = yield* sql<{
+            revision: number;
+            payload_json: string;
+          }>`SELECT revision, payload_json FROM fork_library_project_revisions WHERE project_id = ${project.id} ORDER BY revision`;
+          expect(
+            revisions.map((row) => [row.revision, JSON.parse(row.payload_json).profile]),
+          ).toEqual([
+            [1, undefined],
+            [2, profile],
+          ]);
+          const kept = yield* service.updateProject({ ...edit("keep", 2), brief: "New brief" });
+          expect(kept).toMatchObject({ revision: 3, brief: "New brief", profile });
+          const removed = yield* service.updateProject({ ...edit("remove", 3), profile: null });
+          expect(removed.revision).toBe(4);
+          expect("profile" in (yield* service.project({ projectId: project.id }))).toBe(false);
+          const rejected = yield* service
+            .updateProject({
+              ...edit("secret", 4),
+              profile: { secretNames: ["ghp_abcdefghijklmnopqrstuvwxyz0123"] },
+            })
+            .pipe(Effect.flip);
+          expect(rejected).toMatchObject({ reason: "invalid" });
+          expect((yield* service.project({ projectId: project.id })).revision).toBe(4);
+        }),
+      ),
+  );
   it.effect("validates repository composition and web references without cloning", () =>
     run((service) =>
       Effect.gen(function* () {

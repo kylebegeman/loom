@@ -12,6 +12,7 @@ import {
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
 import { OrchestrationV2ThreadProjection } from "../orchestrationV2.ts";
+import { LibraryProjectProfile, LibraryProjectProfileInput } from "./project-library-profile.ts";
 
 export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
@@ -48,6 +49,8 @@ export const LibraryProject = Schema.Struct({
   resources: Schema.Array(LibraryResource).check(Schema.isMaxLength(64)),
   /** Absent until someone picks one; clients then show a stable automatic color. */
   color: Schema.optional(LibraryProjectColor),
+  /** Setup, defaults and requirements. Absent until someone saves one; older hosts drop it. */
+  profile: Schema.optional(LibraryProjectProfile),
   archived: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -265,6 +268,8 @@ export const LibraryUpdateProjectRequest = Schema.Struct({
   resources: Schema.Array(LibraryResource),
   /** Omitted keeps the saved color, so older clients never clear it; null returns to automatic. */
   color: Schema.optional(Schema.NullOr(LibraryProjectColor)),
+  /** Omitted keeps the saved profile; null removes it. */
+  profile: Schema.optional(Schema.NullOr(LibraryProjectProfileInput)),
 });
 export type LibraryUpdateProjectRequest = typeof LibraryUpdateProjectRequest.Type;
 export const LibraryArchiveProjectRequest = Schema.Struct({

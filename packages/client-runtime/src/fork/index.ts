@@ -39,3 +39,4 @@ export {
 export * from "./library-continuation.ts";
 
 export * from "./library-project.ts";
+export * from "./library-project-profile.ts";

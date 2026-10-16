@@ -495,12 +495,15 @@ const make = Effect.gen(function* () {
         if (current.revision !== input.expectedRevision)
           return yield* new LibraryError({ reason: "revision-conflict" });
         if (!validLibraryResources(input.resources)) return yield* invalid();
-        // Omitted keeps the saved color so older clients never clear it; null returns to automatic.
-        const { color: savedColor, ...rest } = current;
+        // Omitted keeps the saved color and profile so older clients never clear them; null
+        // returns the color to automatic and removes the profile.
+        const { color: savedColor, profile: savedProfile, ...rest } = current;
         const color = input.color === undefined ? savedColor : (input.color ?? undefined);
+        const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
         return yield* putProject({
           ...rest,
           ...(color ? { color } : {}),
+          ...(profile ? { profile } : {}),
           title: input.title.trim(),
           brief: input.brief,
           resources: input.resources,
