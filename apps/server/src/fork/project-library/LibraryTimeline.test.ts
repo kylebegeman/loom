@@ -199,6 +199,25 @@ describe("Library project timeline", () => {
     ),
   );
 
+  it.effect("hides a deleted conversation's entries, as search does", () =>
+    run(({ project, timeline, ingest }) =>
+      Effect.gen(function* () {
+        const kept = yield* conversation(project, 1);
+        const removed = yield* conversation(project, 2);
+        yield* ingest(kept);
+        yield* ingest(removed);
+        yield* ingest(revise(removed, 1, {}, { pullRequests: [link(null)] }));
+        yield* ingest(revise(removed, 2, { deleted: true }));
+        const page = yield* timeline.page({
+          projectId: project.id,
+          kinds: [...conversationKinds, "pull-request-linked"],
+        });
+        expect(page.entries.map((entry) => entry.kind)).toEqual(["conversation-started"]);
+        expect(page.entries[0]).toMatchObject({ conversation: { id: kept.summary.id } });
+      }),
+    ),
+  );
+
   it.effect("records pull requests linked, failing checks and merged with their URL", () =>
     run(({ project, timeline, ingest, replay }) =>
       Effect.gen(function* () {

@@ -32,6 +32,7 @@ export const LIBRARY_TIMELINE_KINDS = [
   ...CONVERSATION_KINDS,
   ...PULL_REQUEST_KINDS,
   "brief-revised",
+  "brief-proposed",
   ...COPY_KINDS,
 ] as const;
 export const LibraryTimelineKind = Schema.Literals(LIBRARY_TIMELINE_KINDS);
@@ -78,6 +79,13 @@ export const LibraryTimelineBriefEntry = Schema.Struct({
   revision: PositiveInt,
   title: LibraryTitle,
 });
+/** A new brief proposal, read in full through `loom.library.brief-proposals`. */
+export const LibraryTimelineBriefProposalEntry = Schema.Struct({
+  ...entryFields,
+  kind: Schema.Literal("brief-proposed"),
+  proposalId: LibraryId,
+  summary: Schema.String,
+});
 export const LibraryTimelineCopyEntry = Schema.Struct({
   ...entryFields,
   kind: Schema.Literals(COPY_KINDS),
@@ -87,6 +95,7 @@ const entryMembers = [
   LibraryTimelineConversationEntry,
   LibraryTimelinePullRequestEntry,
   LibraryTimelineBriefEntry,
+  LibraryTimelineBriefProposalEntry,
   LibraryTimelineCopyEntry,
 ] as const;
 export const LibraryTimelineEntry = Schema.Union(entryMembers);

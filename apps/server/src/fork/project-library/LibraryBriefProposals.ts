@@ -157,6 +157,19 @@ export const make = (catalog: LibraryBriefProposalCatalog) =>
         }),
         timestamp,
       );
+      // The project timeline reads `timeline.*` events, so the proposal is recorded there too.
+      yield* catalog.appendEvent(
+        proposal.projectId,
+        "timeline.brief-proposed",
+        yield* encode({
+          kind: "brief-proposed",
+          at: timestamp,
+          environmentId: input.source.kind === "conversation" ? input.source.environmentId : null,
+          proposalId: proposal.id,
+          summary: proposal.summary,
+        }),
+        timestamp,
+      );
       return proposal;
     });
 

@@ -26,6 +26,7 @@ import { makeForkRpcAuth } from "../rpcAuthorization.ts";
 import * as Assets from "./assets/LibraryAssetService.ts";
 import { resource } from "./Library.testkit.ts";
 import * as LibraryService from "./LibraryService.ts";
+import * as LibraryTimeline from "./LibraryTimeline.ts";
 import { ProjectLibraryToolkit } from "./mcp.ts";
 import { ProjectLibraryMigrations } from "./migrations.ts";
 
@@ -36,11 +37,12 @@ const noAssets = Layer.succeed(Assets.LibraryAssetService, {
   put: () => Effect.fail(new LibraryError({ reason: "io" })),
   url: () => Effect.succeed(null),
 });
+const authority = ConfigProvider.layer(
+  ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } }),
+);
 const serviceLayer = LibraryService.layer.pipe(
   Layer.provide(noAssets),
-  Layer.provide(
-    ConfigProvider.layer(ConfigProvider.fromEnv({ env: { LOOM_LIBRARY_AUTHORITY: "true" } })),
-  ),
+  Layer.provide(authority),
   Layer.provide(
     Layer.succeed(ServerEnvironmentIdentity, {
       getEnvironmentId: Effect.succeed(EnvironmentId.make("authority")),
@@ -179,6 +181,32 @@ describe("Library brief proposals", () => {
               edited: false,
             },
           },
+        ]);
+      }),
+    ),
+  );
+
+  it.effect("new proposals appear in the project timeline with their source computer", () =>
+    run((service) =>
+      Effect.gen(function* () {
+        const { project, propose } = yield* setup(service);
+        const fromConversation = yield* propose("first", "Ship the viewer. Export as STEP.");
+        const fromPerson = yield* propose("second", "Ship the viewer. Export as 3MF.", {
+          kind: "user",
+        });
+        const timeline = yield* LibraryTimeline.LibraryTimeline.pipe(
+          Effect.provide(LibraryTimeline.layer.pipe(Layer.provide(authority))),
+        );
+        const page = yield* timeline.page({ projectId: project.id, kinds: ["brief-proposed"] });
+        expect(
+          page.entries.map((entry) =>
+            entry.kind === "brief-proposed"
+              ? [entry.proposalId, entry.environmentId, entry.summary]
+              : entry.kind,
+          ),
+        ).toEqual([
+          [fromPerson.id, null, "Record the export decision."],
+          [fromConversation.id, conversation.environmentId, "Record the export decision."],
         ]);
       }),
     ),

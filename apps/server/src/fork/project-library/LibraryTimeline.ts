@@ -399,11 +399,15 @@ const make = Effect.gen(function* () {
           : LIBRARY_TIMELINE_KINDS.filter((kind) => input.kinds!.includes(kind));
       if (kinds.length === 0) return { entries: [], nextBefore: null };
       // Sequences only grow, so a page read with `before` never shifts while new entries arrive.
+      // Entries about a deleted conversation are hidden, as they are from search.
       const rows = yield* sql<{ sequence: number; payload_json: string }>`
-        SELECT sequence, payload_json FROM fork_library_events
-        WHERE aggregate_id = ${input.projectId} AND event_type IN ${sql.in(kinds.map(eventType))}
-        ${input.before === undefined ? sql`` : sql`AND sequence < ${input.before}`}
-        ORDER BY sequence DESC LIMIT ${limit + 1}`;
+        SELECT e.sequence, e.payload_json FROM fork_library_events e
+        LEFT JOIN fork_library_threads t
+          ON t.library_id = json_extract(e.payload_json, '$.conversation.id')
+        WHERE e.aggregate_id = ${input.projectId} AND e.event_type IN ${sql.in(kinds.map(eventType))}
+          AND coalesce(json_extract(t.summary_json, '$.deleted'), 0) = 0
+        ${input.before === undefined ? sql`` : sql`AND e.sequence < ${input.before}`}
+        ORDER BY e.sequence DESC LIMIT ${limit + 1}`;
       const shown = rows.slice(0, limit);
       const entries = shown.flatMap((row) => {
         const payload = decodeJson(row.payload_json);
