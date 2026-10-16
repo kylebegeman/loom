@@ -60,9 +60,15 @@ cloning files. Add repositories or reference links as needed. **Add existing fol
 you inspect a folder, then add it to an existing project or create a new project. Imported
 folders are borrowed: removing their registration preserves your files.
 
-Open a project to see its resources, conversations and known working copies. Starting a
-conversation requires an explicit computer and either the whole project or one repository.
-Use a suitable existing copy on that computer, or prepare files first. **Clone project**
+Open a project to see its resources, conversations and known working copies. **New
+conversation** works on either the whole project or one repository, and chooses a connected
+computer for you with the reason under it, for example "Mac Mini · online, up to date". It
+prefers a copy that covers the scope, then one that is up to date, then the computer you used
+last for the project, then the one running the fewest threads. It never chooses an offline
+computer; pick another computer from the list to change it. When no computer has a copy,
+**Get a copy on** that computer prepares one and the conversation starts once it is ready. When
+the chosen copy is behind or has uncommitted files, **Pull first** updates it and starts, and
+**Continue anyway** starts without changing it. **Clone project**
 prepares the project repositories together under one parent folder. Editing the shared brief
 applies to new conversations; existing conversations keep the context they started with.
 Each copy on a connected computer shows its branch, how far it is ahead of or behind its

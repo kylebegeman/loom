@@ -3,12 +3,17 @@ import {
   libraryContinuationContext,
   libraryCopiesForScope,
   libraryCopyReadiness,
+  libraryLaunchChoice,
+  libraryLaunchWarning,
   isRepositoryResource,
+  supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
+import { libraryLaunchCandidateSummary } from "@t3tools/shared/fork/library-launch";
 import { useEnvironmentQuery } from "~/state/query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { EnvironmentId, ModelSelection, RuntimeMode, ThreadId } from "@t3tools/contracts";
 import {
+  LIBRARY_COPY_HEALTH_FEATURE,
   LibraryThreadBinding,
   LibraryProject,
   type LibraryWorkingCopy,
@@ -38,6 +43,9 @@ import { useComposerDraftStore } from "~/composerDraftStore";
 import { projectLibrary, useLibraryAuthority, useLibraryPermission } from "./state";
 import { LibraryDialog, LibraryField, LibraryErrorNotice } from "./LibraryControls";
 import { CopyDialog } from "./CopyDialog";
+import { LaunchGetCopy } from "./LaunchGetCopy";
+import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
+import { vcsEnvironment } from "~/state/vcs";
 import type { EnvironmentQueryView } from "~/state/query";
 
 const ConversationAttempt = Schema.NullOr(
@@ -87,25 +95,9 @@ export function NewConversationDialog({
     `loom:library:conversation:${authority.authorityId}:${project.id}`,
     ConversationAttempt,
   );
-  const suggestedScope =
-    initialResourceId ??
-    (continuation?.resourceIds.length === 1 ? continuation.resourceIds[0]! : null);
-  const suggestedHosts = authority.environments.filter(
-    (entry) =>
-      entry.entry.enabled &&
-      entry.connection.phase === "connected" &&
-      entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
-      libraryCopiesForScope(
-        project,
-        copies,
-        entry.environmentId,
-        suggestedScope === null ? null : [suggestedScope],
-      ).length > 0,
-  );
-  const [hostId, setHostId] = useState<EnvironmentId | null>(
-    attempt?.environmentId ??
-      initialHostId ??
-      (suggestedHosts.length === 1 ? suggestedHosts[0]!.environmentId : null),
+  // Null until the user picks a computer, so the ranked choice can follow data as it arrives.
+  const [hostChoice, setHostId] = useState<EnvironmentId | null>(
+    attempt?.environmentId ?? initialHostId ?? null,
   );
   const [resourceId, setResourceId] = useState<string | null>(
     attempt?.binding.resourceIds.length === 1
@@ -135,38 +127,61 @@ export function NewConversationDialog({
   );
   const [preparing, setPreparing] = useState<"clone" | "reuse" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pulling, setPulling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const host = authority.environments.find((entry) => entry.environmentId === hostId);
   const copiesReadiness = libraryCopyReadiness(copiesQuery);
-  const candidates =
+  const knownCopies = [
+    ...copies,
+    ...(preparedCopy && !copies.some((copy) => copy.id === preparedCopy.id) ? [preparedCopy] : []),
+  ];
+  const ranking = useLibraryLaunchRanking({
+    project,
+    copies: copiesReadiness === "ready" ? knownCopies : [],
+    resourceId,
+  });
+  // Nothing is preselected while copies load, so the choice never jumps away from a copy.
+  const choice =
     copiesReadiness === "ready"
-      ? libraryCopiesForScope(
-          project,
-          [
-            ...copies,
-            ...(preparedCopy && !copies.some((copy) => copy.id === preparedCopy.id)
-              ? [preparedCopy]
-              : []),
-          ],
-          hostId,
-          resourceId === null ? null : [resourceId],
-        )
-      : [];
+      ? libraryLaunchChoice({ ranking, hostId: hostChoice, copyId })
+      : { hostId: hostChoice, candidate: null };
+  const hostId = choice.hostId;
+  const host = authority.environments.find((entry) => entry.environmentId === hostId);
+  const candidates = ranking.candidates.flatMap((candidate) =>
+    candidate.kind === "copy" && candidate.environmentId === hostId
+      ? knownCopies.filter((entry) => entry.id === candidate.copyId)
+      : [],
+  );
+  const chosen = choice.candidate;
   const copy =
     copiesReadiness !== "ready"
       ? null
       : attempt
         ? (copies.find((entry) => entry.id === attempt.binding.workingCopyId) ?? preparedCopy)
-        : (candidates.find((entry) => entry.id === copyId) ??
-          (candidates.length === 1 ? candidates[0]! : null));
-  const modelSelection =
-    attempt?.modelSelection ??
-    (host?.serverConfig
+        : chosen?.kind === "copy"
+          ? (knownCopies.find((entry) => entry.id === chosen.copyId) ?? null)
+          : null;
+  const warning = attempt ? null : libraryLaunchWarning(chosen, copy, resourceId);
+  const modelSelectionFor = (environmentId: EnvironmentId | null) => {
+    const entry = authority.environments.find((item) => item.environmentId === environmentId);
+    return entry?.serverConfig
       ? resolveDefaultProviderModelSelection(
-          host.serverConfig.providers,
-          host.serverConfig.settings.defaultModelSelection,
+          entry.serverConfig.providers,
+          entry.serverConfig.settings.defaultModelSelection,
         )
-      : null);
+      : null;
+  };
+  const modelSelection = attempt?.modelSelection ?? modelSelectionFor(hostId);
+  const copyHealth = useEnvironmentQuery(
+    copy &&
+      supportsLoomFeature(host?.serverConfig?.environment.capabilities, LIBRARY_COPY_HEALTH_FEATURE)
+      ? projectLibrary.copyHealth({
+          environmentId: copy.environmentId,
+          input: { workingCopyId: copy.id },
+        })
+      : null,
+  );
+  const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
+  const canPull = useLibraryPermission(vcsEnvironment.pull, hostId);
   const resolve = useAtomQueryRunner(projectLibrary.resolveBinding, {
     refresh: true,
     reportFailure: false,
@@ -182,28 +197,34 @@ export function NewConversationDialog({
   const register = useAtomCommand(projectLibrary.registerThread, { reportFailure: false });
   const allowed = useLibraryPermission(projectLibrary.bindThread, hostId);
   const canRegister = useLibraryPermission(projectLibrary.registerThread, authority.authorityId);
-  const submit = async () => {
+  /** Launch on the current choice, or on a copy saved a moment ago by the get-a-copy step. */
+  const submit = async (target = { hostId, copy }) => {
+    const launchHost = authority.environments.find(
+      (entry) => entry.environmentId === target.hostId,
+    );
+    const launchModel = attempt?.modelSelection ?? modelSelectionFor(target.hostId);
     if (
       !authority.authorityId ||
-      !hostId ||
-      !copy ||
-      !modelSelection ||
+      !target.hostId ||
+      !target.copy ||
+      !launchModel ||
       busy ||
       copiesReadiness !== "ready"
     )
       return;
+    const launchCopy = target.copy;
     setBusy(true);
     setError(null);
     try {
       let next = attempt ?? {
-        environmentId: hostId,
+        environmentId: target.hostId,
         project,
         threadId: newThreadId(),
         binding: {
           projectId: project.id,
           projectRevision: project.revision,
-          workingCopyId: copy.id,
-          environmentId: hostId,
+          workingCopyId: launchCopy.id,
+          environmentId: target.hostId,
           resourceIds: resourceId ? [resourceId] : [],
           ...(continuation
             ? {
@@ -217,20 +238,20 @@ export function NewConversationDialog({
         },
         title: title.trim() || "New project conversation",
         context,
-        modelSelection,
-        runtimeMode: host?.serverConfig?.settings.defaultRuntimeMode ?? "approval-required",
+        modelSelection: launchModel,
+        runtimeMode: launchHost?.serverConfig?.settings.defaultRuntimeMode ?? "approval-required",
         createdAt: new Date().toISOString(),
         created: false,
         registerRequestId: randomUUID(),
       };
       saveAttempt(next);
-      if (copy.ownership === "borrowed" && !next.created) {
+      if (launchCopy.ownership === "borrowed" && !next.created) {
         const prepared = await prepareCopy({
           environmentId: next.environmentId,
           input: {
             requestId: `${next.registerRequestId}:files`,
             project: next.project,
-            rootPath: copy.rootPath,
+            rootPath: launchCopy.rootPath,
             strategy: "reuse",
             resourceIds: next.binding.resourceIds,
           },
@@ -311,6 +332,45 @@ export function NewConversationDialog({
       setBusy(false);
     }
   };
+  /** Fast-forward the stale repositories, then launch on the refreshed copy. */
+  const pullThenSubmit = async (paths: readonly string[]) => {
+    if (!hostId) return;
+    setPulling(true);
+    setError(null);
+    for (const cwd of paths) {
+      const result = await pull({ environmentId: hostId, input: { cwd } });
+      if (result._tag === "Failure") {
+        const cause = squashAtomCommandFailure(result);
+        setError(cause instanceof Error ? cause.message : "Could not pull the latest changes.");
+        setPulling(false);
+        copyHealth.refresh();
+        return;
+      }
+    }
+    setPulling(false);
+    copyHealth.refresh();
+    await submit();
+  };
+  const canCreate =
+    !busy &&
+    !pulling &&
+    copiesReadiness === "ready" &&
+    copy !== null &&
+    allowed &&
+    canRegister &&
+    modelSelection !== null &&
+    (continuation === undefined || (source.isSuccess && !source.isPending)) &&
+    authority.connected &&
+    host?.connection.phase === "connected";
+  const rankOf = (environmentId: EnvironmentId) => {
+    const index = ranking.candidates.findIndex(
+      (candidate) => candidate.environmentId === environmentId,
+    );
+    return index === -1 ? ranking.candidates.length : index;
+  };
+  const executionHosts = authority.environments
+    .filter((entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false)
+    .toSorted((left, right) => rankOf(left.environmentId) - rankOf(right.environmentId));
   if (preparing)
     return (
       <CopyDialog
@@ -320,9 +380,24 @@ export function NewConversationDialog({
         {...(resourceId ? { resourceId } : {})}
         onSaved={(value) => {
           setPreparedCopy(value);
+          setHostId(value.environmentId);
           setCopyId(value.id);
           setPreparing(null);
           onChanged();
+          // Getting a copy is a step of this launch, so the conversation continues on it.
+          if (
+            allowed &&
+            canRegister &&
+            authority.connected &&
+            (continuation === undefined || source.isSuccess) &&
+            libraryCopiesForScope(
+              project,
+              [value],
+              value.environmentId,
+              resourceId === null ? null : [resourceId],
+            ).length > 0
+          )
+            void submit({ hostId: value.environmentId, copy: value });
         }}
         onClose={() => setPreparing(null)}
       />
@@ -344,20 +419,7 @@ export function NewConversationDialog({
           <Button variant="outline" disabled={busy} onClick={onClose}>
             Close
           </Button>
-          <Button
-            disabled={
-              busy ||
-              copiesReadiness !== "ready" ||
-              !copy ||
-              !allowed ||
-              !canRegister ||
-              !modelSelection ||
-              (continuation !== undefined && (!source.isSuccess || source.isPending)) ||
-              !authority.connected ||
-              host?.connection.phase !== "connected"
-            }
-            onClick={() => void submit()}
-          >
+          <Button disabled={!canCreate} onClick={() => void submit()}>
             {busy ? "Creating..." : attempt ? "Retry conversation" : "Create conversation"}
           </Button>
         </>
@@ -407,30 +469,21 @@ export function NewConversationDialog({
               setHostId(value);
               setCopyId(null);
             }}
-            items={authority.environments
-              .filter(
-                (entry) => entry.serverConfig?.environment.capabilities.supportsExecution !== false,
-              )
-              .map((entry) => ({
-                value: entry.environmentId,
-                label: entry.label,
-              }))}
+            items={executionHosts.map((entry) => ({
+              value: entry.environmentId,
+              label: entry.label,
+            }))}
           >
             <SelectTrigger>
               <SelectValue placeholder="Choose a computer" />
             </SelectTrigger>
             <SelectPopup>
-              {authority.environments
-                .filter(
-                  (entry) =>
-                    entry.serverConfig?.environment.capabilities.supportsExecution !== false,
-                )
-                .map((entry) => (
-                  <SelectItem key={entry.environmentId} value={entry.environmentId}>
-                    {entry.label}
-                    {entry.connection.phase !== "connected" ? " (offline)" : ""}
-                  </SelectItem>
-                ))}
+              {executionHosts.map((entry) => (
+                <SelectItem key={entry.environmentId} value={entry.environmentId}>
+                  {entry.label}
+                  {entry.connection.phase !== "connected" ? " (offline)" : ""}
+                </SelectItem>
+              ))}
               {authority.computers
                 .filter(
                   (computer) =>
@@ -446,6 +499,11 @@ export function NewConversationDialog({
                 ))}
             </SelectPopup>
           </Select>
+          {chosen && !attempt ? (
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {libraryLaunchCandidateSummary(chosen)}
+            </p>
+          ) : null}
         </LibraryField>
         {authority.computers.some(
           (computer) =>
@@ -463,7 +521,7 @@ export function NewConversationDialog({
         {candidates.length > 1 ? (
           <LibraryField label="Working copy">
             <Select
-              value={copyId}
+              value={copy?.id ?? null}
               onValueChange={setCopyId}
               disabled={busy || attempt !== null}
               items={candidates.map((entry) => ({ value: entry.id, label: entry.rootPath }))}
@@ -491,34 +549,42 @@ export function NewConversationDialog({
             onRetry={copiesQuery.refresh}
           />
         ) : copy ? (
-          <p className="break-words text-sm text-muted-foreground">
-            Use the existing {copy.ownership === "borrowed" ? "borrowed folder" : "working copy"} on{" "}
-            {host?.label}: {copy.rootPath}
-          </p>
-        ) : hostId ? (
           <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">
-              Choose a suitable working copy on this computer before starting.
+            <p className="break-words text-sm text-muted-foreground">
+              Use the existing {copy.ownership === "borrowed" ? "borrowed folder" : "working copy"}{" "}
+              on {host?.label}: {copy.rootPath}
             </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy || attempt !== null || host?.connection.phase !== "connected"}
-                onClick={() => setPreparing("reuse")}
-              >
-                Use a folder you already have
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={busy || attempt !== null || host?.connection.phase !== "connected"}
-                onClick={() => setPreparing("clone")}
-              >
-                Prepare workspace
-              </Button>
-            </div>
+            {warning ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm text-warning-foreground">{warning.message}</p>
+                {warning.pullPaths && canPull ? (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={!canCreate}
+                    onClick={() => void pullThenSubmit(warning.pullPaths ?? [])}
+                  >
+                    {pulling ? "Pulling..." : "Pull first"}
+                  </Button>
+                ) : null}
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={!canCreate}
+                  onClick={() => void submit()}
+                >
+                  Continue anyway
+                </Button>
+              </div>
+            ) : null}
           </div>
+        ) : hostId ? (
+          <LaunchGetCopy
+            hostLabel={host?.label ?? "this computer"}
+            firstCopy={!ranking.candidates.some((candidate) => candidate.kind === "copy")}
+            disabled={busy || pulling || attempt !== null || host?.connection.phase !== "connected"}
+            onGetCopy={setPreparing}
+          />
         ) : null}
         {project.brief ? (
           <details className="text-sm text-muted-foreground">
