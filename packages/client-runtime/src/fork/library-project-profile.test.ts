@@ -80,6 +80,9 @@ describe("profile drafts", () => {
     expect(librarySecretNameFromInput("openai-api-key")).toBe("OPENAI_API_KEY");
     expect(librarySecretNameFromInput("TOKEN=abc")).toBeNull();
     expect(librarySecretNameFromInput("AKIAIOSFODNN7EXAMPLE")).toBeNull();
+    // Uppercasing would otherwise turn a pasted token into a plausible name.
+    expect(librarySecretNameFromInput("ghp_abcdefghijklmnopqrstuvwxyz0123")).toBeNull();
+    expect(librarySecretNameFromInput("sk-proj-abc123defghijklmnopq")).toBeNull();
     expect(librarySecretNameFromInput("")).toBeNull();
   });
 

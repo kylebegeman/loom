@@ -17,6 +17,7 @@ import {
   LibraryInfo,
   LibraryError,
   LibraryRequestId,
+  libraryProfileAddedUnknownTools,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
@@ -500,13 +501,21 @@ const make = Effect.gen(function* () {
         const { color: savedColor, profile: savedProfile, ...rest } = current;
         const color = input.color === undefined ? savedColor : (input.color ?? undefined);
         const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
-        return yield* putProject({
+        if (profile && libraryProfileAddedUnknownTools(profile, savedProfile).length)
+          return yield* invalid();
+        const next = {
           ...rest,
           ...(color ? { color } : {}),
           ...(profile ? { profile } : {}),
           title: input.title.trim(),
           brief: input.brief,
           resources: input.resources,
+        };
+        // An edit that changes nothing keeps its revision, so conversations stay current.
+        if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))
+          return current;
+        return yield* putProject({
+          ...next,
           revision: current.revision + 1,
           updatedAt: yield* now,
         });

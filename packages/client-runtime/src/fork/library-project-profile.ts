@@ -19,8 +19,12 @@ export function libraryToolLabel(id: string) {
   return LIBRARY_TOOL_CATALOG.find((tool) => tool.id === id)?.label ?? id;
 }
 
-/** Turns what someone typed, like `github token`, into an environment variable name, or null. */
+/**
+ * Turns what someone typed, like `github token`, into an environment variable name, or null.
+ * The raw text is checked too, since uppercasing a pasted token would hide its shape.
+ */
 export function librarySecretNameFromInput(input: string): string | null {
+  if (looksLikeSecretValue(input)) return null;
   const name = input
     .trim()
     .toUpperCase()

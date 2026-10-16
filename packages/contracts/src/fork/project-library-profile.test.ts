@@ -6,6 +6,7 @@ import {
   LIBRARY_TOOL_CATALOG,
   LibraryProjectProfile,
   LibraryProjectProfileInput,
+  libraryProfileAddedUnknownTools,
   libraryProfileSecretValueField,
 } from "./project-library-profile.ts";
 
@@ -70,14 +71,21 @@ describe("LibraryProjectProfile", () => {
     expect(older.title).toBe("Loom");
   });
 
-  it("rejects tool ids outside the catalog on save, and reads ones a newer catalog adds", () => {
+  it("rejects tool ids outside the catalog unless the project already has them", () => {
     for (const tool of LIBRARY_TOOL_CATALOG)
       expect(accepts({ requiredTools: [{ id: tool.id }] })).toBe(true);
-    for (const id of ["curl", "sh", "node; rm -rf /", "$(whoami)", "Node", ""])
+    // Only id-shaped text gets through the schema; never a command.
+    for (const id of ["node; rm -rf /", "$(whoami)", "Node", "", "a".repeat(33)])
       expect(accepts({ requiredTools: [{ id }] })).toBe(false);
     expect(accepts({ requiredTools: [{ id: "node" }, { id: "node" }] })).toBe(false);
     expect(reads({ requiredTools: [{ id: "zig" }] })).toBe(true);
     expect(reads({ requiredTools: [{ id: "zig; curl" }] })).toBe(false);
+    // A well-formed id outside the catalog is new unless a newer catalog already saved it.
+    const tools = { requiredTools: [{ id: "node" }, { id: "curl" }, { id: "zig" }] };
+    expect(libraryProfileAddedUnknownTools(tools, undefined)).toEqual(["curl", "zig"]);
+    expect(libraryProfileAddedUnknownTools(tools, { requiredTools: [{ id: "zig" }] })).toEqual([
+      "curl",
+    ]);
   });
 
   it("accepts only plain version numbers as a minimum", () => {
@@ -133,12 +141,22 @@ describe("LibraryProjectProfile", () => {
       "NODE_ENV=production pnpm build",
       'deploy --token "$TOKEN"',
       "pnpm test",
+      "SECRET=`op read op://vault/item` pnpm deploy",
+      'curl -H "Authorization: Bearer $API_TOKEN" https://api.example.com',
+      "psql postgres://app:$DB_PASSWORD@localhost/app",
+      "pnpm --filter @acme/sk-design-system-components build",
+      "MAX_TOKENS=4096 TOKEN_FILE=./token pnpm eval",
+      "ssh://git@github.com:22/acme/app.git",
     ])
       expect(accepts(withCommand(command))).toBe(true);
     for (const command of [
       "GITHUB_TOKEN=abc123 pnpm release",
       "deploy --password=hunter2",
       "curl -H 'Authorization: Bearer sk-proj-abcdefghijklmnopqrstu' api",
+      "curl -H 'Authorization: Bearer 4f9c2e1ab7d3e8f60a5b' api",
+      "STRIPE_KEY=$KEY stripe listen --api-key sk_live_51Habcdefghij",
+      "npm publish --//registry.npmjs.org/:_authToken npm_abcdefghijklmnopqrstuvwxyz0123456789",
+      "huggingface-cli login hf_abcdefghijklmnopqrstuvwxyz0123",
       "git clone https://kyle:ghp_abcdefghijklmnopqrstuvwxyz0123@github.com/x/y",
       "echo '-----BEGIN OPENSSH PRIVATE KEY-----'",
     ])
@@ -151,10 +169,13 @@ describe("LibraryProjectProfile", () => {
         defaultModelSelection: {
           instanceId: "codex",
           model: "gpt-6",
-          options: [{ id: "key", value: "sk-abcdefghijklmnopqrstu" }],
+          options: [{ id: "key", value: "sk-abc123defghijklmnopqrstu" }],
         },
       }),
     ).toBe(false);
+    expect(accepts({ preferredEnvironmentIds: ["ghp_abcdefghijklmnopqrstuvwxyz0123"] })).toBe(
+      false,
+    );
   });
 
   it("names the offending field without echoing its value", () => {
@@ -181,6 +202,6 @@ describe("LibraryProjectProfile", () => {
     expect("profile" in decode(base)).toBe(false);
     expect(decode({ ...base, profile: null }).profile).toBeNull();
     expect(decode({ ...base, profile }).profile).toEqual(profile);
-    expect(() => decode({ ...base, profile: { requiredTools: [{ id: "curl" }] } })).toThrow();
+    expect(() => decode({ ...base, profile: { requiredTools: [{ id: "curl; sh" }] } })).toThrow();
   });
 });

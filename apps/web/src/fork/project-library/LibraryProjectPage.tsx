@@ -235,6 +235,7 @@ function ProjectView({
               busy={update.busy}
               error={update.error}
               hostLabel={hostLabel}
+              onEdit={update.clearError}
               onSave={(profile) => update.save({ profile })}
             />
           ) : null}

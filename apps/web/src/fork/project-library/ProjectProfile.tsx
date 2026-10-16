@@ -3,12 +3,10 @@ import type { EnvironmentId, ProjectScript } from "@t3tools/contracts";
 import {
   LIBRARY_PROFILE_LIMITS,
   LIBRARY_TOOL_CATALOG,
-  LIBRARY_TOOL_IDS,
   type LibraryComputer,
   type LibraryProject,
   type LibraryProjectProfileInput,
   type LibraryRequiredTool,
-  type LibraryToolId,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
@@ -30,11 +28,6 @@ import { Toggle } from "~/components/ui/toggle";
 import { useProjects } from "~/state/entities";
 import { LibraryDialog, LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
 
-type DraftTool = { readonly id: LibraryToolId; readonly minimumVersion?: string };
-type ProfileDraft = Omit<LibraryProfileDraft, "requiredTools"> & {
-  readonly requiredTools?: readonly DraftTool[] | undefined;
-};
-
 const toolText = (tool: LibraryRequiredTool) =>
   `${libraryToolLabel(tool.id)}${tool.minimumVersion ? ` ${tool.minimumVersion}+` : ""}`;
 
@@ -50,6 +43,7 @@ export function ProjectProfile({
   busy,
   error,
   hostLabel,
+  onEdit,
   onSave,
 }: {
   readonly project: LibraryProject;
@@ -59,6 +53,8 @@ export function ProjectProfile({
   readonly busy: boolean;
   readonly error: string | null;
   readonly hostLabel: (id: EnvironmentId) => string;
+  /** Called as the editor opens, so an earlier failed save does not show in it. */
+  readonly onEdit: () => void;
   readonly onSave: (profile: LibraryProjectProfileInput | null) => Promise<boolean>;
 }) {
   const [editing, setEditing] = useState(false);
@@ -89,7 +85,10 @@ export function ProjectProfile({
             size="xs"
             variant="ghost"
             disabled={busy}
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              onEdit();
+              setEditing(true);
+            }}
           >
             {rows.length ? "Edit" : "Set up"}
           </Button>
@@ -148,15 +147,10 @@ function ProfileDialog({
   readonly onClose: () => void;
   readonly onSave: (profile: LibraryProjectProfileInput | null) => Promise<void>;
 }) {
-  // A tool only a newer catalog knows cannot be saved from this client, so it is left out.
-  const [draft, setDraft] = useState<ProfileDraft>(() => ({
-    ...project.profile,
-    requiredTools: project.profile?.requiredTools?.filter((tool): tool is DraftTool =>
-      LIBRARY_TOOL_IDS.includes(tool.id as LibraryToolId),
-    ),
-  }));
+  // Tools a newer catalog added stay in the draft, so saving from here keeps them.
+  const [draft, setDraft] = useState<LibraryProfileDraft>(() => ({ ...project.profile }));
   const [problem, setProblem] = useState<string | null>(null);
-  const patch = (change: Partial<ProfileDraft>) => {
+  const patch = (change: LibraryProfileDraft) => {
     setProblem(null);
     setDraft((current) => ({ ...current, ...change }));
   };
@@ -311,8 +305,8 @@ function ToolsField({
   tools,
   onChange,
 }: {
-  readonly tools: readonly DraftTool[];
-  readonly onChange: (tools: readonly DraftTool[]) => void;
+  readonly tools: readonly LibraryRequiredTool[];
+  readonly onChange: (tools: readonly LibraryRequiredTool[]) => void;
 }) {
   return (
     <section className="space-y-2">
@@ -359,6 +353,17 @@ function ToolsField({
                   );
                 }}
               />
+              {LIBRARY_TOOL_CATALOG.some((entry) => entry.id === tool.id) ? null : (
+                // Only catalog tools have a toggle above, so others are removed here.
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Remove ${tool.id}`}
+                  onClick={() => onChange(tools.filter((entry) => entry.id !== tool.id))}
+                >
+                  <XIcon />
+                </Button>
+              )}
             </li>
           ))}
         </ul>

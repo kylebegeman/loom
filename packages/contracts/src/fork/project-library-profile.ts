@@ -44,14 +44,17 @@ export const LIBRARY_PROFILE_LIMITS = {
   bytes: 32_768,
 } as const;
 
-/** A catalog id on save. Reads accept any well-formed id so a newer catalog never breaks them. */
-export const LibraryRequiredToolId = Schema.Literals(LIBRARY_TOOL_IDS);
-const SavedToolId = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,31}$/));
+/**
+ * Any well-formed id, so a client with an older catalog can still read and resend a tool a
+ * newer one added. The Library accepts an id outside its catalog only when the project
+ * already has it; see `libraryProfileAddedUnknownTools`.
+ */
+const LibraryToolIdText = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,31}$/));
 export const LibraryToolVersion = Schema.String.check(
   Schema.isPattern(/^\d{1,6}(\.\d{1,6}){0,3}$/),
 );
 export const LibraryRequiredTool = Schema.Struct({
-  id: SavedToolId,
+  id: LibraryToolIdText,
   minimumVersion: Schema.optional(LibraryToolVersion),
 });
 export type LibraryRequiredTool = typeof LibraryRequiredTool.Type;
@@ -84,15 +87,8 @@ const profileFields = {
 export const LibraryProjectProfile = Schema.Struct(profileFields);
 export type LibraryProjectProfile = typeof LibraryProjectProfile.Type;
 
-/** What a client may save: catalog tools only, bounded in size, and no secret values. */
-export const LibraryProjectProfileInput = Schema.Struct({
-  ...profileFields,
-  requiredTools: Schema.optional(
-    Schema.Array(Schema.Struct({ ...LibraryRequiredTool.fields, id: LibraryRequiredToolId })).check(
-      Schema.isMaxLength(LIBRARY_PROFILE_LIMITS.requiredTools),
-    ),
-  ),
-}).check(
+/** What a client may save: each tool once, bounded in size, and no secret values. */
+export const LibraryProjectProfileInput = Schema.Struct(profileFields).check(
   Schema.makeFilter((profile) => {
     const ids = profile.requiredTools?.map((tool) => tool.id) ?? [];
     if (new Set(ids).size !== ids.length) return "List each required tool once.";
@@ -106,20 +102,44 @@ export const LibraryProjectProfileInput = Schema.Struct({
 );
 export type LibraryProjectProfileInput = typeof LibraryProjectProfileInput.Type;
 
+const CATALOG_IDS: ReadonlySet<string> = new Set(LIBRARY_TOOL_IDS);
+
+/**
+ * Tool ids a save would add that are outside this catalog and not already on the project.
+ * The Library refuses those, while ids a newer catalog saved earlier survive an edit from an
+ * older client.
+ */
+export function libraryProfileAddedUnknownTools(
+  profile: Pick<LibraryProjectProfile, "requiredTools">,
+  saved: Pick<LibraryProjectProfile, "requiredTools"> | undefined,
+): string[] {
+  const kept = new Set(saved?.requiredTools?.map((tool) => tool.id));
+  return (profile.requiredTools ?? [])
+    .map((tool) => tool.id)
+    .filter((id) => !CATALOG_IDS.has(id) && !kept.has(id));
+}
+
 const CREDENTIAL_SHAPES = [
   /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
   /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/,
   /\bgithub_pat_[A-Za-z0-9_]{20,}/,
   /\bglpat-[A-Za-z0-9_-]{20,}/,
-  /\bsk-[A-Za-z0-9][A-Za-z0-9_-]{15,}/,
+  // OpenAI and Anthropic keys always carry digits, which keeps names like `sk-learn-ui` out.
+  /\bsk-(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9][A-Za-z0-9_-]{15,}/,
+  /\b[sr]k_(?:live|test)_[A-Za-z0-9]{10,}/,
+  /\bnpm_[A-Za-z0-9]{36}\b/,
+  /\bhf_[A-Za-z0-9]{30,}\b/,
   /\bxox[abposr]-[A-Za-z0-9-]{10,}/,
   /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/,
   /\bAIza[A-Za-z0-9_-]{35}\b/,
   /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\./,
-  // Credentials inside a URL, such as https://user:password@host.
-  /:\/\/[^\s/@:]+:[^\s/@]+@/,
-  // A literal assigned to a secret-sounding variable or flag. `TOKEN=$TOKEN` stays allowed.
-  /[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIALS?)\s*=\s*["']?(?![$"'\s])\S/i,
+  // Credentials inside a URL, such as https://user:password@host. `user:$PASSWORD@` stays allowed.
+  /:\/\/[^\s/@:]+:(?![$"'`{])[^\s/@]+@/,
+  // A literal bearer token. `Bearer $TOKEN` stays allowed.
+  /\bBearer\s+(?![$"'`{])[A-Za-z0-9._~+/=-]{16,}/i,
+  // A literal assigned to a secret-sounding variable or flag. References such as `$TOKEN`,
+  // `"$TOKEN"` or a backtick command stay allowed.
+  /[A-Za-z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_KEY|ACCESS_KEY|CREDENTIALS?)\s*=\s*["']?(?![$"'`\s])\S/i,
 ];
 
 /** Whether free text carries something shaped like a credential rather than a reference to one. */
@@ -131,12 +151,15 @@ export const looksLikeSecretValue = (text: string) =>
  * every computer and into saved history, so they may name secrets but never carry them.
  */
 export function libraryProfileSecretValueField(
-  profile: Pick<LibraryProjectProfile, "scripts" | "defaultModelSelection" | "secretNames">,
+  profile: Pick<
+    LibraryProjectProfile,
+    "scripts" | "defaultModelSelection" | "secretNames" | "preferredEnvironmentIds"
+  >,
 ): string | null {
   // Labels name the field by position, never by its text, which may be the secret itself.
   for (const [index, script] of (profile.scripts ?? []).entries()) {
-    if ([script.name, script.command, script.previewUrl ?? ""].some(looksLikeSecretValue))
-      return `Script ${index + 1}`;
+    const text = [script.id, script.name, script.command, script.previewUrl ?? ""];
+    if (text.some(looksLikeSecretValue)) return `Script ${index + 1}`;
   }
   const selection = profile.defaultModelSelection;
   if (
@@ -149,5 +172,6 @@ export function libraryProfileSecretValueField(
     ].some(looksLikeSecretValue)
   )
     return "The default model";
+  if (profile.preferredEnvironmentIds?.some(looksLikeSecretValue)) return "A preferred computer";
   return profile.secretNames?.some(looksLikeSecretValue) ? "A secret name" : null;
 }

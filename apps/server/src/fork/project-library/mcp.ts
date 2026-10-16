@@ -31,7 +31,7 @@ const updateProjectParameters = Schema.Struct({
   ),
   profile: Schema.optional(
     Schema.NullOr(Library.LibraryProjectProfileInput).annotate({
-      description: `Project setup: scripts, default model, required tools (ids from ${Library.LIBRARY_TOOL_IDS.join(", ")}, each with an optional minimum version like 20 or 3.12), secret names (environment variable names only, never values), preferred computer ids and whether Mini may run it. Omit to keep the saved profile; null removes it.`,
+      description: `Project setup: scripts, default model, required tools (ids from ${Library.LIBRARY_TOOL_IDS.join(", ")}, each with an optional minimum version like 20 or 3.12; other ids are refused unless the project already lists them), secret names (environment variable names such as GITHUB_TOKEN, never values), preferred computer ids and whether Mini may run its jobs. Text that looks like a token or password is refused. Send the whole profile: it replaces the saved one. Omit to keep the saved profile; null removes it.`,
     }),
   ),
 });
