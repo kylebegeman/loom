@@ -53,6 +53,7 @@ export * from "./project-library.ts";
 export * from "./project-library-health.ts";
 export * from "./project-library-profile.ts";
 export * from "./project-library-search.ts";
+export * from "./project-library-semantic-search.ts";
 export * from "./project-library-timeline.ts";
 export * from "./project-library-brief.ts";
 export * from "./project-library-readiness.ts";

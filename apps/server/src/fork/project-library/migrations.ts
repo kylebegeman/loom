@@ -3,6 +3,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type { ForkMigrationSet } from "../persistence/migrations.ts";
 import { LIBRARY_SEARCH_SCHEMA, backfillLibrarySearch } from "./LibrarySearch.ts";
 import { backfillTimeline } from "./LibraryTimeline.ts";
+import { LIBRARY_SEMANTIC_SEARCH_SCHEMA } from "./LibrarySemanticSearch.ts";
 
 export const ProjectLibraryMigrations: ForkMigrationSet = {
   slug: "project-library",
@@ -75,6 +76,16 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         const sql = yield* SqlClient.SqlClient;
         yield* sql`CREATE TABLE IF NOT EXISTS fork_library_brief_proposals (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES fork_library_projects(id), status TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL)`;
         yield* sql`CREATE INDEX IF NOT EXISTS fork_library_brief_proposals_project ON fork_library_brief_proposals(project_id, status, created_at)`;
+      }),
+    ],
+    [
+      7,
+      "SemanticSearchVectors",
+      // Idempotent because parallel packets renumber this migration at merge. Vectors fill in the
+      // background once a Library has the model; none are computed here.
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        for (const statement of LIBRARY_SEMANTIC_SEARCH_SCHEMA) yield* sql.unsafe(statement);
       }),
     ],
   ],
