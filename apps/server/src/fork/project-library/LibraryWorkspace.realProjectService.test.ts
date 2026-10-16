@@ -1,6 +1,12 @@
 import { expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CommandId, ProjectId, EnvironmentId } from "@t3tools/contracts";
+import {
+  CommandId,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import { type LibraryProject } from "@t3tools/contracts/fork";
 import * as Effect from "effect/Effect";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -84,6 +90,92 @@ const git = Effect.fnUntraced(function* (cwd: string, args: ReadonlyArray<string
 });
 
 it.layer(layer)("Library workspace with real project services", (it) => {
+  it.effect("fills empty settings from the setup and replaces local ones only with consent", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem,
+        path = yield* Path.Path;
+      const rootPath = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "library-profile-settings-" }),
+      );
+      for (const name of ["web", "server"]) {
+        yield* fs.makeDirectory(path.join(rootPath, name));
+        yield* git(path.join(rootPath, name), ["init", "--initial-branch=main"]);
+      }
+      const workspace = yield* Workspace.LibraryWorkspace,
+        projects = yield* ProjectService.ProjectService;
+      const script = (id: string, command: string): ProjectScript => ({
+        id,
+        name: id,
+        command,
+        icon: "play",
+        runOnWorktreeCreate: false,
+      });
+      const localScripts = [script("dev", "make dev")];
+      const setupScripts = [script("dev", "vp run dev")];
+      const model = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5" };
+      const custom = yield* projects.bootstrap({
+        commandId: CommandId.make("customized-web"),
+        projectId: ProjectId.make("customized-web"),
+        title: "Customized web",
+        workspaceRoot: path.join(rootPath, "web"),
+        scripts: localScripts,
+      });
+      const setup = {
+        ...project,
+        profile: { scripts: setupScripts, defaultModelSelection: model },
+      };
+
+      const copy = yield* workspace.prepareCopy({
+        requestId: "profile-copy",
+        project: setup,
+        rootPath,
+        strategy: "reuse",
+      });
+      const local = (id: ProjectId) =>
+        projects.getById(id).pipe(Effect.map((found) => Option.getOrThrow(found)));
+      const web = copy.repositories.find((repository) => repository.resourceId === "web")!;
+      const server = copy.repositories.find((repository) => repository.resourceId === "server")!;
+      expect(web.localProjectId).toBe(custom.project.id);
+      // Empty settings take the setup's values; a local customization is kept.
+      expect((yield* local(web.localProjectId)).scripts).toEqual(localScripts);
+      expect((yield* local(web.localProjectId)).defaultModelSelection).toEqual(model);
+      expect((yield* local(server.localProjectId)).scripts).toEqual(setupScripts);
+      expect((yield* local(server.localProjectId)).defaultModelSelection).toEqual(model);
+
+      const review = yield* workspace.profileSettings({ workingCopyId: copy.id });
+      expect(review.projects).toEqual([
+        {
+          localProjectId: web.localProjectId,
+          title: "Customized web",
+          differences: [{ field: "scripts", local: localScripts, profile: setupScripts }],
+        },
+      ]);
+      expect(review.reviewToken).not.toBeNull();
+
+      // Getting the copy again still leaves the customization alone.
+      yield* workspace.prepareCopy({
+        requestId: "profile-copy-again",
+        project: setup,
+        rootPath,
+        strategy: "reuse",
+      });
+      expect((yield* local(web.localProjectId)).scripts).toEqual(localScripts);
+
+      // A token for other differences applies nothing.
+      const stale = yield* workspace
+        .applyProfile({ workingCopyId: copy.id, reviewToken: "not-what-was-reviewed" })
+        .pipe(Effect.flip);
+      expect(stale.reason).toBe("invalid");
+      expect((yield* local(web.localProjectId)).scripts).toEqual(localScripts);
+
+      const applied = yield* workspace.applyProfile({
+        workingCopyId: copy.id,
+        reviewToken: review.reviewToken!,
+      });
+      expect(applied).toEqual({ workingCopyId: copy.id, projects: [], reviewToken: null });
+      expect((yield* local(web.localProjectId)).scripts).toEqual(setupScripts);
+    }),
+  );
   it.effect(
     "materializes migrated component records when an existing borrowed copy is reused",
     () =>

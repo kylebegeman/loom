@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Stream recovery archive hashing without buffering archive bytes.
 import { CommandId, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
+  type LibraryApplyProfileRequest,
   LibraryError,
   type LibraryCopyHealth,
   type LibraryCopyHealthRequest,
@@ -8,6 +9,10 @@ import {
   type LibraryFolderInspection,
   type LibraryInspectFolderRequest,
   LibraryPrepareCopyRequest,
+  type LibraryProfileReadiness,
+  type LibraryProfileReadinessRequest,
+  type LibraryProfileSettings,
+  type LibraryProfileSettingsRequest,
   LibraryProject,
   LibraryThreadBinding,
   LibraryResolvedBinding,
@@ -42,6 +47,8 @@ import * as ProcessRunner from "../../processRunner.ts";
 import * as LibraryWorkspaceStore from "./LibraryWorkspaceStore.ts";
 import * as LibraryRecoveryPublisher from "./LibraryRecoveryPublisher.ts";
 import { makeCopyHealthReader } from "./LibraryCopyHealth.ts";
+import { makeProfileReadinessReader } from "./LibraryProfileReadiness.ts";
+import { makeProfileSettings } from "./LibraryProfileSettings.ts";
 import { validLibraryResources } from "./policy.ts";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 
@@ -64,6 +71,18 @@ export class LibraryWorkspace extends Context.Service<
     readonly health: (
       input: LibraryCopyHealthRequest,
     ) => Effect.Effect<LibraryCopyHealth, LibraryError>;
+    /** Checks a project's required tools on this computer. Secret values are never read. */
+    readonly readiness: (
+      input: LibraryProfileReadinessRequest,
+    ) => Effect.Effect<LibraryProfileReadiness, LibraryError>;
+    /** Where a copy's local project settings differ from its project's setup. */
+    readonly profileSettings: (
+      input: LibraryProfileSettingsRequest,
+    ) => Effect.Effect<LibraryProfileSettings, LibraryError>;
+    /** Replaces the reviewed differences with the setup's values; a changed one is `blocked`. */
+    readonly applyProfile: (
+      input: LibraryApplyProfileRequest,
+    ) => Effect.Effect<LibraryProfileSettings, LibraryError>;
     readonly release: (
       input: LibraryReleaseCopyRequest,
     ) => Effect.Effect<LibraryWorkingCopy, LibraryError>;
@@ -153,6 +172,8 @@ const make = Effect.gen(function* () {
   );
   const locks = yield* KeyedLock.make<string>();
   const readHealth = yield* makeCopyHealthReader;
+  const readReadiness = yield* makeProfileReadinessReader;
+  const settings = yield* makeProfileSettings;
   const environmentId = yield* identity.getEnvironmentId;
   const homeDirectory = yield* HostProcess.HomeDirectory;
   const requestedRoot = (rootPath: string) =>
@@ -1138,6 +1159,47 @@ const make = Effect.gen(function* () {
     return released.copy;
   });
 
+  /** The local projects a profile's settings apply to: the copy's root and each repository. */
+  const copyLocalProjects = (receipt: LibraryWorkspaceStore.WorkspaceReceipt) =>
+    [
+      receipt.copy.rootLocalProjectId ?? receipt.rootLocalProjectId,
+      ...receipt.copy.repositories.map((repository) => repository.localProjectId),
+    ].filter((id): id is ProjectId => id != null);
+
+  const settingsCopy = Effect.fn("LibraryWorkspace.settingsCopy")(function* (
+    input: LibraryProfileSettingsRequest,
+  ) {
+    const receipt = yield* store.get(input.workingCopyId);
+    if (receipt.copy.state !== "ready" || receipt.copy.registered === false)
+      return yield* new LibraryError({ reason: "invalid" });
+    return {
+      workingCopyId: receipt.copy.id,
+      localProjectIds: copyLocalProjects(receipt),
+      profile: input.profile ?? receipt.project.profile ?? {},
+    };
+  });
+
+  // Getting or reusing a copy fills settings the local projects lack. Values someone set
+  // locally stay; `profileSettings` shows them and `applyProfile` replaces them with consent.
+  const fillProfile = (input: LibraryPrepareCopyRequest, copy: LibraryWorkingCopy) =>
+    input.project.profile === undefined || copy.state !== "ready"
+      ? Effect.void
+      : store.get(copy.id).pipe(
+          Effect.flatMap((receipt) =>
+            settings.fillEmpty({
+              requestId: input.requestId,
+              localProjectIds: copyLocalProjects(receipt),
+              profile: input.project.profile ?? {},
+            }),
+          ),
+          Effect.catch((cause) =>
+            Effect.logWarning("Could not apply the project setup to a Library copy.", {
+              copyId: copy.id,
+              cause,
+            }),
+          ),
+        );
+
   return LibraryWorkspace.of({
     threadProject: (input) => store.getBoundProject(input.threadId),
     threadBinding: (input) =>
@@ -1157,9 +1219,39 @@ const make = Effect.gen(function* () {
         ),
       ),
     prepareCopy: (input) =>
+      locks
+        .withLock(
+          "prepare",
+          withWorkspaceLease(requestedRoot(input.rootPath), mapIo(prepareCopy(input))),
+        )
+        .pipe(Effect.tap((copy) => fillProfile(input, copy))),
+    readiness: (input) =>
+      mapIo(
+        Effect.gen(function* () {
+          const recorded =
+            input.profile === undefined
+              ? (yield* store.receipts)
+                  .filter((receipt) => receipt.project.id === input.projectId)
+                  .toSorted((left, right) => right.project.revision - left.project.revision)[0]
+              : undefined;
+          if (input.profile === undefined && recorded === undefined)
+            return yield* new LibraryError({ reason: "not-found" });
+          return yield* readReadiness({
+            projectId: input.projectId,
+            environmentId,
+            profile: input.profile ?? recorded?.project.profile ?? {},
+          });
+        }),
+      ),
+    profileSettings: (input) => mapIo(settingsCopy(input).pipe(Effect.flatMap(settings.read))),
+    applyProfile: (input) =>
       locks.withLock(
         "prepare",
-        withWorkspaceLease(requestedRoot(input.rootPath), mapIo(prepareCopy(input))),
+        mapIo(
+          settingsCopy(input).pipe(
+            Effect.flatMap((copy) => settings.apply({ ...copy, reviewToken: input.reviewToken })),
+          ),
+        ),
       ),
     status: (input) =>
       mapIo(

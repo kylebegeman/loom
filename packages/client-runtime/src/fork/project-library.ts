@@ -7,6 +7,7 @@ import {
   LibraryThreadArchive,
   LIBRARY_WS_METHODS as L,
   LIBRARY_HEALTH_WS_METHODS as LH,
+  LIBRARY_READINESS_WS_METHODS as LR,
   LIBRARY_TIMELINE_WS_METHODS as LT,
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
   LIBRARY_SEARCH_WS_METHODS as LS,
@@ -141,6 +142,20 @@ export function createProjectLibraryAtoms<R, E>(
     readCopyHealth: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:read-copy-health",
       tag: LH.copyHealth,
+    }),
+    /** Query the copy's computer, which must advertise `library-profile-readiness`. */
+    profileReadiness: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:profile-readiness",
+      tag: LR.readiness,
+    }),
+    /** Where a copy's local settings differ from its project's setup, on the copy's computer. */
+    profileSettings: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:profile-settings",
+      tag: LR.profileSettings,
+    }),
+    applyProfile: createEnvironmentRpcCommand(runtime, {
+      label: "loom:library:apply-profile",
+      tag: LR.applyProfile,
     }),
     readCopyStatus: createEnvironmentRpcCommand(runtime, {
       label: "loom:library:read-copy-status",

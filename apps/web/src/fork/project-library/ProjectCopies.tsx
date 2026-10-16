@@ -36,6 +36,7 @@ import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
+import { CopyProfileSetup } from "./ProfileReadiness";
 import { ComputerLabel, PathLabel } from "./ProjectIdentity";
 import { projectLibrary, useLibraryPermission } from "./state";
 
@@ -439,6 +440,9 @@ export function ProjectCopies({
                     lastSeenAt={lastSeenAt(copy.environmentId)}
                     offlineLabel={online ? null : label}
                   />
+                ) : null}
+                {online && copy.state === "ready" ? (
+                  <CopyProfileSetup project={project} copy={copy} />
                 ) : null}
                 {copy.projectRevision !== project.revision && copy.state === "ready" ? (
                   <p className="text-xs text-muted-foreground">

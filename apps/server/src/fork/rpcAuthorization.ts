@@ -3,6 +3,7 @@ import { LIBRARY_HEALTH_WS_METHODS as LH } from "@t3tools/contracts/fork";
 import { LIBRARY_SEARCH_WS_METHODS as LS } from "@t3tools/contracts/fork";
 import { LIBRARY_TIMELINE_WS_METHODS as LIBT } from "@t3tools/contracts/fork";
 import { LIBRARY_BRIEF_WS_METHODS as BRIEF } from "@t3tools/contracts/fork";
+import { LIBRARY_READINESS_WS_METHODS as LR } from "@t3tools/contracts/fork";
 import { PROJECT_CHECKOUT_WS_METHODS as C } from "@t3tools/contracts/fork";
 import { AuthSettingsWriteScope } from "@t3tools/contracts";
 import { COMPUTER_NAMING_WS_METHODS as N } from "@t3tools/contracts/fork";
@@ -51,6 +52,9 @@ export const FORK_RPC_REQUIRED_SCOPES = {
   [LIB.copyStatus]: AuthOrchestrationReadScope,
   // Matches vcs.refreshStatus: a remote fetch is a read.
   [LH.copyHealth]: AuthOrchestrationReadScope,
+  [LR.readiness]: AuthOrchestrationReadScope,
+  [LR.profileSettings]: AuthOrchestrationReadScope,
+  [LR.applyProfile]: AuthSettingsWriteScope,
   [LIB.resolveBinding]: AuthOrchestrationReadScope,
   [LIB.createProject]: AuthSettingsWriteScope,
   [LIB.updateProject]: AuthSettingsWriteScope,
