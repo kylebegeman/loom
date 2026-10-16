@@ -2,6 +2,7 @@
 export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "core",
   "project-library",
+  "library-project-profile",
   "computer-naming",
   "mini-offload",
   "mini-offload-outputs",

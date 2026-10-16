@@ -17,6 +17,7 @@ import {
   LibraryInfo,
   LibraryError,
   LibraryRequestId,
+  libraryProfileAddedUnknownTools,
 } from "@t3tools/contracts/fork";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
@@ -495,15 +496,26 @@ const make = Effect.gen(function* () {
         if (current.revision !== input.expectedRevision)
           return yield* new LibraryError({ reason: "revision-conflict" });
         if (!validLibraryResources(input.resources)) return yield* invalid();
-        // Omitted keeps the saved color so older clients never clear it; null returns to automatic.
-        const { color: savedColor, ...rest } = current;
+        // Omitted keeps the saved color and profile so older clients never clear them; null
+        // returns the color to automatic and removes the profile.
+        const { color: savedColor, profile: savedProfile, ...rest } = current;
         const color = input.color === undefined ? savedColor : (input.color ?? undefined);
-        return yield* putProject({
+        const profile = input.profile === undefined ? savedProfile : (input.profile ?? undefined);
+        if (profile && libraryProfileAddedUnknownTools(profile, savedProfile).length)
+          return yield* invalid();
+        const next = {
           ...rest,
           ...(color ? { color } : {}),
+          ...(profile ? { profile } : {}),
           title: input.title.trim(),
           brief: input.brief,
           resources: input.resources,
+        };
+        // An edit that changes nothing keeps its revision, so conversations stay current.
+        if ((yield* encode(codecs.project, next)) === (yield* encode(codecs.project, current)))
+          return current;
+        return yield* putProject({
+          ...next,
           revision: current.revision + 1,
           updatedAt: yield* now,
         });
