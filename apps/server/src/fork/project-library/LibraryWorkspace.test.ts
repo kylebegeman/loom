@@ -1,6 +1,6 @@
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { EnvironmentId, type Project, ThreadId } from "@t3tools/contracts";
+import { CommandId, EnvironmentId, type Project, ProjectId, ThreadId } from "@t3tools/contracts";
 import {
   LibraryError,
   type LibraryProject,
@@ -668,6 +668,50 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
             store.validateThreadCwd({ threadId, localProjectId: resolved.localProjectId, cwd }),
           ))._tag,
         ).toBe("Failure");
+      }),
+  );
+  it.effect.each([true, false])(
+    "keeps native projects usable for new root and worktree threads after borrowing, root resource=%s",
+    (rootResource) =>
+      Effect.gen(function* () {
+        const rootPath = yield* makeTemp;
+        const worktreePath = yield* makeTemp;
+        const path = yield* Path.Path;
+        const nativeCwd = rootResource ? rootPath : path.join(rootPath, "web");
+        yield* initRepo(nativeCwd);
+        if (!rootResource) yield* initRepo(path.join(rootPath, "server"));
+        const projects = yield* ProjectService.ProjectService;
+        const nativeProject = (yield* projects.bootstrap({
+          commandId: CommandId.make(`native-project:${rootPath}`),
+          projectId: ProjectId.make(`native-project:${rootPath}`),
+          title: "Existing native project",
+          workspaceRoot: nativeCwd,
+        })).project;
+        const service = yield* LibraryWorkspace.LibraryWorkspace;
+        const receipts = yield* LibraryWorkspaceStore.LibraryWorkspaceStore;
+        const copy = yield* service.prepareCopy({
+          requestId: `borrow-native:${rootPath}`,
+          project: projectFor(rootResource),
+          rootPath,
+          strategy: "reuse",
+        });
+        const receipt = yield* receipts.get(copy.id);
+        expect([
+          receipt.rootLocalProjectId,
+          ...copy.repositories.map((repository) => repository.localProjectId),
+        ]).toContain(nativeProject.id);
+        for (const cwd of [nativeCwd, worktreePath]) {
+          const threadId = ThreadId.make(`new-native-thread:${cwd}`);
+          expect(receipt.legacyThreadIds).not.toContain(threadId);
+          expect(yield* receipts.getBinding(threadId)).toBeNull();
+          expect(
+            yield* receipts.validateThreadCwd({
+              threadId,
+              localProjectId: nativeProject.id,
+              cwd,
+            }),
+          ).toBe(cwd);
+        }
       }),
   );
   it.effect("blocks an orphan conversation before its first provider launch", () =>

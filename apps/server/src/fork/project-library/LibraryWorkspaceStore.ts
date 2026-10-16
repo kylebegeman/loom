@@ -372,8 +372,11 @@ const make = Effect.gen(function* () {
                   (repository) => repository.localProjectId === input.localProjectId,
                 ),
             );
+            // Borrowing an existing native project must not take over its launch path.
+            // Library-created projects still require an explicit conversation binding.
             if (
-              (owners.length === 0 && !input.localProjectId.startsWith("library-copy:")) ||
+              (!input.localProjectId.startsWith("library-copy:") &&
+                owners.every((row) => row.copy.ownership === "borrowed")) ||
               owners.some(
                 (row) =>
                   row.copy.ownership === "borrowed" && row.legacyThreadIds.includes(input.threadId),
