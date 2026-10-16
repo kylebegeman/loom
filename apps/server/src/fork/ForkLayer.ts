@@ -4,6 +4,7 @@ import * as LibraryRecoveryStore from "./project-library/assets/LibraryRecoveryS
 import { LibraryRecoveryHttpRoutes } from "./project-library/assets/recoveryHttp.ts";
 import * as LibraryPublisher from "./project-library/LibraryPublisher.ts";
 import * as LibraryReplication from "./project-library/LibraryReplication.ts";
+import * as LibraryActivityPublication from "./project-library/LibraryActivityPublication.ts";
 import * as LibraryCopyHealthPublication from "./project-library/LibraryCopyHealthPublication.ts";
 import { LibraryHttpRoutes } from "./project-library/http.ts";
 import * as LibraryHistorySource from "./project-library/LibraryHistorySource.ts";
@@ -48,6 +49,16 @@ const layerLibraryRecovery = LibraryRecoveryStore.layer.pipe(
   Layer.provide(NodeHttpClient.layerNodeHttp),
 );
 const layerLibraryAssets = LibraryAssetService.layer.pipe(Layer.provide(FetchHttpClient.layer));
+const layerLibraryPublisher = LibraryPublisher.layer.pipe(
+  Layer.provide(FetchHttpClient.layer),
+  Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
+  Layer.provide(layerLibraryAssets),
+);
+const layerMiniOffload = MiniOffload.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
+  ),
+);
 
 /** Packet service layers, one line each. Keep `Layer.empty` first. */
 const ForkServicesLive = Layer.mergeAll(
@@ -55,13 +66,7 @@ const ForkServicesLive = Layer.mergeAll(
   LibraryService.layer.pipe(Layer.provide(layerLibraryAssets)),
   LibraryTimeline.layer,
   LibraryReplication.layer.pipe(
-    Layer.provide(
-      LibraryPublisher.layer.pipe(
-        Layer.provide(FetchHttpClient.layer),
-        Layer.provide(LibraryService.layer.pipe(Layer.provide(layerLibraryAssets))),
-        Layer.provide(layerLibraryAssets),
-      ),
-    ),
+    Layer.provide(layerLibraryPublisher),
     Layer.provide(
       LibraryHistorySource.layer.pipe(
         Layer.provide(LibraryWorkspaceStore.layer),
@@ -99,9 +104,15 @@ const ForkServicesLive = Layer.mergeAll(
   GitHubSetupFlow.layer.pipe(
     Layer.provide(GitHubHostSetup.layer.pipe(Layer.provide(FetchHttpClient.layer))),
   ),
-  MiniOffload.layer.pipe(
+  layerMiniOffload,
+  LibraryActivityPublication.layer.pipe(
+    Layer.provide(layerLibraryPublisher),
+    Layer.provide(LibraryWorkspaceStore.layer),
     Layer.provide(
-      Layer.mergeAll(ProjectionStore.layer, ProjectStore.layer, MiniSsh.layer, ProcessRunner.layer),
+      LibraryActivityPublication.layerSource.pipe(
+        Layer.provide(layerMiniOffload),
+        Layer.provide(ProjectionStore.layer),
+      ),
     ),
   ),
   SwitchboardLive,

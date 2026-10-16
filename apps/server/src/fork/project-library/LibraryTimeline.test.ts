@@ -2,6 +2,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ThreadId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import {
+  LIBRARY_TIMELINE_ACTIVITY_FEATURE,
   LIBRARY_TIMELINE_KINDS,
   LibraryError,
   type LibraryProject,
@@ -483,6 +484,170 @@ describe("Library project timeline", () => {
           .pipe(Effect.flip);
         expect(failure.reason).toBe("invalid");
         expect(yield* kinds()).toEqual([]);
+      }),
+    ),
+  );
+
+  it.effect("records commits when a health report moves a head, counting only from that head", () =>
+    run(({ project, library, timeline }) =>
+      Effect.gen(function* () {
+        const one = "1".repeat(40);
+        const two = "2".repeat(40);
+        const three = "3".repeat(40);
+        const report = (
+          requestId: string,
+          checkedAt: string,
+          head: string,
+          commitsSince?: { head: string; count: number },
+        ) =>
+          library.registerCopy({
+            requestId,
+            copy: {
+              ...copyFor(project),
+              health: {
+                copyId: "copy",
+                environmentId: source,
+                checkedAt,
+                repositories: [
+                  {
+                    resourceId: resource.id,
+                    branch: "main",
+                    head,
+                    ...(commitsSince ? { commitsSince } : {}),
+                    uncommittedFiles: 0,
+                    unpushedCommits: 0,
+                    checkedAt,
+                  },
+                ],
+              },
+            },
+          });
+        const commits = timeline
+          .page({ projectId: project.id, kinds: ["commits"] })
+          .pipe(Effect.map((page) => page.entries));
+        // The first report has nothing to compare with.
+        yield* report("health-1", "2026-10-16T10:00:00.000Z", one);
+        expect(yield* commits).toEqual([]);
+        yield* report("health-2", "2026-10-16T10:05:00.000Z", two, { head: one, count: 3 });
+        // The same head again, or an older report, is no news.
+        yield* report("health-3", "2026-10-16T10:06:00.000Z", two);
+        yield* report("health-old", "2026-10-16T09:00:00.000Z", three, { head: two, count: 1 });
+        // A count from some other head is not this range's count.
+        yield* report("health-4", "2026-10-16T10:10:00.000Z", three, { head: one, count: 4 });
+        const entries = yield* commits;
+        expect(entries).toHaveLength(2);
+        expect(entries[0]).toMatchObject({
+          kind: "commits",
+          at: "2026-10-16T10:10:00.000Z",
+          environmentId: source,
+          copy: { id: "copy", rootPath: "/borrowed/aspectavy" },
+          repository: { resourceId: resource.id, branch: "main" },
+          from: two,
+          to: three,
+        });
+        expect(entries[0]).not.toHaveProperty("count");
+        expect(entries[1]).toMatchObject({ from: one, to: two, count: 3 });
+      }),
+    ),
+  );
+
+  it.effect("stores finished scheduled runs and Mini jobs reported by the copy's computer", () =>
+    run(({ project, library, timeline }) =>
+      Effect.gen(function* () {
+        const run = {
+          requestId: "journal:activity:run",
+          environmentId: source,
+          activity: {
+            id: "scheduled:task:2026-10-16T10:00:00.000Z",
+            copyId: "copy",
+            at: "2026-10-16T10:02:00.000Z",
+            kind: "scheduled-run",
+            run: {
+              taskId: "task",
+              title: "Nightly checks",
+              status: "failed",
+              startedAt: "2026-10-16T10:00:00.000Z",
+            },
+          },
+        } as const;
+        expect(yield* library.recordActivity(run)).toEqual({
+          projectId: project.id,
+          copyId: "copy",
+        });
+        // The computer resends after a lost response. The request id makes it the same entry.
+        yield* library.recordActivity(run);
+        yield* library.recordActivity({
+          requestId: "journal:activity:job",
+          environmentId: source,
+          activity: {
+            id: "mini:job",
+            copyId: "copy",
+            at: "2026-10-16T10:04:00.000Z",
+            kind: "mini-job",
+            job: {
+              requestId: "0123456789abcdef0123456789abcdef",
+              label: "Unit tests",
+              workerName: "studio",
+              status: "succeeded",
+              exitCode: 0,
+              summary: "All 212 tests passed",
+            },
+          },
+        });
+        // The computer is gone; the Library still serves what it reported.
+        const page = yield* timeline.page({
+          projectId: project.id,
+          kinds: ["scheduled-run", "mini-job"],
+        });
+        expect(page.entries).toMatchObject([
+          {
+            kind: "mini-job",
+            at: "2026-10-16T10:04:00.000Z",
+            environmentId: source,
+            copy: { id: "copy", rootPath: "/borrowed/aspectavy" },
+            job: { label: "Unit tests", status: "succeeded", exitCode: 0 },
+          },
+          {
+            kind: "scheduled-run",
+            at: "2026-10-16T10:02:00.000Z",
+            run: { taskId: "task", title: "Nightly checks", status: "failed" },
+          },
+        ]);
+
+        // Only the copy's own computer reports work in it, and only for a copy the Library has.
+        const elsewhere = yield* library
+          .recordActivity({
+            ...run,
+            requestId: "other:activity:run",
+            environmentId: EnvironmentId.make("other-computer"),
+          })
+          .pipe(Effect.flip);
+        expect(elsewhere.reason).toBe("invalid");
+        const unknown = yield* library
+          .recordActivity({
+            ...run,
+            requestId: "journal:activity:unknown",
+            activity: { ...run.activity, copyId: "missing-copy" },
+          })
+          .pipe(Effect.flip);
+        expect(unknown.reason).toBe("not-found");
+        // A request id reused for different work is refused, not recorded as the first.
+        const reused = yield* library
+          .recordActivity({ ...run, activity: { ...run.activity, at: "2026-10-16T11:00:00.000Z" } })
+          .pipe(Effect.flip);
+        expect(reused.reason).toBe("request-conflict");
+        expect(
+          (yield* timeline.page({ projectId: project.id, kinds: ["scheduled-run", "mini-job"] }))
+            .entries,
+        ).toHaveLength(2);
+      }),
+    ),
+  );
+
+  it.effect("advertises timeline activity, so computers know they can publish it", () =>
+    run(({ library }) =>
+      Effect.gen(function* () {
+        expect((yield* library.info).features).toContain(LIBRARY_TIMELINE_ACTIVITY_FEATURE);
       }),
     ),
   );

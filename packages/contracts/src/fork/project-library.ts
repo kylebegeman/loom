@@ -197,6 +197,8 @@ export const LibraryInfo = Schema.Struct({
   authorityId: LibraryId,
   authorityEpoch: PositiveInt,
   assets: Schema.Literals(["local", "b2", "unconfigured"]),
+  /** The Library's `loomFeatures`, so computers publish only what it can record. */
+  features: Schema.optional(Schema.Array(Schema.String.check(Schema.isMaxLength(64)))),
 });
 export type LibraryInfo = typeof LibraryInfo.Type;
 export class LibraryError extends Schema.TaggedError<LibraryError>()("LibraryError", {

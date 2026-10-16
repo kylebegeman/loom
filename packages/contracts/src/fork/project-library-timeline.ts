@@ -6,6 +6,7 @@ import {
   EnvironmentId,
   ForwardCompatibleUnionArray,
   IsoDateTime,
+  NonNegativeInt,
   PositiveInt,
   ThreadId,
   TrimmedNonEmptyString,
@@ -28,12 +29,15 @@ const PULL_REQUEST_KINDS = [
   "pull-request-checks-failed",
 ] as const;
 const COPY_KINDS = ["copy-added", "copy-released", "copy-failed"] as const;
+/** Recorded only by a Library that advertises `library-timeline-activity`. */
+export const LIBRARY_TIMELINE_ACTIVITY_KINDS = ["commits", "scheduled-run", "mini-job"] as const;
 export const LIBRARY_TIMELINE_KINDS = [
   ...CONVERSATION_KINDS,
   ...PULL_REQUEST_KINDS,
   "brief-revised",
   "brief-proposed",
   ...COPY_KINDS,
+  ...LIBRARY_TIMELINE_ACTIVITY_KINDS,
 ] as const;
 export const LibraryTimelineKind = Schema.Literals(LIBRARY_TIMELINE_KINDS);
 export type LibraryTimelineKind = typeof LibraryTimelineKind.Type;
@@ -86,10 +90,60 @@ export const LibraryTimelineBriefProposalEntry = Schema.Struct({
   proposalId: LibraryId,
   summary: Schema.String,
 });
+export const LibraryTimelineCopy = Schema.Struct({ id: LibraryId, rootPath: Schema.String });
+export type LibraryTimelineCopy = typeof LibraryTimelineCopy.Type;
 export const LibraryTimelineCopyEntry = Schema.Struct({
   ...entryFields,
   kind: Schema.Literals(COPY_KINDS),
-  copy: Schema.Struct({ id: LibraryId, rootPath: Schema.String }),
+  copy: LibraryTimelineCopy,
+});
+const CommitId = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+/**
+ * A repository in a copy moved from `from` to `to` between two health reports. `count` is the
+ * number of commits from `from` to `to`, present only when its computer could count them: `to`
+ * builds on `from` and the computer still remembered `from`. A rewrite or a branch switch has none.
+ */
+export const LibraryTimelineCommitsEntry = Schema.Struct({
+  ...entryFields,
+  kind: Schema.Literal("commits"),
+  copy: LibraryTimelineCopy,
+  repository: Schema.Struct({
+    resourceId: LibraryId,
+    branch: Schema.optional(Schema.String.check(Schema.isMaxLength(512))),
+  }),
+  from: CommitId,
+  to: CommitId,
+  count: Schema.optional(NonNegativeInt),
+});
+/** A scheduled task run that finished, with no prompt or error text. `at` is when it finished. */
+export const LibraryTimelineScheduledRun = Schema.Struct({
+  taskId: LibraryId,
+  title: Schema.String.check(Schema.isMaxLength(160)),
+  status: Schema.Literals(["succeeded", "failed"]),
+  startedAt: IsoDateTime,
+});
+export type LibraryTimelineScheduledRun = typeof LibraryTimelineScheduledRun.Type;
+export const LibraryTimelineScheduledRunEntry = Schema.Struct({
+  ...entryFields,
+  kind: Schema.Literal("scheduled-run"),
+  copy: LibraryTimelineCopy,
+  run: LibraryTimelineScheduledRun,
+});
+/** A Mini job that reached a final state. `summary` is the worker's short reason, if it gave one. */
+export const LibraryTimelineMiniJob = Schema.Struct({
+  requestId: LibraryId,
+  label: Schema.String.check(Schema.isMaxLength(80)),
+  workerName: Schema.optional(Schema.String.check(Schema.isMaxLength(80))),
+  status: Schema.Literals(["succeeded", "failed", "cancelled", "interrupted"]),
+  exitCode: Schema.optional(Schema.Int),
+  summary: Schema.optional(Schema.String.check(Schema.isMaxLength(160))),
+});
+export type LibraryTimelineMiniJob = typeof LibraryTimelineMiniJob.Type;
+export const LibraryTimelineMiniJobEntry = Schema.Struct({
+  ...entryFields,
+  kind: Schema.Literal("mini-job"),
+  copy: LibraryTimelineCopy,
+  job: LibraryTimelineMiniJob,
 });
 const entryMembers = [
   LibraryTimelineConversationEntry,
@@ -97,6 +151,9 @@ const entryMembers = [
   LibraryTimelineBriefEntry,
   LibraryTimelineBriefProposalEntry,
   LibraryTimelineCopyEntry,
+  LibraryTimelineCommitsEntry,
+  LibraryTimelineScheduledRunEntry,
+  LibraryTimelineMiniJobEntry,
 ] as const;
 export const LibraryTimelineEntry = Schema.Union(entryMembers);
 export type LibraryTimelineEntry = typeof LibraryTimelineEntry.Type;
