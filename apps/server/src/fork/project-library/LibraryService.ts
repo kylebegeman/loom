@@ -476,6 +476,7 @@ const make = Effect.gen(function* () {
           title: input.title.trim(),
           brief: input.brief ?? "",
           resources,
+          ...(input.color ? { color: input.color } : {}),
           archived: false,
           revision: 1,
           createdAt: timestamp,
@@ -494,8 +495,12 @@ const make = Effect.gen(function* () {
         if (current.revision !== input.expectedRevision)
           return yield* new LibraryError({ reason: "revision-conflict" });
         if (!validLibraryResources(input.resources)) return yield* invalid();
+        // Omitted keeps the saved color so older clients never clear it; null returns to automatic.
+        const { color: savedColor, ...rest } = current;
+        const color = input.color === undefined ? savedColor : (input.color ?? undefined);
         return yield* putProject({
-          ...current,
+          ...rest,
+          ...(color ? { color } : {}),
           title: input.title.trim(),
           brief: input.brief,
           resources: input.resources,

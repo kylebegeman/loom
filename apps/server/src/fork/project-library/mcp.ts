@@ -13,6 +13,23 @@ import * as Replication from "./LibraryReplication.ts";
 
 const failure = Schema.Union([Library.LibraryError, OrchestratorMcpFailure]);
 const dependencies = [McpInvocationContext, ThreadManagementService];
+const colorNames = Library.LIBRARY_PROJECT_COLORS.join(", ");
+const createProjectParameters = Schema.Struct({
+  ...Library.LibraryCreateProjectRequest.fields,
+  color: Schema.optional(
+    Library.LibraryProjectColor.annotate({
+      description: `Project color: one of ${colorNames}. Omit for a stable automatic color.`,
+    }),
+  ),
+});
+const updateProjectParameters = Schema.Struct({
+  ...Library.LibraryUpdateProjectRequest.fields,
+  color: Schema.optional(
+    Schema.NullOr(Library.LibraryProjectColor).annotate({
+      description: `Project color: one of ${colorNames}. Omit to keep the saved color; null returns to the automatic color.`,
+    }),
+  ),
+});
 export const ProjectLibraryToolkit = Toolkit.make(
   Tool.make("loom_library_projects", {
     description: "List durable projects in this Library, independent of working computers.",
@@ -91,7 +108,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_project_create", {
     description: "Create a durable project and shared brief. No computer or folder is selected.",
-    parameters: Library.LibraryCreateProjectRequest,
+    parameters: createProjectParameters,
     success: Library.LibraryProject,
     failure,
     dependencies,
@@ -101,7 +118,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
   Tool.make("loom_library_project_update", {
     description:
       "Save a new project context revision with optimistic conflict checks. Existing conversations keep their pinned context.",
-    parameters: Library.LibraryUpdateProjectRequest,
+    parameters: updateProjectParameters,
     success: Library.LibraryProject,
     failure,
     dependencies,

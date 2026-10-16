@@ -737,6 +737,37 @@ describe("independent Library catalog and durable history", () => {
         }),
       ),
   );
+  it.effect(
+    "saves a chosen project color, keeps it when an edit omits it, and returns to automatic on null",
+    () =>
+      run((service) =>
+        Effect.gen(function* () {
+          expect((yield* create(service)).color).toBeUndefined();
+          const project = yield* service.createProject({
+            requestId: "colored",
+            title: "Colored",
+            color: "teal",
+          });
+          expect(project.color).toBe("teal");
+          const edit = (requestId: string, expectedRevision: number) => ({
+            requestId,
+            projectId: project.id,
+            expectedRevision,
+            title: project.title,
+            brief: project.brief,
+            resources: project.resources,
+          });
+          const kept = yield* service.updateProject({ ...edit("keep", 1), brief: "New brief" });
+          expect(kept).toMatchObject({ color: "teal", brief: "New brief", revision: 2 });
+          const recolored = yield* service.updateProject({ ...edit("recolor", 2), color: "plum" });
+          expect(recolored).toMatchObject({ color: "plum", revision: 3 });
+          const automatic = yield* service.updateProject({ ...edit("automatic", 3), color: null });
+          expect(automatic.revision).toBe(4);
+          expect("color" in automatic).toBe(false);
+          expect("color" in (yield* service.project({ projectId: project.id }))).toBe(false);
+        }),
+      ),
+  );
   it.effect("validates repository composition and web references without cloning", () =>
     run((service) =>
       Effect.gen(function* () {
