@@ -8,6 +8,7 @@ import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { ThreadManagementService } from "../../orchestration-v2/ThreadManagementService.ts";
 import { ForkRuntime, withForkRuntime } from "../ForkRuntime.ts";
 import * as Catalog from "./LibraryService.ts";
+import * as Timeline from "./LibraryTimeline.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as Replication from "./LibraryReplication.ts";
 
@@ -120,6 +121,12 @@ export const ProjectLibraryToolkit = Toolkit.make(
       "Search saved conversation messages and plans across every computer, including offline ones. Every word must match; quote an exact phrase. Scope by projectId, environmentId or an ISO since/until. To read a hit in context, call loom_library_history with its id; history offsets count back from the newest item, so offset window.totalItems - 1 - position ends the page at the hit.",
     parameters: searchParameters,
     success: Library.LibrarySearchResult,
+    failure,
+  }).annotate(Tool.Readonly, true),
+  Tool.make("loom_library_timeline", {
+    description: `Read what happened in a project, newest first, up to 200 entries a page. Optional kinds filters to: ${Library.LIBRARY_TIMELINE_KINDS.join(", ")}. Pass nextBefore as before for older entries. Entries marked approximate were rebuilt from records saved before the timeline existed.`,
+    parameters: Library.LibraryTimelineRequest,
+    success: Library.LibraryTimelinePage,
     failure,
   }).annotate(Tool.Readonly, true),
   Tool.make("loom_library_project_create", {
@@ -252,6 +259,9 @@ export const projectLibraryHandlers = McpToolAccess.toLayer(
             service.search({ ...input, limit: input.limit ?? 20 }),
           ),
         ),
+      ),
+      loom_library_timeline: McpToolAccess.reads((input) =>
+        onHost(Effect.flatMap(Timeline.LibraryTimeline, (service) => service.page(input))),
       ),
       loom_library_project_create: McpToolAccess.writesEnvironment((input) =>
         onHost(Effect.flatMap(Catalog.LibraryService, (service) => service.createProject(input))),

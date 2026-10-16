@@ -36,6 +36,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { ServerEnvironmentIdentity } from "../../environment/ServerEnvironment.ts";
 import * as LibraryStore from "./LibraryStore.ts";
+import * as LibraryTimeline from "./LibraryTimeline.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerConfig from "../../config.ts";
 import * as Option from "effect/Option";
@@ -201,6 +202,7 @@ const make = Effect.gen(function* () {
     const payload = yield* encode(codecs.project, project);
     yield* store.putProject({ ...project, payload });
     yield* store.appendEvent(project.id, "project.saved", payload, project.updatedAt);
+    yield* LibraryTimeline.recordProjectTimeline(store, project);
     return project;
   });
   const mutation = <A>(
@@ -264,8 +266,8 @@ const make = Effect.gen(function* () {
     if (copy.ownership === "borrowed" && copy.state === "released")
       return yield* new LibraryError({ reason: "not-managed" });
     const previous = yield* store.copy(copy.id);
-    if (previous) {
-      const old = yield* decode(codecs.copy, previous);
+    const old = previous ? yield* decode(codecs.copy, previous) : null;
+    if (old) {
       if (
         old.projectId !== copy.projectId ||
         old.environmentId !== copy.environmentId ||
@@ -281,6 +283,7 @@ const make = Effect.gen(function* () {
     const payload = yield* encode(codecs.copy, copy);
     yield* store.putCopy({ ...copy, payload });
     yield* store.appendEvent(copy.id, "copy.saved", payload, copy.updatedAt);
+    yield* LibraryTimeline.recordTimeline(store, LibraryTimeline.copyTimeline(old, copy));
     return copy;
   });
   const saveThread = Effect.fnUntraced(function* (
@@ -323,8 +326,8 @@ const make = Effect.gen(function* () {
         return yield* invalid();
     }
     const previous = yield* store.thread(environmentId, summary.threadId);
-    if (previous) {
-      const old = yield* decode(codecs.archive, previous);
+    const old = previous ? yield* decode(codecs.archive, previous) : null;
+    if (old) {
       if (
         old.summary.id !== summary.id ||
         old.summary.projectId !== summary.projectId ||
@@ -372,6 +375,13 @@ const make = Effect.gen(function* () {
         summary.sequence,
         yield* encode(codecs.archive, normalized),
       );
+    yield* LibraryTimeline.recordTimeline(
+      store,
+      LibraryTimeline.threadTimeline(
+        old && LibraryTimeline.timelineThread(old),
+        LibraryTimeline.timelineThread(normalized),
+      ),
+    );
     return normalized;
   });
   const registerComputer = (input: LibraryRegisterComputerRequest) =>

@@ -44,4 +44,5 @@ export const LOOM_SERVER_FEATURES: ReadonlyArray<string> = [
   "code-graph",
   "library-copy-health",
   "library-search",
+  "library-timeline",
 ];

@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { ForkMigrationSet } from "../persistence/migrations.ts";
 import { LIBRARY_SEARCH_SCHEMA, backfillLibrarySearch } from "./LibrarySearch.ts";
+import { backfillTimeline } from "./LibraryTimeline.ts";
 
 export const ProjectLibraryMigrations: ForkMigrationSet = {
   slug: "project-library",
@@ -55,6 +56,15 @@ export const ProjectLibraryMigrations: ForkMigrationSet = {
         const sql = yield* SqlClient.SqlClient;
         for (const statement of LIBRARY_SEARCH_SCHEMA) yield* sql.unsafe(statement);
         yield* backfillLibrarySearch;
+      }),
+    ],
+    [
+      5,
+      "ProjectTimeline",
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`CREATE INDEX IF NOT EXISTS fork_library_events_aggregate ON fork_library_events(aggregate_id, sequence)`;
+        yield* backfillTimeline;
       }),
     ],
   ],
