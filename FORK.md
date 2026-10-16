@@ -497,3 +497,12 @@ See [Connections help](docs/fork/user/connections.md).
 | `packages/shared/src/cliRelease.ts`                                          | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/ssh/src/tunnel.test.ts`                                            | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
 | `packages/ssh/src/tunnel.ts`                                                 | `fleet-connect`     | Restore configured Connect authentication and exact Loom runtime delivery. |
+
+### Machine update seams
+
+| File                                                        | Packet            | Why                                                  |
+| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------- |
+| `apps/web/src/components/ProviderUpdatesAction.tsx`         | `machine-updates` | Scope provider updates to permitted computers.       |
+| `apps/web/src/components/sidebar/SidebarUpdatePill.tsx`     | `machine-updates` | Keep the footer local to the desktop computer.       |
+| `apps/web/src/components/sidebar/useUpdateEverything.ts`    | `machine-updates` | Share scoped local and fleet update execution.       |
+| `apps/web/src/components/sidebar/updateEverything.logic.ts` | `machine-updates` | Keep local and fleet progress in their owning views. |

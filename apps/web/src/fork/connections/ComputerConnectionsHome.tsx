@@ -8,6 +8,7 @@ import { searchableSetting } from "~/components/settings/settingsSearch";
 import { ConnectAccount } from "./ConnectAccount";
 import { ComputerWorkActions } from "./ComputerWorkActions";
 import { ComputerConnectionDetails } from "./ComputerConnectionDetails";
+import { FleetUpdatesSection } from "./FleetUpdatesSection";
 
 const PRIMARY_DETAIL_TARGETS = [
   "connections-environment",
@@ -81,6 +82,7 @@ export function ComputerConnectionsHome({
         {computerRows}
         {discoveredRows}
       </SettingsSection>
+      <FleetUpdatesSection />
     </>
   );
 }

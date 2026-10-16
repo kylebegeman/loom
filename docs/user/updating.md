@@ -5,36 +5,31 @@ When a server is behind your web or desktop app, an update notice appears in the
 conversation and **Settings → Connections**. Update the machine named in that
 notice.
 
-## Update everything at once
+## Update this computer
 
-The update button at the bottom of the sidebar updates every connected machine
-in one step. It updates outdated providers, then servers that are behind, then
-the desktop app you are using. Servers move to the
-version your desktop app is installing, or to your web app's version. A
-background service stays on its current release channel. A remote desktop app
-installs the latest release from its own channel. Hover the button to see what
-it will update.
+The update button at the bottom of the desktop sidebar belongs to the computer
+you are using. It downloads and installs that app and can update providers on
+its local backends, including WSL. Other computers' updates and progress appear
+in **Settings → Computers**.
 
-While it runs, the button widens to show progress. It names a machine that is
-taking longer than usual, and offers **Retry** for a server that failed. Click
-it to see every machine. The desktop app restarts once each server has started
-its own restart, after a short countdown. Choose **Later** to keep working and
-restart from the update button when you are ready. A server still restarting
-finishes on its own, and the button keeps showing it after the desktop app
-restarts.
+## Manage fleet updates
 
-Server updates appear only after that version is published to npm. Remote
-desktop apps do not wait for npm. The confirmation lists each machine it skips
-and why, such as a machine that is offline or needs a manual update. Use the
-notice or **Settings → Connections** for those.
+Open **Settings → Computers → Fleet updates** for a snapshot of runtime versions
+and provider updates across your connected computers. Offline computers show
+their last known version and must reconnect before their status can be checked.
 
-If a desktop app restarts on its old version, T3 Code tells you the update did
-not apply. It does not install that version again on its own, even when another
-device asks. Use the update button on that machine to retry.
+Choose **Review updates** to see which computers and providers will update,
+which machines need manual action, and which running threads a restart will
+interrupt. The pass updates providers before restarting their servers. It leaves
+this computer's desktop app update on its own sidebar control.
 
-The confirmation counts the running threads that the restarts will interrupt,
-and how many can resume afterwards. See **Continue threads after restarts**
-below.
+Background services stay on their release channel and appear once their platform's
+runtime archive and checksums are published. Remote desktop apps install from
+their own update feeds. Failed fleet updates stay in the Computers view with
+retry and dismiss actions.
+
+If a desktop app restarts on its old version, Loom reports that the update did
+not apply. Use the update button on that machine to retry.
 
 ## Before you update
 

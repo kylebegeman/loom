@@ -9,6 +9,7 @@ import {
   supportsServerUpdateThreadContinuation,
 } from "~/versionSkew";
 import type { ServerUpdateOutcome, ServerUpdateTarget } from "../ServerUpdateAction";
+import type { UpdateScope } from "~/fork/connections/updateScope";
 
 export interface UpdateEverythingMachine {
   readonly environmentId: EnvironmentId;
@@ -208,6 +209,8 @@ export interface UpdateRunMachine {
  * failed machine keeps it open, so the sidebar can offer a retry.
  */
 export interface UpdateEverythingRun {
+  // fork: machine-updates - Runs from older clients belong to fleet management.
+  readonly scope?: UpdateScope;
   /** The version this app installs, or null when it does not install (or the
       user chose to restart later). */
   readonly localVersion: string | null;

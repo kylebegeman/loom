@@ -49,3 +49,11 @@ computer and determine which actions that connection can use.
 
 Moving existing work still uses **Move work**. Signing in or choosing a different
 computer does not move its projects or conversations automatically.
+
+## Updates across computers
+
+The desktop sidebar's update control applies to that computer and its local
+backends. Open **Settings > Computers > Fleet updates** to compare runtime
+versions and provider updates across computers. **Review updates** shows the
+planned updates, skipped computers, and restart impact before you run them.
+Offline computers retain their last known version until they reconnect.

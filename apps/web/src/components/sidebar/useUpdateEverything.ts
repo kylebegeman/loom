@@ -1,13 +1,20 @@
 import { useAtomValue } from "@effect/atom-react";
 import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
-import { Atom } from "effect/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useMemo } from "react";
 
 import { APP_VERSION } from "~/branding";
-import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import {
+  isLocalUpdateEnvironment,
+  updateEnvironmentInScope,
+  type UpdateScope,
+} from "~/fork/connections/updateScope";
 import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
-import { useNpmReleasePublished } from "~/state/npmRelease";
+import {
+  isRuntimeArchivePublished,
+  useRuntimeReleaseAssets,
+} from "~/fork/connections/runtimeRelease";
 import { serverEnvironment } from "~/state/server";
 import { environmentSession } from "~/state/session";
 import { getProviderUpdateRunOutcome } from "../ProviderUpdateLaunchNotification.logic";
@@ -40,19 +47,30 @@ const UPDATE_RESTART_DELAY_MS = 5_000;
 export type ReportLocalUpdateError = (title: string, description: string) => void;
 
 /**
- * The remote half of the sidebar update button: outdated providers on every
- * connected machine, and servers behind the version this client runs or is
- * about to install (`localUpdateVersion`). Servers that install from npm appear
- * only once npm confirms that version. `run` performs the whole pass, including
+ * Outdated providers and runtimes within the caller's machine scope. Runtime
+ * archives must be published for the destination computer's platform.
+ * `run` performs the whole pass, including
  * this app's own download and install when given. It updates quietly, tracks
  * each machine in the run state, and reports one summary toast at the end.
  * This app relaunches once every server restarts into its update, after a
  * short countdown the user can postpone. The summary then waits for the
  * relaunch, and servers still restarting are followed after it.
  */
-export function useUpdateEverything(localUpdateVersion: string | null) {
+// fork: machine-updates - The footer owns local updates; Computers owns fleet updates.
+export function useUpdateEverything(localUpdateVersion: string | null, scope: UpdateScope) {
   const targetVersion = localUpdateVersion ?? APP_VERSION;
-  const { environments } = useEnvironments();
+  const { environments: allEnvironments } = useEnvironments();
+  const environments = useMemo(
+    () =>
+      allEnvironments.filter((environment) =>
+        updateEnvironmentInScope(environment.entry.target, scope, isElectron),
+      ),
+    [allEnvironments, scope],
+  );
+  const environmentIds = useMemo(
+    () => new Set(environments.map((environment) => environment.environmentId)),
+    [environments],
+  );
   const machinesAtom = useMemo(
     () =>
       Atom.make((get) =>
@@ -60,11 +78,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
           environmentId: environment.environmentId,
           label: environment.label,
           serverConfig: environment.serverConfig,
-          connected: environment.connection.phase === "connected",
-          hostedByThisApp:
-            isElectron &&
-            (environment.entry.target._tag === "PrimaryConnectionTarget" ||
-              isDesktopLocalConnectionTarget(environment.entry.target)),
+          connected: environment.entry.enabled && environment.connection.phase === "connected",
+          hostedByThisApp: isLocalUpdateEnvironment(environment.entry.target, isElectron),
           canMaintain: canUpdateServer(
             get(environmentSession.sessionStateAtom(environment.environmentId)),
           ),
@@ -78,13 +93,15 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     machines,
     targetVersion,
   );
-  // A desktop-managed server installs from its own app's update feed, so only
-  // servers that download t3 from npm wait for npm to publish the version.
-  const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
-  const published = useNpmReleasePublished(needsNpm ? targetVersion : null);
-  const servers = published
-    ? behindServers
-    : behindServers.filter((server) => server.selfUpdate === "desktop-managed");
+  const needsArchive = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
+  const release = useRuntimeReleaseAssets(needsArchive ? targetVersion : null);
+  const assets = AsyncResult.getOrElse(release, () => []);
+  const servers = behindServers.filter((server) => {
+    if (server.selfUpdate === "desktop-managed") return true;
+    const platform = machines.find((machine) => machine.environmentId === server.environmentId)
+      ?.serverConfig?.environment.platform;
+    return platform !== undefined && isRuntimeArchivePublished(assets, targetVersion, platform);
+  });
   const skipped: ReadonlyArray<SkippedMachine> = [
     ...unreachable,
     ...behindServers
@@ -92,15 +109,23 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
-        reason: `t3@${targetVersion} is not on npm yet`,
+        reason: AsyncResult.isFailure(release)
+          ? "could not verify runtime release"
+          : AsyncResult.isInitial(release)
+            ? "checking runtime release"
+            : "runtime archive is not published for this computer",
       })),
   ];
-  const restarts = collectRestartingMachines(machines, servers, localUpdateVersion !== null);
-  const providers = useProviderUpdates();
+  const restarts = collectRestartingMachines(
+    machines,
+    servers,
+    scope === "local" && localUpdateVersion !== null,
+  );
+  const providers = useProviderUpdates(environmentIds);
   const updateServer = useServerUpdate();
 
   const { summary, lines } = describeUpdateEverything({
-    localVersion: localUpdateVersion,
+    localVersion: scope === "local" ? localUpdateVersion : null,
     servers,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
@@ -112,6 +137,9 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   });
 
   return {
+    machines,
+    environments,
+    targetVersion,
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
     /** Short label for the tooltip and the confirmation title. */
     summary,
@@ -164,12 +192,19 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
         });
       }
       const localVersion = installLocal ? localUpdateVersion : null;
-      setUpdateEverythingRun(() => ({
-        localVersion,
-        phase: "providers",
-        restartAt: null,
-        machines: Array.from(machinesById.values()),
-      }));
+      let started = false;
+      setUpdateEverythingRun((existing) => {
+        if (existing !== null) return existing;
+        started = true;
+        return {
+          scope,
+          localVersion,
+          phase: "providers",
+          restartAt: null,
+          machines: Array.from(machinesById.values()),
+        };
+      });
+      if (!started) return;
       const providerFailures = new Map<UpdateRunMachine["environmentId"], string>();
       const finishedServers: Array<{ label: string; outcome: ServerUpdateOutcome }> = [];
       try {
@@ -216,9 +251,11 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
                 server.environmentId,
                 serverOutcome.status === "failed"
                   ? serverOutcome.message
-                  : (providerFailures.get(server.environmentId) ?? null),
+                  : serverOutcome.status === "skipped"
+                    ? "Could not start the update"
+                    : (providerFailures.get(server.environmentId) ?? null),
                 {
-                  serverUpdated: serverOutcome.status !== "failed",
+                  serverUpdated: serverOutcome.status === "updated",
                   providerFailure: providerFailures.get(server.environmentId) ?? null,
                 },
               );

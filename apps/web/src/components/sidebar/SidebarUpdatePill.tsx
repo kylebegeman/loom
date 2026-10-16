@@ -193,13 +193,11 @@ async function installLocalUpdate(
 }
 
 /**
- * The sidebar update button. With only a local app update it downloads, then
- * installs. When other machines' servers or any providers are behind, one
- * click updates everything: providers, then servers, then this app last. On
- * web there is no local app, so the button shows only for remote updates.
+ * Downloads and installs this app and updates providers hosted on this computer.
+ * Fleet updates live on the Computers page.
  */
 export function SidebarUpdatePill() {
-  return <SidebarUpdateControl />;
+  return isElectron ? <SidebarUpdateControl /> : null;
 }
 
 function SidebarUpdateControl() {
@@ -227,11 +225,13 @@ function SidebarUpdateControl() {
   // Remote servers follow this app to the version it is about to install.
   const localUpdateVersion =
     state && action !== "none" ? getDesktopUpdateDownloadedVersion(state) : null;
-  const everything = useUpdateEverything(localUpdateVersion);
+  // fork: machine-updates - Remote availability and progress stay in Computers.
+  const everything = useUpdateEverything(localUpdateVersion, "local");
   const runsEverything = everything.hasUpdates && !isDownloading;
   // Providers leave the list once queued, so the run keeps its own state.
-  const run = useUpdateEverythingRun();
-  const isRunningEverything = run !== null;
+  const activeRun = useUpdateEverythingRun();
+  const run = activeRun?.scope === "local" ? activeRun : null;
+  const isRunningEverything = activeRun !== null;
   const showCheckIcon = shouldShowDesktopUpdateCheckIcon({
     isAnimationLatched: isCheckAnimationLatched,
     isChecking: state?.status === "checking",
@@ -387,9 +387,6 @@ function SidebarUpdateControl() {
       }),
     );
   }, [prefersReducedMotion, state?.status]);
-
-  // Web has no local app to check, so it only shows the button for remote work.
-  if (!isElectron && !runsEverything && !isRunningEverything) return null;
 
   const statusIcon = (
     <DesktopUpdateStatusIcon

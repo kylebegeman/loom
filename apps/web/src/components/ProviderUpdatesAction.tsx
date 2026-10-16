@@ -1,5 +1,7 @@
-import { PROVIDER_DISPLAY_NAMES } from "@t3tools/contracts";
+import { PROVIDER_DISPLAY_NAMES, type EnvironmentId } from "@t3tools/contracts";
 import { useMemo, useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react";
+import { Atom } from "effect/reactivity";
 
 import { useEnvironments } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
@@ -23,16 +25,35 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
  * settles with every result when every update has finished. `quiet` skips the
  * toast, for a caller that reports the results itself.
  */
-export function useProviderUpdates() {
+// fork: machine-updates - Scoped callers must not send provider updates to other computers.
+export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) {
   const { environments } = useEnvironments();
+  const permittedAtom = useMemo(
+    () =>
+      Atom.make(
+        (get) =>
+          new Set(
+            environments
+              .filter((environment) =>
+                get(serverEnvironment.updateProvider.permissionAtom(environment.environmentId)),
+              )
+              .map((environment) => environment.environmentId),
+          ),
+      ),
+    [environments],
+  );
+  const permitted = useAtomValue(permittedAtom);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
   const machines = useMemo(
     () =>
       environments.flatMap((environment) => {
+        if (!permitted.has(environment.environmentId)) return [];
+        if (environmentIds !== undefined && !environmentIds.has(environment.environmentId))
+          return [];
         const providers = environment.serverConfig?.providers ?? [];
-        if (environment.connection.phase !== "connected") {
+        if (!environment.entry.enabled || environment.connection.phase !== "connected") {
           return [];
         }
         const candidates = collectProviderUpdateCandidates(providers).filter((candidate) =>
@@ -42,7 +63,7 @@ export function useProviderUpdates() {
           ? [{ environmentId: environment.environmentId, label: environment.label, candidates }]
           : [];
       }),
-    [environments],
+    [environments, environmentIds, permitted],
   );
 
   const updateAll = async ({ quiet = false }: { readonly quiet?: boolean } = {}) => {

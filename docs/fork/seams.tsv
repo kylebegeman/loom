@@ -245,3 +245,7 @@ apps/web/src/components/settings/settingsSearch.ts	respectful-notifications	1
 apps/web/src/components/pullRequest/guide/PullRequestGuideRunCoordinator.tsx	respectful-notifications	2
 packages/contracts/src/settings.ts	respectful-notifications	2
 packages/contracts/src/settings.test.ts	respectful-notifications	1
+apps/web/src/components/ProviderUpdatesAction.tsx	machine-updates	1
+apps/web/src/components/sidebar/SidebarUpdatePill.tsx	machine-updates	1
+apps/web/src/components/sidebar/useUpdateEverything.ts	machine-updates	1
+apps/web/src/components/sidebar/updateEverything.logic.ts	machine-updates	1
