@@ -186,8 +186,13 @@ export function remoteRefreshFailureDelay(
 export class VcsStatusBroadcaster extends Context.Service<
   VcsStatusBroadcaster,
   {
+    /**
+     * Cached status, loading what is missing. `refreshUpstream: false` (fork) reads remote
+     * divergence from the last fetch instead of fetching a stale upstream.
+     */
     readonly getStatus: (
       input: VcsStatusInput,
+      options?: { readonly refreshUpstream?: boolean },
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
     readonly refreshLocalStatus: (
       cwd: string,
@@ -369,7 +374,7 @@ export const make = Effect.gen(function* () {
 
   const getStatus: VcsStatusBroadcaster["Service"]["getStatus"] = Effect.fn(
     "VcsStatusBroadcaster.getStatus",
-  )(function* (input) {
+  )(function* (input, options) {
     const cwd = yield* withFileSystem(normalizeCwd(input.cwd));
     const cached = yield* getCachedStatus(cwd);
     if (cached?.local && cached.remote) {
@@ -382,7 +387,9 @@ export const make = Effect.gen(function* () {
         const [local, remote] = yield* Effect.all(
           [
             latest?.local ? Effect.succeed(latest.local.value) : workflow.localStatus({ cwd }),
-            latest?.remote ? Effect.succeed(latest.remote.value) : workflow.remoteStatus({ cwd }),
+            latest?.remote
+              ? Effect.succeed(latest.remote.value)
+              : workflow.remoteStatus({ cwd }, options),
           ],
           { concurrency: "unbounded" },
         );

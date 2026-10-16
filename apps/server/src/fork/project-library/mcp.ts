@@ -146,7 +146,7 @@ export const ProjectLibraryToolkit = Toolkit.make(
     .annotate(Tool.Destructive, false),
   Tool.make("loom_library_copy_status", {
     description:
-      "Review working-copy ownership, active bindings and cleanup blockers. A current reviewToken is needed to release.",
+      "Review working-copy ownership, active bindings, cleanup blockers and each repository's branch, ahead/behind counts and uncommitted files. A current reviewToken is needed to release.",
     parameters: Schema.Struct({ workingCopyId: Library.LibraryId }),
     success: Library.LibraryCopyStatus,
     failure,

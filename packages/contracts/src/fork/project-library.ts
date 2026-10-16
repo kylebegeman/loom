@@ -12,6 +12,7 @@ import {
   TrimmedNonEmptyString,
 } from "../baseSchemas.ts";
 import { OrchestrationV2ThreadProjection } from "../orchestrationV2.ts";
+import { LibraryCopyHealth } from "./project-library-health-schema.ts";
 
 export const PROJECT_LIBRARY_FEATURE = "project-library";
 export const LibraryId = TrimmedNonEmptyString.check(Schema.isMaxLength(200));
@@ -99,6 +100,8 @@ export const LibraryWorkingCopy = Schema.Struct({
   state: Schema.Literals(["preparing", "ready", "missing", "released", "failed"]),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  /** Last known health of the copy's repositories, read on its computer. */
+  health: Schema.optional(LibraryCopyHealth),
 });
 export type LibraryWorkingCopy = typeof LibraryWorkingCopy.Type;
 export const LibraryContinuation = Schema.Struct({
@@ -353,6 +356,8 @@ export const LibraryCopyStatus = Schema.Struct({
   copy: LibraryWorkingCopy,
   blockers: Schema.Array(Schema.String),
   reviewToken: Schema.NullOr(Schema.String),
+  /** Per-repository health, present when the copy's computer can read it. */
+  health: Schema.optional(LibraryCopyHealth),
 });
 export type LibraryCopyStatus = typeof LibraryCopyStatus.Type;
 export const LibraryReleaseCopyRequest = Schema.Struct({

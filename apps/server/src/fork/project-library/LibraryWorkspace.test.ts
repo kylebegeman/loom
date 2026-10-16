@@ -26,6 +26,7 @@ import * as LibraryRecoveryPublisher from "./LibraryRecoveryPublisher.ts";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
+import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
 
@@ -105,8 +106,31 @@ const runnerLayer = Layer.effect(
     });
   }),
 );
+const vcsCalls: string[] = [];
+const vcsStatus = {
+  isRepo: true,
+  hasPrimaryRemote: true,
+  isDefaultRef: true,
+  refName: "main",
+  hasWorkingTreeChanges: true,
+  workingTree: {
+    files: [{ path: "a.ts", insertions: 1, deletions: 0 }],
+    insertions: 1,
+    deletions: 0,
+  },
+  hasUpstream: true,
+  aheadCount: 0,
+  behindCount: 2,
+  pr: null,
+};
+const broadcasterLayer = Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({
+  refreshLocalStatus: (cwd) => Effect.sync(() => (vcsCalls.push(`local:${cwd}`), vcsStatus)),
+  getStatus: (input) => Effect.sync(() => (vcsCalls.push(`get:${input.cwd}`), vcsStatus)),
+  refreshStatus: (cwd) => Effect.sync(() => (vcsCalls.push(`fetch:${cwd}`), vcsStatus)),
+});
 const hostDependencies = Layer.mergeAll(
   store,
+  broadcasterLayer,
   projectLayer,
   projections,
   Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
@@ -249,6 +273,40 @@ it.layer(layerTest)("LibraryWorkspace", (it) => {
         });
         expect(yield* fs.exists(path.join(rootPath, "web", "README.md"))).toBe(true);
       }),
+  );
+  it.effect("reports repository health in copy status and fetches only on request", () =>
+    Effect.gen(function* () {
+      const rootPath = yield* makeTemp;
+      const path = yield* Path.Path;
+      const fs = yield* FileSystem.FileSystem;
+      yield* initRepo(path.join(rootPath, "web"));
+      yield* initRepo(path.join(rootPath, "server"));
+      const service = yield* LibraryWorkspace.LibraryWorkspace;
+      const copy = yield* service.prepareCopy({
+        requestId: "health-status",
+        project: projectFor(),
+        rootPath,
+        strategy: "reuse",
+      });
+      yield* fs.remove(path.join(rootPath, "server"), { recursive: true });
+      const status = yield* service.status({ workingCopyId: copy.id });
+      expect(status.health?.copyId).toBe(copy.id);
+      expect(
+        Object.fromEntries(
+          (status.health?.repositories ?? []).map((repository) => [
+            repository.resourceId,
+            repository.error ??
+              `${repository.branch} ${repository.behind} ${repository.uncommittedFiles}`,
+          ]),
+        ),
+      ).toEqual({ web: "main 2 1", server: "missing" });
+      const ownCalls = () => vcsCalls.filter((call) => call.includes(rootPath));
+      expect(ownCalls().some((call) => call.startsWith("fetch:"))).toBe(false);
+      yield* service.health({ workingCopyId: copy.id, refreshRemote: true });
+      expect(ownCalls().filter((call) => call.startsWith("fetch:"))).toEqual([
+        `fetch:${path.join(rootPath, "web")}`,
+      ]);
+    }),
   );
   it.effect(
     "resolves whole-project and component scope while rejecting cross-host and stale bindings",

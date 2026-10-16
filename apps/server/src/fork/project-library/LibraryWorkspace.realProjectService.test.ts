@@ -19,6 +19,7 @@ import * as ProcessRunner from "../../processRunner.ts";
 import * as ProjectEnrichmentService from "../../project/ProjectEnrichmentService.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ServerSettings from "../../serverSettings.ts";
+import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspacePaths from "../../workspace/WorkspacePaths.ts";
 import * as Workspace from "./LibraryWorkspace.ts";
 import * as Store from "./LibraryWorkspaceStore.ts";
@@ -51,6 +52,7 @@ const dependencies = Layer.mergeAll(
   Store.layer,
   ProjectionStore.layer,
   ProcessRunner.layer,
+  Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
   Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
     getEnvironmentId: Effect.succeed(EnvironmentId.make("real-project-service-host")),
   }),
