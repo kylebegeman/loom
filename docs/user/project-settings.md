@@ -92,7 +92,7 @@ including offline ones: conversations started, settled, failed or archived, pull
 opened, merged, closed or failing checks, brief revisions and copies coming and going. Use the
 chips to show only some kinds, and scroll to read further back. Selecting a conversation opens
 the live thread when its computer is connected and the saved conversation otherwise; a pull
-request opens in your browser. Entries marked **estimated** were rebuilt from records saved
+request opens in your browser. Entries marked **estimated time** were rebuilt from records saved
 before the Library kept a timeline. A Library that does not keep a timeline yet shows a shorter
 **History** of copies instead. Agents can read the timeline through `loom_library_timeline`.
 

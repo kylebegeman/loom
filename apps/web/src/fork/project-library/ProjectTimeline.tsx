@@ -238,17 +238,13 @@ function TimelineRow({
         <span className="block truncate text-xs text-muted-foreground">
           {[where, folder].filter(Boolean).join(" · ")}
           <span className="ms-1.5">{when}</span>
-          {entry.approximate ? (
-            <span className="ms-1.5" title="Rebuilt from saved records, so the time is a guess">
-              estimated
-            </span>
-          ) : null}
+          {entry.approximate ? <span className="ms-1.5">estimated time</span> : null}
         </span>
       </span>
     </>
   );
   const row = "-mx-2 flex gap-2.5 rounded-lg px-2 py-1.5";
-  const linked = `${row} outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring`;
+  const linked = `${row} outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
   switch (link?.kind) {
     case "pull-request":
       return (
