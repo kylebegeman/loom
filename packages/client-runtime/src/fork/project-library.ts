@@ -9,6 +9,7 @@ import {
   LIBRARY_HEALTH_WS_METHODS as LH,
   LIBRARY_TIMELINE_WS_METHODS as LT,
   LIBRARY_BRIEF_WS_METHODS as BRIEF,
+  LIBRARY_SEARCH_WS_METHODS as LS,
 } from "@t3tools/contracts/fork";
 import * as Schema from "effect/Schema";
 import { persistQuery } from "../state/queryPersistence.ts";
@@ -113,6 +114,14 @@ export function createProjectLibraryAtoms<R, E>(
       tag: LT.timeline,
       refreshTrigger: ({ environmentId, input }) =>
         input.before === undefined ? refreshes({ environmentId, input: {} }) : undefined,
+    }),
+    /**
+     * Query the authority, which must advertise `library-search`. Results do not follow Library
+     * changes, so pages already read stay put while more are read.
+     */
+    search: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "loom:library:search",
+      tag: LS.search,
     }),
     copyStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "loom:library:copy-status",
