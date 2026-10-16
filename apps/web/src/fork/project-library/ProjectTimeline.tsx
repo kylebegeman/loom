@@ -129,15 +129,23 @@ function TimelineFeed({
           input: { ...input, before: reading },
         }),
   );
-  useEffect(() => {
-    const page = newest.data;
-    if (page) setFeed((current) => mergeLibraryTimelinePage(current, page));
-  }, [newest.data]);
-  useEffect(() => {
-    const page = older.data;
-    if (page && reading !== null)
-      setFeed((current) => mergeLibraryTimelinePage(current, page, reading));
-  }, [older.data, reading]);
+  // Each page merges once, while rendering, as it arrives.
+  const newestPage = newest.data;
+  const [mergedNewest, setMergedNewest] = useState<typeof newestPage>(null);
+  if (newestPage !== mergedNewest) {
+    setMergedNewest(newestPage);
+    if (newestPage) setFeed((current) => mergeLibraryTimelinePage(current, newestPage));
+  }
+  const olderPage = older.data;
+  const [mergedOlder, setMergedOlder] = useState<{
+    page: typeof olderPage;
+    reading: typeof reading;
+  }>({ page: null, reading: null });
+  if (olderPage !== mergedOlder.page || reading !== mergedOlder.reading) {
+    setMergedOlder({ page: olderPage, reading });
+    if (olderPage && reading !== null)
+      setFeed((current) => mergeLibraryTimelinePage(current, olderPage, reading));
+  }
 
   const cursor = feed.nextBefore;
   const loadingOlder = reading !== null && reading === cursor && older.isPending;

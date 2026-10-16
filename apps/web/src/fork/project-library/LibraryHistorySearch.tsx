@@ -125,15 +125,23 @@ function SearchResults({
           input: { ...request, cursor: reading },
         }),
   );
-  useEffect(() => {
-    const page = first.data;
-    if (page) setFeed((current) => mergeLibrarySearchPage(current, page));
-  }, [first.data]);
-  useEffect(() => {
-    const page = more.data;
-    if (page && reading !== null)
-      setFeed((current) => mergeLibrarySearchPage(current, page, reading));
-  }, [more.data, reading]);
+  // Each page merges once, while rendering, as it arrives.
+  const firstPage = first.data;
+  const [mergedFirst, setMergedFirst] = useState<typeof firstPage>(null);
+  if (firstPage !== mergedFirst) {
+    setMergedFirst(firstPage);
+    if (firstPage) setFeed((current) => mergeLibrarySearchPage(current, firstPage));
+  }
+  const morePage = more.data;
+  const [mergedMore, setMergedMore] = useState<{
+    page: typeof morePage;
+    reading: typeof reading;
+  }>({ page: null, reading: null });
+  if (morePage !== mergedMore.page || reading !== mergedMore.reading) {
+    setMergedMore({ page: morePage, reading });
+    if (morePage && reading !== null)
+      setFeed((current) => mergeLibrarySearchPage(current, morePage, reading));
+  }
 
   const cursor = feed.nextCursor;
   if (cursor === undefined) {
