@@ -9,6 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { parseLoomConnectConfig } from "./connect-config.ts";
 
+import { normalizeDesktopUpdateReleaseNotes } from "../../apps/desktop/src/updates/releaseNotes.ts";
 import { parseUpdateManifest } from "../lib/update-manifest.ts";
 import {
   buildEnvironment,
@@ -22,6 +23,8 @@ import {
   prunePublishedBuilds,
   releaseForTag,
   releaseFromRepository,
+  releaseHistory,
+  releaseNotes,
   ensureUpstreamProvenance,
   restoreBuildInputs,
   reservePublicationTag,
@@ -501,6 +504,58 @@ describe("Loom update publishing", () => {
     } finally {
       await NodeFSP.rm(fixture.root, { recursive: true, force: true });
     }
+  });
+
+  it("lists the commits since the previous publication as the popover's changes", async () => {
+    const fixture = await publicationFixture();
+    try {
+      fixture.commit("feat(web): earlier work");
+      fixture.git("tag", "0.0.64-nightly.20261015.3158");
+      fixture.commit("fix(mobile): stable-only fix");
+      fixture.git("tag", "0.0.70");
+      fixture.commit("feat(library): let projects carry a chosen color");
+      fixture.commit("docs(plans): claim LP-01");
+      fixture.commit("fix(web): give the computer chip a subtle hover surface");
+      const release = releaseForTag(
+        "loom-v0.0.65-nightly.20261015.3158",
+        fixture.git("rev-parse", "HEAD"),
+        {
+          upstreamTags: ["v0.0.46-nightly.20261015.3158"],
+        },
+      );
+      const history = releaseHistory(release, fixture.source);
+      expect(history.previous).toBe("0.0.64-nightly.20261015.3158");
+
+      const notes = releaseNotes(release, history.previous, history.subjects);
+      expect(notes).toContain(
+        "https://github.com/kylebegeman/loom/compare/0.0.64-nightly.20261015.3158...0.0.65-nightly.20261015.3158",
+      );
+      expect(notes).toContain("v0.0.46-nightly.20261015.3158");
+      const popover = normalizeDesktopUpdateReleaseNotes(
+        [{ version: release.version, note: notes }],
+        release.version,
+        "nightly",
+      );
+      expect(popover.releaseNotes).toEqual([
+        {
+          version: release.version,
+          items: [
+            "Web: give the computer chip a subtle hover surface",
+            "Library: let projects carry a chosen color",
+            "Mobile: stable-only fix",
+          ],
+          totalItems: 3,
+        },
+      ]);
+    } finally {
+      await NodeFSP.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it("says so when a publication carries no app changes", () => {
+    const release = releaseForTag("loom-v0.0.65-nightly.20261015.3158", COMMIT);
+    const notes = releaseNotes(release, "0.0.64-nightly.20261015.3158", ["docs: update plan"]);
+    expect(notes).toContain("- No app changes since 0.0.64-nightly.20261015.3158.");
   });
 
   it("refuses upstream, missing and mock update feeds", () => {

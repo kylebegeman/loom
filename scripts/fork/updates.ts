@@ -659,21 +659,83 @@ async function prepare(release: Release) {
   }
 }
 
+const CONVENTIONAL_SUBJECT = /^([a-z]+)(?:\(([^)]+)\))?!?:\s+(.+)$/i;
+// Commits that cannot change what an installed Loom does stay out of the change list.
+const UNLISTED_CHANGE_TYPES = new Set(["docs", "test"]);
+
+const sentenceCase = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+/** Turns first-parent commit subjects into readable change list items, in the same order. */
+export function releaseChangeItems(subjects: readonly string[]) {
+  return subjects.flatMap((raw) => {
+    const subject = raw.trim();
+    const match = CONVENTIONAL_SUBJECT.exec(subject);
+    if (!match) return subject ? [subject] : [];
+    const [, type, scope, description] = match;
+    if (UNLISTED_CHANGE_TYPES.has(type!.toLowerCase())) return [];
+    return [scope ? `${sentenceCase(scope)}: ${description}` : sentenceCase(description!)];
+  });
+}
+
+/**
+ * GitHub release body for one publication. `subjects` are the first-parent commits since
+ * `previous`, oldest first. The desktop popover lists items up to a "Full changelog"
+ * heading and shows the newest first, so build details stay below that heading.
+ */
+export function releaseNotes(
+  release: Release,
+  previous: string | undefined,
+  subjects: readonly string[],
+) {
+  const items = releaseChangeItems(subjects);
+  const changes =
+    items.length > 0
+      ? items.map((item) => `- ${item}`).join("\n")
+      : `- ${previous ? `No app changes since ${previous}.` : "First Loom publication."}`;
+  const compare = previous
+    ? `[${previous}...${release.version}](https://github.com/${REPOSITORY}/compare/${previous}...${release.version})\n\n`
+    : "";
+  const upstream = release.upstreamTag
+    ? ` Includes upstream T3 Code [${release.upstreamTag}](https://github.com/pingdotgg/t3code/releases/tag/${release.upstreamTag}).`
+    : "";
+  return `## What's changed
+
+${changes}
+
+## Full changelog
+
+${compare}Loom built from the checked integration [${release.tag}](https://github.com/${REPOSITORY}/tree/${release.tag}).${upstream}
+
+Source commit: ${release.commit}. macOS Apple Silicon; signed with Kyle's local Loom certificate.
+
+Use Loom's update button to download, then restart and install when ready.
+`;
+}
+
+/** The newest earlier publication on the release's channel and the commit subjects since it. */
+export function releaseHistory(release: Release, sourceDir = SOURCE_DIR) {
+  const previous = publicationTags(sourceDir)
+    .filter(
+      (item) =>
+        item.tag.includes("-nightly.") === (release.channel === "nightly") &&
+        compareVersions(item.tag, release.version) < 0,
+    )
+    .toSorted((a, b) => compareVersions(b.tag, a.tag))[0];
+  if (!previous) return { previous: undefined, subjects: [] };
+  const log = run(
+    "git",
+    ["log", "--first-parent", "--reverse", "--format=%s", `${previous.commit}..${release.commit}`],
+    { cwd: sourceDir },
+  );
+  return { previous: previous.tag, subjects: log ? log.split("\n") : [] };
+}
+
 async function publish(release: Release, prepared: Awaited<ReturnType<typeof prepare>>) {
   const state = await releaseState(release);
   if (state === "published") return;
   const notes = NodePath.join(prepared.record, "updates/release-notes.md");
-  await NodeFSP.writeFile(
-    notes,
-    `Loom built from the checked integration [${release.tag}](https://github.com/${REPOSITORY}/tree/${release.tag}).
-
-${release.upstreamTag ? `Includes upstream T3 Code [${release.upstreamTag}](https://github.com/pingdotgg/t3code/releases/tag/${release.upstreamTag}).` : ""}
-
-Use Loom's update button to download, then restart and install when ready.
-
-Source commit: ${release.commit}. macOS Apple Silicon; signed with Kyle's local Loom certificate.
-`,
-  );
+  const history = releaseHistory(release);
+  await NodeFSP.writeFile(notes, releaseNotes(release, history.previous, history.subjects));
   if (state === "missing") {
     run(
       "gh",
