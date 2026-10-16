@@ -104,6 +104,16 @@ older than the minimum. A check that fails shows the tool as not checked rather 
 secret names are listed as a reminder; their values are never read. Agents can run the same
 check with `loom_library_profile_readiness`. Computers on an older version show neither.
 
+New conversation also uses those checks to choose a computer. A computer that is missing a
+required tool, or has one older than the minimum, is listed after the ready ones with the
+problem beside its name, for example "Go 1.21 (needs 1.24)", and is never chosen for you. A
+computer whose tools could not be checked keeps its usual place. When the setup allows Mini
+jobs and a Mini worker registered on the chosen computer is ready with every required tool,
+the dialog names it under the computer. The conversation still starts on the computer; its
+agent can send long builds and tests to that worker. Agents can ask the Library for the same
+ranking with `loom_library_launch_candidates`, which uses the copies and computers the Library
+knows about and leaves tool checks to `loom_library_profile_readiness`.
+
 **Timeline** on the project page lists what happened on the project from every computer,
 including offline ones: conversations started, settled, failed or archived, pull requests
 opened, merged, closed or failing checks, brief revisions and copies coming and going. Use the
