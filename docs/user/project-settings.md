@@ -175,6 +175,13 @@ copies, checking each one again just before removing it, and can also archive th
 Archive is for work you have finished or set aside: an archived project leaves the project
 pickers, its conversations stay readable, and you can restore it any time from **Archived**.
 
+On mobile, a project page shows the same copy states and required-tool checks, its latest
+entries under **Lately** with **Full timeline** for the rest, and waiting brief suggestions in
+its Brief section. **Search conversation history** on the Projects page and **Search this
+project's history** on a project page search saved conversations. Resting projects are listed
+under **Resting** on the Projects page; select one to tidy it up. New conversation chooses a
+computer the same way, but mobile does not name Mini workers.
+
 Saved projects and conversation history remain readable when a computer is offline.
 Conversation history shows when it was last saved to the Library; work that has not uploaded
 may be missing. Open saved attachments from the Library, and use **Save pending history**
