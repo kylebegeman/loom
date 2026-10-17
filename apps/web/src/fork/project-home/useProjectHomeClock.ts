@@ -7,13 +7,7 @@ import { useNowMinute } from "~/hooks/useNowMinute";
 export function useProjectHomeClock(threads: readonly EnvironmentThreadShell[]) {
   const minute = useNowMinute();
   const [wakeTick, bumpWakeTick] = useReducer((tick: number) => tick + 1, 0);
-  const now = useMemo(() => {
-    void minute;
-    void wakeTick;
-    void threads;
-    return new Date().toISOString();
-    // oxlint-disable-next-line react/memo-dependencies -- Shell changes and timer ticks invalidate this real-clock snapshot before snooze classification.
-  }, [minute, wakeTick, threads]);
+  const now = useMemo(() => readClock(minute, wakeTick, threads), [minute, wakeTick, threads]);
   const nextWake = useMemo(() => {
     let deadline = Number.POSITIVE_INFINITY;
     for (const thread of threads) {
@@ -34,4 +28,13 @@ export function useProjectHomeClock(threads: readonly EnvironmentThreadShell[]) 
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A clamped long snooze must rearm after its timer refreshes the clock even when its deadline stays the same.
   }, [nextWake, now]);
   return now;
+}
+
+/**
+ * Shell changes and timer ticks invalidate the real-clock snapshot before snooze classification.
+ * They arrive as arguments because the React Compiler drops `void` reads from its dependencies and
+ * would otherwise cache the first reading forever.
+ */
+function readClock(..._invalidatedBy: readonly unknown[]) {
+  return new Date().toISOString();
 }
