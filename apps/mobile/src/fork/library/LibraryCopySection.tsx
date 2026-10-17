@@ -5,8 +5,8 @@ import type { LibraryCopyStatus, LibraryWorkingCopy } from "@t3tools/contracts/f
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
-import { AppText as Text } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -166,7 +166,7 @@ export function LibraryCopySection(props: {
           </Text>
         ) : null}
         {!removed ? (
-          <MaterialButton
+          <Button
             label={pending ? "Reviewing…" : borrowed ? "Review unregister" : "Review removal"}
             tone="text"
             disabled={!allowed || pending || recoveryProgress !== null}
@@ -211,7 +211,7 @@ export function LibraryCopySection(props: {
               </Text>
             ))}
             <View className="flex-row flex-wrap gap-2">
-              <MaterialButton
+              <Button
                 label={borrowed ? "Confirm unregister" : "Confirm removal"}
                 tone="danger"
                 disabled={
@@ -225,7 +225,7 @@ export function LibraryCopySection(props: {
                   void remove();
                 }}
               />
-              <MaterialButton
+              <Button
                 label="Cancel"
                 tone="text"
                 disabled={pending}
@@ -235,7 +235,7 @@ export function LibraryCopySection(props: {
           </View>
         ) : null}
         {removedCopy && !removalRegistered && error ? (
-          <MaterialButton
+          <Button
             label="Save removed copy status"
             disabled={pending || !props.authorityReady || !canRegister}
             onPress={() => {
@@ -244,7 +244,7 @@ export function LibraryCopySection(props: {
           />
         ) : null}
         {borrowed && removed ? (
-          <MaterialButton
+          <Button
             label="Use folder again"
             tone="text"
             disabled={!props.authorityReady || recoveryProgress !== null || pending}
@@ -260,7 +260,7 @@ export function LibraryCopySection(props: {
             <Text selectable className="text-xs text-foreground-muted">
               SHA-256: {copy.recovery.sha256}
             </Text>
-            <MaterialButton
+            <Button
               label={recoveryProgress ?? "Save recovery archive"}
               disabled={!props.authorityReady || pending || recoveryProgress !== null}
               onPress={() => {
@@ -268,7 +268,7 @@ export function LibraryCopySection(props: {
               }}
             />
             {recoveryProgress ? (
-              <MaterialButton
+              <Button
                 label="Cancel download"
                 tone="text"
                 onPress={() => recoveryController.current?.abort()}

@@ -12,10 +12,10 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { Pressable, View } from "react-native";
 
-import { AppText as Text } from "../../../components/AppText";
-import { SymbolView } from "../../../components/AppSymbol";
-import { ControlPillMenu } from "../../../components/ControlPill";
-import { MaterialButton } from "../../../components/MaterialButton";
+import { AppText as Text } from "../../../components/ui/AppText";
+import { SymbolView } from "../../../components/ui/AppSymbol";
+import { Menu } from "../../../components/ui/Menu";
+import { Button } from "../../../components/ui/Button";
 import { SettingsSection } from "../../../features/settings/components/SettingsSection";
 import { projectStorageRolloutQueueState } from "./projectStorageRolloutQueueState";
 
@@ -85,12 +85,12 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
             {PROJECT_STORAGE_ROLLOUT_CONFIRMATION_NOTICE}
           </Text>
           <View className="flex-row flex-wrap items-center gap-2">
-            <MaterialButton
+            <Button
               label={`Save ${confirmation.entries.length} ${confirmation.entries.length === 1 ? "choice" : "choices"}`}
               tone="primary"
               onPress={() => void controller.save(confirmation)}
             />
-            <MaterialButton
+            <Button
               label="Back to choices"
               tone="text"
               onPress={() => controller.cancelConfirmation()}
@@ -106,7 +106,7 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
                 ? "Saving one location at a time. Completed choices stay saved."
                 : "Checking one location at a time. Working files stay unchanged."}
           </Text>
-          <MaterialButton
+          <Button
             label={snapshot.phase === "saving" ? "Stop remaining saves" : "Stop review"}
             disabled={snapshot.cancelRequested}
             tone="text"
@@ -123,7 +123,7 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
           ) : null}
           <View className="flex-row flex-wrap items-center gap-2">
             {state.reviewable.length > 0 ? (
-              <MaterialButton
+              <Button
                 label={
                   state.savedCount > 0 || state.errorCount > 0
                     ? "Check unfinished locations"
@@ -132,7 +132,7 @@ export function ProjectStorageRolloutQueue({ controller, snapshot }: Props) {
                 onPress={() => void controller.review(state.reviewable.map((row) => row.key))}
               />
             ) : null}
-            <MaterialButton
+            <Button
               label="Continue to confirmation"
               disabled={!state.canConfirm}
               tone="primary"
@@ -243,7 +243,7 @@ function FolderReview({
         ) : null}
       </View>
       {!saved && choices.length > 0 ? (
-        <ControlPillMenu
+        <Menu
           accessible
           accessibilityRole="button"
           accessibilityLabel={`Storage choice for ${row.target.projectName} on ${row.target.environmentLabel} at ${row.target.workspaceRoot}. ${row.choice ? PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[row.choice] : "Choose what stays here"}`}
@@ -283,7 +283,7 @@ function FolderReview({
               <SymbolView name="chevron.down" size={12} tintColorClassName="accent-primary-text" />
             </View>
           </Pressable>
-        </ControlPillMenu>
+        </Menu>
       ) : null}
       {!saved && row.choice ? (
         <Text className="px-4 pb-2 text-xs leading-normal text-foreground-muted">

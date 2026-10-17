@@ -70,7 +70,7 @@ vi.mock("react-native", () => ({
   View: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   Pressable: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../../components/AppText", () => ({
+vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("../../features/settings/components/SettingsSection", () => ({
@@ -90,8 +90,8 @@ vi.mock("../../features/settings/components/SettingsSection", () => ({
     </section>
   ),
 }));
-vi.mock("../../components/MaterialButton", () => ({
-  MaterialButton: ({
+vi.mock("../../components/ui/Button", () => ({
+  Button: ({
     label,
     disabled,
     onPress,
@@ -105,9 +105,9 @@ vi.mock("../../components/MaterialButton", () => ({
     </button>
   ),
 }));
-vi.mock("../../components/AppSymbol", () => ({ SymbolView: () => null }));
-vi.mock("../../components/ControlPill", () => ({
-  ControlPillMenu: ({
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/Menu", () => ({
+  Menu: ({
     children,
     actions,
     onPressAction,

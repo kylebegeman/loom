@@ -2,8 +2,8 @@ import { useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useMemo } from "react";
 import { Pressable, View } from "react-native";
-import { AppText as Text } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { useEnvironmentQuery } from "../../state/query";
 import { library, useLibraryAuthority } from "./libraryState";
 
@@ -82,7 +82,7 @@ export function LibrarySavedThreads({
         </Pressable>
       ))}
       {threads.length > 20 || index.data?.nextOffset !== null ? (
-        <MaterialButton
+        <Button
           label="Browse earlier conversations by project"
           tone="text"
           onPress={() => navigation.navigate("Library")}

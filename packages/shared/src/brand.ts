@@ -10,10 +10,11 @@
 export const BRAND_NAME = "Loom";
 
 /**
- * Stage labels that show the bare name: upstream's stable desktop stage
- * ("Alpha") and the hosted stable web channel ("Latest").
+ * Stage labels that show the bare name: upstream's stable desktop and mobile
+ * stage ("Beta", formerly "Alpha", which older desktop hosts still report) and
+ * the hosted stable web channel ("Latest").
  */
-const UNLABELED_STAGES: ReadonlySet<string> = new Set(["alpha", "latest"]);
+const UNLABELED_STAGES: ReadonlySet<string> = new Set(["beta", "alpha", "latest"]);
 
 /**
  * Display name for a release stage: "Loom" for stable builds, otherwise the

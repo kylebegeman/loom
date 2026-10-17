@@ -107,7 +107,7 @@ describe("resolveEnvironmentProjectMatch", () => {
     });
     const unindexed = makeProject("unindexed", "server", { workspaceRoot: "/srv/t3code" });
     expect(resolveEnvironmentProjectMatch([fork, unindexed], selected)).toBe(unindexed);
-    expect(resolveEnvironmentProjectMatch([fork], selected)).toBeNull();
+    expect(resolveEnvironmentProjectMatch([fork], selected)).toBeNull(); // fork: fleet-connections
   });
 
   it("does not retarget an existing draft when the target has no matching repository", () => {

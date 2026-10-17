@@ -4,23 +4,16 @@ import Constants from "expo-constants";
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Platform, View } from "react-native";
 
-import { AppText as Text } from "./AppText";
+import { AppText as Text } from "./ui/AppText";
 import { IPAD_HOME_TITLE_OFFSET } from "../lib/layoutMetrics";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
-import { useAndroidControlSizing } from "./useAndroidControlSizing";
+import { useAndroidControlSizing } from "./ui/useAndroidControlSizing";
 
-/**
- * Horizontal correction applied to content rendered in the brand title slot,
- * shared with the connection-status swap so both align identically.
- */
 export function brandTitleOffset(): number {
   if (Platform.OS !== "ios") return 0;
   return Platform.isPad && !NATIVE_WORKSPACE_COLUMNS_SUPPORTED ? IPAD_HOME_TITLE_OFFSET : 0;
 }
 
-/**
- * Compact brand lockup sized for native navigation bars.
- */
 export function CompactBrandTitle(
   props: {
     readonly allowFontScaling?: boolean;
@@ -34,6 +27,7 @@ export function CompactBrandTitle(
   return (
     <View
       aria-level={1}
+      // fork: brand
       accessibilityLabel={props.accessibilityLabel ?? `${BRAND_NAME}, Threads`}
       accessible
       role="heading"
@@ -45,6 +39,7 @@ export function CompactBrandTitle(
         className="font-t3-medium text-foreground-muted"
         style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}
       >
+        {/* fork: brand */}
         {BRAND_NAME}
       </Text>
       <View

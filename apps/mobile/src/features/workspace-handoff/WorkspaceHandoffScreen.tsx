@@ -25,9 +25,9 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
-import { AppText } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
-import { ScreenScrollView } from "../../components/ScreenScrollView";
+import { AppText } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -427,7 +427,7 @@ function WorkspaceHandoffContent({
             )}
           </View>
         )}
-        <MaterialButton
+        <Button
           label="Manage computers"
           tone="text"
           disabled={running || savingSelection}
@@ -479,7 +479,7 @@ function WorkspaceHandoffContent({
             </AppText>
           )}
           {phase !== "done" && (
-            <MaterialButton
+            <Button
               label={
                 running
                   ? "Moving work…"
@@ -497,7 +497,7 @@ function WorkspaceHandoffContent({
             />
           )}
           {attempt?.receipt && (
-            <MaterialButton
+            <Button
               label="Open conversation"
               tone={phase === "done" ? "primary" : "secondary"}
               fullWidth
@@ -509,7 +509,7 @@ function WorkspaceHandoffContent({
             canStartNew &&
             !attempt.sourceResult?.sourceSettled &&
             (error || attempt.offer || phase === "done") && (
-              <MaterialButton
+              <Button
                 label={phase === "done" ? "Move again" : "Start over"}
                 tone="text"
                 fullWidth
@@ -545,7 +545,7 @@ function DestinationComputer({
       <AppText className="font-t3-medium">{group.label}</AppText>
       {reason && <AppText className="text-sm text-foreground-muted">{reason}</AppText>}
       {group.projects.length === 0 && onPrepare ? (
-        <MaterialButton
+        <Button
           label={`Prepare project on ${group.label}`}
           disabled={disabled || !group.connected || !group.supportsHandoff || !permitted}
           onPress={onPrepare}

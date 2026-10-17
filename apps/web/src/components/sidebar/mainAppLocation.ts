@@ -1,27 +1,23 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect } from "react";
 
-// Settings, Projects, Usage, Computers, and Pull Requests use Back in the sidebar utility row.
-// fork: project-home overview pages also return to the previous conversation.
-// Other main app locations are remembered as that destination.
 export function isSidebarUtilityPage(pathname: string) {
   return (
     pathname === "/settings" ||
     pathname.startsWith("/settings/") ||
-    pathname === "/projects" ||
+    pathname === "/projects" || // fork: project-home
     pathname.startsWith("/projects/") ||
+    // fork: project-home Library overview pages also return to the previous conversation.
     pathname === "/library" ||
     pathname.startsWith("/library/") ||
     pathname === "/usage" ||
-    pathname === "/computers" ||
+    pathname === "/computers" || // fork: fleet-connections
     pathname === "/pull-requests"
   );
 }
 
 let mainAppHref: string | null = null;
 
-// Mount once in the app shell. Records the latest main app URL so Back can
-// return there no matter how many utility pages were visited since.
 export function MainAppLocationTracker() {
   const href = useLocation({
     select: (location) => (isSidebarUtilityPage(location.pathname) ? null : location.href),
@@ -32,8 +28,6 @@ export function MainAppLocationTracker() {
   return null;
 }
 
-// Leaves a utility page for the last main app URL, or the thread list when
-// the app was opened directly on a utility page.
 export function useNavigateToMainApp() {
   const navigate = useNavigate();
   return useCallback(() => navigate({ href: mainAppHref ?? "/" }), [navigate]);

@@ -3,6 +3,7 @@ import { ProjectId, RepositoryIdentity, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import { fileIdentity } from "../fork/fileIdentity.ts";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -105,6 +106,8 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
     return yield* fail("A managed project receipt already exists for this folder.");
   const root = yield* fs.stat(cwd);
   const git = yield* fs.stat(path.join(cwd, ".git"));
+  const rootId = fileIdentity(root);
+  const gitId = fileIdentity(git);
   const uid = yield* HostProcess.UserId;
   if (
     uid === undefined ||
@@ -112,9 +115,10 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
     git.type !== "Directory" ||
     Option.getOrNull(root.uid) !== uid ||
     Option.getOrNull(git.uid) !== uid ||
-    !Option.isSome(root.ino) ||
-    !Option.isSome(git.ino) ||
-    root.dev !== git.dev
+    rootId.inode === null ||
+    gitId.inode === null ||
+    rootId.device === null ||
+    rootId.device !== gitId.device
   )
     return yield* fail("Clone ownership could not be proven on this filesystem.");
   if ((yield* fs.realPath(path.join(cwd, ".git"))) !== path.join(cwd, ".git"))
@@ -126,9 +130,9 @@ export const markManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.mark
     projectId: options?.projectId ?? null,
     ownershipSource: options?.ownershipSource ?? "clone",
     retention: options?.retention ?? "inherit",
-    checkoutInode: root.ino.value,
-    gitInode: git.ino.value,
-    device: root.dev,
+    checkoutInode: rootId.inode,
+    gitInode: gitId.inode,
+    device: rootId.device,
     uid,
     birthtime: Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull),
     released: false,
@@ -179,15 +183,17 @@ export const assertManagedProjectOwned = Effect.fn("ManagedProjectCheckout.asser
     return yield* fail("The managed checkout uses an external Git directory.");
   const root = yield* fs.stat(target);
   const git = yield* fs.stat(path.join(target, ".git"));
+  const rootId = fileIdentity(root);
+  const gitId = fileIdentity(git);
   if (
     root.type !== "Directory" ||
     git.type !== "Directory" ||
-    root.dev !== receipt.device ||
-    git.dev !== receipt.device ||
+    rootId.device !== receipt.device ||
+    gitId.device !== receipt.device ||
     Option.getOrNull(root.uid) !== receipt.uid ||
     Option.getOrNull(git.uid) !== receipt.uid ||
-    Option.getOrNull(root.ino) !== receipt.checkoutInode ||
-    Option.getOrNull(git.ino) !== receipt.gitInode ||
+    rootId.inode !== receipt.checkoutInode ||
+    gitId.inode !== receipt.gitInode ||
     Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull) !==
       receipt.birthtime
   )
@@ -340,13 +346,15 @@ export const restoreManagedProjectCheckout = Effect.fn("ManagedProjectCheckout.r
     if (!restored) return yield* fail("The managed project's recovery archive is unavailable.");
     const root = yield* fs.stat(receipt.workspaceRoot);
     const git = yield* fs.stat(path.join(receipt.workspaceRoot, ".git"));
-    if (!Option.isSome(root.ino) || !Option.isSome(git.ino))
+    const rootId = fileIdentity(root);
+    const gitId = fileIdentity(git);
+    if (rootId.inode === null || gitId.inode === null)
       return yield* fail("The restored checkout cannot be identified safely.");
     // A partially removed old folder is never reused. It stays retained if deletion was interrupted.
     yield* writeReceipt({
       ...receipt,
-      checkoutInode: root.ino.value,
-      gitInode: git.ino.value,
+      checkoutInode: rootId.inode,
+      gitInode: gitId.inode,
       birthtime: Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull),
       released: false,
       removalPath:

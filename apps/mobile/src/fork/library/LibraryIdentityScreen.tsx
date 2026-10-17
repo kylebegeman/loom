@@ -12,8 +12,8 @@ import { AuthRequest, exchangeCodeAsync, makeRedirectUri, ResponseType } from "e
 import Constants from "expo-constants";
 import { useRef, useState } from "react";
 import { View } from "react-native";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { environmentCatalog } from "../../connection/catalog";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useSavedRemoteConnection } from "../../state/use-remote-environment-registry";
@@ -152,7 +152,7 @@ function LibraryIdentityContent({ environmentId }: { environmentId: EnvironmentI
             This address must reach the saved library server.
           </Text>
         ) : null}
-        <MaterialButton
+        <Button
           label={pending ?? "Sign in to library"}
           tone="primary"
           disabled={pending !== null || !address.trim()}

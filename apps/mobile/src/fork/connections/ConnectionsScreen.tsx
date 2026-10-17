@@ -1,4 +1,4 @@
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useNavigation } from "@react-navigation/native";
 import { useAtomValue } from "@effect/atom-react";
 import { managedRelaySessionAtom } from "@t3tools/client-runtime/relay";
@@ -6,15 +6,15 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useRef, useState } from "react";
 import { Platform, RefreshControl, View } from "react-native";
 import { useAuth } from "@clerk/expo";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsActionRow } from "../../features/settings/components/SettingsActionRow";
 import { hasCloudPublicConfig } from "../../features/cloud/publicConfig";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SettingsScreen } from "../../features/settings/components/SettingsScreen";
-import { AndroidAnchoredMenu } from "../../components/AndroidAnchoredMenu";
-import { AndroidHeaderIconButton } from "../../components/AndroidScreenHeader";
+import { AndroidAnchoredMenu } from "../../components/ui/AndroidAnchoredMenu";
+import { AndroidHeaderIconButton } from "../../components/ui/AndroidScreenHeader";
 import { CloudEnvironmentRows } from "../../features/connection/CloudEnvironmentRows";
 import { LocalEnvironmentList } from "../../features/connection/LocalEnvironmentList";
 import { GitHubRoutingSettings } from "../../features/connection/GitHubRoutingSettings";

@@ -4,6 +4,8 @@ import { BRAND_NAME, formatBrandDisplayName } from "./brand.ts";
 
 describe("fork brand display names", () => {
   it("shows the bare name for stable stages", () => {
+    expect(formatBrandDisplayName("Beta")).toBe(BRAND_NAME);
+    // Older desktop hosts still report upstream's previous stable stage.
     expect(formatBrandDisplayName("Alpha")).toBe(BRAND_NAME);
     expect(formatBrandDisplayName("Latest")).toBe(BRAND_NAME);
   });
@@ -14,7 +16,7 @@ describe("fork brand display names", () => {
   });
 
   it("applies the same policy to another base name", () => {
-    expect(formatBrandDisplayName("Alpha", "Other")).toBe("Other");
+    expect(formatBrandDisplayName("Beta", "Other")).toBe("Other");
     expect(formatBrandDisplayName("Nightly", "Other")).toBe("Other (Nightly)");
   });
 });

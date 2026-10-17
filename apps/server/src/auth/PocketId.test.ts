@@ -3,7 +3,6 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   AuthAccessWriteScope,
   AuthSessionId,
-  AuthStandardClientScopes,
   EnvironmentId,
   type AuthClientMetadata,
 } from "@t3tools/contracts";
@@ -168,7 +167,7 @@ it.effect(
         });
         expect(test.issued[0]).toMatchObject({
           subject: "pocket-id:owner-id",
-          scopes: AuthStandardClientScopes,
+          scopes: PocketId.PocketIdStandardScopes,
           client: CLIENT,
           method: "bearer-access-token",
         });

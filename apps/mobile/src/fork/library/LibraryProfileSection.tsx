@@ -15,8 +15,8 @@ import {
 } from "@t3tools/client-runtime/fork";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../../features/settings/components/SettingsSwitchRow";
 import { cn } from "../../lib/cn";
@@ -63,7 +63,7 @@ export function LibraryProfileSection(props: {
                 {script.command}
               </Text>
             </View>
-            <MaterialButton
+            <Button
               label="Remove"
               tone="text"
               disabled={disabled}
@@ -76,7 +76,7 @@ export function LibraryProfileSection(props: {
         {sources.length ? (
           <View className="gap-2 p-4">
             {sources.map((source) => (
-              <MaterialButton
+              <Button
                 key={`${source.environmentId}:${source.projectId}`}
                 label={`Use ${source.title} on ${props.hostLabel(source.environmentId)} (${source.scripts.length})`}
                 disabled={disabled}
@@ -132,7 +132,7 @@ export function LibraryProfileSection(props: {
                 />
                 {LIBRARY_TOOL_CATALOG.some((entry) => entry.id === tool.id) ? null : (
                   // Only catalog tools have a pill above, so others are removed here.
-                  <MaterialButton
+                  <Button
                     label="Remove"
                     tone="text"
                     disabled={disabled}
@@ -182,7 +182,7 @@ export function LibraryProfileSection(props: {
             <Text className="min-w-0 flex-1 text-sm text-foreground" numberOfLines={1}>
               {draft.defaultModelSelection.model}
             </Text>
-            <MaterialButton
+            <Button
               label="Remove"
               tone="text"
               disabled={disabled}
@@ -265,7 +265,7 @@ function SecretNamesSection(props: {
               editable={!props.disabled}
               className="min-h-11 flex-1 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
             />
-            <MaterialButton label="Add" disabled={props.disabled || !value.trim()} onPress={add} />
+            <Button label="Add" disabled={props.disabled || !value.trim()} onPress={add} />
           </View>
         ) : null}
       </View>

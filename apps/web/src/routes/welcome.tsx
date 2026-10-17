@@ -1,6 +1,6 @@
 import { createFileRoute, redirect, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useEnvironment, usePrimaryEnvironmentId } from "~/state/environments";
+import { useEffect, useState } from "react"; // fork: library-only
+import { useEnvironment, usePrimaryEnvironmentId } from "~/state/environments"; // fork: library-only
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
@@ -11,7 +11,6 @@ import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 
 const decodeEnvironmentId = Schema.decodeOption(EnvironmentId);
 
-/** Onboarding overlays the workspace. Visiting /welcome reopens setup. */
 export const Route = createFileRoute("/welcome")({
   beforeLoad: ({ context }) => {
     const { authGateState } = context;
@@ -34,17 +33,14 @@ function WelcomeRouteView() {
   const isWelcomeRoute = useLocation({ select: (location) => location.pathname === "/welcome" });
   const [dismissed, setDismissed] = useState(false);
   const openNewThread = useNewThreadHandler();
+  // fork: library-only A Library-only server has no execution setup to offer.
   const primaryEnvironment = useEnvironment(usePrimaryEnvironmentId());
   const executionAvailable =
     primaryEnvironment?.serverConfig?.environment.capabilities.supportsExecution !== false;
   useEffect(() => {
     if (isWelcomeRoute && !executionAvailable) void navigate({ to: "/", replace: true });
   }, [isWelcomeRoute, executionAvailable, navigate]);
-  if (!executionAvailable) return null;
-  // An authenticated gate means a primary server is serving this app —
-  // desktop, `npx t3`, or a dev server — and that server is "this machine"
-  // no matter what hostname the browser used. Only hosted-static has no
-  // local server to offer.
+  if (!executionAvailable) return null; // fork: library-only
   const localAvailable = authGateState.status === "authenticated";
   return (
     <>

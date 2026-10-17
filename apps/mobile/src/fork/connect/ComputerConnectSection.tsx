@@ -10,10 +10,10 @@ import {
 import { AuthRelayWriteScope, type EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Platform, View } from "react-native";
+import { View } from "react-native";
 
-import { AppText } from "../../components/AppText";
-import { showConfirmDialog } from "../../components/ConfirmDialogHost";
+import { AppText } from "../../components/ui/AppText";
+import * as Dialog from "../../components/ui/Dialog";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironmentScope, readEnvironmentScope } from "../../state/session";
@@ -63,12 +63,7 @@ function confirm(
   action: () => void,
   destructive = false,
 ) {
-  if (Platform.OS === "ios") {
-    Alert.alert(title, message, [
-      { text: "Cancel", style: "cancel" },
-      { text: label, style: destructive ? "destructive" : "default", onPress: action },
-    ]);
-  } else showConfirmDialog({ title, message, confirmText: label, onConfirm: action, destructive });
+  Dialog.confirm({ title, message, confirmText: label, onConfirm: action, destructive });
 }
 
 export function ComputerConnectSection(props: {

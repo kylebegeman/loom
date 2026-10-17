@@ -1,7 +1,8 @@
-import { PROVIDER_DISPLAY_NAMES, type EnvironmentId } from "@t3tools/contracts";
-import { useMemo, useRef, useState } from "react";
-import { useAtomValue } from "@effect/atom-react";
-import { Atom } from "effect/reactivity";
+import { PROVIDER_DISPLAY_NAMES, type EnvironmentId } from "@t3tools/contracts"; // fork: machine-updates
+import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { useRef, useState } from "react";
+import { useAtomValue } from "@effect/atom-react"; // fork: machine-updates
+import { Atom } from "effect/reactivity"; // fork: machine-updates
 
 import { useEnvironments } from "~/state/environments";
 import { serverEnvironment } from "~/state/server";
@@ -16,55 +17,40 @@ import { Button } from "./ui/button";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
-/**
- * Every outdated provider with a one-click update on every connected machine,
- * plus a function that updates them all and reports the results in one toast.
- * Each server queues updates that share an installer, so sending them all
- * together is safe. The server still checks permissions: a session that
- * cannot operate a machine gets a failure line for it. The returned promise
- * settles with every result when every update has finished. `quiet` skips the
- * toast, for a caller that reports the results itself.
- */
 // fork: machine-updates - Scoped callers must not send provider updates to other computers.
 export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) {
   const { environments } = useEnvironments();
-  const permittedAtom = useMemo(
-    () =>
-      Atom.make(
-        (get) =>
-          new Set(
-            environments
-              .filter((environment) =>
-                get(serverEnvironment.updateProvider.permissionAtom(environment.environmentId)),
-              )
-              .map((environment) => environment.environmentId),
-          ),
+  // fork: machine-updates - Only computers this session may maintain are offered.
+  const permittedAtom = Atom.make(
+    (get) =>
+      new Set(
+        environments
+          .filter((environment) =>
+            get(serverEnvironment.updateProvider.permissionAtom(environment.environmentId)),
+          )
+          .map((environment) => environment.environmentId),
       ),
-    [environments],
   );
-  const permitted = useAtomValue(permittedAtom);
+  const permitted = useAtomValue(permittedAtom); // fork: machine-updates
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });
-  const machines = useMemo(
-    () =>
-      environments.flatMap((environment) => {
-        if (!permitted.has(environment.environmentId)) return [];
-        if (environmentIds !== undefined && !environmentIds.has(environment.environmentId))
-          return [];
-        const providers = environment.serverConfig?.providers ?? [];
-        if (!environment.entry.enabled || environment.connection.phase !== "connected") {
-          return [];
-        }
-        const candidates = collectProviderUpdateCandidates(providers).filter((candidate) =>
-          canOneClickUpdateProviderCandidate(candidate, providers),
-        );
-        return candidates.length > 0
-          ? [{ environmentId: environment.environmentId, label: environment.label, candidates }]
-          : [];
-      }),
-    [environments, environmentIds, permitted],
-  );
+  const machines = environments.flatMap((environment) => {
+    if (!permitted.has(environment.environmentId)) return []; // fork: machine-updates
+    // fork: machine-updates
+    if (environmentIds !== undefined && !environmentIds.has(environment.environmentId)) return [];
+    const providers = environment.serverConfig?.providers ?? [];
+    // fork: machine-updates - Switched-off computers are not updated.
+    if (!environment.entry.enabled || environment.connection.phase !== "connected") {
+      return [];
+    }
+    const candidates = collectProviderUpdateCandidates(providers).filter((candidate) =>
+      canOneClickUpdateProviderCandidate(candidate, providers),
+    );
+    return candidates.length > 0
+      ? [{ environmentId: environment.environmentId, label: environment.label, candidates }]
+      : [];
+  });
 
   const updateAll = async ({ quiet = false }: { readonly quiet?: boolean } = {}) => {
     const runs = await Promise.all(
@@ -96,14 +82,10 @@ export function useProviderUpdates(environmentIds?: ReadonlySet<EnvironmentId>) 
   return { machines, updateAll };
 }
 
-/** Provider settings button for {@link useProviderUpdates}. Renders nothing
-    when no machine has a one-click update. */
 export function ProviderUpdatesAction() {
   const { machines, updateAll } = useProviderUpdates();
   const pending = useRef(false);
   const [isPending, setIsPending] = useState(false);
-  // Candidates leave the list as soon as their servers report them queued, so
-  // keep the button while the run is in flight.
   if (machines.length === 0 && !isPending) {
     return null;
   }
@@ -112,12 +94,9 @@ export function ProviderUpdatesAction() {
     if (pending.current) return;
     pending.current = true;
     setIsPending(true);
-    try {
-      await updateAll();
-    } finally {
-      pending.current = false;
-      setIsPending(false);
-    }
+    await settlePromise(() => updateAll());
+    pending.current = false;
+    setIsPending(false);
   };
 
   return (

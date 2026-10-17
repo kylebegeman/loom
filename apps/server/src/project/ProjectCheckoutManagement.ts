@@ -27,6 +27,7 @@ import {
   restoreManagedProjectCheckout,
   setManagedProjectRetention,
 } from "../workspace/ManagedProjectCheckout.ts";
+import { fileIdentity } from "../fork/fileIdentity.ts";
 import { withWorkspaceLease } from "../workspace/workspaceLease.ts";
 import { runCheckoutProcess } from "../workspace/checkoutProcess.ts";
 import { buildRepositoryIdentity } from "./RepositoryIdentityResolver.ts";
@@ -199,16 +200,20 @@ const make = Effect.gen(function* () {
     const root = yield* fs.stat(cwd);
     const gitPath = path.join(cwd, ".git");
     const git = yield* fs.stat(gitPath).pipe(Effect.option);
+    const rootId = fileIdentity(root);
+    const gitId = Option.isSome(git) ? fileIdentity(git.value) : null;
     if (
       uid === undefined ||
       root.type !== "Directory" ||
       Option.getOrNull(root.uid) !== uid ||
-      !Option.isSome(root.ino) ||
+      rootId.inode === null ||
+      rootId.device === null ||
       Option.isNone(git) ||
       git.value.type !== "Directory" ||
       Option.getOrNull(git.value.uid) !== uid ||
-      !Option.isSome(git.value.ino) ||
-      root.dev !== git.value.dev
+      gitId === null ||
+      gitId.inode === null ||
+      rootId.device !== gitId.device
     )
       return blocked(
         "Only a primary Git checkout owned by this computer's user can be managed. Linked worktrees and shared Git directories stay external.",
@@ -346,9 +351,9 @@ const make = Effect.gen(function* () {
     const fingerprint = {
       projectId,
       cwd,
-      checkoutInode: root.ino.value,
-      gitInode: git.value.ino.value,
-      device: root.dev,
+      checkoutInode: rootId.inode,
+      gitInode: gitId.inode,
+      device: rootId.device,
       uid,
       birthtime: Option.map(root.birthtime, (date) => date.getTime()).pipe(Option.getOrNull),
       head: state.head,

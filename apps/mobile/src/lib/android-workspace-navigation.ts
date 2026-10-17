@@ -4,12 +4,12 @@ export type AndroidWorkspaceDestination =
   | { readonly name: "Thread"; readonly params: ReactNavigation.RootParamList["Thread"] }
   | { readonly name: "PullRequest"; readonly params: ReactNavigation.RootParamList["PullRequest"] };
 
-/** Peer details share one slot above the selected library or legacy list. */
 export function androidWorkspaceNavigationState(
   state: NavigationState,
   destination?: AndroidWorkspaceDestination,
   reviewers?: ReactNavigation.RootParamList["PullRequestReviewers"],
 ) {
+  // fork: library - Peer details sit above the Library or the legacy Home list.
   const primary = state.routes.findLast(
     (route) => route.name === "Library" || route.name === "Home",
   ) ?? {
@@ -30,7 +30,7 @@ export function androidWorkspaceNavigationState(
     ...state,
     index: reviewers ? 2 : 1,
     routes: [
-      primary,
+      primary, // fork: library
       { ...existing, ...destination },
       ...(reviewers ? [{ name: "PullRequestReviewers", params: reviewers }] : []),
     ],

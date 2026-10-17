@@ -1,19 +1,21 @@
-import { libraryHoldsLocalRefs } from "@t3tools/client-runtime/fork";
-import { library, useLibraryAuthority } from "../../fork/library/libraryState";
-import { useThreadSelection } from "../../state/use-thread-selection";
-import { useEnvironmentQuery } from "../../state/query";
-import { AppActivityIndicator } from "../../components/AppActivityIndicator";
-import { MaterialListRow } from "../../components/MaterialListRow";
-import { ScreenHeader } from "../../components/ScreenHeader";
+// fork: library
+import {
+  NewTaskLibraryProjectChoices,
+  useNewTaskLibraryProjects,
+} from "../../fork/library/NewTaskLibraryProjects";
+import * as Dialog from "../../components/ui/Dialog";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { NavigationRow } from "../../components/ui/NavigationRow";
+import { AppBar } from "../../components/ui/AppBar";
 import {
   StackActions,
   useIsFocused,
   useNavigation,
   type StaticScreenProps,
 } from "@react-navigation/native";
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
-import { connectionStatusTitle } from "@t3tools/client-runtime/connection";
+import { connectionStatusTitle } from "@t3tools/client-runtime/connection"; // fork: fleet-connections
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -21,20 +23,20 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { useEffect, useRef, useState } from "react";
-import { Alert, Platform, Pressable, View } from "react-native";
+import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
-import { MaterialScreenContent } from "../../components/MaterialScreenContent";
-import { MaterialButton } from "../../components/MaterialButton";
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
-import { AppText as Text } from "../../components/AppText";
+import { ScreenContent } from "../../components/ui/ScreenContent";
+import { Button } from "../../components/ui/Button";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
+import { AppText as Text } from "../../components/ui/AppText";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { useProjects, useServerConfigs } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   useRemoteConnectionStatus,
-  useSavedRemoteConnections,
+  useSavedRemoteConnections, // fork: fleet-connections
 } from "../../state/use-remote-environment-registry";
 import type { WorkspaceState } from "../../state/workspaceModel";
 import { useWorkspaceState } from "../../state/workspace";
@@ -46,7 +48,6 @@ import { filterProjectScopes, getProjectScopeSelectionTarget } from "./new-task-
 
 type NewTaskRouteParams = {
   readonly incomingShareId?: string | string[];
-  // A `t3code://new?…` prompt link. See usePromptLinkResolver.
   readonly prompt?: string | string[];
   readonly repo?: string | string[];
   readonly pr?: string | string[];
@@ -54,6 +55,7 @@ type NewTaskRouteParams = {
   readonly model?: string | string[];
 };
 
+// fork: fleet-connections - Empty states speak of computers and surface unsupported clients.
 function deriveProjectEmptyState(catalogState: WorkspaceState): {
   readonly title: string;
   readonly detail: string;
@@ -123,7 +125,7 @@ function NewTaskHeader(props: {
   const navigation = useNavigation();
   const { layout } = useAdaptiveWorkspaceLayout();
   return (
-    <ScreenHeader
+    <AppBar
       title={props.title}
       subtitle={props.subtitle ?? undefined}
       sidebar={false}
@@ -140,7 +142,7 @@ function NewTaskHeader(props: {
               {
                 accessibilityLabel: "Add project",
                 icon: "plus",
-                onPress: () => navigation.navigate("LibraryCreate"),
+                onPress: () => navigation.navigate("LibraryCreate"), // fork: library
               },
             ]
           : []
@@ -160,28 +162,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const { projectScopes, selectedEnvironmentId, setProject } = useNewTaskFlow();
   const { state: catalogState } = useWorkspaceState();
   const navigation = useNavigation();
-  const authority = useLibraryAuthority();
-  const { selectedThread } = useThreadSelection();
-  const inherit = !route.params && authority.environmentId !== null && selectedThread !== null;
-  const currentBinding = useEnvironmentQuery(
-    inherit && selectedThread
-      ? library.threadBinding({
-          environmentId: selectedThread.environmentId,
-          input: { threadId: selectedThread.id },
-        })
-      : null,
-  );
-  useEffect(() => {
-    if (!inherit || !currentBinding.data) return;
-    const binding = currentBinding.data;
-    navigation.getParent()?.dispatch(
-      StackActions.replace("LibraryStart", {
-        projectId: binding.projectId,
-        reuseEnvironmentId: binding.environmentId,
-        ...(binding.resourceIds.length === 1 ? { initialResourceId: binding.resourceIds[0] } : {}),
-      }),
-    );
-  }, [inherit, currentBinding.data, navigation]);
+  const libraryProjects = useNewTaskLibraryProjects({ hasRouteParams: !!route.params, searchText }); // fork: library
+  const sharedChoices = libraryProjects.choices; // fork: library
   const isFocused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { getShare, releaseShareReservation } = useIncomingShare();
@@ -200,24 +182,6 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const screenTitle = incomingShare ? "Start a task" : "Choose project";
   const projectEmptyState = deriveProjectEmptyState(catalogState);
   const serverConfigs = useServerConfigs();
-  // Scratch projects are reached through the No project row, never as rows
-  // of their own.
-  const sharedProjects = useEnvironmentQuery(
-    authority.environmentId
-      ? library.projects({
-          environmentId: authority.environmentId,
-          input: { includeArchived: false },
-        })
-      : null,
-  );
-  const sharedCopies = useEnvironmentQuery(
-    authority.environmentId
-      ? library.copies({ environmentId: authority.environmentId, input: {} })
-      : null,
-  );
-  const sharedChoices = (sharedProjects.data ?? []).filter((project) =>
-    project.title.toLocaleLowerCase().includes(searchText.trim().toLocaleLowerCase()),
-  );
   const listScopes = projectScopes.filter(
     (scope) =>
       !scope.projects.every((project) =>
@@ -225,8 +189,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       ),
   );
   const legacyScopes = listScopes.filter(
-    (scope) => !libraryHoldsLocalRefs([], scope.projectRefs, sharedCopies.data ?? []),
-  );
+    (scope) => !libraryProjects.holdsLocalRefs(scope.projectRefs),
+  ); // fork: library
   const visibleScopes = filterProjectScopes(legacyScopes, searchText);
   const resumedDestinationKeyRef = useRef<string | null>(null);
   const reservedDestinationProject = incomingShare?.destination
@@ -237,13 +201,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       ) ?? null)
     : null;
   const { connectedEnvironments } = useRemoteConnectionStatus();
-  const { savedConnectionsById } = useSavedRemoteConnections();
+  const { savedConnectionsById } = useSavedRemoteConnections(); // fork: fleet-connections
   const openScratch = useAtomCommand(projectEnvironment.openScratch, {
     reportFailure: false,
   });
-  // Threads without a project need a connected environment that offers them.
-  // The row starts on the selected environment when it has one, otherwise the
-  // first that does; the draft page's machine picker moves it from there.
   const scratchEnvironments = connectedEnvironments.filter(
     (environment) =>
       availableScratchWorkspaceRoot(
@@ -265,7 +226,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       try {
         await releaseShareReservation(incomingShare.id, incomingShare.destination);
       } catch (error) {
-        Alert.alert(
+        Dialog.alert(
           "Could not change project",
           error instanceof Error
             ? error.message
@@ -301,7 +262,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
           const error = squashAtomCommandFailure(result);
-          Alert.alert(
+          Dialog.alert(
             "Could not start without a project",
             error instanceof Error
               ? error.message
@@ -356,7 +317,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         onSearchTextChange={setSearchText}
       />
 
-      <MaterialScreenContent>
+      <ScreenContent>
         <ScrollView
           contentInsetAdjustmentBehavior="automatic"
           showsVerticalScrollIndicator={false}
@@ -373,34 +334,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               : {}),
           }}
         >
-          {sharedChoices.length > 0 ? (
-            <View className="overflow-hidden rounded-2xl bg-grouped-card">
-              {sharedChoices.map((project) => (
-                <MaterialListRow
-                  key={project.id}
-                  title={project.title}
-                  subtitle={
-                    project.brief.trim().split("\n")[0] ||
-                    `${project.resources.filter((resource) => resource.kind !== "link").length} repository components`
-                  }
-                  onPress={() =>
-                    navigation
-                      .getParent()
-                      ?.dispatch(StackActions.replace("LibraryStart", { projectId: project.id }))
-                  }
-                />
-              ))}
-            </View>
-          ) : null}
-          {sharedProjects.error ? (
-            <Text accessibilityLiveRegion="polite" className="text-sm text-danger-foreground">
-              {sharedProjects.error}
-            </Text>
-          ) : null}
+          {/* fork: library */}
+          <NewTaskLibraryProjectChoices choices={sharedChoices} error={libraryProjects.error} />
           {canStartScratch && listScopes.length > 0 ? (
             Platform.OS === "android" ? (
               <View collapsable={false} className="overflow-hidden rounded-[28px] bg-grouped-card">
-                <MaterialListRow
+                <NavigationRow
                   className="bg-grouped-card"
                   title="No project"
                   subtitle="Start a task without a project"
@@ -447,7 +386,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               </View>
             )
           ) : null}
-          {legacyScopes.length === 0 && sharedChoices.length === 0 ? (
+          {legacyScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
             <View
               collapsable={false}
               className={cn(
@@ -464,9 +403,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               <Text className="text-center text-sm leading-normal text-foreground-muted">
                 {projectEmptyState.detail}
               </Text>
-              {!projectEmptyState.loading ? (
+              {!projectEmptyState.loading /* fork: fleet-connections */ ? (
                 <>
-                  <MaterialButton
+                  {/* fork: fleet-connections */}
+                  <Button
                     label={
                       catalogState.hasReadyEnvironment
                         ? "Add project"
@@ -479,12 +419,12 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       catalogState.hasReadyEnvironment
                         ? navigation.dispatch(StackActions.push("AddProject"))
                         : navigation.navigate(
-                            catalogState.hasConnections ? "Connections" : "ConnectionsNew",
+                            catalogState.hasConnections ? "Connections" : "ConnectionsNew", // fork: fleet-connections
                           )
                     }
                   />
                   {canStartScratch ? (
-                    <MaterialButton
+                    <Button
                       label="Start without a project"
                       tone="secondary"
                       onPress={() => void startScratch()}
@@ -493,7 +433,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                 </>
               ) : null}
             </View>
-          ) : visibleScopes.length === 0 && sharedChoices.length === 0 ? (
+          ) : visibleScopes.length === 0 && sharedChoices.length === 0 /* fork: library */ ? (
             <View className="items-center gap-2 px-6 py-8">
               <Text className="text-center text-lg font-t3-bold text-foreground">
                 No matching projects
@@ -517,6 +457,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   scope,
                   selectedEnvironmentId,
                 );
+                // fork: fleet-connections - Name the computer and its connection state on each row.
                 const computerLabel =
                   savedConnectionsById[selectionTarget.environmentId]?.environmentLabel ??
                   "Computer";
@@ -537,11 +478,11 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   .join(" · ");
                 if (Platform.OS === "android") {
                   return (
-                    <MaterialListRow
+                    <NavigationRow
                       className="bg-grouped-card"
                       key={scope.key}
                       title={scope.title}
-                      subtitle={projectSubtitle}
+                      subtitle={projectSubtitle} // fork: fleet-connections
                       subtitleNumberOfLines={1}
                       subtitleEllipsizeMode="middle"
                       disabled={reservedDestinationProject !== null}
@@ -566,7 +507,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                   >
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`${scope.title}, ${projectSubtitle}`}
+                      accessibilityLabel={`${scope.title}, ${projectSubtitle}`} // fork: fleet-connections
                       disabled={reservedDestinationProject !== null}
                       onPress={() => void selectProject(selectionTarget)}
                       className="flex-row items-center gap-3 bg-grouped-card px-4 py-3.5"
@@ -590,7 +531,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                           ellipsizeMode="middle"
                           numberOfLines={1}
                         >
-                          {projectSubtitle}
+                          {projectSubtitle /* fork: fleet-connections */}
                         </Text>
                       </View>
                       <SymbolView
@@ -606,7 +547,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
             </View>
           )}
         </ScrollView>
-      </MaterialScreenContent>
+      </ScreenContent>
     </View>
   );
 }

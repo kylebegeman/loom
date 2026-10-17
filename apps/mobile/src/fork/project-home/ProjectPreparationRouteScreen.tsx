@@ -22,12 +22,12 @@ import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { EmptyState } from "../../components/EmptyState";
-import { ListChoiceRow } from "../../components/ListChoiceRow";
-import { MaterialButton } from "../../components/MaterialButton";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { ScreenScrollView } from "../../components/ScreenScrollView";
+import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { Button } from "../../components/ui/Button";
+import { AppBar } from "../../components/ui/AppBar";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { preparationReceiptKey } from "./projectPreparationReceipt";
@@ -269,7 +269,7 @@ function ProjectPreparationContent(props: {
   };
   return (
     <View className="flex-1 bg-screen">
-      <ScreenHeader
+      <AppBar
         title="Prepare another computer"
         onBack={() => navigation.goBack()}
         backInSplitView={{ accessibilityLabel: "Back to project", icon: "arrow.left" }}
@@ -305,7 +305,7 @@ function ProjectPreparationContent(props: {
                   Review the actual origin before preparing another copy. This review leaves
                   released working files released.
                 </Text>
-                <MaterialButton
+                <Button
                   label={
                     busy
                       ? "Reviewing origin…"
@@ -405,7 +405,7 @@ function ProjectPreparationContent(props: {
                     <Text selectable className="text-xs text-foreground-muted">
                       {project.workspaceRoot}
                     </Text>
-                    <MaterialButton
+                    <Button
                       label={`Open ${project.title} on ${destination?.label ?? "computer"}`}
                       disabled={!destinationConnected}
                       onPress={() =>
@@ -434,7 +434,7 @@ function ProjectPreparationContent(props: {
                       : "Review and edit the destination folder in the next step before starting the clone."}
                   </Text>
                 )}
-                <MaterialButton
+                <Button
                   tone="primary"
                   label={
                     receipt
@@ -451,7 +451,7 @@ function ProjectPreparationContent(props: {
                 />
               </View>
             ) : null}
-            <MaterialButton
+            <Button
               label="Manage computers"
               tone="text"
               onPress={() => navigation.navigate("Connections")}

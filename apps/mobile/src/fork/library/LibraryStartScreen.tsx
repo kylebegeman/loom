@@ -28,9 +28,9 @@ import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { ListChoiceRow } from "../../components/ListChoiceRow";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { buildModelOptions, resolveNewTaskModelSelection } from "../../lib/modelOptions";
 import { uuidv4 } from "../../lib/uuid";
@@ -646,7 +646,7 @@ function LibraryStartContent(props: {
             computer.supportsExecution &&
             !environments.some((entry) => entry.environmentId === computer.environmentId),
         ) ? (
-          <MaterialButton
+          <Button
             label="Connect a computer"
             tone="text"
             onPress={() => navigation.navigate("Connections")}
@@ -718,7 +718,7 @@ function LibraryStartContent(props: {
               className="min-h-11 rounded-xl border border-input-border bg-input px-3 text-sm text-foreground"
             />
           ) : null}
-          <MaterialButton
+          <Button
             label={
               chosenModel
                 ? `${chosenModel.providerLabel}: ${chosenModel.label}`
@@ -764,7 +764,7 @@ function LibraryStartContent(props: {
         <LibraryNotice detail="The selected model is unavailable. Restore it in provider settings before resuming this preparation." />
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
-      <MaterialButton
+      <Button
         label={pending ?? (progress.intent ? "Resume preparation" : "Open conversation")}
         tone="primary"
         disabled={pending !== null || !canStart}

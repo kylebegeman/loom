@@ -6,10 +6,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryThreadArchive } from "@t3tools/contracts/fork";
 import { memo, useCallback, useState } from "react";
 import { Alert, View } from "react-native";
-import { AppText as Text } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
-import { MaterialButton } from "../../components/MaterialButton";
+import { Button } from "../../components/ui/Button";
 import { useMarkdownPreviewStyles } from "../../features/files/FileMarkdownPreview";
 import { resolveThreadActivityStatus } from "../../features/threads/thread-activity-row-presentation";
 import {
@@ -45,7 +45,7 @@ export function LibraryArchiveAttachment(props: {
 }) {
   const navigation = useNavigation();
   return (
-    <MaterialButton
+    <Button
       label={`${props.attachment.name}${props.attachment.sizeBytes ? ` · ${formatAttachmentSize(props.attachment.sizeBytes)}` : ""}`}
       tone="secondary"
       onPress={() =>
@@ -173,7 +173,7 @@ function SavedActivity({ row }: { row: Extract<LibraryArchiveRow, { type: "activ
               )
             ) : null}
             {Math.max(call.length, detail?.length ?? 0) > visibleCharacters ? (
-              <MaterialButton
+              <Button
                 label="Show more saved detail"
                 tone="text"
                 onPress={() => setVisibleCharacters((value) => value + LOG_PREVIEW_CHARACTERS)}
