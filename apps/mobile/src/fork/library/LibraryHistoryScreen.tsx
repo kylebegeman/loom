@@ -82,6 +82,11 @@ export function LibraryHistoryRouteScreen({
       </LibraryPage>
     );
   const target = authority.environmentId;
+  const hostLabel =
+    host?.label ??
+    authority.computers.find((entry) => entry.environmentId === archive.summary.environmentId)
+      ?.label ??
+    "the original computer";
   return (
     <LibraryPage title={archive.summary.title} back scroll={false}>
       <LegendList
@@ -123,13 +128,8 @@ export function LibraryHistoryRouteScreen({
         ListHeaderComponent={
           <View className="gap-4 pb-4">
             <Text className="text-sm text-foreground-muted">
-              Saved history from{" "}
-              {host?.label ??
-                authority.computers.find(
-                  (entry) => entry.environmentId === archive.summary.environmentId,
-                )?.label ??
-                "the original computer"}
-              . Last uploaded {new Date(archive.summary.syncedAt).toLocaleString()}.
+              Saved history from {hostLabel}. Last uploaded{" "}
+              {new Date(archive.summary.syncedAt).toLocaleString()}.
             </Text>
             <LibraryReplicationNotice
               summary={archive.summary}
@@ -166,7 +166,7 @@ export function LibraryHistoryRouteScreen({
             <LibrarySuggestBriefUpdates
               summary={archive.summary}
               authorityId={target}
-              hostLabel={host?.label ?? "the original computer"}
+              hostLabel={hostLabel}
               hostConnected={connected}
             />
             <LibraryBriefSuggestionOffer

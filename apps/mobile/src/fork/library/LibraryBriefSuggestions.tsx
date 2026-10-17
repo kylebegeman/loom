@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { useFocusEffect } from "@react-navigation/native";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   LIBRARY_BRIEF_SUGGESTION_CHOICES,
@@ -25,7 +26,7 @@ import {
   type LibraryThreadSummary,
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { View } from "react-native";
 import { AppText as Text } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
@@ -37,8 +38,10 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useLoomFeature } from "./LibraryBriefProposals";
-import { library } from "./libraryState";
+import { library, useLoomFeature } from "./libraryState";
+
+const ASKED_MESSAGE =
+  "Asked the agent. Its suggestions will wait on the project page for you to review.";
 
 /**
  * Whether a conversation that settles asks its agent for brief updates. The agent only proposes;
@@ -85,28 +88,34 @@ export function LibraryBriefSuggestionOffer(props: {
 }) {
   const { environmentId, threadId } = props;
   const supported = useLoomFeature(environmentId, LIBRARY_BRIEF_SUGGESTIONS_FEATURE);
+  const live = props.connected && supported;
   const query = useEnvironmentQuery(
-    props.connected && supported
-      ? library.briefSuggestion({ environmentId, input: { threadId } })
-      : null,
+    live ? library.briefSuggestion({ environmentId, input: { threadId } }) : null,
   );
   const start = useAtomCommand(library.startBriefSuggestion, { reportFailure: false });
   const decline = useAtomCommand(library.declineBriefSuggestion, { reportFailure: false });
   const canStart = useAtomValue(library.startBriefSuggestion.permissionAtom(environmentId));
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<"start" | "decline" | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const notice =
-    props.connected && supported ? libraryBriefSuggestionNotice(query.data ?? null) : null;
+  // This screen stays mounted under the conversation it opens, so a run can finish out of sight.
+  const refresh = query.refresh;
+  useFocusEffect(
+    useCallback(() => {
+      if (live) refresh();
+    }, [live, refresh]),
+  );
+  const notice = live ? libraryBriefSuggestionNotice(query.data ?? null) : null;
   if (!notice) return null;
 
   const run = async (
+    action: "start" | "decline",
     attempt: () => Promise<AtomCommandResult<unknown, unknown>>,
     fallback: string,
   ) => {
-    setBusy(true);
+    setPending(action);
     setError(null);
     const result = await attempt();
-    setBusy(false);
+    setPending(null);
     if (AsyncResult.isFailure(result)) {
       const cause = squashAtomCommandFailure(result);
       setError(cause instanceof Error ? cause.message : fallback);
@@ -127,9 +136,11 @@ export function LibraryBriefSuggestionOffer(props: {
           <Button
             label="Suggest updates"
             tone="primary"
-            loading={busy}
+            loading={pending === "start"}
+            disabled={pending !== null}
             onPress={() =>
               void run(
+                "start",
                 () => start({ environmentId, input: { threadId } }),
                 "Could not start the suggestion.",
               )
@@ -138,9 +149,11 @@ export function LibraryBriefSuggestionOffer(props: {
           <Button
             label="Not now"
             tone="text"
-            disabled={busy}
+            loading={pending === "decline"}
+            disabled={pending !== null}
             onPress={() =>
               void run(
+                "decline",
                 () => decline({ environmentId, input: { threadId } }),
                 "Could not dismiss this offer.",
               )
@@ -182,9 +195,16 @@ export function LibrarySuggestBriefUpdates(props: {
   const [error, setError] = useState<string | null>(null);
   const [asked, setAsked] = useState(false);
   // The live conversation is the freshest word on whether it is settled; the saved copy stands in.
+  const settled = shell ? shell.settledOverride === "settled" : summary.settled === true;
+  // Asking unsettles the conversation; once it settles again, the earlier ask is done.
+  const [wasSettled, setWasSettled] = useState(settled);
+  if (settled !== wasSettled) {
+    setWasSettled(settled);
+    if (settled) setAsked(false);
+  }
   const availability = libraryBriefSuggestionAvailability({
     libraryKeepsProposals,
-    settled: shell ? shell.settledOverride === "settled" : summary.settled === true,
+    settled,
     archived:
       (project.data?.archived ?? false) || (shell ? shell.archivedAt !== null : summary.archived),
     hostLabel: props.hostLabel,
@@ -192,7 +212,13 @@ export function LibrarySuggestBriefUpdates(props: {
     hostProposes,
     canSend,
   });
-  if (availability.kind === "hidden") return null;
+  if (availability.kind === "hidden")
+    // The ask hides the action, so the confirmation stands in for it until the next settle.
+    return asked ? (
+      <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+        {ASKED_MESSAGE}
+      </Text>
+    ) : null;
   const reason =
     availability.kind === "disabled"
       ? availability.reason
@@ -227,11 +253,7 @@ export function LibrarySuggestBriefUpdates(props: {
     }
     setAsked(true);
   };
-  const message =
-    error ??
-    (asked
-      ? "Asked the agent. Its suggestions will wait on the project page for you to review."
-      : reason);
+  const message = error ?? (asked ? ASKED_MESSAGE : reason);
   return (
     <View className="gap-1">
       <Button

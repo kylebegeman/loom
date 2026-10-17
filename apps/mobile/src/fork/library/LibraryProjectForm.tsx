@@ -277,6 +277,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
             value={brief}
             onChangeText={setBrief}
             multiline
+            textAlignVertical="top"
             maxLength={65536}
             editable={!pending && !awaitingResult}
             className="min-h-28 rounded-xl border border-input-border bg-input p-3 text-sm text-foreground"

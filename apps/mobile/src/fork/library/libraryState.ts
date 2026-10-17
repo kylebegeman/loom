@@ -28,6 +28,14 @@ export function refreshLibraryWork(environmentId: EnvironmentId, projectId: stri
   appAtomRegistry.refresh(library.threads({ environmentId, input: { projectId } }));
 }
 
+/** Whether a computer advertises a Loom feature. Absent or unknown means no. */
+export function useLoomFeature(environmentId: EnvironmentId | null, feature: string) {
+  return supportsLoomFeature(
+    useEnvironmentServerConfig(environmentId)?.environment.capabilities,
+    feature,
+  );
+}
+
 /** One library authority is retained independently of execution host selection. */
 export function useLibraryAuthority() {
   const preferences = useAtomValue(mobilePreferencesAtom);

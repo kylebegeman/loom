@@ -3,10 +3,11 @@ import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-na
 import {
   libraryBriefAcceptance,
   libraryBriefDiff,
+  libraryBriefProposalAfterDecision,
+  libraryBriefProposalSelection,
   libraryBriefProposalSourceLabel,
   libraryBriefReview,
-  libraryBriefSuggestionsLabel,
-  supportsLoomFeature,
+  type LibraryBriefProposalPick,
 } from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
@@ -21,83 +22,27 @@ import {
 } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
 import { useCallback, useMemo, useState } from "react";
-import { Platform, View } from "react-native";
-import { useResolveClassNames } from "uniwind";
+import { View } from "react-native";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
-import { RowPressable } from "../../components/ui/RowPressable";
+import { Notice } from "../../components/ui/Notice";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { relativeTime } from "../../lib/time";
 import { uuidv4 } from "../../lib/uuid";
 import { useEnvironments } from "../../state/environments";
-import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { pendingProposals } from "./LibraryBriefProposalsRow";
 import { LibraryNotice, LibraryPage } from "./LibraryScreens";
-import { library, refreshLibraryProject, useLibraryAuthority } from "./libraryState";
+import {
+  library,
+  refreshLibraryProject,
+  useLibraryAuthority,
+  useLoomFeature,
+} from "./libraryState";
 
-/** One page of pending suggestions is plenty; the count is what is waiting, not history. */
-const PENDING_LIMIT = 100;
-
-/** Whether a computer advertises a Loom feature. Absent or unknown means no. */
-export function useLoomFeature(environmentId: EnvironmentId | null, feature: string) {
-  return supportsLoomFeature(
-    useEnvironmentServerConfig(environmentId)?.environment.capabilities,
-    feature,
-  );
-}
-
-const pendingProposals = (environmentId: EnvironmentId, projectId: string) =>
-  library.briefProposals({
-    environmentId,
-    input: { projectId, status: "pending", limit: PENDING_LIMIT },
-  });
-
-/**
- * The suggestions waiting on a project's brief, as a row inside the Brief section. Renders only
- * when the Library advertises `library-brief-proposals` and something is pending.
- */
-export function LibraryBriefProposalsRow(props: {
-  readonly project: LibraryProject;
-  readonly authorityId: EnvironmentId;
-  readonly hostLabel: (id: EnvironmentId) => string;
-}) {
-  const navigation = useNavigation();
-  const keepsProposals = useLoomFeature(props.authorityId, LIBRARY_BRIEF_PROPOSALS_FEATURE);
-  const query = useEnvironmentQuery(
-    keepsProposals ? pendingProposals(props.authorityId, props.project.id) : null,
-  );
-  const refresh = query.refresh;
-  useFocusEffect(
-    useCallback(() => {
-      if (keepsProposals) refresh();
-    }, [keepsProposals, refresh]),
-  );
-  const rippleStyle = useResolveClassNames("bg-subtle-strong");
-  const proposals = query.data?.proposals ?? [];
-  const newest = proposals[0];
-  if (!keepsProposals || !newest) return null;
-  const title = libraryBriefSuggestionsLabel(proposals.length);
-  const source = `${libraryBriefProposalSourceLabel(newest, props.hostLabel)}, ${relativeTime(newest.createdAt)} ago`;
-  const detail = proposals.length > 1 ? `Newest: ${source}` : source;
-  return (
-    <RowPressable
-      accessibilityRole="button"
-      accessibilityLabel={title}
-      accessibilityHint={`${detail}. Opens the review.`}
-      onPress={() => navigation.navigate("LibraryBriefReview", { projectId: props.project.id })}
-      android_ripple={{ color: rippleStyle.backgroundColor }}
-      unstable_pressDelay={Platform.OS === "android" ? 50 : undefined}
-      className="border-t border-border-subtle bg-grouped-card"
-    >
-      <View className="gap-1 px-4 py-3">
-        <Text className="text-sm font-t3-medium text-foreground">{title}</Text>
-        <Text className="text-xs text-foreground-muted">{detail}</Text>
-      </View>
-    </RowPressable>
-  );
-}
+type Decision = "accept" | "dismiss";
 
 export function LibraryBriefReviewRouteScreen({
   route,
@@ -114,7 +59,13 @@ export function LibraryBriefReviewRouteScreen({
   const query = useEnvironmentQuery(
     target && keepsProposals ? pendingProposals(target, projectId) : null,
   );
-  const [index, setIndex] = useState(0);
+  const [pick, setPick] = useState<LibraryBriefProposalPick | null>(null);
+  // Decided here, so they leave the review at once instead of when the refreshed list lands.
+  const [decided, setDecided] = useState<ReadonlySet<string>>(() => new Set());
+  const [confirmation, setConfirmation] = useState<{
+    readonly text: string;
+    readonly beforeId: string;
+  } | null>(null);
   const refreshProposals = query.refresh;
   useFocusEffect(
     useCallback(() => {
@@ -127,7 +78,11 @@ export function LibraryBriefReviewRouteScreen({
     environments.find((env) => env.environmentId === id)?.label ??
     authority.computers.find((entry) => entry.environmentId === id)?.label ??
     "Saved computer";
-  const proposals = query.data?.proposals ?? [];
+  const waiting = (query.data?.proposals ?? []).filter((entry) => !decided.has(entry.id));
+  const selection = libraryBriefProposalSelection(waiting, pick);
+  // Pin the first suggestion shown, so one that arrives later can't take its place.
+  if (pick === null && selection.proposal)
+    setPick({ id: selection.proposal.id, index: selection.index });
   if (!target || !keepsProposals || !project.data || !query.data)
     return (
       <LibraryPage title="Suggested updates" back>
@@ -146,32 +101,68 @@ export function LibraryBriefReviewRouteScreen({
         />
       </LibraryPage>
     );
-  const shown = Math.min(index, Math.max(proposals.length - 1, 0));
-  const proposal = proposals[shown];
+  const { index: shown, proposal, missing } = selection;
+  const show = (index: number) => {
+    const next = waiting[index];
+    if (next) setPick({ id: next.id, index });
+  };
+  const decide = (decidedId: string, kind: Decision) => {
+    const next = libraryBriefProposalAfterDecision(waiting, decidedId, shown);
+    setDecided((ids) => new Set(ids).add(decidedId));
+    refreshLibraryProject(target, projectId);
+    query.refresh();
+    if (!next) {
+      navigation.goBack();
+      return;
+    }
+    setPick(next);
+    setConfirmation({
+      text: kind === "accept" ? "Brief updated." : "Suggestion dismissed.",
+      beforeId: next.id,
+    });
+  };
   return (
     <LibraryPage title="Suggested updates" back>
       <Text className="text-sm text-foreground-muted">
         Agents can suggest changes to the brief. Nothing changes until you accept one.
       </Text>
-      {proposals.length > 1 ? (
+      {confirmation && proposal?.id === confirmation.beforeId ? (
+        <Notice
+          message={confirmation.text}
+          icon="checkmark.circle"
+          onDismiss={() => setConfirmation(null)}
+        />
+      ) : null}
+      {missing ? (
+        <View className="gap-2">
+          <LibraryNotice detail="That suggestion was replaced or decided somewhere else." />
+          {waiting.length ? (
+            <Button
+              label="Review the next suggestion"
+              tone="secondary"
+              onPress={() => show(shown)}
+            />
+          ) : null}
+        </View>
+      ) : waiting.length > 1 ? (
         <View className="flex-row items-center gap-2">
           <Text
             className="flex-1 text-sm text-foreground-muted"
             style={{ fontVariant: ["tabular-nums"] }}
           >
-            {shown + 1} of {proposals.length}
+            {shown + 1} of {waiting.length}
           </Text>
           <Button
             label="Previous"
             tone="text"
             disabled={shown === 0}
-            onPress={() => setIndex(shown - 1)}
+            onPress={() => show(shown - 1)}
           />
           <Button
             label="Next"
             tone="text"
-            disabled={shown === proposals.length - 1}
-            onPress={() => setIndex(shown + 1)}
+            disabled={shown === waiting.length - 1}
+            onPress={() => show(shown + 1)}
           />
         </View>
       ) : null}
@@ -183,16 +174,17 @@ export function LibraryBriefReviewRouteScreen({
           authorityId={target}
           connected={authority.connected}
           hostLabel={hostLabel}
-          onDecided={() => {
+          onDeciding={() => setConfirmation(null)}
+          onDecided={(kind) => decide(proposal.id, kind)}
+          onConflict={() => {
+            // A conflict can also mean the suggestion was decided elsewhere, so reload both.
             refreshLibraryProject(target, projectId);
             query.refresh();
-            if (proposals.length === 1) navigation.goBack();
           }}
-          onConflict={() => refreshLibraryProject(target, projectId)}
         />
-      ) : (
+      ) : !waiting.length ? (
         <LibraryNotice detail="No suggestions are waiting. New ones from agents appear on the project's brief." />
-      )}
+      ) : null}
       {query.error ? <LibraryNotice error={query.error} onRetry={query.refresh} /> : null}
     </LibraryPage>
   );
@@ -205,7 +197,9 @@ function BriefProposalReview(props: {
   readonly authorityId: EnvironmentId;
   readonly connected: boolean;
   readonly hostLabel: (id: EnvironmentId) => string;
-  readonly onDecided: () => void;
+  /** A decision is on its way, so an earlier confirmation no longer applies. */
+  readonly onDeciding: () => void;
+  readonly onDecided: (kind: Decision) => void;
   readonly onConflict: () => void;
 }) {
   const { proposal, project, authorityId } = props;
@@ -216,7 +210,8 @@ function BriefProposalReview(props: {
   const [draft, setDraft] = useState<string | null>(null);
   const [confirmingStale, setConfirmingStale] = useState(false);
   const [conflict, setConflict] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Decision | null>(null);
+  const busy = pending !== null;
   const [error, setError] = useState<string | null>(null);
   const review = libraryBriefReview(proposal, project);
   const diff = useMemo(
@@ -232,14 +227,16 @@ function BriefProposalReview(props: {
         : null;
 
   const run = async (
+    action: Decision,
     attempt: () => Promise<AtomCommandResult<unknown, unknown>>,
     fallback: string,
   ) => {
-    setBusy(true);
+    setPending(action);
     setError(null);
     setConflict(false);
+    props.onDeciding();
     const result = await attempt();
-    setBusy(false);
+    setPending(null);
     if (AsyncResult.isFailure(result)) {
       const cause = squashAtomCommandFailure(result);
       // The brief moved since this screen loaded it; reload so the changes show against it.
@@ -252,7 +249,7 @@ function BriefProposalReview(props: {
       setError(cause instanceof Error ? cause.message : fallback);
       return;
     }
-    props.onDecided();
+    props.onDecided(action);
   };
 
   const acceptNow = (confirmedStale: boolean) => {
@@ -264,6 +261,7 @@ function BriefProposalReview(props: {
     if (decision.kind === "unchanged")
       return setError("The brief already says this. Dismiss the suggestion instead.");
     void run(
+      "accept",
       () =>
         accept({ environmentId: authorityId, input: { requestId: uuidv4(), ...decision.input } }),
       "Could not accept this suggestion.",
@@ -295,6 +293,7 @@ function BriefProposalReview(props: {
               setError(null);
             }}
             multiline
+            textAlignVertical="top"
             autoFocus
             maxLength={65536}
             editable={!busy}
@@ -321,6 +320,7 @@ function BriefProposalReview(props: {
             <Button
               label="Accept anyway"
               tone="primary"
+              loading={pending === "accept"}
               disabled={busy}
               onPress={() => acceptNow(true)}
             />
@@ -341,8 +341,8 @@ function BriefProposalReview(props: {
           <Button
             label={draft !== null ? "Accept edited brief" : "Accept"}
             tone="primary"
-            loading={busy}
-            disabled={!canAccept || confirmingStale}
+            loading={pending === "accept" && !confirmingStale}
+            disabled={busy || !canAccept || confirmingStale}
             onPress={() => acceptNow(false)}
           />
           {draft !== null ? (
@@ -365,9 +365,11 @@ function BriefProposalReview(props: {
           <Button
             label="Dismiss"
             tone="text"
+            loading={pending === "dismiss"}
             disabled={busy || !canDismiss}
             onPress={() =>
               void run(
+                "dismiss",
                 () =>
                   dismiss({
                     environmentId: authorityId,
@@ -404,6 +406,7 @@ function BriefDiffLine({ line }: { readonly line: DiffLine }) {
   const marker = line.kind === "added" ? "+" : line.kind === "removed" ? "−" : " ";
   return (
     <View
+      accessible
       accessibilityLabel={`${line.kind === "same" ? "Unchanged" : line.kind === "added" ? "Added" : "Removed"}: ${line.text || "blank line"}`}
       className={cn(
         "flex-row gap-2 px-4 py-0.5",

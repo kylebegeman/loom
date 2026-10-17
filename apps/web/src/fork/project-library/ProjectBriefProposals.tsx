@@ -5,9 +5,12 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryBriefProposal, LibraryProject } from "@t3tools/contracts/fork";
 import {
   libraryBriefAcceptance,
+  libraryBriefProposalAfterDecision,
+  libraryBriefProposalSelection,
   libraryBriefProposalSourceLabel,
   libraryBriefReview,
   libraryBriefSuggestionsLabel,
+  type LibraryBriefProposalPick,
 } from "@t3tools/client-runtime/fork";
 import {
   squashAtomCommandFailure,
@@ -63,15 +66,26 @@ export function ProjectBriefProposals({
   );
   const proposals = query.data?.proposals ?? [];
   const [open, setOpen] = useState(false);
-  const [index, setIndex] = useState(0);
+  const [pick, setPick] = useState<LibraryBriefProposalPick | null>(null);
   if (!proposals.length) return null;
-  const shown = Math.min(index, proposals.length - 1);
-  const proposal = proposals[shown]!;
+  const { index: shown, proposal, missing } = libraryBriefProposalSelection(proposals, pick);
+  const show = (index: number) => {
+    const next = proposals[index];
+    if (next) setPick({ id: next.id, index });
+  };
   return (
     <>
       <Badge
         variant="info"
-        render={<button type="button" onClick={() => setOpen(true)} />}
+        render={
+          <button
+            type="button"
+            onClick={() => {
+              show(0);
+              setOpen(true);
+            }}
+          />
+        }
         aria-haspopup="dialog"
       >
         {libraryBriefSuggestionsLabel(proposals.length)}
@@ -85,22 +99,33 @@ export function ProjectBriefProposals({
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <BriefProposalReview
-              key={proposal.id}
-              proposal={proposal}
-              project={project}
-              authorityId={authorityId}
-              connected={connected}
-              hostLabel={hostLabel}
-              onDecided={() => {
-                query.refresh();
-                onDecided();
-                if (proposals.length === 1) setOpen(false);
-              }}
-            />
+            {proposal ? (
+              <BriefProposalReview
+                key={proposal.id}
+                proposal={proposal}
+                project={project}
+                authorityId={authorityId}
+                connected={connected}
+                hostLabel={hostLabel}
+                onDecided={() => {
+                  const next = libraryBriefProposalAfterDecision(proposals, proposal.id, shown);
+                  query.refresh();
+                  onDecided();
+                  if (next) setPick(next);
+                  else setOpen(false);
+                }}
+              />
+            ) : (
+              <div className="space-y-3 text-sm">
+                <p role="status">That suggestion was replaced or decided somewhere else.</p>
+                <Button size="sm" variant="outline" onClick={() => show(shown)}>
+                  Review the next suggestion
+                </Button>
+              </div>
+            )}
           </DialogPanel>
           <DialogFooter variant="bare">
-            {proposals.length > 1 ? (
+            {proposals.length > 1 && !missing ? (
               <>
                 <span className="me-auto text-xs tabular-nums text-muted-foreground">
                   {shown + 1} of {proposals.length}
@@ -109,7 +134,7 @@ export function ProjectBriefProposals({
                   size="sm"
                   variant="ghost"
                   disabled={shown === 0}
-                  onClick={() => setIndex(shown - 1)}
+                  onClick={() => show(shown - 1)}
                 >
                   Previous
                 </Button>
@@ -117,7 +142,7 @@ export function ProjectBriefProposals({
                   size="sm"
                   variant="ghost"
                   disabled={shown === proposals.length - 1}
-                  onClick={() => setIndex(shown + 1)}
+                  onClick={() => show(shown + 1)}
                 >
                   Next
                 </Button>

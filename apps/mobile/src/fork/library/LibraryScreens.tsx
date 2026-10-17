@@ -51,7 +51,7 @@ import {
 import { libraryListState, libraryRepositories, libraryScopeLabel } from "./libraryLogic";
 import { LibraryCopySection } from "./LibraryCopySection";
 import { LibraryProjectTile } from "./libraryProjectColors";
-import { LibraryBriefProposalsRow } from "./LibraryBriefProposals";
+import { LibraryBriefProposalsRow } from "./LibraryBriefProposalsRow";
 
 const RECENT_CONVERSATIONS = 5;
 const ANY_COLOR: ReadonlySet<LibraryProjectColor> = new Set();
@@ -92,6 +92,8 @@ export function LibraryPage(props: {
         <ScreenScrollView
           className="flex-1"
           keyboardShouldPersistTaps="handled"
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{
             padding: 16,

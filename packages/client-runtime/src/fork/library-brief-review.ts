@@ -67,6 +67,45 @@ export function libraryBriefAcceptance(
 export const libraryBriefSuggestionsLabel = (count: number) =>
   count === 1 ? "1 suggested update" : `${count} suggested updates`;
 
+/** The suggestion a review is on, and where it stood in the list when it was picked. */
+export type LibraryBriefProposalPick = { readonly id: string; readonly index: number };
+
+/**
+ * Which pending suggestion a review shows. It follows the picked id, so a newer suggestion arriving
+ * at the front of the list never slides a different one under the Accept button. Once the picked
+ * one leaves the list without a decision on this screen, it was replaced or decided elsewhere:
+ * `proposal` is absent and `index` is where it stood, so the review can say so and offer the one
+ * now in its place rather than silently showing it.
+ */
+export function libraryBriefProposalSelection<P extends { readonly id: string }>(
+  proposals: readonly P[],
+  pick: LibraryBriefProposalPick | null,
+): { readonly index: number; readonly proposal: P | undefined; readonly missing: boolean } {
+  if (pick === null) return { index: 0, proposal: proposals[0], missing: false };
+  const index = proposals.findIndex((proposal) => proposal.id === pick.id);
+  if (index >= 0) return { index, proposal: proposals[index], missing: false };
+  return {
+    index: Math.min(pick.index, Math.max(proposals.length - 1, 0)),
+    proposal: undefined,
+    missing: true,
+  };
+}
+
+/**
+ * Where a review goes after the person decides the suggestion at `index`: the one that takes its
+ * place, or nowhere when none are left.
+ */
+export function libraryBriefProposalAfterDecision<P extends { readonly id: string }>(
+  proposals: readonly P[],
+  decidedId: string,
+  index: number,
+): LibraryBriefProposalPick | null {
+  const rest = proposals.filter((proposal) => proposal.id !== decidedId);
+  const at = Math.min(index, rest.length - 1);
+  const next = rest[at];
+  return next ? { id: next.id, index: at } : null;
+}
+
 /** Who suggested a change, naming the computer a conversation ran on. */
 export function libraryBriefProposalSourceLabel(
   proposal: LibraryBriefProposal,
