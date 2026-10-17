@@ -135,16 +135,18 @@ export function LibrarySection({
   icon,
   count,
   action,
+  className,
   children,
 }: {
   readonly title: string;
   readonly icon?: LucideIcon;
   readonly count?: number | undefined;
   readonly action?: ReactNode;
+  readonly className?: string;
   readonly children: ReactNode;
 }) {
   return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-3">
+    <section aria-label={title} className={cn("flex min-w-0 flex-col gap-3", className)}>
       <div className="flex min-h-8 items-center justify-between gap-3">
         <LibraryHeading title={title} icon={icon} count={count} size="section" />
         {action}

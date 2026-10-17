@@ -153,6 +153,7 @@ export function TimelinePreview({
   hostLabel,
   hostConnected,
   onShowAll,
+  className,
 }: {
   readonly projectId: string;
   readonly authorityId: EnvironmentId;
@@ -161,6 +162,7 @@ export function TimelinePreview({
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly hostConnected: (id: EnvironmentId) => boolean;
   readonly onShowAll: () => void;
+  readonly className?: string;
 }) {
   const supported = supportsLoomFeature(capabilities, LIBRARY_TIMELINE_FEATURE);
   const latest = useEnvironmentQuery(
@@ -177,6 +179,7 @@ export function TimelinePreview({
     <LibrarySection
       title="Lately"
       icon={HistoryIcon}
+      className={cn("@container/timeline", className)}
       action={
         entries.length ? (
           <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
@@ -193,6 +196,7 @@ export function TimelinePreview({
           hostLabel={hostLabel}
           hostConnected={hostConnected}
           clock={false}
+          plain
         />
       ) : latest.error ? null : latest.data ? (
         <p className="text-xs text-muted-foreground">Nothing has happened in this project yet.</p>
@@ -391,6 +395,14 @@ const TONE_CLASSES: Record<Tone, string> = {
   quiet: "bg-muted text-muted-foreground dark:bg-accent",
 };
 
+/** The same inks without their fill, for icons that stand on their own. */
+const TONE_INK: Record<Tone, string> = {
+  project: "text-(--project-color)",
+  success: "text-success-foreground",
+  warning: "text-warning-foreground",
+  quiet: "text-muted-foreground",
+};
+
 /** Starts, merges and new work carry the project's color; endings and removals stay quiet. */
 const KIND_DISPLAY: Record<
   LibraryTimelineKind,
@@ -423,11 +435,14 @@ function TimelineList({
   hostLabel,
   hostConnected,
   clock,
+  plain = false,
 }: {
   readonly entries: readonly LibraryTimelineEntry[];
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly hostConnected: (id: EnvironmentId) => boolean;
   readonly clock: boolean;
+  /** Icons without their tinted discs, for previews that sit among plain lists. */
+  readonly plain?: boolean;
 }) {
   return (
     <ol className="min-w-0 flex-1">
@@ -447,10 +462,32 @@ function TimelineList({
             link={libraryTimelineEntryLink(entry, hostConnected)}
             hostLabel={hostLabel}
             clock={clock}
+            plain={plain}
           />
         </li>
       ))}
     </ol>
+  );
+}
+
+/** An estimated time reads as "~3:27 PM", with what the mark means one hover away. */
+function EntryTime({
+  approximate,
+  children,
+}: {
+  readonly approximate: boolean | undefined;
+  readonly children: string;
+}) {
+  if (!approximate) return children;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span />}>
+        <span aria-hidden>~</span>
+        <span className="sr-only">About </span>
+        {children}
+      </TooltipTrigger>
+      <TooltipPopup side="top">Estimated time</TooltipPopup>
+    </Tooltip>
   );
 }
 
@@ -466,40 +503,32 @@ function TimelineRow({
   link,
   hostLabel,
   clock = false,
+  plain = false,
 }: {
   readonly entry: LibraryTimelineEntry;
   readonly link: LibraryTimelineLink | null;
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly clock?: boolean;
+  readonly plain?: boolean;
 }) {
   const folder = "copy" in entry ? libraryPathParts(entry.copy.rootPath).name : null;
   const display = KIND_DISPLAY[entry.kind];
+  const tone = libraryTimelineEntryFailed(entry) ? "warning" : display.tone;
   const body = (
     <>
       {clock ? (
         <span className="w-16 shrink-0 pt-1.5 text-right text-xs tabular-nums text-muted-foreground">
-          {entry.approximate ? (
-            <Tooltip>
-              <TooltipTrigger render={<span />}>
-                <span aria-hidden>~</span>
-                <span className="sr-only">About </span>
-                {formatClock(entry.at)}
-              </TooltipTrigger>
-              <TooltipPopup side="top">Estimated time</TooltipPopup>
-            </Tooltip>
-          ) : (
-            formatClock(entry.at)
-          )}
+          <EntryTime approximate={entry.approximate}>{formatClock(entry.at)}</EntryTime>
         </span>
       ) : null}
       <span
         aria-hidden
         className={cn(
-          "inline-flex size-7 shrink-0 items-center justify-center rounded-full ring-4 ring-background",
-          TONE_CLASSES[libraryTimelineEntryFailed(entry) ? "warning" : display.tone],
+          "inline-flex size-7 shrink-0 items-center justify-center",
+          plain ? TONE_INK[tone] : ["rounded-full ring-4 ring-background", TONE_CLASSES[tone]],
         )}
       >
-        <display.icon className="size-3.5" />
+        <display.icon className={plain ? "size-4" : "size-3.5"} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1 @3xl/timeline:flex-row @3xl/timeline:items-baseline @3xl/timeline:gap-6">
         <span className="min-w-0 break-words text-sm leading-snug font-medium @3xl/timeline:flex-1">
@@ -524,12 +553,13 @@ function TimelineRow({
               <span className="max-w-40 truncate">{folder}</span>
             </span>
           ) : null}
-          {clock ? null : <span className="shrink-0">{formatRelativeTimeLabel(entry.at)}</span>}
-          {entry.approximate && !clock ? (
-            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 dark:bg-accent">
-              estimated time
+          {clock ? null : (
+            <span className="shrink-0 tabular-nums @3xl/timeline:w-14 @3xl/timeline:text-right">
+              <EntryTime approximate={entry.approximate}>
+                {formatRelativeTimeLabel(entry.at)}
+              </EntryTime>
             </span>
-          ) : null}
+          )}
         </span>
       </span>
     </>

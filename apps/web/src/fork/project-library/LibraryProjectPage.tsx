@@ -278,15 +278,6 @@ function ProjectView({
                   onShowAll={() => show("conversations")}
                 />
               )}
-              <TimelinePreview
-                projectId={project.id}
-                authorityId={authorityId}
-                connected={library.connected}
-                capabilities={capabilities}
-                hostLabel={hostLabel}
-                hostConnected={hostConnected}
-                onShowAll={() => show("timeline")}
-              />
             </div>
             <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
               <CopiesSummary
@@ -303,6 +294,17 @@ function ProjectView({
                 onShowAll={() => show("repositories")}
               />
             </aside>
+            {/* Below both columns, so the side cards never leave it a narrow strip. */}
+            <TimelinePreview
+              className="lg:col-span-2"
+              projectId={project.id}
+              authorityId={authorityId}
+              connected={library.connected}
+              capabilities={capabilities}
+              hostLabel={hostLabel}
+              hostConnected={hostConnected}
+              onShowAll={() => show("timeline")}
+            />
           </div>
         ) : shown === "conversations" ? (
           <div className="flex min-w-0 flex-col gap-8">
