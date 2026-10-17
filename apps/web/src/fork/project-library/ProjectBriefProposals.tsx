@@ -5,6 +5,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryBriefProposal, LibraryProject } from "@t3tools/contracts/fork";
 import {
   libraryBriefAcceptance,
+  libraryBriefProposalSourceLabel,
   libraryBriefReview,
   libraryBriefSuggestionsLabel,
 } from "@t3tools/client-runtime/fork";
@@ -229,7 +230,8 @@ function BriefProposalReview({
       <div className="space-y-1">
         <p className="whitespace-pre-wrap">{proposal.summary}</p>
         <p className="text-xs text-muted-foreground">
-          {sourceLabel(proposal, hostLabel)} · {formatRelativeTimeLabel(proposal.createdAt)}
+          {libraryBriefProposalSourceLabel(proposal, hostLabel)} ·{" "}
+          {formatRelativeTimeLabel(proposal.createdAt)}
         </p>
       </div>
       {review.stale ? (
@@ -339,15 +341,4 @@ function BriefProposalReview({
       )}
     </div>
   );
-}
-
-function sourceLabel(proposal: LibraryBriefProposal, hostLabel: (id: EnvironmentId) => string) {
-  switch (proposal.source.kind) {
-    case "conversation":
-      return `From a conversation on ${hostLabel(proposal.source.environmentId)}`;
-    case "agent":
-      return `From ${proposal.source.label}`;
-    case "user":
-      return "From a person";
-  }
 }
