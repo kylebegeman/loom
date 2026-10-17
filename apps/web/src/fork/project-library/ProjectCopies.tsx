@@ -2,6 +2,7 @@ import { AuthOrchestrationReadScope, type EnvironmentId } from "@t3tools/contrac
 import {
   LIBRARY_COPY_HEALTH_FEATURE,
   type LibraryProject,
+  type LibraryRepositoryHealth,
   type LibraryWorkingCopy,
 } from "@t3tools/contracts/fork";
 import {
@@ -14,19 +15,16 @@ import {
   type LibraryProjectEvent,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
+  ArrowRightIcon,
   ChevronDownIcon,
   ChevronRightIcon,
-  EllipsisIcon,
   MessageSquarePlusIcon,
   MonitorIcon,
 } from "lucide-react";
 import { Button } from "~/components/ui/button";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
-import { toastManager } from "~/components/ui/toast";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { cn } from "~/lib/utils";
 import { useEnvironments } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
@@ -34,7 +32,7 @@ import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
+import { LibraryErrorNotice, LibraryPanel, LibrarySection } from "./LibraryControls";
 import { LibraryRecoveryDownload } from "./LibraryRecoveryDownload";
 import { CopyProfileSetup } from "./ProfileReadiness";
 import { ComputerLabel, PathLabel } from "./ProjectIdentity";
@@ -70,8 +68,64 @@ const STATUS_DOT: Record<CopyStatus["tone"], string> = {
   warning: "bg-warning",
 };
 
+function CopyStatusLabel({ status }: { readonly status: CopyStatus }) {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <span aria-hidden className={cn("size-1.5 rounded-full", STATUS_DOT[status.tone])} />
+      <span className={status.tone === "warning" ? "text-warning-foreground" : ""}>
+        {status.label}
+      </span>
+    </span>
+  );
+}
+
 const repositoryTitle = (project: LibraryProject, resourceId: string) =>
   project.resources.find((resource) => resource.id === resourceId)?.title ?? resourceId;
+
+/** One row per repository in the copy, then when the counts were read and what to do next. */
+function RepositoryHealthList({
+  project,
+  repositories,
+  renderAction,
+  footer,
+}: {
+  readonly project: LibraryProject;
+  readonly repositories: readonly LibraryRepositoryHealth[];
+  readonly renderAction?: (repository: LibraryRepositoryHealth) => ReactNode;
+  readonly footer: ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <ul
+        aria-label="Repositories"
+        className="divide-y divide-border rounded-lg border border-border"
+      >
+        {repositories.map((repository) => (
+          <li
+            key={repository.resourceId}
+            className="flex min-h-9 min-w-0 items-center gap-3 py-1 ps-3 pe-1.5 text-xs"
+          >
+            <span className="w-28 shrink-0 truncate font-medium sm:w-44">
+              {repositoryTitle(project, repository.resourceId)}
+            </span>
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate",
+                repository.error ? "text-warning-foreground" : "text-muted-foreground",
+              )}
+            >
+              {libraryRepositoryHealthSummary(repository)}
+            </span>
+            {renderAction?.(repository)}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+        {footer}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The last health the copy's computer published to the Library, aged by when the Library last
@@ -91,34 +145,17 @@ function PublishedCopyHealth({
 }) {
   const effective = effectiveLibraryCopyHealth({ copy, live: null, lastSeenAt });
   if (effective === null) return null;
-  const { repositories } = effective.health;
-  const named = repositories.length > 1;
   return (
-    <div className="space-y-0.5">
-      {repositories.map((repository, index) => (
-        <p
-          key={repository.resourceId}
-          className={cn(
-            "min-w-0 truncate text-xs",
-            repository.error ? "text-warning-foreground" : "text-muted-foreground",
-          )}
-        >
-          {named ? (
-            <span className="text-foreground">
-              {repositoryTitle(project, repository.resourceId)} ·{" "}
-            </span>
-          ) : null}
-          {libraryRepositoryHealthSummary(repository)}
-          {index === repositories.length - 1 ? (
-            <span>
-              {" "}
-              · as of {formatRelativeTimeLabel(effective.asOf)}
-              {offlineLabel === null ? null : ` · ${offlineLabel} offline`}
-            </span>
-          ) : null}
-        </p>
-      ))}
-    </div>
+    <RepositoryHealthList
+      project={project}
+      repositories={effective.health.repositories}
+      footer={
+        <span>
+          As of {formatRelativeTimeLabel(effective.asOf)}
+          {offlineLabel === null ? null : ` · ${offlineLabel} offline`}
+        </span>
+      }
+    />
   );
 }
 
@@ -204,59 +241,48 @@ function CopyHealth({
         Checking repositories...
       </p>
     ) : null;
-  const named = data.repositories.length > 1;
   return (
-    <div className="space-y-0.5">
-      {data.repositories.map((repository, index) => {
-        const title = repositoryTitle(project, repository.resourceId);
+    <RepositoryHealthList
+      project={project}
+      repositories={data.repositories}
+      renderAction={(repository) => {
         const cwd = copy.repositories.find(
           (entry) => entry.resourceId === repository.resourceId,
         )?.path;
-        return (
-          <div key={repository.resourceId} className="flex min-w-0 items-center gap-2 text-xs">
-            <p
-              className={cn(
-                "min-w-0 truncate",
-                repository.error ? "text-warning-foreground" : "text-muted-foreground",
-              )}
+        return cwd !== undefined && canPull && libraryRepositoryCanPull(repository) ? (
+          <Button
+            shape="pill"
+            size="xs"
+            variant="outline"
+            disabled={busy}
+            onClick={() => void pullRepository(repository.resourceId, cwd)}
+          >
+            {pulling === repository.resourceId ? "Pulling..." : "Pull"}
+          </Button>
+        ) : null;
+      }}
+      footer={
+        <>
+          <span>Checked {formatRelativeTimeLabel(data.checkedAt)}</span>
+          {canRefreshRemote ? (
+            <Button
+              shape="pill"
+              size="xs"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => void checkRemote()}
             >
-              {named ? <span className="text-foreground">{title} · </span> : null}
-              {libraryRepositoryHealthSummary(repository)}
-              {index === data.repositories.length - 1 ? (
-                <span> · checked {formatRelativeTimeLabel(data.checkedAt)}</span>
-              ) : null}
-            </p>
-            {cwd !== undefined && canPull && libraryRepositoryCanPull(repository) ? (
-              <Button
-                shape="pill"
-                size="xs"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => void pullRepository(repository.resourceId, cwd)}
-              >
-                {pulling === repository.resourceId ? "Pulling..." : "Pull"}
-              </Button>
-            ) : null}
-            {index === data.repositories.length - 1 && canRefreshRemote ? (
-              <Button
-                shape="pill"
-                size="xs"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => void checkRemote()}
-              >
-                {checkingRemote ? "Checking..." : "Check remote"}
-              </Button>
-            ) : null}
-          </div>
-        );
-      })}
-      {actionError ? <p className="text-xs text-warning-foreground">{actionError}</p> : null}
-    </div>
+              {checkingRemote ? "Checking..." : "Check remote"}
+            </Button>
+          ) : null}
+          {actionError ? <span className="text-warning-foreground">{actionError}</span> : null}
+        </>
+      }
+    />
   );
 }
 
-/** The two ways to put a project on a computer, shared by the panel header and the setup steps. */
+/** The two ways to put a project on a computer, shared by the copies view and the setup steps. */
 export function GetCopyMenu({
   disabled,
   label = "Get a copy",
@@ -281,6 +307,29 @@ export function GetCopyMenu({
         </MenuItem>
       </MenuPopup>
     </Menu>
+  );
+}
+
+function NoCopies({
+  canAct,
+  onGetCopy,
+}: {
+  readonly canAct: boolean;
+  readonly onGetCopy: (request: CopyRequest) => void;
+}) {
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <div className="flex items-start gap-2.5">
+        <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
+          <MonitorIcon aria-hidden className="size-3.5" />
+        </span>
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Not on a computer right now. Get a copy when you want to work and remove it when you're
+          done. Conversations stay either way.
+        </p>
+      </div>
+      {canAct ? <GetCopyMenu variant="outline" onGetCopy={onGetCopy} /> : null}
+    </div>
   );
 }
 
@@ -329,103 +378,62 @@ export function ProjectCopies({
         .capabilities,
       LIBRARY_COPY_HEALTH_FEATURE,
     );
-  const { copyToClipboard } = useCopyToClipboard<string>({
-    onCopy: (path) =>
-      toastManager.add({ type: "success", title: "Path copied", description: path }),
-  });
   return (
-    <LibraryPanel
+    <LibrarySection
       title="On your computers"
       count={active.length}
-      action={canAct && active.length ? <GetCopyMenu label="Add" onGetCopy={onGetCopy} /> : null}
+      action={
+        canAct && active.length ? <GetCopyMenu variant="outline" onGetCopy={onGetCopy} /> : null
+      }
     >
-      {error ? (
-        <div className="px-3.5">
-          <LibraryErrorNotice error={error} onRetry={onRetry} />
-        </div>
-      ) : null}
+      <LibraryErrorNotice error={error} onRetry={onRetry} />
       {active.length ? (
-        <ul className="divide-y divide-border border-t border-border">
+        <ul className="flex flex-col gap-3">
           {active.map((copy) => {
             const online = hostConnected(copy.environmentId);
-            const status = copyStatus(copy, online);
             const label = hostLabel(copy.environmentId);
             return (
               <li
                 key={copy.id}
-                className="space-y-1 py-2.5 ps-3.5 pe-2 transition-colors duration-150 hover:bg-accent/40"
+                aria-label={`Copy on ${label}`}
+                className="space-y-3 rounded-xl border border-border bg-card p-4"
               >
-                <div className="flex min-w-0 items-center gap-2">
-                  <ComputerLabel
-                    environmentId={copy.environmentId}
-                    label={label}
-                    className="min-w-0 shrink text-sm font-medium text-foreground"
-                  />
-                  <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-                    <span
-                      aria-hidden
-                      className={cn("size-1.5 rounded-full", STATUS_DOT[status.tone])}
-                    />
-                    <span className={status.tone === "warning" ? "text-warning-foreground" : ""}>
-                      {status.label}
-                    </span>
-                  </span>
-                  <span className="ms-auto flex shrink-0 items-center">
+                <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+                  <div className="min-w-0 flex-1 basis-60 space-y-1">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <ComputerLabel
+                        environmentId={copy.environmentId}
+                        label={label}
+                        className="min-w-0 shrink text-sm font-medium text-foreground"
+                      />
+                      <CopyStatusLabel status={copyStatus(copy, online)} />
+                    </div>
+                    <PathLabel path={copy.rootPath} className="-ms-1.5" />
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-1.5">
                     {copy.state === "ready" ? (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              shape="pill"
-                              size="icon-xs"
-                              variant="ghost"
-                              disabled={!canStart || !online}
-                              aria-label={`Start a conversation on ${label}`}
-                              onClick={() => onStart(copy)}
-                            />
-                          }
-                        >
-                          <MessageSquarePlusIcon />
-                        </TooltipTrigger>
-                        <TooltipPopup side="top">Start a conversation here</TooltipPopup>
-                      </Tooltip>
-                    ) : null}
-                    <Menu>
-                      <MenuTrigger
-                        render={
-                          <Button
-                            shape="pill"
-                            size="icon-xs"
-                            variant="ghost"
-                            aria-label={`Actions for the copy on ${label}`}
-                          />
-                        }
+                      <Button
+                        shape="pill"
+                        size="xs"
+                        variant="outline"
+                        disabled={!canStart || !online}
+                        onClick={() => onStart(copy)}
                       >
-                        <EllipsisIcon />
-                      </MenuTrigger>
-                      <MenuPopup side="bottom" align="end">
-                        <MenuItem
-                          disabled={copy.state !== "ready" || !canStart || !online}
-                          onClick={() => onStart(copy)}
-                        >
-                          Start a conversation here
-                        </MenuItem>
-                        <MenuItem onClick={() => copyToClipboard(copy.rootPath, copy.rootPath)}>
-                          Copy path
-                        </MenuItem>
-                        <MenuSeparator />
-                        <MenuItem
-                          variant="destructive"
-                          disabled={!canAct}
-                          onClick={() => onRemove(copy)}
-                        >
-                          {copy.ownership === "borrowed" ? "Stop using this folder" : "Remove copy"}
-                        </MenuItem>
-                      </MenuPopup>
-                    </Menu>
-                  </span>
+                        <MessageSquarePlusIcon />
+                        Start a conversation here
+                      </Button>
+                    ) : null}
+                    <Button
+                      shape="pill"
+                      size="xs"
+                      variant="ghost"
+                      disabled={!canAct}
+                      onClick={() => onRemove(copy)}
+                    >
+                      {copy.ownership === "borrowed" ? "Stop using this folder" : "Remove copy"}
+                    </Button>
+                  </div>
                 </div>
-                <PathLabel path={copy.rootPath} className="-ms-1.5" />
                 {copy.state !== "ready" ? null : online && supportsHealth(copy.environmentId) ? (
                   <CopyHealth
                     project={project}
@@ -454,21 +462,70 @@ export function ProjectCopies({
           })}
         </ul>
       ) : loading ? (
-        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
+        <p role="status" className="text-xs text-muted-foreground">
           Checking your computers...
         </p>
       ) : error ? null : (
-        <div className="flex flex-col items-start gap-3 px-3.5 pb-3.5">
-          <div className="flex items-start gap-2.5">
-            <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
-              <MonitorIcon aria-hidden className="size-3.5" />
-            </span>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Not on a computer right now. Get a copy when you want to work and remove it when
-              you're done. Conversations stay either way.
-            </p>
-          </div>
-          {canAct ? <GetCopyMenu variant="outline" onGetCopy={onGetCopy} /> : null}
+        <NoCopies canAct={canAct} onGetCopy={onGetCopy} />
+      )}
+    </LibrarySection>
+  );
+}
+
+/** The overview's glance at where the project lives, with the way to manage each copy. */
+export function CopiesSummary({
+  copies,
+  loading,
+  canAct,
+  hostLabel,
+  hostConnected,
+  onGetCopy,
+  onShowAll,
+}: {
+  readonly copies: readonly LibraryWorkingCopy[];
+  readonly loading: boolean;
+  readonly canAct: boolean;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly hostConnected: (id: EnvironmentId) => boolean;
+  readonly onGetCopy: (request: CopyRequest) => void;
+  readonly onShowAll: () => void;
+}) {
+  const active = libraryActiveCopies(copies);
+  return (
+    <LibraryPanel
+      title="On your computers"
+      count={active.length}
+      action={
+        active.length ? (
+          <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
+            Manage
+            <ArrowRightIcon />
+          </Button>
+        ) : null
+      }
+    >
+      {active.length ? (
+        <ul className="divide-y divide-border border-t border-border">
+          {active.map((copy) => (
+            <li key={copy.id} className="flex min-w-0 items-center gap-2 px-3.5 py-2.5">
+              <ComputerLabel
+                environmentId={copy.environmentId}
+                label={hostLabel(copy.environmentId)}
+                className="min-w-0 shrink text-sm text-foreground"
+              />
+              <span className="ms-auto">
+                <CopyStatusLabel status={copyStatus(copy, hostConnected(copy.environmentId))} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : loading ? (
+        <p role="status" className="px-3.5 pb-3 text-xs text-muted-foreground">
+          Checking your computers...
+        </p>
+      ) : (
+        <div className="px-3.5 pb-3.5">
+          <NoCopies canAct={canAct} onGetCopy={onGetCopy} />
         </div>
       )}
     </LibraryPanel>

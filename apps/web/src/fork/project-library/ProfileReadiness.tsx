@@ -57,6 +57,27 @@ export function ProfileReadiness({
   ) : null;
 }
 
+/**
+ * One computer's readiness for the setup page. Unlike `ProfileReadiness`, it says so when the
+ * computer is too old to check, because the page lists every computer by name.
+ */
+export function ComputerReadiness({
+  environmentId,
+  project,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly project: LibraryProject;
+}) {
+  const supported = useSupportsReadiness(environmentId);
+  return supported ? (
+    <ReadinessChecklist environmentId={environmentId} project={project} />
+  ) : (
+    <p className="text-xs text-muted-foreground">
+      This computer can't check tools yet. Update Loom on it to see what's missing.
+    </p>
+  );
+}
+
 function ReadinessChecklist({
   environmentId,
   project,

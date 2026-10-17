@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { EnvironmentId, ProjectScript } from "@t3tools/contracts";
 import {
   LIBRARY_PROFILE_LIMITS,
@@ -12,6 +12,7 @@ import {
 } from "@t3tools/contracts/fork";
 import {
   compactLibraryProfile,
+  libraryActiveCopies,
   LIBRARY_BRIEF_SUGGESTION_CHOICES,
   libraryBriefSuggestionChoice,
   libraryBriefSuggestionChoiceLabel,
@@ -35,7 +36,30 @@ import { Radio, RadioGroup } from "~/components/ui/radio-group";
 import { Switch } from "~/components/ui/switch";
 import { Toggle } from "~/components/ui/toggle";
 import { useProjects } from "~/state/entities";
-import { LibraryDialog, LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
+import { cn } from "~/lib/utils";
+import { LibraryDialog, LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import { ComputerReadiness } from "./ProfileReadiness";
+import { ComputerLabel } from "./ProjectIdentity";
+
+function SetupCard({
+  title,
+  className,
+  children,
+}: {
+  readonly title: string;
+  readonly className?: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className={cn("space-y-2 rounded-xl border border-border bg-card p-4", className)}
+    >
+      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      {children}
+    </section>
+  );
+}
 
 /**
  * How work on this project gets going on any computer: its scripts, the tools it needs, the
@@ -68,60 +92,132 @@ export function ProjectProfile({
 }) {
   const [editing, setEditing] = useState(false);
   const profile = project.profile;
-  const rows = profile
-    ? [
-        profile.scripts?.length
-          ? ["Scripts", profile.scripts.map((script) => script.name).join(", ")]
-          : null,
-        profile.requiredTools?.length
-          ? ["Needs", profile.requiredTools.map(libraryToolText).join(", ")]
-          : null,
-        profile.secretNames?.length ? ["Secrets", profile.secretNames.join(", ")] : null,
-        profile.preferredEnvironmentIds?.length
-          ? ["Runs on", profile.preferredEnvironmentIds.map(hostLabel).join(", ")]
-          : null,
-        profile.defaultModelSelection ? ["Model", profile.defaultModelSelection.model] : null,
-        profile.allowMini ? ["Mini", "Can run its jobs"] : null,
-        keepsBriefSuggestions && libraryBriefSuggestionChoice(profile.briefSuggestions) !== "off"
-          ? ["Brief", `${libraryBriefSuggestionChoiceLabel(profile.briefSuggestions)} suggestions`]
-          : null,
-      ].filter((row) => row !== null)
-    : [];
+  const scripts = profile?.scripts ?? [];
+  const tools = profile?.requiredTools ?? [];
+  const secrets = profile?.secretNames ?? [];
+  const preferred = profile?.preferredEnvironmentIds ?? [];
+  const briefSuggestions =
+    keepsBriefSuggestions && libraryBriefSuggestionChoice(profile?.briefSuggestions) !== "off";
+  const details = [
+    profile?.defaultModelSelection ? ["Model", profile.defaultModelSelection.model] : null,
+    profile?.allowMini ? ["Mini", "Can run its jobs"] : null,
+    briefSuggestions
+      ? ["Brief", `${libraryBriefSuggestionChoiceLabel(profile?.briefSuggestions)} suggestions`]
+      : null,
+  ].filter((row) => row !== null);
+  const empty =
+    !scripts.length && !tools.length && !secrets.length && !preferred.length && !details.length;
+  const computersWithCopies = [
+    ...new Set(libraryActiveCopies(copies).map((copy) => copy.environmentId)),
+  ];
   return (
-    <LibraryPanel
+    <LibrarySection
       title="Setup"
       action={
         canEdit ? (
           <Button
             shape="pill"
             size="xs"
-            variant="ghost"
+            variant="outline"
             disabled={busy}
             onClick={() => {
               onEdit();
               setEditing(true);
             }}
           >
-            {rows.length ? "Edit" : "Set up"}
+            {empty ? "Set up" : "Edit"}
           </Button>
         ) : null
       }
     >
-      {rows.length ? (
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 border-t border-border px-3.5 py-3 text-xs">
-          {rows.map(([label, value]) => (
-            <div key={label} className="contents">
-              <dt className="text-muted-foreground">{label}</dt>
-              <dd className="wrap-anywhere">{value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
+      {empty ? (
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Scripts, required tools and secret names that every computer working on this project
           should have.
         </p>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2">
+          {scripts.length ? (
+            <SetupCard title="Scripts" className="md:col-span-2">
+              <ul className="divide-y divide-border">
+                {scripts.map((script) => (
+                  <li
+                    key={script.id}
+                    className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1.5"
+                  >
+                    <span className="w-40 shrink-0 truncate text-sm">{script.name}</span>
+                    <code className="min-w-0 flex-1 font-mono text-xs wrap-anywhere text-muted-foreground">
+                      {script.command}
+                    </code>
+                  </li>
+                ))}
+              </ul>
+            </SetupCard>
+          ) : null}
+          {tools.length ? (
+            <SetupCard title="Needs">
+              <div className="flex flex-wrap gap-1.5">
+                {tools.map((tool) => (
+                  <Badge key={tool.id} variant="outline">
+                    {libraryToolText(tool)}
+                  </Badge>
+                ))}
+              </div>
+            </SetupCard>
+          ) : null}
+          {secrets.length ? (
+            <SetupCard title="Secrets each computer sets">
+              <div className="flex flex-wrap gap-1.5">
+                {secrets.map((name) => (
+                  <Badge key={name} variant="outline">
+                    <KeyRoundIcon aria-hidden />
+                    {name}
+                  </Badge>
+                ))}
+              </div>
+            </SetupCard>
+          ) : null}
+          {preferred.length ? (
+            <SetupCard title="Runs on">
+              <p className="text-sm">{preferred.map(hostLabel).join(", ")}</p>
+            </SetupCard>
+          ) : null}
+          {details.length ? (
+            <SetupCard title="Conversations">
+              <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
+                {details.map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="wrap-anywhere">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </SetupCard>
+          ) : null}
+        </div>
       )}
+      {(tools.length || secrets.length) && computersWithCopies.length ? (
+        <div className="space-y-2 pt-3">
+          <h3 className="text-sm font-semibold tracking-tight">On each computer</h3>
+          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
+            {computersWithCopies.map((environmentId) => (
+              <li
+                key={environmentId}
+                className="flex flex-wrap items-start gap-x-4 gap-y-1.5 px-4 py-3"
+              >
+                <ComputerLabel
+                  environmentId={environmentId}
+                  label={hostLabel(environmentId)}
+                  className="w-40 shrink-0 text-sm text-foreground"
+                />
+                <div className="min-w-0 flex-1 basis-64">
+                  <ComputerReadiness environmentId={environmentId} project={project} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {editing ? (
         <ProfileDialog
           project={project}
@@ -137,7 +233,7 @@ export function ProjectProfile({
           }}
         />
       ) : null}
-    </LibraryPanel>
+    </LibrarySection>
   );
 }
 

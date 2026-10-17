@@ -344,7 +344,14 @@ export function useLibraryPaletteContext(
           // Only a project page names a project; anywhere else searches every project.
           const projectId = params.projectId;
           requestLibraryHistorySearch(projectId);
-          if (!projectId) await navigate({ to: "/library" });
+          // The project's search field lives on its Conversations view.
+          await (projectId
+            ? navigate({
+                to: "/library/$projectId",
+                params: { projectId },
+                search: { view: "conversations" },
+              })
+            : navigate({ to: "/library" }));
         }
       : null,
   };

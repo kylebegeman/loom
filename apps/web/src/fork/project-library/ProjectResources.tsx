@@ -1,19 +1,54 @@
 import { useState } from "react";
-import type { LibraryResource } from "@t3tools/contracts/fork";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { LibraryResource, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import {
+  libraryActiveCopies,
   libraryResourceFromInput,
   libraryResourceLocation,
   isRepositoryResource,
   resourceLink,
 } from "@t3tools/client-runtime/fork";
-import { ArrowUpRightIcon, EllipsisIcon, FolderGit2Icon, LinkIcon, PlusIcon } from "lucide-react";
+import {
+  ArrowRightIcon,
+  ArrowUpRightIcon,
+  EllipsisIcon,
+  FolderGit2Icon,
+  LinkIcon,
+  MessageSquarePlusIcon,
+  PlusIcon,
+} from "lucide-react";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "~/components/ui/menu";
 import { randomUUID } from "~/lib/utils";
-import { LibraryField, LibraryPanel } from "./LibraryControls";
+import { LibraryField, LibraryPanel, LibrarySection } from "./LibraryControls";
 
 const MAX_RESOURCES = 64;
+
+function ResourceIcon({ resource }: { readonly resource: LibraryResource }) {
+  const Icon = isRepositoryResource(resource) ? FolderGit2Icon : LinkIcon;
+  return (
+    <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
+      <Icon aria-hidden className="size-3.5" />
+    </span>
+  );
+}
+
+/** The computers whose ready copy holds this repository, so a row says where the code already is. */
+function computersHolding(
+  resource: LibraryResource,
+  copies: readonly LibraryWorkingCopy[],
+  hostLabel: (id: EnvironmentId) => string,
+) {
+  const labels = libraryActiveCopies(copies)
+    .filter(
+      (copy) =>
+        copy.state === "ready" &&
+        copy.repositories.some((repository) => repository.resourceId === resource.id),
+    )
+    .map((copy) => hostLabel(copy.environmentId));
+  return [...new Set(labels)];
+}
 
 /**
  * Repositories and links, edited in place. Pasting a URL is the whole add flow, and a repository
@@ -21,6 +56,8 @@ const MAX_RESOURCES = 64;
  */
 export function ProjectResources({
   resources,
+  copies,
+  hostLabel,
   canEdit,
   busy,
   adding,
@@ -30,6 +67,8 @@ export function ProjectResources({
   onStart,
 }: {
   readonly resources: readonly LibraryResource[];
+  readonly copies: readonly LibraryWorkingCopy[];
+  readonly hostLabel: (id: EnvironmentId) => string;
   readonly canEdit: boolean;
   readonly busy: boolean;
   readonly adding: boolean;
@@ -41,7 +80,7 @@ export function ProjectResources({
   const [editingId, setEditingId] = useState<string | null>(null);
   const canAdd = canEdit && resources.length < MAX_RESOURCES;
   return (
-    <LibraryPanel
+    <LibrarySection
       title="Repositories and links"
       count={resources.length}
       action={
@@ -49,7 +88,7 @@ export function ProjectResources({
           <Button
             shape="pill"
             size="xs"
-            variant="ghost"
+            variant="outline"
             aria-expanded={adding}
             onClick={() => onAddingChange(!adding)}
           >
@@ -65,11 +104,21 @@ export function ProjectResources({
         ) : null
       }
     >
+      {canAdd && (adding || !resources.length) ? (
+        <div className="max-w-2xl pb-2">
+          <ResourceAdder
+            resources={resources}
+            busy={busy}
+            autoFocus={adding}
+            onAdd={(resource) => onChange([...resources, resource])}
+          />
+        </div>
+      ) : null}
       {resources.length ? (
-        <ul className="divide-y divide-border border-t border-border">
+        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
           {resources.map((resource) =>
             editingId === resource.id ? (
-              <li key={resource.id} className="px-3.5 py-3">
+              <li key={resource.id} className="max-w-2xl px-4 py-3.5">
                 <ResourceEditor
                   resource={resource}
                   busy={busy}
@@ -86,6 +135,7 @@ export function ProjectResources({
               <ResourceRow
                 key={resource.id}
                 resource={resource}
+                computers={computersHolding(resource, copies, hostLabel)}
                 canEdit={canEdit && !busy}
                 canStart={canStart}
                 onEdit={() => setEditingId(resource.id)}
@@ -98,26 +148,17 @@ export function ProjectResources({
           )}
         </ul>
       ) : (
-        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           The repositories this project is made of, plus any links worth keeping close.
         </p>
       )}
-      {canAdd && (adding || !resources.length) ? (
-        <div className={resources.length ? "border-t border-border px-3.5 py-3" : "px-3.5 pb-3.5"}>
-          <ResourceAdder
-            resources={resources}
-            busy={busy}
-            autoFocus={adding}
-            onAdd={(resource) => onChange([...resources, resource])}
-          />
-        </div>
-      ) : null}
-    </LibraryPanel>
+    </LibrarySection>
   );
 }
 
 function ResourceRow({
   resource,
+  computers,
   canEdit,
   canStart,
   onEdit,
@@ -125,6 +166,7 @@ function ResourceRow({
   onRemove,
 }: {
   readonly resource: LibraryResource;
+  readonly computers: readonly string[];
   readonly canEdit: boolean;
   readonly canStart: boolean;
   readonly onEdit: () => void;
@@ -133,59 +175,101 @@ function ResourceRow({
 }) {
   const href = resourceLink(resource);
   const repository = isRepositoryResource(resource);
-  const Icon = repository ? FolderGit2Icon : LinkIcon;
   return (
-    <li className="group/resource flex items-center gap-2.5 py-2 ps-3.5 pe-2 transition-colors duration-150 hover:bg-accent/40">
-      <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground dark:bg-accent">
-        <Icon aria-hidden className="size-3.5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{resource.title}</p>
-        <p className="truncate text-xs text-muted-foreground">
-          {libraryResourceLocation(resource)}
-        </p>
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5 ps-4 pe-2.5">
+      <div className="flex min-w-0 flex-1 basis-64 items-center gap-3">
+        <ResourceIcon resource={resource} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{resource.title}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {libraryResourceLocation(resource)}
+          </p>
+        </div>
       </div>
-      {href ? (
-        <Button
-          shape="pill"
-          size="icon-xs"
-          variant="ghost"
-          aria-label={`Open ${resource.title}`}
-          render={<a href={href} target="_blank" rel="noopener noreferrer" />}
-        >
-          <ArrowUpRightIcon />
-        </Button>
+      {repository ? (
+        <p className="w-40 shrink-0 truncate text-xs text-muted-foreground">
+          {computers.length ? `On ${computers.join(", ")}` : "Not on a computer"}
+        </p>
       ) : null}
-      {canEdit || (repository && canStart) ? (
-        <Menu>
-          <MenuTrigger
-            render={
-              <Button
-                shape="pill"
-                size="icon-xs"
-                variant="ghost"
-                aria-label={`Actions for ${resource.title}`}
-              />
-            }
+      <div className="ms-auto flex shrink-0 items-center gap-1">
+        {repository ? (
+          <Button shape="pill" size="xs" variant="ghost" disabled={!canStart} onClick={onStart}>
+            <MessageSquarePlusIcon />
+            Start a conversation
+          </Button>
+        ) : null}
+        {href ? (
+          <Button
+            shape="pill"
+            size="icon-xs"
+            variant="ghost"
+            aria-label={`Open ${resource.title}`}
+            render={<a href={href} target="_blank" rel="noopener noreferrer" />}
           >
-            <EllipsisIcon />
-          </MenuTrigger>
-          <MenuPopup side="bottom" align="end">
-            {repository ? (
-              <MenuItem disabled={!canStart} onClick={onStart}>
-                Start a conversation about it
+            <ArrowUpRightIcon />
+          </Button>
+        ) : null}
+        {canEdit ? (
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  shape="pill"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={`Actions for ${resource.title}`}
+                />
+              }
+            >
+              <EllipsisIcon />
+            </MenuTrigger>
+            <MenuPopup side="bottom" align="end">
+              <MenuItem onClick={onEdit}>Edit</MenuItem>
+              <MenuItem variant="destructive" onClick={onRemove}>
+                Remove from project
               </MenuItem>
-            ) : null}
-            <MenuItem disabled={!canEdit} onClick={onEdit}>
-              Edit
-            </MenuItem>
-            <MenuItem variant="destructive" disabled={!canEdit} onClick={onRemove}>
-              Remove from project
-            </MenuItem>
-          </MenuPopup>
-        </Menu>
-      ) : null}
+            </MenuPopup>
+          </Menu>
+        ) : null}
+      </div>
     </li>
+  );
+}
+
+/** The overview's glance at what the project is made of. */
+export function ResourcesSummary({
+  resources,
+  onShowAll,
+}: {
+  readonly resources: readonly LibraryResource[];
+  readonly onShowAll: () => void;
+}) {
+  return (
+    <LibraryPanel
+      title="Repositories and links"
+      count={resources.length}
+      action={
+        <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
+          {resources.length ? "Manage" : "Add"}
+          <ArrowRightIcon />
+        </Button>
+      }
+    >
+      {resources.length ? (
+        <ul className="divide-y divide-border border-t border-border">
+          {resources.map((resource) => (
+            <li key={resource.id} className="flex min-w-0 items-center gap-2.5 px-3.5 py-2">
+              <ResourceIcon resource={resource} />
+              <p className="min-w-0 truncate text-sm">{resource.title}</p>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="px-3.5 pb-3 text-xs leading-relaxed text-muted-foreground">
+          The repositories this project is made of, plus any links worth keeping close.
+        </p>
+      )}
+    </LibraryPanel>
   );
 }
 

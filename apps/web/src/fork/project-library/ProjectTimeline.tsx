@@ -21,17 +21,21 @@ import {
   type LibraryTimelineLink,
 } from "@t3tools/client-runtime/fork";
 import { Link } from "@tanstack/react-router";
+import { ArrowRightIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "~/components/ui/button";
 import { Toggle } from "~/components/ui/toggle";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
-import { LibraryErrorNotice, LibraryPanel } from "./LibraryControls";
+import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
 import { projectLibrary } from "./state";
+import { groupTimelineByDay } from "./timelineDays";
 
-/** Entries per request. Small enough to arrive quickly, enough to fill the panel. */
+/** Entries per request. Small enough to arrive quickly, enough to fill the page. */
 const TIMELINE_PAGE = 30;
+/** The overview's glance at what happened most recently. */
+const PREVIEW_ENTRIES = 5;
 
 type Capabilities = Parameters<typeof supportsLoomFeature>[0];
 
@@ -64,16 +68,12 @@ export function ProjectTimeline({
   );
   const kinds = libraryTimelineKinds(filters, shown);
   return (
-    <LibraryPanel title="Timeline">
-      <div
-        role="group"
-        aria-label="Show only"
-        className="flex flex-wrap gap-1.5 border-t border-border px-3.5 py-2.5"
-      >
+    <section aria-label="Timeline" className="flex min-w-0 flex-col gap-5">
+      <div role="group" aria-label="Show only" className="flex flex-wrap gap-1.5">
         {shown.map((filter) => (
           <Toggle
             key={filter}
-            size="xs"
+            size="segmented"
             shape="pill"
             variant="outline"
             pressed={filters.includes(filter)}
@@ -95,7 +95,72 @@ export function ProjectTimeline({
         hostLabel={hostLabel}
         hostConnected={hostConnected}
       />
-    </LibraryPanel>
+    </section>
+  );
+}
+
+/** The newest few entries, for the overview. Renders nothing for a Library without a timeline. */
+export function TimelinePreview({
+  projectId,
+  authorityId,
+  connected,
+  capabilities,
+  hostLabel,
+  hostConnected,
+  onShowAll,
+}: {
+  readonly projectId: string;
+  readonly authorityId: EnvironmentId;
+  readonly connected: boolean;
+  readonly capabilities: Capabilities;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly hostConnected: (id: EnvironmentId) => boolean;
+  readonly onShowAll: () => void;
+}) {
+  const supported = supportsLoomFeature(capabilities, LIBRARY_TIMELINE_FEATURE);
+  const latest = useEnvironmentQuery(
+    supported
+      ? projectLibrary.timeline({
+          environmentId: authorityId,
+          input: { projectId, limit: PREVIEW_ENTRIES },
+        })
+      : null,
+  );
+  if (!supported) return null;
+  const entries = latest.data?.entries ?? [];
+  return (
+    <LibrarySection
+      title="Lately"
+      action={
+        entries.length ? (
+          <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
+            Full timeline
+            <ArrowRightIcon />
+          </Button>
+        ) : null
+      }
+    >
+      <LibraryErrorNotice error={latest.error} onRetry={latest.refresh} />
+      {entries.length ? (
+        <ol>
+          {entries.map((entry) => (
+            <li key={entry.sequence}>
+              <TimelineRow
+                entry={entry}
+                link={libraryTimelineEntryLink(entry, hostConnected)}
+                hostLabel={hostLabel}
+              />
+            </li>
+          ))}
+        </ol>
+      ) : latest.error ? null : latest.data ? (
+        <p className="text-xs text-muted-foreground">Nothing has happened in this project yet.</p>
+      ) : (
+        <p role="status" className="text-xs text-muted-foreground">
+          {connected ? "Loading timeline..." : "Connect your Library to see the timeline."}
+        </p>
+      )}
+    </LibrarySection>
   );
 }
 
@@ -153,10 +218,9 @@ function TimelineFeed({
   const readOlder = () => {
     if (typeof cursor === "number") setReading(cursor);
   };
-  const scrollRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
-  // Reading on as the end scrolls into view. Re-armed per cursor, so a short page that leaves
-  // the end in view reads the next one too.
+  // Reading on as the end scrolls into view of the page. Re-armed per cursor, so a short page
+  // that leaves the end in view reads the next one too.
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!canReadOlder || !sentinel || typeof IntersectionObserver === "undefined") return;
@@ -164,56 +228,64 @@ function TimelineFeed({
       ([entry]) => {
         if (entry?.isIntersecting) setReading(cursor);
       },
-      { root: scrollRef.current, rootMargin: "0px 0px 120px 0px" },
+      { rootMargin: "0px 0px 240px 0px" },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [canReadOlder, cursor]);
+  // Read once per visit, so day names stay pure while rendering.
+  const [now] = useState(() => new Date());
 
   if (cursor === undefined) {
-    return (
-      <div className="border-t border-border px-3.5 py-3">
-        {newest.error ? (
-          <LibraryErrorNotice error={newest.error} onRetry={newest.refresh} />
-        ) : (
-          <p role="status" className="text-xs text-muted-foreground">
-            {connected ? "Loading timeline..." : "Connect your Library to see the timeline."}
-          </p>
-        )}
-      </div>
+    return newest.error ? (
+      <LibraryErrorNotice error={newest.error} onRetry={newest.refresh} />
+    ) : (
+      <p role="status" className="text-sm text-muted-foreground">
+        {connected ? "Loading timeline..." : "Connect your Library to see the timeline."}
+      </p>
     );
   }
   if (!feed.entries.length && cursor === null) {
     return (
-      <p className="border-t border-border px-3.5 py-3 text-xs text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         {kinds ? "Nothing of these kinds yet." : "Nothing has happened in this project yet."}
       </p>
     );
   }
   return (
-    <div ref={scrollRef} className="max-h-96 overflow-y-auto border-t border-border">
-      {newest.error ? (
-        <div className="px-3.5">
-          <LibraryErrorNotice error={newest.error} onRetry={newest.refresh} />
-        </div>
-      ) : null}
-      <ol className="space-y-1 px-3.5 py-2">
-        {feed.entries.map((entry) => (
-          <li key={entry.sequence}>
-            <TimelineRow
-              entry={entry}
-              link={libraryTimelineEntryLink(entry, hostConnected)}
-              hostLabel={hostLabel}
-            />
-          </li>
-        ))}
-      </ol>
-      {cursor === null ? null : (
-        <div ref={sentinelRef} className="px-3.5 pb-3">
+    <div className="flex min-w-0 flex-col gap-6">
+      <LibraryErrorNotice error={newest.error} onRetry={newest.refresh} />
+      {groupTimelineByDay(feed.entries, now).map((day) => (
+        <section key={day.key} aria-label={day.label} className="flex flex-col gap-1">
+          <h3 className="text-xs font-medium text-muted-foreground">{day.label}</h3>
+          <ol>
+            {day.entries.map((entry) => (
+              <li key={entry.sequence}>
+                <TimelineRow
+                  entry={entry}
+                  link={libraryTimelineEntryLink(entry, hostConnected)}
+                  hostLabel={hostLabel}
+                  clock
+                />
+              </li>
+            ))}
+          </ol>
+        </section>
+      ))}
+      {cursor === null ? (
+        <p className="text-xs text-muted-foreground">That's everything since the project began.</p>
+      ) : (
+        <div ref={sentinelRef}>
           {older.error && reading === cursor ? (
             <LibraryErrorNotice error={older.error} onRetry={older.refresh} />
           ) : (
-            <Button size="xs" variant="ghost" disabled={loadingOlder} onClick={readOlder}>
+            <Button
+              shape="pill"
+              size="xs"
+              variant="outline"
+              disabled={loadingOlder}
+              onClick={readOlder}
+            >
               {loadingOlder ? "Loading..." : "Show older"}
             </Button>
           )}
@@ -223,40 +295,53 @@ function TimelineFeed({
   );
 }
 
+const formatClock = (iso: string) =>
+  new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+
+/**
+ * One thing that happened. Under a day heading the time of day leads; on its own the row says
+ * how long ago instead.
+ */
 function TimelineRow({
   entry,
   link,
   hostLabel,
+  clock = false,
 }: {
   readonly entry: LibraryTimelineEntry;
   readonly link: LibraryTimelineLink | null;
   readonly hostLabel: (id: EnvironmentId) => string;
+  readonly clock?: boolean;
 }) {
   const where = entry.environmentId ? hostLabel(entry.environmentId) : "Library";
   const folder = "copy" in entry ? libraryPathParts(entry.copy.rootPath).name : null;
-  const when = formatRelativeTimeLabel(entry.at);
   const body = (
     <>
+      {clock ? (
+        <span className="w-16 shrink-0 pt-px text-xs tabular-nums text-muted-foreground">
+          {formatClock(entry.at)}
+        </span>
+      ) : null}
       <span
         aria-hidden
         className={cn(
-          "mt-1.5 size-1.5 shrink-0 rounded-full",
+          "mt-2 size-1.5 shrink-0 rounded-full",
           libraryTimelineEntryFailed(entry) ? "bg-warning" : "bg-muted-foreground/45",
         )}
       />
-      <span className="min-w-0 flex-1">
-        <span className="block break-words text-xs leading-relaxed">
+      <span className="min-w-0 flex-1 space-y-0.5">
+        <span className="block break-words text-sm leading-snug">
           {libraryTimelineEntrySummary(entry)}
         </span>
         <span className="block truncate text-xs text-muted-foreground">
           {[where, folder].filter(Boolean).join(" · ")}
-          <span className="ms-1.5">{when}</span>
+          {clock ? null : <span className="ms-1.5">{formatRelativeTimeLabel(entry.at)}</span>}
           {entry.approximate ? <span className="ms-1.5">estimated time</span> : null}
         </span>
       </span>
     </>
   );
-  const row = "-mx-2 flex gap-2.5 rounded-lg px-2 py-1.5";
+  const row = "-mx-2.5 flex gap-3 rounded-lg px-2.5 py-2";
   const linked = `${row} outline-none transition-colors duration-150 hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring`;
   switch (link?.kind) {
     case "pull-request":

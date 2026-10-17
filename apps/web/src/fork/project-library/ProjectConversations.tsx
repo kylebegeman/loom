@@ -60,6 +60,8 @@ import { ComputerLabel } from "./ProjectIdentity";
 const CONVERSATION_PAGE = 20;
 /** A short list reads at a glance; search and sort arrive once there's something to look through. */
 const TOOLS_AFTER = 5;
+/** Rows under the featured conversation on the overview. */
+const RECENT_ROWS = 4;
 const SORT_KEY = "loom:library:project-conversations-sort:v1";
 const SortSchema = Schema.Literals(PROJECT_SORTS);
 
@@ -238,63 +240,26 @@ export function ProjectConversations({
       ) : null}
       <LibraryErrorNotice error={error} onRetry={onRetry} />
       {featured ? (
-        <ConversationLink
+        <FeaturedConversation
+          project={project}
           thread={featured}
+          status={statuses.get(featured.id)}
+          hostLabel={hostLabel}
           connected={hostConnected(featured.environmentId)}
-          className="group/card relative isolate -mx-3 flex items-center gap-4 rounded-xl p-3 outline-none transition-colors duration-200 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <ProjectWash />
-          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
-            <MessageSquareIcon aria-hidden className="size-4.5" />
-          </span>
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Pick up where you left off · {formatRelativeTimeLabel(featured.updatedAt)}
-            </p>
-            <p className="truncate text-base font-semibold tracking-tight">
-              {conversationTitle(featured)}
-            </p>
-            <ConversationMeta
-              project={project}
-              thread={featured}
-              status={statuses.get(featured.id)}
-              hostLabel={hostLabel}
-            />
-          </div>
-          <ArrowRightIcon
-            aria-hidden
-            className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
-          />
-        </ConversationLink>
+        />
       ) : null}
       {shown.length ? (
         <ul className={featured ? "pt-1" : undefined}>
           {shown.map((thread) => (
             <li key={thread.id}>
-              <ConversationLink
+              <ConversationRow
+                project={project}
                 thread={thread}
+                status={statuses.get(thread.id)}
+                hostLabel={hostLabel}
                 connected={hostConnected(thread.environmentId)}
-                className={cn(
-                  LIBRARY_ROW,
-                  "-mx-3 flex items-center gap-3 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                )}
-              >
-                <ConversationStatusIcon status={statuses.get(thread.id)} />
-                <span className="min-w-0 flex-1 truncate text-sm">{conversationTitle(thread)}</span>
-                <ConversationStatusLabel status={statuses.get(thread.id)} className="sm:hidden" />
-                <ConversationMeta
-                  project={project}
-                  thread={thread}
-                  status={statuses.get(thread.id)}
-                  hostLabel={hostLabel}
-                  className="hidden max-w-1/2 sm:flex"
-                />
-                <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                  {formatRelativeTimeLabel(
-                    sort === "created" ? thread.createdAt : thread.updatedAt,
-                  )}
-                </span>
-              </ConversationLink>
+                at={sort === "created" ? thread.createdAt : thread.updatedAt}
+              />
             </li>
           ))}
         </ul>
@@ -349,6 +314,163 @@ export function ProjectConversations({
         </div>
       ) : null}
     </LibrarySection>
+  );
+}
+
+/**
+ * The overview's slice of the list: the latest active conversation to pick back up, then the
+ * next few, with the way to every conversation.
+ */
+export function RecentConversations({
+  project,
+  threads,
+  loading,
+  error,
+  onRetry,
+  hostLabel,
+  hostConnected,
+  onShowAll,
+}: {
+  readonly project: LibraryProject;
+  readonly threads: readonly LibraryThreadSummary[];
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly onRetry: () => void;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly hostConnected: (id: EnvironmentId) => boolean;
+  readonly onShowAll: () => void;
+}) {
+  const live = useLiveConversations(threads, hostConnected);
+  const statusOf = (thread: LibraryThreadSummary) =>
+    conversationStatus(thread, live.get(liveKey(thread.environmentId, thread.threadId)) ?? null);
+  // Threads arrive newest first, so the first active ones are the latest.
+  const active = threads.filter((thread) => statusOf(thread).lane === "active");
+  const [featured, ...rest] = active.length ? active : threads;
+  const recent = rest.slice(0, RECENT_ROWS);
+  return (
+    <LibrarySection
+      title="Recent conversations"
+      action={
+        threads.length > recent.length + 1 ? (
+          <Button shape="pill" size="xs" variant="ghost" onClick={onShowAll}>
+            All {threads.length}
+            <ArrowRightIcon />
+          </Button>
+        ) : null
+      }
+    >
+      <LibraryErrorNotice error={error} onRetry={onRetry} />
+      {featured ? (
+        <FeaturedConversation
+          project={project}
+          thread={featured}
+          status={statusOf(featured)}
+          hostLabel={hostLabel}
+          connected={hostConnected(featured.environmentId)}
+        />
+      ) : loading ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Loading conversations...
+        </p>
+      ) : null}
+      {recent.length ? (
+        <ul className="pt-1">
+          {recent.map((thread) => (
+            <li key={thread.id}>
+              <ConversationRow
+                project={project}
+                thread={thread}
+                status={statusOf(thread)}
+                hostLabel={hostLabel}
+                connected={hostConnected(thread.environmentId)}
+                at={thread.updatedAt}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </LibrarySection>
+  );
+}
+
+function FeaturedConversation({
+  project,
+  thread,
+  status,
+  hostLabel,
+  connected,
+}: {
+  readonly project: LibraryProject;
+  readonly thread: LibraryThreadSummary;
+  readonly status: ConversationStatus | undefined;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly connected: boolean;
+}) {
+  return (
+    <ConversationLink
+      thread={thread}
+      connected={connected}
+      className="group/card relative isolate -mx-3 flex items-center gap-4 rounded-xl p-3 outline-none transition-colors duration-200 hover:bg-accent/30 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <ProjectWash />
+      <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-xl bg-(--project-color)/12 text-(--project-color) dark:bg-(--project-color)/16">
+        <MessageSquareIcon aria-hidden className="size-4.5" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1">
+        <p className="text-xs text-muted-foreground">
+          Pick up where you left off · {formatRelativeTimeLabel(thread.updatedAt)}
+        </p>
+        <p className="truncate text-base font-semibold tracking-tight">
+          {conversationTitle(thread)}
+        </p>
+        <ConversationMeta project={project} thread={thread} status={status} hostLabel={hostLabel} />
+      </div>
+      <ArrowRightIcon
+        aria-hidden
+        className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover/card:translate-x-0.5 group-hover/card:text-foreground"
+      />
+    </ConversationLink>
+  );
+}
+
+function ConversationRow({
+  project,
+  thread,
+  status,
+  hostLabel,
+  connected,
+  at,
+}: {
+  readonly project: LibraryProject;
+  readonly thread: LibraryThreadSummary;
+  readonly status: ConversationStatus | undefined;
+  readonly hostLabel: (id: EnvironmentId) => string;
+  readonly connected: boolean;
+  readonly at: string;
+}) {
+  return (
+    <ConversationLink
+      thread={thread}
+      connected={connected}
+      className={cn(
+        LIBRARY_ROW,
+        "-mx-3 flex items-center gap-3 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+      )}
+    >
+      <ConversationStatusIcon status={status} />
+      <span className="min-w-0 flex-1 truncate text-sm">{conversationTitle(thread)}</span>
+      <ConversationStatusLabel status={status} className="sm:hidden" />
+      <ConversationMeta
+        project={project}
+        thread={thread}
+        status={status}
+        hostLabel={hostLabel}
+        className="hidden max-w-1/2 sm:flex"
+      />
+      <span className="w-16 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+        {formatRelativeTimeLabel(at)}
+      </span>
+    </ConversationLink>
   );
 }
 

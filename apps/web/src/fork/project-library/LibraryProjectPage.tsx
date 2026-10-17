@@ -1,5 +1,6 @@
 import { randomUUID, cn } from "~/lib/utils";
 import { useEffect, useState, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_BRIEF_PROPOSALS_FEATURE,
@@ -23,6 +24,7 @@ import { Input } from "~/components/ui/input";
 import { Textarea } from "~/components/ui/textarea";
 import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "~/components/ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
+import { ToggleGroup, ToggleGroupItem } from "~/components/ui/toggle-group";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useProjects } from "~/state/entities";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
@@ -49,12 +51,24 @@ import { CopyDialog } from "./CopyDialog";
 import { ReleaseCopyDialog } from "./ReleaseCopyDialog";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { useProjectUpdate } from "./useProjectUpdate";
-import { ProjectResources } from "./ProjectResources";
+import { ProjectResources, ResourcesSummary } from "./ProjectResources";
 import { ProjectProfile } from "./ProjectProfile";
-import { GetCopyMenu, ProjectCopies, ProjectHistory, type CopyRequest } from "./ProjectCopies";
+import {
+  CopiesSummary,
+  GetCopyMenu,
+  ProjectCopies,
+  ProjectHistory,
+  type CopyRequest,
+} from "./ProjectCopies";
 import { ProjectColorPicker, ProjectTile, projectColorStyle } from "./ProjectIdentity";
-import { ProjectConversations } from "./ProjectConversations";
-import { ProjectTimeline } from "./ProjectTimeline";
+import { ProjectConversations, RecentConversations } from "./ProjectConversations";
+import { ProjectTimeline, TimelinePreview } from "./ProjectTimeline";
+import {
+  PROJECT_VIEW_LABELS,
+  PROJECT_VIEWS,
+  projectViewSearch,
+  type ProjectViewName,
+} from "./projectViews";
 import { LibraryHistorySearch } from "./LibraryHistorySearch";
 import { ProjectBriefProposals } from "./ProjectBriefProposals";
 import { dropLibraryBriefEdit, onLibraryBriefEdit, takeLibraryBriefEdit } from "./actions";
@@ -74,7 +88,13 @@ type ConversationRequest = {
  * A project is a name, a brief and the repositories and links it is made of. Copies on
  * computers come and go; conversations and the project outlive them.
  */
-export function LibraryProjectPage({ projectId }: { readonly projectId: string }) {
+export function LibraryProjectPage({
+  projectId,
+  view,
+}: {
+  readonly projectId: string;
+  readonly view: ProjectViewName;
+}) {
   // Removed copies feed the folded history, so the page always asks for them.
   const library = useLibraryProject(projectId, true);
   const [, selectProject] = useSelectedLibraryProject();
@@ -103,24 +123,33 @@ export function LibraryProjectPage({ projectId }: { readonly projectId: string }
     );
   return (
     <LibraryPageFrame title={project.title}>
-      <ProjectView library={library} authorityId={library.authorityId} project={project} />
+      <ProjectView
+        library={library}
+        authorityId={library.authorityId}
+        project={project}
+        view={view}
+      />
     </LibraryPageFrame>
   );
 }
 
 /**
- * The page reads top to bottom as the work does: what the project is, how to get going, then
- * the conversations. Where it lives on disk and what it's made of sit alongside.
+ * The hero always says what the project is. Below it one view at a time gets the full width:
+ * the overview glances at everything, and each other view is where that part gets managed. The
+ * view lives in the URL so back, reload and shared links land where the reader was.
  */
 function ProjectView({
   library,
   authorityId,
   project,
+  view,
 }: {
   readonly library: LibraryProjectView;
   readonly authorityId: EnvironmentId;
   readonly project: LibraryProject;
+  readonly view: ProjectViewName;
 }) {
+  const navigate = useNavigate();
   const [copyRequest, setCopyRequest] = useState<CopyRequest | null>(null);
   const [releasing, setReleasing] = useState<LibraryWorkingCopy | null>(null);
   const [conversation, setConversation] = useState<ConversationRequest | null>(null);
@@ -155,19 +184,14 @@ function ProjectView({
     );
   const copies = library.copies.data ?? [];
   const activeCopies = libraryActiveCopies(copies);
+  const capabilities = library.environment?.serverConfig?.environment.capabilities;
   // An older Library would drop a saved profile, so the section waits until it says it keeps one.
-  const keepsProfile = supportsLoomFeature(
-    library.environment?.serverConfig?.environment.capabilities,
-    LIBRARY_PROJECT_PROFILE_FEATURE,
-  );
+  const keepsProfile = supportsLoomFeature(capabilities, LIBRARY_PROJECT_PROFILE_FEATURE);
   // Suggested brief updates appear only once the Library says it keeps them.
-  const proposesBrief = supportsLoomFeature(
-    library.environment?.serverConfig?.environment.capabilities,
-    LIBRARY_BRIEF_PROPOSALS_FEATURE,
-  );
+  const proposesBrief = supportsLoomFeature(capabilities, LIBRARY_BRIEF_PROPOSALS_FEATURE);
   // An older Library would drop the brief suggestion setting, so the field waits for it too.
   const keepsBriefSuggestions = supportsLoomFeature(
-    library.environment?.serverConfig?.environment.capabilities,
+    capabilities,
     LIBRARY_BRIEF_SUGGESTIONS_FEATURE,
   );
   const canWork = library.connected && !project.archived;
@@ -179,6 +203,24 @@ function ProjectView({
     threads[0] && threads[0].updatedAt > project.updatedAt
       ? threads[0].updatedAt
       : project.updatedAt;
+  const copiesLoading = libraryCopyReadiness(library.copies) === "loading";
+  const views = PROJECT_VIEWS.filter((entry) => entry !== "setup" || keepsProfile);
+  // A link to the setup view still lands somewhere on a Library that keeps no setup.
+  const shown = views.includes(view) ? view : "overview";
+  const show = (next: ProjectViewName) =>
+    void navigate({
+      to: "/library/$projectId",
+      params: { projectId: project.id },
+      search: projectViewSearch(next),
+    });
+  const viewCount = (entry: ProjectViewName) =>
+    entry === "conversations"
+      ? threads.length
+      : entry === "computers"
+        ? activeCopies.length
+        : entry === "repositories"
+          ? project.resources.length
+          : 0;
   // A project nobody has talked about yet gets a path to its first conversation instead.
   const settingUp =
     !project.archived && !library.threads.isPending && !library.threads.error && !threads.length;
@@ -202,107 +244,170 @@ function ProjectView({
         onNewConversation={() => setConversation({})}
       />
       <LibraryErrorNotice error={library.project.error} onRetry={library.project.refresh} />
-      <div className="grid items-start gap-x-14 gap-y-10 border-t border-border pt-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="flex min-w-0 flex-col gap-10">
+      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+        <ToggleGroup
+          shape="pill"
+          aria-label="Project views"
+          variant="segmented"
+          className="w-fit"
+          value={[shown]}
+          onValueChange={(value) => {
+            const next = views.find((entry) => entry === value[0]);
+            if (next) show(next);
+          }}
+        >
+          {views.map((entry) => (
+            <ToggleGroupItem key={entry} value={entry}>
+              {PROJECT_VIEW_LABELS[entry]}
+              {viewCount(entry) ? (
+                <span className="tabular-nums opacity-60">{viewCount(entry)}</span>
+              ) : null}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+      {shown === "overview" ? (
+        <div className="grid items-start gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem]">
+          <div className="flex min-w-0 flex-col gap-10">
+            {settingUp ? (
+              <ProjectSetup
+                project={project}
+                hasCopy={activeCopies.length > 0}
+                canEdit={update.canEdit}
+                canWork={canWork}
+                canStart={canStart}
+                onWriteBrief={() => setEditingBrief(true)}
+                onAddResource={() => {
+                  setAddingResource(true);
+                  show("repositories");
+                }}
+                onGetCopy={setCopyRequest}
+                onStart={() => setConversation({})}
+              />
+            ) : (
+              <RecentConversations
+                project={project}
+                threads={threads}
+                loading={library.threads.isPending}
+                error={library.threads.error}
+                onRetry={library.threads.refresh}
+                hostLabel={hostLabel}
+                hostConnected={hostConnected}
+                onShowAll={() => show("conversations")}
+              />
+            )}
+            <TimelinePreview
+              projectId={project.id}
+              authorityId={authorityId}
+              connected={library.connected}
+              capabilities={capabilities}
+              hostLabel={hostLabel}
+              hostConnected={hostConnected}
+              onShowAll={() => show("timeline")}
+            />
+          </div>
+          <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
+            <CopiesSummary
+              copies={copies}
+              loading={copiesLoading}
+              canAct={canWork}
+              hostLabel={hostLabel}
+              hostConnected={hostConnected}
+              onGetCopy={setCopyRequest}
+              onShowAll={() => show("computers")}
+            />
+            <ResourcesSummary
+              resources={project.resources}
+              onShowAll={() => show("repositories")}
+            />
+          </aside>
+        </div>
+      ) : shown === "conversations" ? (
+        <div className="flex min-w-0 flex-col gap-8">
           <LibraryHistorySearch
             authorityId={authorityId}
             connected={library.connected}
-            capabilities={library.environment?.serverConfig?.environment.capabilities}
+            capabilities={capabilities}
             projectId={project.id}
             hostLabel={hostLabel}
           />
-          {settingUp ? (
-            <ProjectSetup
+          <ProjectConversations
+            project={project}
+            threads={threads}
+            loading={library.threads.isPending}
+            error={library.threads.error}
+            onRetry={library.threads.refresh}
+            hostLabel={hostLabel}
+            hostConnected={hostConnected}
+          />
+        </div>
+      ) : shown === "timeline" ? (
+        <ProjectTimeline
+          projectId={project.id}
+          authorityId={authorityId}
+          connected={library.connected}
+          capabilities={capabilities}
+          hostLabel={hostLabel}
+          hostConnected={hostConnected}
+          fallback={
+            <ProjectHistory
               project={project}
-              hasCopy={activeCopies.length > 0}
-              canEdit={update.canEdit}
-              canWork={canWork}
-              canStart={canStart}
-              onWriteBrief={() => setEditingBrief(true)}
-              onAddResource={() => setAddingResource(true)}
-              onGetCopy={setCopyRequest}
-              onStart={() => setConversation({})}
-            />
-          ) : (
-            <ProjectConversations
-              project={project}
-              threads={threads}
-              loading={library.threads.isPending}
-              error={library.threads.error}
-              onRetry={library.threads.refresh}
+              copies={copies}
+              authorityId={authorityId}
+              connected={library.connected}
+              canAct={canWork}
               hostLabel={hostLabel}
               hostConnected={hostConnected}
+              onReuse={setCopyRequest}
             />
-          )}
-        </div>
-        <aside aria-label="Project details" className="flex min-w-0 flex-col gap-4">
-          <ProjectCopies
-            project={project}
-            copies={copies}
-            loading={libraryCopyReadiness(library.copies) === "loading"}
-            error={library.copies.error}
-            onRetry={library.copies.refresh}
-            canAct={canWork}
-            canStart={canStart}
-            hostLabel={hostLabel}
-            hostConnected={hostConnected}
-            lastSeenAt={(id) =>
-              library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
-            }
-            publishedHealth={supportsLoomFeature(
-              library.environment?.serverConfig?.environment.capabilities,
-              LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE,
-            )}
-            onGetCopy={setCopyRequest}
-            onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
-            onRemove={setReleasing}
-          />
-          <ProjectResources
-            resources={project.resources}
-            canEdit={update.canEdit}
-            busy={update.busy}
-            adding={addingResource}
-            canStart={canStart}
-            onAddingChange={setAddingResource}
-            onChange={(resources) => update.save({ resources })}
-            onStart={(resource) => setConversation({ resourceId: resource.id })}
-          />
-          {keepsProfile ? (
-            <ProjectProfile
-              project={project}
-              copies={activeCopies}
-              computers={library.computers}
-              canEdit={update.canEdit}
-              keepsBriefSuggestions={keepsBriefSuggestions}
-              busy={update.busy}
-              error={update.error}
-              hostLabel={hostLabel}
-              onEdit={update.clearError}
-              onSave={(profile) => update.save({ profile })}
-            />
-          ) : null}
-          <ProjectTimeline
-            projectId={project.id}
-            authorityId={authorityId}
-            connected={library.connected}
-            capabilities={library.environment?.serverConfig?.environment.capabilities}
-            hostLabel={hostLabel}
-            hostConnected={hostConnected}
-            fallback={
-              <ProjectHistory
-                project={project}
-                copies={copies}
-                authorityId={authorityId}
-                connected={library.connected}
-                canAct={canWork}
-                hostLabel={hostLabel}
-                hostConnected={hostConnected}
-                onReuse={setCopyRequest}
-              />
-            }
-          />
-        </aside>
-      </div>
+          }
+        />
+      ) : shown === "computers" ? (
+        <ProjectCopies
+          project={project}
+          copies={copies}
+          loading={copiesLoading}
+          error={library.copies.error}
+          onRetry={library.copies.refresh}
+          canAct={canWork}
+          canStart={canStart}
+          hostLabel={hostLabel}
+          hostConnected={hostConnected}
+          lastSeenAt={(id) =>
+            library.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+          }
+          publishedHealth={supportsLoomFeature(capabilities, LIBRARY_COPY_HEALTH_PUBLISHED_FEATURE)}
+          onGetCopy={setCopyRequest}
+          onStart={(copy) => setConversation({ hostId: copy.environmentId, copyId: copy.id })}
+          onRemove={setReleasing}
+        />
+      ) : shown === "repositories" ? (
+        <ProjectResources
+          resources={project.resources}
+          copies={copies}
+          hostLabel={hostLabel}
+          canEdit={update.canEdit}
+          busy={update.busy}
+          adding={addingResource}
+          canStart={canStart}
+          onAddingChange={setAddingResource}
+          onChange={(resources) => update.save({ resources })}
+          onStart={(resource) => setConversation({ resourceId: resource.id })}
+        />
+      ) : (
+        <ProjectProfile
+          project={project}
+          copies={activeCopies}
+          computers={library.computers}
+          canEdit={update.canEdit}
+          keepsBriefSuggestions={keepsBriefSuggestions}
+          busy={update.busy}
+          error={update.error}
+          hostLabel={hostLabel}
+          onEdit={update.clearError}
+          onSave={(profile) => update.save({ profile })}
+        />
+      )}
       {copyRequest ? (
         <CopyDialog
           project={project}
