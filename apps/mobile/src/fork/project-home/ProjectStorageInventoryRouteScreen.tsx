@@ -8,13 +8,13 @@ import { useMemo, useState, type ComponentProps } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { EmptyState } from "../../components/EmptyState";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { ScreenScrollView } from "../../components/ScreenScrollView";
-import { SymbolView } from "../../components/AppSymbol";
+import { AppBar } from "../../components/ui/AppBar";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { useProjects } from "../../state/entities";
 import { useEnvironments } from "../../state/environments";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
@@ -70,7 +70,7 @@ export function ProjectStorageInventoryRouteScreen() {
   const listExtraData = useMemo(() => ({ rowsByKey, busy }), [rowsByKey, busy]);
   return (
     <View className="flex-1 bg-screen">
-      <ScreenHeader
+      <AppBar
         title="Files on computers"
         onBack={() => navigation.goBack()}
         backInSplitView={{ accessibilityLabel: "Back to projects", icon: "arrow.left" }}
@@ -143,7 +143,7 @@ export function ProjectStorageInventoryRouteScreen() {
         ListFooterComponent={
           visibleCount < records.length ? (
             <View className="py-4">
-              <MaterialButton
+              <Button
                 label={`Show more (${records.length - visibleCount})`}
                 onPress={() =>
                   setVisibleCount((count) => count + PROJECT_STORAGE_INVENTORY_PAGE_SIZE)

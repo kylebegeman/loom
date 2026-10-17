@@ -719,7 +719,7 @@ export const make = Effect.gen(function* () {
             path.relative(resolved.root, canonical),
             Number(info.size),
             Option.getOrNull(info.mtime)?.getTime() ?? 0,
-            Option.getOrNull(info.ino),
+            Option.getOrNull(info.ino)?.toString() ?? null,
           ]),
         );
       }

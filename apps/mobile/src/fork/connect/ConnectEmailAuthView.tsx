@@ -3,12 +3,12 @@ import { useEffect, useRef, useState } from "react";
 import { Linking, Platform, View } from "react-native";
 import { NativeHeaderToolbar } from "../../native/StackHeader";
 
-import { AppActivityIndicator } from "../../components/AppActivityIndicator";
-import { AppText, AppTextInput } from "../../components/AppText";
-import { ErrorBanner } from "../../components/ErrorBanner";
-import { MaterialButton } from "../../components/MaterialButton";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { ScreenScrollView } from "../../components/ScreenScrollView";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { AppText, AppTextInput } from "../../components/ui/AppText";
+import { ErrorBanner } from "../../components/ui/ErrorBanner";
+import { Button } from "../../components/ui/Button";
+import { AppBar } from "../../components/ui/AppBar";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import {
   connectEmailSignInError,
   CONNECT_FACTOR_LABELS,
@@ -120,7 +120,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
 
   return (
     <View className="flex-1 bg-sheet">
-      <ScreenHeader title="Sign in to Connect" sidebar={false} onBack={props.onBack} />
+      <AppBar title="Sign in to Connect" sidebar={false} onBack={props.onBack} />
       <ScreenScrollView
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -152,7 +152,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
                   editable={!pending}
                 />
               </View>
-              <MaterialButton
+              <Button
                 label={pending === "send" ? "Sending code…" : "Send sign-in code"}
                 tone="primary"
                 loading={pending !== null}
@@ -160,7 +160,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
                 onPress={sendCode}
                 fullWidth
               />
-              <MaterialButton
+              <Button
                 label="Create a Connect account"
                 tone="text"
                 disabled={pending !== null}
@@ -209,7 +209,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
                   autoFocus
                 />
               </View>
-              <MaterialButton
+              <Button
                 label={pending === "verify" ? "Signing in…" : "Sign in"}
                 tone="primary"
                 loading={pending !== null}
@@ -219,7 +219,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
               />
               <View className="gap-2">
                 {!secondFactor || secondFactor === "email_code" || secondFactor === "phone_code" ? (
-                  <MaterialButton
+                  <Button
                     label={
                       pending === "send"
                         ? "Sending code…"
@@ -236,7 +236,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
                   ? connectSecondFactors(signIn)
                       .filter((factor) => factor !== secondFactor)
                       .map((factor) => (
-                        <MaterialButton
+                        <Button
                           key={factor}
                           label={`Use ${CONNECT_FACTOR_LABELS[factor].toLowerCase()}`}
                           tone="text"
@@ -245,7 +245,7 @@ export function ConnectEmailAuthView(props: { readonly onBack: () => void }) {
                         />
                       ))
                   : null}
-                <MaterialButton
+                <Button
                   label="Use a different email"
                   tone="text"
                   disabled={pending !== null}
@@ -295,7 +295,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
   if (page === "computers" && linkedComputersAvailable) {
     return (
       <View className="flex-1 bg-sheet">
-        <ScreenHeader
+        <AppBar
           title="Linked computers"
           sidebar={false}
           options={{ headerBackVisible: false }}
@@ -317,7 +317,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
   }
   return (
     <View className="flex-1 bg-sheet">
-      <ScreenHeader title="Connect account" sidebar={false} onBack={props.onBack} />
+      <AppBar title="Connect account" sidebar={false} onBack={props.onBack} />
       <ScreenScrollView contentInsetAdjustmentBehavior="automatic">
         <View className="w-full max-w-xl self-center gap-5 px-5 py-6">
           <AppText className="font-t3-medium">
@@ -328,7 +328,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
             browser. Connections manages access on this device.
           </AppText>
           {linkedComputersAvailable ? (
-            <MaterialButton
+            <Button
               label="Linked computers"
               tone="primary"
               disabled={pending !== null}
@@ -336,7 +336,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
               fullWidth
             />
           ) : null}
-          <MaterialButton
+          <Button
             label="Manage account"
             tone="primary"
             disabled={pending !== null}
@@ -346,7 +346,7 @@ export function ConnectEmailAccountView(props: { readonly onBack: () => void }) 
               )
             }
           />
-          <MaterialButton
+          <Button
             label={pending === "signout" ? "Signing out…" : "Sign out"}
             disabled={pending !== null}
             onPress={() => void run("signout", () => clerk.signOut())}

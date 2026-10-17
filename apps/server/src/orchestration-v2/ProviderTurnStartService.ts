@@ -79,11 +79,6 @@ export const libraryBriefProposalHint = (projectId: string) =>
   `To suggest a change to this brief, call loom_library_brief_propose for project ${projectId} with the full new brief and why; a person reviews it.`;
 
 export interface ProviderTurnStartServiceV2Shape {
-  /**
-   * Starts the run's provider turn. When `willRetry` is true, a session open
-   * failure is returned so the caller can retry. Otherwise the run is settled
-   * as failed.
-   */
   readonly start: (input: {
     readonly threadId: ThreadId;
     readonly runId: RunId;
@@ -151,10 +146,6 @@ export const layer: Layer.Layer<
         typeof RunExecutionService.selectInheritedBackgroundTurnItems
       >;
     }) => {
-      // Guards and background routing need live execution state, not a fresh
-      // allocation of every completed message and tool output in the thread.
-      // `false` means the run moved on or is gone. A failed read is an error,
-      // so the caller fails the start or the run instead of skipping it.
       const isCurrentAttemptInStatus = (expectedStatus: OrchestrationV2Run["status"]) =>
         projectionStore.getRuntimeRecoveryProjection(input.threadId).pipe(
           Effect.map((current) => {
@@ -223,8 +214,6 @@ export const layer: Layer.Layer<
             ? session.compactThread(input)
             : session.startTurn(input);
         }).pipe(
-          // Only startup needs the handoff history. The event worker keeps this
-          // session alive afterward, including when background work remains.
           Effect.ensuring(
             Effect.sync(() => {
               deliver = undefined;
@@ -254,7 +243,6 @@ export const layer: Layer.Layer<
         return yield* new ProviderTurnStartError({ runId, cause: `Run ${runId} was not found.` });
       }
       if (run.status !== "starting") {
-        // The effect is idempotent once the run has advanced or terminalized.
         return;
       }
       const rootNode = projection.nodes.find((candidate) => candidate.id === run.rootNodeId);
@@ -307,15 +295,11 @@ export const layer: Layer.Layer<
           cause: `Run ${runId} is missing its execution projection state.`,
         });
       }
-      // Settles a run that never reached the provider: one signal turn item plus
-      // terminal run, attempt and root node, written only while the run is still
-      // the current starting attempt.
       const settleRunBeforeStart = Effect.fn("orchestrationV2.providerTurnStart.settleBeforeStart")(
         function* (input: {
           readonly signal: string;
           readonly status: "completed" | "failed";
           readonly now: DateTime.Utc;
-          /** Omitted when the run never started, so `startedAt` stays as projected. */
           readonly startedAt?: DateTime.Utc;
           readonly providerInstanceId: OrchestrationV2Run["providerInstanceId"];
           readonly itemProviderThreadId: OrchestrationV2ProviderThread["id"];
@@ -328,7 +312,6 @@ export const layer: Layer.Layer<
                 Extract<OrchestrationV2TurnItem, { type: "command_execution" }>,
                 "type" | "title" | "input" | "output" | "exitCode"
               >;
-          /** Emitted after the run events when the provider thread should go idle. */
           readonly providerThreadUpdate?: OrchestrationV2ProviderThread;
         }) {
           const { now, status } = input;
@@ -648,10 +631,6 @@ export const layer: Layer.Layer<
               }),
         }),
       );
-      // The last start attempt fails the run with the provider's own reason
-      // instead of leaving it `starting` after the effect gives up. A run that
-      // already left `starting` is not overwritten, and a failed write returns
-      // its error to the effect worker.
       const settleStartFailure = (failed: {
         readonly signal: string;
         readonly title: string;
@@ -691,8 +670,6 @@ export const layer: Layer.Layer<
         return;
       }
       const session = sessionResult.success;
-      // Only the provider's own thread load fails the run on the last attempt;
-      // store, id and handoff failures around it keep their typed errors.
       const loadFromProvider = (
         load: Effect.Effect<OrchestrationV2ProviderThread, ProviderAdapter.ProviderAdapterV2Error>,
       ) =>
@@ -880,14 +857,11 @@ export const layer: Layer.Layer<
         });
         return replacement;
       });
-      // The last attempt already failed the run.
       if (loadedProviderThread === undefined) return;
       if (!(yield* isCurrentAttemptInStatus("starting"))) {
         return;
       }
       const now = yield* DateTime.now;
-      // Only started runs reached the provider-thread update below. Queued runs and
-      // failures during session setup cannot establish a new telemetry selection.
       const measuredContext = latestNativeContextUsage(projection, providerThread);
       const previousSelection =
         measuredContext?.modelSelection ??
@@ -914,9 +888,6 @@ export const layer: Layer.Layer<
         run.modelSelection,
         resolvedRuntimePolicy.cwd,
       );
-      // Persist before delivery. Keep this native transcript's measured
-      // occupancy. A different model drops compaction telemetry and uses the
-      // new window when that window is known.
       const handoffUsage = contextUsageForHandoff({
         sameNativeThread,
         sameSelection,
@@ -1171,9 +1142,8 @@ export const layer: Layer.Layer<
           )
           .map((source) => source.id),
       );
-      // Use saved text and actual native attachments when telemetry is absent.
-      // Legacy attempts lack native identity; exclude their explicitly recovered
-      // history, whose attachments were not replayed into the replacement thread.
+      // Legacy attempts lack native identity; exclude their explicitly recovered history, whose
+      // attachments were not replayed into the replacement thread.
       const nativeContextEstimate = Effect.gen(function* () {
         return sameNativeThread
           ? (yield* projectionStore.getTurnStartHistory(input.threadId)).reduce((sum, item) => {
@@ -1207,7 +1177,6 @@ export const layer: Layer.Layer<
       const modelContextWindow =
         knownModelWindow ??
         (handoffUsage !== null || reuseTelemetry ? previousUsage?.maxTokens : undefined);
-      // Replacing a native thread clears its usage, not the selected model's capacity.
       const budgetProviderThread = {
         ...runningProviderThread,
         contextUsage: handoffUsage,
@@ -1235,8 +1204,6 @@ export const layer: Layer.Layer<
         compact = false,
       ) =>
         Effect.gen(function* () {
-          // A failed turn/start can leave the requested turn absent from
-          // native history even when its preceding handoff was injected.
           const retryHandoff =
             missedItems.length === 0
               ? []
@@ -1267,7 +1234,6 @@ export const layer: Layer.Layer<
               return handoffBudget({
                 tokenCap,
                 modelContextWindow,
-                // The note is sent with the user text, so it spends the same allowance.
                 userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
                 attachments: message.attachments,
                 providerThread: budgetProviderThread,
@@ -1312,7 +1278,6 @@ export const layer: Layer.Layer<
           const context = [delivery.context, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
-          // A note continuation has no turn to resume; its text is the prompt.
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
           yield* start({
             ...(noteContinuation ? promptedInput : turnInput),
@@ -1390,8 +1355,6 @@ export const layer: Layer.Layer<
               .filter((turn) => turn.providerThreadId === providerThread.id)
               .map((turn) => turn.ordinal),
           ) + 1,
-        // Legacy accepted attempts have no native id. They count only before
-        // a replacement, while no accepted attempt records a native identity.
         nativeThreadHasTurns:
           nativeInputRunIds.size > 0 ||
           (legacyInputRunIds.size > 0 &&

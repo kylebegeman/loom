@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { AppSheet } from "../../components/AppSheet";
+import { Sheet } from "../../components/ui/Sheet";
 
 export interface WorktreeSetupSheetProps {
   children: ReactElement;
@@ -8,9 +8,10 @@ export interface WorktreeSetupSheetProps {
 }
 
 export function WorktreeSetupSheet({ children, onClose }: WorktreeSetupSheetProps) {
+  // fork: project-lifecycle - Setup runs in every workspace, not only worktrees.
   return (
-    <AppSheet title="Workspace setup" onClose={onClose}>
+    <Sheet title="Workspace setup" onClose={onClose}>
       {children}
-    </AppSheet>
+    </Sheet>
   );
 }

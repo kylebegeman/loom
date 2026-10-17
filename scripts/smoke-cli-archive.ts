@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Unpacks a CLI archive into a scratch directory and runs the executable the
- * way an installer would: no repo, no node_modules, no Node on PATH. Catches
- * the failures that only show inside the single-executable, such as an
- * external package reached through `import` or a native addon the hardened
- * runtime refuses to load.
- */
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Duration from "effect/Duration";
@@ -65,6 +58,7 @@ const runExecutable = Effect.fn("runExecutable")(function* (
   return { stdout, stderr, exitCode };
 });
 
+// fork: smoke-port-race -- exported for the concurrent smoke test.
 export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   readonly archive: string;
   readonly expectVersion: string;
@@ -124,11 +118,8 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     });
   }
 
-  // Starting the server is what actually opens sqlite, loads the terminal
-  // and search stacks (node-pty, fff, msgpackr-extract), and serves the
-  // client, so probe a real `serve` in a scratch home rather than a
-  // command that only reads package metadata.
-  // Bind once through the kernel; probing and releasing a port races other smoke runs.
+  // fork: smoke-port-race -- bind once through the kernel; probing and releasing a port
+  // races other smoke runs. The probe reads the bound port from server-runtime.json.
   let port = 0;
   const home = path.join(scratch, "home");
   const server = yield* spawner.spawn(
@@ -155,6 +146,7 @@ export const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   const httpClient = yield* HttpClient.HttpClient;
   // A request that connects while the server is still initializing can hang,
   // so each probe gets its own deadline, like the SSH readiness probe.
+  // fork: smoke-port-race
   const serverRuntimeStatePath = path.join(home, "userdata", "server-runtime.json");
   const decodeRuntime = Schema.decodeUnknownEffect(
     Schema.fromJsonString(

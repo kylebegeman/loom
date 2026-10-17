@@ -5,8 +5,8 @@ import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AppText as Text } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
@@ -97,7 +97,7 @@ export function LibraryHistoryRouteScreen({
           historyOffset > 0 || archive.window?.hasMore ? (
             <View className="flex-row flex-wrap gap-2 pt-4">
               {archive.window?.hasMore ? (
-                <MaterialButton
+                <Button
                   label="Earlier history"
                   tone="secondary"
                   onPress={() => {
@@ -107,7 +107,7 @@ export function LibraryHistoryRouteScreen({
                 />
               ) : null}
               {historyOffset > 0 ? (
-                <MaterialButton
+                <Button
                   label="Newer history"
                   tone="secondary"
                   onPress={() => {
@@ -140,7 +140,7 @@ export function LibraryHistoryRouteScreen({
               <LibraryNotice detail="Viewing cached library history. Reconnect the library to reload history or open saved attachments." />
             ) : null}
             <View className="flex-row flex-wrap gap-2">
-              <MaterialButton
+              <Button
                 label={`Continue on ${host?.label ?? "original computer"}`}
                 disabled={!connected || !canContinue}
                 onPress={() =>
@@ -150,7 +150,7 @@ export function LibraryHistoryRouteScreen({
                   })
                 }
               />
-              <MaterialButton
+              <Button
                 label="Linked continuation"
                 tone="text"
                 disabled={!authority.ready}

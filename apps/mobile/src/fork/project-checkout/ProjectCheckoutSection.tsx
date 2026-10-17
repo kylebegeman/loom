@@ -12,10 +12,10 @@ import { AsyncResult } from "effect/reactivity";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
-import { ControlPillMenu } from "../../components/ControlPill";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { Menu } from "../../components/ui/Menu";
+import { Button } from "../../components/ui/Button";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -304,7 +304,7 @@ function ProjectCheckoutReview({
               project. Keep permanent application data outside disposable working copies.
             </Text>
             <View className="flex-row flex-wrap gap-2">
-              <MaterialButton
+              <Button
                 label={
                   pending === "save"
                     ? "Saving…"
@@ -318,7 +318,7 @@ function ProjectCheckoutReview({
                   void save();
                 }}
               />
-              <MaterialButton
+              <Button
                 label="Back to review"
                 disabled={pending !== null}
                 onPress={() => setConfirming(false)}
@@ -327,7 +327,7 @@ function ProjectCheckoutReview({
           </View>
         ) : preview && canChange ? (
           <>
-            <ControlPillMenu
+            <Menu
               accessible
               accessibilityRole="button"
               accessibilityLabel={`Working files preference for ${workspaceRoot} on ${computerLabel}. ${PROJECT_STORAGE_ROLLOUT_RETENTION_LABELS[retention]}`}
@@ -373,8 +373,8 @@ function ProjectCheckoutReview({
                   />
                 </View>
               </Pressable>
-            </ControlPillMenu>
-            <MaterialButton
+            </Menu>
+            <Button
               label={managed ? "Review file preference" : "Review file management"}
               tone="primary"
               disabled={!changed || pending !== null}
@@ -394,7 +394,7 @@ function ProjectCheckoutReview({
         ) : null}
         {!confirming ? (
           <View className="flex-row flex-wrap gap-2">
-            <MaterialButton
+            <Button
               label={
                 pending === "review"
                   ? "Reviewing…"
@@ -410,7 +410,7 @@ function ProjectCheckoutReview({
               }}
             />
             {preview ? (
-              <MaterialButton
+              <Button
                 label="Cancel review"
                 disabled={pending !== null}
                 onPress={() => {

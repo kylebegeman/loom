@@ -1,5 +1,9 @@
 import { useAuth } from "@clerk/expo";
-import { AuthView, type UserProfileCustomPage, UserProfileView } from "@clerk/expo/native";
+import {
+  AuthView,
+  type UserProfileCustomPage,
+  UserProfileView,
+} from "@clerk/expo/native-components";
 import { StackActions, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { View } from "react-native";
@@ -11,7 +15,6 @@ import {
 } from "../../fork/connect/ConnectEmailAuthView"; // fork: fleet-connect
 import { T3ConnectProfilePage } from "../cloud/T3ConnectProfilePage";
 
-// Custom rows in Clerk's native profile. Mirrors the web UserButton pages.
 const USER_PROFILE_CUSTOM_PAGES = [
   {
     path: "t3-connect",

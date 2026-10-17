@@ -1,6 +1,6 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { useAtomValue } from "@effect/atom-react";
-import { primaryServerConfigAtom } from "~/state/server";
+import { useAtomValue } from "@effect/atom-react"; // fork: library-only
+import { primaryServerConfigAtom } from "~/state/server"; // fork: library-only
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { LinkIcon, PlusIcon } from "lucide-react";
@@ -9,8 +9,8 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
-import { LibraryThreadHome } from "~/fork/project-library/LibraryThreadHome";
-import { useLibraryAuthority } from "~/fork/project-library/state";
+import { LibraryThreadHome } from "~/fork/project-library/LibraryThreadHome"; // fork: library-only
+import { useLibraryAuthority } from "~/fork/project-library/state"; // fork: library-only
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
@@ -22,8 +22,8 @@ import {
   useProjects,
   useThreadShells,
 } from "../state/entities";
-import { useConnectedEnvironmentIds, useEnvironments } from "../state/environments";
-import { resolveIndexDraftProject } from "../lib/indexDraftLanding";
+import { useConnectedEnvironmentIds, useEnvironments } from "../state/environments"; // fork: fleet-connections
+import { resolveIndexDraftProject } from "../lib/indexDraftLanding"; // fork: fleet-connections
 import { APP_DISPLAY_NAME } from "~/branding";
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 
@@ -39,12 +39,8 @@ function ChatIndexRouteView() {
   return <IndexDraftLanding />;
 }
 
-/**
- * Landing on the index route drops straight into a draft thread for the most
- * recently active connected project. Cached projects on offline computers
- * stay in the sidebar, and the landing offers a way to reconnect to them.
- */
 function IndexDraftLanding() {
+  // fork: library-only
   const { authGateState } = Route.useRouteContext();
   const library = useLibraryAuthority();
   const primaryConfig = useAtomValue(primaryServerConfigAtom);
@@ -56,6 +52,7 @@ function IndexDraftLanding() {
   const threads = useThreadShells();
   const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const { environments } = useEnvironments();
+  // fork: fleet-connections Only connected computers that can run agents start a draft.
   const executionEnvironments = useMemo(
     () =>
       connectedEnvironmentIds.filter(
@@ -77,8 +74,8 @@ function IndexDraftLanding() {
 
   const mostRecentProject = useMemo(
     () =>
-      bootstrapped && primaryReady && !libraryOnly
-        ? resolveIndexDraftProject(projects, threads, executionEnvironments)
+      bootstrapped && primaryReady && !libraryOnly // fork: library-only
+        ? resolveIndexDraftProject(projects, threads, executionEnvironments) // fork: fleet-connections
         : null,
     [bootstrapped, primaryReady, libraryOnly, projects, threads, executionEnvironments],
   );
@@ -89,15 +86,12 @@ function IndexDraftLanding() {
       return;
     }
     const projectRef = scopeProjectRef(mostRecentProject.environmentId, mostRecentProject.id);
-    // A project removed since this render is gone from the store; the next
-    // render picks another one.
     if (readProject(projectRef) === null) {
       return;
     }
     startingRef.current = true;
     void handleNewThread(projectRef, { replace: true })
       .then((opened) => {
-        // The project was removed while its draft started; land on the next one.
         if (opened === null) {
           startingRef.current = false;
           setRetryRequest((request) => request + 1);
@@ -115,10 +109,11 @@ function IndexDraftLanding() {
   if (mostRecentProject !== null) {
     return startFailed ? <DraftStartError onRetry={() => setStartFailed(false)} /> : null;
   }
+  // fork: library-only
   return libraryOnly || library.authorityId ? (
     <LibraryThreadHome />
   ) : (
-    <NoProjectsHero savedProjectsUnavailable={projects.length > 0} />
+    <NoProjectsHero savedProjectsUnavailable={projects.length > 0} /> // fork: fleet-connections
   );
 }
 
@@ -137,6 +132,7 @@ function DraftStartError({ onRetry }: { readonly onRetry: () => void }) {
               <RefreshIcon size="md" />
               Try again
             </Button>
+            {/* fork: fleet-connections */}
             <Button size="sm" variant="outline" render={<Link to="/settings/connections" />}>
               Open connections
             </Button>

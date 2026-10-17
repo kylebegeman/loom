@@ -26,12 +26,12 @@ import { useCallback, useState, type ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useResolveClassNames } from "uniwind";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { ListChoiceRow } from "../../components/ListChoiceRow";
-import { MaterialButton } from "../../components/MaterialButton";
-import { RowPressable } from "../../components/RowPressable";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { ScreenScrollView } from "../../components/ScreenScrollView";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { Button } from "../../components/ui/Button";
+import { RowPressable } from "../../components/ui/RowPressable";
+import { AppBar } from "../../components/ui/AppBar";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { useEnvironments } from "../../state/environments";
 import { useEnvironmentQuery } from "../../state/query";
@@ -60,7 +60,7 @@ export function LibraryPage(props: {
   children: ReactNode;
   back?: boolean;
   scroll?: boolean;
-  actions?: Parameters<typeof ScreenHeader>[0]["actions"];
+  actions?: Parameters<typeof AppBar>[0]["actions"];
 }) {
   const navigation = useNavigation();
   const focused = useIsFocused();
@@ -79,7 +79,7 @@ export function LibraryPage(props: {
   const insets = useSafeAreaInsets();
   return (
     <View className="flex-1 bg-screen">
-      <ScreenHeader
+      <AppBar
         title={props.title}
         onBack={props.back ? () => navigation.goBack() : undefined}
         actions={props.actions}
@@ -117,9 +117,7 @@ export function LibraryNotice(props: {
           {props.error}
         </Text>
       ) : null}
-      {props.onRetry ? (
-        <MaterialButton label="Reload library" tone="text" onPress={props.onRetry} />
-      ) : null}
+      {props.onRetry ? <Button label="Reload library" tone="text" onPress={props.onRetry} /> : null}
     </View>
   );
 }
@@ -187,7 +185,7 @@ export function LibraryRouteScreen() {
           <Text className="text-sm text-foreground">
             Connect your Library once. Your existing threads and folders remain available.
           </Text>
-          <MaterialButton
+          <Button
             label="Connect Library"
             tone="primary"
             onPress={() => navigation.navigate("LibrarySettings")}
@@ -224,12 +222,12 @@ export function LibraryRouteScreen() {
             className="min-h-[44px] rounded-xl bg-field px-4 text-base text-foreground"
           />
           <View className="flex-row gap-2">
-            <MaterialButton
+            <Button
               label="Active"
               tone={archived ? "text" : "secondary"}
               onPress={() => setArchived(false)}
             />
-            <MaterialButton
+            <Button
               label="Archived"
               tone={archived ? "secondary" : "text"}
               onPress={() => setArchived(true)}
@@ -267,7 +265,7 @@ export function LibraryRouteScreen() {
                     : "Create a project with its brief and separate component repositories. Choose a computer when you start work."}
               </Text>
               {!query && !archived ? (
-                <MaterialButton
+                <Button
                   label="New project"
                   tone="primary"
                   disabled={!authority.ready || !canCreate}
@@ -390,7 +388,7 @@ export function LibraryAuthorityScreen() {
         })}
       </SettingsSection>
       {error ? <LibraryNotice error={error} /> : null}
-      <MaterialButton
+      <Button
         label="Sign in to library"
         tone="primary"
         onPress={() =>
@@ -400,12 +398,12 @@ export function LibraryAuthorityScreen() {
           )
         }
       />
-      <MaterialButton
+      <Button
         label="Manage computer connections"
         tone="text"
         onPress={() => navigation.navigate("Connections")}
       />
-      <MaterialButton
+      <Button
         label="T3 Connect account settings"
         tone="text"
         onPress={() => navigation.navigate("SettingsSheet", { screen: "SettingsAuth" })}
@@ -533,7 +531,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
         {p.archived ? (
           <LibraryNotice detail="Archived. Conversations stay readable; reopen the project to change it or start new work." />
         ) : null}
-        <MaterialButton
+        <Button
           label="New conversation"
           tone="primary"
           disabled={!authority.ready || p.archived}
@@ -562,7 +560,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
             Add the repositories this project is made of, plus any links worth keeping close.
           </Text>
         ) : null}
-        <MaterialButton
+        <Button
           label={p.resources.length ? "Edit project" : "Add repositories or links"}
           tone="text"
           disabled={!authority.ready || p.archived}
@@ -598,7 +596,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           />
         ) : null}
         {copies.error ? <LibraryNotice error={copies.error} onRetry={copies.refresh} /> : null}
-        <MaterialButton
+        <Button
           label="Get a copy"
           tone="secondary"
           disabled={!authority.ready || p.archived}
@@ -624,7 +622,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
           ),
         )}
         {visibleThreads.length > RECENT_CONVERSATIONS ? (
-          <MaterialButton
+          <Button
             label={showAllThreads ? "Show recent only" : `Show all ${visibleThreads.length}`}
             tone="text"
             onPress={() => setShowAllThreads((current) => !current)}
@@ -647,7 +645,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       </SettingsSection>
       {removedCopies.length ? (
         <View className="gap-3">
-          <MaterialButton
+          <Button
             label={showHistory ? "Hide history" : "History"}
             tone="text"
             onPress={() => setShowHistory((current) => !current)}
@@ -675,7 +673,7 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       ) : null}
       {project.error ? <LibraryNotice error={project.error} onRetry={project.refresh} /> : null}
       {error ? <LibraryNotice error={error} /> : null}
-      <MaterialButton
+      <Button
         label={p.archived ? "Reopen project" : "Archive project"}
         tone="text"
         disabled={!authority.ready || !canArchive || pending}

@@ -1,7 +1,7 @@
 import { libraryProjectColor, libraryProjectInitials } from "@t3tools/client-runtime/fork";
 import type { LibraryProject, LibraryProjectColor } from "@t3tools/contracts/fork";
 import { View } from "react-native";
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { useAppearancePreferences } from "../../features/settings/appearance/AppearancePreferencesProvider";
 
 /** Readable text color for each named project color, per appearance. */

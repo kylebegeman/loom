@@ -22,11 +22,11 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from "
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
-import { EmptyState } from "../../components/EmptyState";
-import { ListChoiceRow } from "../../components/ListChoiceRow";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
+import { Menu } from "../../components/ui/Menu";
 import { projectHomeThreadMenuActions } from "./projectHomeThreadMenuActions";
 import { pinProjectHomeView } from "./projectHomeView";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
@@ -34,9 +34,9 @@ import { cn } from "../../lib/cn";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentPresentations } from "../../state/presentation";
 import { useThreadListActions } from "../../features/home/useThreadListActions";
-import { MaterialButton } from "../../components/MaterialButton";
-import { ScreenHeader } from "../../components/ScreenHeader";
-import { ScreenScrollView } from "../../components/ScreenScrollView";
+import { Button } from "../../components/ui/Button";
+import { AppBar } from "../../components/ui/AppBar";
+import { ScreenScrollView } from "../../components/ui/ScreenScrollView";
 import { buildHomeProjectScopes, findHomeProjectScope } from "../../features/home/homeThreadList";
 import { useHomeThreadSelection } from "../../features/home/home-thread-navigation";
 import { scopedProjectKey } from "../../lib/scopedEntities";
@@ -350,7 +350,7 @@ function ProjectHomeContent(props: {
             </View>
           </View>
           <View className="flex-row items-start gap-3">
-            <MaterialButton
+            <Button
               tone="primary"
               label="New task"
               disabled={taskProject === null}
@@ -429,7 +429,7 @@ function ProjectHomeContent(props: {
                   ? "Choose a connected checkout with task access, or review the source to prepare another copy. Existing threads stay on their current computer."
                   : "Reconnect a computer with this project to start work or review its origin before preparing another copy."}
               </Text>
-              <MaterialButton
+              <Button
                 tone="text"
                 label={
                   availableTaskProject
@@ -554,7 +554,7 @@ function ProjectHomeContent(props: {
     if (item.type === "more")
       return (
         <View className="px-4 py-1">
-          <MaterialButton
+          <Button
             label={`Show more (${item.hiddenCount})`}
             tone="text"
             onPress={() =>
@@ -629,7 +629,7 @@ function ProjectHomeContent(props: {
             </View>
           </Pressable>
           {actions.length > 0 ? (
-            <ControlPillMenu
+            <Menu
               actions={[...actions]}
               onPressAction={({ nativeEvent }) => {
                 if (nativeEvent.event === "settle") void settleThread(thread);
@@ -652,7 +652,7 @@ function ProjectHomeContent(props: {
               >
                 <SymbolView name="ellipsis" size={17} tintColorClassName="accent-icon-muted" />
               </Pressable>
-            </ControlPillMenu>
+            </Menu>
           ) : null}
         </View>
       );
@@ -687,16 +687,16 @@ function ProjectHomeContent(props: {
               you resume work. Checking a location does not restore files.
             </Text>
             <View className="flex-row flex-wrap gap-2">
-              <MaterialButton
+              <Button
                 label="Prepare another computer"
                 disabled={onlineProject === undefined}
                 onPress={prepareComputer}
               />
-              <MaterialButton
+              <Button
                 label="Manage working files"
                 onPress={() => navigation.navigate("ProjectStorageInventory")}
               />
-              <MaterialButton
+              <Button
                 label="Manage computers"
                 tone="text"
                 onPress={() => navigation.navigate("Connections")}
@@ -718,7 +718,7 @@ function ProjectHomeContent(props: {
                   <Text selectable className="text-xs leading-normal text-foreground-muted">
                     {project.workspaceRoot}
                   </Text>
-                  <MaterialButton
+                  <Button
                     label={
                       connected && reviewProjectKey === key
                         ? "Hide storage review"
@@ -746,7 +746,7 @@ function ProjectHomeContent(props: {
   };
   return (
     <View className="flex-1 bg-screen">
-      <ScreenHeader
+      <AppBar
         title={scope?.title ?? "Project home"}
         onBack={() => navigation.goBack()}
         backInSplitView={{ accessibilityLabel: "Back to projects", icon: "arrow.left" }}

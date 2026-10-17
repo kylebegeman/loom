@@ -221,8 +221,6 @@ export const makeWith = (options: DeviceQaOptions) =>
         Effect.orElseSucceed(() => null),
       );
 
-    // --- Tools -------------------------------------------------------------------------------
-
     /** adb from the Android SDK (ANDROID_HOME, the default SDK folders) or PATH; aapt beside it. */
     const android = Effect.gen(function* () {
       if (androidSdk !== undefined) return androidSdk;
@@ -326,8 +324,6 @@ export const makeWith = (options: DeviceQaOptions) =>
           )
         : Effect.succeed(probe.path),
     );
-
-    // --- Workspace and devices ---------------------------------------------------------------
 
     const threadOf = (threadId: ThreadId) =>
       queries
@@ -435,8 +431,6 @@ export const makeWith = (options: DeviceQaOptions) =>
         ? error("timeout", `${label} timed out.`)
         : error("command-failed", `${label} failed: ${outputOf(result, "no output")}`);
 
-    // --- Status and flows --------------------------------------------------------------------
-
     const status = Effect.fn("DeviceQa.status")(function* (threadId: ThreadId) {
       const workspace = yield* resolveWorkspace(threadId).pipe(Effect.orElseSucceed(() => null));
       const [argent, local, adb] = yield* Effect.all(
@@ -476,8 +470,6 @@ export const makeWith = (options: DeviceQaOptions) =>
       if (text === null) return yield* error("flow-not-found", `${path} was not found.`);
       return { path, text };
     });
-
-    // --- Evidence state ----------------------------------------------------------------------
 
     const publishEvidence = (threadId: string | null) =>
       Effect.sync(() => {
@@ -534,8 +526,6 @@ export const makeWith = (options: DeviceQaOptions) =>
       !item.path.startsWith(evidenceRoot + NodePath.sep)
         ? Effect.void
         : removeFile(item.path);
-
-    // --- Runs --------------------------------------------------------------------------------
 
     const publishRuns = (projectId: string) =>
       Effect.sync(() => {
@@ -962,8 +952,6 @@ export const makeWith = (options: DeviceQaOptions) =>
         }),
       );
 
-    // --- Capture -----------------------------------------------------------------------------
-
     const screenshotBytes = (target: DeviceQaTarget, file: string) =>
       Effect.gen(function* () {
         if (target.hostId !== LOCAL_DEVICE_HOST_ID) {
@@ -1249,8 +1237,6 @@ export const makeWith = (options: DeviceQaOptions) =>
         : yield* startRecording(input, createdBy);
     });
 
-    // --- Install and status bar --------------------------------------------------------------
-
     const installApp = Effect.fn("DeviceQa.installApp")(function* (
       input: DeviceQaInstallInput,
       createdBy: "user" | "agent",
@@ -1372,8 +1358,6 @@ export const makeWith = (options: DeviceQaOptions) =>
       return yield* argentStatus(null);
     });
 
-    // --- Evidence management -----------------------------------------------------------------
-
     const isActive = (item: DeviceQaEvidence) =>
       item.status === "recording" || item.status === "finalizing";
 
@@ -1468,8 +1452,6 @@ export const makeWith = (options: DeviceQaOptions) =>
       return items.length;
     });
 
-    // --- Settings ----------------------------------------------------------------------------
-
     const updateSettings = Effect.fn("DeviceQa.updateSettings")(function* (
       patch: DeviceQaSettingsPatch,
     ) {
@@ -1480,8 +1462,6 @@ export const makeWith = (options: DeviceQaOptions) =>
         yield* sweepExpired.pipe(Effect.ignore({ log: true }), Effect.forkIn(serviceScope));
       return settings;
     });
-
-    // --- Startup -----------------------------------------------------------------------------
 
     yield* Effect.promise(() => NodeFSP.mkdir(runsDir, { recursive: true }));
     yield* runStore.markInterrupted(yield* nowIso).pipe(orDie);

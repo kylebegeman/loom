@@ -139,8 +139,6 @@ function NodeRow({
   );
 }
 
-// --- Graph state ----------------------------------------------------------------------------
-
 function MissingGraphify({
   threadRef,
   projectId,
@@ -356,8 +354,6 @@ function GraphState({
   );
 }
 
-// --- Overview -------------------------------------------------------------------------------
-
 function AgentAccess({
   threadRef,
   projectId,
@@ -508,8 +504,6 @@ function Overview({
     </>
   );
 }
-
-// --- Search ---------------------------------------------------------------------------------
 
 function Neighbors({
   threadRef,
@@ -723,8 +717,6 @@ function Search({
   );
 }
 
-// --- Impact ---------------------------------------------------------------------------------
-
 function Impact({
   threadRef,
   projectId,
@@ -872,8 +864,6 @@ function Impact({
     </Section>
   );
 }
-
-// --- Panel ----------------------------------------------------------------------------------
 
 function Body({ threadRef, projectId }: { threadRef: ScopedThreadRef; projectId: ProjectId }) {
   const { environmentId } = threadRef;

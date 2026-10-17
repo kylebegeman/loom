@@ -1,6 +1,8 @@
 import {
+  AuthAccessReadScope,
   AuthAccessTokenType,
-  AuthAdministrativeScopes,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
   AuthStandardClientScopes,
   type AuthAccessTokenResult,
   type AuthClientMetadata,
@@ -26,6 +28,21 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as SessionStore from "./SessionStore.ts";
 import { signPayload, timingSafeEqualBase64Url } from "./utils.ts";
+
+const ManagementScopes: ReadonlySet<AuthEnvironmentScope> = new Set([
+  AuthAccessReadScope,
+  AuthAccessWriteScope,
+  AuthRelayWriteScope,
+]);
+
+/**
+ * What a Pocket ID session gets without LOOM_IDENTITY_ALLOW_ADMIN=true: the
+ * pairing default minus access and relay management. Upstream folded those into
+ * the default grant, but Library sign-in keeps them behind the explicit flag.
+ */
+export const PocketIdStandardScopes = AuthStandardClientScopes.filter(
+  (scope) => !ManagementScopes.has(scope),
+);
 
 const LOGIN_TTL_MS = 5 * 60 * 1000;
 const HOST_SESSION_TTL = Duration.hours(24);
@@ -166,8 +183,8 @@ const make = Effect.gen(function* () {
   if (audiences.length === 0) audiences.push(environmentId);
   const grantedScopes =
     optional("LOOM_IDENTITY_ALLOW_ADMIN") === "true"
-      ? AuthAdministrativeScopes
-      : AuthStandardClientScopes;
+      ? AuthStandardClientScopes
+      : PocketIdStandardScopes;
   const stateSecret = yield* crypto.randomBytes(32).pipe(Effect.orDie);
   const cookieName = `loom_identity_state_${Base64Url.encode(yield* crypto.digest("SHA-256", new TextEncoder().encode(environmentId)).pipe(Effect.orDie)).slice(0, 16)}`;
   const pending = yield* Ref.make<ReadonlyMap<string, PendingLogin>>(new Map());

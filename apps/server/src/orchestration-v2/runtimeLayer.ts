@@ -1,7 +1,8 @@
-import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts";
+import * as LibraryWorkspaceStore from "../fork/project-library/LibraryWorkspaceStore.ts"; // fork: library-projects
 import * as UsageLimitRecoveryWorker from "./UsageLimitRecoveryWorker.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
 import * as Layer from "effect/Layer";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as OrchestrationCommandReceipts from "../persistence/OrchestrationCommandReceipts.ts";
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
@@ -12,7 +13,7 @@ import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "../project/AgentSessionScanner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
-import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts";
+import * as WorktreeSetupTracker from "../project/WorktreeSetupTracker.ts"; // fork: project-lifecycle
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as CheckpointCaptureService from "./CheckpointCaptureService.ts";
@@ -38,8 +39,9 @@ import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationServic
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
-import * as ProcessRunner from "../processRunner.ts";
-import * as NativeResources from "./NativeWorkloadResources.ts";
+import * as ProcessRunner from "../processRunner.ts"; // fork: mini-native-retention
+import * as NativeResources from "./NativeWorkloadResources.ts"; // fork: mini-native-retention
+import * as CommandOutputHub from "./CommandOutputHub.ts";
 import * as ProviderRuntimeRecoveryService from "./ProviderRuntimeRecoveryService.ts";
 import * as ProviderSwitchService from "./ProviderSwitchService.ts";
 import * as ProviderTurnControlService from "./ProviderTurnControlService.ts";
@@ -56,14 +58,13 @@ import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 
-/** The shared application event log and its command receipts. */
 export const layerEventInfrastructure = Layer.mergeAll(
   OrchestrationEventStore.layer,
   OrchestrationCommandReceipts.layer,
 );
 
 const layerRuntimePolicyProvided = RuntimePolicy.layerFromProjectStore.pipe(
-  Layer.provide(LibraryWorkspaceStore.layer),
+  Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
   Layer.provide(ProjectStore.layer),
 );
 
@@ -112,6 +113,7 @@ const layerProviderEventIngestorProvided = ProviderEventIngestor.layer.pipe(
       IdAllocator.layer,
       ProjectionStore.layer,
       ThreadCommandExecutor.layer,
+      GitVcsDriver.layer,
     ),
   ),
 );
@@ -129,10 +131,15 @@ const layerProviderSwitchServiceProvided = ProviderSwitchService.layer.pipe(
   Layer.provide(layerProviderAdapterRegistryProvided),
 );
 
+const layerCommandOutputHubProvided = CommandOutputHub.layer.pipe(
+  Layer.provide(Layer.merge(layerEventSinkProvided, ProjectionStore.layer)),
+);
+
 const layerProviderSessionManagerProvided = ProviderSessionManager.layer.pipe(
-  Layer.provide(NativeResources.layer.pipe(Layer.provide(ProcessRunner.layer))),
+  Layer.provide(NativeResources.layer.pipe(Layer.provide(ProcessRunner.layer))), // fork: mini-native-retention
   Layer.provide(
     Layer.mergeAll(
+      layerCommandOutputHubProvided,
       layerProviderAdapterRegistryProvided,
       layerEventSinkProvided,
       IdAllocator.layer,
@@ -159,7 +166,7 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
 );
 
 const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
-  Layer.provide(LibraryWorkspaceStore.layer),
+  Layer.provide(LibraryWorkspaceStore.layer), // fork: library-projects
   Layer.provide(
     Layer.mergeAll(
       layerContextHandoffServiceProvided,
@@ -344,6 +351,7 @@ const layerMcpAppRequestsProvided = McpAppRequests.layer.pipe(
 );
 
 export const layer = Layer.mergeAll(
+  layerCommandOutputHubProvided,
   layerOrchestratorProvided,
   layerMcpAppRequestsProvided,
   layerThreadManagementProvided,
@@ -358,6 +366,7 @@ export const layer = Layer.mergeAll(
 export const layerProduction = Layer.mergeAll(
   layer.pipe(
     Layer.provide(layerProjectService),
+    // fork: project-lifecycle
     Layer.provide(layerProjectSetupScriptRunner),
     Layer.provide(WorktreeSetupTracker.layer),
   ),

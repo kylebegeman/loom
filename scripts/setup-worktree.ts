@@ -1,15 +1,9 @@
 /* eslint-disable t3code/no-global-process-runtime -- Bootstrap executes before dependencies exist and must check the native Node host. */
 // @effect-diagnostics nodeBuiltinImport:off - runs before `vp i`, so only Node built-ins exist.
-/**
- * Worktree setup, run by the t3.json "Setup Worktree" action as
- * `node scripts/setup-worktree.ts`. Plain Node keeps one command working in
- * every shell T3 Code spawns (zsh, bash, fish, PowerShell): it installs
- * dependencies, links the main checkout's gitignored env files into this
- * worktree, then warms the web dependency cache.
- */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
+// fork: setup-reuse
 import {
   invalidateWorkspaceInstallation,
   recordWorkspaceInstallation,
@@ -24,6 +18,8 @@ if (!projectRoot) {
 }
 const worktree = NodePath.dirname(import.meta.dirname);
 
+// fork: setup-reuse -- reuse a prepared installation; otherwise install exactly the
+// locked dependencies so setup never rewrites the lockfile.
 const setupStarted = performance.now();
 const installStarted = performance.now();
 if (!process.argv.includes("--force-install") && workspaceInstallationReady(worktree)) {
@@ -76,6 +72,7 @@ for (const file of ENV_FILES) {
   NodeFS.symlinkSync(source, target);
 }
 
+// fork: dev-db
 const dataStarted = performance.now();
 process.stdout.write("Preparing development data...\n");
 const seed = NodeChildProcess.spawnSync(
@@ -88,13 +85,14 @@ process.stdout.write(
   `Development data ready (${Math.round(performance.now() - dataStarted)} ms).\n`,
 );
 
-const warmStarted = performance.now();
+const warmStarted = performance.now(); // fork: setup-reuse
 process.stdout.write("Warming web dependencies...\n");
 const warm = NodeChildProcess.spawnSync(
   process.execPath,
   [NodePath.join(worktree, "apps", "web", "scripts", "warm-dep-cache.ts")],
   { cwd: worktree, stdio: "inherit" },
 );
+// fork: setup-reuse
 if (warm.status !== 0) process.exit(warm.status ?? 1);
 process.stdout.write(
   `Web dependencies ready (${Math.round(performance.now() - warmStarted)} ms).\n`,

@@ -12,8 +12,8 @@ import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
 import { Linking, View } from "react-native";
 import { connectionAtomRuntime } from "../../../connection/runtime";
-import { AppText } from "../../../components/AppText";
-import { MaterialButton } from "../../../components/MaterialButton";
+import { AppText } from "../../../components/ui/AppText";
+import { Button } from "../../../components/ui/Button";
 import { uuidv4 } from "../../../lib/uuid";
 import { useEnvironmentServerConfig } from "../../../state/entities";
 import { useEnvironmentQuery } from "../../../state/query";
@@ -87,7 +87,7 @@ export function GitHubHostSetupSettings({
               {state.deviceCode}
             </AppText>
             <View className="flex-row flex-wrap gap-2">
-              <MaterialButton
+              <Button
                 label="Copy code"
                 onPress={() => {
                   void Clipboard.setStringAsync(state.deviceCode!).catch(() =>
@@ -95,7 +95,7 @@ export function GitHubHostSetupSettings({
                   );
                 }}
               />
-              <MaterialButton
+              <Button
                 label="Open GitHub"
                 tone="primary"
                 onPress={() => {
@@ -118,7 +118,7 @@ export function GitHubHostSetupSettings({
             {error ?? query.error}
           </AppText>
         )}
-        <MaterialButton
+        <Button
           label={
             pending
               ? "Please wait…"
@@ -136,7 +136,7 @@ export function GitHubHostSetupSettings({
           }}
         />
         {query.error && allowed && (
-          <MaterialButton
+          <Button
             label="Reconnect"
             onPress={() => {
               setError(null);

@@ -12,9 +12,9 @@ import type {
 import { useNavigation } from "@react-navigation/native";
 import { Pressable, View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
-import { SymbolView } from "../../components/AppSymbol";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { AppText as Text } from "../../components/ui/AppText";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { Menu } from "../../components/ui/Menu";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import { cn } from "../../lib/cn";
 import { scopedThreadKey } from "../../lib/scopedEntities";
@@ -145,7 +145,7 @@ export function ProjectLibraryRow(props: {
             ) : null}
           </View>
         </Pressable>
-        <ControlPillMenu
+        <Menu
           actions={[
             {
               id: "new-task",
@@ -194,7 +194,7 @@ export function ProjectLibraryRow(props: {
           >
             <SymbolView name="ellipsis" size={17} tintColorClassName="accent-icon-muted" />
           </Pressable>
-        </ControlPillMenu>
+        </Menu>
       </View>
       {expanded ? (
         <View className="pb-2">

@@ -2,7 +2,7 @@ import { createAuthEnvironmentAtoms } from "@t3tools/client-runtime/state/auth";
 import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
 import { View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";

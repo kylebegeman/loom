@@ -5,8 +5,8 @@ import { LibraryError, type LibraryThreadSummary } from "@t3tools/contracts/fork
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { View } from "react-native";
-import { AppText as Text } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -68,14 +68,14 @@ export function LibraryReplicationNotice(props: {
         <Text className="text-sm text-danger-foreground">{error ?? status.error}</Text>
       ) : null}
       <View className="flex-row flex-wrap gap-2">
-        <MaterialButton
+        <Button
           label="Reload saved history"
           tone="text"
           disabled={pending}
           onPress={props.onRefresh}
         />
         {props.sourceConnected ? (
-          <MaterialButton
+          <Button
             label={
               pending
                 ? "Uploading history…"

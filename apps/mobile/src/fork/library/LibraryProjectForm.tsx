@@ -11,8 +11,8 @@ import {
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
-import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
-import { MaterialButton } from "../../components/MaterialButton";
+import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
+import { Button } from "../../components/ui/Button";
 import { SettingsSection } from "../../features/settings/components/SettingsSection";
 import { cn } from "../../lib/cn";
 import { uuidv4 } from "../../lib/uuid";
@@ -343,7 +343,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
                 />
               </>
             ) : null}
-            <MaterialButton
+            <Button
               label="Remove resource"
               tone="text"
               disabled={pending || awaitingResult}
@@ -376,7 +376,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
             {pasteProblem ? (
               <Text className="text-sm text-danger-foreground">{pasteProblem}</Text>
             ) : null}
-            <MaterialButton
+            <Button
               label="Add"
               disabled={pending || awaitingResult || !pasted.trim()}
               onPress={addPasted}
@@ -398,7 +398,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
         />
       ) : null}
       {!authority.environmentId ? (
-        <MaterialButton
+        <Button
           label="Connect your Library"
           onPress={() => navigation.navigate("LibrarySettings")}
         />
@@ -408,7 +408,7 @@ function LibraryProjectForm({ initial: seed }: { initial?: LibraryProject }) {
         <LibraryNotice detail="Project settings access is required to save this project." />
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
-      <MaterialButton
+      <Button
         label={pending ? "Saving…" : initial ? "Save project" : "Create project"}
         tone="primary"
         disabled={pending || !authority.ready || !canSave || !title.trim()}

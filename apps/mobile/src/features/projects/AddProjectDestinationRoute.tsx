@@ -8,13 +8,13 @@ type AddProjectDestinationRouteParams = {
   readonly remoteUrl?: string | string[];
   readonly repositoryTitle?: string | string[];
   readonly repositoryName?: string | string[];
+  // fork: project-home
   readonly preparationSourceEnvironmentId?: string | string[];
   readonly preparationSourceProjectId?: string | string[];
   readonly preparationProjectId?: string | string[];
   readonly preparationCreatedAt?: string | string[];
   readonly preparationRepositoryKey?: string | string[];
   readonly preparationDestinationPath?: string | string[];
-  /** A prompt link's prompt, for the draft the clone opens. */
   readonly prompt?: string | string[];
 };
 

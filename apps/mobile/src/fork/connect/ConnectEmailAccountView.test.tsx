@@ -43,7 +43,6 @@ vi.mock("../../features/cloud/managedRelayState", () => ({
   deregisterManagedRelayEnvironmentCommand: {},
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => harness.deregister }));
-vi.mock("../../components/ConfirmDialogHost", () => ({ showConfirmDialog: vi.fn() }));
 vi.mock("../../lib/copyTextWithHaptic", () => ({ copyTextWithHaptic: vi.fn() }));
 vi.mock("../../native/StackHeader", () => ({
   NativeHeaderToolbar: Object.assign(
@@ -83,24 +82,24 @@ vi.mock("react-native", () => ({
   Alert: { alert: harness.alert },
   Linking: { openURL: harness.openURL },
 }));
-vi.mock("../../components/ControlPill", () => ({
-  ControlPillMenu: ({ onPressAction }: { onPressAction: () => void }) => (
+vi.mock("../../components/ui/Menu", () => ({
+  Menu: ({ onPressAction }: { onPressAction: () => void }) => (
     <button onClick={onPressAction}>Deregister computer</button>
   ),
 }));
-vi.mock("../../components/AppSymbol", () => ({ SymbolView: () => null }));
-vi.mock("../../components/AppActivityIndicator", () => ({
+vi.mock("../../components/ui/AppSymbol", () => ({ SymbolView: () => null }));
+vi.mock("../../components/ui/AppActivityIndicator", () => ({
   AppActivityIndicator: () => <span>Loading</span>,
 }));
-vi.mock("../../components/AppText", () => ({
+vi.mock("../../components/ui/AppText", () => ({
   AppText: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   AppTextInput: () => null,
 }));
-vi.mock("../../components/ErrorBanner", () => ({
+vi.mock("../../components/ui/ErrorBanner", () => ({
   ErrorBanner: ({ message }: { message: string }) => <span role="alert">{message}</span>,
 }));
-vi.mock("../../components/MaterialButton", () => ({
-  MaterialButton: ({
+vi.mock("../../components/ui/Button", () => ({
+  Button: ({
     label,
     disabled,
     onPress,
@@ -114,15 +113,15 @@ vi.mock("../../components/MaterialButton", () => ({
     </button>
   ),
 }));
-vi.mock("../../components/ScreenHeader", () => ({
-  ScreenHeader: ({ title, onBack }: { title: string; onBack: () => void }) => (
+vi.mock("../../components/ui/AppBar", () => ({
+  AppBar: ({ title, onBack }: { title: string; onBack: () => void }) => (
     <header>
       <h1>{title}</h1>
       <button onClick={onBack}>Back</button>
     </header>
   ),
 }));
-vi.mock("../../components/ScreenScrollView", () => ({
+vi.mock("../../components/ui/ScreenScrollView", () => ({
   ScreenScrollView: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 

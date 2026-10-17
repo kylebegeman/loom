@@ -33,6 +33,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Hex from "effect/encoding/Hex";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import { fileIdentity } from "../fileIdentity.ts";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as KeyedLock from "@t3tools/shared/KeyedLock";
@@ -116,7 +117,7 @@ const ReviewRepository = Schema.Struct({
 const ReviewState = Schema.Struct({
   copyId: Schema.String,
   root: Schema.String,
-  device: Schema.Number,
+  device: Schema.NullOr(Schema.Number),
   inode: Schema.NullOr(Schema.Number),
   state: LibraryWorkingCopy.fields.state,
   facts: Schema.Array(Schema.String),
@@ -583,7 +584,7 @@ const make = Effect.gen(function* () {
         rootLocalProjectId: null,
         rootCheckpointRepository: false,
         legacyThreadIds,
-        rootIdentity: { device: info.dev, inode: Option.getOrNull(info.ino) },
+        rootIdentity: fileIdentity(info),
         releaseRequestId: null,
         releaseReviewToken: null,
         removalPath: null,
@@ -731,11 +732,13 @@ const make = Effect.gen(function* () {
     if ((yield* fs.realPath(copy.rootPath)) !== copy.rootPath)
       blockers.push("The working folder now points to a different location.");
     const info = yield* fs.stat(copy.rootPath);
+    const identity = fileIdentity(info);
     if (
       copy.ownership === "managed" &&
-      (receipt.rootIdentity?.device !== info.dev ||
+      (identity.device === null ||
+        receipt.rootIdentity?.device !== identity.device ||
         receipt.rootIdentity?.inode === null ||
-        receipt.rootIdentity?.inode !== Option.getOrNull(info.ino))
+        receipt.rootIdentity?.inode !== identity.inode)
     )
       blockers.push("Ownership of this working folder changed.");
     const bindings = (yield* store.bindings).filter(
@@ -862,8 +865,8 @@ const make = Effect.gen(function* () {
               yield* encodeReviewState({
                 copyId: copy.id,
                 root: copy.rootPath,
-                device: info.dev,
-                inode: Option.getOrNull(info.ino),
+                device: identity.device,
+                inode: identity.inode,
                 state,
                 facts,
               }),
@@ -1139,11 +1142,12 @@ const make = Effect.gen(function* () {
         yield* fs.rename(receipt.copy.rootPath, receipt.removalPath);
       }
       if (yield* fs.exists(receipt.removalPath)) {
-        const info = yield* fs.stat(receipt.removalPath);
+        const identity = fileIdentity(yield* fs.stat(receipt.removalPath));
         if (
           (yield* fs.realPath(receipt.removalPath)) !== receipt.removalPath ||
-          receipt.rootIdentity?.device !== info.dev ||
-          receipt.rootIdentity?.inode !== Option.getOrNull(info.ino)
+          identity.device === null ||
+          receipt.rootIdentity?.device !== identity.device ||
+          receipt.rootIdentity?.inode !== identity.inode
         )
           return yield* new LibraryError({ reason: "blocked" });
         yield* fs.remove(receipt.removalPath, { recursive: true });
