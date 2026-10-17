@@ -55,6 +55,7 @@ const callers = (
             deletedAt: null,
             archivedAt: null,
             activeRunId: live ? RunId.make("active") : null,
+            pendingBackgroundTasks: [],
             providerInstanceId: ProviderInstanceId.make("codex"),
             runtimeMode,
             interactionMode,
