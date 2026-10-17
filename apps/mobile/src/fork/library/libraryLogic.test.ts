@@ -1,7 +1,12 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import type { LibraryProject, LibraryWorkingCopy } from "@t3tools/contracts/fork";
 import { describe, expect, it } from "vite-plus/test";
-import { libraryBinding, libraryListState, libraryResourceDraft } from "./libraryLogic";
+import {
+  libraryBinding,
+  libraryFeatureState,
+  libraryListState,
+  libraryResourceDraft,
+} from "./libraryLogic";
 const host = EnvironmentId.make("travel");
 const project: LibraryProject = {
   id: "durable",
@@ -131,5 +136,46 @@ describe("durable library execution selection", () => {
       relativePath: "apps/ios",
       remoteUrl: "git@github.com:aspect/ios.git",
     });
+  });
+});
+
+describe("library feature state", () => {
+  const selected = { loaded: true, environmentId: "library", connected: true };
+  const withFeature = { repositoryIdentity: false, loomFeatures: ["library-timeline"] };
+  const withoutFeature = { repositoryIdentity: false, loomFeatures: [] };
+
+  it("asks for an update only when a connected Library's config lacks the feature", () => {
+    expect(libraryFeatureState(selected, withoutFeature, "library-timeline")).toBe("unsupported");
+    expect(libraryFeatureState(selected, withFeature, "library-timeline")).toBe("supported");
+  });
+
+  it("does not mistake unknown capabilities for a missing feature", () => {
+    expect(libraryFeatureState(selected, undefined, "library-timeline")).toBe("loading");
+    expect(
+      libraryFeatureState({ ...selected, connected: false }, undefined, "library-timeline"),
+    ).toBe("offline");
+    // A config cached before the Library was updated cannot prove the feature is missing.
+    expect(
+      libraryFeatureState({ ...selected, connected: false }, withoutFeature, "library-timeline"),
+    ).toBe("offline");
+  });
+
+  it("keeps a supported feature usable from a cached config while offline", () => {
+    expect(
+      libraryFeatureState({ ...selected, connected: false }, withFeature, "library-timeline"),
+    ).toBe("supported");
+  });
+
+  it("separates an unchosen Library from preferences still loading", () => {
+    expect(
+      libraryFeatureState({ ...selected, environmentId: null }, undefined, "library-timeline"),
+    ).toBe("unselected");
+    expect(
+      libraryFeatureState(
+        { loaded: false, environmentId: null, connected: false },
+        undefined,
+        "library-timeline",
+      ),
+    ).toBe("loading");
   });
 });

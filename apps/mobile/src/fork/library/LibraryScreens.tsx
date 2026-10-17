@@ -63,6 +63,8 @@ export function LibraryPage(props: {
   children: ReactNode;
   back?: boolean;
   scroll?: boolean;
+  /** For a page whose results scroll beneath an open keyboard, such as a search. */
+  keyboardResults?: boolean;
   actions?: Parameters<typeof AppBar>[0]["actions"];
 }) {
   const navigation = useNavigation();
@@ -93,6 +95,10 @@ export function LibraryPage(props: {
         <ScreenScrollView
           className="flex-1"
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={props.keyboardResults ? "on-drag" : "none"}
+          automaticallyAdjustKeyboardInsets={
+            props.keyboardResults === true && Platform.OS === "ios"
+          }
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{
             padding: 16,

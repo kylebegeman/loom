@@ -23,7 +23,7 @@ import {
   type LibraryTimelineEntry,
   type LibraryTimelineKind,
 } from "@t3tools/contracts/fork";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -135,6 +135,12 @@ export function LibraryTimelinePreview({ projectId }: { readonly projectId: stri
           className={cn("bg-grouped-card", index > 0 && "border-t border-border-subtle")}
         />
       ))}
+      {/* A failed refresh keeps the last entries, which may no longer be the latest. */}
+      {entries.length && latest.error ? (
+        <View className="border-t border-border-subtle p-4">
+          <LibraryNotice error={latest.error} onRetry={latest.refresh} />
+        </View>
+      ) : null}
       {entries.length ? (
         <View className="border-t border-border-subtle">
           <SettingsActionRow
@@ -168,17 +174,22 @@ export function LibraryTimelineRouteScreen({
   route,
 }: StaticScreenProps<{ readonly projectId: string }>) {
   const { projectId } = route.params;
-  const { authority, capabilities } = useLibraryActivity();
+  const { authority, capabilities, featureState } = useLibraryActivity();
   const [filters, setFilters] = useState<readonly LibraryTimelineFilter[]>([]);
   const authorityId = authority.environmentId;
-  if (!authorityId || !supportsLoomFeature(capabilities, LIBRARY_TIMELINE_FEATURE))
+  const state = featureState(LIBRARY_TIMELINE_FEATURE);
+  if (!authorityId || state !== "supported")
     return (
       <LibraryPage title="Timeline" back>
         <LibraryNotice
           detail={
-            authorityId
-              ? "Your Library does not keep a timeline yet. Update it to see what happened on this project."
-              : "Connect your Library to see the timeline."
+            state === "loading"
+              ? "Loading timeline..."
+              : state === "offline"
+                ? `Library offline. Reconnect ${authority.label} to see the timeline.`
+                : state === "unsupported"
+                  ? "Your Library does not keep a timeline yet. Update it to see what happened on this project."
+                  : "Connect your Library to see the timeline."
           }
         />
       </LibraryPage>
@@ -246,7 +257,7 @@ function TimelineFeed({
   readonly connected: boolean;
   readonly kinds: readonly LibraryTimelineKind[] | undefined;
 }) {
-  const { hostLabel, hostConnected } = useLibraryActivity();
+  const { hostLabel, hostConnected, hostsKey } = useLibraryActivity();
   const insets = useSafeAreaInsets();
   const ink = useProjectInk(projectId, authorityId);
   const open = useOpenLibraryTimelineLink(projectId);
@@ -279,6 +290,25 @@ function TimelineFeed({
   }
   // Read once per visit, so day names stay pure while rendering.
   const [now] = useState(() => new Date());
+  // Stable rows let the list skip rows that did not change when the feed renders again.
+  const rows = useMemo(
+    () =>
+      groupTimelineByDay(feed.entries, now).flatMap((day): FeedRow[] => [
+        {
+          type: "day",
+          key: `day:${day.key}`,
+          label: day.label,
+          detail: day.detail,
+          count: day.entries.length,
+        },
+        ...day.entries.map((entry): FeedRow => ({
+          type: "entry",
+          key: `entry:${entry.sequence}`,
+          entry,
+        })),
+      ]),
+    [feed.entries, now],
+  );
 
   const cursor = feed.nextBefore;
   const loadingOlder = reading !== null && reading === cursor && older.isPending;
@@ -309,24 +339,12 @@ function TimelineFeed({
         {kinds ? "Nothing of these kinds yet." : "Nothing has happened in this project yet."}
       </Text>
     );
-  const rows: FeedRow[] = groupTimelineByDay(feed.entries, now).flatMap((day): FeedRow[] => [
-    {
-      type: "day",
-      key: `day:${day.key}`,
-      label: day.label,
-      detail: day.detail,
-      count: day.entries.length,
-    },
-    ...day.entries.map((entry): FeedRow => ({
-      type: "entry",
-      key: `entry:${entry.sequence}`,
-      entry,
-    })),
-  ]);
   return (
     <LegendList
       className="flex-1"
       data={rows}
+      // Rows read the project's color and which computers are connected from outside their data.
+      extraData={`${ink ?? ""}|${hostsKey}`}
       keyExtractor={(row) => row.key}
       getItemType={(row) => row.type}
       recycleItems={false}
@@ -341,11 +359,10 @@ function TimelineFeed({
       }
       renderItem={({ item }) =>
         item.type === "day" ? (
-          <View
-            accessibilityRole="header"
-            className="flex-row flex-wrap items-baseline gap-2 pt-5 pb-1"
-          >
-            <Text className="text-base font-t3-medium text-foreground">{item.label}</Text>
+          <View className="flex-row flex-wrap items-baseline gap-2 pt-5 pb-1">
+            <Text accessibilityRole="header" className="text-base font-t3-medium text-foreground">
+              {item.label}
+            </Text>
             <Text className="text-xs text-foreground-muted">
               {item.detail ? `${item.detail} · ` : null}
               {item.count === 1 ? "1 event" : `${item.count} events`}
@@ -385,8 +402,8 @@ function TimelineFeed({
   );
 }
 
-const formatClock = (iso: string) =>
-  new Date(iso).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+const CLOCK_FORMATTER = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const formatClock = (iso: string) => CLOCK_FORMATTER.format(new Date(iso));
 
 /**
  * One thing that happened. Under a day heading the time of day leads and the icon sits on its

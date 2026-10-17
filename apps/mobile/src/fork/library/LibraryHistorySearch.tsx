@@ -8,7 +8,6 @@ import {
   librarySearchRequest,
   librarySnippetParts,
   mergeLibrarySearchPage,
-  supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
@@ -32,10 +31,7 @@ import { useLibraryActivity } from "./useLibraryActivity";
 
 /** Whether the Library can search saved history, for entry points outside this file. */
 export function useLibrarySearchSupported() {
-  const { authority, capabilities } = useLibraryActivity();
-  return (
-    Boolean(authority.environmentId) && supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE)
-  );
+  return useLibraryActivity().featureState(LIBRARY_SEARCH_FEATURE) === "supported";
 }
 
 /** Opens history search, scoped to one project when `projectId` is set. */
@@ -62,12 +58,12 @@ export function LibrarySearchRouteScreen({
   route,
 }: StaticScreenProps<{ readonly projectId?: string; readonly query?: string } | undefined>) {
   const projectId = route.params?.projectId;
-  const { authority, capabilities, hostLabel } = useLibraryActivity();
+  const { authority, featureState, hostLabel } = useLibraryActivity();
   const [text, setText] = useState(route.params?.query ?? "");
   const sent = useDebouncedValue(text, LIBRARY_SEARCH_DEBOUNCE_MS);
   const authorityId = authority.environmentId;
-  const supported =
-    Boolean(authorityId) && supportsLoomFeature(capabilities, LIBRARY_SEARCH_FEATURE);
+  const state = featureState(LIBRARY_SEARCH_FEATURE);
+  const supported = state === "supported";
   // Library-wide hits name their project; a project's own search leaves that out.
   const projects = useEnvironmentQuery(
     supported && authorityId && !projectId
@@ -81,9 +77,13 @@ export function LibrarySearchRouteScreen({
       <LibraryPage title={title} back>
         <LibraryNotice
           detail={
-            authorityId
-              ? "Your Library cannot search saved history yet. Update it to search what was said."
-              : "Connect your Library to search saved history."
+            state === "loading"
+              ? "Loading..."
+              : state === "offline"
+                ? `Library offline. Reconnect ${authority.label} to search saved history.`
+                : state === "unsupported"
+                  ? "Your Library cannot search saved history yet. Update it to search what was said."
+                  : "Connect your Library to search saved history."
           }
         />
       </LibraryPage>
@@ -93,7 +93,7 @@ export function LibrarySearchRouteScreen({
   const typed = librarySearchRequest(text, scope);
   const request = typed ? librarySearchRequest(sent, scope) : null;
   return (
-    <LibraryPage title={title} back>
+    <LibraryPage title={title} back keyboardResults>
       <View className="gap-4">
         <TextInput
           accessibilityLabel={
