@@ -28,9 +28,13 @@ import {
   CircleAlertIcon,
   CircleCheckIcon,
   CpuIcon,
+  FolderIcon,
   GitCommitHorizontalIcon,
   HardDriveDownloadIcon,
   HistoryIcon,
+  LayersIcon,
+  LibraryBigIcon,
+  MessageSquareIcon,
   MessageSquarePlusIcon,
   MonitorXIcon,
   PencilLineIcon,
@@ -41,10 +45,12 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { Button } from "~/components/ui/button";
 import { Toggle } from "~/components/ui/toggle";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 import { LibraryErrorNotice, LibrarySection } from "./LibraryControls";
+import { ComputerLabel } from "./ProjectIdentity";
 import { projectLibrary } from "./state";
 import { groupTimelineByDay } from "./timelineDays";
 
@@ -54,6 +60,15 @@ const TIMELINE_PAGE = 30;
 const PREVIEW_ENTRIES = 5;
 
 type Capabilities = Parameters<typeof supportsLoomFeature>[0];
+
+const FILTER_ICONS: Record<LibraryTimelineFilter, LucideIcon> = {
+  conversations: MessageSquareIcon,
+  "pull-requests": PullRequestGlyph.pullRequest,
+  brief: PencilLineIcon,
+  copies: HardDriveDownloadIcon,
+  commits: GitCommitHorizontalIcon,
+  runs: AlarmClockCheckIcon,
+};
 
 /**
  * What happened on the project, from every computer, as the Library recorded it. A Library
@@ -84,22 +99,36 @@ export function ProjectTimeline({
   );
   const kinds = libraryTimelineKinds(filters, shown);
   return (
-    <section aria-label="Timeline" className="flex min-w-0 flex-col gap-5">
+    <section aria-label="Timeline" className="@container/timeline flex min-w-0 flex-col gap-6">
       <div role="group" aria-label="Show only" className="flex flex-wrap gap-1.5">
-        {shown.map((filter) => (
-          <Toggle
-            key={filter}
-            size="segmented"
-            shape="pill"
-            variant="outline"
-            pressed={filters.includes(filter)}
-            onPressedChange={() =>
-              setFilters((current) => toggleLibraryTimelineFilter(current, filter))
-            }
-          >
-            {LIBRARY_TIMELINE_FILTER_LABELS[filter]}
-          </Toggle>
-        ))}
+        <Toggle
+          size="segmented"
+          shape="pill"
+          variant="outline"
+          pressed={!filters.length}
+          onPressedChange={() => setFilters([])}
+        >
+          <LayersIcon />
+          Everything
+        </Toggle>
+        {shown.map((filter) => {
+          const Icon = FILTER_ICONS[filter];
+          return (
+            <Toggle
+              key={filter}
+              size="segmented"
+              shape="pill"
+              variant="outline"
+              pressed={filters.includes(filter)}
+              onPressedChange={() =>
+                setFilters((current) => toggleLibraryTimelineFilter(current, filter))
+              }
+            >
+              <Icon />
+              {LIBRARY_TIMELINE_FILTER_LABELS[filter]}
+            </Toggle>
+          );
+        })}
       </div>
       {/* A new choice of kinds starts reading from the newest entry again. */}
       <TimelineFeed
@@ -265,16 +294,15 @@ function TimelineFeed({
     );
   }
   return (
-    <div className="flex min-w-0 flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-8">
       <LibraryErrorNotice error={newest.error} onRetry={newest.refresh} />
       {groupTimelineByDay(feed.entries, now).map((day) => (
-        <section key={day.key} aria-label={day.label} className="flex flex-col gap-1">
-          <h3 className="flex items-baseline gap-2 py-1.5 text-sm font-semibold tracking-tight">
-            {day.label}
-            <span className="text-xs font-normal tabular-nums text-muted-foreground">
-              ({day.entries.length})
-            </span>
-          </h3>
+        <section
+          key={day.key}
+          aria-label={day.label}
+          className="flex flex-col gap-1 @3xl/timeline:flex-row @3xl/timeline:gap-6"
+        >
+          <DayHeading label={day.label} detail={day.detail} entries={day.entries} />
           <TimelineList
             entries={day.entries}
             hostLabel={hostLabel}
@@ -284,9 +312,12 @@ function TimelineFeed({
         </section>
       ))}
       {cursor === null ? (
-        <p className="text-xs text-muted-foreground">That's everything since the project began.</p>
+        <p className="flex items-center gap-2 text-xs text-muted-foreground @3xl/timeline:ps-46">
+          <span aria-hidden className="size-1.5 rounded-full bg-border" />
+          That's everything since the project began.
+        </p>
       ) : (
-        <div ref={sentinelRef}>
+        <div ref={sentinelRef} className="@3xl/timeline:ps-46">
           {older.error && reading === cursor ? (
             <LibraryErrorNotice error={older.error} onRetry={older.refresh} />
           ) : (
@@ -303,6 +334,51 @@ function TimelineFeed({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * A day's name and date, with how its events break down by kind. On a wide page it holds the
+ * left of the day while its entries scroll past.
+ */
+function DayHeading({
+  label,
+  detail,
+  entries,
+}: {
+  readonly label: string;
+  readonly detail: string | null;
+  readonly entries: readonly LibraryTimelineEntry[];
+}) {
+  const mix = new Map<LibraryTimelineKind, number>();
+  for (const entry of entries) mix.set(entry.kind, (mix.get(entry.kind) ?? 0) + 1);
+  return (
+    <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5 @3xl/timeline:sticky @3xl/timeline:top-4 @3xl/timeline:w-40 @3xl/timeline:shrink-0 @3xl/timeline:flex-col @3xl/timeline:items-start @3xl/timeline:self-start">
+      <div className="flex items-baseline gap-2 @3xl/timeline:flex-col @3xl/timeline:gap-0.5">
+        <h3 className="text-sm font-semibold tracking-tight @3xl/timeline:text-lg">{label}</h3>
+        <span className="text-xs text-muted-foreground">
+          {detail ? `${detail} · ` : null}
+          {entries.length === 1 ? "1 event" : `${entries.length} events`}
+        </span>
+      </div>
+      <span aria-hidden className="flex flex-wrap gap-1">
+        {[...mix].map(([kind, count]) => {
+          const display = KIND_DISPLAY[kind];
+          return (
+            <span
+              key={kind}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs font-medium tabular-nums",
+                TONE_CLASSES[display.tone],
+              )}
+            >
+              <display.icon className="size-3" />
+              {count}
+            </span>
+          );
+        })}
+      </span>
+    </header>
   );
 }
 
@@ -354,7 +430,7 @@ function TimelineList({
   readonly clock: boolean;
 }) {
   return (
-    <ol>
+    <ol className="min-w-0 flex-1">
       {entries.map((entry, index) => (
         <li key={entry.sequence} className="relative">
           {index < entries.length - 1 ? (
@@ -362,7 +438,7 @@ function TimelineList({
               aria-hidden
               className={cn(
                 "pointer-events-none absolute top-10 -bottom-2 w-px -translate-x-1/2 bg-border",
-                clock ? "start-[5.375rem]" : "start-3.5",
+                clock ? "start-[5.625rem]" : "start-3.5",
               )}
             />
           ) : null}
@@ -396,14 +472,24 @@ function TimelineRow({
   readonly hostLabel: (id: EnvironmentId) => string;
   readonly clock?: boolean;
 }) {
-  const where = entry.environmentId ? hostLabel(entry.environmentId) : "Library";
   const folder = "copy" in entry ? libraryPathParts(entry.copy.rootPath).name : null;
   const display = KIND_DISPLAY[entry.kind];
   const body = (
     <>
       {clock ? (
-        <span className="w-15 shrink-0 pt-1.5 text-right text-xs tabular-nums text-muted-foreground">
-          {formatClock(entry.at)}
+        <span className="w-16 shrink-0 pt-1.5 text-right text-xs tabular-nums text-muted-foreground">
+          {entry.approximate ? (
+            <Tooltip>
+              <TooltipTrigger render={<span />}>
+                <span aria-hidden>~</span>
+                <span className="sr-only">About </span>
+                {formatClock(entry.at)}
+              </TooltipTrigger>
+              <TooltipPopup side="top">Estimated time</TooltipPopup>
+            </Tooltip>
+          ) : (
+            formatClock(entry.at)
+          )}
         </span>
       ) : null}
       <span
@@ -415,14 +501,35 @@ function TimelineRow({
       >
         <display.icon className="size-3.5" />
       </span>
-      <span className="min-w-0 flex-1 space-y-0.5 pt-1">
-        <span className="block break-words text-sm leading-snug font-medium">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1 @3xl/timeline:flex-row @3xl/timeline:items-baseline @3xl/timeline:gap-6">
+        <span className="min-w-0 break-words text-sm leading-snug font-medium @3xl/timeline:flex-1">
           {libraryTimelineEntrySummary(entry)}
         </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {[where, folder].filter(Boolean).join(" · ")}
-          {clock ? null : <span className="ms-1.5">{formatRelativeTimeLabel(entry.at)}</span>}
-          {entry.approximate ? <span className="ms-1.5">estimated time</span> : null}
+        <span className="flex min-w-0 items-center gap-3 text-xs text-muted-foreground @3xl/timeline:shrink-0 @3xl/timeline:justify-end">
+          {entry.environmentId ? (
+            <ComputerLabel
+              environmentId={entry.environmentId}
+              label={hostLabel(entry.environmentId)}
+              className="shrink"
+            />
+          ) : (
+            <span className="inline-flex shrink-0 items-center gap-1.5">
+              <LibraryBigIcon aria-hidden className="size-3.5" />
+              Library
+            </span>
+          )}
+          {folder ? (
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <FolderIcon aria-hidden className="size-3.5 shrink-0" />
+              <span className="max-w-40 truncate">{folder}</span>
+            </span>
+          ) : null}
+          {clock ? null : <span className="shrink-0">{formatRelativeTimeLabel(entry.at)}</span>}
+          {entry.approximate && !clock ? (
+            <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 dark:bg-accent">
+              estimated time
+            </span>
+          ) : null}
         </span>
       </span>
     </>

@@ -1,6 +1,8 @@
 export type TimelineDay<T> = {
   readonly key: string;
   readonly label: string;
+  /** The calendar date, when the label names the day without one. */
+  readonly detail: string | null;
   readonly entries: readonly T[];
 };
 
@@ -25,6 +27,13 @@ export function timelineDayLabel(date: Date, now: Date, locale?: string) {
   });
 }
 
+/** The date behind a relative day name. Labels for older days already carry their date. */
+export function timelineDayDetail(date: Date, now: Date, locale?: string) {
+  const daysAgo = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+  if (daysAgo >= WEEK_DAYS) return null;
+  return date.toLocaleDateString(locale, { month: "long", day: "numeric" });
+}
+
 /**
  * One group per local day, in the order days first appear. Estimated times can land an entry
  * out of order, so a day seen again joins its earlier group instead of repeating.
@@ -34,13 +43,22 @@ export function groupTimelineByDay<T extends { readonly at: string }>(
   now: Date,
   locale?: string,
 ): TimelineDay<T>[] {
-  const days = new Map<string, { key: string; label: string; entries: T[] }>();
+  const days = new Map<
+    string,
+    { key: string; label: string; detail: string | null; entries: T[] }
+  >();
   for (const entry of entries) {
     const date = new Date(entry.at);
     const key = String(startOfDay(date));
     const day = days.get(key);
     if (day) day.entries.push(entry);
-    else days.set(key, { key, label: timelineDayLabel(date, now, locale), entries: [entry] });
+    else
+      days.set(key, {
+        key,
+        label: timelineDayLabel(date, now, locale),
+        detail: timelineDayDetail(date, now, locale),
+        entries: [entry],
+      });
   }
   return [...days.values()];
 }

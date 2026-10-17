@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { groupTimelineByDay, timelineDayLabel } from "./timelineDays";
+import { groupTimelineByDay, timelineDayDetail, timelineDayLabel } from "./timelineDays";
 
 const local = (month: number, day: number, hour: number, year = 2026) =>
   new Date(year, month - 1, day, hour);
@@ -14,6 +14,12 @@ describe("timeline days", () => {
     expect(timelineDayLabel(local(12, 30, 12, 2025), now, "en-US")).toBe("Tue, Dec 30, 2025");
     // A computer whose clock runs ahead still reads as today.
     expect(timelineDayLabel(local(10, 18, 2), now, "en-US")).toBe("Today");
+  });
+
+  it("dates the days a relative name leaves undated", () => {
+    expect(timelineDayDetail(local(10, 17, 1), now, "en-US")).toBe("October 17");
+    expect(timelineDayDetail(local(10, 13, 12), now, "en-US")).toBe("October 13");
+    expect(timelineDayDetail(local(10, 2, 12), now, "en-US")).toBeNull();
   });
 
   it("groups by local calendar day and folds an out of order entry into its day", () => {
