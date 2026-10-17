@@ -9,8 +9,11 @@ import {
 import {
   libraryContinuationContext,
   libraryCopiesForScope,
+  libraryLaunchChoice,
+  libraryLaunchWarning,
   supportsLoomFeature,
 } from "@t3tools/client-runtime/fork";
+import { libraryLaunchCandidateSummary } from "@t3tools/shared/fork/library-launch";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -44,6 +47,7 @@ import { setComposerDraftText, flushComposerDrafts } from "../../state/use-compo
 import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../state/preferences";
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { threadEnvironment } from "../../state/threads";
+import { vcsEnvironment } from "../../state/vcs";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { LibraryAuthorityScreen, LibraryNotice, LibraryPage } from "./LibraryScreens";
@@ -55,6 +59,12 @@ import {
   readLibraryLaunchAttempt,
   encodeLibraryLaunchAttempt,
 } from "./libraryLaunch";
+import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
+
+const sentence = (parts: readonly string[]) => {
+  const text = parts.join(", ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
 function unwrap<A, E>(result: AtomCommandResult<A, E>): A {
   if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
@@ -170,8 +180,9 @@ function LibraryStartContent(props: {
     [selectedExecution, setExecution] = useState<EnvironmentId | null>(
       saved?.receipt.intent?.executionEnvironmentId ?? props.reuseEnvironmentId ?? null,
     ),
-    [mode, setMode] = useState<"reuse" | "folder" | "clone">(
-      saved?.review.mode ?? (props.reuseRootPath ? "folder" : "reuse"),
+    // Null until picked, so the working files follow the chosen computer.
+    [modeChoice, setMode] = useState<"reuse" | "folder" | "clone" | null>(
+      saved?.review.mode ?? (props.reuseRootPath ? "folder" : null),
     ),
     [rootPath, setRootPath] = useState(saved?.review.rootPath ?? props.reuseRootPath ?? ""),
     [copyId, setCopyId] = useState<string | null>(null),
@@ -234,21 +245,55 @@ function LibraryStartContent(props: {
   );
   const [carryInput, setCarryContext] = useState<string | null>(saved?.review.carryContext ?? null);
   const carryContext = carryInput ?? (source.data ? libraryContinuationContext(source.data) : "");
-  const suggestedHosts = environments.filter(
-    (entry) =>
-      entry.entry.enabled &&
-      entry.connection.phase === "connected" &&
-      entry.serverConfig?.environment.capabilities.supportsExecution !== false &&
-      operable.has(entry.environmentId) &&
-      libraryCopiesForScope(launchProject, copies.data ?? [], entry.environmentId, resourceIds)
-        .length > 0,
-  );
-  const execution =
-    selectedExecution ?? (suggestedHosts.length === 1 ? suggestedHosts[0]!.environmentId : null);
-  const eligible = libraryCopiesForScope(launchProject, copies.data ?? [], execution, resourceIds);
   const copiesState = libraryListState(copies);
   const copiesReady = copiesState === "ready" || copiesState === "empty";
-  const selectedCopy = eligible.find((copy) => copy.id === copyId) ?? eligible[0] ?? null;
+  const ranking = useLibraryLaunchRanking({
+    project: launchProject,
+    copies: copiesReady ? (copies.data ?? []) : [],
+    resourceId: scope === "all" ? null : scope,
+  });
+  // Nothing is preselected while copies load, so the choice never jumps away from a copy.
+  // Memoized so React Compiler can treat the choice as immutable and keep optimizing this screen.
+  const choosing = copiesReady && progress.intent === null;
+  const choice = useMemo(
+    () =>
+      choosing
+        ? libraryLaunchChoice({ ranking, hostId: selectedExecution, copyId })
+        : { hostId: selectedExecution, candidate: null },
+    [choosing, ranking, selectedExecution, copyId],
+  );
+  const execution = choice.hostId,
+    chosen = choice.candidate;
+  const rankOf = (environmentId: EnvironmentId, id?: string) => {
+    const index = ranking.candidates.findIndex(
+      (candidate) =>
+        candidate.environmentId === environmentId &&
+        (id === undefined || (candidate.kind === "copy" && candidate.copyId === id)),
+    );
+    return index === -1 ? ranking.candidates.length : index;
+  };
+  const candidateFor = (environmentId: EnvironmentId, id?: string) =>
+    ranking.candidates.find(
+      (candidate) =>
+        candidate.environmentId === environmentId &&
+        candidate.kind !== "mini" &&
+        (id === undefined || (candidate.kind === "copy" && candidate.copyId === id)),
+    ) ?? null;
+  const eligible = [
+    ...libraryCopiesForScope(launchProject, copies.data ?? [], execution, resourceIds),
+  ].sort(
+    (left, right) => rankOf(left.environmentId, left.id) - rankOf(right.environmentId, right.id),
+  );
+  // Skip "online": the computer row already says it.
+  const copyReasons = (copy: LibraryWorkingCopy) => {
+    const reasons = candidateFor(copy.environmentId, copy.id)?.reasons.slice(1) ?? [];
+    return reasons.length > 0 ? sentence(reasons) : undefined;
+  };
+  const selectedCopy =
+    eligible.find((copy) => copy.id === copyId) ??
+    (chosen?.kind === "copy" ? eligible.find((copy) => copy.id === chosen.copyId) : undefined) ??
+    eligible[0] ??
+    null;
   const config = execution ? (configs.get(execution) ?? null) : null;
   const models = useMemo(
     () =>
@@ -277,6 +322,25 @@ function LibraryStartContent(props: {
     canRegisterThread = useAtomValue(
       library.registerThread.permissionAtom(authority.environmentId),
     );
+  // A computer without a copy gets one inline: clone when allowed, otherwise review a folder.
+  const needsCopy = copiesReady && execution !== null && eligible.length === 0;
+  const mode =
+    modeChoice ??
+    (needsCopy
+      ? canPrepare && execution !== null && writable.has(execution)
+        ? "clone"
+        : "folder"
+      : "reuse");
+  const warning =
+    progress.intent === null && mode === "reuse"
+      ? libraryLaunchWarning(
+          selectedCopy ? candidateFor(selectedCopy.environmentId, selectedCopy.id) : null,
+          selectedCopy,
+          scope === "all" ? null : scope,
+        )
+      : null;
+  const canPull = useAtomValue(vcsEnvironment.pull.permissionAtom(execution));
+  const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const prepare = useAtomCommand(library.prepareCopy, { reportFailure: false }),
     registerCopy = useAtomCommand(library.registerCopy, { reportFailure: false }),
     bind = useAtomCommand(library.bindThread, { reportFailure: false }),
@@ -496,6 +560,36 @@ function LibraryStartContent(props: {
       setPending(null);
     }
   }
+  /** Fast-forward the copy's behind repositories, then start on it. */
+  async function pullThenStart(paths: readonly string[]) {
+    if (busy.current || !execution || !selectedCopy) return;
+    const copy = selectedCopy;
+    busy.current = true;
+    setPending("Pulling latest changes…");
+    setError(null);
+    let pulled = true;
+    try {
+      for (const cwd of paths) {
+        const result = await pull({ environmentId: execution, input: { cwd } });
+        if (AsyncResult.isFailure(result)) {
+          const cause = squashAtomCommandFailure(result);
+          setError(cause instanceof Error ? cause.message : "Could not pull the latest changes.");
+          pulled = false;
+          break;
+        }
+      }
+    } finally {
+      busy.current = false;
+      setPending(null);
+      appAtomRegistry.refresh(
+        library.copyHealth({
+          environmentId: copy.environmentId,
+          input: { workingCopyId: copy.id },
+        }),
+      );
+    }
+    if (pulled) await start();
+  }
   return (
     <LibraryPage title={props.sourceArchiveId ? "Linked continuation" : "New conversation"} back>
       <Text className="text-sm text-foreground-muted">
@@ -594,12 +688,14 @@ function LibraryStartContent(props: {
       <SettingsSection title="Computer for this conversation">
         {environments
           .filter((env) => env.serverConfig?.environment.capabilities.supportsExecution !== false)
+          .sort((left, right) => rankOf(left.environmentId) - rankOf(right.environmentId))
           .map((env, index) => {
             const connected = env.entry.enabled && env.connection.phase === "connected",
               supported = supportsLoomFeature(
                 env.serverConfig?.environment.capabilities,
                 "project-library",
-              );
+              ),
+              candidate = candidateFor(env.environmentId);
             return (
               <ListChoiceRow
                 key={env.environmentId}
@@ -614,12 +710,15 @@ function LibraryStartContent(props: {
                       ? "Update Loom to run library conversations"
                       : !operable.has(env.environmentId)
                         ? "Conversation access required"
-                        : "Connected"
+                        : candidate
+                          ? sentence(candidate.reasons)
+                          : "Connected"
                 }
                 onPress={() => {
                   setExecution(env.environmentId);
                   setCopyId(null);
                   setModelKey(null);
+                  setMode(null);
                 }}
               />
             );
@@ -653,6 +752,11 @@ function LibraryStartContent(props: {
           />
         ) : null}
       </SettingsSection>
+      {chosen && selectedExecution === null ? (
+        <Text className="text-xs text-foreground-muted">
+          Suggested: {libraryLaunchCandidateSummary(chosen)}
+        </Text>
+      ) : null}
       {execution ? (
         <>
           <SettingsSection title="Working files">
@@ -674,6 +778,7 @@ function LibraryStartContent(props: {
                   <ListChoiceRow
                     key={copy.id}
                     label={copy.rootPath}
+                    description={copyReasons(copy)}
                     selected={selectedCopy?.id === copy.id}
                     separated={index > 0}
                     disabled={locked || !copiesReady}
@@ -706,6 +811,27 @@ function LibraryStartContent(props: {
               onPress={() => setMode("clone")}
             />
           </SettingsSection>
+          {needsCopy && progress.intent === null ? (
+            <Text className="text-sm text-foreground-muted">
+              {ranking.candidates.some((candidate) => candidate.kind === "copy")
+                ? `${selectedHost?.label ?? "This computer"} has no copy of this project yet. The conversation starts when the copy is ready.`
+                : `This project has no copy yet. Get one on ${selectedHost?.label ?? "this computer"} and the conversation starts when it is ready.`}
+            </Text>
+          ) : null}
+          {warning ? (
+            <View className="gap-2">
+              <Text className="text-sm text-warning-foreground">{warning.message}</Text>
+              {warning.pullPaths && canPull ? (
+                <Button
+                  label="Pull first"
+                  disabled={pending !== null || !canStart}
+                  onPress={() => {
+                    void pullThenStart(warning.pullPaths ?? []);
+                  }}
+                />
+              ) : null}
+            </View>
+          ) : null}
           {mode !== "reuse" ? (
             <TextInput
               accessibilityLabel="Parent folder on selected computer"
@@ -765,7 +891,14 @@ function LibraryStartContent(props: {
       ) : null}
       {error ? <LibraryNotice error={error} /> : null}
       <Button
-        label={pending ?? (progress.intent ? "Resume preparation" : "Open conversation")}
+        label={
+          pending ??
+          (progress.intent
+            ? "Resume preparation"
+            : warning
+              ? "Continue anyway"
+              : "Open conversation")
+        }
         tone="primary"
         disabled={pending !== null || !canStart}
         onPress={() => {
