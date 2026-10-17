@@ -30,7 +30,11 @@ export async function readLoomIdentity(baseUrl: string, signal?: AbortSignal, re
   return decodeMetadata(await response.json());
 }
 
-export function loomBrowserLoginUrl(baseUrl: string, metadata: LoomIdentityMetadata | null) {
+export function loomBrowserLoginUrl(
+  baseUrl: string,
+  metadata: LoomIdentityMetadata | null,
+  currentUrl?: string,
+) {
   if (
     !metadata?.enabled ||
     !metadata.browserLoginEnabled ||
@@ -40,5 +44,11 @@ export function loomBrowserLoginUrl(baseUrl: string, metadata: LoomIdentityMetad
     !metadata.tokenEndpoint
   )
     return null;
-  return loomIdentityUrl(baseUrl, LOOM_IDENTITY_LOGIN_PATH);
+  const login = loomIdentityUrl(baseUrl, LOOM_IDENTITY_LOGIN_PATH);
+  if (!login || !currentUrl) return login;
+  const target = new URL(login);
+  const current = new URL(currentUrl);
+  if (current.origin === target.origin)
+    target.searchParams.set("returnTo", current.pathname + current.search + current.hash);
+  return target.href;
 }

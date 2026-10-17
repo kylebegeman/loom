@@ -115,6 +115,7 @@ interface VerifiedIdentity {
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
 }
 interface PendingLogin {
+  readonly returnTo: string;
   readonly verifier: string;
   readonly nonce: string;
   readonly expiresAt: number;
@@ -126,7 +127,7 @@ export class PocketId extends Context.Service<
   {
     readonly metadata: Effect.Effect<LoomIdentityMetadata, PocketIdError>;
     readonly cookieName: string;
-    readonly beginLogin: Effect.Effect<
+    readonly beginLogin: (returnTo?: string) => Effect.Effect<
       {
         readonly authorizationUrl: string;
         readonly cookieValue: string;
@@ -140,7 +141,7 @@ export class PocketId extends Context.Service<
       readonly code: string;
       readonly issuer?: string;
       readonly client: AuthClientMetadata;
-    }) => Effect.Effect<SessionStore.IssuedSession, PocketIdError>;
+    }) => Effect.Effect<SessionStore.IssuedSession & { readonly returnTo: string }, PocketIdError>;
     readonly verifyAccessToken: (token: string) => Effect.Effect<VerifiedIdentity, PocketIdError>;
     readonly exchangeAccessToken: (input: {
       readonly token: string;
@@ -445,7 +446,15 @@ const make = Effect.gen(function* () {
       environmentId,
     } satisfies LoomIdentityMetadata;
   });
-  const beginLogin = Effect.gen(function* () {
+  const beginLogin = Effect.fn("PocketId.beginLogin")(function* (requestedReturnTo = "/") {
+    // Keep the destination in single-use server state, never in callback parameters.
+    const returnTo =
+      requestedReturnTo.startsWith("/") &&
+      !requestedReturnTo.startsWith("//") &&
+      !/[\\\s\p{Cc}]/u.test(requestedReturnTo) &&
+      requestedReturnTo.length <= 2048
+        ? requestedReturnTo
+        : "/";
     if (!browserLoginEnabled || clientId === null || redirectUri === null)
       return yield* new PocketIdError({ reason: "disabled" });
     const endpoints = yield* discovery;
@@ -466,7 +475,12 @@ const make = Effect.gen(function* () {
         [...current].filter(([, entry]) => entry.expiresAt > now.epochMilliseconds),
       );
       if (next.size >= MAX_PENDING_LOGINS) return [false, next] as const;
-      next.set(state, { verifier, nonce, expiresAt: now.epochMilliseconds + LOGIN_TTL_MS });
+      next.set(state, {
+        verifier,
+        nonce,
+        returnTo,
+        expiresAt: now.epochMilliseconds + LOGIN_TTL_MS,
+      });
       return [true, next] as const;
     });
     if (!accepted) return yield* new PocketIdError({ reason: "capacity" });
@@ -571,7 +585,7 @@ const make = Effect.gen(function* () {
       }
       const expiration = DateTime.make(claims.exp * 1000);
       if (expiration._tag === "None") return yield* new PocketIdError({ reason: "token" });
-      return yield* issue(
+      const session = yield* issue(
         {
           ...identity,
           expiresAt: DateTime.toUtc(
@@ -582,6 +596,7 @@ const make = Effect.gen(function* () {
         },
         { client: input.client, method: "browser-session-cookie" },
       );
+      return { ...session, returnTo: entry.returnTo };
     },
   );
   return PocketId.of({

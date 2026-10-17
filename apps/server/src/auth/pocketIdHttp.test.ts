@@ -39,19 +39,21 @@ const metadata = {
 const pocket = Layer.mock(PocketId.PocketId)({
   cookieName: "identity-state",
   metadata: Effect.succeed(metadata),
-  beginLogin: DateTime.now.pipe(
-    Effect.map((now) => ({
-      authorizationUrl: "https://id.example.test/authorize?state=verified",
-      cookieValue: "signed-state",
-      expiresAt: DateTime.add(now, { minutes: 5 }),
-    })),
-  ),
+  beginLogin: () =>
+    DateTime.now.pipe(
+      Effect.map((now) => ({
+        authorizationUrl: "https://id.example.test/authorize?state=verified",
+        cookieValue: "signed-state",
+        expiresAt: DateTime.add(now, { minutes: 5 }),
+      })),
+    ),
   completeLogin: (input) =>
     Effect.gen(function* () {
       if (input.state !== "verified" || input.cookieValue !== "signed-state")
         return yield* new PocketId.PocketIdError({ reason: "state" });
       return {
         token: "host-browser-token",
+        returnTo: "/sites",
         sessionId: AuthSessionId.make("browser"),
         method: "browser-session-cookie" as const,
         scopes: ["orchestration:read" as const],
@@ -100,7 +102,7 @@ const layerTokens = HttpApiBuilder.layer(TestApi).pipe(
 
 it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
   it.effect(
-    "serves public metadata and sets secure browser cookies with a fixed callback destination",
+    "serves public metadata and sets secure browser cookies with the destination bound to login state",
     () =>
       Effect.gen(function* () {
         const crypto = yield* Crypto.Crypto;
@@ -131,7 +133,7 @@ it.layer(NodeServices.layer)("PocketId HTTP", (it) => {
                 ),
                 context,
               );
-              expect(callback.headers.get("location")).toBe("/");
+              expect(callback.headers.get("location")).toBe("/sites");
               expect(
                 callback.headers
                   .getSetCookie()

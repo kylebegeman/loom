@@ -48,7 +48,10 @@ export const layer = Layer.unwrap(
       Effect.catch(() => Effect.succeed(failed(503))),
     );
     const login = Effect.gen(function* () {
-      const pending = yield* identity.beginLogin;
+      const request = yield* HttpServerRequest.HttpServerRequest;
+      const returnTo =
+        new URL(request.url, "https://localhost").searchParams.get("returnTo") ?? "/";
+      const pending = yield* identity.beginLogin(returnTo);
       return yield* setCookie(
         HttpServerResponse.redirect(pending.authorizationUrl, { headers: HEADERS }),
         identity.cookieName,
@@ -67,7 +70,7 @@ export const layer = Layer.unwrap(
         client: deriveAuthClientMetadata({ request }),
       });
       return yield* setCookie(
-        HttpServerResponse.redirect("/", { headers: HEADERS }),
+        HttpServerResponse.redirect(session.returnTo, { headers: HEADERS }),
         sessions.cookieName,
         session.token,
         DateTime.toUtc(session.expiresAt),

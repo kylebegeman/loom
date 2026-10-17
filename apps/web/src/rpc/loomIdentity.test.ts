@@ -61,3 +61,18 @@ describe("Loom browser sign-in boundary", () => {
     await expect(readLoomIdentity("https://library.example.com")).rejects.toThrow();
   });
 });
+
+it("returns browser sign-in to the requested page only on the selected host", () => {
+  const login = loomBrowserLoginUrl(
+    "https://library.example.com",
+    metadata,
+    "https://library.example.com/sites?range=30#checks",
+  );
+  expect(new URL(login!).searchParams.get("returnTo")).toBe("/sites?range=30#checks");
+  const remote = loomBrowserLoginUrl(
+    "https://library.example.com",
+    metadata,
+    "https://local.example.com/sites",
+  );
+  expect(new URL(remote!).searchParams.has("returnTo")).toBe(false);
+});

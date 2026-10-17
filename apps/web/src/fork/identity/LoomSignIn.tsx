@@ -65,7 +65,9 @@ export function LoomSignIn({
     return () => abort.abort();
   }, [baseUrl, checkAttempt, onAvailabilityChange]);
   const active = identity && (!baseUrl || identity.baseUrl === baseUrl) ? identity : null;
-  const browserUrl = active ? loomBrowserLoginUrl(active.baseUrl, active.metadata) : null;
+  const browserUrl = active
+    ? loomBrowserLoginUrl(active.baseUrl, active.metadata, window.location.href)
+    : null;
   const nativeEnabled =
     active?.metadata.enabled &&
     active.metadata.nativeClientId &&
