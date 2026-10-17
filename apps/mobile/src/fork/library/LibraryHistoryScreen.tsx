@@ -83,19 +83,25 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
     : -1;
   const matchedRowId = matchedIndex >= 0 ? rows[matchedIndex]?.id : undefined;
   const list = useRef<LegendListRef>(null);
-  const scrolledTo = useRef<string | null>(null);
+  const scrolledTo = useRef<{ readonly row: string; readonly measured: boolean } | null>(null);
   const matchedActivity = rows[matchedIndex]?.type === "activity";
-  // Brings the matched item into view once, without moving the page again as history refreshes.
+  const [laidOut, setLaidOut] = useState<string | null>(null);
+  // Brings the matched item into view without moving the page again as history refreshes. The
+  // first scroll lands on estimated row heights, often a screen short, so it scrolls once more
+  // when the hit is laid out and the rows before it have been measured.
   useEffect(() => {
-    if (!matchedRowId || scrolledTo.current === matchedRowId) return;
-    scrolledTo.current = matchedRowId;
+    if (!matchedRowId) return;
+    const measured = laidOut === matchedRowId;
+    const done = scrolledTo.current;
+    if (done?.row === matchedRowId && (done.measured || !measured)) return;
+    scrolledTo.current = { row: matchedRowId, measured };
     // An opened plan can be taller than the screen, so its start leads rather than its middle.
     void list.current?.scrollToIndex({
       index: matchedIndex,
       viewPosition: matchedActivity ? 0 : 0.5,
       animated: false,
     });
-  }, [matchedRowId, matchedIndex, matchedActivity]);
+  }, [matchedRowId, matchedIndex, matchedActivity, laidOut]);
   // Scrolling does not move a screen reader, so its focus moves to the hit once the row is laid
   // out and the push has finished; the screen change that ends a push would take it back earlier.
   const [appeared, setAppeared] = useState(false);
@@ -107,7 +113,6 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
     [navigation],
   );
   const matchLabel = useRef<ComponentRef<typeof View>>(null);
-  const [laidOut, setLaidOut] = useState<string | null>(null);
   const focusedOn = useRef<string | null>(null);
   useEffect(() => {
     if (!appeared || !matchedRowId || laidOut !== matchedRowId) return;
@@ -163,6 +168,8 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
         data={rows}
         keyExtractor={(row) => row.id}
         recycleItems={false}
+        // A short first scroll can leave the hit outside the drawn rows, so it never lays out.
+        alwaysRender={matchedRowId ? { keys: [matchedRowId] } : undefined}
         renderItem={({ item }) =>
           item.id === matchedRowId ? (
             <View className="-mx-2 gap-1 rounded-xl bg-subtle px-2 pt-2 pb-1">
