@@ -485,8 +485,12 @@ function LibraryProjectContent({ projectId }: { projectId: string }) {
       environments.find((env) => env.environmentId === id)?.label ??
       authority.computers.find((entry) => entry.environmentId === id)?.label ??
       "Saved computer",
+    // Info and copies are cached separately, so a newer cached lastSeenAt could make older cached
+    // health look recent. Only a live, settled read of both may age health past its own check.
     lastSeenAt = (id: string) =>
-      authority.computers.find((entry) => entry.environmentId === id)?.lastSeenAt;
+      authority.ready && copiesReady
+        ? authority.computers.find((entry) => entry.environmentId === id)?.lastSeenAt
+        : undefined;
   const showThread = (thread: LibraryThreadSummary) =>
     navigation.navigate("LibraryHistory", { projectId: p.id, archiveId: thread.id });
   const reuseFolder = (copy: LibraryWorkingCopy) =>

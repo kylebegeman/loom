@@ -1,9 +1,10 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { useFocusEffect } from "@react-navigation/native";
 import { createProjectLibraryAtoms, supportsLoomFeature } from "@t3tools/client-runtime/fork";
 import { AuthOrchestrationReadScope, EnvironmentId } from "@t3tools/contracts";
 import { LIBRARY_PROJECT_PROFILE_FEATURE } from "@t3tools/contracts/fork";
 import { AsyncResult } from "effect/reactivity";
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
 import { connectionAtomRuntime } from "../../connection/runtime";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { useEnvironments } from "../../state/environments";
@@ -26,6 +27,20 @@ export function refreshLibraryWork(environmentId: EnvironmentId, projectId: stri
     library.copies({ environmentId, input: { projectId, includeReleased: true } }),
   );
   appAtomRegistry.refresh(library.threads({ environmentId, input: { projectId } }));
+}
+
+/**
+ * Re-reads a copy query when its screen is shown again, because the project screen stays mounted
+ * under the screens it opens. Mounting, or switching to another query, already reads.
+ */
+export function useRefreshOnRefocus(refresh: () => void) {
+  const lastRefresh = useRef<(() => void) | null>(null);
+  useFocusEffect(
+    useCallback(() => {
+      if (lastRefresh.current === refresh) refresh();
+      lastRefresh.current = refresh;
+    }, [refresh]),
+  );
 }
 
 /** One library authority is retained independently of execution host selection. */

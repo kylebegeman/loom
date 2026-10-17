@@ -22,7 +22,8 @@ import { cn } from "../../lib/cn";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { library } from "./libraryState";
+import { LibraryReadFailure } from "./LibraryCopyHealth";
+import { library, useRefreshOnRefocus } from "./libraryState";
 
 const TONE_SYMBOLS: Record<LibraryToolCheckTone, AppSymbolName> = {
   ok: "checkmark.circle",
@@ -64,15 +65,24 @@ function ReadinessChecklist(props: { project: LibraryProject; copy: LibraryWorki
       input: { projectId: props.project.id, profile: props.project.profile ?? {} },
     }),
   );
+  useRefreshOnRefocus(readiness.refresh);
   const data = readiness.data;
+  const failure = readiness.error ? (
+    <LibraryReadFailure
+      message="Could not check required tools."
+      retrying={readiness.isPending}
+      onRetry={readiness.refresh}
+    />
+  ) : null;
   if (data === null)
-    return readiness.error ? (
-      <Text className="text-xs text-foreground-muted">Could not check required tools.</Text>
-    ) : readiness.isPending ? (
-      <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
-        Checking required tools…
-      </Text>
-    ) : null;
+    return (
+      failure ??
+      (readiness.isPending ? (
+        <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+          Checking required tools…
+        </Text>
+      ) : null)
+    );
   return (
     <View className="gap-1.5">
       {data.checks.length > 0 ? (
@@ -107,6 +117,7 @@ function ReadinessChecklist(props: { project: LibraryProject; copy: LibraryWorki
           {data.secrets.map((secret) => secret.name).join(", ")}
         </Text>
       ) : null}
+      {failure}
     </View>
   );
 }
@@ -119,12 +130,21 @@ function SettingsDifferences(props: { project: LibraryProject; copy: LibraryWork
       input: { workingCopyId: copy.id, profile: props.project.profile ?? {} },
     }),
   );
+  useRefreshOnRefocus(settings.refresh);
   const apply = useAtomCommand(library.applyProfile, { reportFailure: false });
   const canApply = useAtomValue(library.applyProfile.permissionAtom(copy.environmentId));
   const [applying, setApplying] = useState(false),
     [error, setError] = useState<string | null>(null);
   const data = settings.data;
-  if (data === null || data.reviewToken === null || data.projects.length === 0) return null;
+  // Hiding a failed comparison would read the same as settings that already match.
+  const failure = settings.error ? (
+    <LibraryReadFailure
+      message="Could not compare this copy's settings with the project setup."
+      retrying={settings.isPending}
+      onRetry={settings.refresh}
+    />
+  ) : null;
+  if (data === null || data.reviewToken === null || data.projects.length === 0) return failure;
   const reviewToken = data.reviewToken;
   const named = data.projects.length > 1;
   async function applySetup() {
@@ -168,6 +188,7 @@ function SettingsDifferences(props: { project: LibraryProject; copy: LibraryWork
           {error}
         </Text>
       ) : null}
+      {failure}
     </View>
   );
 }

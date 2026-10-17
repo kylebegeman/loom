@@ -26,7 +26,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { vcsEnvironment } from "../../state/vcs";
-import { library } from "./libraryState";
+import { library, useRefreshOnRefocus } from "./libraryState";
 
 const ago = (iso: string) => `${relativeTime(iso)} ago`;
 
@@ -77,6 +77,26 @@ export function LibraryCopyHealth(props: {
   ) : null;
 }
 
+export function LibraryReadFailure(props: {
+  message: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <View className="gap-1">
+      <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+        {props.message}
+      </Text>
+      <Button
+        label={props.retrying ? "Checking…" : "Try again"}
+        tone="text"
+        disabled={props.retrying}
+        onPress={props.onRetry}
+      />
+    </View>
+  );
+}
+
 function RepositoryHealthList(props: {
   project: LibraryProject;
   repositories: readonly LibraryRepositoryHealth[];
@@ -115,6 +135,8 @@ function PublishedCopyHealth(props: {
   lastSeenAt: string | undefined;
   /** The computer's name when it is not connected here. */
   offlineLabel: string | null;
+  /** Why the live read that would replace this report is missing. */
+  failure?: ReactNode;
 }) {
   const effective = effectiveLibraryCopyHealth({
     copy: props.copy,
@@ -127,10 +149,13 @@ function PublishedCopyHealth(props: {
       project={props.project}
       repositories={effective.health.repositories}
       footer={
-        <Text className="text-xs text-foreground-muted">
-          Last reported {ago(effective.asOf)}
-          {props.offlineLabel === null ? null : ` · ${props.offlineLabel} offline`}
-        </Text>
+        <View className="gap-1">
+          <Text className="text-xs text-foreground-muted">
+            Last reported {ago(effective.asOf)}
+            {props.offlineLabel === null ? null : ` · ${props.offlineLabel} offline`}
+          </Text>
+          {props.failure}
+        </View>
       }
     />
   );
@@ -147,6 +172,7 @@ function LiveCopyHealth(props: {
   const health = useEnvironmentQuery(
     library.copyHealth({ environmentId: copy.environmentId, input: { workingCopyId: copy.id } }),
   );
+  useRefreshOnRefocus(health.refresh);
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const canPull = useAtomValue(vcsEnvironment.pull.permissionAtom(copy.environmentId));
   const refreshRemote = useAtomCommand(library.refreshCopyHealth, { reportFailure: false });
@@ -185,6 +211,13 @@ function LiveCopyHealth(props: {
     health.refresh();
   }
   const data = health.data;
+  const failure = health.error ? (
+    <LibraryReadFailure
+      message="Could not check this copy."
+      retrying={health.isPending}
+      onRetry={health.refresh}
+    />
+  ) : null;
   if (
     data === null &&
     props.published &&
@@ -196,16 +229,18 @@ function LiveCopyHealth(props: {
         copy={copy}
         lastSeenAt={props.lastSeenAt}
         offlineLabel={null}
+        failure={failure}
       />
     );
   if (data === null)
-    return health.error ? (
-      <Text className="text-xs text-foreground-muted">Could not check this copy.</Text>
-    ) : health.isPending ? (
-      <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
-        Checking repositories…
-      </Text>
-    ) : null;
+    return (
+      failure ??
+      (health.isPending ? (
+        <Text accessibilityLiveRegion="polite" className="text-xs text-foreground-muted">
+          Checking repositories…
+        </Text>
+      ) : null)
+    );
   return (
     <RepositoryHealthList
       project={props.project}
@@ -226,6 +261,7 @@ function LiveCopyHealth(props: {
       footer={
         <View className="gap-1">
           <Text className="text-xs text-foreground-muted">Checked {ago(data.checkedAt)}</Text>
+          {failure}
           {canRefreshRemote ? (
             <Button
               label={checkingRemote ? "Checking…" : "Check remote"}
