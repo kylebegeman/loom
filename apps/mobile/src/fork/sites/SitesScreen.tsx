@@ -1,3 +1,4 @@
+import { useSiteCheckClock } from "./use-site-check-clock";
 import { useState } from "react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { Linking, View } from "react-native";
@@ -29,6 +30,7 @@ export function SitesRouteScreen({ route }: StaticScreenProps<{ siteId?: string 
       : null,
   );
   const snapshot = query.data?.snapshot;
+  const now = useSiteCheckClock(snapshot);
   const selected = snapshot?.sites.find((site) => site.id === selection) ?? snapshot?.sites[0];
   const analytics = useEnvironmentQuery(
     authority.environmentId && supported && selected
@@ -198,8 +200,7 @@ export function SitesRouteScreen({ route }: StaticScreenProps<{ siteId?: string 
                             onPress={() => setEditing({ kind: "check", row: check })}
                           />
                           <Text>
-                            {check.name}:{" "}
-                            {siteCheckState(check, snapshot.staleAfterSeconds, Date.now())}
+                            {check.name}: {siteCheckState(check, snapshot.staleAfterSeconds, now)}
                           </Text>
                           <Text className="text-xs text-foreground-muted">
                             {check.last

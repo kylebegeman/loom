@@ -127,7 +127,11 @@ export function SiteEditor({
     }
   };
   return (
-    <Sheet title={`${row ? "Edit" : "Register"} ${target.kind}`} onClose={onClose}>
+    <Sheet
+      title={`${row ? "Edit" : "Register"} ${target.kind}`}
+      dismissible={!busy}
+      onClose={onClose}
+    >
       <ScrollView contentInsetAdjustmentBehavior="automatic" keyboardShouldPersistTaps="handled">
         <View className="gap-4 p-4">
           <Text className="text-lg font-t3-semibold">
@@ -214,7 +218,7 @@ export function SiteEditor({
               {(["website", "api", "redirect"] as const).map((value) => (
                 <Button
                   key={value}
-                  label={value}
+                  label={`${kind === value ? "Selected: " : ""}${value}`}
                   disabled={busy}
                   tone={kind === value ? "primary" : "secondary"}
                   onPress={() => setKind(value)}
@@ -227,7 +231,7 @@ export function SiteEditor({
               {snapshot.services.map((service) => (
                 <Button
                   key={service.id}
-                  label={service.name}
+                  label={`${serviceId === service.id ? "Selected: " : ""}${service.name}`}
                   disabled={busy}
                   tone={serviceId === service.id ? "primary" : "secondary"}
                   onPress={() => setServiceId(service.id)}

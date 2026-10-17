@@ -309,3 +309,7 @@ scripts/setup-worktree.ts	dev-db	1
 scripts/setup-worktree.ts	setup-reuse	4
 scripts/smoke-cli-archive.ts	smoke-port-race	3
 apps/web/src/components/sidebar/SidebarChrome.tsx	sites-navigation	1
+
+apps/mobile/src/components/ui/Sheet.tsx	sites-editor-dismiss	1
+apps/mobile/src/components/ui/Sheet.android.tsx	sites-editor-dismiss	1
+apps/mobile/src/components/ui/Sheet.types.ts	sites-editor-dismiss	1

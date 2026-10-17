@@ -20,11 +20,16 @@ export function Sheet(props: SheetProps) {
   const containerStyle = useResolveClassNames("bg-sheet");
   const screenId = useId();
   const [isOpen, setIsOpen] = useState(true);
-  const close = () => setIsOpen(false);
+  // fork: sites-editor-dismiss -- Pending forms must retain their input until saving settles.
+  const dismissible = props.dismissible ?? true;
+  const close = () => {
+    if (dismissible) setIsOpen(false);
+  };
 
   return (
     <FormSheet
       isOpen={isOpen}
+      preventNativeDismiss={!dismissible}
       detents={[0.5, 0.9]}
       prefersGrabberVisible
       nativeContainerStyle={containerStyle}
@@ -57,6 +62,7 @@ export function Sheet(props: SheetProps) {
                   type: "button",
                   title: "Done",
                   variant: "done",
+                  disabled: !dismissible,
                   accessibilityLabel: `Close ${props.title}`,
                   identifier: `app-sheet-done-${screenId}`,
                   onPress: close,

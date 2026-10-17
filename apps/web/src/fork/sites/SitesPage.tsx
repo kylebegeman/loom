@@ -1,3 +1,4 @@
+import { useSiteCheckClock } from "./use-site-check-clock";
 import { useState } from "react";
 import { Link, useSearch, useNavigate } from "@tanstack/react-router";
 import { siteCheckState, supportsLoomFeature } from "@t3tools/client-runtime/fork";
@@ -45,6 +46,7 @@ export function SitesPage() {
       : null,
   );
   const snapshot = query.data?.snapshot;
+  const now = useSiteCheckClock(snapshot);
   const selected = snapshot?.sites.find((site) => site.id === search.siteId) ?? snapshot?.sites[0];
   const analytics = useEnvironmentQuery(
     authority.authorityId && supported && selected
@@ -272,7 +274,7 @@ export function SitesPage() {
                                 const state = siteCheckState(
                                   check,
                                   snapshot.staleAfterSeconds,
-                                  Date.now(),
+                                  now,
                                 );
                                 return (
                                   <div
