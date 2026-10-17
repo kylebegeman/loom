@@ -37,6 +37,10 @@ import { ReopenClosedViewShortcut } from "../components/ReopenClosedViewShortcut
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { PullRequestGuideRunCoordinator } from "../components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
+import {
+  clearLoomSignInDestination,
+  rememberLoomSignInDestination,
+} from "~/fork/identity/returnTo";
 import { ForkRoot } from "../fork/ForkRoot"; // fork: ext-web-root
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ProviderAuthCallbackCoordinator } from "../components/settings/ProviderAuthCallbackCoordinator";
@@ -106,6 +110,11 @@ export const Route = createRootRoute({
     }
 
     const authGateState = await resolveInitialServerAuthGateState();
+    if (authGateState.status === "requires-auth") {
+      rememberLoomSignInDestination(new URL(location.href, window.location.origin).href);
+    } else if (authGateState.status === "authenticated") {
+      clearLoomSignInDestination();
+    }
     if (
       authGateState.status === "authenticated" &&
       getDesktopSnapShotBridge() &&
