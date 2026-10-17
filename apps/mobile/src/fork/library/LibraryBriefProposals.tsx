@@ -101,7 +101,9 @@ export function LibraryBriefReviewRouteScreen({
         />
       </LibraryPage>
     );
-  const { index: shown, proposal, missing } = selection;
+  const { index: shown, proposal } = selection;
+  // The last suggestion decided here leaves with the screen; it was not decided somewhere else.
+  const missing = selection.missing && !(pick && decided.has(pick.id));
   const show = (index: number) => {
     const next = waiting[index];
     if (next) setPick({ id: next.id, index });

@@ -64,9 +64,12 @@ export function ProjectBriefProposals({
       input: { projectId: project.id, status: "pending", limit: PENDING_LIMIT },
     }),
   );
-  const proposals = query.data?.proposals ?? [];
   const [open, setOpen] = useState(false);
   const [pick, setPick] = useState<LibraryBriefProposalPick | null>(null);
+  // Decided here, so they leave the count and Previous/Next at once instead of when the refreshed
+  // list lands.
+  const [decided, setDecided] = useState<ReadonlySet<string>>(() => new Set());
+  const proposals = (query.data?.proposals ?? []).filter((entry) => !decided.has(entry.id));
   if (!proposals.length) return null;
   const { index: shown, proposal, missing } = libraryBriefProposalSelection(proposals, pick);
   const show = (index: number) => {
@@ -111,8 +114,13 @@ export function ProjectBriefProposals({
                   const next = libraryBriefProposalAfterDecision(proposals, proposal.id, shown);
                   query.refresh();
                   onDecided();
-                  if (next) setPick(next);
-                  else setOpen(false);
+                  if (next) {
+                    setDecided((ids) => new Set(ids).add(proposal.id));
+                    setPick(next);
+                  } else {
+                    // The last one closes with the dialog, so it stays on screen until it is gone.
+                    setOpen(false);
+                  }
                 }}
               />
             ) : (
