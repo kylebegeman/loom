@@ -1,11 +1,12 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import {
   libraryHistoryOffsetForItem,
   shouldRefreshLibraryArchive,
 } from "@t3tools/client-runtime/fork";
 import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from "react";
 import { AccessibilityInfo, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
@@ -39,7 +40,7 @@ export function LibraryHistoryRouteScreen({ route }: StaticScreenProps<LibraryHi
 
 function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryParams }) {
   const authority = useLibraryAuthority(),
-    navigation = useNavigation(),
+    navigation = useNavigation<NativeStackNavigationProp<ReactNavigation.RootParamList>>(),
     { environments } = useEnvironments();
   const targetItem = params.item;
   const targetPosition =
@@ -93,9 +94,26 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
       viewPosition: matchedActivity ? 0 : 0.5,
       animated: false,
     });
-    // Scrolling does not move a screen reader, and nothing here is a live region on Android.
-    AccessibilityInfo.announceForAccessibility("Showing what your search found");
   }, [matchedRowId, matchedIndex, matchedActivity]);
+  // Scrolling does not move a screen reader, so its focus moves to the hit once the row is laid
+  // out and the push has finished; the screen change that ends a push would take it back earlier.
+  const [appeared, setAppeared] = useState(false);
+  useEffect(
+    () =>
+      navigation.addListener("transitionEnd", (event) => {
+        if (!event.data.closing) setAppeared(true);
+      }),
+    [navigation],
+  );
+  const matchLabel = useRef<ComponentRef<typeof View>>(null);
+  const [laidOut, setLaidOut] = useState<string | null>(null);
+  const focusedOn = useRef<string | null>(null);
+  useEffect(() => {
+    if (!appeared || !matchedRowId || laidOut !== matchedRowId) return;
+    if (focusedOn.current === matchedRowId || !matchLabel.current) return;
+    focusedOn.current = matchedRowId;
+    AccessibilityInfo.sendAccessibilityEvent(matchLabel.current, "focus");
+  }, [appeared, matchedRowId, laidOut]);
   const host = archive
     ? environments.find((env) => env.environmentId === archive.summary.environmentId)
     : undefined;
@@ -142,7 +160,9 @@ function LibraryHistoryContent({ params }: { readonly params: LibraryHistoryPara
         renderItem={({ item }) =>
           item.id === matchedRowId ? (
             <View className="-mx-2 gap-1 rounded-xl bg-subtle px-2 pt-2 pb-1">
-              <Text className="text-xs text-foreground-muted">Found by your search</Text>
+              <View ref={matchLabel} accessible onLayout={() => setLaidOut(item.id)}>
+                <Text className="text-xs text-foreground-muted">Found by your search</Text>
+              </View>
               <LibraryArchiveFeedRow
                 row={item}
                 archive={archive}
