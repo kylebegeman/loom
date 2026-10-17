@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { LibraryBriefProposal, LibraryProject } from "@t3tools/contracts/fork";
 import {
   libraryBriefAcceptance,
+  libraryBriefProposalSourceLabel,
   libraryBriefReview,
   libraryBriefSuggestionAvailability,
 } from "./library-brief-review.ts";
@@ -124,5 +126,24 @@ describe("libraryBriefSuggestionAvailability", () => {
     expect(libraryBriefSuggestionAvailability({ ...ready, canSend: false })).toMatchObject({
       kind: "disabled",
     });
+  });
+});
+
+describe("libraryBriefProposalSourceLabel", () => {
+  it("names the computer a conversation ran on, an agent's label, or a person", () => {
+    const hostLabel = (id: EnvironmentId) => (id === "studio" ? "Studio" : "Saved computer");
+    const from = (source: LibraryBriefProposal["source"]) =>
+      libraryBriefProposalSourceLabel({ ...proposal, source }, hostLabel);
+    expect(
+      from({
+        kind: "conversation",
+        environmentId: EnvironmentId.make("studio"),
+        threadId: ThreadId.make("thread-1"),
+      }),
+    ).toBe("From a conversation on Studio");
+    expect(from({ kind: "agent", id: "agent-1", label: "Release agent" })).toBe(
+      "From Release agent",
+    );
+    expect(from({ kind: "user" })).toBe("From a person");
   });
 });

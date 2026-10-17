@@ -1,3 +1,4 @@
+import type { EnvironmentId } from "@t3tools/contracts";
 import type {
   LibraryAcceptBriefProposalRequest,
   LibraryBriefProposal,
@@ -65,6 +66,21 @@ export function libraryBriefAcceptance(
 
 export const libraryBriefSuggestionsLabel = (count: number) =>
   count === 1 ? "1 suggested update" : `${count} suggested updates`;
+
+/** Who suggested a change, naming the computer a conversation ran on. */
+export function libraryBriefProposalSourceLabel(
+  proposal: LibraryBriefProposal,
+  hostLabel: (id: EnvironmentId) => string,
+): string {
+  switch (proposal.source.kind) {
+    case "conversation":
+      return `From a conversation on ${hostLabel(proposal.source.environmentId)}`;
+    case "agent":
+      return `From ${proposal.source.label}`;
+    case "user":
+      return "From a person";
+  }
+}
 
 export type LibraryBriefSuggestionAvailability =
   | { readonly kind: "hidden" }
