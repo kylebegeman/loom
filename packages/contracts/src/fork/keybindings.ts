@@ -16,7 +16,6 @@ export const FORK_KEYBINDING_COMMANDS = [
   "loom.panel-picker.open",
   "loom.library.goToProject",
   "loom.library.newConversationIn",
-  "loom.navigation.toggleView",
 ] as const;
 export type ForkKeybindingCommand = (typeof FORK_KEYBINDING_COMMANDS)[number];
 
@@ -28,5 +27,4 @@ export const FORK_KEYBINDING_FEATURE_NAMES: Readonly<Record<string, string>> = {
   "pcb-preview": "PCB Preview",
   "model-preview-3d": "3D Model",
   "device-qa": "Device QA",
-  navigation: "Sidebar",
 };

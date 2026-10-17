@@ -7,7 +7,6 @@ import { appleBuildToolingPaletteSource } from "../apple-build-tooling/palette";
 import { deviceQaPaletteSource } from "../device-qa/palette";
 import { panelPickerPaletteSource } from "../panel-picker/palette";
 import { codeGraphPaletteSource } from "../code-graph/palette";
-import { projectNavigationPaletteSource } from "../project-navigation/palette";
 import {
   libraryPaletteSource,
   useLibraryPaletteContext,
@@ -70,7 +69,6 @@ export const FORK_COMMAND_PALETTE_SOURCES: ReadonlyArray<ForkCommandPaletteSourc
   panelPickerPaletteSource,
   codeGraphPaletteSource,
   libraryPaletteSource,
-  projectNavigationPaletteSource,
 ];
 
 /** Every source's items. The palette matches search terms only, so a string title joins them. */

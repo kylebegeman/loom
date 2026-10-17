@@ -43,7 +43,6 @@ import { environmentServerConfigsAtom } from "~/state/server";
 import { readEnvironmentScope, useEnvironmentsWithScope } from "~/state/session";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { isElectron } from "~/env";
-import { useProjectNavigationView } from "~/fork/project-navigation/preference";
 import { resolveProjectThreadActivity } from "~/fork/project-navigation/activity";
 import { ProjectHomeComputers } from "./ProjectHomeComputers";
 import { ProjectPreparationDialog } from "./ProjectPreparationDialog";
@@ -63,19 +62,13 @@ export function ProjectHomePage({
   chosenProjectRef: ScopedProjectRef | null;
 }) {
   useEscapeToGoBack();
-  const navigate = useNavigate();
   const home = useProjectHomeGroup(projectKey, chosenProjectRef);
-  const [, setNavigatorView] = useProjectNavigationView();
-  const goToProjects = useCallback(() => {
-    setNavigatorView("projects");
-    void navigate({ to: "/" });
-  }, [navigate, setNavigatorView]);
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none isolate">
       <WorkspacePageHeader electron={isElectron}>
         <WorkspaceBreadcrumb ariaLabel="Project">
           <WorkspaceBreadcrumbItem>
-            <Button variant="link" size="xs" onClick={goToProjects}>
+            <Button variant="link" size="xs" render={<Link to="/projects" />}>
               Projects
             </Button>
           </WorkspaceBreadcrumbItem>
@@ -106,7 +99,7 @@ export function ProjectHomePage({
                 : "Waiting for the project catalog from your computers."}
             </p>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={goToProjects}>
+              <Button variant="outline" render={<Link to="/projects" />}>
                 Open Projects
               </Button>
               <Button variant="outline" render={<Link to="/settings/connections" />}>
