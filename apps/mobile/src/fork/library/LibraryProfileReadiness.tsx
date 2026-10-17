@@ -7,6 +7,7 @@ import {
   type LibraryToolCheckTone,
 } from "@t3tools/client-runtime/fork";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId } from "@t3tools/contracts";
 import {
   LIBRARY_PROFILE_READINESS_FEATURE,
   type LibraryProject,
@@ -31,6 +32,30 @@ const TONE_SYMBOLS: Record<LibraryToolCheckTone, AppSymbolName> = {
   unknown: "exclamationmark.circle",
 };
 
+function useSupportsReadiness(environmentId: EnvironmentId) {
+  return supportsLoomFeature(
+    useEnvironmentServerConfig(environmentId)?.environment.capabilities,
+    LIBRARY_PROFILE_READINESS_FEATURE,
+  );
+}
+
+const requiresSomething = (project: LibraryProject) =>
+  (project.profile?.requiredTools?.length ?? 0) + (project.profile?.secretNames?.length ?? 0) > 0;
+
+/**
+ * The project's required tools as checked on one computer, plus the secret names to set there.
+ * Shows nothing when the project requires nothing or the computer cannot check.
+ */
+export function LibraryProfileReadiness(props: {
+  environmentId: EnvironmentId;
+  project: LibraryProject;
+}) {
+  const supported = useSupportsReadiness(props.environmentId);
+  return supported && requiresSomething(props.project) ? (
+    <ReadinessChecklist environmentId={props.environmentId} project={props.project} />
+  ) : null;
+}
+
 /**
  * A copy's readiness on its computer, and where its local settings differ from the project's
  * setup with a way to replace them. Local settings change only when someone chooses to apply the
@@ -40,17 +65,14 @@ export function LibraryCopyProfileSetup(props: {
   project: LibraryProject;
   copy: LibraryWorkingCopy;
 }) {
-  const config = useEnvironmentServerConfig(props.copy.environmentId);
-  const supported = supportsLoomFeature(
-    config?.environment.capabilities,
-    LIBRARY_PROFILE_READINESS_FEATURE,
-  );
+  const supported = useSupportsReadiness(props.copy.environmentId);
   const profile = props.project.profile;
   if (!supported) return null;
-  const required = (profile?.requiredTools?.length ?? 0) + (profile?.secretNames?.length ?? 0) > 0;
   return (
     <>
-      {required ? <ReadinessChecklist project={props.project} copy={props.copy} /> : null}
+      {requiresSomething(props.project) ? (
+        <ReadinessChecklist environmentId={props.copy.environmentId} project={props.project} />
+      ) : null}
       {profile?.scripts?.length || profile?.defaultModelSelection ? (
         <SettingsDifferences project={props.project} copy={props.copy} />
       ) : null}
@@ -58,10 +80,10 @@ export function LibraryCopyProfileSetup(props: {
   );
 }
 
-function ReadinessChecklist(props: { project: LibraryProject; copy: LibraryWorkingCopy }) {
+function ReadinessChecklist(props: { environmentId: EnvironmentId; project: LibraryProject }) {
   const readiness = useEnvironmentQuery(
     library.profileReadiness({
-      environmentId: props.copy.environmentId,
+      environmentId: props.environmentId,
       input: { projectId: props.project.id, profile: props.project.profile ?? {} },
     }),
   );

@@ -63,6 +63,7 @@ import {
   readLibraryLaunchAttempt,
   encodeLibraryLaunchAttempt,
 } from "./libraryLaunch";
+import { LibraryProfileReadiness } from "./LibraryProfileReadiness";
 import { useLibraryLaunchRanking } from "./useLibraryLaunchRanking";
 
 const sentence = (parts: readonly string[]) => {
@@ -869,6 +870,9 @@ function LibraryStartContent(props: {
                 ? `${selectedHost?.label ?? "This computer"} has no copy of this project yet. The conversation starts when the copy is ready.`
                 : `This project has no copy yet. Get one on ${selectedHost?.label ?? "this computer"} and the conversation starts when it is ready.`}
             </Text>
+          ) : null}
+          {mode !== "reuse" && progress.intent === null ? (
+            <LibraryProfileReadiness environmentId={execution} project={launchProject} />
           ) : null}
           {warning ? (
             <View className="gap-2">
